@@ -923,6 +923,92 @@
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
     <string name="flowering_accessibility_month_intensity">%1$s %2$d</string>
     <string name="flowering_chart_content_description">%1$s. 0 means no bloom, 1 occasional bloom, 2 peak bloom. The dot marks this month. %2$s</string>
+
+    <!-- Plant screen · collapsible sections -->
+    <string name="section_about_title">About the plant</string>
+    <string name="section_about_subtitle">Description, traits and varieties.</string>
+    <string name="section_care_title">Care</string>
+    <string name="section_care_subtitle">Watering, light, temperature, humidity and pruning.</string>
+    <string name="section_diseases_title">Diseases and pests</string>
+    <string name="section_diseases_subtitle">Common problems and how to treat them.</string>
+    <string name="section_fertiliser_title">Fertiliser and feeding</string>
+    <string name="section_fertiliser_subtitle">What to feed with, and when.</string>
+    <string name="section_lunar_title">Lunar calendar</string>
+    <string name="section_lunar_subtitle">Favourable days for planting and care.</string>
+    <string name="section_tips_title">Tips</string>
+    <string name="section_tips_subtitle">Useful growing recommendations.</string>
+    <string name="section_expand">Expand section</string>
+    <string name="section_collapse">Collapse section</string>
+
+    <!-- Lunar calendar -->
+    <string name="lunar_today">Today, %1$s</string>
+    <string name="lunar_good_for">The day is good for:</string>
+    <string name="lunar_avoid">Better to postpone:</string>
+    <string name="lunar_upcoming">Upcoming favourable days</string>
+    <string name="lunar_legend_good">favourable</string>
+    <string name="lunar_legend_neutral">neutral</string>
+    <string name="lunar_legend_bad">unfavourable</string>
+    <string name="lunar_prev_month">Previous month</string>
+    <string name="lunar_next_month">Next month</string>
+
+    <!-- Moon phases -->
+    <string name="moon_new">New Moon</string>
+    <string name="moon_waxing_crescent">Waxing Moon</string>
+    <string name="moon_first_quarter">First Quarter</string>
+    <string name="moon_waxing_gibbous">Waxing Moon</string>
+    <string name="moon_full">Full Moon</string>
+    <string name="moon_waning_gibbous">Waning Moon</string>
+    <string name="moon_last_quarter">Last Quarter</string>
+    <string name="moon_waning_crescent">Waning Moon</string>
+
+    <!-- Zodiac signs -->
+    <string name="zodiac_aries">Aries</string>
+    <string name="zodiac_taurus">Taurus</string>
+    <string name="zodiac_gemini">Gemini</string>
+    <string name="zodiac_cancer">Cancer</string>
+    <string name="zodiac_leo">Leo</string>
+    <string name="zodiac_virgo">Virgo</string>
+    <string name="zodiac_libra">Libra</string>
+    <string name="zodiac_scorpio">Scorpio</string>
+    <string name="zodiac_sagittarius">Sagittarius</string>
+    <string name="zodiac_capricorn">Capricorn</string>
+    <string name="zodiac_aquarius">Aquarius</string>
+    <string name="zodiac_pisces">Pisces</string>
+
+    <!-- Lunar tasks -->
+    <string name="lunar_task_planting">Planting</string>
+    <string name="lunar_task_repotting">Repotting</string>
+    <string name="lunar_task_feeding">Feeding</string>
+    <string name="lunar_task_watering">Watering</string>
+    <string name="lunar_task_pruning">Pruning</string>
+
+    <!-- Lunar calendar · plant categories -->
+    <string name="lunar_category_note">Tailored for: %1$s</string>
+    <string name="lunar_cat_fruiting">fruiting plants</string>
+    <string name="lunar_cat_root">root crops</string>
+    <string name="lunar_cat_leafy">leafy greens</string>
+    <string name="lunar_cat_flowering">flowering plants</string>
+    <string name="lunar_cat_succulent">succulents and cacti</string>
+    <string name="lunar_cat_foliage">foliage houseplants</string>
+    <string name="lunar_cat_herb">herbs</string>
+    <string name="lunar_out_of_range">This calendar covers 2026–2027.</string>
+
+    <!-- Weekday initials, Monday first -->
+    <string name="lunar_dow_mon">Mon</string>
+    <string name="lunar_dow_tue">Tue</string>
+    <string name="lunar_dow_wed">Wed</string>
+    <string name="lunar_dow_thu">Thu</string>
+    <string name="lunar_dow_fri">Fri</string>
+    <string name="lunar_dow_sat">Sat</string>
+    <string name="lunar_dow_sun">Sun</string>
+
+    <!-- Fertiliser / tips section bodies -->
+    <string name="fertiliser_interval">Feed every %1$d weeks during active growth.</string>
+    <string name="fertiliser_interval_none">No regular feeding needed for this plant.</string>
+    <string name="fertiliser_npk">Fertiliser: %1$s</string>
+    <string name="fertiliser_soil">Soil mix: %1$s</string>
+    <string name="section_empty">Details will appear once the plant profile has loaded.</string>
+
     <string-array name="flowering_month_initials">
         <item>J</item>
         <item>F</item>

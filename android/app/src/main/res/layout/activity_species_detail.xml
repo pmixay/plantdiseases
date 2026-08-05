@@ -2,9 +2,18 @@
 <!--
     Full-screen species detail, opened from the Home "Trending species"
     carousel (and reusable elsewhere). A large Wikipedia lead photo under a
-    gradient toolbar, the common/scientific name, the encyclopedia blurb, a
-    care-at-a-glance block (filled from /api/care-plan), and add-to-garden /
-    scan-health / Wikipedia actions.
+    gradient toolbar, the common/scientific name, then six collapsible
+    sections (About / Care / Diseases / Fertiliser / Lunar calendar / Tips) —
+    all collapsed by default, expanding in place on tap — followed by
+    add-to-garden / scan-health / Wikipedia actions.
+
+    Every section body below is declared once, inside the hidden
+    `section_content_pool` at the bottom of this file, keeping the exact ids
+    and attributes SpeciesDetailActivity already binds against
+    (tv_species_extract, care_slot, list_diseases, card_flowering, …).
+    SpeciesDetailActivity.attachSections() re-parents each body into its
+    ExpandableSectionView at runtime — nothing about how those views are
+    populated changes.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -107,367 +116,43 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/tv_species_extract"
+                <!-- Collapsible sections — all start collapsed. Bodies are
+                     attached at runtime from section_content_pool below. -->
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_about"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:lineSpacingExtra="3dp"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_body" />
+                    android:layout_marginTop="@dimen/space_lg" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_wikipedia"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:text="@string/identify_wikipedia"
-                    android:visibility="gone" />
-
-                <!-- Care at a glance — the same rich CarePlanCardView the scan
-                     result and garden detail render, inserted here at runtime
-                     (gradient header + watering/light/humidity pills +
-                     expandable details). -->
-                <FrameLayout
-                    android:id="@+id/care_slot"
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_care"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md" />
 
-                <!-- Pet-toxicity card — same surface the scan result uses
-                     (icon + title + body, red for toxic / green for pet-safe),
-                     populated from the care plan's toxicity fields. Replaces
-                     the old barely-visible "Toxic to pets" text line. -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_toxicity"
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_diseases"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone"
-                    app:cardCornerRadius="@dimen/radius_lg"
-                    app:cardElevation="0dp">
+                    android:layout_marginTop="@dimen/space_md" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:padding="@dimen/space_lg">
-
-                        <ImageView
-                            android:id="@+id/iv_toxicity_icon"
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:src="@drawable/ic_warning"
-                            android:contentDescription="@null"
-                            android:importantForAccessibility="no" />
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="@dimen/space_md"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:id="@+id/tv_toxicity_title"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:textSize="@dimen/text_body"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:id="@+id/tv_toxicity_body"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="2dp" />
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Flowering calendar and its bloom trigger are sourced from
-                     the same optional /api/species-profile response as the
-                     map below. Each card exposes its own loading state, then
-                     independently shows content or disappears when absent. -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_flowering"
-                    style="@style/App.GlassCard"
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_fertiliser"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone"
-                    app:cardBackgroundColor="@color/surface"
-                    app:contentPadding="0dp">
+                    android:layout_marginTop="@dimen/space_md" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/space_lg">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <ImageView
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:contentDescription="@null"
-                                android:importantForAccessibility="no"
-                                android:src="@drawable/ic_garden"
-                                app:tint="@color/primary" />
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_sm"
-                                android:layout_weight="1"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/flowering_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/flowering_loading"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_sm"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.progressindicator.CircularProgressIndicator
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:indeterminate="true"
-                                android:importantForAccessibility="no"
-                                app:indicatorColor="@color/primary"
-                                app:indicatorSize="22dp"
-                                app:trackThickness="2dp" />
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_md"
-                                android:layout_weight="1"
-                                android:text="@string/flowering_loading"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/flowering_content"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:visibility="gone">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="1dp"
-                                android:text="@string/flowering_chart_hint"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
-                            <com.plantdiseases.app.ui.widget.FloweringChartView
-                                android:id="@+id/flowering_chart"
-                                android:layout_width="match_parent"
-                                android:layout_height="184dp"
-                                android:layout_marginTop="@dimen/space_sm" />
-
-                            <TextView
-                                android:id="@+id/tv_flowering_indoor_note"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm"
-                                android:lineSpacingExtra="2dp"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm"
-                                android:visibility="gone" />
-
-                            <LinearLayout
-                                android:id="@+id/card_flowering_conditions"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_lg"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal"
-                                android:visibility="gone">
-
-                                <ImageView
-                                    android:layout_width="28dp"
-                                    android:layout_height="28dp"
-                                    android:contentDescription="@null"
-                                    android:importantForAccessibility="no"
-                                    android:src="@drawable/ic_light"
-                                    app:tint="@color/primary" />
-
-                                <LinearLayout
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginStart="@dimen/space_md"
-                                    android:layout_weight="1"
-                                    android:orientation="vertical">
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:fontFamily="sans-serif-medium"
-                                        android:text="@string/flowering_conditions_title"
-                                        android:textColor="@color/on_surface"
-                                        android:textSize="@dimen/text_body" />
-
-                                    <TextView
-                                        android:id="@+id/tv_flowering_conditions"
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginTop="@dimen/space_xs"
-                                        android:lineSpacingExtra="2dp"
-                                        android:textColor="@color/on_surface_secondary"
-                                        android:textSize="@dimen/text_body_sm" />
-
-                                </LinearLayout>
-
-                            </LinearLayout>
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Optional /api/species-profile native-range section. The
-                     custom view owns its offline Canvas geometry, tap state
-                     and selected-country result; this card only supplies the
-                     surrounding species-screen title and server summary. -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_native_range"
-                    style="@style/App.GlassCard"
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_lunar"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone">
+                    android:layout_marginTop="@dimen/space_md" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="sans-serif-medium"
-                            android:text="@string/native_range_title"
-                            android:textColor="@color/on_surface"
-                            android:textSize="@dimen/text_title_sm" />
-
-                        <LinearLayout
-                            android:id="@+id/native_range_loading"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_sm"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.progressindicator.CircularProgressIndicator
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:indeterminate="true"
-                                android:importantForAccessibility="no"
-                                app:indicatorColor="@color/primary"
-                                app:indicatorSize="22dp"
-                                app:trackThickness="2dp" />
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_md"
-                                android:layout_weight="1"
-                                android:text="@string/native_range_loading"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/native_range_content"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:visibility="gone">
-
-                            <TextView
-                                android:id="@+id/tv_native_range_summary"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="2dp"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
-                            <com.plantdiseases.app.ui.widget.WorldMapView
-                                android:id="@+id/world_map"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_md" />
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Common problems for this species (AI list with guide
-                     links, or the bundled disease guide as fallback). Rows
-                     built programmatically by SpeciesDetailActivity. -->
-                <TextView
-                    android:id="@+id/tv_diseases_title"
+                <com.plantdiseases.app.ui.common.ExpandableSectionView
+                    android:id="@+id/section_tips"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="@string/species_common_problems"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_body"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/tv_diseases_subtitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:visibility="gone" />
-
-                <ProgressBar
-                    android:id="@+id/pb_diseases"
-                    style="?android:attr/progressBarStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/list_diseases"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:orientation="vertical"
-                    android:visibility="gone" />
+                    android:layout_marginTop="@dimen/space_md" />
 
                 <!-- baselineAligned=false + match_parent heights keep both
                      buttons the same height even when one label wraps to two
@@ -497,6 +182,461 @@
                         android:layout_marginStart="@dimen/space_sm"
                         android:text="@string/identify_scan_health" />
                 </LinearLayout>
+
+                <!-- Section bodies. Declared here, hidden, so every existing
+                     view keeps its id and attributes; SpeciesDetailActivity
+                     re-parents each block into its ExpandableSectionView at
+                     runtime (see attachSections()). -->
+                <LinearLayout
+                    android:id="@+id/section_content_pool"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- About: encyclopedia blurb + Wikipedia link + flowering
+                         calendar + native-range map. -->
+                    <LinearLayout
+                        android:id="@+id/body_about"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_species_extract"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_body" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_wikipedia"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:text="@string/identify_wikipedia"
+                            android:visibility="gone" />
+
+                        <!-- Flowering calendar and its bloom trigger are
+                             sourced from the same optional
+                             /api/species-profile response as the map below.
+                             Each card exposes its own loading state, then
+                             independently shows content or disappears when
+                             absent. -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/card_flowering"
+                            style="@style/App.GlassCard"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:visibility="gone"
+                            app:cardBackgroundColor="@color/surface"
+                            app:contentPadding="0dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="@dimen/space_lg">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal">
+
+                                    <ImageView
+                                        android:layout_width="24dp"
+                                        android:layout_height="24dp"
+                                        android:contentDescription="@null"
+                                        android:importantForAccessibility="no"
+                                        android:src="@drawable/ic_garden"
+                                        app:tint="@color/primary" />
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="@dimen/space_sm"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif-medium"
+                                        android:text="@string/flowering_title"
+                                        android:textColor="@color/on_surface"
+                                        android:textSize="@dimen/text_title_sm" />
+
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:id="@+id/flowering_loading"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_sm"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal">
+
+                                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                                        android:layout_width="24dp"
+                                        android:layout_height="24dp"
+                                        android:indeterminate="true"
+                                        android:importantForAccessibility="no"
+                                        app:indicatorColor="@color/primary"
+                                        app:indicatorSize="22dp"
+                                        app:trackThickness="2dp" />
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="@dimen/space_md"
+                                        android:layout_weight="1"
+                                        android:text="@string/flowering_loading"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:id="@+id/flowering_content"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical"
+                                    android:visibility="gone">
+
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_xs"
+                                        android:lineSpacingExtra="1dp"
+                                        android:text="@string/flowering_chart_hint"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                    <com.plantdiseases.app.ui.widget.FloweringChartView
+                                        android:id="@+id/flowering_chart"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="184dp"
+                                        android:layout_marginTop="@dimen/space_sm" />
+
+                                    <TextView
+                                        android:id="@+id/tv_flowering_indoor_note"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_sm"
+                                        android:lineSpacingExtra="2dp"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm"
+                                        android:visibility="gone" />
+
+                                    <LinearLayout
+                                        android:id="@+id/card_flowering_conditions"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_lg"
+                                        android:gravity="center_vertical"
+                                        android:orientation="horizontal"
+                                        android:visibility="gone">
+
+                                        <ImageView
+                                            android:layout_width="28dp"
+                                            android:layout_height="28dp"
+                                            android:contentDescription="@null"
+                                            android:importantForAccessibility="no"
+                                            android:src="@drawable/ic_light"
+                                            app:tint="@color/primary" />
+
+                                        <LinearLayout
+                                            android:layout_width="0dp"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginStart="@dimen/space_md"
+                                            android:layout_weight="1"
+                                            android:orientation="vertical">
+
+                                            <TextView
+                                                android:layout_width="match_parent"
+                                                android:layout_height="wrap_content"
+                                                android:fontFamily="sans-serif-medium"
+                                                android:text="@string/flowering_conditions_title"
+                                                android:textColor="@color/on_surface"
+                                                android:textSize="@dimen/text_body" />
+
+                                            <TextView
+                                                android:id="@+id/tv_flowering_conditions"
+                                                android:layout_width="match_parent"
+                                                android:layout_height="wrap_content"
+                                                android:layout_marginTop="@dimen/space_xs"
+                                                android:lineSpacingExtra="2dp"
+                                                android:textColor="@color/on_surface_secondary"
+                                                android:textSize="@dimen/text_body_sm" />
+
+                                        </LinearLayout>
+
+                                    </LinearLayout>
+
+                                </LinearLayout>
+
+                            </LinearLayout>
+
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <!-- Optional /api/species-profile native-range
+                             section. The custom view owns its offline Canvas
+                             geometry, tap state and selected-country result;
+                             this card only supplies the surrounding
+                             species-screen title and server summary. -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/card_native_range"
+                            style="@style/App.GlassCard"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:visibility="gone">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/native_range_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <LinearLayout
+                                    android:id="@+id/native_range_loading"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_sm"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal">
+
+                                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                                        android:layout_width="24dp"
+                                        android:layout_height="24dp"
+                                        android:indeterminate="true"
+                                        android:importantForAccessibility="no"
+                                        app:indicatorColor="@color/primary"
+                                        app:indicatorSize="22dp"
+                                        app:trackThickness="2dp" />
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="@dimen/space_md"
+                                        android:layout_weight="1"
+                                        android:text="@string/native_range_loading"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:id="@+id/native_range_content"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical"
+                                    android:visibility="gone">
+
+                                    <TextView
+                                        android:id="@+id/tv_native_range_summary"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_xs"
+                                        android:lineSpacingExtra="2dp"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                    <com.plantdiseases.app.ui.widget.WorldMapView
+                                        android:id="@+id/world_map"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_md" />
+
+                                </LinearLayout>
+
+                            </LinearLayout>
+
+                        </com.google.android.material.card.MaterialCardView>
+
+                    </LinearLayout>
+
+                    <!-- Care: the rich CarePlanCardView + pet-toxicity card. -->
+                    <LinearLayout
+                        android:id="@+id/body_care"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <!-- Care at a glance — the same rich CarePlanCardView
+                             the scan result and garden detail render,
+                             inserted here at runtime (gradient header +
+                             watering/light/humidity pills + expandable
+                             details). -->
+                        <FrameLayout
+                            android:id="@+id/care_slot"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <!-- Pet-toxicity card — same surface the scan result
+                             uses (icon + title + body, red for toxic / green
+                             for pet-safe), populated from the care plan's
+                             toxicity fields. -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/card_toxicity"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:visibility="gone"
+                            app:cardCornerRadius="@dimen/radius_lg"
+                            app:cardElevation="0dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:padding="@dimen/space_lg">
+
+                                <ImageView
+                                    android:id="@+id/iv_toxicity_icon"
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:src="@drawable/ic_warning"
+                                    android:contentDescription="@null"
+                                    android:importantForAccessibility="no" />
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="@dimen/space_md"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:id="@+id/tv_toxicity_title"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:textSize="@dimen/text_body"
+                                        android:fontFamily="sans-serif-medium" />
+
+                                    <TextView
+                                        android:id="@+id/tv_toxicity_body"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_xs"
+                                        android:textSize="@dimen/text_body_sm"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:lineSpacingExtra="2dp" />
+
+                                </LinearLayout>
+
+                            </LinearLayout>
+
+                        </com.google.android.material.card.MaterialCardView>
+
+                    </LinearLayout>
+
+                    <!-- Diseases: common-problems list (AI, or bundled guide
+                         fallback), rows built programmatically. -->
+                    <LinearLayout
+                        android:id="@+id/body_diseases"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_diseases_title"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="@string/species_common_problems"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_body"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tv_diseases_subtitle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm"
+                            android:visibility="gone" />
+
+                        <ProgressBar
+                            android:id="@+id/pb_diseases"
+                            style="?android:attr/progressBarStyleSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_sm"
+                            android:visibility="gone" />
+
+                        <LinearLayout
+                            android:id="@+id/list_diseases"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:orientation="vertical"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <!-- Fertiliser: filled from the same care plan loadCare()
+                         already fetches — no extra request. -->
+                    <LinearLayout
+                        android:id="@+id/body_fertiliser"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_fertiliser_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/section_empty"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_body" />
+
+                    </LinearLayout>
+
+                    <!-- Lunar calendar: fully offline, computed from the
+                         device date — no network call. -->
+                    <LinearLayout
+                        android:id="@+id/body_lunar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <com.plantdiseases.app.ui.widget.LunarCalendarView
+                            android:id="@+id/lunar_calendar"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                    </LinearLayout>
+
+                    <!-- Tips: the care plan's free-text guidance. -->
+                    <LinearLayout
+                        android:id="@+id/body_tips"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_tips_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/section_empty"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_body" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
             </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

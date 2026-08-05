@@ -91,6 +91,22 @@
     <color name="shimmer_base">#192118</color>
     <color name="shimmer_highlight">#243023</color>
 
+    <!-- Lunar calendar (dark): deep fills with bright glyph text, the
+         inverse of the light ramp — matches every other dark chip. -->
+    <color name="lunar_good_bg">#14532D</color>
+    <color name="lunar_good_fg">#4ADE80</color>
+    <color name="lunar_neutral_bg">#3F2A06</color>
+    <color name="lunar_neutral_fg">#FBBF24</color>
+    <color name="lunar_bad_bg">#450A0A</color>
+    <color name="lunar_bad_fg">#F87171</color>
+
+    <!-- ─── MoonPhaseView (dark) ───────────────────────────────── -->
+    <color name="moon_lit_hi">#F2EFE6</color>
+    <color name="moon_lit_lo">#B9B4A6</color>
+    <color name="moon_dark">#161B20</color>
+    <color name="moon_mare">#7A766B</color>
+    <color name="moon_glow">#22FFFFFF</color>
+
     <!-- ─── AI Doctor chat bubbles (dark) ───────────────────────── -->
     <color name="chat_bubble_bot_bg">#1F2820</color>
     <color name="chat_bubble_user_bg">#14532D</color>

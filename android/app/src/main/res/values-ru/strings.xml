@@ -918,6 +918,92 @@
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
     <string name="flowering_accessibility_month_intensity">%1$s: %2$d</string>
     <string name="flowering_chart_content_description">%1$s. 0 — не цветёт, 1 — иногда, 2 — пик цветения. Точка отмечает текущий месяц. %2$s</string>
+
+    <!-- Экран растения · сворачиваемые разделы -->
+    <string name="section_about_title">О растении</string>
+    <string name="section_about_subtitle">Описание, особенности и виды.</string>
+    <string name="section_care_title">Уход</string>
+    <string name="section_care_subtitle">Полив, свет, температура, влажность и обрезка.</string>
+    <string name="section_diseases_title">Болезни и вредители</string>
+    <string name="section_diseases_subtitle">Распространённые проблемы и способы лечения.</string>
+    <string name="section_fertiliser_title">Удобрения и подкормка</string>
+    <string name="section_fertiliser_subtitle">Чем и когда подкармливать.</string>
+    <string name="section_lunar_title">Лунный календарь</string>
+    <string name="section_lunar_subtitle">Благоприятные дни для посадки и ухода.</string>
+    <string name="section_tips_title">Советы</string>
+    <string name="section_tips_subtitle">Полезные рекомендации по выращиванию.</string>
+    <string name="section_expand">Развернуть раздел</string>
+    <string name="section_collapse">Свернуть раздел</string>
+
+    <!-- Лунный календарь -->
+    <string name="lunar_today">Сегодня, %1$s</string>
+    <string name="lunar_good_for">День благоприятен для:</string>
+    <string name="lunar_avoid">Лучше отложить:</string>
+    <string name="lunar_upcoming">Ближайшие благоприятные дни</string>
+    <string name="lunar_legend_good">благоприятные</string>
+    <string name="lunar_legend_neutral">нейтральные</string>
+    <string name="lunar_legend_bad">неблагоприятные</string>
+    <string name="lunar_prev_month">Предыдущий месяц</string>
+    <string name="lunar_next_month">Следующий месяц</string>
+
+    <!-- Фазы Луны -->
+    <string name="moon_new">Новолуние</string>
+    <string name="moon_waxing_crescent">Растущая Луна</string>
+    <string name="moon_first_quarter">Первая четверть</string>
+    <string name="moon_waxing_gibbous">Растущая Луна</string>
+    <string name="moon_full">Полнолуние</string>
+    <string name="moon_waning_gibbous">Убывающая Луна</string>
+    <string name="moon_last_quarter">Последняя четверть</string>
+    <string name="moon_waning_crescent">Убывающая Луна</string>
+
+    <!-- Знаки зодиака -->
+    <string name="zodiac_aries">Овен</string>
+    <string name="zodiac_taurus">Телец</string>
+    <string name="zodiac_gemini">Близнецы</string>
+    <string name="zodiac_cancer">Рак</string>
+    <string name="zodiac_leo">Лев</string>
+    <string name="zodiac_virgo">Дева</string>
+    <string name="zodiac_libra">Весы</string>
+    <string name="zodiac_scorpio">Скорпион</string>
+    <string name="zodiac_sagittarius">Стрелец</string>
+    <string name="zodiac_capricorn">Козерог</string>
+    <string name="zodiac_aquarius">Водолей</string>
+    <string name="zodiac_pisces">Рыбы</string>
+
+    <!-- Лунные задачи -->
+    <string name="lunar_task_planting">Посадка</string>
+    <string name="lunar_task_repotting">Пересадка</string>
+    <string name="lunar_task_feeding">Подкормка</string>
+    <string name="lunar_task_watering">Полив</string>
+    <string name="lunar_task_pruning">Обрезка</string>
+
+    <!-- Лунный календарь · категории растений -->
+    <string name="lunar_category_note">Подобрано для: %1$s</string>
+    <string name="lunar_cat_fruiting">плодовых</string>
+    <string name="lunar_cat_root">корнеплодов</string>
+    <string name="lunar_cat_leafy">зелени</string>
+    <string name="lunar_cat_flowering">цветущих</string>
+    <string name="lunar_cat_succulent">суккулентов и кактусов</string>
+    <string name="lunar_cat_foliage">декоративно-лиственных</string>
+    <string name="lunar_cat_herb">пряных трав</string>
+    <string name="lunar_out_of_range">Календарь охватывает 2026–2027 годы.</string>
+
+    <!-- Дни недели, начиная с понедельника -->
+    <string name="lunar_dow_mon">Пн</string>
+    <string name="lunar_dow_tue">Вт</string>
+    <string name="lunar_dow_wed">Ср</string>
+    <string name="lunar_dow_thu">Чт</string>
+    <string name="lunar_dow_fri">Пт</string>
+    <string name="lunar_dow_sat">Сб</string>
+    <string name="lunar_dow_sun">Вс</string>
+
+    <!-- Удобрения / советы -->
+    <string name="fertiliser_interval">Подкармливать каждые %1$d недель в период активного роста.</string>
+    <string name="fertiliser_interval_none">Регулярная подкормка этому растению не нужна.</string>
+    <string name="fertiliser_npk">Удобрение: %1$s</string>
+    <string name="fertiliser_soil">Субстрат: %1$s</string>
+    <string name="section_empty">Детали появятся, когда загрузится профиль растения.</string>
+
     <string-array name="flowering_month_initials">
         <item>Я</item>
         <item>Ф</item>

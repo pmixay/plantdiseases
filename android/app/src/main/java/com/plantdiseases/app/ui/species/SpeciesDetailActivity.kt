@@ -33,6 +33,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.common.ExpandableSectionView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -98,6 +99,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.speciesToolbar.title = title
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
+
+        binding.lunarCalendar.setSpecies(scientificName, commonName)
+        binding.lunarCalendar.onRequestScrollTo = { target -> scrollSpeciesTo(target) }
+
+        attachSections()
 
         binding.btnAddGarden.setOnClickListener { addToGarden() }
         binding.btnScanHealth.setOnClickListener {
@@ -176,12 +182,120 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     speciesDisplay = speciesDisplay,
                     showApplyToReminders = false,
                 )
+                bindFertiliser(plan)
+                bindTips(plan)
             } else {
                 careCard.showError(onRetry = { loadCare() })
             }
             // Pet toxicity renders as its own card (below), not part of the
             // care card. Hidden when the plan couldn't load / pin toxicity.
             bindToxicity(plan)
+        }
+    }
+
+    /** Feeding section — assembled from the care plan already on hand
+     *  (fertilise_weeks / fertiliser_npk / soil_mix), so no extra request. */
+    private fun bindFertiliser(plan: CarePlanResponse) {
+        val lines = buildList {
+            add(
+                if (plan.fertiliseWeeks > 0) {
+                    getString(R.string.fertiliser_interval, plan.fertiliseWeeks)
+                } else {
+                    getString(R.string.fertiliser_interval_none)
+                },
+            )
+            plan.fertiliserNpk?.takeIf { it.isNotBlank() }
+                ?.let { add(getString(R.string.fertiliser_npk, it)) }
+            plan.soilMix?.takeIf { it.isNotBlank() }
+                ?.let { add(getString(R.string.fertiliser_soil, it)) }
+            plan.seasonNote?.takeIf { it.isNotBlank() }?.let { add(it) }
+        }
+        binding.tvFertiliserBody.text = lines.joinToString("\n\n")
+    }
+
+    /** Tips section — the care plan's free-text guidance, one paragraph per item. */
+    private fun bindTips(plan: CarePlanResponse) {
+        val lines = listOfNotNull(
+            plan.keyAction, plan.placement, plan.acclimation, plan.wateringMethod,
+        ).filter { it.isNotBlank() } + plan.redFlags.orEmpty().filter { it.isNotBlank() }
+        binding.tvTipsBody.text = if (lines.isEmpty()) {
+            getString(R.string.section_empty)
+        } else {
+            lines.joinToString("\n\n") { "• $it" }
+        }
+    }
+
+    /**
+     * Moves each pre-declared body block out of the hidden pool and into its
+     * ExpandableSectionView. Re-parenting (rather than rebuilding) means every
+     * existing loader — loadDetail / loadCare / loadDiseases /
+     * loadSpeciesProfile — keeps writing to the very same view ids it always
+     * has. All sections start collapsed.
+     */
+    private fun attachSections() {
+        val pool = binding.sectionContentPool
+        fun move(section: ExpandableSectionView, body: View, icon: Int, title: Int, subtitle: Int) {
+            pool.removeView(body)
+            body.visibility = View.VISIBLE
+            section.bind(icon, title, subtitle)
+            section.setContent(body)
+        }
+        move(
+            binding.sectionAbout, binding.bodyAbout, R.drawable.ic_garden,
+            R.string.section_about_title, R.string.section_about_subtitle,
+        )
+        move(
+            binding.sectionCare, binding.bodyCare, R.drawable.ic_shield_check,
+            R.string.section_care_title, R.string.section_care_subtitle,
+        )
+        move(
+            binding.sectionDiseases, binding.bodyDiseases, R.drawable.ic_pest,
+            R.string.section_diseases_title, R.string.section_diseases_subtitle,
+        )
+        move(
+            binding.sectionFertiliser, binding.bodyFertiliser, R.drawable.ic_fertilize,
+            R.string.section_fertiliser_title, R.string.section_fertiliser_subtitle,
+        )
+        move(
+            binding.sectionLunar, binding.bodyLunar, R.drawable.ic_moon,
+            R.string.section_lunar_title, R.string.section_lunar_subtitle,
+        )
+        move(
+            binding.sectionTips, binding.bodyTips, R.drawable.ic_guide,
+            R.string.section_tips_title, R.string.section_tips_subtitle,
+        )
+        pool.visibility = View.GONE
+
+        // Expanding a section scrolls its header to the top so the freshly
+        // revealed content isn't opened below the fold.
+        listOf(
+            binding.sectionAbout, binding.sectionCare, binding.sectionDiseases,
+            binding.sectionFertiliser, binding.sectionLunar, binding.sectionTips,
+        ).forEach { section ->
+            section.onToggle = { expanded ->
+                if (expanded) {
+                    binding.speciesScroll.post {
+                        val margin = (8 * resources.displayMetrics.density).toInt()
+                        binding.speciesScroll.smoothScrollTo(0, (section.top - margin).coerceAtLeast(0))
+                    }
+                }
+            }
+        }
+    }
+
+    /** Scrolls the day-detail panel into view when a tap (e.g. an upcoming-day
+     *  row) selects a date outside the current viewport. Uses on-screen
+     *  deltas rather than walking the parent chain, so it stays correct
+     *  regardless of how deeply [LunarCalendarView]'s body ends up nested
+     *  after [attachSections] re-parents it. */
+    private fun scrollSpeciesTo(target: View) {
+        binding.speciesScroll.post {
+            val targetLoc = IntArray(2)
+            target.getLocationOnScreen(targetLoc)
+            val scrollLoc = IntArray(2)
+            binding.speciesScroll.getLocationOnScreen(scrollLoc)
+            val margin = (24 * resources.displayMetrics.density).toInt()
+            binding.speciesScroll.smoothScrollBy(0, targetLoc[1] - scrollLoc[1] - margin)
         }
     }
 

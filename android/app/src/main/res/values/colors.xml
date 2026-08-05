@@ -115,6 +115,24 @@
     <color name="shimmer_highlight">#F9FAFB</color>
     <color name="camera_control_scrim">#66000000</color>
 
+    <!-- ─── Lunar calendar day ratings ───────────────────────────
+         Filled circle + matching text colour per rating. Mirrors the
+         healthy/warning/disease semantic ramp so the calendar reads as
+         part of the same design system. -->
+    <color name="lunar_good_bg">#DCFCE7</color>
+    <color name="lunar_good_fg">#15803D</color>
+    <color name="lunar_neutral_bg">#FEF3C7</color>
+    <color name="lunar_neutral_fg">#B45309</color>
+    <color name="lunar_bad_bg">#FEE2E2</color>
+    <color name="lunar_bad_fg">#B91C1C</color>
+
+    <!-- ─── MoonPhaseView ──────────────────────────────────────── -->
+    <color name="moon_lit_hi">#FFFDF6</color>
+    <color name="moon_lit_lo">#D6D2C6</color>
+    <color name="moon_dark">#242B31</color>
+    <color name="moon_mare">#8E8A7E</color>
+    <color name="moon_glow">#33FFFFFF</color>
+
     <!-- ─── AI Doctor chat bubbles ───────────────────────────────
          Bot bubble is neutral grey for legibility; user bubble carries
          the brand-green tint. Text uses chat_bubble_text. -->
