@@ -32,21 +32,33 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
+import com.plantdiseases.app.ui.common.ExpandableSectionView
+import com.plantdiseases.app.ui.common.rowDivider
+import com.plantdiseases.app.ui.common.sectionEmpty
+import com.plantdiseases.app.ui.common.sectionFooter
+import com.plantdiseases.app.ui.common.sectionRow
 import com.plantdiseases.app.util.CareSchedule
+import com.plantdiseases.app.util.FertiliserGuide
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.LunarCalendar
+import com.plantdiseases.app.util.PlantCategory
+import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.ReminderManager
+import com.plantdiseases.app.util.ReminderPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
+import java.time.LocalDate
 
 /**
  * Garden tab. The screen scaffold (hero, plant list container, empty
@@ -72,6 +84,9 @@ class GardenFragment : Fragment() {
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
 
+    /** Whether "Today's queue" is showing every due task or just the top rows. */
+    private var queueExpandedAll = false
+
     private val plantRepository: PlantRepository by inject()
 
     override fun onCreateView(
@@ -86,6 +101,11 @@ class GardenFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.gardenScroll.applyStatusBarTopInset()
+        attachGardenSections()
+        binding.gardenSettings.setOnClickListener {
+            Haptics.tick(requireContext())
+            (activity as? MainActivity)?.checkTabSilently(R.id.profileFragment)
+        }
         binding.gardenAddFab.setOnClickListener {
             Haptics.medium(requireContext())
             showPlantDialog(null)
@@ -170,6 +190,29 @@ class GardenFragment : Fragment() {
             p.scientificName?.contains(query, ignoreCase = true) == true
     }
 
+    /**
+     * Moves each pre-declared body out of garden_content_pool into its section, exactly
+     * like SpeciesDetailActivity.attachSections. Called once from onViewCreated.
+     */
+    private fun attachGardenSections() {
+        val pool = binding.gardenContentPool
+        fun move(section: ExpandableSectionView, body: View) {
+            pool.removeView(body)
+            body.visibility = View.VISIBLE
+            section.setContent(body)
+        }
+        move(binding.gardenSectionQueue, binding.gardenBodyQueue)
+        move(binding.gardenSectionPlants, binding.gardenBodyPlants)
+        move(binding.gardenSectionDiseases, binding.gardenBodyDiseases)
+        move(binding.gardenSectionFeeding, binding.gardenBodyFeeding)
+        move(binding.gardenSectionLunar, binding.gardenBodyLunar)
+        move(binding.gardenSectionScans, binding.gardenBodyScans)
+        pool.visibility = View.GONE
+        // The queue is the reason the user opened this tab. Open it by default.
+        binding.gardenSectionQueue.setExpanded(true, animate = false)
+        binding.gardenLunarCalendar.setSpecies(null, null)
+    }
+
     /** Re-render the whole tab from [allSummaries]: screen chrome (empty
      *  state / FAB / summary / search visibility) follows the FULL garden;
      *  the list itself follows the search filter. */
@@ -209,6 +252,391 @@ class GardenFragment : Fragment() {
             }
 
         renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
+        renderHub(all, scanTotal)
+    }
+
+    // ── Hub: stat tiles + the six collapsible sections below the plant list ──────────
+
+    /**
+     * Fills the three stat tiles and every section header + body from the
+     * already-loaded [summaries] list. Nothing here issues a query of its own —
+     * renderGarden already has the data, and re-querying per section is how this
+     * screen would become slow.
+     */
+    private fun renderHub(summaries: List<PlantRepository.PlantSummary>, scanTotal: Int) {
+        val queue = buildQueue(summaries)
+        val problems = summaries.filter { isProblem(it) }
+        val feedingDue = summaries.filter { dueSoon(it, ReminderPresets.TYPE_FERTILIZE, days = 7) }
+
+        val stats = binding.gardenStats
+        stats.removeAllViews()
+        stats.addView(statTile(getString(R.string.garden_stat_today), queue.size.toString()))
+        stats.addView(statTile(getString(R.string.garden_stat_problems), problems.size.toString()))
+        stats.addView(statTile(getString(R.string.garden_stat_scans), scanTotal.toString(), endMargin = false))
+
+        binding.gardenSectionQueue.bind(R.drawable.ic_watering, getString(R.string.garden_section_queue), null)
+        binding.gardenSectionQueue.setBadge(queue.size.takeIf { it > 0 }?.toString())
+
+        binding.gardenSectionPlants.bind(R.drawable.ic_garden, getString(R.string.garden_section_plants), null)
+        binding.gardenSectionPlants.setBadge(summaries.size.toString())
+
+        binding.gardenSectionDiseases.bind(R.drawable.ic_pest, getString(R.string.garden_section_diseases), null)
+        binding.gardenSectionDiseases.setBadge(problems.size.takeIf { it > 0 }?.toString())
+
+        binding.gardenSectionFeeding.bind(R.drawable.ic_fertilize, getString(R.string.garden_section_feeding), null)
+        binding.gardenSectionFeeding.setBadge(feedingDue.size.takeIf { it > 0 }?.toString())
+
+        val today = LunarCalendar.rating(LocalDate.now())
+        binding.gardenSectionLunar.bind(
+            R.drawable.ic_moon,
+            getString(R.string.garden_section_lunar),
+            getString(
+                when (today) {
+                    LunarCalendar.Rating.GOOD -> R.string.garden_lunar_good
+                    LunarCalendar.Rating.NEUTRAL -> R.string.garden_lunar_neutral
+                    LunarCalendar.Rating.BAD -> R.string.garden_lunar_bad
+                },
+            ),
+        )
+
+        binding.gardenSectionScans.bind(R.drawable.ic_history, getString(R.string.garden_section_scans), null)
+        binding.gardenSectionScans.setBadge(scanTotal.takeIf { it > 0 }?.toString())
+
+        renderQueue(queue)
+        renderDiseaseList(problems)
+        renderFeedingList(feedingDue)
+        renderScansList(summaries)
+    }
+
+    /** Same visual language as the plant-detail stat pills (DetailUiKit.statPill). */
+    private fun statTile(label: String, value: String, endMargin: Boolean = true): View =
+        LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = requireContext().getDrawable(R.drawable.bg_plant_stat_pill)
+            setPadding(10.dp(), 10.dp(), 10.dp(), 10.dp())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { if (endMargin) marginEnd = 8.dp() }
+            addView(
+                TextView(context).apply {
+                    text = value
+                    textSize = 18f
+                    setTextColor(requireContext().getColor(R.color.on_surface))
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    gravity = Gravity.CENTER
+                },
+            )
+            addView(
+                TextView(context).apply {
+                    text = label
+                    textSize = 11f
+                    setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                    gravity = Gravity.CENTER
+                },
+            )
+        }
+
+    /** Loads a plant/scan thumbnail into a row's icon slot, matching buildPlantCard's
+     *  Glide setup — round crop, RGB_565, generic leaf on failure/absence. Reused for
+     *  every real photo shown in the hub sections (queue, diseases, scans), so those
+     *  rows show real plant/scan photos instead of a generic tinted icon. */
+    private fun loadRowThumb(iconView: ImageView, source: String?) {
+        iconView.setPadding(0, 0, 0, 0)
+        iconView.imageTintList = null
+        if (source == null) {
+            iconView.setImageResource(R.drawable.ic_garden)
+            iconView.setColorFilter(requireContext().getColor(R.color.primary))
+            iconView.scaleType = ImageView.ScaleType.CENTER_INSIDE
+            iconView.setPadding(7.dp(), 7.dp(), 7.dp(), 7.dp())
+            return
+        }
+        iconView.clearColorFilter()
+        iconView.scaleType = ImageView.ScaleType.CENTER_CROP
+        Glide.with(this)
+            .load(source)
+            .format(DecodeFormat.PREFER_RGB_565)
+            .transform(CenterCrop(), RoundedCorners(resources.getDimensionPixelSize(R.dimen.radius_round)))
+            .placeholder(R.drawable.ic_garden)
+            .error(R.drawable.ic_garden)
+            .into(iconView)
+    }
+
+    /** Best available photo for a plant: its cover photo, else its latest scan image,
+     *  else null (falls back to the generic leaf icon). Mirrors buildPlantCard. */
+    private fun plantThumbSource(summary: PlantRepository.PlantSummary): String? =
+        summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
+
+    // ── Today's queue ─────────────────────────────────────────────────────────────
+
+    private data class QueueItem(
+        val plantId: Long,
+        val plantName: String,
+        val thumbSource: String?,
+        val actionLabel: String,
+        val dueLabel: String,
+        val overdue: Boolean,
+        val iconRes: Int,
+    )
+
+    /** Everything due before midnight tonight, soonest first. */
+    private fun buildQueue(summaries: List<PlantRepository.PlantSummary>): List<QueueItem> {
+        val endOfDay = LocalDate.now().plusDays(1)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val nowMs = System.currentTimeMillis()
+        return summaries
+            .mapNotNull { summary ->
+                val action = summary.nextAction ?: return@mapNotNull null
+                if (action.dueAt > endOfDay) return@mapNotNull null
+                val overdue = CareSchedule.isOverdue(action.dueAt, nowMs)
+                val deltaDays = CareSchedule.daysUntil(action.dueAt, nowMs)
+                val dueLabel = when {
+                    overdue -> getString(R.string.garden_queue_overdue)
+                    deltaDays <= 0 -> getString(R.string.garden_queue_today)
+                    else -> getString(R.string.garden_queue_in_days, deltaDays)
+                }
+                QueueItem(
+                    plantId = summary.plant.id,
+                    plantName = summary.plant.name,
+                    thumbSource = plantThumbSource(summary),
+                    actionLabel = getString(ReminderPresets.fallbackLabelRes(action.type)),
+                    dueLabel = dueLabel,
+                    overdue = overdue,
+                    iconRes = ReminderPresets.iconRes(null, action.type),
+                )
+            }
+            .sortedWith(compareByDescending<QueueItem> { it.overdue }.thenBy { it.dueLabel })
+    }
+
+    private fun renderQueue(items: List<QueueItem>) {
+        val host = binding.gardenBodyQueue
+        host.removeAllViews()
+        if (items.isEmpty()) {
+            host.addView(
+                requireContext().sectionEmpty(
+                    R.drawable.ic_watering,
+                    getString(R.string.garden_queue_empty_title),
+                    getString(R.string.garden_queue_empty_body),
+                ),
+            )
+            return
+        }
+        val shown = if (queueExpandedAll) items else items.take(QUEUE_COLLAPSED_ROWS)
+        shown.forEachIndexed { index, item ->
+            if (index > 0) host.addView(requireContext().rowDivider())
+            host.addView(queueRow(item))
+        }
+        if (items.size > QUEUE_COLLAPSED_ROWS) {
+            host.addView(
+                requireContext().sectionFooter(
+                    getString(if (queueExpandedAll) R.string.garden_queue_less else R.string.garden_queue_more),
+                ) {
+                    queueExpandedAll = !queueExpandedAll
+                    renderQueue(items)
+                },
+            )
+        }
+    }
+
+    private fun queueRow(item: QueueItem): View = requireContext().sectionRow(
+        title = item.plantName,
+        subtitle = item.actionLabel,
+        iconRes = item.iconRes,
+        trailing = item.dueLabel,
+        trailingColor = if (item.overdue) R.color.disease_red else R.color.on_surface_secondary,
+        thumb = { iv -> loadRowThumb(iv, item.thumbSource) },
+        onClick = {
+            startActivity(
+                Intent(requireContext(), PlantDetailActivity::class.java)
+                    .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, item.plantId),
+            )
+        },
+    )
+
+    // ── Diseases and pests ────────────────────────────────────────────────────────
+
+    private fun isProblem(summary: PlantRepository.PlantSummary): Boolean {
+        val scan = summary.latestScan ?: return false
+        return !scan.isHealthy
+    }
+
+    private fun renderDiseaseList(problems: List<PlantRepository.PlantSummary>) {
+        val host = binding.gardenBodyDiseases
+        host.removeAllViews()
+        if (problems.isEmpty()) {
+            host.addView(
+                requireContext().sectionEmpty(
+                    R.drawable.ic_shield_check,
+                    getString(R.string.garden_diseases_empty_title),
+                    getString(R.string.garden_diseases_empty_body),
+                ),
+            )
+            return
+        }
+        val ctx = requireContext()
+        val shown = problems.sortedByDescending { it.latestScan?.timestamp ?: 0L }.take(5)
+        shown.forEachIndexed { index, summary ->
+            if (index > 0) host.addView(ctx.rowDivider())
+            val scan = summary.latestScan
+            val label = if (LocaleHelper.isRussian(ctx)) scan?.diseaseNameRu else scan?.diseaseName
+            host.addView(
+                ctx.sectionRow(
+                    title = summary.plant.name,
+                    subtitle = label ?: getString(R.string.no_scans_attached),
+                    iconRes = R.drawable.ic_pest,
+                    iconTint = R.color.disease_red,
+                    thumb = { iv -> loadRowThumb(iv, scan?.imagePath) },
+                    onClick = {
+                        startActivity(
+                            Intent(ctx, PlantDetailActivity::class.java)
+                                .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, summary.plant.id),
+                        )
+                    },
+                ),
+            )
+        }
+    }
+
+    // ── Fertiliser and feeding ────────────────────────────────────────────────────
+
+    private fun dueSoon(summary: PlantRepository.PlantSummary, type: String, days: Int): Boolean {
+        val action = summary.nextAction ?: return false
+        if (action.type != type) return false
+        return action.dueAt <= System.currentTimeMillis() + days * CareSchedule.DAY_MS
+    }
+
+    private fun renderFeedingList(due: List<PlantRepository.PlantSummary>) {
+        val host = binding.gardenBodyFeeding
+        host.removeAllViews()
+        val ctx = requireContext()
+        var rowsAdded = false
+
+        if (due.isNotEmpty()) {
+            host.addView(cardLabel(getString(R.string.garden_feeding_due_heading)))
+            due.sortedBy { it.nextAction?.dueAt ?: Long.MAX_VALUE }.forEachIndexed { index, summary ->
+                if (index > 0) host.addView(ctx.rowDivider())
+                host.addView(
+                    ctx.sectionRow(
+                        title = summary.plant.name,
+                        subtitle = getString(R.string.garden_feeding_due),
+                        iconRes = R.drawable.ic_fertilize,
+                        thumb = { iv -> loadRowThumb(iv, plantThumbSource(summary)) },
+                        onClick = {
+                            startActivity(
+                                Intent(ctx, PlantDetailActivity::class.java)
+                                    .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, summary.plant.id),
+                            )
+                        },
+                    ),
+                )
+            }
+            rowsAdded = true
+        }
+
+        val categories = allSummaries
+            .map { PlantCategoryClassifier.classify(it.plant.scientificName, it.plant.species ?: it.plant.commonName) }
+            .distinct()
+        if (categories.isNotEmpty()) {
+            if (rowsAdded) host.addView(ctx.rowDivider())
+            host.addView(cardLabel(getString(R.string.garden_feeding_guide_heading)))
+            categories.forEachIndexed { index, category ->
+                if (index > 0) host.addView(ctx.rowDivider())
+                val guide = FertiliserGuide.forCategory(category)
+                host.addView(
+                    ctx.sectionRow(
+                        title = getString(categoryLabelRes(category)),
+                        subtitle = resources.getQuantityString(
+                            R.plurals.feed_every_weeks, guide.intervalWeeks, guide.intervalWeeks,
+                        ),
+                        iconRes = R.drawable.ic_fertilize,
+                        trailing = guide.npk,
+                    ),
+                )
+            }
+            rowsAdded = true
+        }
+
+        if (!rowsAdded) {
+            host.addView(
+                ctx.sectionEmpty(
+                    R.drawable.ic_fertilize,
+                    getString(R.string.garden_feeding_empty_title),
+                    getString(R.string.garden_feeding_empty_body),
+                    actionLabel = getString(R.string.add_plant),
+                    onAction = { showPlantDialog(null) },
+                ),
+            )
+        }
+    }
+
+    private fun categoryLabelRes(category: PlantCategory): Int = when (category) {
+        PlantCategory.FRUITING -> R.string.lunar_cat_fruiting
+        PlantCategory.ROOT -> R.string.lunar_cat_root
+        PlantCategory.LEAFY -> R.string.lunar_cat_leafy
+        PlantCategory.FLOWERING -> R.string.lunar_cat_flowering
+        PlantCategory.SUCCULENT -> R.string.lunar_cat_succulent
+        PlantCategory.FOLIAGE -> R.string.lunar_cat_foliage
+        PlantCategory.HERB -> R.string.lunar_cat_herb
+    }
+
+    private fun cardLabel(text: String): TextView = TextView(requireContext()).apply {
+        this.text = text
+        textSize = 11f
+        letterSpacing = 0.06f
+        setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setPadding(0, 6.dp(), 0, 6.dp())
+    }
+
+    // ── Scans and history ─────────────────────────────────────────────────────────
+
+    /** Most-recent scan per plant, newest first, capped at 5 — real activity, not a
+     *  placeholder list. (A flattened cross-plant scan history would need a new
+     *  repository query; this reuses the per-plant summaries already loaded.) */
+    private fun renderScansList(summaries: List<PlantRepository.PlantSummary>) {
+        val host = binding.gardenBodyScans
+        host.removeAllViews()
+        val ctx = requireContext()
+        val withScans = summaries.filter { it.latestScan != null }
+            .sortedByDescending { it.latestScan!!.timestamp }
+            .take(5)
+        if (withScans.isEmpty()) {
+            host.addView(
+                ctx.sectionEmpty(
+                    R.drawable.ic_scan,
+                    getString(R.string.garden_scans_empty_title),
+                    getString(R.string.garden_scans_empty_body),
+                ),
+            )
+            return
+        }
+        withScans.forEachIndexed { index, summary ->
+            if (index > 0) host.addView(ctx.rowDivider())
+            val scan = summary.latestScan!!
+            val label = if (scan.isHealthy) {
+                getString(R.string.garden_card_health_healthy, (scan.confidence * 100f).toInt())
+            } else if (LocaleHelper.isRussian(ctx)) {
+                scan.diseaseNameRu
+            } else {
+                scan.diseaseName
+            }
+            host.addView(
+                ctx.sectionRow(
+                    title = summary.plant.name,
+                    subtitle = label,
+                    iconRes = R.drawable.ic_scan,
+                    iconTint = if (scan.isHealthy) R.color.healthy_green else R.color.disease_red,
+                    thumb = { iv -> loadRowThumb(iv, scan.imagePath) },
+                    onClick = {
+                        startActivity(
+                            Intent(ctx, PlantDetailActivity::class.java)
+                                .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, summary.plant.id),
+                        )
+                    },
+                ),
+            )
+        }
     }
 
     private fun renderPlantList(
@@ -699,6 +1127,7 @@ class GardenFragment : Fragment() {
 
     private companion object {
         private const val TEXT_FIELD_MAX_LENGTH = 1024
+        private const val QUEUE_COLLAPSED_ROWS = 3
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(

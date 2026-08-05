@@ -34,11 +34,21 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionView
+import com.plantdiseases.app.ui.common.bulletRow
+import com.plantdiseases.app.ui.common.cardColumn
+import com.plantdiseases.app.ui.common.cardHeading
+import com.plantdiseases.app.ui.common.factRow
+import com.plantdiseases.app.ui.common.sectionCard
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
+import com.plantdiseases.app.util.FertiliserGuide
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PlantCategory
+import com.plantdiseases.app.util.PlantCategoryClassifier
+import com.plantdiseases.app.util.PlantFacts
+import com.plantdiseases.app.util.PlantTips
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Locale
@@ -63,6 +73,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var scientificName: String
     private var commonName: String? = null
+
+    /** Latest care plan / native-range summary seen so far, feeding [bindAboutFacts].
+     *  Both loadCare() and loadSpeciesProfile() run concurrently and independently, so
+     *  the fact card re-renders from whichever field is populated as each arrives. */
+    private var carePlanSnapshot: CarePlanResponse? = null
+    private var nativeRangeSummary: String? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -104,6 +120,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.lunarCalendar.onRequestScrollTo = { target -> scrollSpeciesTo(target) }
 
         attachSections()
+        bindAboutFacts()
 
         binding.btnAddGarden.setOnClickListener { addToGarden() }
         binding.btnScanHealth.setOnClickListener {
@@ -184,6 +201,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 )
                 bindFertiliser(plan)
                 bindTips(plan)
+                carePlanSnapshot = plan
+                bindAboutFacts()
             } else {
                 careCard.showError(onRetry = { loadCare() })
             }
@@ -193,35 +212,188 @@ class SpeciesDetailActivity : AppCompatActivity() {
         }
     }
 
-    /** Feeding section — assembled from the care plan already on hand
-     *  (fertilise_weeks / fertiliser_npk / soil_mix), so no extra request. */
-    private fun bindFertiliser(plan: CarePlanResponse) {
-        val lines = buildList {
-            add(
-                if (plan.fertiliseWeeks > 0) {
-                    getString(R.string.fertiliser_interval, plan.fertiliseWeeks)
-                } else {
-                    getString(R.string.fertiliser_interval_none)
-                },
-            )
-            plan.fertiliserNpk?.takeIf { it.isNotBlank() }
-                ?.let { add(getString(R.string.fertiliser_npk, it)) }
-            plan.soilMix?.takeIf { it.isNotBlank() }
-                ?.let { add(getString(R.string.fertiliser_soil, it)) }
-            plan.seasonNote?.takeIf { it.isNotBlank() }?.let { add(it) }
+    private val plantCategory: PlantCategory
+        get() = PlantCategoryClassifier.classify(scientificName, commonName)
+
+    /**
+     * Fact card above the encyclopedia text: scientific name, plant group, native range
+     * (once loaded) and a computed care difficulty. Rebuilt from scratch on every call,
+     * so it is safe to invoke again whenever a later response (care plan, species
+     * profile) fills in more of the picture.
+     */
+    private fun bindAboutFacts() {
+        val host = binding.aboutFacts
+        host.removeAllViews()
+        val category = plantCategory
+
+        val card = sectionCard()
+        val column = cardColumn()
+        card.addView(column)
+
+        column.addView(
+            factRow(R.drawable.ic_garden, getString(R.string.about_fact_scientific), scientificName),
+        )
+        column.addView(
+            factRow(
+                R.drawable.ic_guide,
+                getString(R.string.about_fact_group),
+                getString(categoryLabelRes(category)),
+            ),
+        )
+        nativeRangeSummary?.let { range ->
+            column.addView(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
         }
-        binding.tvFertiliserBody.text = lines.joinToString("\n\n")
+        val difficultyRes = when (PlantFacts.difficulty(carePlanSnapshot, category)) {
+            1 -> R.string.about_difficulty_easy
+            2 -> R.string.about_difficulty_moderate
+            else -> R.string.about_difficulty_demanding
+        }
+        column.addView(
+            factRow(
+                R.drawable.ic_shield_check,
+                getString(R.string.about_fact_difficulty),
+                getString(difficultyRes),
+            ),
+        )
+        host.addView(card)
     }
 
-    /** Tips section — the care plan's free-text guidance, one paragraph per item. */
-    private fun bindTips(plan: CarePlanResponse) {
-        val lines = listOfNotNull(
-            plan.keyAction, plan.placement, plan.acclimation, plan.wateringMethod,
-        ).filter { it.isNotBlank() } + plan.redFlags.orEmpty().filter { it.isNotBlank() }
-        binding.tvTipsBody.text = if (lines.isEmpty()) {
-            getString(R.string.section_empty)
+    /** Maps a category onto the lunar_cat_* label the app already ships in both locales. */
+    private fun categoryLabelRes(category: PlantCategory): Int = when (category) {
+        PlantCategory.FRUITING -> R.string.lunar_cat_fruiting
+        PlantCategory.ROOT -> R.string.lunar_cat_root
+        PlantCategory.LEAFY -> R.string.lunar_cat_leafy
+        PlantCategory.FLOWERING -> R.string.lunar_cat_flowering
+        PlantCategory.SUCCULENT -> R.string.lunar_cat_succulent
+        PlantCategory.FOLIAGE -> R.string.lunar_cat_foliage
+        PlantCategory.HERB -> R.string.lunar_cat_herb
+    }
+
+    /**
+     * Feeding section. Structure and defaults are local ([FertiliserGuide], keyed by the
+     * same [PlantCategory] the lunar calendar uses); anything the care plan actually
+     * supplied overrides the default. Nothing here costs a request.
+     */
+    private fun bindFertiliser(plan: CarePlanResponse) {
+        val host = binding.bodyFertiliser
+        // Keep the legacy TextView in the tree but stop using it, so no id disappears.
+        binding.tvFertiliserBody.visibility = View.GONE
+        // Remove any card added by a previous bind (index 0 is the legacy TextView).
+        while (host.childCount > 1) host.removeViewAt(1)
+
+        val guide = FertiliserGuide.forCategory(plantCategory)
+
+        val schedule = sectionCard()
+        val scheduleColumn = cardColumn()
+        schedule.addView(scheduleColumn)
+        scheduleColumn.addView(cardHeading(getString(R.string.feed_heading_schedule)))
+
+        val weeks = if (plan.fertiliseWeeks > 0) plan.fertiliseWeeks else guide.intervalWeeks
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_fertilize,
+                getString(R.string.feed_row_interval),
+                resources.getQuantityString(R.plurals.feed_every_weeks, weeks, weeks),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_shield_check,
+                getString(R.string.feed_row_npk),
+                plan.fertiliserNpk?.takeIf { it.isNotBlank() } ?: guide.npk,
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_watering,
+                getString(R.string.feed_row_dose),
+                getString(R.string.feed_dose_percent, guide.dosePercent),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_moon,
+                getString(R.string.feed_row_season),
+                monthRangeLabel(guide.seasonMonths),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_garden,
+                getString(R.string.feed_row_soil),
+                plan.soilMix?.takeIf { it.isNotBlank() } ?: getString(guide.soilRes),
+            ),
+        )
+        host.addView(schedule)
+
+        val cautions = sectionCard()
+        val cautionColumn = cardColumn()
+        cautions.addView(cautionColumn)
+        cautionColumn.addView(cardHeading(getString(R.string.feed_heading_cautions)))
+        guide.cautionRes.forEach {
+            cautionColumn.addView(bulletRow(getString(it), R.color.warning_amber))
+        }
+        FertiliserGuide.universalRules.forEach {
+            cautionColumn.addView(bulletRow(getString(it)))
+        }
+        plan.seasonNote?.takeIf { it.isNotBlank() }?.let {
+            cautionColumn.addView(bulletRow(it))
+        }
+        host.addView(cautions)
+    }
+
+    /** "March - September" from an IntRange of month numbers, or "all year round". */
+    private fun monthRangeLabel(months: IntRange): String {
+        val names = resources.getStringArray(R.array.flowering_month_names)
+        return if (months.first == 1 && months.last == 12) {
+            getString(R.string.feed_season_year_round)
         } else {
-            lines.joinToString("\n\n") { "• $it" }
+            getString(R.string.feed_season_range, names[months.first - 1], names[months.last - 1])
+        }
+    }
+
+    /**
+     * Tips section: local category advice first (always present), then whatever
+     * free-text guidance the care plan carried, then red flags in warning colour. The
+     * old version showed [R.string.section_empty] for every species whose plan had no
+     * free text at all.
+     */
+    private fun bindTips(plan: CarePlanResponse) {
+        val host = binding.bodyTips
+        binding.tvTipsBody.visibility = View.GONE
+        while (host.childCount > 1) host.removeViewAt(1)
+
+        val category = plantCategory
+
+        val general = sectionCard()
+        val generalColumn = cardColumn()
+        general.addView(generalColumn)
+        generalColumn.addView(cardHeading(getString(R.string.tips_heading_general)))
+        resources.getStringArray(PlantTips.forCategory(category)).forEach {
+            generalColumn.addView(bulletRow(it))
+        }
+        host.addView(general)
+
+        val fromPlan = listOfNotNull(
+            plan.keyAction, plan.placement, plan.acclimation, plan.wateringMethod,
+        ).filter { it.isNotBlank() }
+        if (fromPlan.isNotEmpty()) {
+            val specific = sectionCard()
+            val specificColumn = cardColumn()
+            specific.addView(specificColumn)
+            specificColumn.addView(cardHeading(getString(R.string.tips_heading_this_plant)))
+            fromPlan.forEach { specificColumn.addView(bulletRow(it)) }
+            host.addView(specific)
+        }
+
+        val flags = plan.redFlags.orEmpty().filter { it.isNotBlank() }
+        if (flags.isNotEmpty()) {
+            val warn = sectionCard()
+            val warnColumn = cardColumn()
+            warn.addView(warnColumn)
+            warnColumn.addView(cardHeading(getString(R.string.tips_heading_red_flags)))
+            flags.forEach { warnColumn.addView(bulletRow(it, R.color.disease_red)) }
+            host.addView(warn)
         }
     }
 
@@ -274,10 +446,18 @@ class SpeciesDetailActivity : AppCompatActivity() {
         ).forEach { section ->
             section.onToggle = { expanded ->
                 if (expanded) {
-                    binding.speciesScroll.post {
-                        val margin = (8 * resources.displayMetrics.density).toInt()
-                        binding.speciesScroll.smoothScrollTo(0, (section.top - margin).coerceAtLeast(0))
-                    }
+                    // Delayed so the section is visibly opening before the list moves —
+                    // firing both at once made the content look yanked rather than revealed.
+                    binding.speciesScroll.postDelayed(
+                        {
+                            val margin = (8 * resources.displayMetrics.density).toInt()
+                            binding.speciesScroll.smoothScrollTo(
+                                0,
+                                (section.top - margin).coerceAtLeast(0),
+                            )
+                        },
+                        160L,
+                    )
                 }
             }
         }
@@ -493,10 +673,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
             val hasNativeRange = nativeRange != null && zones.isNotEmpty()
             if (hasNativeRange) {
-                binding.tvNativeRangeSummary.text = localized?.nativeRangeSummary.orEmpty()
+                val summary = localized?.nativeRangeSummary.orEmpty()
                     .ifBlank { nativeRange.summary.orEmpty() }
                     .trim()
+                binding.tvNativeRangeSummary.text = summary
                 binding.worldMap.setZones(zones)
+                nativeRangeSummary = summary.takeIf { it.isNotBlank() }
+                bindAboutFacts()
             }
             finishNativeRangeLoading(hasNativeRange)
         }

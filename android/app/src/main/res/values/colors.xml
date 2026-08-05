@@ -92,6 +92,8 @@
     <color name="warning_amber_bg">#FEF3C7</color>
     <color name="neutral_blue">#2563EB</color>
     <color name="neutral_blue_bg">#DBEAFE</color>
+    <!-- Section-header count pill (ExpandableSectionView badge). -->
+    <color name="section_badge_bg">#1A2E7D32</color>
 
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#2563EB</color>

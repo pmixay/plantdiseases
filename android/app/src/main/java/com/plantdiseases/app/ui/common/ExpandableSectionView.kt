@@ -39,6 +39,7 @@ class ExpandableSectionView @JvmOverloads constructor(
     private val iconView: ImageView
     private val titleView: TextView
     private val subtitleView: TextView
+    private val badgeView: TextView
     private val chevron: ImageView
     val body: FrameLayout
 
@@ -47,10 +48,14 @@ class ExpandableSectionView @JvmOverloads constructor(
 
     var onToggle: ((Boolean) -> Unit)? = null
 
-    private val expandInterp = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f) // M3 emphasized decelerate
-    private val collapseInterp = PathInterpolator(0.3f, 0.0f, 0.8f, 0.15f) // M3 emphasized accelerate
+    // M3 "emphasized decelerate/accelerate" — a slow, confident settle instead of the
+    // previous curve, which reached ~70% of the height in the first 5% of the duration
+    // and read as an instant jump rather than a reveal.
+    private val expandInterp = PathInterpolator(0.2f, 0f, 0f, 1f)
+    private val collapseInterp = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)
     private val chevronInterp = PathInterpolator(0.2f, 0f, 0f, 1f)
     private var bodyAnimator: ValueAnimator? = null
+    private val risePx = 10f * resources.displayMetrics.density
 
     init {
         radius = resources.getDimension(R.dimen.radius_lg)
@@ -101,6 +106,23 @@ class ExpandableSectionView @JvmOverloads constructor(
         texts.addView(titleView)
         texts.addView(subtitleView)
 
+        badgeView = TextView(context).apply {
+            visibility = View.GONE
+            setBackgroundResource(R.drawable.bg_section_badge)
+            setTextColor(context.getColor(R.color.primary))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body_sm))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(3), dp(10), dp(3))
+        }
+        header.addView(
+            badgeView,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { marginEnd = dp(8) },
+        )
+
         chevron = ImageView(context).apply {
             setImageResource(R.drawable.ic_chevron_down)
             imageTintList = ColorStateList.valueOf(context.getColor(R.color.on_surface_secondary))
@@ -118,7 +140,23 @@ class ExpandableSectionView @JvmOverloads constructor(
     fun bind(iconRes: Int, titleRes: Int, subtitleRes: Int) {
         iconView.setImageResource(iconRes)
         titleView.setText(titleRes)
-        subtitleView.setText(subtitleRes)
+        subtitleView.text = context.getString(subtitleRes)
+        subtitleView.visibility = View.VISIBLE
+    }
+
+    /** Overload for callers that already have resolved strings (e.g. the Garden hub,
+     *  which builds its subtitles at runtime from live counts). */
+    fun bind(iconRes: Int, title: CharSequence, subtitle: CharSequence?) {
+        iconView.setImageResource(iconRes)
+        titleView.text = title
+        subtitleView.text = subtitle.orEmpty()
+        subtitleView.visibility = if (subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** Shows a count pill in the header, or hides it when [value] is null or blank. */
+    fun setBadge(value: String?) {
+        badgeView.text = value.orEmpty()
+        badgeView.visibility = if (value.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 
     /** Adds [content] as the section body, replacing anything already there. */
@@ -156,6 +194,7 @@ class ExpandableSectionView @JvmOverloads constructor(
             body.visibility = if (expanded) View.VISIBLE else View.GONE
             body.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
             body.alpha = 1f
+            body.translationY = 0f
             chevron.rotation = chevronTarget
             return
         }
@@ -193,8 +232,18 @@ class ExpandableSectionView @JvmOverloads constructor(
             duration = if (expanded) EXPAND_MS else COLLAPSE_MS
             interpolator = if (expanded) expandInterp else collapseInterp
             addUpdateListener { animator ->
+                val f = animator.animatedFraction
                 body.layoutParams.height = animator.animatedValue as Int
-                body.alpha = if (expanded) animator.animatedFraction else 1f - animator.animatedFraction
+                // The body fades in only after the box has already started opening, and
+                // rises the last few dp into place. Height and opacity moving in lockstep
+                // is what made the old expand read as a pop rather than a reveal.
+                val fade = if (expanded) {
+                    ((f - FADE_DELAY) / (1f - FADE_DELAY)).coerceIn(0f, 1f)
+                } else {
+                    1f - f
+                }
+                body.alpha = fade
+                body.translationY = (1f - fade) * risePx
                 body.requestLayout()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -202,6 +251,7 @@ class ExpandableSectionView @JvmOverloads constructor(
                     bodyAnimator = null
                     body.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                     body.alpha = 1f
+                    body.translationY = 0f
                     if (!expanded) body.visibility = View.GONE
                     body.requestLayout()
                 }
@@ -232,7 +282,9 @@ class ExpandableSectionView @JvmOverloads constructor(
     }
 
     private companion object {
-        const val EXPAND_MS = 300L
-        const val COLLAPSE_MS = 240L
+        const val EXPAND_MS = 420L
+        const val COLLAPSE_MS = 300L
+        /** Fraction of the expand spent opening the box before the body starts fading in. */
+        const val FADE_DELAY = 0.28f
     }
 }

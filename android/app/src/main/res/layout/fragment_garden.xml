@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Garden tab.
+    Garden tab: a care hub, not a flat plant list.
 
-    Previously this whole screen was assembled by hand in
-    GardenFragment.onCreateView (FrameLayout → NestedScrollView → …).
-    It now lives here as a proper layout interface:
+    Structure, top to bottom:
+      • a leaf-green gradient hero (bg_garden_hero) with the title, live
+        "N plants watched" summary and a settings shortcut,
+      • three stat tiles (today's tasks / problems / scans),
+      • a stack of collapsible ExpandableSectionView sections — Today's
+        queue, My plants (the original search + plant-card list, moved in
+        unchanged), Diseases and pests, Fertiliser and feeding, Lunar
+        calendar, Scans and history — each filled at runtime by
+        GardenFragment.renderHub(),
+      • an Extended FAB overlaid bottom-end for adding a plant.
 
-      • a leaf-green gradient hero (bg_garden_hero) with the title +
-        live "N plants watched" summary,
-      • the dynamically-populated plant list (item_plant_card rows are
-        inflated into garden_plants_container),
-      • a centred empty state with a primary CTA, and
-      • an Extended FAB overlaid bottom-end.
-
-    Spacing is on the @dimen space grid; type + colour come from the
-    shared leaf-green design system.
+    Every body under garden_content_pool starts hidden and is re-parented
+    into its section by GardenFragment.attachGardenSections(), exactly like
+    activity_species_detail.xml's section_content_pool.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -24,9 +25,9 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <!-- Bottom padding clears the overlaid Add-plant FAB so the last plant
-         card is never hidden behind it (clipToPadding=false keeps the
-         scrollbar full-height). -->
+    <!-- Bottom padding clears the overlaid Add-plant FAB so the last section
+         is never hidden behind it (clipToPadding=false keeps the scrollbar
+         full-height). -->
     <androidx.core.widget.NestedScrollView
         android:id="@+id/garden_scroll"
         android:layout_width="match_parent"
@@ -57,20 +58,43 @@
                 android:paddingTop="@dimen/space_2xl"
                 android:paddingBottom="@dimen/space_xl">
 
-                <FrameLayout
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="@drawable/bg_circle_semi">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                    <ImageView
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_gravity="center"
-                        android:src="@drawable/ic_garden"
-                        android:contentDescription="@null"
+                    <FrameLayout
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_circle_semi">
+
+                        <ImageView
+                            android:layout_width="26dp"
+                            android:layout_height="26dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_garden"
+                            android:contentDescription="@null"
+                            app:tint="@color/on_hero" />
+
+                    </FrameLayout>
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <ImageButton
+                        android:id="@+id/garden_settings"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@drawable/bg_circle_semi"
+                        android:contentDescription="@string/garden_settings"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_settings"
                         app:tint="@color/on_hero" />
 
-                </FrameLayout>
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/garden_summary_title"
@@ -95,101 +119,201 @@
 
             </LinearLayout>
 
-            <!-- Search — only shown once the garden grows past a handful of
-                 plants (GardenFragment toggles visibility at >6). Mirrors the
-                 Guide tab's search-bar styling. -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/garden_search_layout"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone"
-                app:boxCornerRadiusTopStart="@dimen/radius_md"
-                app:boxCornerRadiusTopEnd="@dimen/radius_md"
-                app:boxCornerRadiusBottomStart="@dimen/radius_md"
-                app:boxCornerRadiusBottomEnd="@dimen/radius_md"
-                app:startIconDrawable="@android:drawable/ic_menu_search"
-                app:startIconTint="@color/on_surface_secondary"
-                app:endIconMode="clear_text"
-                app:hintEnabled="false"
-                tools:visibility="visible">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/garden_search"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/garden_search_hint"
-                    android:inputType="text"
-                    android:maxLines="1"
-                    android:textSize="@dimen/text_body" />
-
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- Plant list — item_plant_card rows are inflated here. -->
+            <!-- Stat tiles — filled at runtime by GardenFragment.renderHub(). -->
             <LinearLayout
-                android:id="@+id/garden_plants_container"
+                android:id="@+id/garden_stats"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
-                android:orientation="vertical" />
+                android:baselineAligned="false"
+                android:orientation="horizontal" />
 
-            <!-- Empty state. -->
-            <LinearLayout
-                android:id="@+id/garden_empty_state"
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_queue"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_2xl"
+                android:layout_marginTop="@dimen/space_lg" />
+
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_plants"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md" />
+
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_diseases"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md" />
+
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_feeding"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md" />
+
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_lunar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md" />
+
+            <com.plantdiseases.app.ui.common.ExpandableSectionView
+                android:id="@+id/garden_section_scans"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md" />
+
+            <!-- Bodies live here until GardenFragment.attachGardenSections()
+                 re-parents each one into its section above — same pattern as
+                 activity_species_detail.xml's section_content_pool. -->
+            <LinearLayout
+                android:id="@+id/garden_content_pool"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:gravity="center"
-                android:paddingHorizontal="@dimen/space_2xl"
-                android:visibility="gone"
-                tools:visibility="visible">
+                android:visibility="gone">
 
-                <ImageView
-                    android:layout_width="220dp"
-                    android:layout_height="220dp"
-                    android:src="@drawable/illustration_empty_garden"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:text="@string/empty_garden_title"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_headline"
-                    android:fontFamily="sans-serif-black"
-                    android:letterSpacing="-0.02"
-                    android:gravity="center" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/garden_body_queue"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:text="@string/empty_garden_hint"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body"
-                    android:gravity="center"
-                    android:lineSpacingExtra="4dp" />
+                    android:orientation="vertical" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/garden_empty_cta"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:id="@+id/garden_body_plants"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xl"
-                    android:text="@string/empty_garden_cta_add"
-                    app:icon="@drawable/ic_garden"
-                    app:iconGravity="textStart" />
+                    android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                    <!-- Search — only shown once the garden grows past a
+                         handful of plants (GardenFragment toggles visibility
+                         at >6). Mirrors the Guide tab's search-bar styling. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/garden_search_layout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone"
+                        app:boxCornerRadiusTopStart="@dimen/radius_md"
+                        app:boxCornerRadiusTopEnd="@dimen/radius_md"
+                        app:boxCornerRadiusBottomStart="@dimen/radius_md"
+                        app:boxCornerRadiusBottomEnd="@dimen/radius_md"
+                        app:startIconDrawable="@android:drawable/ic_menu_search"
+                        app:startIconTint="@color/on_surface_secondary"
+                        app:endIconMode="clear_text"
+                        app:hintEnabled="false"
+                        tools:visibility="visible">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/garden_search"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="@string/garden_search_hint"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textSize="@dimen/text_body" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Plant list — item_plant_card rows are inflated here. -->
+                    <LinearLayout
+                        android:id="@+id/garden_plants_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:orientation="vertical" />
+
+                    <!-- Empty state. -->
+                    <LinearLayout
+                        android:id="@+id/garden_empty_state"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2xl"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:paddingHorizontal="@dimen/space_2xl"
+                        android:visibility="gone"
+                        tools:visibility="visible">
+
+                        <ImageView
+                            android:layout_width="220dp"
+                            android:layout_height="220dp"
+                            android:src="@drawable/illustration_empty_garden"
+                            android:contentDescription="@null" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:text="@string/empty_garden_title"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_headline"
+                            android:fontFamily="sans-serif-black"
+                            android:letterSpacing="-0.02"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_sm"
+                            android:text="@string/empty_garden_hint"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body"
+                            android:gravity="center"
+                            android:lineSpacingExtra="4dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/garden_empty_cta"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xl"
+                            android:text="@string/empty_garden_cta_add"
+                            app:icon="@drawable/ic_garden"
+                            app:iconGravity="textStart" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:text="@string/empty_garden_secondary_hint"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm"
+                            android:gravity="center" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/garden_body_diseases"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:text="@string/empty_garden_secondary_hint"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:gravity="center" />
+                    android:orientation="vertical" />
+
+                <LinearLayout
+                    android:id="@+id/garden_body_feeding"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <LinearLayout
+                    android:id="@+id/garden_body_lunar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.plantdiseases.app.ui.widget.LunarCalendarView
+                        android:id="@+id/garden_lunar_calendar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/garden_body_scans"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
 
             </LinearLayout>
 
