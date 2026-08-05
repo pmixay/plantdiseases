@@ -1011,4 +1011,23 @@
     <string name="lunar_dow_fri">Fri</string>
     <string name="lunar_dow_sat">Sat</string>
     <string name="lunar_dow_sun">Sun</string>
+
+    <!-- Collapsible sections on the species screen -->
+    <string name="section_about_title">About the plant</string>
+    <string name="section_about_subtitle">Description, traits and varieties.</string>
+    <string name="section_care_title">Care</string>
+    <string name="section_care_subtitle">Watering, light, temperature, humidity and pruning.</string>
+    <string name="section_fertiliser_title">Fertiliser and feeding</string>
+    <string name="section_fertiliser_subtitle">What to feed with, and when.</string>
+    <string name="section_diseases_title">Diseases and pests</string>
+    <string name="section_diseases_subtitle">Common problems and how to treat them.</string>
+    <string name="section_expand">Expand section</string>
+    <string name="section_collapse">Collapse section</string>
+    <plurals name="fertiliser_interval">
+        <item quantity="one">Feed weekly during active growth.</item>
+        <item quantity="other">Feed every %1$d weeks during active growth.</item>
+    </plurals>
+    <string name="fertiliser_interval_none">No regular feeding needed for this plant.</string>
+    <string name="fertiliser_npk">Fertiliser: %1$s</string>
+    <string name="fertiliser_soil">Soil mix: %1$s</string>
 </resources>
