@@ -14,7 +14,7 @@ services:
       - ./logs:/app/logs
       # Persistent data volume — every SQLite store, user-derived image,
       # thumbnail and cache is explicitly routed here below. Without this
-      # mount a rebuild from the admin panel would wipe container-local data.
+      # mount a rebuild would wipe container-local data.
       - ./data:/app/data
     environment:
       # Restrict origins in production (comma separated list of explicit origins).

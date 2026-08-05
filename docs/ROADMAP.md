@@ -8,10 +8,9 @@ stale, see the model track**).
 Every status below was verified against the tree, not carried over from a
 previous edit.
 
-Three tracks, independently releasable: the **app** (`versionName` 1.8 /
+Two tracks, independently releasable: the **app** (`versionName` 1.8 /
 `versionCode` 18, already bumped in `app/build.gradle.kts`; the tag is not
-cut), the **model** (bundle version, moves per training run), and the
-**admin panel** (a local operator tool, not shipped to users).
+cut) and the **model** (bundle version, moves per training run).
 
 ---
 
@@ -51,27 +50,6 @@ Small, real, and cheap — worth clearing before the tag or shortly after.
       covered the old path were deleted rather than replaced, because
       `MapCanvasView` is private. Make it internal and test a dispatched
       `MotionEvent`.
-- [ ] **CI does not cover `admin-panel/`.** The `paths-filter` has `android`
-      and `server` only, so its 5 test files and its ruff config never run —
-      on the one deliverable that holds production root SSH credentials.
-      (`codex/**` now triggers CI; server CI is green — 510 tests.)
-
----
-
-## Admin panel (`admin-panel/`) — shipped, undocumented
-
-~4.7k lines added 2026-07-30, absent from every doc until now. A loopback-only
-FastAPI operator console (binds `127.0.0.1:8787`, opened through a one-time
-signed bootstrap URL) that administers the live VPS over SSH with an explicit
-host-fingerprint check. It does anonymous-install data management, safe branch
-switching and updating, service restarts, health checks, and an SSH console.
-Credentials live only in the running process.
-
-- [ ] **Give it a CI job** — see the loose end above. It has tests and a ruff
-      config; neither runs.
-- [ ] **Decide its support level** — it is an internal tool with production
-      root credentials. Either treat it as a first-class deliverable (CI,
-      docs, a security review per change) or mark it explicitly unsupported.
 
 ---
 
@@ -234,14 +212,12 @@ logits only, and an unpinned conformal grid.
 
 Found by a full doc-vs-code sweep; none of it blocks a release.
 
-- [ ] **`CLAUDE.md`** — says "two independent deliverables" and omits
-      `admin-panel/` entirely; its server module map misses `telemetry.py`,
+- [ ] **`CLAUDE.md`** — its server module map misses `telemetry.py`,
       `plant_photos.py`, `popular_plants.py`, `countries.py`; CI trigger
       branches are wrong (`master` is not one, `work/**` is undocumented).
-- [ ] **`README.ru.md` has diverged from `README.md`** — missing the admin
-      panel section, 12 of 24 API rows, the project-tree line and two
-      Documentation bullets. It also carries a project-website block the
-      English README never gained.
+- [ ] **`README.ru.md` has diverged from `README.md`** — missing 12 of 24 API
+      rows, the project-tree line and two Documentation bullets. It also
+      carries a project-website block the English README never gained.
 - [ ] **`DEPLOYMENT.md`** — tells operators to set the server URL "through
       Profile → Server URL" (no such setting; it is compile-time only), and
       lists an onboarding entry point that the coach-mark rework removed. Its
@@ -316,6 +292,5 @@ every merge.
 **CI** (`.github/workflows/ci.yml`) is push-only on `main`, `claude/**`,
 `work/**`, with a `paths-filter` running the **android** and **server** jobs
 only when their trees change. Android: `ktlintCheck` + `detekt` +
-`testDebugUnitTest` + R8 `assembleRelease`. Server: `ruff` + `pytest`. Two
-gaps are open work above: `admin-panel/` has no job, and `codex/**` branches
-do not trigger CI at all.
+`testDebugUnitTest` + R8 `assembleRelease`. Server: `ruff` + `pytest`. One
+gap is open work above: `codex/**` branches do not trigger CI at all.
