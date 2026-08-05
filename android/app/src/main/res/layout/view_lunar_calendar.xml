@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Body of the Lunar calendar section on the plant screen. Inflated by
+    LunarCalendarView, which fills every id below purely from LunarCalendar
+    (util) + PlantCategoryClassifier — no network call.
+
+    Two cards: month grid with an inline day-detail panel directly beneath it
+    (tapping a day or an upcoming-day row updates this panel in place, so the
+    selection visibly does something instead of updating a card off-screen
+    above the fold), then the upcoming-favourable-days list.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/lunar_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Month grid + inline day panel + legend -->
+    <com.google.android.material.card.MaterialCardView
+        style="@style/App.GlassCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="@color/surface">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/lunar_prev"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/lunar_prev_month"
+                    android:padding="4dp"
+                    android:rotation="180"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/on_surface_secondary" />
+
+                <TextView
+                    android:id="@+id/lunar_month_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title_sm" />
+
+                <ImageView
+                    android:id="@+id/lunar_next"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/lunar_next_month"
+                    android:padding="4dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/on_surface_secondary" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/lunar_dow_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_mon"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_tue"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_wed"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_thu"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_fri"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_sat"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/lunar_dow_sun"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+            </LinearLayout>
+
+            <GridLayout
+                android:id="@+id/lunar_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:columnCount="7" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/space_lg"
+                android:background="@color/divider" />
+
+            <!-- Inline day-detail panel — updated in place by selectDate(),
+                 directly under the grid so tapping a day or an upcoming-day
+                 row visibly does something. -->
+            <LinearLayout
+                android:id="@+id/lunar_day_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/lunar_today_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/primary"
+                    android:textSize="@dimen/text_title_sm" />
+
+                <TextView
+                    android:id="@+id/lunar_category_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_caption" />
+
+                <TextView
+                    android:id="@+id/lunar_range_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/warning_amber"
+                    android:textSize="@dimen/text_caption"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.plantdiseases.app.ui.widget.MoonPhaseView
+                        android:id="@+id/lunar_moon"
+                        android:layout_width="64dp"
+                        android:layout_height="64dp" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/space_lg"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/lunar_phase_name"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_title_sm" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:id="@+id/lunar_sign_icon"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                app:tint="@color/primary" />
+
+                            <TextView
+                                android:id="@+id/lunar_sign"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_xs"
+                                android:layout_weight="1"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_body" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/lunar_good_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:text="@string/lunar_good_for"
+                    android:textColor="@color/primary"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <LinearLayout
+                    android:id="@+id/lunar_good_tasks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:orientation="horizontal" />
+
+                <TextView
+                    android:id="@+id/lunar_avoid_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:text="@string/lunar_avoid"
+                    android:textColor="@color/disease_red"
+                    android:textSize="@dimen/text_body_sm" />
+
+                <LinearLayout
+                    android:id="@+id/lunar_avoid_tasks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:orientation="horizontal" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/lunar_legend"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Upcoming favourable days -->
+    <com.google.android.material.card.MaterialCardView
+        style="@style/App.GlassCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_md"
+        app:cardBackgroundColor="@color/surface">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="@string/lunar_upcoming"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title_sm" />
+
+            <LinearLayout
+                android:id="@+id/lunar_upcoming_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+</LinearLayout>

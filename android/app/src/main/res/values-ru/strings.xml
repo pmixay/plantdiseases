@@ -940,4 +940,80 @@
     <!-- Обновления из RuStore (util/InAppUpdateManager) -->
     <string name="update_ready">Обновление приложения загружено</string>
     <string name="update_ready_action">Установить</string>
+
+    <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
+    <string name="lunar_title">Лунный календарь</string>
+    <string name="lunar_expand">Показать лунный календарь</string>
+    <string name="lunar_collapse">Скрыть лунный календарь</string>
+    <string name="lunar_today">Сегодня, %1$s</string>
+    <string name="lunar_good_for">День благоприятен для:</string>
+    <string name="lunar_avoid">Лучше отложить:</string>
+    <string name="lunar_upcoming">Ближайшие благоприятные дни</string>
+    <string name="lunar_legend_good">благоприятные</string>
+    <string name="lunar_legend_neutral">нейтральные</string>
+    <string name="lunar_legend_bad">неблагоприятные</string>
+    <string name="lunar_prev_month">Предыдущий месяц</string>
+    <string name="lunar_next_month">Следующий месяц</string>
+    <string name="moon_new">Новолуние</string>
+    <string name="moon_waxing_crescent">Растущая Луна</string>
+    <string name="moon_first_quarter">Первая четверть</string>
+    <string name="moon_waxing_gibbous">Растущая Луна</string>
+    <string name="moon_full">Полнолуние</string>
+    <string name="moon_waning_gibbous">Убывающая Луна</string>
+    <string name="moon_last_quarter">Последняя четверть</string>
+    <string name="moon_waning_crescent">Убывающая Луна</string>
+    <string name="zodiac_aries">Овен</string>
+    <string name="zodiac_taurus">Телец</string>
+    <string name="zodiac_gemini">Близнецы</string>
+    <string name="zodiac_cancer">Рак</string>
+    <string name="zodiac_leo">Лев</string>
+    <string name="zodiac_virgo">Дева</string>
+    <string name="zodiac_libra">Весы</string>
+    <string name="zodiac_scorpio">Скорпион</string>
+    <string name="zodiac_sagittarius">Стрелец</string>
+    <string name="zodiac_capricorn">Козерог</string>
+    <string name="zodiac_aquarius">Водолей</string>
+    <string name="zodiac_pisces">Рыбы</string>
+    <string name="lunar_task_planting">Посадка</string>
+    <string name="lunar_task_repotting">Пересадка</string>
+    <string name="lunar_task_feeding">Подкормка</string>
+    <string name="lunar_task_watering">Полив</string>
+    <string name="lunar_task_pruning">Обрезка</string>
+    <string name="lunar_category_note">Подобрано для: %1$s</string>
+    <string name="lunar_cat_fruiting">плодовых</string>
+    <string name="lunar_cat_root">корнеплодов</string>
+    <string name="lunar_cat_leafy">зелени</string>
+    <string name="lunar_cat_flowering">цветущих</string>
+    <string name="lunar_cat_succulent">суккулентов и кактусов</string>
+    <string name="lunar_cat_foliage">декоративно-лиственных</string>
+    <string name="lunar_cat_herb">пряных трав</string>
+    <string name="lunar_out_of_range">Календарь охватывает 2026–2027 годы.</string>
+    <string name="lunar_dow_mon">Пн</string>
+    <string name="lunar_dow_tue">Вт</string>
+    <string name="lunar_dow_wed">Ср</string>
+    <string name="lunar_dow_thu">Чт</string>
+    <string name="lunar_dow_fri">Пт</string>
+    <string name="lunar_dow_sat">Сб</string>
+    <string name="lunar_dow_sun">Вс</string>
+
+    <!-- Collapsible sections on the species screen -->
+    <string name="section_about_title">О растении</string>
+    <string name="section_about_subtitle">Описание, особенности и виды.</string>
+    <string name="section_care_title">Уход</string>
+    <string name="section_care_subtitle">Полив, свет, температура, влажность и обрезка.</string>
+    <string name="section_fertiliser_title">Удобрения и подкормка</string>
+    <string name="section_fertiliser_subtitle">Чем и когда подкармливать.</string>
+    <string name="section_diseases_title">Болезни и вредители</string>
+    <string name="section_diseases_subtitle">Распространённые проблемы и способы лечения.</string>
+    <string name="section_expand">Развернуть раздел</string>
+    <string name="section_collapse">Свернуть раздел</string>
+    <plurals name="fertiliser_interval">
+        <item quantity="one">Подкармливать каждую неделю в период активного роста.</item>
+        <item quantity="few">Подкармливать каждые %1$d недели в период активного роста.</item>
+        <item quantity="many">Подкармливать каждые %1$d недель в период активного роста.</item>
+        <item quantity="other">Подкармливать каждые %1$d недели в период активного роста.</item>
+    </plurals>
+    <string name="fertiliser_interval_none">Регулярная подкормка этому растению не нужна.</string>
+    <string name="fertiliser_npk">Удобрение: %1$s</string>
+    <string name="fertiliser_soil">Субстрат: %1$s</string>
 </resources>

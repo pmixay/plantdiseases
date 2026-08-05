@@ -95,4 +95,17 @@
     <color name="chat_bubble_user_bg">#14532D</color>
     <color name="chat_bubble_text">#F0FDF4</color>
     <color name="chat_bubble_text_secondary">#9CA3AF</color>
+
+    <!-- Lunar calendar + moon phase -->
+    <color name="lunar_good_bg">#14532D</color>
+    <color name="lunar_good_fg">#4ADE80</color>
+    <color name="lunar_neutral_bg">#3F2A06</color>
+    <color name="lunar_neutral_fg">#FBBF24</color>
+    <color name="lunar_bad_bg">#450A0A</color>
+    <color name="lunar_bad_fg">#F87171</color>
+    <color name="moon_lit_hi">#F2EFE6</color>
+    <color name="moon_lit_lo">#B9B4A6</color>
+    <color name="moon_dark">#161B20</color>
+    <color name="moon_mare">#7A766B</color>
+    <color name="moon_glow">#22FFFFFF</color>
 </resources>
