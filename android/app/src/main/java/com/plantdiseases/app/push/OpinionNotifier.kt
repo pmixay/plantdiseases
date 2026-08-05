@@ -12,11 +12,13 @@ import androidx.core.content.ContextCompat
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
-import com.plantdiseases.app.di.appEntryPoint
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OpinionPrefs
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Builds + posts the "someone left a second opinion on your scan" notification.
@@ -28,12 +30,10 @@ import com.plantdiseases.app.util.OpinionPrefs
  *
  * The notification deep-links to the scan's result screen when the scan is
  * still in local history; otherwise it opens the app.
- *
- * A plain Kotlin `object` — not an Android framework component — so Hilt
- * can't field-inject it via `@AndroidEntryPoint`; it resolves its repository
- * via [com.plantdiseases.app.di.AppEntryPoint] instead, same as the workers.
  */
-object OpinionNotifier {
+object OpinionNotifier : KoinComponent {
+
+    private val scanRepository: ScanRepository by inject()
 
     /**
      * @param disease the suggested-diagnosis class key (push) or the scan's
@@ -77,7 +77,7 @@ object OpinionNotifier {
 
         // community scan_id == the local scan's clientScanId — open it directly
         // if we still have it; otherwise drop into the app.
-        val localId = appEntryPoint(ctx).scanRepository().getScanByClientScanId(scanId)?.id
+        val localId = scanRepository.getScanByClientScanId(scanId)?.id
         val intent = if (localId != null) {
             Intent(ctx, ResultActivity::class.java)
                 .putExtra(ResultActivity.EXTRA_SCAN_ID, localId)

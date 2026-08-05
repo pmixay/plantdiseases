@@ -23,6 +23,8 @@ import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import java.io.File
 
 /**
@@ -32,9 +34,9 @@ import java.io.File
  */
 class DetailTimelineController(
     private val activity: AppCompatActivity,
-    private val plantRepository: PlantRepository,
-) {
+) : KoinComponent {
 
+    private val plantRepository: PlantRepository by inject()
     private var plantId: Long = -1L
 
     fun renderTimeline(

@@ -12,14 +12,14 @@ import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SimilarScans
 import com.plantdiseases.app.util.TelemetryIds
-import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns every community-facing surface on the result screen: the similar-scans
@@ -34,36 +34,14 @@ import kotlinx.coroutines.launch
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val repository: ScanRepository,
-    private val communityUploader: CommunityUploader,
-    private val connectivity: ConnectivityObserver,
     private val ensureNotificationPermission: () -> Unit,
     // Requests coarse location (+ notifications) and reports back whether
     // location was granted. Owned by the activity because permission launchers
     // must be registered before the activity starts. See ResultActivity.
     private val requestCommunityOptIn: (onResult: (Boolean) -> Unit) -> Unit,
-) {
-
-    /**
-     * True from the moment an ask is sent until the server answers. The
-     * control must stay disabled across a STOPPED→STARTED cycle in that
-     * window: the button still reads "waiting…" but keeps `showAsk`'s
-     * listener, so re-enabling it fires a *second* request — a duplicate
-     * community upload and a duplicate ask.
-     */
-    private var opinionRequestInFlight = false
-
-    /**
-     * The one writer of this button's enabled state.
-     *
-     * It has two independent reasons to be off — no server, or an ask already
-     * in flight — and they used to be owned by different code that overwrote
-     * each other in whichever order ran last. Everything that renders the
-     * control goes through here.
-     */
-    private fun applySecondOpinionEnabled() {
-        binding.btnSecondOpinion.isEnabled = connectivity.lastKnownOnline && !opinionRequestInFlight
-    }
+) : KoinComponent {
+    private val repository: ScanRepository by inject()
+    private val communityUploader: CommunityUploader by inject()
 
     private fun displayName(key: String, isRu: Boolean): String =
         DiseaseLabels.displayName(key, isRu) ?: key
@@ -94,9 +72,6 @@ class CommunityController(
      * Result API so this control re-renders immediately.
      */
     fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
-        // This control is not in the activity's enableWhileOnline set — it
-        // needs the in-flight rule too, so it observes reachability itself.
-        activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
         activity.supportFragmentManager.setFragmentResultListener(
             CommunityOpinionSheet.REQUEST_STATE_CHANGED,
             activity,
@@ -178,7 +153,7 @@ class CommunityController(
         requestedAtSec: Long?,
     ) {
         val btn = binding.btnSecondOpinion
-        applySecondOpinionEnabled()
+        btn.isEnabled = true
         val hours = hoursLeft(requestedAtSec)
         btn.text = when {
             replyCount > 0 && hours != null ->
@@ -202,7 +177,7 @@ class CommunityController(
     private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
-        applySecondOpinionEnabled()
+        btn.isEnabled = true
         btn.text = activity.getString(R.string.result_second_opinion_view, count)
         btn.setOnClickListener { openReplies(scan, isRu) }
     }
@@ -210,7 +185,7 @@ class CommunityController(
     private fun showAsk(scan: ScanEntity, isRu: Boolean) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
-        applySecondOpinionEnabled()
+        btn.isEnabled = true
         btn.setText(R.string.result_get_second_opinion)
         btn.setOnClickListener {
             // Second opinions come FROM the community, so they require the
@@ -244,9 +219,8 @@ class CommunityController(
     }
 
     private fun beginRequest(scan: ScanEntity, isRu: Boolean) {
-        opinionRequestInFlight = true
         val btn = binding.btnSecondOpinion
-        applySecondOpinionEnabled()
+        btn.isEnabled = false
         btn.setText(R.string.result_second_opinion_waiting)
         // Notifications are requested HERE — the one moment they're clearly
         // needed (replies to YOUR ask) — not as part of the community opt-in.
@@ -258,7 +232,6 @@ class CommunityController(
             communityUploader.uploadFromEntity(scan, force = true)
             repository.requestSecondOpinion(scan.clientScanId, pseudoId)
                 .onSuccess {
-                    opinionRequestInFlight = false
                     // Fresh request: 0 replies, full 72 h window.
                     showOpenRequest(
                         scan,
@@ -272,7 +245,6 @@ class CommunityController(
                     OpinionPrefs.setSeen(activity, scan.clientScanId, 0)
                 }
                 .onFailure {
-                    opinionRequestInFlight = false
                     showAsk(scan, isRu)
                     Toast.makeText(
                         activity,

@@ -8,32 +8,30 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.plantdiseases.app.MainActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import com.plantdiseases.app.util.applyStatusBarTopInset
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Calendar
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class ProfileFragment : Fragment() {
 
-    @Inject
-    lateinit var scanRepository: ScanRepository
+    private val scanRepository: ScanRepository by inject()
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -84,12 +82,40 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
-        binding.replayGuidanceRow.setOnClickListener {
-            (activity as? MainActivity)?.replayAppGuidance()
-        }
+        setupCommunityControls()
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue
         // a duplicate getStats() DB read on every fragment creation.
+    }
+
+    private fun setupCommunityControls() {
+        val ctx = requireContext()
+        // Enabling/disabling community now lives inside the community screen.
+        // Profile keeps only the destructive delete-my-shared-data control — a
+        // data right, available regardless of the current on/off state.
+        binding.btnDeleteCommunity.setOnClickListener {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.community_delete_title)
+                .setMessage(R.string.community_delete_body)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    deleteCommunityContributions()
+                }
+                .show()
+        }
+    }
+
+    private fun deleteCommunityContributions() {
+        val pseudoId = TelemetryIds.userPseudoId(requireContext())
+        lifecycleScope.launch {
+            val result = scanRepository.deleteCommunityContributions(pseudoId)
+            val msg = if (result.isSuccess) {
+                R.string.community_delete_done
+            } else {
+                R.string.community_delete_failed
+            }
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun color(res: Int): Int = ContextCompat.getColor(requireContext(), res)
@@ -293,7 +319,6 @@ class ProfileFragment : Fragment() {
             if (stats.totalScans == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
-                registerOnboardingAnchors(binding.emptyState)
                 return@launch
             }
 
@@ -329,19 +354,6 @@ class ProfileFragment : Fragment() {
 
             val commonDisease = if (isRu) stats.mostCommonDiseaseRu else stats.mostCommonDisease
             binding.tvCommonDisease.text = commonDisease ?: getString(R.string.none_yet)
-            registerOnboardingAnchors(binding.statsLayout)
-        }
-    }
-
-    private fun registerOnboardingAnchors(statisticsAnchor: View) {
-        (activity as? MainActivity)?.apply {
-            registerOnboardingAnchor(OnboardingAnchorKey.PROFILE_SETTINGS, binding.settingsCard)
-            registerOnboardingAnchor(OnboardingAnchorKey.PROFILE_STATISTICS, statisticsAnchor)
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.PROFILE_REPLAY,
-                binding.replayGuidanceRow,
-                pauseAfterTarget = true,
-            )
         }
     }
 
@@ -365,11 +377,6 @@ class ProfileFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        (activity as? MainActivity)?.apply {
-            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_SETTINGS)
-            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_STATISTICS)
-            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_REPLAY)
-        }
         super.onDestroyView()
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()

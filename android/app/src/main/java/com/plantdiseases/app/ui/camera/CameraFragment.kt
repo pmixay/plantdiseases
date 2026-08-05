@@ -28,41 +28,30 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.plantdiseases.app.PlantDiseasesApp
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.crop.CropContract
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
-import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
-import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.applyStatusBarTopInset
-import com.plantdiseases.app.util.onConnectivityChanged
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class CameraFragment : Fragment() {
 
     private var _binding: FragmentCameraBinding? = null
     private val binding get() = _binding!!
 
-    @Inject
-    lateinit var scanRepository: ScanRepository
-
-    @Inject
-    lateinit var connectivity: ConnectivityObserver
+    private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -70,10 +59,6 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
-
-    /** Latest reachability reading. Offline the scan screen is limited to the
-     *  on-device model — or, without one, to explaining why it can't scan. */
-    private var isOffline = false
 
     /** Monotonic timestamp of the last accepted shutter tap. A fast double-tap
      *  used to fire two captures / two croppers (and two first-run tips sheets)
@@ -121,6 +106,7 @@ class CameraFragment : Fragment() {
 
         private const val PREFS_NAME = "plantdiseases_prefs"
         private const val KEY_GRID_OVERLAY = "grid_overlay_enabled"
+        private const val KEY_TIPS_SEEN = "scan_tips_seen"
 
         /** Set in the fragment arguments to run the camera as a species
          *  identification front-end (see [identifyMode]). */
@@ -147,18 +133,12 @@ class CameraFragment : Fragment() {
         // use cases twice.
         binding.permissionLayout.visibility = if (granted) View.GONE else View.VISIBLE
         binding.cameraPreview.visibility = if (granted) View.VISIBLE else View.GONE
-        (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
     }
 
     private val galleryLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri == null) {
-            (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
-        } else {
-            (activity as? MainActivity)?.moveOnboardingTo(OnboardingStepId.RESULT_DIAGNOSIS)
-            handleGalleryImage(uri)
-        }
+        uri?.let { handleGalleryImage(it) }
     }
 
     /** Crop editor (our own [CropContract] / CropActivity). Both the camera
@@ -201,6 +181,23 @@ class CameraFragment : Fragment() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Deliver the first-run tips sheet's "Continue" tap via the Fragment
+        // Result API rather than a transient lambda, so it survives a
+        // config-change recreation (rotation / dark-mode / locale) while the
+        // sheet is open. Registering with `this` re-arms on recreation and the
+        // FragmentManager replays any pending result to the new listener.
+        parentFragmentManager.setFragmentResultListener(
+            ScanTipsSheet.REQUEST_KEY,
+            this,
+        ) { _, _ ->
+            requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_TIPS_SEEN, true).apply()
+            continueCaptureFlow()
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -233,15 +230,8 @@ class CameraFragment : Fragment() {
         // In identify mode the host (SpeciesIdentifyActivity) shows the shared
         // OfflineNoticeView over this preview, so skip this fragment's own
         // banner there rather than stacking two strips at the top.
-        if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity.isOnline)
-        // Tracked in both modes: identify is server-only, so the shutter guard
-        // needs the state even though the host owns identify's notice.
-        viewLifecycleOwner.onConnectivityChanged(connectivity.isOnline) { online ->
-            isOffline = !online
-            if (_binding != null && !identifyMode) applyOfflineScanState()
-        }
+        if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity)
         restoreGridOverlay()
-        registerOnboardingAnchors()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -256,9 +246,6 @@ class CameraFragment : Fragment() {
     private fun setupUI() {
         binding.btnCapture.setOnClickListener { onCaptureClicked() }
         binding.btnGallery.setOnClickListener {
-            // Same offline rule as the shutter — an imported photo needs the
-            // same model the captured one does.
-            if (refuseOffline()) return@setOnClickListener
             galleryLauncher.launch("image/*")
         }
         binding.btnFlash.setOnClickListener { toggleFlash() }
@@ -297,44 +284,11 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Update the picker chip to show the family a capture would actually
-     *  run on — which offline is Aqua, not whatever the user last picked. */
+    /** Update the picker chip to show the currently-selected family. */
     private fun refreshModelFamilyChip() {
-        val family = effectiveFamily()
+        val family = ModelFamilyPrefs.selected(requireContext())
         binding.btnModelFamily.setText(family.labelRes)
         binding.btnModelFamily.setIconResource(family.iconRes)
-    }
-
-    /**
-     * The family this capture will really use. Offline, the two server tiers
-     * cannot run at all, so an installed on-device model takes over — decided
-     * here, before the shutter, rather than after a wasted image re-encode and
-     * a connect timeout downstream.
-     */
-    private fun effectiveFamily(): ModelFamily {
-        val selected = ModelFamilyPrefs.selected(requireContext())
-        return if (isOffline && !selected.onDevice && AquaClassifier.isAvailable(requireContext())) {
-            ModelFamily.AQUA
-        } else {
-            selected
-        }
-    }
-
-    /**
-     * Reflect reachability on the scan screen. Offline the app is limited to
-     * the on-device model, so the banner says which of the two situations the
-     * user is in — a limited scan still works, or scanning is unavailable —
-     * and the picker chip switches to the family that will actually run.
-     */
-    private fun applyOfflineScanState() {
-        binding.offlineBanner.setText(
-            if (AquaClassifier.isAvailable(requireContext())) {
-                R.string.offline_notice_scan_on_device
-            } else {
-                R.string.offline_notice_scan_unavailable
-            },
-        )
-        refreshModelFamilyChip()
     }
 
     /** Refresh per-family availability from the server so the picker can grey
@@ -584,36 +538,28 @@ class CameraFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
-    /** Explicit shutter click. Contextual guidance now owns first-use tips. */
+    /** Explicit shutter click. Shows the pre-scan tips sheet the
+     *  first time, otherwise falls straight through to capture. */
     private fun onCaptureClicked() {
         // Swallow a rapid second tap before it can branch into a duplicate
         // capture / cropper / tips sheet.
         val now = SystemClock.elapsedRealtime()
         if (now - lastCaptureTapAt < captureDebounceMs) return
         lastCaptureTapAt = now
-        if (refuseOffline()) return
+        // The first-run scan-tips sheet is disease-scan guidance; identify
+        // mode goes straight to capture.
+        if (identifyMode) {
+            continueCaptureFlow()
+            return
+        }
+        val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_TIPS_SEEN, false)) {
+            // The Continue tap is handled by the Fragment Result listener
+            // registered in onCreate (config-change safe).
+            ScanTipsSheet.show(parentFragmentManager)
+            return
+        }
         continueCaptureFlow()
-    }
-
-    /**
-     * True when this photo has nowhere to go: offline in identify mode (always
-     * server-side) or offline with no on-device model installed. Says so up
-     * front rather than letting the user frame, crop and then wait out a
-     * connect timeout for an error dialog.
-     */
-    private fun refuseOffline(): Boolean {
-        if (!isOffline) return false
-        if (!identifyMode && AquaClassifier.isAvailable(requireContext())) return false
-        Toast.makeText(
-            requireContext(),
-            if (identifyMode) {
-                R.string.offline_action_unavailable
-            } else {
-                R.string.offline_scan_needs_model
-            },
-            Toast.LENGTH_LONG,
-        ).show()
-        return true
     }
 
     /** Second stage of the shutter flow. Community sharing is opt-in and
@@ -626,9 +572,6 @@ class CameraFragment : Fragment() {
     private fun takePhoto() {
         if (captureInFlight) return
         val imageCapture = imageCapture ?: return
-        if (!identifyMode) {
-            (activity as? MainActivity)?.moveOnboardingTo(OnboardingStepId.RESULT_DIAGNOSIS)
-        }
 
         captureInFlight = true
         binding.btnCapture.isEnabled = false
@@ -780,20 +723,12 @@ class CameraFragment : Fragment() {
 
     private fun navigateToAnalysis(imagePath: String) {
         captureInFlight = true
-        // Only when reachability overrode the user's pick — otherwise let
-        // analysis read the preference itself, as it always has.
-        val override = effectiveFamily().takeIf { it != ModelFamilyPrefs.selected(requireContext()) }
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
             putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, imagePath)
             // Camera-origin flag: gates the post-verdict device-gallery
             // autosave in AnalysisActivity (gallery imports are never
             // autosaved — the user already has that photo).
             putExtra(AnalysisActivity.EXTRA_FROM_CAMERA, pendingFromCamera)
-            // Offline, hand analysis the on-device family explicitly. Without
-            // it, a scan on the default (server) family walks the whole server
-            // path first — decode, resize, re-encode, connect timeout — before
-            // failing over to the very model we already know it will use.
-            override?.let { putExtra(AnalysisActivity.EXTRA_FORCE_FAMILY, it.id) }
         }
         startActivity(intent)
     }
@@ -816,6 +751,13 @@ class CameraFragment : Fragment() {
         binding.gridOverlay.visibility = if (enabled) View.VISIBLE else View.GONE
     }
 
+    fun toggleGridOverlay() {
+        val isVisible = binding.gridOverlay.visibility == View.VISIBLE
+        binding.gridOverlay.visibility = if (isVisible) View.GONE else View.VISIBLE
+        requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_GRID_OVERLAY, !isVisible).apply()
+    }
+
     override fun onResume() {
         super.onResume()
         // Re-arm the shutter in case we came back from gallery /
@@ -833,10 +775,7 @@ class CameraFragment : Fragment() {
         // this is where the preview opens — on arrival at the Scan page, on
         // return from the cropper/gallery, and once the permission dialog is
         // dismissed and state is stable.
-        if (_binding != null) {
-            openCameraOrAskPermission()
-            (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
-        }
+        if (_binding != null) openCameraOrAskPermission()
     }
 
     override fun onPause() {
@@ -858,14 +797,6 @@ class CameraFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        if (!identifyMode) {
-            (activity as? MainActivity)?.apply {
-                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_PERMISSION, _binding?.btnGrantPermission)
-                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_PREVIEW, _binding?.cameraPreview)
-                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_GALLERY, _binding?.btnGallery)
-                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_SHUTTER, _binding?.btnCapture)
-            }
-        }
         super.onDestroyView()
         // Belt and braces — onPause has already released it on every path that
         // gets here. Kept so the "no provider outlives the view" guarantee
@@ -876,32 +807,5 @@ class CameraFragment : Fragment() {
         // dangling Choreographer callback on the destroyed view.
         binding.tvZoom.removeCallbacks(hideZoomRunnable)
         _binding = null
-    }
-
-    private fun registerOnboardingAnchors() {
-        if (identifyMode) return
-        (activity as? MainActivity)?.apply {
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.CAMERA_PERMISSION,
-                binding.btnGrantPermission,
-                available = { binding.btnGrantPermission.isShown },
-                pauseAfterTarget = true,
-            )
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.CAMERA_PREVIEW,
-                binding.cameraPreview,
-                available = { binding.cameraPreview.isShown },
-            )
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.CAMERA_GALLERY,
-                binding.btnGallery,
-                pauseAfterTarget = true,
-            )
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.CAMERA_SHUTTER,
-                binding.btnCapture,
-                pauseAfterTarget = true,
-            )
-        }
     }
 }

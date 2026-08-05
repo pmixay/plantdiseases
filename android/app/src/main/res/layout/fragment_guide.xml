@@ -10,9 +10,12 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- Deliberately no offline notice: every article on this screen ships in
-         the APK (GuideDataProvider) and the photos are prefetched to disk, so
-         nothing here degrades without a connection. -->
+    <!-- Shared offline notice — the guide text is bundled, but its photos come
+         from the server, so this says "showing cached content". -->
+    <com.plantdiseases.app.ui.common.OfflineNoticeView
+        android:id="@+id/offline_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
 
     <!-- Search bar -->
     <com.google.android.material.textfield.TextInputLayout

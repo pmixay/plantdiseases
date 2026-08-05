@@ -43,13 +43,8 @@ key maps to the same name as the legacy environment variable.
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
 | `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
-| `openrouter_model` | `openai/gpt-5.6-luna` | Pinned chat model. Pick anything OpenRouter exposes; the AI content surfaces expect a model with **structured outputs** (`response_format: json_schema`) and reasoning-effort support. A model without them still works — the schema is dropped after one rejected request and the tolerant JSON parsers take over. |
+| `openrouter_model` | `openai/gpt-oss-120b` | Pinned chat model. Pick anything OpenRouter exposes (e.g. `openai/gpt-4o-mini`, `meta-llama/llama-3.1-8b-instruct`). |
 | `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
-| `openrouter_provider_only` | `openai` | Comma-separated provider slugs the model may be routed to; blank = OpenRouter's choice. See "Provider pinning" below. |
-| `openrouter_reasoning_effort` | `medium` | Global fallback effort for callers that don't pin their own. `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no reasoning field. A stale `minimal` (gpt-5.0-era, rejected by gpt-5.6) is mapped to `low` rather than failing the call. |
-| `species_profile_reasoning_effort` | `high` | Flowering calendar + ISO-3166 native range — the hardest recall here, cached 30 days per species. |
-| `species_diseases_reasoning_effort` | `medium` | Per-species common problems, cached 7 days. |
-| `care_plan_polish_reasoning_effort` | `medium` | Care-plan Markdown rewrite; judged on copying canonical dosages verbatim. |
 | `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
 | `fcm_credentials_file` | *(empty)* | Path to a Firebase service-account JSON for FCM push (opinion notifications). Empty → push is a no-op. See §8.2. |
 
@@ -83,96 +78,10 @@ chat sheet and the optional Markdown summary on care plans.
 1. Sign up at <https://openrouter.ai> and create an API key.
 2. Drop it into `server/config.json` under `openrouter_api_key`, or
    export `OPENROUTER_API_KEY=...`. Optionally pin a model with
-   `openrouter_model` (default `openai/gpt-5.6-luna`).
+   `openrouter_model` (default `openai/gpt-oss-120b`).
 3. Restart the server. The care-plan endpoint still returns a
    complete, deterministic plan without a key; only the
    `summary_md` polish step is skipped.
-
-**Provider pinning.** One OpenRouter model id is served by several
-providers, and the price spread is not a rounding error — for
-`openai/gpt-5.6-luna`:
-
-| Endpoint | Input | Output | Reachable how |
-|---|---|---|---|
-| `openai` | $0.10/M | $0.60/M | default routing or pin |
-| `openai/flex` | $0.05/M | $0.30/M | **opt-in only** (tier slug) |
-| `amazon-bedrock/us-east-1` | $0.22/M | $1.32/M | default routing or pin |
-| `azure` | $1.00/M | $6.00/M | default routing or pin |
-
-Leaving routing to OpenRouter does *not* mean it picks the best option,
-in either direction:
-
-* Default routing is price-weighted load **balancing** (inverse square of
-  price, among providers with no recent outage), not cheapest-first — the
-  expensive endpoints keep a real share of traffic.
-* A provider that doesn't support a parameter still receives the request
-  and silently **ignores** the parameter. Balanced onto Bedrock (no
-  `response_format`), a species-profile call comes back as unconstrained
-  prose. That is why every request also carries
-  `provider.require_parameters = true`, which is what makes an unpinned
-  deployment safe.
-* Cheaper service tiers are **not** reachable automatically. Tier
-  endpoints are excluded from default routing and from base-slug matching,
-  so `only: ["openai"]` never yields flex, and blanking the pin never
-  yields it either.
-
-So `openrouter_provider_only` defaults to `openai`.
-
-**About flex.** It is 50% off and opt-in by slug
-(`openrouter_provider_only: "openai/flex"`). Two things to weigh before
-switching: a flex request never falls back to standard on a capacity
-error — that would break its price guarantee, so you get a 429 (retried
-here with backoff, into the same tier) — and OpenAI documents flex as
-unsuitable for real-time work: normally seconds, minutes under load.
-Every AI call in this server is made while a user waits on a screen (the
-care-plan polish runs inside the `/api/care-plan` request), so the trade
-is a visible stall against a fraction of a cent per call. Fine for a
-deployment that values cost over tail latency; not the default.
-
-The pin is a request, not a receipt — billing follows the endpoint that
-actually ran, and a service tier can decline. Confirm what really served
-a request in OpenRouter's own activity log, which reports the provider,
-the tier and the charge per call.
-
-**Reasoning effort.** gpt-5.6 treats `reasoning.effort` as a *ceiling*,
-not a floor: on a prompt it judges easy the model may spend no reasoning
-tokens at all, even at `high`. So each caller asks for the effort its own
-task needs (the table above) rather than inheriting one global setting,
-and a higher setting costs nothing on the calls that don't use it. Two
-things to keep in mind when tuning:
-
-* The hidden trace bills against `max_tokens`, so raising an effort means
-  raising the matching `*_max_tokens` (`chat_max_tokens`,
-  `species_profile_max_tokens`, `species_diseases_max_tokens`,
-  `care_plan_polish_max_tokens`). A call that runs out mid-answer is
-  rejected outright (`require_complete`) and degrades to the
-  deterministic fallback rather than serving a truncated one.
-* Reasoning tokens also count against `chat_session_token_cap`, which is
-  why that cap is 32000 — low enough values end a doctor conversation
-  several turns before `chat_session_turn_cap` does.
-
-**Structured outputs.** The species-profile and species-diseases calls
-send a strict JSON schema (`response_format: json_schema`) instead of
-asking for a shape in prose, so the shape is a provider-side constraint
-rather than an instruction the model can drift from. The tolerant parsers
-and sanitisers stay in place regardless — a schema constrains shape, never
-truthfulness. If the configured model/provider rejects the schema, the
-server logs it, retries once without it and carries on.
-
-**Cache generations.** Every AI answer is cached twice — server-side
-(in-memory + `server/ai_cache/`, 7 days for species diseases and care-plan
-polish, 30 days for species profiles) and again on the device
-(`ResponseCache`, 7 days). Those caches are the reason a model or prompt
-change can appear to do nothing: the old answer keeps being served until
-it expires. So the cache keys carry a generation, and this change bumps
-all of them — species profile `v3`→`v4`, species diseases → `v2`,
-care-plan polish dir → `care_plan_polish_v3`, plus the matching Android
-keys and the `profile_version` query parameter. Superseded entries are
-never read again; the orphaned JSON files under `server/ai_cache/` are
-harmless and can be deleted at any time (`rm -rf
-server/ai_cache/care_plan_polish_v2`). Bump the generation whenever you
-change a prompt, model or effort in a way that should reach users before
-the TTL does.
 
 **Prompt caching (on by default).** Every chat turn re-sends the same
 ~600-token system prompt plus the conversation so far. With
@@ -184,8 +93,7 @@ are billed at a fraction of input price — 0.1× on Anthropic/DeepSeek,
 
 It is opportunistic and safe to leave on: providers that cache
 automatically (OpenAI, Groq, DeepSeek, Grok, Z.AI, Gemini 2.5 — including
-the default `openai/gpt-5.6-luna`, whose cached input reads bill at 0.1×)
-ignore the breakpoint, and a prompt
+the default `openai/gpt-oss-120b`) ignore the breakpoint, and a prompt
 under a provider's minimum cacheable prefix (1024 tokens for
 OpenAI/Anthropic) simply doesn't cache and costs what it costs today.
 Set `openrouter_prompt_caching: false` to opt out entirely.
@@ -206,24 +114,6 @@ cache (a subset, not an addition). A `cache_hit_ratio` stuck at `0.0`
 over real multi-turn traffic means caching is not engaging — usually a
 model whose provider doesn't cache, or first turns whose prompt is still
 under the provider's minimum.
-
-The same endpoint carries `care_plan_polish`, the quality signal for
-care-plan prose:
-
-```json
-"care_plan_polish": {
-  "attempts": 120, "accepted": 117, "rejected": 2, "failed": 1,
-  "reject_ratio": 0.0167
-}
-```
-
-`rejected` counts polishes the model returned but the canonical-dosage
-guard refused (it contradicted the plan's own watering / feeding / NPK
-numbers); `failed` counts calls that produced no usable text at all. Both
-fall back to the deterministic summary, so neither is visible to the user
-— which is exactly why they need watching. A `reject_ratio` that climbs
-after a model or prompt change means the new configuration is drifting off
-the canonical numbers and the LLM summary is being silently thrown away.
 
 ---
 

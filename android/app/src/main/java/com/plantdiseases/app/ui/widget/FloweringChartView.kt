@@ -93,6 +93,12 @@ class FloweringChartView @JvmOverloads constructor(
     fun statusText(): String? = bloomStatus?.let { statusText(context, it) }
 
     /** Hide the drawn status when a surrounding card already presents it. */
+    fun setStatusLineVisible(visible: Boolean) {
+        if (showStatusLine == visible) return
+        showStatusLine = visible
+        invalidate()
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val desiredWidth = dp(300f).toInt() + paddingLeft + paddingRight
         val desiredHeight = dp(184f).toInt() + paddingTop + paddingBottom
@@ -116,7 +122,7 @@ class FloweringChartView @JvmOverloads constructor(
         val chartBottom = statusBaseline - dp(if (showStatusLine) 40f else 16f)
         val chartTop = top + dp(8f)
         val chartHeight = max(dp(1f), chartBottom - chartTop)
-        val chartLeft = left + dp(intensityLabelGutterDp)
+        val chartLeft = left + dp(28f)
         val axisLabelX = chartLeft - dp(8f)
         val slot = (right - chartLeft) / MONTH_COUNT
         val barWidth = slot * 0.52f
@@ -129,11 +135,9 @@ class FloweringChartView @JvmOverloads constructor(
             val y = yForIntensity(intensity)
             canvas.drawLine(chartLeft, y, right, y, axisGuidePaint)
         }
-        // Words, not 0/1/2 — the scale is meaningless without a legend, and
-        // labelling it directly removes the need for one.
-        drawAxisLabel(canvas, intensityLabels[2], axisLabelX, yForIntensity(2f))
-        drawAxisLabel(canvas, intensityLabels[1], axisLabelX, yForIntensity(1f))
-        drawAxisLabel(canvas, intensityLabels[0], axisLabelX, yForIntensity(0f))
+        drawAxisLabel(canvas, "2", axisLabelX, yForIntensity(2f))
+        drawAxisLabel(canvas, "1", axisLabelX, yForIntensity(1f))
+        drawAxisLabel(canvas, "0", axisLabelX, yForIntensity(0f))
 
         intensities.forEachIndexed { index, intensity ->
             val centerX = chartLeft + slot * index + slot / 2f
@@ -166,21 +170,6 @@ class FloweringChartView @JvmOverloads constructor(
         }
     }
 
-    /** Localized "none / occasional / peak", indexed by intensity 0..2. */
-    private val intensityLabels: List<String> by lazy {
-        listOf(
-            context.getString(R.string.flowering_level_none),
-            context.getString(R.string.flowering_level_occasional),
-            context.getString(R.string.flowering_level_peak),
-        )
-    }
-
-    /** Widest label plus breathing room, so the plot never overlaps the axis. */
-    private val intensityLabelGutterDp: Float by lazy {
-        val widest = intensityLabels.maxOf { axisLabelPaint.measureText(it) }
-        widest / resources.displayMetrics.density + 10f
-    }
-
     private fun drawAxisLabel(canvas: Canvas, label: String, x: Float, centerY: Float) {
         val metrics = axisLabelPaint.fontMetrics
         val baseline = centerY - (metrics.ascent + metrics.descent) / 2f
@@ -208,14 +197,12 @@ class FloweringChartView @JvmOverloads constructor(
     }
 
     private fun buildContentDescription(status: BloomStatus): String {
-        // Nominative names: the list reads "January: peak", not the
-        // prepositional forms the Russian "Next bloom in %s" status needs.
-        val monthNames = resources.getStringArray(R.array.flowering_month_names_nominative)
+        val monthNames = resources.getStringArray(R.array.flowering_month_names)
         val pattern = intensities.mapIndexed { index, intensity ->
             context.getString(
                 R.string.flowering_accessibility_month_intensity,
                 monthNames[index],
-                intensityLabels[intensity.coerceIn(0, 2)],
+                intensity,
             )
         }.joinToString()
         return context.getString(
@@ -259,8 +246,6 @@ class FloweringChartView @JvmOverloads constructor(
             when (status) {
                 BloomStatus.BloomsNow -> context.getString(R.string.flowering_blooms_now)
                 is BloomStatus.NextBloom -> {
-                    // Prepositional in Russian — this array exists to be
-                    // substituted into flowering_next_bloom.
                     val month = context.resources
                         .getStringArray(R.array.flowering_month_names)[status.monthIndex]
                     context.getString(R.string.flowering_next_bloom, month)

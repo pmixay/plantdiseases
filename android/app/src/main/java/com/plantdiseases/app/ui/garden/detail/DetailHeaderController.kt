@@ -26,6 +26,8 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Header / actions controller: the green hero panel, the four-tile action row
@@ -36,12 +38,12 @@ import kotlinx.coroutines.launch
  */
 class DetailHeaderController(
     private val activity: AppCompatActivity,
-    private val plantRepository: PlantRepository,
     private val onReload: () -> Unit,
     private val onRequestNewScan: () -> Unit,
     private val onOpenHero: (PlantEntity, List<ScanEntity>) -> Unit,
-) {
+) : KoinComponent {
 
+    private val plantRepository: PlantRepository by inject()
     private var plantId: Long = -1L
     private var currentPlant: PlantEntity? = null
 

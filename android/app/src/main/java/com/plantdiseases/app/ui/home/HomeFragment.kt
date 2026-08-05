@@ -23,7 +23,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
@@ -32,7 +31,6 @@ import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.CommunityPrefs
@@ -44,12 +42,9 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import com.plantdiseases.app.util.applyStatusBarTopInset
-import com.plantdiseases.app.util.enableWhileOnline
-import com.plantdiseases.app.util.onConnectivityChanged
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Calendar
-import javax.inject.Inject
 
 /**
  * Home — a visual discovery feed (start destination). Two hero actions, a
@@ -58,17 +53,13 @@ import javax.inject.Inject
  * guide. A slim Stats & Tips teaser sits at the bottom. Tapping a card opens
  * a dedicated detail screen (SpeciesDetailActivity / GuideDetailActivity).
  */
-@AndroidEntryPoint
 class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
-    @Inject
-    lateinit var apiClient: PlantApiClient
-
-    @Inject
-    lateinit var connectivity: ConnectivityObserver
+    private val apiClient: PlantApiClient by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     // Use the app's persisted UI language (LocaleHelper), NOT the device
     // locale: a Russian phone with the app switched to English must send
@@ -94,13 +85,6 @@ class HomeFragment : Fragment() {
     // refresh) doesn't re-hit /api/species-info for a name already resolved.
     private val speciesImageCache = mutableMapOf<String, String?>()
 
-    /** Latest reachability reading, and whether the carousel currently holds
-     *  live data. Together they decide the "saved earlier" caption: it is only
-     *  honest when we are offline AND what's on screen came from the cache or
-     *  the bundled list rather than this session's fetch. */
-    private var isOffline = false
-    private var showingLiveTrending = false
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -112,24 +96,11 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // The fixed notice and the scroll content share one status-bar inset;
+        // when the notice appears it takes its own row instead of overlaying
+        // the Home title.
         binding.root.applyStatusBarTopInset()
-        // Home keeps working offline — the carousels fall back to the cached
-        // popular bundle and then to the bundled catalogs — so there is no
-        // offline strip here. Instead the carousel says its data is saved
-        // rather than live, and the entry points into features that genuinely
-        // cannot run offline are disabled.
-        viewLifecycleOwner.onConnectivityChanged(connectivity.isOnline) { online ->
-            isOffline = !online
-            _binding?.let { applyTrendingScopeNote(it) }
-        }
-        // Species ID (PlantNet), symptom triage (scored server-side) and the
-        // community feed have no offline mode at all.
-        viewLifecycleOwner.enableWhileOnline(
-            connectivity.isOnline,
-            binding.cardIdentify,
-            binding.tileSymptom,
-            binding.btnNearbyScans,
-        )
+        binding.offlineNotice.observe(viewLifecycleOwner, connectivity)
         binding.tvGreeting.text = greeting()
 
         binding.btnNearbyScans.setOnClickListener {
@@ -169,16 +140,6 @@ class HomeFragment : Fragment() {
         // real scan-based data when the scope has any.
         renderSpecies(binding, null)
         maybePlayIntro(savedInstanceState)
-        (activity as? MainActivity)?.apply {
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.HOME_SCAN_IDENTIFY,
-                binding.homePrimaryActions,
-            )
-            registerOnboardingAnchor(
-                OnboardingAnchorKey.HOME_QUICK_TOOLS,
-                binding.homeQuickTools,
-            )
-        }
     }
 
     /**
@@ -199,11 +160,7 @@ class HomeFragment : Fragment() {
         )
         if (animScale == 0f) return
 
-        // The blocks to stagger are the scroll view's content column, not the
-        // root's children. (Resolving this against the root silently disabled
-        // the whole intro while the offline strip was the root's first child:
-        // a TextView is not a ViewGroup, so the cast returned null every time.)
-        val content = binding.homeScroll.getChildAt(0) as? ViewGroup ?: return
+        val content = binding.root.getChildAt(0) as? ViewGroup ?: return
         val dy = 24f * resources.displayMetrics.density
         var shown = 0
         for (i in 0 until content.childCount) {
@@ -228,16 +185,6 @@ class HomeFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        (activity as? MainActivity)?.apply {
-            unregisterOnboardingAnchor(
-                OnboardingAnchorKey.HOME_SCAN_IDENTIFY,
-                _binding?.homePrimaryActions,
-            )
-            unregisterOnboardingAnchor(
-                OnboardingAnchorKey.HOME_QUICK_TOOLS,
-                _binding?.homeQuickTools,
-            )
-        }
         super.onDestroyView()
         _binding = null
     }
@@ -330,7 +277,7 @@ class HomeFragment : Fragment() {
                         com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
                     )
                     val b = _binding ?: return@launch
-                    renderSpecies(b, fresh, live = true)
+                    renderSpecies(b, fresh)
                     renderDiseases(b, fresh)
                 } else if (cached == null) {
                     // No cache and no network → fall back to the bundled list.
@@ -352,30 +299,10 @@ class HomeFragment : Fragment() {
             ""
         }
 
-    /**
-     * "Saved earlier — may be out of date" under the trending carousel.
-     *
-     * The carousel never blanks offline (cache → bundled list), which is the
-     * right behaviour but leaves the user reading month-old "trending nearby"
-     * data with no way to tell. This is the one honest signal Home needs, and
-     * it sits on the content it describes rather than claiming the whole
-     * screen is degraded.
-     */
-    private fun applyTrendingScopeNote(b: FragmentHomeBinding) {
-        val stale = isOffline && !showingLiveTrending
-        b.tvTrendingScope.visibility = if (stale) View.VISIBLE else View.GONE
-        if (stale) b.tvTrendingScope.setText(R.string.offline_saved_data_note)
-    }
-
-    private fun renderSpecies(
-        b: FragmentHomeBinding,
-        popular: PopularResponse?,
-        live: Boolean = false,
-    ) {
+    private fun renderSpecies(b: FragmentHomeBinding, popular: PopularResponse?) {
         b.sectionSpecies.visibility = View.VISIBLE
         setPopularTitle(b, popular)
-        showingLiveTrending = live
-        applyTrendingScopeNote(b)
+        b.tvTrendingScope.visibility = View.GONE
         val items = if (popular != null && popular.items.isNotEmpty()) {
             popular.items.take(MAX_POPULAR_CARDS).map { p ->
                 // Pre-seed the image cache so loadSpeciesImage paints instantly,

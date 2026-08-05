@@ -29,23 +29,17 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import com.plantdiseases.app.util.TelemetryReporter
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class AnalysisActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAnalysisBinding
-
-    @Inject
-    lateinit var scanRepository: ScanRepository
-
-    @Inject
-    lateinit var plantRepository: PlantRepository
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
     private var imagePath: String = ""
 
     // When set (≥0), the resulting scan is auto-attached to this plant after

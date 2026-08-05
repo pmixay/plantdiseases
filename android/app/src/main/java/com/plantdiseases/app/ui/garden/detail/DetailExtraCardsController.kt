@@ -29,6 +29,8 @@ import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * The "extra cards" stacked between the header and the tabs (care plan,
@@ -39,12 +41,13 @@ import kotlinx.coroutines.launch
  */
 class DetailExtraCardsController(
     private val activity: AppCompatActivity,
-    private val plantRepository: PlantRepository,
-    private val scanRepository: ScanRepository,
     private val content: LinearLayout,
     private val onReload: () -> Unit,
     private val onClearWateringSuggestion: () -> Unit,
-) {
+) : KoinComponent {
+
+    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository by inject()
 
     private var plantId: Long = -1L
 
@@ -67,8 +70,6 @@ class DetailExtraCardsController(
      */
     fun buildCarePlanSlot(plant: PlantEntity, scans: List<ScanEntity>): View {
         val card = CarePlanCardView(activity).apply {
-            // Keyed to the plant's current condition, not the species baseline.
-            isCurePlan = true
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

@@ -31,13 +31,6 @@ _BAD_MEDIA_TERMS = {
     "distribution", "range map", "map", "locator", "diagram", "logo", "icon",
     "flag", "portrait", "person", "herbarium", "specimen", "sheet",
     "drawing", "illustration", "coat of arms", "symbol",
-    # Wikipedia plant articles lean heavily on 19th-century botanical plates
-    # and taxonomy graphics. They are accurate but they don't look like the
-    # plant on the user's windowsill, which is what a species card is for.
-    # (Substring matches, so no "plate" — it hides inside "template" — and no
-    # "graph", which would veto every caption saying "photograph".)
-    "engraving", "lithograph", "sketch", "painting", "watercolor",
-    "watercolour", "stamp", "banknote", "cladogram",
 }
 _GOOD_PLANT_TERMS = {
     "plant", "leaf", "leaves", "flower", "foliage", "stem", "fruit",
@@ -251,7 +244,10 @@ def _fetch(name: str, lang: str) -> dict | None:
     if data.get("type") == "disambiguation":
         return None
     extract = (data.get("extract") or "").strip()
-    image = _display_image(data.get("thumbnail"), data.get("originalimage"))
+    image = (
+        (data.get("originalimage") or {}).get("source")
+        or (data.get("thumbnail") or {}).get("source")
+    )
     page = ((data.get("content_urls") or {}).get("desktop") or {}).get("page")
     if not extract and not image:
         return None
@@ -267,62 +263,6 @@ def _fetch(name: str, lang: str) -> dict | None:
         "lang": lang,
         "source": "wikipedia",
     }
-
-
-# Wikipedia's summary offers two extremes and neither is what we want to hand
-# the photo proxy: `thumbnail` is ~320 px (soft once main.py re-encodes it) and
-# `originalimage` is the untouched upload, routinely 6-11 MB. We used to take
-# the original. The app never saw those megabytes — main.py transcodes what it
-# serves down to _PLANT_PHOTO_MAX_SIDE (1000 px) WebP — but the SERVER still
-# had to pull the whole file inside plant_photos' 6 s fetch timeout, and a
-# 10 MB original on a slow hop simply doesn't arrive: the fetch fails and the
-# card falls back to its placeholder. That is the picture-quality bug — missing
-# photos, not blurry ones.
-#
-# Wikimedia thumb URLs carry their width in the last path segment
-# (".../320px-Foo.jpg"), so we re-point the thumbnail at a card-sized render
-# instead. Three wins: the fetch is a few hundred KB and lands inside the
-# timeout, the byte cache holds far more species for the same disk, and — when
-# the original is an SVG — we get a PNG render, where plant_photos dropped the
-# raw .svg as unrenderable and left the card on its placeholder for good.
-#
-# Keep _DISPLAY_WIDTH at or above _PLANT_PHOTO_MAX_SIDE: below it the transcode
-# would be upscaling, which is where "blurry" would actually come from.
-_DISPLAY_WIDTH = 1024
-# Secondary "example photos" strip — smaller on screen than the lead image, so
-# it gets a smaller render rather than paying for 1024 px four times over.
-_STRIP_WIDTH = 800
-_THUMB_WIDTH_RE = re.compile(r"/(\d+)px-")
-
-
-def _resize_thumb(url: str, width: int) -> str | None:
-    """Re-point a Wikimedia thumbnail URL at ``width``. ``None`` if the URL
-    isn't a thumbnail (nothing to rewrite — the caller keeps what it has)."""
-    resized, count = _THUMB_WIDTH_RE.subn(f"/{width}px-", url, count=1)
-    return resized if count == 1 else None
-
-
-def _display_image(thumbnail: dict | None, original: dict | None) -> str | None:
-    """Best display URL for a species card: the lead image rendered at
-    ``_DISPLAY_WIDTH``, falling back to whatever the summary actually gave us."""
-    thumb_src = ((thumbnail or {}).get("source") or "").strip()
-    orig_src = ((original or {}).get("source") or "").strip()
-    if not thumb_src:
-        return orig_src or None
-    width = _DISPLAY_WIDTH
-    orig_width = (original or {}).get("width")
-    # Never ask for more pixels than the file holds — Wikimedia refuses to
-    # upscale a raster original. An SVG has no such ceiling: it renders at any
-    # width, and its nominal `width` would otherwise clamp us to a tiny render.
-    if (
-        isinstance(orig_width, int) and orig_width > 0
-        and not orig_src.lower().endswith(".svg")
-    ):
-        width = min(width, orig_width)
-    thumb_width = (thumbnail or {}).get("width")
-    if isinstance(thumb_width, int) and thumb_width >= width:
-        return thumb_src  # already at least as large as we'd ask for
-    return _resize_thumb(thumb_src, width) or orig_src or thumb_src
 
 
 def _media_images(quoted_title: str, lang: str, limit: int = 4) -> list[str]:
@@ -358,19 +298,6 @@ def _media_images(quoted_title: str, lang: str, limit: int = 4) -> list[str]:
         src = (srcset[-1].get("src") or "").strip()
         if src.startswith("//"):
             src = "https:" + src
-        # Same width normalisation as the lead image, in the other direction:
-        # the largest srcset entry is only ~2× the media-list default (~640 px),
-        # so here the render is UPSIZED to stay above what main.py re-encodes
-        # rather than downsized to fit the fetch timeout. The item carries the
-        # source file's own width, so we ask for more pixels only when the file
-        # can supply them and the URL isn't already at least that large.
-        current = _THUMB_WIDTH_RE.search(src)
-        item_width = item.get("width")
-        if (
-            current and int(current.group(1)) < _STRIP_WIDTH
-            and isinstance(item_width, int) and item_width >= _STRIP_WIDTH
-        ):
-            src = _resize_thumb(src, _STRIP_WIDTH) or src
         base = src.lower().split("?")[0]
         if not base.endswith((".jpg", ".jpeg", ".png")) or base.endswith(".svg"):
             continue

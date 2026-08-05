@@ -35,14 +35,12 @@
 
     <!-- Shared offline notice. CameraFragment observes the app-wide
          reachability state except when hosted by SpeciesIdentifyActivity,
-         which owns the single notice for that screen. The message is set at
-         runtime (see applyOfflineScanState): with the on-device model
-         installed an offline scan still works, just limited. -->
+         which owns the single notice for that screen. -->
     <com.plantdiseases.app.ui.common.OfflineNoticeView
         android:id="@+id/offline_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/offline_notice_scan_unavailable"
+        android:text="@string/offline_banner"
         android:elevation="10dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"

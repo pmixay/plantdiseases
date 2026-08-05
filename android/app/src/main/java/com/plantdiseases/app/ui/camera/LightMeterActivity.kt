@@ -37,17 +37,14 @@ import kotlin.math.ln
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
 import com.plantdiseases.app.data.repository.PlantRepository
-import dagger.hilt.android.AndroidEntryPoint
+import org.koin.android.ext.android.inject
 import java.util.concurrent.Executors
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class LightMeterActivity :
     AppCompatActivity(),
     SensorEventListener {
 
-    @Inject
-    lateinit var plantRepository: PlantRepository
+    private val plantRepository: PlantRepository by inject()
     private lateinit var binding: ActivityLightMeterBinding
     private lateinit var tvLux: TextView
     private lateinit var tvStatus: TextView

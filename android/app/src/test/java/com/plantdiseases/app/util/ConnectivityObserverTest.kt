@@ -2,18 +2,20 @@ package com.plantdiseases.app.util
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.currentTime
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -23,21 +25,9 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowNetworkCapabilities
 
 /**
- * Robolectric coverage of the shared [ConnectivityObserver]: the system
- * capability gate, network handovers, the reports-driven reachability gate
- * (including a stale validated VPN), recovery, and — the point of the whole
- * design — that an online device is never polled.
- *
- * Virtual time throughout: the observer waits out probe retries and recovery
- * backoff, so the tests drive a [TestScope] clock rather than sleeping.
- *
- * Use `runCurrent()` / `advanceTimeBy()` here, never `advanceUntilIdle()`.
- * Everything the observer runs — the shared flow, the network callback, both
- * reachability drivers — lives in `backgroundScope`, and `advanceUntilIdle()`
- * does not drive background work: it returns having executed nothing, and the
- * assertions then fail against an empty list rather than a wrong value. There
- * is also nothing to become idle in the first place once the observer is
- * offline, since the recovery loop reschedules itself forever.
+ * Robolectric coverage of the shared [ConnectivityObserver]: Android
+ * capability gating, real server reachability (including a stale validated
+ * VPN), periodic recovery, and the single callback's lifecycle.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -48,7 +38,8 @@ class ConnectivityObserverTest {
     private val connectivityManager: ConnectivityManager
         get() = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    private val activeNetwork get() = connectivityManager.activeNetwork!!
+    /** The shadow's default active network — always present in this test. */
+    private val activeNetwork: Network get() = connectivityManager.activeNetwork!!
 
     private fun capabilities(vararg granted: Int): NetworkCapabilities {
         val caps = ShadowNetworkCapabilities.newInstance()
@@ -56,12 +47,6 @@ class ConnectivityObserverTest {
         granted.forEach { shadow.addCapability(it) }
         return caps
     }
-
-    private val online: NetworkCapabilities
-        get() = capabilities(
-            NetworkCapabilities.NET_CAPABILITY_INTERNET,
-            NetworkCapabilities.NET_CAPABILITY_VALIDATED,
-        )
 
     private fun setActiveCapabilities(caps: NetworkCapabilities) {
         shadowOf(connectivityManager).setNetworkCapabilities(activeNetwork, caps)
@@ -80,18 +65,44 @@ class ConnectivityObserverTest {
         shadowOf(connectivityManager).networkCallbacks.toList().forEach { it.onLost(activeNetwork) }
     }
 
-    private fun TestScope.observer(
-        probe: suspend () -> Boolean,
-        reports: MutableSharedFlow<Boolean> = MutableSharedFlow(extraBufferCapacity = 8),
-        scope: CoroutineScope = backgroundScope,
-    ) = ConnectivityObserver(
-        context = context,
-        probe = probe,
-        reports = reports,
-        scope = scope,
-        nowMs = { currentTime },
-        stopTimeoutMs = 0,
+    private val online: NetworkCapabilities
+        get() = capabilities(
+            NetworkCapabilities.NET_CAPABILITY_INTERNET,
+            NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+        )
+
+    private data class ObserverHarness(
+        val observer: ConnectivityObserver,
+        val scope: CoroutineScope,
     )
+
+    private fun observer(
+        probe: suspend () -> Boolean = { true },
+        ticks: Flow<Unit> = emptyFlow(),
+    ): ObserverHarness {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        return ObserverHarness(
+            observer = ConnectivityObserver(
+                context = context,
+                reachabilityProbe = probe,
+                scope = scope,
+                probeTicks = ticks,
+                stopTimeoutMs = 0,
+            ),
+            scope = scope,
+        )
+    }
+
+    /**
+     * Collect [ConnectivityObserver.isOnline] into [into], synchronously on the
+     * test thread: with [Dispatchers.Unconfined] every emission — and the
+     * `awaitClose` cleanup on cancel — runs inline, so no test scheduler is
+     * needed (Robolectric delivers the network callbacks on this thread too).
+     */
+    private fun collectOnline(observer: ConnectivityObserver, into: MutableList<Boolean>): Job =
+        CoroutineScope(Dispatchers.Unconfined).launch(start = CoroutineStart.UNDISPATCHED) {
+            observer.isOnline.collect { into += it }
+        }
 
     // ── The validated-internet rule ─────────────────────────────────────
     @Test
@@ -113,19 +124,12 @@ class ConnectivityObserverTest {
         assertThat(ConnectivityObserver.hasValidatedInternet(online)).isTrue()
     }
 
+    // ── The flow ────────────────────────────────────────────────────────
     @Test
-    fun recoveryBackoff_growsThenCaps() {
-        val delays = (0..6).map { ConnectivityObserver.recoveryDelayMs(it) }
-        assertThat(delays).containsExactly(3_000L, 6_000L, 12_000L, 24_000L, 30_000L, 30_000L, 30_000L)
-            .inOrder()
-    }
-
-    // ── Gate 1: the system's view ───────────────────────────────────────
-    @Test
-    fun unvalidatedNetwork_isOfflineWithoutSpendingAProbe() = runTest {
+    fun isOnline_gatesTheProbeThenTracksNetworkChanges() {
         setActiveCapabilities(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
         var probeCalls = 0
-        val observer = observer(
+        val harness = observer(
             probe = {
                 probeCalls++
                 true
@@ -133,190 +137,78 @@ class ConnectivityObserverTest {
         )
 
         val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        runCurrent()
+        val job = collectOnline(harness.observer, seen)
+        try {
+            // An unvalidated network is offline without wasting a server call.
+            assertThat(seen).containsExactly(false)
+            assertThat(probeCalls).isEqualTo(0)
 
-        assertThat(seen).containsExactly(false)
-        assertThat(probeCalls).isEqualTo(0)
+            // Validation completing now permits the reachability probe.
+            fireCapabilitiesChanged(online)
+            assertThat(seen).containsExactly(false, true).inOrder()
+            assertThat(probeCalls).isEqualTo(1)
 
-        // Validation completing now permits the reachability gate to run.
-        fireCapabilitiesChanged(online)
-        runCurrent()
-        assertThat(seen).containsExactly(false, true).inOrder()
+            // Re-delivering identical capabilities is collapsed.
+            fireCapabilitiesChanged(online)
+            assertThat(seen).containsExactly(false, true).inOrder()
+            assertThat(probeCalls).isEqualTo(1)
+
+            fireLost()
+            assertThat(seen).containsExactly(false, true, false).inOrder()
+        } finally {
+            job.cancel()
+            harness.scope.cancel()
+        }
     }
 
     @Test
-    fun handover_doesNotReportOfflineWhileAnotherDefaultNetworkIsUp() = runTest {
-        // The regression this guards: `onLost` for the network being handed
-        // off from used to be trusted as-is, so every Wi-Fi→mobile switch (and
-        // every VPN connect) blinked the notice even though a validated
-        // default network was already in place.
+    fun validatedVpn_isOfflineWhenTheServerCannotBeReached_thenRecoversOnTick() {
+        // This is the real-device regression: Samsung still reported an
+        // Amnezia VPN as INTERNET+VALIDATED after its underlying network was
+        // gone. Capabilities alone would incorrectly hide every notice.
         setActiveCapabilities(online)
-        val observer = observer(probe = { true })
-
-        val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        runCurrent()
-        assertThat(seen).containsExactly(true)
-
-        fireLost() // old network gone, the new default is already validated
-        runCurrent()
-        assertThat(seen).containsExactly(true)
-    }
-
-    @Test
-    fun losingTheLastNetwork_reportsOfflineImmediately() = runTest {
-        setActiveCapabilities(online)
-        val observer = observer(probe = { true })
-
-        val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        runCurrent()
-
-        setActiveCapabilities(capabilities()) // nothing left to fall back to
-        fireLost()
-        runCurrent()
-        assertThat(seen).containsExactly(true, false).inOrder()
-    }
-
-    // ── Gate 2: can this network actually reach us? ─────────────────────
-    @Test
-    fun validatedVpn_isOfflineWhenTheServerCannotBeReached() = runTest {
-        // The real-device regression: Samsung still reported an Amnezia VPN as
-        // INTERNET+VALIDATED after its underlying network was gone.
-        setActiveCapabilities(online)
-        var probeCalls = 0
-        val observer = observer(
-            probe = {
-                probeCalls++
-                false
-            },
+        var serverReachable = false
+        val ticks = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val harness = observer(
+            probe = { serverReachable },
+            ticks = ticks,
         )
 
         val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceTimeBy(1_000)
-        runCurrent()
+        val job = collectOnline(harness.observer, seen)
+        try {
+            assertThat(seen).containsExactly(false)
 
-        // Starts optimistic, then the confirming probe settles it. Two
-        // attempts, so one slow round-trip on a waking tunnel is not enough
-        // to claim the device is offline.
-        assertThat(seen).containsExactly(true, false).inOrder()
-        assertThat(probeCalls).isEqualTo(2)
+            serverReachable = true
+            assertThat(ticks.tryEmit(Unit)).isTrue()
+            assertThat(seen).containsExactly(false, true).inOrder()
+
+            serverReachable = false
+            assertThat(ticks.tryEmit(Unit)).isTrue()
+            assertThat(seen).containsExactly(false, true, false).inOrder()
+        } finally {
+            job.cancel()
+            harness.scope.cancel()
+        }
     }
 
     @Test
-    fun onlineDevice_isNeverPolled() = runTest {
-        // The whole point of the reports-driven design: a reachable device
-        // costs exactly one probe — the initial read — no matter how long a
-        // screen stays open.
+    fun isOnline_sharesOneCallbackAndUnregistersWhenCollectionStops() {
         setActiveCapabilities(online)
-        var probeCalls = 0
-        val observer = observer(
-            probe = {
-                probeCalls++
-                true
-            },
-        )
-
-        backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
-        runCurrent()
-        assertThat(probeCalls).isEqualTo(1)
-
-        advanceTimeBy(10 * 60_000)
-        runCurrent()
-        assertThat(probeCalls).isEqualTo(1)
-    }
-
-    @Test
-    fun reportedFailure_flipsOfflineOnlyOnceAProbeAgrees() = runTest {
-        setActiveCapabilities(online)
-        var reachable = true
-        val reports = MutableSharedFlow<Boolean>(extraBufferCapacity = 8)
-        val observer = observer(probe = { reachable }, reports = reports)
-
-        val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        runCurrent()
-        assertThat(seen).containsExactly(true)
-
-        // A one-off transport failure (a request dying on a handover, an
-        // upload timing out) must not paint the screen offline.
-        reports.emit(false)
-        runCurrent()
-        assertThat(seen).containsExactly(true)
-
-        // A failure the probe corroborates does.
-        reachable = false
-        reports.emit(false)
-        advanceTimeBy(1_000)
-        runCurrent()
-        assertThat(seen).containsExactly(true, false).inOrder()
-    }
-
-    @Test
-    fun recovery_isNoticedByASuccessfulRequestWithoutProbing() = runTest {
-        setActiveCapabilities(online)
-        var probeCalls = 0
-        val reports = MutableSharedFlow<Boolean>(extraBufferCapacity = 8)
-        val observer = observer(
-            probe = {
-                probeCalls++
-                false
-            },
-            reports = reports,
-        )
-
-        val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceTimeBy(1_000)
-        runCurrent()
-        assertThat(seen).containsExactly(true, false).inOrder()
-
-        val probesWhileOffline = probeCalls
-        reports.emit(true)
-        runCurrent()
-        assertThat(seen).containsExactly(true, false, true).inOrder()
-        assertThat(probeCalls).isEqualTo(probesWhileOffline)
-    }
-
-    @Test
-    fun recovery_isNoticedByTheBackoffProbeWhenNoRequestsAreMade() = runTest {
-        setActiveCapabilities(online)
-        var reachable = false
-        val observer = observer(probe = { reachable })
-
-        val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceTimeBy(1_000)
-        runCurrent()
-        assertThat(seen).containsExactly(true, false).inOrder()
-
-        reachable = true
-        advanceTimeBy(ConnectivityObserver.recoveryDelayMs(0) + 100)
-        runCurrent()
-        assertThat(seen).containsExactly(true, false, true).inOrder()
-    }
-
-    // ── One callback for the whole app ──────────────────────────────────
-    @Test
-    fun isOnline_sharesOneCallbackAndUnregistersWhenCollectionStops() = runTest {
-        setActiveCapabilities(online)
-        val observer = observer(probe = { true })
+        val harness = observer()
         val before = shadowOf(connectivityManager).networkCallbacks.size
 
-        val first = backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
-        val second = backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
-        runCurrent()
+        val first = collectOnline(harness.observer, mutableListOf())
+        assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
+
+        val second = collectOnline(harness.observer, mutableListOf())
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
         first.cancel()
-        runCurrent()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
         second.cancel()
-        advanceTimeBy(100)
-        runCurrent()
+        harness.scope.cancel()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before)
     }
 }

@@ -70,121 +70,55 @@ PLANTNET_CACHE_TTL_SECONDS = get_int("PLANTNET_CACHE_TTL_SECONDS", 7 * 24 * 3600
 
 # OpenRouter chat backend (single provider so one key gates many models).
 OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
-OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-5.6-luna").strip()
+OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-# The 20 s budget was sized for gpt-oss pinned at the shortest possible trace.
-# Every call now runs at medium-or-higher effort, so the budget has to cover a
-# real reasoning pass plus a retry. It is a ceiling, not a target — a cached
-# species/care-plan answer never reaches OpenRouter at all.
-OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 30.0)
-# Reasoning effort. The default model (openai/gpt-5.6-luna) is a reasoning
-# model whose hidden trace still bills against max_tokens — but unlike gpt-oss
-# it treats effort as a CEILING rather than a floor: on a prompt it judges easy
-# it may spend no reasoning tokens at all, even at a high setting. That inverts
-# the old tuning. Where gpt-oss forced us to pin the shortest possible trace
-# everywhere (a long trace starved the answer and truncated it mid-word), 5.6
-# lets us ask for the reasoning each task actually needs and only pay for it
-# when the model decides to use it. So:
-#   * effort is chosen PER TASK (the *_REASONING_EFFORT knobs by each caller
-#     below), never globally floored at the cheapest level; and
-#   * max_tokens keeps generous headroom so trace + answer both fit at that
-#     effort (see SPECIES_DISEASES_MAX_TOKENS).
-# "medium" is both the model's own default and our floor: this module produces
-# factual content (care plans, species botany) where an under-thought answer is
-# WRONG data, not merely terse data — and wrong data is what the disk caches
-# then serve for the next 7-30 days.
-# gpt-5.6 accepts max/xhigh/high/medium/low/none. It does NOT accept "minimal"
-# (a gpt-5.0-era level), so `_normalise_effort` maps a stale "minimal" left in
-# a config file onto "low" instead of letting the provider 400 the request.
-# Set OPENROUTER_REASONING_EFFORT to "omit" to send no reasoning field at all
-# (let the model use its own default).
-OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "medium").strip().lower()
-
-# Provider routing. One OpenRouter model id is served by several providers at
-# wildly different prices — for openai/gpt-5.6-luna, OpenAI's own endpoint is
-# $0.10/M input against Bedrock's $0.22/M and Azure's $1.00/M, a 10x spread for
-# identical output.
-#
-# Leaving it to OpenRouter does NOT mean "it picks the best one". Default
-# routing is price-weighted load BALANCING (inverse-square of price, among
-# providers with no recent outage), so the expensive endpoints keep a real
-# share of traffic rather than being ruled out. Worse for us, a provider that
-# doesn't support a parameter still receives the request and silently IGNORES
-# the parameter — a request balanced onto Bedrock (no `response_format`) would
-# come back as unconstrained prose, and only our tolerant parsers would stand
-# between that and an empty species screen. `require_parameters` below closes
-# that hole; the pin makes it moot in the first place.
-#
-# Cheaper service tiers are NOT reachable this way either: tier endpoints
-# ("openai/flex", 50% off) are excluded from default routing and from base-slug
-# matching, so `only: ["openai"]` never yields flex — it is opt-in only, by
-# tier-suffixed slug. Flex also never falls back to standard on a capacity
-# error (that would break its price guarantee): you get a 429, which we retry
-# into the same tier. OpenAI documents it as unsuitable for real-time chat
-# (seconds normally, minutes under load) — and every call in this module is
-# made while a user waits on a screen, so flex trades a visible stall for a
-# fraction of a cent. Set OPENROUTER_PROVIDER_ONLY to "openai/flex" if that
-# trade is right for your deployment; nothing else needs to change.
-#
-# Comma-separated OpenRouter provider slugs; blank lets OpenRouter route
-# freely (still parameter-filtered, see below).
-OPENROUTER_PROVIDER_ONLY = get_str("OPENROUTER_PROVIDER_ONLY", "openai").strip()
+OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
+# The default model (openai/gpt-oss-120b) is a REASONING model: its hidden
+# reasoning tokens are billed against max_tokens. The trace length VARIES per
+# call, so with a small budget it sometimes eats the whole thing and the answer
+# is truncated mid-word (finish_reason="length"). Two levers keep the answer's
+# room, and we use both:
+#   * a generous max_tokens (see SPECIES_DISEASES_MAX_TOKENS) — headroom; and
+#   * a LOW reasoning effort so the trace stays short and predictable rather
+#     than variable — this is what turns "usually fits" into "reliably fits".
+# Default effort is "minimal" (confirmed to return complete content on gpt-oss).
+# We do NOT disable reasoning: {"reasoning": {"enabled": false}} — and effort
+# "none" — is rejected outright by some providers (Novita's gpt-oss endpoint
+# 400s with "Reasoning is mandatory for this endpoint and cannot be disabled").
+# Set OPENROUTER_REASONING_EFFORT to any documented level
+# (max/xhigh/high/medium/low/minimal/none), or to "omit" to send no reasoning
+# field at all (let the model use its own default).
+OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "minimal").strip().lower()
 
 # Prompt caching (https://openrouter.ai/docs/features/prompt-caching).
-# The chat doctor re-sends the same ~500-token system prompt plus a growing
+# The chat doctor re-sends the same ~600-token system prompt plus a growing
 # conversation history on every turn; billed at full input price that is the
 # single largest recurring cost in this module. Caching makes the provider
-# re-read that prefix from ITS cache instead — on gpt-5.6 a cached read is
-# 0.1x input price ($0.01/M against $0.10/M) — so only the new user turn is
-# paid in full.
-#
-# gpt-5.6 changed one side of that trade: from this generation on OpenAI
-# CHARGES for the cache write, at 1.25x input, where earlier models wrote for
-# free. So caching is no longer unconditionally free money — a prefix written
-# once and never re-read now costs 25% more than not caching at all. It still
-# pays overwhelmingly here, because the only surface that caches is the chat
-# doctor, where the prefix is re-read on every turn of the same conversation:
-# one write at 1.25x is repaid by the second read (2.0x -> 1.1x) and every
-# turn after that is nearly free. The one-shot species/care-plan calls
-# deliberately don't ask for caching (see their call sites).
+# re-read that prefix from ITS cache instead (0.1x-0.5x input price depending
+# on the provider, free on some), so only the new user turn is paid in full.
 #
 # Two request fields do the work, both handled by OpenRouter itself and
 # ignored by providers that don't need them:
 #   * ``cache_control: {"type": "ephemeral"}`` at the request level — asks
 #     OpenRouter to place the breakpoint for us and advance it as the
 #     conversation grows. Required by Anthropic/Qwen; a no-op for the default
-#     openai/gpt-5.6-luna and the other automatic-caching providers (OpenAI,
+#     openai/gpt-oss-120b and the other automatic-caching providers (OpenAI,
 #     Groq, DeepSeek, Grok, Z.AI, Gemini 2.5).
 #   * ``session_id`` — OpenRouter's sticky-routing key. Without it a model
 #     served by several providers can land on a DIFFERENT provider each turn,
 #     and a cold provider means a guaranteed cache miss no matter how stable
 #     the prefix is. With it, stickiness starts from the first successful
-#     request rather than only after a hit is observed. (OPENROUTER_PROVIDER_ONLY
-#     narrows the field to one provider anyway; session_id still earns its keep
-#     by pinning the specific instance behind it.)
+#     request rather than only after a hit is observed.
 # Caching is opportunistic everywhere: providers enforce their own minimum
 # cacheable prefix (1024 tokens for OpenAI/Anthropic), so short prompts simply
-# don't cache and cost exactly what they cost today — the doctor's system
-# prompt alone sits under that line, and caching starts paying once a couple of
-# turns of history have accumulated behind it. Set to false to opt out.
+# don't cache and cost exactly what they cost today. Set to false to opt out.
 OPENROUTER_PROMPT_CACHING = get_bool("OPENROUTER_PROMPT_CACHING", True)
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
-# max_tokens covers the hidden reasoning trace AND the reply. A doctor reply is
-# 3-6 sentences (~200 tokens), so 512 left almost nothing for a medium-effort
-# trace and cut answers off mid-word — chat is the one caller that does NOT
-# pass require_complete, so a truncated reply ships to the user instead of
-# raising. The cap is a ceiling, not a target: a short answer still bills only
-# what it generates.
-CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 2048)
+CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 512)
 CHAT_SESSION_TURN_CAP = get_int("CHAT_SESSION_TURN_CAP", 20)
-# Reasoning tokens count in completion_tokens, so they draw down this budget
-# too. At 8000 a medium-effort conversation hit the cap after ~5 turns and the
-# doctor went silent well before the 20-turn cap that is meant to be the
-# binding limit. 32000 keeps turn_count the thing that ends a session (20 turns
-# of this size is still well under a cent on luna pricing).
-CHAT_SESSION_TOKEN_CAP = get_int("CHAT_SESSION_TOKEN_CAP", 32000)
+CHAT_SESSION_TOKEN_CAP = get_int("CHAT_SESSION_TOKEN_CAP", 8000)
 CHAT_SESSION_TTL_SEC = get_int("CHAT_SESSION_TTL_SEC", 3600)
 # Hard cap on retained messages per session — independent of the turn
 # count cap, this protects against very long single-turn messages
@@ -461,43 +395,51 @@ def identify_species(
 # full-price re-read of all ~600 tokens on every turn. On its own it sits under
 # the 1024-token minimum most providers require, so caching starts paying once
 # a couple of turns of history have accumulated behind it.
-_DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' AI Plant Doctor, helping people care
-for their plants — indoor and garden alike. Ground every answer in the PlantVision v2.x
-taxonomy the app's classifier predicts (9 classes):
+_DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
+people care for their plants — indoor and garden alike. Your knowledge is grounded in the
+PlantVision v2.x disease taxonomy (9 trainable classes):
 
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
-- leaf_scorch_underwatering: crisp brown leaf margins from insufficient
-  watering or transpiration shock
-- leaf_spot: fungal AND bacterial leaf spot — dark/angular spots, yellow
-  halos, concentric rings (one class; a phone photo can't separate them)
+- leaf_scorch_underwatering: crisp brown leaf margins from
+  insufficient watering or transpiration shock
+- leaf_spot: umbrella class for fungal and bacterial leaf spot —
+  dark/angular spots, yellow halos, concentric rings (the two are
+  not reliably separable from a phone photo, so they share one class)
 - not_a_plant: image does not contain a plant
-- nutrient_deficiency: chlorosis / interveinal yellowing — iron, nitrogen,
-  magnesium etc.
-- pests: sap-sucking mealybugs (white cottony tufts in leaf axils) and scale
-  (waxy brown/tan bumps on stems and leaf undersides) — one class, the care
-  advice is nearly identical
+- nutrient_deficiency: chlorosis / interveinal yellowing — iron,
+  nitrogen, magnesium etc.
+- pests: sap-sucking pests — mealybugs (white cottony tufts in leaf
+  axils) and scale (waxy brown/tan bumps on stems and leaf undersides),
+  merged into one class as the care advice is nearly identical
 - powdery_mildew: white powdery coating, fungal
-- viral_disease: mosaic, leaf curl and ringspot — incurable
+- viral_disease: umbrella class for mosaic, leaf curl and ringspot;
+  incurable
 
-edema and sunburn are NOT trained classes: on those patterns the classifier
-returns a low-confidence verdict or not_a_plant. Ask about the watering, light
-and fertiliser routine, advise from first principles, and say plainly that the
-model has not diagnosed it.
+Remaining deferred physiological conditions (edema, sunburn) are NOT
+yet trained classes — if the user's photo shows one of those patterns
+the classifier will return a low-confidence verdict or `not_a_plant`.
+In that case, ask the user
+about watering, light and fertiliser routine and give physiological
+advice from first principles, but be explicit that the model has not
+diagnosed it.
 
-Rules:
-- 3-6 sentences. Specific, actionable, friendly. Reply in the user's language
-  (English or Russian).
-- The classifier verdict the user already has is the diagnosis — never claim
-  diagnostic certainty of your own.
-- Generic active ingredients only ("copper-based fungicide", "neem oil"),
-  never fungicide trade names.
-- Symptoms outside the taxonomy: say so, and suggest a photo scan or a local
-  nursery.
-- Cite the app's offline care guide with a token like [[doc:leaf_spot]] right
-  after the condition's name — any class above except not_a_plant, plus edema
-  and sunburn_or_scorch. At most one per reply, only when relevant, never a
-  key outside that list."""
+Style guide:
+- Keep replies SHORT (3-6 sentences). Specific, actionable, friendly.
+- Match the user's language (English or Russian).
+- If the user describes symptoms outside the taxonomy, say so and
+  suggest taking a photo or consulting a local nursery.
+- Never invent fungicide trade names. Recommend generic active
+  ingredients only (e.g. "copper-based fungicide", "neem oil").
+- Never claim the AI can diagnose with certainty — defer to the
+  classifier output the user already has.
+- When you mention a condition the app has a care guide for, cite it
+  once with a token like [[doc:leaf_spot]] placed right after the name —
+  the app turns it into a tappable link to the offline guide. Valid keys:
+  gray_mold_botrytis, healthy, leaf_scorch_underwatering, leaf_spot,
+  nutrient_deficiency, pests, powdery_mildew, viral_disease, edema,
+  sunburn_or_scorch. Use a key at most once per reply, only when relevant,
+  and never invent keys outside this list."""
 
 
 class _ChatSession:
@@ -565,52 +507,6 @@ _OPENROUTER_BASE_DELAY = 1.0  # seconds
 _OPENROUTER_REASONING_EFFORTS = frozenset(
     {"max", "xhigh", "high", "medium", "low", "minimal", "none"}
 )
-# ...but the level set is per-model, and gpt-5.6 dropped the gpt-5.0-era
-# "minimal". Sending it would 400 the whole request, taking the feature down
-# with it, so an effort the configured model can't accept is mapped onto the
-# nearest one it can. Keyed by model prefix rather than exact id so the
-# terra/sol/luna and -pro variants are all covered.
-_EFFORT_ALIASES: dict[str, dict[str, str]] = {
-    "openai/gpt-5.": {"minimal": "low"},
-}
-
-
-_SCHEMA_ERROR_HINTS = (
-    "response_format", "json_schema", "schema", "structured output",
-    # OpenRouter's phrasing when `require_parameters` filters every provider
-    # out — with the schema being the most demanding parameter we send, that
-    # is the same failure wearing a different message, and dropping the schema
-    # is the same right answer.
-    "no endpoints",
-)
-
-
-def _blames_schema(response: Any) -> bool:
-    """True when a 4xx body points at the JSON schema we sent. Best-effort: an
-    unreadable body counts as "not the schema" so an unrelated failure keeps
-    its own error instead of being retried into a different one."""
-    try:
-        body = response.text or ""
-    except Exception:  # noqa: BLE001 — a body we can't read tells us nothing
-        return False
-    lowered = body.lower()
-    return any(hint in lowered for hint in _SCHEMA_ERROR_HINTS)
-
-
-def _provider_only() -> list[str]:
-    """Provider slugs this request may be routed to (see
-    ``OPENROUTER_PROVIDER_ONLY``). Empty list = no pin. Read at call time so a
-    config reload / test override takes effect."""
-    return [slug for slug in (s.strip() for s in OPENROUTER_PROVIDER_ONLY.split(",")) if slug]
-
-
-def _normalise_effort(effort: str) -> str:
-    """Map a reasoning effort the configured model doesn't accept onto the
-    nearest level it does. Identity for every model/level pair we know is fine."""
-    for prefix, aliases in _EFFORT_ALIASES.items():
-        if OPENROUTER_MODEL.startswith(prefix):
-            return aliases.get(effort, effort)
-    return effort
 
 
 def _int_or_zero(value: Any) -> int:
@@ -637,7 +533,6 @@ def _call_openrouter(
     system_text: str, history: list[dict],
     *, max_tokens: int | None = None, require_complete: bool = False,
     reasoning_effort: str | None = None,
-    json_schema: dict | None = None, schema_name: str = "response",
     session_id: str | None = None, cache_prefix: bool = False,
 ) -> tuple[str, int, int, dict]:
     """Run an OpenRouter chat completion with bounded retry.
@@ -656,19 +551,10 @@ def _call_openrouter(
     parsed-as-empty.
 
     ``reasoning_effort`` overrides the global ``OPENROUTER_REASONING_EFFORT``
-    for this call only — each caller picks the effort its task actually needs
-    (see the ``*_REASONING_EFFORT`` knobs) rather than inheriting one global
-    setting tuned for the conversational doctor.
-
-    ``json_schema`` asks the provider to constrain the completion to a JSON
-    Schema (OpenRouter structured outputs, ``strict: true``). That replaces
-    "return ONLY a JSON object of this shape" prose in the system prompt: the
-    shape becomes a hard constraint instead of an instruction the model may
-    drift from, and the caller's parser stops having to salvage JSON out of
-    fenced prose. Callers keep their tolerant parsers + sanitisers regardless —
-    a schema constrains SHAPE, never truthfulness. A provider that rejects the
-    schema outright (4xx) is retried once without it so the feature degrades to
-    the old prose-parsing path instead of going dark.
+    for this call only. Structured-output callers (species diseases, care-plan
+    polish) pin "minimal" so an operator raising the global effort for the
+    conversational doctor can't reinflate their reasoning traces back into
+    ``finish_reason="length"`` truncation.
 
     ``cache_prefix`` requests provider-side prompt caching of the stable
     message prefix, and ``session_id`` pins the conversation to one provider so
@@ -694,33 +580,16 @@ def _call_openrouter(
         "max_tokens": max_tokens or CHAT_MAX_TOKENS,
         "messages": messages,
     }
-    # Reasoning effort for this call (see OPENROUTER_REASONING_EFFORT). A
-    # recognised level is forwarded after normalisation; any other value (e.g.
-    # "omit") sends no reasoning field and lets the model use its own default.
-    # reasoning.exclude stays unused: it hides the trace but the model still
-    # reasons and still bills for it, so it can't buy headroom.
-    effort = _normalise_effort(
-        (reasoning_effort or OPENROUTER_REASONING_EFFORT).strip().lower()
-    )
+    # Bound the reasoning trace so it can't starve the answer: by default send a
+    # low effort ("minimal") so the trace stays short, alongside the generous
+    # max_tokens headroom. A recognised effort level is forwarded; any other
+    # value (e.g. "omit") sends no reasoning field. We don't default to disabling
+    # reasoning — {"enabled": false} / effort "none" is rejected by some
+    # providers (see OPENROUTER_REASONING_EFFORT). reasoning.exclude is unused:
+    # it hides the trace but the model still reasons + bills, so it can't help.
+    effort = (reasoning_effort or OPENROUTER_REASONING_EFFORT).strip().lower()
     if effort in _OPENROUTER_REASONING_EFFORTS:
         payload["reasoning"] = {"effort": effort}
-    if json_schema is not None:
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name, "strict": True, "schema": json_schema,
-            },
-        }
-    # `require_parameters` is what makes an UNPINNED deployment safe: without
-    # it OpenRouter may route to a provider that ignores response_format /
-    # reasoning and returns something that merely looks like an answer. With
-    # the default pin it changes nothing (OpenAI's endpoint advertises every
-    # parameter we send) — it is the safety belt for loosening the pin.
-    provider_pref: dict[str, Any] = {"require_parameters": True}
-    providers = _provider_only()
-    if providers:
-        provider_pref["only"] = providers
-    payload["provider"] = provider_pref
     if OPENROUTER_PROMPT_CACHING:
         # Request-level breakpoint: OpenRouter places it after the last
         # cacheable block and advances it as the history grows, so we don't
@@ -768,22 +637,6 @@ def _call_openrouter(
             if attempt + 1 == _OPENROUTER_MAX_RETRIES:
                 r.raise_for_status()  # last-ditch — caller handles
             _sleep_for_retry(attempt, retry_after=r.headers.get("Retry-After"))
-            continue
-        if r.status_code >= 400 and "response_format" in payload and _blames_schema(r):
-            # The configured model/provider won't take our schema (unsupported
-            # feature, or a schema keyword its strict mode rejects). Structured
-            # output is an upgrade, not a dependency: drop it and retry once so
-            # the caller's tolerant parser handles a plain JSON reply, exactly
-            # as it did before schemas existed. Popping the key also makes this
-            # branch unreachable on the retry, so it can't loop.
-            # Gated on the error actually naming the schema: a 400 from an
-            # unrelated cause (a bad provider slug, say) must fail loudly as
-            # itself, not masquerade as a schema problem in the logs.
-            payload.pop("response_format")
-            logger.warning(
-                "OpenRouter rejected response_format (HTTP %s); retrying without it",
-                r.status_code,
-            )
             continue
         if r.status_code >= 400:
             r.raise_for_status()  # 4xx (not in transient set) — fail fast
@@ -1086,19 +939,13 @@ def chat_metrics_snapshot() -> dict:
 
 SPECIES_DISEASES_CACHE_SIZE = get_int("SPECIES_DISEASES_CACHE_SIZE", 256)
 SPECIES_DISEASES_CACHE_TTL_SECONDS = get_int("SPECIES_DISEASES_CACHE_TTL_SECONDS", 7 * 24 * 3600)
-# Headroom for the answer even when the model spends real budget reasoning
-# (max_tokens is a cap, not a target — short answers stop early and only bill
-# what they generate, so a higher cap costs nothing but avoids the truncation
-# that returned an empty list and re-paid the call on every open). Doubled
-# again alongside the move to medium effort: the trace bills against this cap.
-SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 4096)
-# Medium effort: this is factual recall about a specific species, and the
-# failure mode is a plausible-but-wrong pest list cached for 7 days, not a
-# clumsy sentence. Cached in memory + on disk per (species, language), so the
-# effort is paid once per species and reused by every later request.
-SPECIES_DISEASES_REASONING_EFFORT = get_str(
-    "SPECIES_DISEASES_REASONING_EFFORT", "medium"
-).strip().lower()
+# Headroom for the answer even if a reasoning model still spends some budget
+# reasoning (max_tokens is a cap, not a target — short answers stop early and
+# only bill what they generate, so a higher cap costs nothing but avoids the
+# truncation that returned an empty list and re-paid the call on every open).
+# 1024 was still hit in production when the model's hidden trace ran long
+# (the trace bills against max_tokens), so the default carries 2× headroom.
+SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 2048)
 _SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
 # Persistent layer behind the LRU: the species→diseases LLM answer is stable,
 # so once paid for it's reused across restarts and fresh installs instead of
@@ -1114,69 +961,24 @@ _GUIDE_DOC_KEYS = frozenset({
     "edema", "sunburn_or_scorch",
 })
 
-# The response SHAPE is enforced by the JSON schema below, so the prompt only
-# carries what a schema can't: what makes an item correct and useful. Restating
-# the RULES in prose is exactly the redundancy that costs gpt-5.6 quality — but
-# the closing one-liner naming the keys stays, because it is the only contract
-# left if a model/provider rejects the schema and `_call_openrouter` retries
-# without it. Without it that fallback returns prose and the feature goes dark.
-_SPECIES_DISEASES_SYSTEM = """You are a plant pathology assistant for a houseplant-care app.
+_SPECIES_DISEASES_SYSTEM = """You are a plant pathology assistant. Given a plant \
+species, list the problems (diseases, sap-sucking pests, physiological disorders) that \
+species is MOST commonly affected by when grown indoors, most common first.
 
-List the 3-5 problems — diseases, sap-sucking pests, physiological disorders — the given \
-species is most commonly affected by when grown INDOORS, most common first.
+Return ONLY a JSON object, no prose, of exactly this shape:
+{"diseases": [{"name": "<short condition name>", "doc_key": "<an allowed key or null>", \
+"note": "<one short sentence: how it shows on this plant + the single most useful first action>"}]}
 
-- Only conditions genuinely plausible for that species indoors. Prefer the boring, \
-frequent problem over the interesting one; never invent exotic pathogens.
-- "name": the condition as an owner would recognise it.
-- "note": one sentence under 20 words — how it shows up ON THIS SPECIES (the tissue and \
-the sign), then the single most useful first action.
-- Generic active ingredients only ("copper-based fungicide", "neem oil"), never trade names.
-- "doc_key": the closest matching app guide key, or null when none of them fits.
-- Write "name" and "note" in the language the request asks for.
+Allowed doc_key values (use the closest match, otherwise null):
+gray_mold_botrytis, leaf_scorch_underwatering, leaf_spot, nutrient_deficiency, pests, \
+powdery_mildew, viral_disease, edema, sunburn_or_scorch
 
-Answer with the JSON object {"diseases": [{"name", "doc_key", "note"}]} and nothing else."""
-
-# Field descriptions are part of the contract the model sees — OpenRouter
-# forwards them with the schema, so they do the job the removed prose rules
-# used to do, at the point where the model is actually filling the field.
-_SPECIES_DISEASES_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["diseases"],
-    "properties": {
-        "diseases": {
-            "type": "array",
-            "description": "3 to 5 problems, most common first.",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["name", "doc_key", "note"],
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Short condition name, in the requested language.",
-                    },
-                    "doc_key": {
-                        # Nullable enum, in the shape strict mode documents:
-                        # null in `type`, never as an enum member. Without the
-                        # null branch the schema would force one of these keys
-                        # onto a condition the app's guide doesn't cover.
-                        "type": ["string", "null"],
-                        "enum": sorted(_GUIDE_DOC_KEYS),
-                        "description": "Closest app guide key, or null if none fits.",
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": (
-                            "One sentence, under 20 words, in the requested language: "
-                            "how it appears on this species, then the first action."
-                        ),
-                    },
-                },
-            },
-        },
-    },
-}
+Rules:
+- 3 to 5 items, most common first.
+- Write "name" and "note" in the requested language.
+- Keep each "note" under 20 words. Never name fungicide trade names — generic actives only.
+- Only conditions plausible for that species indoors; do not invent exotic pathogens.
+- Output the JSON object only, nothing before or after it."""
 
 
 def _parse_species_diseases(text: str) -> list[dict]:
@@ -1236,12 +1038,7 @@ def species_common_diseases(
     if not _chat_api_key_present():
         return {"available": False, "diseases": [], "source": "no_api_key"}
 
-    # ``v2`` = this generation of the answer (gpt-5.6 + medium effort + JSON
-    # schema). Without the bump, every species already in the 7-day disk cache
-    # would keep serving the OLD model's list for a week after deploy — the
-    # improvement would look like it had done nothing. Superseded entries are
-    # never read again; their JSON files are harmless and can be deleted.
-    cache_key = f"v2:{name.lower()}:{lang}"
+    cache_key = f"{name.lower()}:{lang}"
     cached = _SPECIES_DISEASES_CACHE.get(cache_key)
     if cached is not None:
         return {**copy.deepcopy(cached), "cached": True}
@@ -1255,7 +1052,11 @@ def species_common_diseases(
     lang_word = "Russian" if lang == "ru" else "English"
     common = (common_name or "").strip()
     subject = name + (f" (commonly known as {common})" if common else "")
-    user = f"Species: {subject}\nLanguage for name and note: {lang_word}."
+    user = (
+        f"Species: {subject}\n"
+        f"Write the names and notes in {lang_word}.\n"
+        "Return the JSON object now."
+    )
     try:
         # No cache_prefix/session_id here: this is a one-shot ~200-token system
         # prompt, far under any provider's minimum cacheable prefix, and the
@@ -1266,9 +1067,9 @@ def species_common_diseases(
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_DISEASES_MAX_TOKENS,
             require_complete=True,
-            reasoning_effort=SPECIES_DISEASES_REASONING_EFFORT,
-            json_schema=_SPECIES_DISEASES_SCHEMA,
-            schema_name="species_diseases",
+            # Pin the shortest trace: this call needs structured recall, not
+            # reasoning, and a long trace is what pushes it into truncation.
+            reasoning_effort="minimal",
         )
     except Exception as e:  # noqa: BLE001 — never propagate to the client
         logger.warning("species_common_diseases failed: %s", e)
@@ -1301,133 +1102,38 @@ def species_common_diseases(
 SPECIES_PROFILE_CACHE_SIZE = get_int("SPECIES_PROFILE_CACHE_SIZE", 256)
 SPECIES_PROFILE_CACHE_TTL_SECONDS = get_int("SPECIES_PROFILE_CACHE_TTL_SECONDS", 30 * 24 * 3600)
 # Same headroom rationale as SPECIES_DISEASES_MAX_TOKENS: the hidden reasoning
-# trace bills against max_tokens, so a generous cap avoids truncation even
-# though the bilingual JSON answer itself is only a few hundred tokens.
-SPECIES_PROFILE_MAX_TOKENS = get_int("SPECIES_PROFILE_MAX_TOKENS", 4096)
-# The one call in this module that earns MORE than the medium floor. It is the
-# hardest recall task here — a 12-month bloom calendar plus ISO-3166 native
-# range for an arbitrary binomial — it is cached for 30 days per species (a
-# wrong country sits on the map for a month), and it is the only output the
-# user sees as data rather than prose, where a confident mistake is obvious.
-# One call per species ever, so the extra thinking is paid once.
-SPECIES_PROFILE_REASONING_EFFORT = get_str(
-    "SPECIES_PROFILE_REASONING_EFFORT", "high"
-).strip().lower()
+# trace of a reasoning model bills against max_tokens, so a generous cap avoids
+# truncation even though the JSON answer itself is short.
+SPECIES_PROFILE_MAX_TOKENS = get_int("SPECIES_PROFILE_MAX_TOKENS", 2048)
 _SPECIES_PROFILE_CACHE = _LRU(SPECIES_PROFILE_CACHE_SIZE, SPECIES_PROFILE_CACHE_TTL_SECONDS)
 _SPECIES_PROFILE_DISK = _DiskCache("species_profile", SPECIES_PROFILE_CACHE_TTL_SECONDS)
 
 _NATIVE_RANGE_STATUSES = frozenset({"grows_more", "grows_less"})
 
-# As with _SPECIES_DISEASES_SYSTEM: the schema below carries the shape, so the
-# prompt carries only botany — the rules a schema cannot express — plus the
-# closing shape one-liner that keeps the no-schema fallback path parseable.
-_SPECIES_PROFILE_SYSTEM = """You are a horticulture assistant for a houseplant-care app. \
-Describe the given species' flowering pattern and native range from its known botany. Where \
-the botany is genuinely uncertain, describe the genus' pattern rather than inventing a \
-species-specific claim.
+_SPECIES_PROFILE_SYSTEM = """You are a horticulture assistant. Given a plant species, describe \
+its flowering pattern and native range for a houseplant-care app.
 
-- "monthly_intensity": the species' normal flowering season under SUITABLE CULTIVATION, in \
-the northern hemisphere — EXACTLY 12 values, one per calendar month starting with January. Do \
-NOT zero the calendar just because flowering indoors is uncommon — put that limitation in \
-"indoor_note". All zeros only for a species that does not flower biologically, such as a fern.
-- "zones": 3 to 6 UNIQUE countries where the species is native, naturalised or widely \
-cultivated outdoors — a country, never a region or continent. "grows_more" = thrives there \
-(native range or common outdoor cultivation); "grows_less" = marginal (sheltered \
-microclimates, rare or greenhouse-only).
-- Every note and summary: under 30 words, and written in BOTH English and Russian — the same \
-fact in each, not a translation artefact.
+Return ONLY a JSON object, no prose, of exactly this shape:
+{"flowering": {"monthly_intensity": [0,0,1,2,2,1,0,0,0,0,0,0], "indoor_note": {"en": "<short \
+English sentence>", "ru": "<short Russian sentence>"}}, \
+"flowering_conditions": {"en": "<short English sentence>", "ru": "<short Russian sentence>"}, \
+"native_range": {"zones": [{"country_code": "PER", "country": {"en": "Peru", \
+"ru": "Перу"}, "status": "grows_more"}], "summary": {"en": "<short English \
+sentence>", "ru": "<short Russian sentence>"}}}
 
-Answer with the JSON object {"flowering": {"monthly_intensity", "indoor_note"}, \
-"flowering_conditions", "native_range": {"zones": [{"country_code", "country", "status"}], \
-"summary"}} and nothing else. "monthly_intensity" is 12 integers (0, 1 or 2); \
-"country_code" is an ISO 3166-1 alpha-3 code; every note, summary and country name is an \
-{"en", "ru"} pair."""
-
-_LOCALIZED_TEXT_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["en", "ru"],
-    "properties": {
-        "en": {"type": "string", "description": "English, under 30 words."},
-        "ru": {"type": "string", "description": "Russian, under 30 words."},
-    },
-}
-
-_SPECIES_PROFILE_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["flowering", "flowering_conditions", "native_range"],
-    "properties": {
-        "flowering": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["monthly_intensity", "indoor_note"],
-            "properties": {
-                # Exact length stays a prompt rule + a sanitiser check:
-                # minItems/maxItems are not part of the strict-mode keyword set
-                # every provider accepts, and _sanitize_monthly_intensity
-                # already rejects any array that isn't 12 long.
-                "monthly_intensity": {
-                    "type": "array",
-                    "description": (
-                        "Exactly 12 values, January to December: "
-                        "0 no bloom, 1 some bloom, 2 peak bloom."
-                    ),
-                    "items": {"type": "integer", "enum": [0, 1, 2]},
-                },
-                "indoor_note": {
-                    **_LOCALIZED_TEXT_SCHEMA,
-                    "description": "How flowering behaves for this species indoors.",
-                },
-            },
-        },
-        "flowering_conditions": {
-            **_LOCALIZED_TEXT_SCHEMA,
-            "description": "What the owner must provide to get it to bloom.",
-        },
-        "native_range": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["zones", "summary"],
-            "properties": {
-                "zones": {
-                    "type": "array",
-                    "description": "3 to 6 unique countries.",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["country_code", "country", "status"],
-                        "properties": {
-                            "country_code": {
-                                "type": "string",
-                                "description": (
-                                    "Uppercase ISO 3166-1 alpha-3 country code, "
-                                    "e.g. PER. Never a region."
-                                ),
-                            },
-                            "country": {
-                                **_LOCALIZED_TEXT_SCHEMA,
-                                "description": "Country name in English and Russian.",
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": sorted(_NATIVE_RANGE_STATUSES),
-                                "description": (
-                                    "grows_more = thrives there; "
-                                    "grows_less = marginal."
-                                ),
-                            },
-                        },
-                    },
-                },
-                "summary": {
-                    **_LOCALIZED_TEXT_SCHEMA,
-                    "description": "One sentence on where the species comes from.",
-                },
-            },
-        },
-    },
-}
+Rules:
+- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January, \
+each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). Describe the species' normal flowering \
+season under suitable cultivation. Do NOT zero the calendar merely because flowering indoors is \
+uncommon; explain that limitation in "indoor_note". Use all 0s only for a species that does not \
+flower biologically (for example, a fern).
+- "zones" lists 3 to 6 UNIQUE countries where the species is native, naturalised or widely \
+cultivated outdoors. Use an uppercase ISO-3166 alpha-3 country code, never a region. Tag each \
+zone "grows_more" (thrives there — native range or common outdoor cultivation) or "grows_less" \
+(marginal — only in sheltered microclimates, or rare/greenhouse-only).
+- Write every English and Russian note/summary under 30 words.
+- Base this on the species' known botany; do not invent unverifiable claims.
+- Output the JSON object only, nothing before or after it."""
 
 
 def _sanitize_monthly_intensity(raw: Any) -> list[int] | None:
@@ -1455,11 +1161,7 @@ def _sanitize_native_zones(raw: Any) -> list[dict]:
     for it in raw[:8]:
         if not isinstance(it, dict):
             continue
-        raw_country = it.get("country")
-        if not isinstance(raw_country, str):
-            # v2 shape ({"en": .., "ru": ..}) — not a v1 zone; never stringify.
-            continue
-        country = raw_country.strip()
+        country = str(it.get("country") or "").strip()
         if not country or len(country) > 80:
             continue
         status = it.get("status")
@@ -1470,14 +1172,7 @@ def _sanitize_native_zones(raw: Any) -> list[dict]:
 
 
 def _clip_note(raw: Any, max_len: int = 240) -> str:
-    # Strings only. A v2 payload carries {"en": ..., "ru": ...} dicts here; a
-    # permissive str() turned those into Python dict reprs ("{'en': '...'}")
-    # which the v1 fallback then served to users and cached for 30 days.
-    # Rejecting non-strings makes such a payload fail BOTH parsers, so the
-    # request degrades to available:false as this module's discipline requires.
-    if not isinstance(raw, str):
-        return ""
-    text = raw.strip()
+    text = str(raw or "").strip()
     return text[:max_len].rstrip() if len(text) > max_len else text
 
 
@@ -1709,65 +1404,53 @@ def species_profile(
     if not _chat_api_key_present():
         return {"available": False, "source": "no_api_key"}
 
-    # Generation v4 is deliberately keyed only by scientific name. v3 refreshed
-    # older profiles that zeroed the calendar when indoor flowering was rare;
-    # v4 refreshes everything the previous model wrote, because this is the
-    # cache that would otherwise hide the whole point of the model switch — a
-    # profile is held for THIRTY days, so without the bump most species would
-    # still be serving gpt-oss's bloom calendar and country list a month after
-    # deploy. Superseded entries are never read again; their JSON files are
-    # harmless and can be deleted.
-    # The cached value is the canonical bilingual profile; locale-specific wire
-    # fields are rendered from it on every request.
-    cache_key = f"v4:{name.lower()}"
-    # A profile built by the legacy adapter is NOT bilingual — that adapter
-    # copies the single language the model replied in into both slots. Storing
-    # it under the shared key would serve e.g. Russian text to every English
-    # client for the whole 30-day TTL, so it gets a locale-scoped key instead.
-    legacy_key = f"v4:{lang}:{name.lower()}"
-    for key in (cache_key, legacy_key):
-        cached = _SPECIES_PROFILE_CACHE.get(key)
-        if cached is not None:
-            return {**_profile_response(cached, name, lang), "cached": True}
+    # Generation v3 is deliberately keyed only by scientific name. It refreshes
+    # older profiles that zeroed the calendar when indoor flowering was rare.
+    # The cached value is
+    # the canonical bilingual profile; locale-specific wire fields are
+    # rendered from it on every request.
+    cache_key = f"v3:{name.lower()}"
+    cached = _SPECIES_PROFILE_CACHE.get(cache_key)
+    if cached is not None:
+        return {**_profile_response(cached, name, lang), "cached": True}
     # Fall through to the persistent layer before paying for the LLM again —
     # this is what survives a server restart / a fresh app install.
-    for key in (cache_key, legacy_key):
-        disk_hit = _SPECIES_PROFILE_DISK.get(key)
-        if disk_hit is not None:
-            _SPECIES_PROFILE_CACHE.put(key, disk_hit)
-            return {**_profile_response(disk_hit, name, lang), "cached": True}
+    disk_hit = _SPECIES_PROFILE_DISK.get(cache_key)
+    if disk_hit is not None:
+        _SPECIES_PROFILE_CACHE.put(cache_key, disk_hit)
+        return {**_profile_response(disk_hit, name, lang), "cached": True}
 
     common = (common_name or "").strip()
     subject = name + (f" (commonly known as {common})" if common else "")
-    user = f"Species: {subject}"
+    user = (
+        f"Species: {subject}\n"
+        "Write every note and summary in both English and Russian.\n"
+        "Return the JSON object now."
+    )
     try:
         text, _tin, _tout, _cache = _call_openrouter(
             _SPECIES_PROFILE_SYSTEM,
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_PROFILE_MAX_TOKENS,
             require_complete=True,
-            reasoning_effort=SPECIES_PROFILE_REASONING_EFFORT,
-            json_schema=_SPECIES_PROFILE_SCHEMA,
-            schema_name="species_profile",
+            # Pin the shortest trace: structured recall, not reasoning — a long
+            # trace is what pushes it into truncation.
+            reasoning_effort="minimal",
         )
     except Exception as e:  # noqa: BLE001 — never propagate to the client
         logger.warning("species_profile failed: %s", e)
         return {"available": False, "source": "api_error"}
 
     canonical = _parse_species_profile_v2(text)
-    from_legacy = False
     if canonical is None:
         # A short-lived compatibility fallback for a provider/model still
         # returning the pre-v2 shape. New responses always use v2 above.
         legacy = _parse_species_profile(text)
-        if legacy:
-            canonical = _legacy_profile_to_canonical(legacy, lang)
-            from_legacy = True
+        canonical = _legacy_profile_to_canonical(legacy, lang) if legacy else None
     if canonical is None:
         return {"available": False, "source": "empty"}
-    store_key = legacy_key if from_legacy else cache_key
-    _SPECIES_PROFILE_CACHE.put(store_key, canonical)
-    _SPECIES_PROFILE_DISK.put(store_key, canonical)
+    _SPECIES_PROFILE_CACHE.put(cache_key, canonical)
+    _SPECIES_PROFILE_DISK.put(cache_key, canonical)
     return _profile_response(canonical, name, lang)
 
 
@@ -2482,49 +2165,13 @@ CARE_PLAN_CACHE_SIZE = get_int("CARE_PLAN_CACHE_SIZE", 256)
 CARE_PLAN_CACHE_TTL_SECONDS = get_int("CARE_PLAN_CACHE_TTL_SECONDS", 7 * 24 * 3600)
 # Headroom so the polished summary isn't cut off mid-sentence by a reasoning
 # model spending budget before it writes (see SPECIES_DISEASES_MAX_TOKENS).
-CARE_PLAN_POLISH_MAX_TOKENS = get_int("CARE_PLAN_POLISH_MAX_TOKENS", 3072)
-# Medium effort: the rewrite is bound by hard numeric constraints (canonical
-# dosages that must survive verbatim) and _enforce_canonical_dosages throws the
-# whole polish away when one drifts — so thinking here buys constraint
-# adherence, which is exactly the quality metric this call is judged on.
-CARE_PLAN_POLISH_REASONING_EFFORT = get_str(
-    "CARE_PLAN_POLISH_REASONING_EFFORT", "medium"
-).strip().lower()
+CARE_PLAN_POLISH_MAX_TOKENS = get_int("CARE_PLAN_POLISH_MAX_TOKENS", 1024)
 _CARE_PLAN_CACHE = _LRU(CARE_PLAN_CACHE_SIZE, CARE_PLAN_CACHE_TTL_SECONDS)
-# The namespace is bumped whenever cached summaries stop matching what the
-# current prompt would produce — otherwise the old text is served for the full
-# 7-day TTL and the change appears to have done nothing. ``_v2`` abandoned
-# summaries truncated mid-sentence by the old model; ``_v3`` abandons summaries
-# written before the prompt started including the follow-up checkpoint and red
-# flags, which is exactly the content this cache would have hidden. Earlier
-# dirs are orphaned and safe to rm.
-_CARE_PLAN_DISK = _DiskCache("care_plan_polish_v3", CARE_PLAN_CACHE_TTL_SECONDS)
-
-# Polish outcome counters for /api/metrics. A polish that drifts off the
-# canonical dosages is dropped SILENTLY (the user still gets the deterministic
-# summary), so without a counter a model or prompt change that starts failing
-# the dosage guard on every call looks exactly like everything working. This is
-# the one direct quality signal we have on care-plan prose: watch `rejected`
-# against `accepted`.
-_care_plan_totals = {"attempts": 0, "accepted": 0, "rejected": 0, "failed": 0}
-_care_plan_lock = threading.Lock()
-
-
-def care_plan_metrics_snapshot() -> dict:
-    """Read-only snapshot of care-plan polish outcomes for /api/metrics.
-
-    ``rejected`` counts polishes the model returned but the canonical-dosage
-    guard refused (the plan's own numbers were contradicted); ``failed`` counts
-    calls that never produced text at all (API error / truncation). Both fall
-    back to the deterministic summary, so neither is user-visible directly.
-    """
-    with _care_plan_lock:
-        attempts = _care_plan_totals["attempts"]
-        rejected = _care_plan_totals["rejected"]
-        return {
-            **_care_plan_totals,
-            "reject_ratio": round(rejected / attempts, 4) if attempts else 0.0,
-        }
+# ``_v2`` namespace abandons entries cached before the truncation fix: a
+# reasoning model truncated the polish past the dosage guard, so the old dir
+# held summaries cut off mid-sentence that would otherwise be served for the
+# full 7-day TTL. The old ``care_plan_polish`` dir is now orphaned (safe to rm).
+_CARE_PLAN_DISK = _DiskCache("care_plan_polish_v2", CARE_PLAN_CACHE_TTL_SECONDS)
 
 
 def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
@@ -2580,47 +2227,29 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         "Copy these numbers verbatim — never recompute, round or replace "
         "them. " if canonical_bits else ""
     )
-    # The old prompt asked only for "watering, light, humidity, feeding and
-    # disease actions", so the rewrite silently DROPPED the two fields the
-    # deterministic summary carries and the owner actually acts on: when to
-    # check back, and what means "stop and escalate". Naming them here is the
-    # single biggest content gain in this call — the plan already contains
-    # `checkpoints` and `red_flags`; the polish just wasn't using them.
     system = (
-        "You rewrite a plant care plan, given as JSON, into 5-7 short Markdown "
-        "bullets for the plant's owner, in this order: the disease action "
-        "first, then watering, light and placement, humidity, feeding, and "
-        "last the next check-up from `checkpoints`. When `red_flags` is "
-        "non-empty, fold the single most serious one into that last bullet as "
-        "the sign to escalate. " + canonical_hint
-        + "Use ONLY facts present in the JSON: copy every interval, dosage, "
-        "NPK ratio, temperature and percentage exactly as written and never "
-        "introduce a number of your own. Generic active ingredients only, "
-        "never fungicide trade names. " + locale_hint
+        "You polish a plant care plan into 5-7 short Markdown bullet "
+        "points covering watering, light, humidity, feeding and disease "
+        "actions. " + canonical_hint
+        + "Keep all other dosages and intervals exactly as given. "
+        + locale_hint
     )
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
-    with _care_plan_lock:
-        _care_plan_totals["attempts"] += 1
     try:
         # Also uncached upstream: short prompt, and identical plans are already
         # served from _CARE_PLAN_CACHE / _CARE_PLAN_DISK before we get here.
         polish, _, _, _ = _call_openrouter(
             system, user_blocks,
             max_tokens=CARE_PLAN_POLISH_MAX_TOKENS, require_complete=True,
-            reasoning_effort=CARE_PLAN_POLISH_REASONING_EFFORT,
+            # Structured rewrite, not reasoning — pin the shortest trace so a
+            # raised global effort can't truncate the polish (see species call).
+            reasoning_effort="minimal",
         )
         if polish and _enforce_canonical_dosages(polish, plan):
             _CARE_PLAN_CACHE.put(cache_key, polish)
             _CARE_PLAN_DISK.put(cache_key, polish)
             plan = {**plan, "summary_md": polish}
-            with _care_plan_lock:
-                _care_plan_totals["accepted"] += 1
-        else:
-            with _care_plan_lock:
-                _care_plan_totals["rejected"] += 1
     except Exception as e:  # noqa: BLE001
-        with _care_plan_lock:
-            _care_plan_totals["failed"] += 1
         logger.info("Care-plan polish skipped: %s", e)
     return plan
 

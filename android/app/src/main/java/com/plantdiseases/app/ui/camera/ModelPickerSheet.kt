@@ -13,33 +13,22 @@ import androidx.fragment.app.setFragmentResult
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.AquaModelManager
-import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 
 /**
  * Bottom-sheet model-family picker shown from the scan screen.
  *
  * Lists the three tiers (Aqua / Gamma / Frontier) with an icon, name and a
- * one-line description. Aqua carries an "Offline" badge. A family that can't
- * run right now is greyed out, badged with the reason and unpickable: the
- * server doesn't offer it (frontier — see [ModelFamilyPrefs.frontierAvailable]
- * — or Aqua before its model has downloaded), or the server can't be reached
- * at all, which rules out **both** server tiers and leaves the on-device model
- * as the only one that can answer. The checkmark still marks the selected
- * tier either way, so the user can always see where they stand.
- * The chosen family is persisted; a Fragment Result on [REQUEST_KEY]
+ * one-line description. Aqua carries an "Offline" badge. A family the server
+ * doesn't serve (frontier when disabled — see [ModelFamilyPrefs.frontierAvailable])
+ * is shown disabled with an "Unavailable on this server" badge and can't be
+ * picked. The chosen family is persisted; a Fragment Result on [REQUEST_KEY]
  * lets the host refresh its chip. (A lambda field set from the static show()
  * did not survive a configuration-change recreation of the open sheet, so a
  * pick made after rotating left the host chip stale until the next resume.)
  */
-@AndroidEntryPoint
 class ModelPickerSheet : BottomSheetDialogFragment() {
-
-    @Inject
-    lateinit var connectivity: ConnectivityObserver
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -55,13 +44,6 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
         val frontierAvailable = ModelFamilyPrefs.frontierAvailable(ctx)
         val aquaInstalled = AquaModelManager.isInstalled(ctx)
 
-        // Offline the two server tiers cannot run at all, so they are shown
-        // exactly like a server that doesn't offer frontier: greyed, badged
-        // unavailable, unpickable. Read once — this is a transient sheet, and
-        // a row flipping under the user's finger mid-tap would be worse than
-        // a slightly stale one.
-        val serverReachable = connectivity.lastKnownOnline
-
         for (family in ModelFamily.entries) {
             // Aqua is pickable only once its on-device model has downloaded.
             // Until then it's treated exactly like an unavailable frontier:
@@ -69,18 +51,11 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
             // show a "Downloading…" badge — the fetch is best-effort and may
             // never complete (no server model, offline, etc.), so a perpetual
             // "Downloading…" would just confuse the user into waiting forever.
-            //
-            // Two distinct reasons a row can't be picked, and they need
-            // different copy: the server doesn't offer this tier, or we can't
-            // reach the server at all. "Unavailable on this server" while the
-            // phone is simply offline blames the wrong thing.
-            val offeredByServer = when (family) {
+            val available = when (family) {
                 ModelFamily.FRONTIER -> frontierAvailable
                 ModelFamily.AQUA -> aquaInstalled
                 else -> true
             }
-            val blockedByOffline = !family.onDevice && !serverReachable
-            val available = offeredByServer && !blockedByOffline
             val row = layoutInflater.inflate(R.layout.item_model_family, container, false)
 
             row.findViewById<ImageView>(R.id.family_icon).setImageResource(family.iconRes)
@@ -89,10 +64,6 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
 
             val badge = row.findViewById<TextView>(R.id.family_badge)
             when {
-                blockedByOffline -> {
-                    badge.setText(R.string.model_family_needs_connection)
-                    badge.visibility = View.VISIBLE
-                }
                 !available -> {
                     badge.setText(R.string.model_family_unavailable)
                     badge.visibility = View.VISIBLE
@@ -104,11 +75,7 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
                 else -> badge.visibility = View.GONE
             }
 
-            // The checkmark tracks what is SELECTED, not what is pickable.
-            // Gating it on availability meant an offline phone with no
-            // on-device model showed three greyed rows and no checkmark
-            // anywhere — the user couldn't even see which tier they were on.
-            val isSelected = family == selected
+            val isSelected = family == selected && available
             row.findViewById<ImageView>(R.id.family_check).visibility =
                 if (isSelected) View.VISIBLE else View.INVISIBLE
 

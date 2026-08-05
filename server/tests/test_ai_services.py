@@ -174,18 +174,18 @@ def _mock_openrouter_post(
     monkeypatch.setattr(requests, "post", _fake_post)
 
 
-def test_call_openrouter_uses_medium_reasoning_by_default(monkeypatch):
-    """Default to "medium" — the model's own default and our floor. gpt-5.6
-    treats effort as a ceiling, so an easy prompt still spends nothing; the
-    floor only buys thinking on the calls that need it. We do NOT disable
-    reasoning: some providers reject {"enabled": false} outright."""
+def test_call_openrouter_uses_minimal_reasoning_by_default(monkeypatch):
+    """Default to a low ("minimal") reasoning effort so the variable-length trace
+    stays short and can't starve the answer. We do NOT disable reasoning — some
+    providers reject {"enabled": false} ("Reasoning is mandatory ... cannot be
+    disabled" -> 400)."""
     import ai_services as ai
 
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     text, _tin, _tout, _c = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert text == "answer"
-    assert captured["payload"]["reasoning"] == {"effort": "medium"}
+    assert captured["payload"]["reasoning"] == {"effort": "minimal"}
 
 
 def test_call_openrouter_omit_sends_no_reasoning_field(monkeypatch):
@@ -211,177 +211,18 @@ def test_call_openrouter_reasoning_effort_override(monkeypatch):
 
 
 def test_call_openrouter_per_call_effort_beats_global(monkeypatch):
-    """Each caller picks the effort its own task needs; the global setting is
-    only the fallback for callers that don't."""
+    """Structured-output callers pin reasoning_effort="minimal" per call so a
+    raised global effort (tuned for the chat doctor) can't reinflate their
+    reasoning traces back into finish_reason=length truncation."""
     import ai_services as ai
 
     monkeypatch.setattr(ai, "OPENROUTER_REASONING_EFFORT", "high")
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     ai._call_openrouter(
-        "sys", [{"role": "user", "content": "hi"}], reasoning_effort="low",
-    )
-    assert captured["payload"]["reasoning"] == {"effort": "low"}
-
-
-def test_call_openrouter_maps_effort_the_model_rejects(monkeypatch):
-    """gpt-5.6 dropped the gpt-5.0-era "minimal" level. A config file still
-    holding it must not 400 every AI call — it maps to the nearest level the
-    configured model does accept."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_MODEL", "openai/gpt-5.6-luna")
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter(
-        "sys", [{"role": "user", "content": "hi"}], reasoning_effort="minimal",
-    )
-    assert captured["payload"]["reasoning"] == {"effort": "low"}
-
-
-def test_call_openrouter_leaves_effort_alone_for_other_models(monkeypatch):
-    """The mapping is per-model, not a blanket rewrite: a model that still
-    accepts "minimal" gets it verbatim."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_MODEL", "openai/gpt-oss-120b")
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter(
         "sys", [{"role": "user", "content": "hi"}], reasoning_effort="minimal",
     )
     assert captured["payload"]["reasoning"] == {"effort": "minimal"}
-
-
-def test_call_openrouter_pins_the_openai_provider(monkeypatch):
-    """Default routing is price-weighted load BALANCING, not "pick the best":
-    the expensive endpoints (Azure $1.00/M against OpenAI's $0.10/M for the
-    same model) keep a real share of traffic. So routing is pinned."""
-    import ai_services as ai
-
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert captured["payload"]["provider"] == {
-        "require_parameters": True, "only": ["openai"],
-    }
-
-
-def test_call_openrouter_requires_parameter_support_even_unpinned(monkeypatch):
-    """Dropping the pin must not mean dropping the guarantees: a provider that
-    doesn't support response_format would otherwise still receive the request
-    and silently ignore it, answering in unconstrained prose."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "")
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert captured["payload"]["provider"] == {"require_parameters": True}
-
-
-def test_call_openrouter_provider_pin_is_configurable(monkeypatch):
-    """An operator can retarget the pin without a code change — e.g. to
-    OpenAI's half-price flex tier, which is opt-in by tier-suffixed slug and
-    is never reachable through default routing."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "openai/flex, openai")
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert captured["payload"]["provider"]["only"] == ["openai/flex", "openai"]
-
-
-def test_call_openrouter_sends_strict_json_schema(monkeypatch):
-    """Structured-output callers constrain the SHAPE at the provider instead of
-    asking for it in prose."""
-    import ai_services as ai
-
-    schema = {"type": "object", "properties": {"x": {"type": "string"}}}
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter(
-        "sys", [{"role": "user", "content": "hi"}],
-        json_schema=schema, schema_name="thing",
-    )
-    assert captured["payload"]["response_format"] == {
-        "type": "json_schema",
-        "json_schema": {"name": "thing", "strict": True, "schema": schema},
-    }
-
-
-def test_call_openrouter_retries_without_schema_when_rejected(monkeypatch):
-    """A provider that won't take the schema must cost us the constraint, not
-    the feature: drop response_format and retry once so the caller's tolerant
-    parser handles a plain JSON reply."""
-    import requests
-
-    import ai_services as ai
-
-    payloads = []
-
-    class _Resp:
-        def __init__(self, status_code):
-            self.status_code = status_code
-            self.headers = {}
-            self.text = (
-                '{"error":{"message":"response_format.json_schema is not supported"}}'
-                if status_code >= 400 else ""
-            )
-
-        def raise_for_status(self):
-            raise requests.HTTPError(f"{self.status_code}")
-
-        def json(self):
-            return {
-                "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
-            }
-
-    def _fake_post(url, headers=None, json=None, timeout=None):
-        payloads.append(dict(json))
-        return _Resp(200 if "response_format" not in json else 400)
-
-    monkeypatch.setattr(requests, "post", _fake_post)
-    text, _tin, _tout, _c = ai._call_openrouter(
-        "sys", [{"role": "user", "content": "hi"}],
-        json_schema={"type": "object"}, schema_name="thing",
-    )
-    assert text == "{}"
-    assert len(payloads) == 2
-    assert "response_format" in payloads[0]
-    assert "response_format" not in payloads[1]
-
-
-def test_call_openrouter_does_not_blame_the_schema_for_unrelated_4xx(monkeypatch):
-    """A 400 that has nothing to do with the schema (a bad provider slug, an
-    auth problem) must surface as itself — retrying it without the schema would
-    fail again anyway and log a misleading cause."""
-    import requests
-
-    import ai_services as ai
-
-    calls = {"n": 0}
-
-    class _Resp:
-        status_code = 400
-        headers: dict = {}
-        text = '{"error":{"message":"Invalid provider slug: opnai"}}'
-
-        def raise_for_status(self):
-            raise requests.HTTPError("400")
-
-    def _fake_post(url, headers=None, json=None, timeout=None):
-        calls["n"] += 1
-        return _Resp()
-
-    monkeypatch.setattr(requests, "post", _fake_post)
-    with pytest.raises(requests.HTTPError):
-        ai._call_openrouter(
-            "sys", [{"role": "user", "content": "hi"}], json_schema={"type": "object"},
-        )
-    assert calls["n"] == 1  # failed fast, no schema-stripping retry
 
 
 def test_prompt_caching_sends_breakpoint_and_sticky_session(monkeypatch):
@@ -671,46 +512,8 @@ def test_care_plan_polish_prompt_echoes_canonical_numbers(tmp_path, monkeypatch)
     assert f"water every {plan['watering_days']} days" in system
     assert f"fertilise every {plan['fertilise_weeks']} weeks" in system
     assert "verbatim" in system
-    # Constraint adherence is what this call is judged on (the dosage guard
-    # throws away any polish that drifts), so it runs at the medium floor.
-    assert captured["reasoning_effort"] == "medium"
-    # The rewrite must also carry the two fields the owner acts on. Asking only
-    # for "watering, light, humidity, feeding, disease actions" made the polish
-    # drop the follow-up and the escalation signs the deterministic summary and
-    # the plan itself both carry.
-    assert "checkpoints" in system
-    assert "red_flags" in system
-
-
-def test_care_plan_polish_rejection_is_counted(tmp_path, monkeypatch):
-    """A polish that contradicts the canonical dosages is dropped silently —
-    the user still gets the deterministic summary. Without a counter, a prompt
-    or model regression that fails the guard on every call is indistinguishable
-    from everything working, so /api/metrics tracks the reject ratio."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
-    monkeypatch.setattr(ai._CARE_PLAN_DISK, "dir", tmp_path / "care_plan_polish")
-    ai._CARE_PLAN_CACHE._d.clear()
-    for key in ai._care_plan_totals:
-        ai._care_plan_totals[key] = 0
-
-    def fake_call(system, blocks, max_tokens=None, require_complete=False,
-                  reasoning_effort=None, session_id=None, cache_prefix=False):
-        # Contradicts the canonical watering cadence for any plan.
-        return ("- Water every 99 days", 5, 10,
-                {"cached_tokens": 0, "cache_write_tokens": 0})
-
-    monkeypatch.setattr(ai, "_call_openrouter", fake_call)
-
-    plan = ai.generate_care_plan(disease="leaf_spot", species="Ficus",
-                                 light="medium", season="growing")
-    assert "99" not in plan["summary_md"], "rejected polish must not reach the user"
-    snap = ai.care_plan_metrics_snapshot()
-    assert snap["attempts"] == 1
-    assert snap["rejected"] == 1
-    assert snap["accepted"] == 0
-    assert snap["reject_ratio"] == 1.0
+    # The polish is a structured rewrite — it pins the shortest trace per call.
+    assert captured["reasoning_effort"] == "minimal"
 
 
 def test_care_plan_unknown_disease_falls_through():

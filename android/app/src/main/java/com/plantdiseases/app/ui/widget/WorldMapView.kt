@@ -24,9 +24,11 @@ import java.io.DataInputStream
 import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlin.math.tan
 
@@ -34,8 +36,8 @@ import kotlin.math.tan
  * Offline native-range map backed by bundled Natural Earth 1:110m geometry.
  *
  * This is deliberately a composite XML-compatible View rather than a screen
- * controller: the inner [Canvas] draws the map, a short hint invites the user
- * to select a country, and one result chip reports that selection.
+ * controller: the inner [Canvas] draws the map and one result chip below it
+ * reports the country selected by the user.
  */
 class WorldMapView @JvmOverloads constructor(
     context: Context,
@@ -62,11 +64,11 @@ class WorldMapView @JvmOverloads constructor(
 
     private val mapCanvas = MapCanvasView(context)
     private val selectionHint = TextView(context)
-
     // Material Chip is intentionally single-line and throws when callers try
     // to enable wrapping. The selected-country explanation can span several
     // lines (especially in Russian), so use a chip-styled TextView instead.
     private val selectedChip = TextView(context)
+    private var zones: List<CountryZone> = emptyList()
 
     init {
         orientation = VERTICAL
@@ -121,34 +123,25 @@ class WorldMapView @JvmOverloads constructor(
     /**
      * Replaces the complete highlighted range. Blank labels and duplicate
      * (country, status) pairs are ignored; an empty result clears the widget.
-     *
-     * Returns whether at least one zone landed on the map. The bundled 1:110m
-     * geometry has no polygon for small island states (Singapore, Maldives,
-     * Malta…), so a range made only of those places nothing — callers should
-     * hide the section rather than show a map that highlights nothing.
      */
-    fun setZones(value: List<CountryZone>): Boolean {
-        val zones = value
+    fun setZones(value: List<CountryZone>) {
+        zones = value
             .filter { it.country.isNotBlank() }
             .distinctBy {
                 "${it.countryCode?.trim()?.uppercase(Locale.ROOT).orEmpty()}:${normalizeMapName(it.country)}"
             }
             .take(6)
         clearSelectedCountry()
-        val placed = mapCanvas.setZones(zones)
-        // Name the countries from the bundled bilingual geometry, not from the
-        // wire payload: the species profile is cached under a locale-free key,
-        // so zone.country can still be English after a language switch.
+        mapCanvas.setZones(zones)
         mapCanvas.contentDescription =
-            if (placed) {
+            if (zones.isEmpty()) {
+                context.getString(R.string.native_range_map_empty)
+            } else {
                 context.getString(
                     R.string.native_range_map_content_description,
-                    mapCanvas.matches.joinToString { it.displayName },
+                    zones.joinToString { it.country },
                 )
-            } else {
-                context.getString(R.string.native_range_map_empty)
             }
-        return placed
     }
 
     private fun clearSelectedCountry() {
@@ -244,11 +237,7 @@ class WorldMapView @JvmOverloads constructor(
         private val clipPath = Path()
         private var projection: WorldMapProjection? = null
         private var renderedCountries: List<RenderedCountry> = emptyList()
-        private var suppliedZones: List<CountryZone> = emptyList()
-
-        /** Zones that resolved to bundled geometry, in the order supplied. */
-        var matches: List<RangeMatch> = emptyList()
-            private set
+        private var matches: List<RangeMatch> = emptyList()
         private var selectedCode: String? = null
         private var onCountrySelected: ((String, ZoneStatus?) -> Unit)? = null
         private var onSelectionCleared: (() -> Unit)? = null
@@ -266,9 +255,7 @@ class WorldMapView @JvmOverloads constructor(
             onSelectionCleared = listener
         }
 
-        /** Returns whether any supplied zone resolved to bundled geometry. */
-        fun setZones(zones: List<CountryZone>): Boolean {
-            suppliedZones = zones
+        fun setZones(zones: List<CountryZone>) {
             matches = zones.flatMap { zone ->
                 val matchedCountries = zone.countryCode
                     ?.takeIf { it.isNotBlank() }
@@ -286,7 +273,6 @@ class WorldMapView @JvmOverloads constructor(
             selectedCode = null
             rebuildProjection()
             invalidate()
-            return matches.isNotEmpty()
         }
 
         override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -397,19 +383,13 @@ class WorldMapView @JvmOverloads constructor(
         }
 
         private fun rebuildProjection() {
-            // With no zones at all the widget still shows the whole globe. A
-            // range that supplied zones but placed none of them draws nothing
-            // instead: a world-fitted map highlighting nothing reads as a bug.
-            val points = when {
-                matches.isNotEmpty() -> matches.flatMap { it.geometry.allPoints }
-                suppliedZones.isEmpty() -> data.countries.flatMap { it.allPoints }
-                else -> emptyList()
-            }
-            if (width <= 0 || height <= 0 || points.isEmpty()) {
+            if (width <= 0 || height <= 0 || data.countries.isEmpty()) {
                 projection = null
                 renderedCountries = emptyList()
                 return
             }
+            val highlightedPoints = matches.flatMap { it.geometry.allPoints }
+            val points = highlightedPoints.ifEmpty { data.countries.flatMap { it.allPoints } }
             val updatedProjection = WorldMapProjection.fit(
                 points = points,
                 width = width.toFloat(),
@@ -485,9 +465,16 @@ internal data class CountryGeometry(
             longitudes.span.coerceAtLeast(0.001) * latitudeSpan
         }
     }
+
+    fun contains(point: GeoPoint, centerLongitude: Double): Boolean =
+        polygons.any { polygon ->
+            val outer = polygon.rings.firstOrNull() ?: return@any false
+            pointInRing(point, outer, centerLongitude) &&
+                polygon.rings.drop(1).none { pointInRing(point, it, centerLongitude) }
+        }
 }
 
-internal data class RangeMatch(
+private data class RangeMatch(
     val geometry: CountryGeometry,
     val source: WorldMapView.CountryZone,
     val displayName: String,
@@ -511,10 +498,20 @@ internal data class WorldMapProjection(
     private val centerX: Double,
     private val centerY: Double,
 ) {
+    fun project(point: GeoPoint): PointF {
+        return projectUnwrapped(longitudeDelta(point.longitude, centerLongitude), point.latitude)
+    }
+
     fun projectUnwrapped(longitudeDelta: Double, latitude: Double): PointF {
         val x = centerX + longitudeDelta * scale
         val y = centerY - (mercatorY(latitude) - centerMercatorY) * scale
         return PointF(x.toFloat(), y.toFloat())
+    }
+
+    fun unproject(x: Float, y: Float): GeoPoint {
+        val longitude = wrapLongitude(centerLongitude + (x - centerX) / scale)
+        val mercator = centerMercatorY - (y - centerY) / scale
+        return GeoPoint(longitude, inverseMercatorY(mercator))
     }
 
     companion object {
@@ -581,10 +578,62 @@ internal data class CircularLongitudeBounds(
     }
 }
 
+internal fun pointInRing(
+    point: GeoPoint,
+    ring: List<GeoPoint>,
+    centerLongitude: Double,
+): Boolean {
+    if (ring.size < 3) return false
+    val unwrappedX = ArrayList<Double>(ring.size)
+    var previousX: Double? = null
+    ring.forEach { vertex ->
+        var x = longitudeDelta(vertex.longitude, centerLongitude)
+        previousX?.let { previous -> x = unwrapLongitudeDelta(x, previous) }
+        unwrappedX += x
+        previousX = x
+    }
+    val ringCenterX = (unwrappedX.minOrNull()!! + unwrappedX.maxOrNull()!!) / 2.0
+    val rawPointX = longitudeDelta(point.longitude, centerLongitude)
+    val px = rawPointX + 360.0 * round((ringCenterX - rawPointX) / 360.0)
+    val py = point.latitude
+    var inside = false
+    var previousIndex = ring.lastIndex
+    ring.indices.forEach { currentIndex ->
+        val x1 = unwrappedX[previousIndex]
+        val y1 = ring[previousIndex].latitude
+        val x2 = unwrappedX[currentIndex]
+        val y2 = ring[currentIndex].latitude
+        if (pointOnSegment(px, py, x1, y1, x2, y2)) return true
+        if ((y1 > py) != (y2 > py)) {
+            val intersectionX = (x2 - x1) * (py - y1) / (y2 - y1) + x1
+            if (px < intersectionX) inside = !inside
+        }
+        previousIndex = currentIndex
+    }
+    return inside
+}
+
+private fun pointOnSegment(
+    px: Double,
+    py: Double,
+    x1: Double,
+    y1: Double,
+    x2: Double,
+    y2: Double,
+): Boolean {
+    val cross = (px - x1) * (y2 - y1) - (py - y1) * (x2 - x1)
+    if (abs(cross) > 1e-7) return false
+    return px in min(x1, x2) - 1e-7..max(x1, x2) + 1e-7 &&
+        py in min(y1, y2) - 1e-7..max(y1, y2) + 1e-7
+}
+
 private fun mercatorY(latitude: Double): Double {
     val clamped = latitude.coerceIn(-85.0, 85.0)
     return ln(tan(PI / 4.0 + Math.toRadians(clamped) / 2.0)) * 180.0 / PI
 }
+
+private fun inverseMercatorY(value: Double): Double =
+    Math.toDegrees(2.0 * kotlin.math.atan(kotlin.math.exp(Math.toRadians(value))) - PI / 2.0)
 
 private fun longitudeDelta(longitude: Double, center: Double): Double =
     wrapLongitude(longitude - center)
@@ -619,15 +668,14 @@ internal fun normalizeMapName(value: String): String =
 
 internal class WorldMapData(val countries: List<CountryGeometry>) {
     private val byCode = countries.associateBy { it.code }
-    private val identityIndex: Map<String, List<CountryGeometry>> =
-        countries
-            .flatMap { country -> country.aliases.map { normalizeMapName(it) to country } }
-            .filter { (key, _) -> key.isNotBlank() }
-            .groupBy({ it.first }, { it.second })
-            // Several aliases of one country can normalize to the same key
-            // ("CAN" and the "Can." abbreviation), which would otherwise make
-            // a plain single-country hit look ambiguous below.
-            .mapValues { (_, matched) -> matched.distinctBy(CountryGeometry::code) }
+    private val identityIndex: Map<String, List<CountryGeometry>> = buildMap {
+        countries.forEach { country ->
+            country.aliases.forEach { alias ->
+                val key = normalizeMapName(alias)
+                if (key.isNotBlank()) put(key, getOrElse(key) { emptyList() } + country)
+            }
+        }
+    }
     private val regionIndex: Map<String, List<CountryGeometry>> = buildMap {
         countries.forEach { country ->
             country.regions.forEach { region ->
@@ -645,7 +693,7 @@ internal class WorldMapData(val countries: List<CountryGeometry>) {
     fun match(label: String): List<CountryGeometry> {
         val normalized = normalizeMapName(label)
         if (normalized.isBlank()) return emptyList()
-        resolveIdentity(normalized)?.let { return it }
+        identityIndex[normalized]?.let { return it }
         COUNTRY_ALIASES[normalized]?.let { code -> byCode[code]?.let { return listOf(it) } }
 
         val regionKey = REGION_ALIASES[normalized] ?: normalized
@@ -660,25 +708,7 @@ internal class WorldMapData(val countries: List<CountryGeometry>) {
             .asSequence()
             .filter { it.length >= 4 && Regex("(^| )${Regex.escape(it)}( |$)").containsMatchIn(normalized) }
             .maxByOrNull(String::length)
-        return embedded?.let(::resolveIdentity).orEmpty()
-    }
-
-    /**
-     * The shipped asset packs Natural Earth's SOVEREIGNT/SOV_A3 as identity
-     * aliases (see tools/build_world_map_asset.py, which no longer does), so
-     * "France" also names its dependencies and "Denmark" names Greenland.
-     * Prefer the country that owns the label as its own code or bundled name;
-     * only a label no single country claims keeps the whole group.
-     */
-    private fun resolveIdentity(normalized: String): List<CountryGeometry>? {
-        val candidates = identityIndex[normalized] ?: return null
-        if (candidates.size == 1) return candidates
-        val owners = candidates.filter {
-            normalizeMapName(it.code) == normalized ||
-                normalizeMapName(it.nameEn) == normalized ||
-                normalizeMapName(it.nameRu) == normalized
-        }
-        return if (owners.size == 1) owners else candidates
+        return embedded?.let(identityIndex::get).orEmpty()
     }
 }
 

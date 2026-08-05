@@ -15,6 +15,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.ui.garden.PhotoCompareActivity
 import com.plantdiseases.app.ui.garden.PhotoViewerActivity
+import org.koin.core.component.KoinComponent
 
 /**
  * Photos tab: every scan image + every PHOTO journal entry as a chronological
@@ -23,7 +24,7 @@ import com.plantdiseases.app.ui.garden.PhotoViewerActivity
  */
 class DetailPhotosController(
     private val activity: AppCompatActivity,
-) {
+) : KoinComponent {
 
     /** Render the Photos tab: every scan image + every PHOTO journal
      *  entry as a chronological 3-column grid. Tap → open the

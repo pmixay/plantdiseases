@@ -21,10 +21,9 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
-import javax.inject.Inject
 
 /**
  * Bottom-sheet replacement for the v1 ``showCreatePlantForScanDialog``
@@ -42,11 +41,9 @@ import javax.inject.Inject
  * for the same reason. Networking + repository writes still belong on
  * the host so this fragment stays stateless across configuration changes.
  */
-@AndroidEntryPoint
 class CreatePlantSheet : BottomSheetDialogFragment() {
 
-    @Inject
-    lateinit var scanRepository: ScanRepository
+    private val scanRepository: ScanRepository by inject()
 
     private var scanId: Long = -1
     private var initialName: String? = null

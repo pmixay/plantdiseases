@@ -4,31 +4,30 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.ThemeHelper
-import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.android.ext.android.inject
+import org.koin.android.ext.koin.androidContext
+import org.koin.android.ext.koin.androidLogger
+import org.koin.core.context.GlobalContext
+import org.koin.core.context.startKoin
 
-@HiltAndroidApp
 class PlantDiseasesApp : Application() {
 
-    // All app-scoped singletons now live in the Hilt graph (see
-    // di/AppModule.kt) and are obtained at the call sites via `@Inject`. The
-    // Application only injects what it uses itself — the community uploader
-    // for [launchCommunityUpload]. Hilt's generated Hilt_PlantDiseasesApp
-    // base class injects these fields from inside its onCreate(), which our
-    // onCreate() below calls via super.onCreate() as its very first line —
-    // so both fields are populated before anything past that line runs.
-    @Inject
-    lateinit var communityUploader: CommunityUploader
-
-    @Inject
-    lateinit var scanRepository: com.plantdiseases.app.data.repository.ScanRepository
+    // All app-scoped singletons now live in Koin (see di/AppModule.kt) and are
+    // obtained at the call sites via direct injection. The Application only
+    // injects what it uses itself — the community uploader for
+    // [launchCommunityUpload]. `inject()` is lazy, so nothing resolves before
+    // startKoin() runs below.
+    private val communityUploader: CommunityUploader by inject()
+    private val scanRepository:
+        com.plantdiseases.app.data.repository.ScanRepository by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -123,30 +122,34 @@ class PlantDiseasesApp : Application() {
     }
 
     override fun onCreate() {
-        // Hilt_PlantDiseasesApp (the generated base class super.onCreate()
-        // calls into) injects communityUploader/scanRepository above before
-        // returning here — unlike a process-wide service-locator container,
-        // each Application instance gets its own freshly-built Dagger
-        // component, so Robolectric reinstantiating this Application across
-        // test classes in one JVM is naturally safe: there is no shared
-        // global container to double-initialise.
         super.onCreate()
-        // NB: do NOT wire a HiltWorkerFactory / Configuration.Provider here.
-        // It would call WorkManager.initialize(), but the default
-        // androidx.startup WorkManagerInitializer (still enabled — the
-        // manifest never removed it) already initialised WorkManager from the
-        // InitializationProvider that runs *before* Application.onCreate. The
-        // second init throws "WorkManager is already initialized" and crashes
-        // every launch on a real device. Robolectric doesn't run the startup
-        // provider, so the double-init never fired in unit tests — it only
-        // crashed on-device. Today's workers (OpinionCheckWorker,
-        // PlantReminderWorker) use the default WorkerFactory and resolve
-        // their deps via EntryPointAccessors (see di/AppEntryPoint.kt), not
-        // Hilt constructor injection, so HiltWorkerFactory isn't needed. If a
-        // future worker needs constructor injection, add
-        // androidx.hilt:hilt-work + a Configuration.Provider *and* remove the
+        // Start Koin before anything resolves an injected singleton. Guarded
+        // with getOrNull() because Robolectric reinstantiates this Application
+        // across test classes in one JVM, and a second startKoin() on the
+        // process-wide GlobalContext would throw.
+        //
+        // NB: do NOT add workManagerFactory() here. It calls
+        // WorkManager.initialize(), but the default androidx.startup
+        // WorkManagerInitializer (still enabled — the manifest never removed it)
+        // already initialised WorkManager from the InitializationProvider that
+        // runs *before* Application.onCreate. The second init throws
+        // "WorkManager is already initialized" and crashes every launch on a
+        // real device. Robolectric doesn't run the startup provider, so the
+        // double-init never fired in unit tests — it only crashed on-device.
+        // Today's workers (OpinionCheckWorker, PlantReminderWorker) use the
+        // default WorkerFactory and resolve their deps as KoinComponents
+        // (`by inject()` off the global Koin), not Koin constructor injection,
+        // so the Koin WorkerFactory isn't needed. If a future worker needs
+        // constructor injection, re-add workManagerFactory() *and* remove the
         // default WorkManagerInitializer in AndroidManifest.xml so only one
         // party initialises WorkManager.
+        if (GlobalContext.getOrNull() == null) {
+            startKoin {
+                androidLogger()
+                androidContext(this@PlantDiseasesApp)
+                modules(appModule)
+            }
+        }
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()

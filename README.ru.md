@@ -242,3 +242,5 @@ Unlicense распространяется на собственный код п
 (DINOv2, Ultralytics YOLOv8), наборы данных (PlantVillage, PlantDoc,
 iNaturalist, COCO, Open Images) и runtime-библиотеки остаются под своими
 лицензиями — см. [`NOTICE`](NOTICE) и [`THIRD_PARTY.md`](THIRD_PARTY.md).
+</content>
+</invoke>

@@ -21,7 +21,6 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
-import com.plantdiseases.app.ui.common.SpeciesInfoCardView
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
@@ -31,10 +30,9 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.TelemetryIds
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import android.widget.Toast
-import javax.inject.Inject
 
 /**
  * Community "second opinion" sheet. Opened from a low-confidence result
@@ -45,11 +43,9 @@ import javax.inject.Inject
  * State-light and recreation-safe: the only inputs are stashed in arguments,
  * so a process-death restore reloads cleanly instead of crashing.
  */
-@AndroidEntryPoint
 class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
-    @Inject
-    lateinit var scanRepository: ScanRepository
+    private val scanRepository: ScanRepository by inject()
 
     private var scanId: String = ""
     private var currentName: String? = null
@@ -67,7 +63,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var listContainer: LinearLayout? = null
     private var emptyView: TextView? = null
     private var metaView: TextView? = null
-    private var speciesCard: SpeciesInfoCardView? = null
     private var voteRow: View? = null
     private var chipGroup: ChipGroup? = null
     private var noteInput: TextInputEditText? = null
@@ -92,7 +87,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             return
         }
 
-        speciesCard = view.findViewById(R.id.card_opinion_species)
         ownerStatusRow = view.findViewById(R.id.ll_opinion_owner_status)
         ownerStatusText = view.findViewById(R.id.tv_opinion_owner_status)
         stopRequestBtn = view.findViewById(R.id.btn_opinion_stop_request)
@@ -187,24 +181,30 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         loadOpinions()
     }
 
-    /** Model confidence line ("Confidence 87%"), hidden when unknown. The
-     *  detected species is deliberately absent — the species card right below
-     *  already names it, so repeating it here only crowded the diagnosis. */
+    /** Confidence + detected species line ("Confidence 87% · Monstera (92%)"),
+     *  hidden when neither is known. */
     private fun renderMeta() {
         val meta = metaView ?: return
         val confidence = arguments?.getFloat(ARG_CONFIDENCE, -1f) ?: -1f
         val species = arguments?.getString(ARG_SPECIES)?.takeIf { it.isNotBlank() }
+        val speciesScore = arguments?.getFloat(ARG_SPECIES_SCORE, -1f) ?: -1f
+        val parts = mutableListOf<String>()
         if (confidence in 0f..1f) {
-            meta.visibility = View.VISIBLE
-            meta.text = getString(R.string.community_opinion_confidence, Math.round(confidence * 100))
-        } else {
-            meta.visibility = View.GONE
+            parts += getString(R.string.community_opinion_confidence, Math.round(confidence * 100))
         }
-
-        // The community feed carries the PlantNet binomial but no common name,
-        // so the card resolves the display name and photo itself. It hides
-        // itself when `species` is null.
-        speciesCard?.bind(species, null)
+        if (species != null) {
+            parts += if (speciesScore in 0f..1f) {
+                getString(R.string.community_opinion_species_fmt, species, Math.round(speciesScore * 100))
+            } else {
+                species
+            }
+        }
+        if (parts.isEmpty()) {
+            meta.visibility = View.GONE
+        } else {
+            meta.visibility = View.VISIBLE
+            meta.text = parts.joinToString(" · ")
+        }
     }
 
     /** Show the shared scan photo (borrowed from the scan-result screen) when
@@ -609,6 +609,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_DISEASE_KEY = "arg_disease_key"
         private const val ARG_CONFIDENCE = "arg_confidence"
         private const val ARG_SPECIES = "arg_species"
+        private const val ARG_SPECIES_SCORE = "arg_species_score"
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
 
@@ -641,8 +642,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         )
 
         /** Open the community scan detail for a feed/carousel item: shows the
-         *  model's diagnosis + confidence, the species card, then Agree /
-         *  Disagree. */
+         *  model's diagnosis + confidence + species, then Agree / Disagree. */
         fun show(
             fm: FragmentManager,
             item: com.plantdiseases.app.data.model.CommunityScanItem,
@@ -655,6 +655,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_DISEASE_KEY to item.disease,
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_SPECIES to item.species,
+                    ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
                     ARG_THUMB to item.thumbPath,
                 )
             }.show(fm, TAG)
@@ -677,6 +678,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_DISEASE_KEY to item.disease,
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_SPECIES to item.species,
+                    ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
                     ARG_THUMB to item.thumbPath,
                     ARG_VIEW_ONLY to true,
                 )

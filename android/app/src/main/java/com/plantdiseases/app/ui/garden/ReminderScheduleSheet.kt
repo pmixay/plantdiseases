@@ -32,9 +32,8 @@ import com.plantdiseases.app.databinding.SheetReminderScheduleBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.android.ext.android.inject
 
 /**
  * Plant reminders bottom sheet — generic-reminder edition.
@@ -51,7 +50,6 @@ import javax.inject.Inject
  * fertilise + check preset reminders exactly like the old fixed rows,
  * with saved user customisations always winning over server defaults.
  */
-@AndroidEntryPoint
 class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
     private var _binding: SheetReminderScheduleBinding? = null
@@ -69,8 +67,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
      */
     private var carePlanDefaults: CarePlanResponse? = null
 
-    @Inject
-    lateinit var plantRepository: PlantRepository
+    private val plantRepository: PlantRepository by inject()
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()

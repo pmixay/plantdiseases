@@ -12,6 +12,7 @@
     <color name="primary_light">#DCFCE7</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#FFFFFF</color>
+    <color name="on_primary_secondary">#CCFFFFFF</color>
     <!-- ``primary_dark`` / ``secondary`` / ``on_secondary`` are
          consumed by ``values/themes.xml`` (Material 3 colorPrimaryDark
          / colorSecondary / colorOnSecondary attributes); they have no
@@ -89,13 +90,12 @@
     <color name="disease_red_bg">#FEE2E2</color>
     <color name="warning_amber">#D97706</color>
     <color name="warning_amber_bg">#FEF3C7</color>
-    <!-- Middle stop for the uncertain-diagnosis red → orange → yellow card. -->
-    <color name="confidence_gradient_mid">#FDE8C8</color>
     <color name="neutral_blue">#2563EB</color>
     <color name="neutral_blue_bg">#DBEAFE</color>
 
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#2563EB</color>
+    <color name="lighting_yellow">#F59E0B</color>
     <!-- Guide-list lighting (sun) icon. Same amber as lighting_yellow
          in light mode; values-night brightens it because amber-400 on
          the dark amber chip background read as near-invisible. -->
@@ -114,6 +114,24 @@
     <color name="shimmer_base">#E5E7EB</color>
     <color name="shimmer_highlight">#F9FAFB</color>
     <color name="camera_control_scrim">#66000000</color>
+
+    <!-- ─── Lunar calendar day ratings ───────────────────────────
+         Filled circle + matching text colour per rating. Mirrors the
+         healthy/warning/disease semantic ramp so the calendar reads as
+         part of the same design system. -->
+    <color name="lunar_good_bg">#DCFCE7</color>
+    <color name="lunar_good_fg">#15803D</color>
+    <color name="lunar_neutral_bg">#FEF3C7</color>
+    <color name="lunar_neutral_fg">#B45309</color>
+    <color name="lunar_bad_bg">#FEE2E2</color>
+    <color name="lunar_bad_fg">#B91C1C</color>
+
+    <!-- ─── MoonPhaseView ──────────────────────────────────────── -->
+    <color name="moon_lit_hi">#FFFDF6</color>
+    <color name="moon_lit_lo">#D6D2C6</color>
+    <color name="moon_dark">#242B31</color>
+    <color name="moon_mare">#8E8A7E</color>
+    <color name="moon_glow">#33FFFFFF</color>
 
     <!-- ─── AI Doctor chat bubbles ───────────────────────────────
          Bot bubble is neutral grey for legibility; user bubble carries

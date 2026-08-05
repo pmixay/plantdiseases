@@ -20,6 +20,8 @@ import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns the "was this diagnosis right?" card and the full feedback round-trip:
@@ -30,8 +32,8 @@ import kotlinx.coroutines.withContext
 class FeedbackController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val repository: ScanRepository,
-) {
+) : KoinComponent {
+    private val repository: ScanRepository by inject()
 
     /**
      * Register the correction-sheet result listener in the activity's

@@ -14,8 +14,10 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
-import com.plantdiseases.app.di.appEntryPoint
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Fires when a reminder's WorkManager interval elapses. Persists a
@@ -29,17 +31,13 @@ import com.plantdiseases.app.ui.garden.PlantDetailActivity
  *
  * The event id is threaded through both pending-intents so the
  * receivers know which row to resolve.
- *
- * Resolves its repository via [appEntryPoint] rather than Hilt-assisted
- * construction (`HiltWorkerFactory`) — see the comment on
- * [com.plantdiseases.app.di.AppEntryPoint] for why.
  */
 class PlantReminderWorker(
     private val context: Context,
     params: WorkerParameters,
-) : CoroutineWorker(context, params) {
+) : CoroutineWorker(context, params), KoinComponent {
 
-    private val plantRepository = appEntryPoint(context).plantRepository()
+    private val plantRepository: PlantRepository by inject()
 
     @SuppressLint("MissingPermission") // permission checked at line below before notify()
     override suspend fun doWork(): Result {

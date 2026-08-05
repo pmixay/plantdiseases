@@ -65,7 +65,6 @@ from starlette.responses import Response as StarletteResponse
 try:
     from . import labeling
     from .ai_services import (  # type: ignore[import-not-found]
-        care_plan_metrics_snapshot,
         chat_metrics_snapshot,
         chat_reply,
         compare_progression_history,
@@ -233,7 +232,6 @@ try:
 except ImportError:
     import labeling
     from ai_services import (
-        care_plan_metrics_snapshot,
         chat_metrics_snapshot,
         chat_reply,
         compare_progression_history,
@@ -1708,7 +1706,6 @@ async def metrics():
         "uptime_seconds": round(uptime, 1),
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
-        "care_plan_polish": care_plan_metrics_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),
     }

@@ -2,15 +2,11 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <!-- app:iconTint, not android:iconTint: the toolbar inflates this through
-         AppCompat's SupportMenuInflater, which only reads the support attr —
-         the framework one was silently dropped, leaving a black bin on the
-         green header. -->
     <item
         android:id="@+id/action_delete"
         android:icon="@drawable/ic_delete"
+        android:iconTint="@color/toolbar_title"
         android:title="@string/delete_scan"
-        app:iconTint="@color/toolbar_title"
         app:showAsAction="ifRoom" />
 
 </menu>

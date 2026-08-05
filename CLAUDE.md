@@ -14,13 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Three deliverables, each with its own toolchain:
+Two independent deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
-| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
-| `admin-panel/` | Python 3.11, FastAPI, paramiko, vanilla JS | Loopback-only operator console that administers the live VPS over SSH. Internal tool, not shipped to users. **Not covered by CI** — run its tests by hand. |
+| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
 
 The bilingual privacy policy is a single standalone page, `privacy.html` (repo
 root) — the canonical data-disclosure surface referenced by the app's consent
@@ -29,9 +28,8 @@ screen.
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next
 steps), `docs/DATASET_LABELING_PLAN.md` (data loop),
-`server/models/MODEL_CARD.md` (**stale — see the roadmap's model track**),
-`server/train_notebook.ipynb` (full training recipe), `admin-panel/README.md`
-(its security model + deployment setup).
+`server/models/MODEL_CARD.md`, `server/train_notebook.ipynb` (full
+training recipe).
 
 ## Common commands
 
@@ -78,11 +76,8 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   else a debug-key fallback so the APK still installs). `lint.abortOnError = true`.
 
 ### CI (`.github/workflows/ci.yml`)
-Push-only, triggers on `main`, `claude/**`, `work/**`. A `paths-filter` job runs
-the **android** and **server** jobs only when their trees (or the workflow)
-change. Two gaps worth knowing: `admin-panel/` has **no job at all**, and
-`codex/**` branches match no trigger — work merged from them reaches `main`
-with zero CI.
+Push-only, triggers on `main`/`master`/`claude/**`. A `paths-filter` job runs the
+**android** and **server** jobs only when their trees (or the workflow) change.
 
 ## ML work — use the bundled skill
 
@@ -119,7 +114,7 @@ distilled → TFLite INT8, runs **on-device/offline** in the app), `gamma` (prod
 DINOv2 ViT-S/14, the default), `frontier` (DINOv2 ViT-B/14, **off by default** —
 needs a GPU host; returns a graceful `available:false` when disabled).
 
-**Server module map** (`main.py` is the HTTP layer — ~185KB of routes, middleware,
+**Server module map** (`main.py` is the HTTP layer — ~150KB of routes, middleware,
 validation, metrics — and wires everything together):
 - `pipeline.py` / `detector.py` / `classifier.py` / `ood.py` / `conformal.py` — inference + calibration
 - `ai_services.py` — PlantNet species ID, OpenRouter chat doctor, care plans, progression (all **optional**, graceful without keys)
@@ -128,20 +123,12 @@ validation, metrics — and wires everything together):
 - `community.py` — nearby-scans feed + second-opinion features
 - `labeling.py` / `labeling_auto.py` — data-collection/labeling loop; `tools/` has offline eval + data export
 - `push.py` — FCM push (lazy/no-op without credentials)
-- `telemetry.py` — anonymous error reports (`TELEMETRY_*` keys; stores a hashed client IP)
-- `plant_photos.py` / `popular_plants.py` / `countries.py` — photo proxy/cache, the popular-plants bundle, country lookups
 - `config.py` — config loader (see below)
-
-**One species surface:** species information lives on `SpeciesDetailActivity`
-alone. Every other screen references a species through the reusable
-`ui/common/SpeciesInfoCardView` (Wikipedia photo + name + description + "more
-about this species"), which is embedded on the scan result, species identify
-and the community opinion sheet. Do not add species cards elsewhere.
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`
 — now the **Ktor `PlantApiClient`** over an OkHttp engine; the Retrofit interface was removed,
-`local/Database.kt` Room), `di/AppModule.kt` (**Hilt** singletons), `util/` helpers (incl.
+`local/Database.kt` Room), `di/AppModule.kt` (**Koin** singletons), `util/` helpers (incl.
 `AquaClassifier`/`AquaInference` for on-device TFLite), `worker/` (WorkManager reminders/opinion
 polling). DTOs in `data/model/Models.kt` are `@Serializable` (kotlinx). Bilingual via
 `res/values*/strings.xml`. The server URL is baked at build time into

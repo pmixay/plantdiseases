@@ -79,7 +79,6 @@
 
         <!-- Settings: language + theme -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/settings_card"
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -260,61 +259,6 @@
 
             </LinearLayout>
 
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/replay_guidance_row"
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:clickable="true"
-            android:focusable="true"
-            android:minHeight="64dp"
-            android:contentDescription="@string/replay_guidance_title">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_rotate"
-                    app:tint="@color/primary" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/space_md"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/replay_guidance_title"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xxs"
-                        android:text="@string/replay_guidance_subtitle"
-                        android:textColor="@color/on_surface_secondary"
-                        android:textSize="@dimen/text_body_sm" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_chevron_right"
-                    app:tint="@color/on_surface_secondary" />
-            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
 
@@ -567,6 +511,50 @@
 
         <!-- Community contributions: delete-my-data. Enabling/disabling
              community now lives inside the community screen itself. -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/App.GlassCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/community_toggle_title"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:accessibilityHeading="true" />
+
+                <!-- Community sharing is opt-in and managed inside the community
+                     screen; Profile keeps only the delete-my-shared-data control
+                     (your data rights, independent of the on/off state). -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xxs"
+                    android:text="@string/community_profile_subtitle"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary"
+                    android:lineSpacingExtra="1dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_delete_community"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:layout_marginStart="-8dp"
+                    android:text="@string/community_delete_title"
+                    android:textColor="@color/disease_red"
+                    app:icon="@drawable/ic_delete"
+                    app:iconTint="@color/disease_red" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Footer: version. The "clear all history" action moved to the
              Gallery tab's top-app-bar basket, next to the scans it wipes.
              The version row doubles as the HIDDEN admin entry: 7 quick taps

@@ -36,6 +36,7 @@ object ResponseCache {
     // entry whose value is truly immutable.
     val TTL_SPECIES_MS: Long = TimeUnit.DAYS.toMillis(7)
     val TTL_CARE_PLAN_MS: Long = TimeUnit.DAYS.toMillis(7)
+    val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(1)
 
     // A species whose AI "common problems" came back unavailable (no key /
     // quota / transient failure → the UI renders the bundled offline guide) is

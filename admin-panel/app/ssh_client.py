@@ -15,6 +15,7 @@ import paramiko
 
 from .models import ConnectionRequest
 
+
 MAX_OUTPUT_BYTES = 512 * 1024
 CONNECT_ATTEMPTS = 3
 CONNECT_RETRY_DELAY_SECONDS = 0.6
@@ -157,10 +158,6 @@ class SshManager:
                 client = self._clients.pop(session_id, None)
             if client:
                 client.close()
-        # Drop the per-session lock itself, otherwise the map grows for the
-        # life of the process (one entry per session ever created).
-        with self._lock:
-            self._session_locks.pop(session_id, None)
 
     def get(self, session_id: str) -> StoredConnection:
         with self._lock:
@@ -235,13 +232,6 @@ class SshManager:
         if result["exit_code"] != 0:
             message = result["stderr"].strip() or "remote database helper failed"
             raise SshOperationError(message[-2000:])
-        if result.get("stdout_truncated"):
-            # Blaming the helper for "invalid JSON" here sent operators looking
-            # in the wrong place: the payload was cut mid-string by the
-            # transfer cap, which is what actually needs raising.
-            raise SshOperationError(
-                f"Remote helper output exceeded the {MAX_OUTPUT_BYTES // 1024} KB transfer cap",
-            )
         try:
             payload = json.loads(result["stdout"])
         except json.JSONDecodeError as exc:

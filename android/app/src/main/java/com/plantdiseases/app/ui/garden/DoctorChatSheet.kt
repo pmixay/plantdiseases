@@ -39,24 +39,19 @@ import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.localizedSpeciesName
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private var _binding: SheetDoctorChatBinding? = null
     private val binding get() = _binding!!
 
-    @Inject
-    lateinit var plantRepository: PlantRepository
-
-    @Inject
-    lateinit var scanRepository: ScanRepository
+    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository by inject()
 
     // The chat runs in one of two modes:
     //   * plant mode — launched from the Garden plant detail; chat history

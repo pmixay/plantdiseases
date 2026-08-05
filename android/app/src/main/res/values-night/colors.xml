@@ -10,6 +10,7 @@
     <color name="primary_light">#14532D</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#052E16</color>
+    <color name="on_primary_secondary">#B0052E16</color>
     <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
          colorSecondary / colorOnSecondary attributes. -->
     <color name="primary_dark">#16A34A</color>
@@ -67,12 +68,12 @@
     <color name="disease_red_bg">#3A1B1B</color>
     <color name="warning_amber">#FBBF24</color>
     <color name="warning_amber_bg">#3A2E1B</color>
-    <color name="confidence_gradient_mid">#3A251B</color>
     <color name="neutral_blue">#60A5FA</color>
     <color name="neutral_blue_bg">#1E2D40</color>
 
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#60A5FA</color>
+    <color name="lighting_yellow">#FBBF24</color>
     <!-- Brighter sun icon for the Guide list in dark mode (amber-300):
          the light-mode amber sank into the dark chip background. -->
 
@@ -89,6 +90,22 @@
     <color name="search_highlight">#665C3A</color>
     <color name="shimmer_base">#192118</color>
     <color name="shimmer_highlight">#243023</color>
+
+    <!-- Lunar calendar (dark): deep fills with bright glyph text, the
+         inverse of the light ramp — matches every other dark chip. -->
+    <color name="lunar_good_bg">#14532D</color>
+    <color name="lunar_good_fg">#4ADE80</color>
+    <color name="lunar_neutral_bg">#3F2A06</color>
+    <color name="lunar_neutral_fg">#FBBF24</color>
+    <color name="lunar_bad_bg">#450A0A</color>
+    <color name="lunar_bad_fg">#F87171</color>
+
+    <!-- ─── MoonPhaseView (dark) ───────────────────────────────── -->
+    <color name="moon_lit_hi">#F2EFE6</color>
+    <color name="moon_lit_lo">#B9B4A6</color>
+    <color name="moon_dark">#161B20</color>
+    <color name="moon_mare">#7A766B</color>
+    <color name="moon_glow">#22FFFFFF</color>
 
     <!-- ─── AI Doctor chat bubbles (dark) ───────────────────────── -->
     <color name="chat_bubble_bot_bg">#1F2820</color>

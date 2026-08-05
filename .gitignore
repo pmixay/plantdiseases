@@ -12,10 +12,10 @@ server/venv/
 server/__pycache__/
 server/*.pyc
 server/data/
-# Model weights + calibration artefacts are NOT committed and are never
-# auto-downloaded: the server is fail-fast and refuses to boot without them
-# (see DEPLOYMENT.md). Keep only the dir placeholder and the human-authored
-# MODEL_CARD.md under version control.
+# Model weights + calibration artefacts are NOT committed — the
+# always-online server fetches the bundle on first boot from
+# MODEL_BUNDLE_URL (see server/model_fetch.py). Keep only the dir
+# placeholder and the human-authored MODEL_CARD.md under version control.
 server/models/*
 !server/models/.gitkeep
 !server/models/MODEL_CARD.md
@@ -66,10 +66,3 @@ server/static/aqua/classes.json
 server/labeling.db*
 server/labeling_images/
 server/labeling_exports/
-
-# Python bytecode from android/tools helper scripts
-android/tools/__pycache__/
-
-# Claude Code agent worktrees (isolated checkouts for background subagents;
-# never a deliverable, sometimes actively lock-held by a running agent)
-.claude/worktrees/

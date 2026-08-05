@@ -7,6 +7,7 @@
     <ID>ImplicitDefaultLocale:DetailExtraCardsController.kt$DetailExtraCardsController$String.format("%.1f", s.meanGapDays)</ID>
     <ID>UnusedParameter:DetailExtraCardsController.kt$DetailExtraCardsController$scans: List&lt;ScanEntity&gt;</ID>
     <ID>VariableNaming:CameraFragment.kt$CameraFragment$private val KEY_GRID_OVERLAY = "grid_overlay_enabled"</ID>
+    <ID>VariableNaming:CameraFragment.kt$CameraFragment$private val KEY_TIPS_SEEN = "scan_tips_seen"</ID>
     <ID>VariableNaming:CameraFragment.kt$CameraFragment$private val PREFS_NAME = "plantdiseases_prefs"</ID>
     <ID>VariableNaming:GuideFragment.kt$GuideFragment$private val KEY_RECENT_SEARCHES = "recent_searches"</ID>
     <ID>VariableNaming:GuideFragment.kt$GuideFragment$private val MAX_RECENT_SEARCHES = 5</ID>

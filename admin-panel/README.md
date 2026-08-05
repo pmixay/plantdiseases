@@ -12,8 +12,8 @@ Prerequisite: Python 3.11 or newer on the administrator's computer.
 Linux or macOS:
 
 ```bash
-chmod +x launch.sh
-./launch.sh
+chmod +x start.sh
+./start.sh
 ```
 
 Windows:

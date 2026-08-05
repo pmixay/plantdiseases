@@ -15,6 +15,8 @@ import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,10 +25,9 @@ import java.io.FileOutputStream
  * scan photo with the diseased region highlighted) plus a text summary, with a
  * graceful text-only fallback when the image can't be decoded/composed.
  */
-class ShareController(
-    private val activity: AppCompatActivity,
-    private val scanRepository: ScanRepository,
-) {
+class ShareController(private val activity: AppCompatActivity) : KoinComponent {
+
+    private val scanRepository: ScanRepository by inject()
 
     fun share(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val shareText = buildString {

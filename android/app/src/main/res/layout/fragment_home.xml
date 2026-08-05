@@ -15,11 +15,12 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- No offline strip here: everything on this feed still renders offline,
-         from the bundled catalogs or the last cached /api/popular bundle. What
-         the user needs to know is narrower — that the carousels are showing
-         saved data — and that is said inline on the carousel itself
-         (tv_trending_scope), next to the content it actually applies to. -->
+    <!-- Fixed above the scroll content, so the state remains visible at every
+         scroll position without covering the page title. -->
+    <com.plantdiseases.app.ui.common.OfflineNoticeView
+        android:id="@+id/offline_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/home_scroll"
@@ -96,7 +97,6 @@
 
         <!-- Hero actions -->
         <LinearLayout
-            android:id="@+id/home_primary_actions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"
@@ -196,7 +196,6 @@
 
         <!-- Compact tools row -->
         <LinearLayout
-            android:id="@+id/home_quick_tools"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One day cell in the lunar calendar grid. Three independent layers so
+    "today", "selected" and "rating" — three orthogonal states — can each be
+    shown or hidden without one clobbering another (the previous single-view
+    cell could only show one at a time). Built by LunarCalendarView.buildDayCell.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="36dp"
+    android:layout_height="36dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <View
+        android:id="@+id/lunar_cell_fill"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <View
+        android:id="@+id/lunar_cell_ring"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_lunar_day_selected"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/lunar_cell_day"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:textSize="@dimen/text_body" />
+
+    <View
+        android:id="@+id/lunar_cell_today_dot"
+        android:layout_width="4dp"
+        android:layout_height="4dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="3dp"
+        android:background="@drawable/bg_lunar_today_dot"
+        android:visibility="gone" />
+</FrameLayout>

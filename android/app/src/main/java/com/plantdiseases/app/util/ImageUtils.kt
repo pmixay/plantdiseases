@@ -358,27 +358,6 @@ object ImageUtils {
     }
 
     /**
-     * Relative age with sub-day granularity ("Just now", "5 min ago",
-     * "2 hr ago"), handing off to [formatRelativeDate] from a day out so a
-     * fresh scan reads as "2 hr ago" instead of a wall-clock stamp. Future
-     * timestamps (clock skew) clamp to "Just now" rather than going negative.
-     */
-    fun formatRelativeTime(context: android.content.Context, timestamp: Long): String {
-        val diff = System.currentTimeMillis() - timestamp
-        val minutes = diff / (1000 * 60)
-        val hours = diff / (1000 * 60 * 60)
-
-        return when {
-            minutes < 1 -> context.getString(com.plantdiseases.app.R.string.time_just_now)
-            minutes < 60 ->
-                context.getString(com.plantdiseases.app.R.string.time_minutes_ago, minutes.toInt())
-            hours < 24 ->
-                context.getString(com.plantdiseases.app.R.string.time_hours_ago, hours.toInt())
-            else -> formatRelativeDate(context, timestamp)
-        }
-    }
-
-    /**
      * Format timestamp as relative date ("Today", "Yesterday", "3 days ago").
      */
     fun formatRelativeDate(context: android.content.Context, timestamp: Long): String {

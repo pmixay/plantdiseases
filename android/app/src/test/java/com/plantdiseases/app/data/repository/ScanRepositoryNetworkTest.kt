@@ -171,6 +171,35 @@ class ScanRepositoryNetworkTest {
         assertThat(result.exceptionOrNull()?.message).contains("Server error")
     }
 
+    // --- GET /api/health (Ktor) ---
+
+    @Test
+    fun health_success_parsesBodyAndGets() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"ok","version":"1.4","num_classes":9}"""),
+        )
+
+        val result = runBlocking { repo.checkServerHealth() }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.status).isEqualTo("ok")
+        assertThat(result.getOrNull()?.numClasses).isEqualTo(9)
+
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("GET")
+        assertThat(request.path).isEqualTo("/api/health")
+    }
+
+    @Test
+    fun health_500_mapsToGenericFailure() {
+        server.enqueue(MockResponse().setResponseCode(500))
+        val result = runBlocking { repo.checkServerHealth() }
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("Server error")
+    }
+
     // --- POST /api/symptom-diagnose (Ktor) ---
 
     @Test
@@ -665,6 +694,16 @@ class ScanRepositoryNetworkTest {
         val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
         assertThat(counts).isEmpty()
         assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun deleteCommunityContributions_success_onDelete() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val result = runBlocking { repo.deleteCommunityContributions("user-9") }
+        assertThat(result.isSuccess).isTrue()
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("DELETE")
+        assertThat(req.path).isEqualTo("/api/community/user/user-9")
     }
 
     @Test

@@ -24,19 +24,15 @@ MAGIC = b"NEWM"
 VERSION = 1
 COORDINATE_SCALE = 100_000
 
-# Identity fields name the feature itself. SOVEREIGNT/SOV_A3 are deliberately
-# NOT here: they name the *sovereign*, so every dependency would answer to it
-# ("France" -> France + New Caledonia + the French Southern Territories, which
-# then fits the map to a ~200-degree span). The shipped
-# app/src/main/assets/natural_earth_countries.bin predates this fix and still
-# carries those aliases; WorldMapData.match works around it on the read side.
 IDENTITY_FIELDS = (
     "ADM0_A3",
     "ISO_A2",
     "ISO_A3",
+    "SOV_A3",
     "NAME",
     "NAME_LONG",
     "ADMIN",
+    "SOVEREIGNT",
     "ABBREV",
     "FORMAL_EN",
     "NAME_CIAWF",

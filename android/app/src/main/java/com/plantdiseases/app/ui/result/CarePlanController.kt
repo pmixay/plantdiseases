@@ -13,19 +13,21 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns the server-side care-plan card (/api/care-plan): inserts it after the
- * AI Plant Doctor action, fetches a species-specific plan (or a locally
+ * Treatment/Prevention card, fetches a species-specific plan (or a locally
  * computed one for offline Aqua scans), and hands an accepted plan off to the
  * reminder scheduler.
  */
 class CarePlanController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val scanRepository: ScanRepository,
-    private val plantRepository: PlantRepository,
-) {
+) : KoinComponent {
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
     private var card: CarePlanCardView? = null
 
     fun bind(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -34,17 +36,15 @@ class CarePlanController(
             ?: scan.diseaseName.lowercase().replace(' ', '_')
 
         // Reuse a single card across re-binds, inserted just after the
-        // doctor / second-opinion action row so identity and the follow-up
-        // entry points remain above the longer care details.
+        // Treatment / Prevention card so the "what's wrong → how to treat →
+        // ongoing care" reading order stays intact.
         val view = card ?: CarePlanCardView(activity).also { fresh ->
-            // Keyed to the diagnosis, not the species baseline.
-            fresh.isCurePlan = true
             card = fresh
             fresh.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dpToPx() }
-            val anchorIdx = container.indexOfChild(binding.resultActionRow)
+            val anchorIdx = container.indexOfChild(binding.cardTreatmentPrevention)
                 .takeIf { it >= 0 } ?: (container.childCount - 1)
             container.addView(fresh, anchorIdx + 1)
         }

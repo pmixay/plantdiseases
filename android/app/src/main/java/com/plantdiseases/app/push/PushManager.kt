@@ -7,10 +7,12 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
-import com.plantdiseases.app.di.appEntryPoint
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Firebase Cloud Messaging bootstrap + token registration.
@@ -20,13 +22,11 @@ import kotlinx.coroutines.launch
  * (set at build time from your Firebase project). When those values are blank
  * — an unconfigured build — everything here no-ops and FCM stays dormant; the
  * WorkManager opinion poll remains the fallback.
- *
- * A plain Kotlin `object` — not an Android framework component — so Hilt
- * can't field-inject it via `@AndroidEntryPoint`; it resolves its repository
- * via [com.plantdiseases.app.di.AppEntryPoint] instead, same as the workers.
  */
-object PushManager {
+object PushManager : KoinComponent {
     private const val TAG = "PushManager"
+
+    private val scanRepository: ScanRepository by inject()
 
     private fun isConfigured(): Boolean =
         BuildConfig.FCM_APP_ID.isNotBlank() &&
@@ -64,7 +64,6 @@ object PushManager {
         if (!ensureFirebase(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
-        val scanRepository = appEntryPoint(ctx).scanRepository()
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener

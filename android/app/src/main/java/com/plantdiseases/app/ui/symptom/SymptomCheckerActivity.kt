@@ -25,10 +25,8 @@ import com.plantdiseases.app.databinding.ActivitySymptomCheckerBinding
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.onConnectivityChanged
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.android.ext.android.inject
 
 /**
  * No-photo symptom checker — the fallback shown when the camera/ML pipeline
@@ -40,21 +38,15 @@ import javax.inject.Inject
  * its limits: a sparse/weak result shows a "take a photo for a reliable
  * diagnosis" nudge.
  */
-@AndroidEntryPoint
 class SymptomCheckerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySymptomCheckerBinding
 
-    @Inject
-    lateinit var scanRepository: ScanRepository
+    private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
-    @Inject
-    lateinit var connectivity: ConnectivityObserver
-
-    // Selected option per question id. The submit button enables at >= 2,
-    // and only while the scoring server is reachable.
+    // Selected option per question id. The submit button enables at >= 2.
     private val answers = linkedMapOf<String, String>()
-    private var isOffline = false
 
     private data class Option(val id: String, val labelRes: Int)
     private data class Question(val id: String, val titleRes: Int, val options: List<Option>)
@@ -151,14 +143,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
             setNavigationOnClickListener { finish() }
         }
 
-        binding.offlineNotice.observe(this, connectivity.isOnline)
-        // The answers are scored server-side, so offline there is nothing to
-        // submit them to. Keep the questionnaire usable — the user can still
-        // fill it in — but hold the submit button until we can actually send.
-        onConnectivityChanged(connectivity.isOnline) { online ->
-            isOffline = !online
-            updateSubmitState()
-        }
+        binding.offlineNotice.observe(this, connectivity)
 
         buildQuestions()
         binding.symptomSubmit.setOnClickListener { submit() }
@@ -232,9 +217,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
 
     private fun updateSubmitState() {
         val enough = answers.size >= MIN_ANSWERS
-        binding.symptomSubmit.isEnabled = enough && !isOffline
-        // The offline strip above already explains why; the hint stays about
-        // the one thing the user can act on — answering more questions.
+        binding.symptomSubmit.isEnabled = enough
         binding.symptomHint.visibility = if (enough) View.GONE else View.VISIBLE
     }
 
@@ -251,10 +234,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
             binding.symptomProgress.visibility = View.GONE
             result.onSuccess { renderResults(it.results, it.lowConfidence) }
                 .onFailure {
-                    // Back through the gate, not straight to enabled: if the
-                    // connection is what failed, re-arming Submit just invites
-                    // a second doomed request.
-                    updateSubmitState()
+                    binding.symptomSubmit.isEnabled = true
                     Toast.makeText(
                         this@SymptomCheckerActivity,
                         R.string.symptom_error,
