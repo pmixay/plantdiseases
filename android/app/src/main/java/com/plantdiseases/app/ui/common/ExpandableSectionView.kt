@@ -149,7 +149,7 @@ class ExpandableSectionView @JvmOverloads constructor(
     fun bind(iconRes: Int, title: CharSequence, subtitle: CharSequence?) {
         iconView.setImageResource(iconRes)
         titleView.text = title
-        subtitleView.text = subtitle.orEmpty()
+        subtitleView.text = subtitle ?: ""
         subtitleView.visibility = if (subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 
