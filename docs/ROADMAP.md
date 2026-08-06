@@ -287,8 +287,11 @@ constraints, then get out of the way).
 wrong in ways tests never catch. Review the `values-ru/strings.xml` diff on
 every merge.
 
-**CI** (`.github/workflows/ci.yml`) runs on pushes to `main`, `claude/**`,
-`work/**`, `codex/**` and on PRs into `main`, with a `paths-filter` running the
-**android** and **server** jobs only when their trees change. Android:
+**CI** (`.github/workflows/ci.yml`) is push-only, on `main`, `claude/**`,
+`work/**` and `codex/**`, with a `paths-filter` running the **android** and
+**server** jobs only when their trees change. Deliberately no `pull_request`
+trigger: every branch that reaches a PR was pushed here first, so a PR trigger
+only duplicates runs (they land under a different `github.ref`, so `concurrency`
+does not cancel them). Android:
 `ktlintCheck` + `detekt` + `testDebugUnitTest` + R8 `assembleRelease`. Server:
 `ruff` + `pytest`. Dependency updates arrive via `.github/dependabot.yml`.

@@ -7,13 +7,6 @@ on:
   # how four auto-fixable lint errors blocked the Android suite for two days.
   push:
     branches: [main, "claude/**", "work/**", "codex/**"]
-  # Also run for PRs into main so branches from forks (where the source push
-  # does not trigger this repository's workflow) still receive checks — and so
-  # any branch name outside the four patterns above cannot reach main unchecked.
-  # This is `pull_request`, NOT `pull_request_target`: fork code must run with a
-  # read-only token and no access to the signing secrets.
-  pull_request:
-    branches: [main]
 
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
