@@ -8,6 +8,10 @@ android/app/build/
 # how that file (containing the maintainer's Windows SDK path) ended up
 # committed in #151. Match it wherever it lands.
 **/local.properties
+# Same story for the per-module Gradle cache dir: android/app/.gradle/
+# (containing the maintainer's local JBR path) slipped past the root-only
+# android/.gradle/ entry above and got committed in #151.
+**/.gradle/
 *.iml
 .idea/
 
