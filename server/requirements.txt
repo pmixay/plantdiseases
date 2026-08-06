@@ -1,23 +1,35 @@
-fastapi==0.136.3
-uvicorn[standard]==0.49.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
 python-multipart==0.0.32
-Pillow==12.2.0
+# SECURITY: 12.2.0 is affected by 26 published advisories, including
+# CVE-2026-59199 (heap out-of-bounds write in ``Image.paste()`` /
+# ``Image.crop()`` via signed coordinate overflow) — reached directly by the
+# Stage-1 letterbox paste (detector.py) and the Stage-2 box crops
+# (pipeline.py, classifier.py) on every attacker-supplied scan image — plus
+# CVE-2026-54058 (OOB read on the mmap path) and several decompression-bomb
+# bypasses. 12.3.0 clears all of them. Keep this pinned and keep it current.
+Pillow==12.3.0
 # Perceptual-hash near-duplicate signal stored with each labeling candidate
 # (server/labeling.py phash_bytes). Pulls numpy/scipy/PyWavelets (numpy pinned
 # below).
-ImageHash>=4.3
+ImageHash>=4.3.2
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
 # matches the training notebook, which already runs on numpy 2.x. Floor
 # raised to the current 2.4 series; cap kept at <3 for the next ABI break.
+#
+# Do NOT raise this floor to 2.5: numpy 2.5.0 declares Requires-Python >=3.12
+# and this service runs on 3.11 (see Dockerfile), so ``>=2.5`` makes the
+# install unresolvable rather than merely newer. 2.4.x is the newest series
+# that ships 3.11 wheels — revisit only together with the Python base image.
 numpy>=2.4,<3.0
-onnxruntime>=1.26.0
+onnxruntime>=1.28.0
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return
 # a graceful ``available: false`` when no API key is configured. Only
 # ``requests`` is required since OpenRouter speaks plain HTTPS JSON.
-requests>=2.34.0
+requests>=2.34.2
 # Firebase Cloud Messaging push (server/push.py). Imported lazily and only
 # used when FCM_CREDENTIALS_FILE points at a service-account JSON — without it
 # every send is a no-op, so the dependency is harmless on push-less deploys.
-firebase-admin>=6.5.0
+firebase-admin>=7.5.0

@@ -9,7 +9,11 @@ plugins {
     // Hilt (Dagger) dependency injection. The Gradle plugin rewrites Hilt's
     // generated component classes into the app's bytecode; must be applied
     // here AND in app/build.gradle.kts per the standard Hilt setup.
-    id("com.google.dagger.hilt.android") version "2.56.2" apply false
+    // Hilt is held at the 2.57.x line on purpose: 2.58+ depends on
+    // kotlin-stdlib 2.2.20 and 2.60+ on 2.3.21, either of which would drag a
+    // stdlib newer than the Kotlin 2.1.21 compiler above onto the classpath.
+    // 2.57.2 is the newest release still built against stdlib 2.1.21.
+    id("com.google.dagger.hilt.android") version "2.57.2" apply false
     // Kotlin linting replaces Android Lint as the code-quality gate:
     // ktlint (formatting/style) + detekt (static analysis / smells).
     id("org.jlleitschuh.gradle.ktlint") version "12.1.2" apply false

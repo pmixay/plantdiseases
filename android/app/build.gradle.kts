@@ -10,11 +10,22 @@ plugins {
 
 android {
     namespace = "com.plantdiseases.app"
-    compileSdk = 35
+    // compileSdk 36 (Android 16) is required by the current AndroidX line —
+    // androidx.core 1.17+, activity 1.13.0 and CameraX 1.6.x all declare
+    // minCompileSdk=36 in their AAR metadata and fail the build below it.
+    // AGP 8.13.2 already satisfies their minAgp=8.9.1, so no AGP/Kotlin bump
+    // is needed to get there.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
         minSdk = 29 // Android 10
+        // Deliberately held one behind compileSdk. targetSdk is what opts the
+        // app into a platform's *behaviour* changes; raising it to 36 would
+        // turn on Android 16's mandatory edge-to-edge enforcement and the
+        // stricter intent/foreground-service rules, which is a UI change to
+        // make on its own terms — not a side effect of a dependency refresh.
+        // Compiling against 36 while targeting 35 is the supported combination.
         targetSdk = 35
         versionCode = 18
         versionName = "1.8"
@@ -60,8 +71,9 @@ android {
         // native .so libs to the ABIs real phones use. x86_64 is dropped: it
         // exists only for emulators/Chromebooks and the LiteRT interpreter lib
         // for it is ~10 MB — on x86_64 the app simply degrades to server
-        // inference (the documented Aqua-absent fallback). LiteRT ships no
-        // armeabi-v7a lib, so 32-bit devices also degrade to the server.
+        // inference (the documented Aqua-absent fallback). As of LiteRT 2.1.6
+        // an armeabi-v7a interpreter IS shipped (2.1.0 had none), so 32-bit
+        // devices now run Aqua on-device instead of degrading to the server.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
         ndk {
@@ -122,11 +134,16 @@ android {
 
     packaging {
         jniLibs {
-            // LiteRT ships an OpenCL GPU-delegate accelerator lib alongside the
-            // interpreter (~2.7 MB arm64 / 3.3 MB x86_64). AquaClassifier runs
-            // CPU-only (Interpreter.Options().setNumThreads(2), no GpuDelegate),
-            // so the accelerator is never dlopen'd — exclude it from the APK.
+            // LiteRT ships a GPU-delegate accelerator lib alongside the
+            // interpreter. AquaClassifier runs CPU-only
+            // (Interpreter.Options().setNumThreads(2), no GpuDelegate), so the
+            // accelerator is never dlopen'd — exclude it from the APK.
+            // The artefact was renamed in LiteRT 2.1.6
+            // (libLiteRtOpenClAccelerator.so → libLiteRtClGlAccelerator.so);
+            // both patterns are listed so the exclude keeps matching across the
+            // rename instead of silently shipping the lib again on a bump.
             excludes += "**/libLiteRtOpenClAccelerator.so"
+            excludes += "**/libLiteRtClGlAccelerator.so"
 
             // These prebuilt .so libs (DataStore, CameraX JNI) can't be
             // stripped by the NDK strip tool, which logs a noisy "Unable to
@@ -220,31 +237,33 @@ ktlint {
 
 dependencies {
     // AndroidX Core
-    implementation("androidx.core:core-ktx:1.15.0")
+    // core-ktx is capped at 1.18.x: 1.19.0 declares minCompileSdk=37 and
+    // minAgp=9.1.0, i.e. it needs the AGP 9 migration, not just an SDK bump.
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.activity:activity-ktx:1.9.3")
-    implementation("androidx.fragment:fragment-ktx:1.8.5")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
 
     // Material Design 3
-    implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.android.material:material:1.14.0")
 
     // Navigation
-    implementation("androidx.navigation:navigation-fragment-ktx:2.8.5")
-    implementation("androidx.navigation:navigation-ui-ktx:2.8.5")
+    implementation("androidx.navigation:navigation-fragment-ktx:2.9.8")
+    implementation("androidx.navigation:navigation-ui-ktx:2.9.8")
 
     // CameraX
-    val cameraxVersion = "1.4.1"
+    val cameraxVersion = "1.6.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // Room Database
-    val roomVersion = "2.7.0"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -265,13 +284,15 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json")
     // Pinned to match the Kotlin 2.1.21 serialization compiler plugin (Ktor
     // 2.3.13 bundles 1.6.3; overriding up keeps the generated serializers and
-    // the runtime in lockstep).
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // the runtime in lockstep). 1.8.1 is the newest release still built
+    // against kotlin-stdlib 2.1.x — 1.9.0 moves to 2.2.0 and 1.11.0 to 2.3.20,
+    // so taking those would mean bumping the Kotlin compiler in lockstep too.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     // Firebase Cloud Messaging (push). No google-services plugin / json:
     // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
     // the build works with or without credentials.
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-messaging")
 
     // RuStore in-app updates — installs that came from RuStore get offered new
@@ -282,7 +303,7 @@ dependencies {
     implementation("ru.rustore.sdk:appupdate:10.5.0")
 
     // Gson
-    implementation("com.google.code.gson:gson:2.11.0")
+    implementation("com.google.code.gson:gson:2.14.0")
 
     // Glide for images
     implementation("com.github.bumptech.glide:glide:4.16.0")
@@ -300,19 +321,19 @@ dependencies {
     // Robolectric host in tests, so it can't be `@AndroidEntryPoint`) instead
     // resolve their deps via EntryPointAccessors against the Application's
     // SingletonComponent — see di/AppEntryPoint.kt.
-    implementation("com.google.dagger:hilt-android:2.56.2")
-    ksp("com.google.dagger:hilt-android-compiler:2.56.2")
+    implementation("com.google.dagger:hilt-android:2.57.2")
+    ksp("com.google.dagger:hilt-android-compiler:2.57.2")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 
     // Lottie animations
-    implementation("com.airbnb.android:lottie:6.6.0")
+    implementation("com.airbnb.android:lottie:6.7.1")
 
     // ViewPager2
     implementation("androidx.viewpager2:viewpager2:1.1.0")
@@ -323,16 +344,16 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     // Preferences DataStore
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     // Shimmer effect for skeleton loading
     implementation("com.facebook.shimmer:shimmer:0.5.0")
 
     // ExifInterface (used for orientation correction in ImageUtils)
-    implementation("androidx.exifinterface:exifinterface:1.4.0")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 
     // WorkManager (plant reminders)
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // LiteRT (formerly TensorFlow Lite) — on-device inference for the Aqua
     // model family. Migrated off org.tensorflow:tensorflow-lite:2.16.1, whose
@@ -342,40 +363,40 @@ dependencies {
     // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
     // out of band like the server weights, never committed; AquaClassifier
     // gates on its presence and the app degrades to the server when absent.
-    implementation("com.google.ai.edge.litert:litert:2.1.0")
+    implementation("com.google.ai.edge.litert:litert:2.1.6")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
     // (Bitmap, Room in-memory DB, resources) without a device, so the
     // bulk of the pipeline is covered in CI-runnable unit tests.
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("androidx.test:core-ktx:1.6.1")
-    testImplementation("androidx.test.ext:junit:1.2.1")
-    testImplementation("androidx.test.ext:junit-ktx:1.2.1")
-    testImplementation("com.google.truth:truth:1.4.4")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core:1.7.0")
+    testImplementation("androidx.test:core-ktx:1.7.0")
+    testImplementation("androidx.test.ext:junit:1.3.0")
+    testImplementation("androidx.test.ext:junit-ktx:1.3.0")
+    testImplementation("com.google.truth:truth:1.4.5")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.room:room-testing:2.7.0")
+    testImplementation("androidx.room:room-testing:2.8.4")
 
     // ─── Instrumented / Espresso UI tests (./gradlew connectedDebugAndroidTest,
     //     device or emulator required) ──────────────────────────────────────
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test:core-ktx:1.6.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.6.1")
-    androidTestImplementation("androidx.test.espresso:espresso-intents:3.6.1")
-    androidTestImplementation("androidx.fragment:fragment-testing:1.8.5")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
+    androidTestImplementation("androidx.fragment:fragment-testing:1.8.9")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
-    debugImplementation("androidx.fragment:fragment-testing-manifest:1.8.5")
+    debugImplementation("androidx.fragment:fragment-testing-manifest:1.8.9")
 }
