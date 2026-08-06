@@ -108,4 +108,7 @@
     <color name="moon_dark">#161B20</color>
     <color name="moon_mare">#7A766B</color>
     <color name="moon_glow">#22FFFFFF</color>
+
+    <!-- Section badge background (SectionUiKit) -->
+    <color name="section_badge_bg">#332E7D32</color>
 </resources>

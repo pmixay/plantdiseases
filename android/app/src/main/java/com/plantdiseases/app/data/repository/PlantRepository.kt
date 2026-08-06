@@ -87,10 +87,12 @@ class PlantRepository(
         existing: PlantEntity? = null,
         scientificName: String? = null,
         commonName: String? = null,
+        room: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
         val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
         val cleanCommon = commonName?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanRoom = room?.trim()?.takeIf { it.isNotEmpty() }
         if (existing == null) {
             plantDao.insert(
                 PlantEntity(
@@ -98,6 +100,7 @@ class PlantRepository(
                     species = cleanSpecies,
                     scientificName = cleanScientific,
                     commonName = cleanCommon,
+                    room = cleanRoom,
                 )
             )
         } else {
@@ -110,6 +113,7 @@ class PlantRepository(
                     // re-identification step).
                     scientificName = cleanScientific ?: existing.scientificName,
                     commonName = cleanCommon ?: existing.commonName,
+                    room = cleanRoom ?: existing.room,
                 )
             )
             existing.id
