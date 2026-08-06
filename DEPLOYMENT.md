@@ -27,7 +27,8 @@ key maps to the same name as the legacy environment variable.
 | Key | Default | Purpose |
 |---|---|---|
 | `cors_origins` | `["http://localhost:3000","http://127.0.0.1:3000"]` | Allowed CORS origins. **Do not set to `["*"]` in production.** |
-| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / cloudflare; otherwise spoofed `X-Forwarded-For` is ignored. |
+| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / Cloudflare; otherwise `X-Forwarded-For` is ignored entirely. **Must list every hop between the client and the app** — see §3.1, which also covers why `127.0.0.1` is usually the *wrong* value under Docker. |
+| `feedback_ip_pepper` (env `FEEDBACK_IP_PEPPER`) | *(empty → generated)* | Secret peppering the SHA-256 of a client IP before it is stored (`client_ip_hash` in the feedback / community / telemetry stores). IPv4 is only 32 bits, so a hash with a weak or known pepper enumerates back to the raw IP in seconds. Leave blank and the server generates a random one on first use and persists it as `.ip_hash_pepper` beside the feedback DB; **set it explicitly** to control rotation, to share one pepper across replicas, or if your state dir is read-only (see §4). Changing it resets the 24 h per-IP write quotas once. |
 | `forwarded_allow_ips` | `127.0.0.1` | Passed to uvicorn `--forwarded-allow-ips`; controls which peers can update `Host` / scheme via forwarded headers. |
 | `rate_limit_rps` | `1.0` | Per-IP request rate limit. Rate-limited responses return `429` with a `Retry-After` header. |
 | `max_file_size` | `10485760` (10 MB) | Hard cap on uploaded bytes. |
@@ -240,6 +241,30 @@ export RATE_LIMIT_RPS=2.0
 docker compose up -d --build
 ```
 
+**The published port is bound to loopback**
+(`"${PORT_BIND:-127.0.0.1}:8000:8000"`), because the API speaks plain HTTP and
+TLS terminates in nginx (§3). Publishing on `0.0.0.0` would also bypass a host
+firewall — Docker's DNAT rules sit in the `DOCKER` chain, traversed *before*
+`INPUT`, so a `ufw deny 8000` does not apply.
+
+That is correct for the topology in §3 (nginx on this host, `proxy_pass
+http://127.0.0.1:8000`) and for nginx running as another container on the same
+compose network (it reaches the service by name, and published ports are
+irrelevant to it). **It breaks anything that targets `<hostIP>:8000` from off
+the host** — a cloud load balancer, a separate proxy host, or a remote Docker
+daemon. For those, set an override before starting:
+
+```bash
+echo 'PORT_BIND=0.0.0.0' >> server/.env   # compose interpolates it
+```
+
+Two more compose knobs, both with defaults that suit a gamma-only CPU host:
+
+| Env | Default | Raise it when |
+|---|---|---|
+| `PORT_BIND` | `127.0.0.1` | the TLS terminator is not on this host (above) |
+| `MEM_LIMIT` | `4g` | `frontier_enabled=true` (ViT-B/14 is ~350 MB of weights plus its own arena) or `infer_workers > 1`. The cap **is** enforced by Compose V2, and with `restart: unless-stopped` an OOM-kill becomes a restart loop paying the ~18 s cold model load each cycle. |
+
 Model weights + calibration artefacts are **not auto-downloaded**.
 Populate the host `./models` dir (mounted at `/app/models`) with the
 trained artefacts before starting — `detector.{pt,onnx}`,
@@ -253,6 +278,14 @@ Smoke test:
 ```bash
 curl -s http://127.0.0.1:8000/api/health | jq
 curl -F "image=@sample.jpg" http://127.0.0.1:8000/api/analyze | jq
+```
+
+Note this passes whether or not the port is reachable from off the host, so it
+cannot tell you the `PORT_BIND` choice was right. Verify the way real traffic
+arrives — through nginx, from another machine:
+
+```bash
+curl -s https://plantdiseases.example.com/api/health | jq
 ```
 
 ---
@@ -298,8 +331,55 @@ sudo certbot --nginx -d plantdiseases.example.com
 sudo systemctl enable --now certbot.timer
 ```
 
-Because nginx is now forwarding, set `TRUSTED_PROXIES=127.0.0.1` on the
-app server so its rate limiter reads `X-Forwarded-For` honestly.
+Because nginx is now forwarding, set `TRUSTED_PROXIES` on the app server so its
+rate limiter reads `X-Forwarded-For` honestly — but read §3.1 first, because the
+right value is often *not* `127.0.0.1`.
+
+### 3.1 Getting the client IP right
+
+`X-Forwarded-For` decides the identity every abuse control keys on: the
+rate-limiter bucket and the hashed `client_ip_hash` behind each 24 h write
+quota. Get it wrong and you either throttle nobody or throttle everybody.
+
+`$proxy_add_x_forwarded_for` above **appends** the peer nginx sees to whatever
+the client already sent, so the header the app receives is
+`<whatever the client claimed>, <real peer>`. The app therefore walks the list
+**right to left**, skipping entries that are in `TRUSTED_PROXIES`, and takes the
+first one that is not — the leftmost entries are attacker-supplied and must
+never win.
+
+Two ways this goes wrong:
+
+**A CDN in front of nginx.** With Cloudflare, the header arrives as
+`<real client>, <CF edge>`. Because CF's ranges are not in `TRUSTED_PROXIES`,
+the app stops at the CF edge IP — so *every* visitor through one PoP shares a
+single rate-limit bucket and a single daily write quota. That fails **closed**:
+mass `429`s and users locked out of feedback. Fix it in nginx, so the real
+client is what gets appended:
+
+```nginx
+    # Cloudflare: https://www.cloudflare.com/ips/ — keep this list current
+    set_real_ip_from 173.245.48.0/20;   # (…all CF ranges…)
+    real_ip_header   CF-Connecting-IP;
+```
+
+Adding CF's ranges to `TRUSTED_PROXIES` also works, but it is more brittle —
+that list changes.
+
+**Docker.** For a loopback-published container the peer uvicorn sees is the
+docker bridge gateway (`172.x.0.1`), *not* `127.0.0.1`, so a literal
+`TRUSTED_PROXIES=127.0.0.1` never matches and the header is ignored — again
+collapsing everyone into one bucket. Use the bridge subnet (e.g.
+`TRUSTED_PROXIES=172.16.0.0/12`) for the compose deployment.
+
+**Verify rather than assume** — every request logs the resolved address:
+
+```bash
+docker compose logs | grep -o 'IP=[^ ]*' | sort | uniq -c | sort -rn | head
+```
+
+A healthy spread of client addresses is right. One address repeated for every
+request means the header is not being honoured and all clients share a bucket.
 
 ---
 

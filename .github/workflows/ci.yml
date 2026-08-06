@@ -36,12 +36,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      # Third-party actions are pinned to a commit SHA, not a mutable tag: a
-      # tag can be repointed at new code by the action's owner (or by anyone
-      # who compromises that account) and every run picks it up silently.
-      # Dependabot's github-actions ecosystem keeps these SHAs current — see
-      # .github/dependabot.yml.
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -81,7 +76,7 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: latest
 
@@ -106,7 +101,7 @@ jobs:
       # it finds android/gradle/ regardless of this job's
       # `defaults.run.working-directory` (which applies to `run:` steps only).
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        uses: gradle/actions/wrapper-validation@v6
 
       # Restores the Gradle home (dependencies + local build cache) and reuses
       # it across runs, so unchanged modules/tasks aren't recompiled. Replaces
@@ -114,7 +109,7 @@ jobs:
       # Pinned to v6 (latest): v5+ runs on Node 24, clearing the Node 20
       # runtime deprecation warning that v4 emitted.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
