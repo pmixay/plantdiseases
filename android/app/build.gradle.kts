@@ -71,9 +71,10 @@ android {
         // native .so libs to the ABIs real phones use. x86_64 is dropped: it
         // exists only for emulators/Chromebooks and the LiteRT interpreter lib
         // for it is ~10 MB — on x86_64 the app simply degrades to server
-        // inference (the documented Aqua-absent fallback). As of LiteRT 2.1.5
-        // an armeabi-v7a interpreter IS shipped (2.1.0 had none), so 32-bit
-        // devices now run Aqua on-device instead of degrading to the server.
+        // inference (the documented Aqua-absent fallback). LiteRT ships no
+        // armeabi-v7a lib at 2.1.3 either (one first appears in 2.1.5, which
+        // the Kotlin ceiling above rules out), so 32-bit devices also degrade
+        // to the server.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
         ndk {
@@ -138,7 +139,7 @@ android {
             // interpreter. AquaClassifier runs CPU-only
             // (Interpreter.Options().setNumThreads(2), no GpuDelegate), so the
             // accelerator is never dlopen'd — exclude it from the APK.
-            // The artefact was renamed between LiteRT 2.1.0 and 2.1.5
+            // The artefact was renamed between LiteRT 2.1.0 and 2.1.3
             // (libLiteRtOpenClAccelerator.so → libLiteRtClGlAccelerator.so);
             // both patterns are listed so the exclude keeps matching across the
             // rename instead of silently shipping the lib again on a bump.
@@ -363,14 +364,14 @@ dependencies {
     // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
     // out of band like the server weights, never committed; AquaClassifier
     // gates on its presence and the app degrades to the server when absent.
-    // Held at 2.1.5, which is the newest release compatible with the Kotlin
-    // 2.1.21 compiler above. 2.1.6 is the first version to depend on
-    // com.google.ai.edge.litert:litert-api, whose .kotlin_module carries
-    // metadata version 2.3.0 — Kotlin 2.1.21 rejects it outright with
+    // Held at 2.1.3: the newest release the Kotlin 2.1.21 compiler above will
+    // read. LiteRT ships Kotlin metadata inside its own classes.jar, and the
+    // compiler only tolerates metadata one minor version ahead of itself —
+    // 2.1.0 through 2.1.3 carry metadata 2.2.0 (accepted, which is why 2.1.0
+    // built), while 2.1.4+ moved to 2.3.0 and fail the build with
     // "Module was compiled with an incompatible version of Kotlin".
-    // 2.1.5 and earlier ship no Kotlin metadata at all (pure Java), so they
-    // are compiler-version agnostic. Revisit together with the Kotlin bump.
-    implementation("com.google.ai.edge.litert:litert:2.1.5")
+    // Raising this needs the Kotlin bump, not just a version change.
+    implementation("com.google.ai.edge.litert:litert:2.1.3")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
