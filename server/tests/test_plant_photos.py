@@ -73,6 +73,85 @@ def test_get_or_fetch_rejects_disallowed_host(photos):
     assert photos.get_or_fetch("https://evil.com/x.png") is None
 
 
+_COMMONS = "https://upload.wikimedia.org/wikipedia/commons"
+
+
+def test_normalize_thumb_url_snaps_off_ladder_widths(photos):
+    """Wikimedia refuses a direct request for a width it does not render
+    (phab:T414805), so an off-ladder width means no photo at all. Round up to
+    the next renderable step — never down, which would lose resolution."""
+    assert photos.normalize_thumb_url(f"{_COMMONS}/thumb/a/ab/F.jpg/1024px-F.jpg") == (
+        f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg"
+    )
+    assert photos.normalize_thumb_url(f"{_COMMONS}/thumb/a/ab/F.jpg/320px-F.jpg") == (
+        f"{_COMMONS}/thumb/a/ab/F.jpg/330px-F.jpg"
+    )
+    # Already renderable, no width at all, and a query suffix: left intact.
+    for url in (
+        f"{_COMMONS}/thumb/a/ab/F.jpg/330px-F.jpg",
+        f"{_COMMONS}/a/ab/F.jpg",
+    ):
+        assert photos.normalize_thumb_url(url) == url
+    assert photos.normalize_thumb_url(
+        f"{_COMMONS}/thumb/a/ab/F.jpg/1024px-F.jpg?utm_source=x",
+    ) == f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg?utm_source=x"
+
+
+def test_get_or_fetch_normalizes_before_touching_the_cache(photos, monkeypatch):
+    """An app installed before the fix keeps sending its 7-day-cached
+    `?u=…/1024px-…` links, which we cannot re-issue. They must resolve to the
+    same fetch — and the same cache entry — as the snapped URL."""
+    asked: list[str] = []
+
+    def _download(url):
+        asked.append(url)
+        return _PNG
+
+    monkeypatch.setattr(photos, "_download", _download)
+    stale = photos.get_or_fetch(f"{_COMMONS}/thumb/a/ab/F.jpg/1024px-F.jpg")
+    assert stale is not None
+    assert asked == [f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg"]
+    # Same photo, addressed the new way → cache hit, no second download.
+    assert photos.get_or_fetch(f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg") == stale
+    assert len(asked) == 1
+
+
+def test_get_or_fetch_falls_back_to_the_original_when_the_render_fails(
+    photos, monkeypatch,
+):
+    """Which widths Wikimedia renders is theirs to change — it just did. When
+    the thumbnail won't come, pull the file behind it rather than dropping the
+    card to its placeholder."""
+    asked: list[str] = []
+
+    def _download(url):
+        asked.append(url)
+        return None if "px-" in url else _PNG
+
+    monkeypatch.setattr(photos, "_download", _download)
+    path = photos.get_or_fetch(f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg")
+    assert path is not None and path.is_file()
+    assert asked == [
+        f"{_COMMONS}/thumb/a/ab/F.jpg/1280px-F.jpg",
+        f"{_COMMONS}/a/ab/F.jpg",
+    ]
+
+
+def test_get_or_fetch_gives_up_when_there_is_no_original_to_fall_back_to(
+    photos, monkeypatch,
+):
+    """A non-thumbnail URL has nothing behind it — one failed fetch, no retry."""
+    asked: list[str] = []
+
+    def _download(url):
+        asked.append(url)
+        return None
+
+    monkeypatch.setattr(photos, "_download", _download)
+    assert photos.get_or_fetch(f"{_COMMONS}/a/ab/F.jpg") is None
+    assert asked == [f"{_COMMONS}/a/ab/F.jpg"]
+
+
 def _stub_requests_get(monkeypatch, *, final_url, body=_PNG):
     """Stub requests.get with a streaming response that already followed its
     redirects — ``final_url`` is where the bytes actually came from."""
