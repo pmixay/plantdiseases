@@ -270,7 +270,7 @@ def _fetch(name: str, lang: str) -> dict | None:
 
 
 # Wikipedia's summary offers two extremes and neither is what we want to hand
-# the photo proxy: `thumbnail` is ~320 px (soft once main.py re-encodes it) and
+# the photo proxy: `thumbnail` is ~330 px (soft once main.py re-encodes it) and
 # `originalimage` is the untouched upload, routinely 6-11 MB. We used to take
 # the original. The app never saw those megabytes — main.py transcodes what it
 # serves down to _PLANT_PHOTO_MAX_SIDE (1000 px) WebP — but the SERVER still
@@ -286,19 +286,52 @@ def _fetch(name: str, lang: str) -> dict | None:
 # the original is an SVG — we get a PNG render, where plant_photos dropped the
 # raw .svg as unrenderable and left the card on its placeholder for good.
 #
-# Keep _DISPLAY_WIDTH at or above _PLANT_PHOTO_MAX_SIDE: below it the transcode
-# would be upscaling, which is where "blurry" would actually come from.
-_DISPLAY_WIDTH = 1024
+# The width we ask for is NOT free-form. Wikimedia renders thumbnails only at
+# a fixed ladder of widths and, since phab:T414805, *rejects a direct request
+# for any other width outright* — HTTP 400 "Use thumbnail sizes listed on
+# https://www.mediawiki.org/wiki/Common_thumbnail_sizes". Hotlinking
+# upload.wikimedia.org is exactly what plant_photos does, so an off-ladder
+# width doesn't degrade to a smaller render: it kills the photo. Asking for
+# 1024 px (one step off the ladder) is what emptied every species card of its
+# lead image. Both widths below must stay ON this ladder.
+_STANDARD_THUMB_WIDTHS = (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+
+# Keep _DISPLAY_WIDTH at or above _PLANT_PHOTO_MAX_SIDE (1000 px): below it the
+# transcode would be upscaling, which is where "blurry" would actually come
+# from. 1280 is the first ladder step that clears it.
+_DISPLAY_WIDTH = 1280
 # Secondary "example photos" strip — smaller on screen than the lead image, so
-# it gets a smaller render rather than paying for 1024 px four times over.
-_STRIP_WIDTH = 800
+# it gets a smaller render rather than paying for 1280 px four times over.
+_STRIP_WIDTH = 960
 _THUMB_WIDTH_RE = re.compile(r"/(\d+)px-")
 
 
+def _standard_width(width: int, ceiling: int | None = None) -> int | None:
+    """The ladder step to actually request for ``width``.
+
+    Rounds UP to the smallest standard step ≥ ``width`` — what MediaWiki's own
+    PHP entry points do with an off-ladder request, and never a downgrade in
+    resolution. When ``ceiling`` is given (a raster original's true width) the
+    result steps back DOWN to the largest step ≤ ceiling, so we never ask for
+    more pixels than the file holds. ``None`` when the file is smaller than
+    every step — the caller then keeps whatever URL Wikipedia gave it.
+    """
+    up = next(
+        (w for w in _STANDARD_THUMB_WIDTHS if w >= width), _STANDARD_THUMB_WIDTHS[-1],
+    )
+    if ceiling is None or up <= ceiling:
+        return up
+    return next((w for w in reversed(_STANDARD_THUMB_WIDTHS) if w <= ceiling), None)
+
+
 def _resize_thumb(url: str, width: int) -> str | None:
-    """Re-point a Wikimedia thumbnail URL at ``width``. ``None`` if the URL
-    isn't a thumbnail (nothing to rewrite — the caller keeps what it has)."""
-    resized, count = _THUMB_WIDTH_RE.subn(f"/{width}px-", url, count=1)
+    """Re-point a Wikimedia thumbnail URL at ``width``, snapped to a renderable
+    ladder step. ``None`` if the URL isn't a thumbnail (nothing to rewrite —
+    the caller keeps what it has)."""
+    standard = _standard_width(width)
+    if standard is None:
+        return None
+    resized, count = _THUMB_WIDTH_RE.subn(f"/{standard}px-", url, count=1)
     return resized if count == 1 else None
 
 
@@ -309,16 +342,21 @@ def _display_image(thumbnail: dict | None, original: dict | None) -> str | None:
     orig_src = ((original or {}).get("source") or "").strip()
     if not thumb_src:
         return orig_src or None
-    width = _DISPLAY_WIDTH
     orig_width = (original or {}).get("width")
     # Never ask for more pixels than the file holds — Wikimedia refuses to
     # upscale a raster original. An SVG has no such ceiling: it renders at any
     # width, and its nominal `width` would otherwise clamp us to a tiny render.
-    if (
-        isinstance(orig_width, int) and orig_width > 0
-        and not orig_src.lower().endswith(".svg")
-    ):
-        width = min(width, orig_width)
+    ceiling = (
+        orig_width
+        if (
+            isinstance(orig_width, int) and orig_width > 0
+            and not orig_src.lower().endswith(".svg")
+        )
+        else None
+    )
+    width = _standard_width(_DISPLAY_WIDTH, ceiling)
+    if width is None:  # smaller than the smallest render — serve it whole
+        return orig_src or thumb_src
     thumb_width = (thumbnail or {}).get("width")
     if isinstance(thumb_width, int) and thumb_width >= width:
         return thumb_src  # already at least as large as we'd ask for

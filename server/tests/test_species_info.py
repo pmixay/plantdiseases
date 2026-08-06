@@ -249,27 +249,57 @@ def test_media_images_excludes_non_plant_media(monkeypatch):
 _THUMB = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Ficus.jpg/320px-Ficus.jpg"
 
 
+def test_every_width_we_ask_for_is_one_wikimedia_will_render():
+    """The whole point of the ladder: since phab:T414805 a direct request for
+    an off-ladder width is refused (HTTP 400), so it costs the card its photo
+    entirely rather than merely serving a different size. Both constants and
+    everything _standard_width can emit must stay on it."""
+    ladder = species_info._STANDARD_THUMB_WIDTHS
+    assert species_info._DISPLAY_WIDTH in ladder
+    assert species_info._STRIP_WIDTH in ladder
+    for requested in (1, 240, 320, 800, 1024, 1500, 99999):
+        assert species_info._standard_width(requested) in ladder
+        for ceiling in (119, 400, 1000, 5000):
+            got = species_info._standard_width(requested, ceiling)
+            assert got is None or (got in ladder and got <= ceiling)
+
+
 def test_display_image_asks_for_a_card_sized_render():
-    """Neither extreme the summary offers is right: the ~320px thumbnail is
+    """Neither extreme the summary offers is right: the ~330px thumbnail is
     below what main.py re-encodes at, and the multi-megabyte original often
-    doesn't arrive inside plant_photos' 6s fetch timeout at all."""
+    doesn't arrive inside plant_photos' 6s fetch timeout at all. 1280 is the
+    first renderable step clearing _PLANT_PHOTO_MAX_SIDE."""
     out = species_info._display_image(
         {"source": _THUMB, "width": 320},
         {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.jpg",
          "width": 4000},
     )
-    assert out.endswith("/1024px-Ficus.jpg")
+    assert out.endswith("/1280px-Ficus.jpg")
 
 
 def test_display_image_never_asks_for_more_than_the_file_has():
     """Wikimedia refuses to upscale a raster original — asking anyway would
-    404 the photo and drop the card back to its placeholder."""
+    404 the photo and drop the card back to its placeholder. A 600px file
+    steps DOWN to 500, the largest render at or under what it holds; 600
+    itself is not renderable."""
     out = species_info._display_image(
         {"source": _THUMB, "width": 320},
         {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.jpg",
          "width": 600},
     )
-    assert out.endswith("/600px-Ficus.jpg")
+    assert out.endswith("/500px-Ficus.jpg")
+
+
+def test_display_image_keeps_a_file_smaller_than_every_render():
+    """Below the smallest ladder step there is no render to ask for, so serve
+    the file whole rather than emitting a width that would be refused."""
+    original = "https://upload.wikimedia.org/wikipedia/commons/a/ab/Tiny.jpg"
+    out = species_info._display_image(
+        {"source": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/"
+                   "Tiny.jpg/12px-Tiny.jpg", "width": 12},
+        {"source": original, "width": 15},
+    )
+    assert out == original
 
 
 def test_display_image_renders_svg_originals_at_full_card_width():
@@ -282,7 +312,7 @@ def test_display_image_renders_svg_originals_at_full_card_width():
         {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.svg",
          "width": 300},
     )
-    assert out.endswith("/1024px-Ficus.svg.png")
+    assert out.endswith("/1280px-Ficus.svg.png")
 
 
 def test_display_image_leaves_unrecognised_urls_alone():
@@ -316,6 +346,10 @@ def test_media_images_upsize_only_when_the_file_can_supply_it(monkeypatch):
 
     images = species_info._media_images("Ficus_elastica", "en", limit=4)
     assert images == [
-        "https://upload.example/thumb/a/ab/A.jpg/800px-A.jpg",
+        # Upsized to the ladder step, not the raw _STRIP_WIDTH…
+        "https://upload.example/thumb/a/ab/A.jpg/960px-A.jpg",
+        # …and left alone when the file can't supply it. This one keeps
+        # whatever width the media-list chose, which is why plant_photos
+        # snaps again on the way out.
         "https://upload.example/thumb/a/ab/B.jpg/320px-B.jpg",
     ]
