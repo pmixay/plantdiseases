@@ -1109,4 +1109,34 @@
         <item>Most culinary herbs want the sunniest windowsill you have, and slightly lean soil.</item>
         <item>Harvest in the morning, when the aromatic oil content is at its peak.</item>
     </string-array>
+
+    <!-- Fertiliser schedule rows, tips headings, section chrome -->
+<string name="feed_heading_schedule">Feeding schedule</string>
+<string name="feed_heading_cautions">What to watch out for</string>
+<string name="tips_heading_general">For this kind of plant</string>
+<string name="tips_heading_this_plant">For your plant</string>
+<string name="tips_heading_red_flags">Warning signs</string>
+<string name="feed_row_interval">How often</string>
+<string name="feed_row_npk">NPK ratio</string>
+<string name="feed_row_dose">Strength</string>
+<string name="feed_row_season">Feeding season</string>
+<string name="feed_row_soil">Substrate</string>
+<string name="feed_dose_percent">%1$d%% of the label dose</string>
+<string name="feed_season_range">%1$s – %2$s</string>
+<string name="feed_season_year_round">All year round</string>
+<string name="section_tips_title">Tips</string>
+<string name="section_tips_subtitle">Useful growing recommendations.</string>
+<plurals name="feed_every_weeks">
+        <item quantity="one">Every week</item>
+        <item quantity="other">Every %1$d weeks</item>
+    </plurals>
+
+    <!-- About-facts card: scientific name, group, native range, difficulty -->
+<string name="about_fact_scientific">Botanical name</string>
+<string name="about_fact_group">Plant group</string>
+<string name="about_fact_range">Native to</string>
+<string name="about_fact_difficulty">Care difficulty</string>
+<string name="about_difficulty_easy">Easy</string>
+<string name="about_difficulty_moderate">Moderate</string>
+<string name="about_difficulty_demanding">Demanding</string>
 </resources>

@@ -222,6 +222,15 @@
                             android:orientation="vertical"
                             android:visibility="gone">
 
+                            <!-- Fact card: scientific name, plant group, native range
+                                 (once loaded) and computed care difficulty. Populated
+                                 by SpeciesDetailActivity.bindAboutFacts(). -->
+                            <LinearLayout
+                                android:id="@+id/about_facts"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical" />
+
                             <!-- A full Wikipedia lead section can run many paragraphs, so
                                  it starts clipped; the toggle below is revealed by the
                                  Activity only when the text is actually cut off. -->
@@ -463,8 +472,91 @@
                                 android:layout_marginTop="@dimen/space_sm"
                                 android:lineSpacingExtra="3dp"
                                 android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body" />
+                                android:textSize="@dimen/text_body"
+                                android:visibility="gone" />
                         </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Tips. Local category advice (always present) plus whatever
+                     free-text guidance and red flags the care plan carried.
+                     Same collapsible-card shape as Fertiliser above. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_tips"
+                    style="@style/App.GlassCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <LinearLayout
+                            android:id="@+id/tips_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:minHeight="@dimen/species_info_touch_target"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_tips"
+                                app:tint="@color/primary" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/section_tips_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/section_tips_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/iv_tips_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/tips_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone" />
 
                     </LinearLayout>
 

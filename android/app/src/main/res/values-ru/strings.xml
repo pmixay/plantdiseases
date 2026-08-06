@@ -1095,4 +1095,36 @@
         <item>Большинству пряных трав нужен самый солнечный подоконник и слегка бедная почва.</item>
         <item>Срезайте утром, когда содержание эфирных масел максимально.</item>
     </string-array>
+
+    <!-- Fertiliser schedule rows, tips headings, section chrome -->
+<string name="feed_heading_schedule">График подкормки</string>
+<string name="feed_heading_cautions">На что обратить внимание</string>
+<string name="tips_heading_general">Для растений этой группы</string>
+<string name="tips_heading_this_plant">Для вашего растения</string>
+<string name="tips_heading_red_flags">Тревожные признаки</string>
+<string name="feed_row_interval">Как часто</string>
+<string name="feed_row_npk">Соотношение NPK</string>
+<string name="feed_row_dose">Концентрация</string>
+<string name="feed_row_season">Сезон подкормок</string>
+<string name="feed_row_soil">Субстрат</string>
+<string name="feed_dose_percent">%1$d%% от дозы на упаковке</string>
+<string name="feed_season_range">%1$s – %2$s</string>
+<string name="feed_season_year_round">Круглый год</string>
+<string name="section_tips_title">Советы</string>
+<string name="section_tips_subtitle">Полезные рекомендации по выращиванию.</string>
+<plurals name="feed_every_weeks">
+        <item quantity="one">Каждую неделю</item>
+        <item quantity="few">Каждые %1$d недели</item>
+        <item quantity="many">Каждые %1$d недель</item>
+        <item quantity="other">Каждые %1$d недели</item>
+    </plurals>
+
+    <!-- About-facts card: scientific name, group, native range, difficulty -->
+<string name="about_fact_scientific">Ботаническое название</string>
+<string name="about_fact_group">Группа растений</string>
+<string name="about_fact_range">Родина</string>
+<string name="about_fact_difficulty">Сложность ухода</string>
+<string name="about_difficulty_easy">Простое</string>
+<string name="about_difficulty_moderate">Среднее</string>
+<string name="about_difficulty_demanding">Требовательное</string>
 </resources>
