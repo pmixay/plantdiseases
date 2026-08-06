@@ -41,6 +41,11 @@ server/models/*
 !server/models/MODEL_CARD.md
 server/logs/
 server/feedback.db
+# Auto-generated IP-hashing pepper (feedback._ip_hash_pepper) written beside
+# the DB when FEEDBACK_IP_PEPPER is unset. It is a secret — committing it would
+# make every stored client_ip_hash reversible again.
+server/.ip_hash_pepper
+**/.ip_hash_pepper
 server/feedback.db-journal
 server/feedback.db-wal
 server/feedback.db-shm
