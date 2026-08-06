@@ -12,10 +12,18 @@ object PlantFacts {
         var score = 0
         // Thirsty plants are unforgiving of a missed week.
         val days = plan.wateringDaysInt
-        if (days != null && days <= 3) score += 2 else if (days != null && days <= 5) score += 1
+        if (days != null && days <= 3) {
+            score += 2
+        } else if (days != null && days <= 5) {
+            score += 1
+        }
         // A humidity floor above 55% means the plant needs help indoors.
         val humidityMin = plan.humidityBand?.min ?: 0
-        if (humidityMin >= 55) score += 2 else if (humidityMin >= 45) score += 1
+        if (humidityMin >= 55) {
+            score += 2
+        } else if (humidityMin >= 45) {
+            score += 1
+        }
         // Narrow daytime temperature tolerance.
         val day = plan.temperatureC?.day
         if (day != null && day.size >= 2 && (day[1] - day[0]) in 1..8) score += 1
