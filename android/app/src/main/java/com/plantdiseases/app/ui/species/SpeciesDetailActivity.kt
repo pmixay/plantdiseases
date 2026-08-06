@@ -472,7 +472,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
         host.addView(general)
 
         val fromPlan = listOfNotNull(
-            plan.keyAction, plan.placement, plan.acclimation, plan.wateringMethod,
+            plan.keyAction,
+            plan.placement,
+            plan.acclimation,
+            plan.wateringMethod,
         ).filter { it.isNotBlank() }
         if (fromPlan.isNotEmpty()) {
             val specific = sectionCard()

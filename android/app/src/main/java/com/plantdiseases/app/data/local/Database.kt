@@ -463,7 +463,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         @Volatile
-        private var INSTANCE: AppDatabase? = null
+        private var databaseInstance: AppDatabase? = null
 
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
@@ -560,7 +560,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun getInstance(context: android.content.Context): AppDatabase = INSTANCE ?: synchronized(this) {
+        fun getInstance(context: android.content.Context): AppDatabase = databaseInstance ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
@@ -572,7 +572,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // when no migration path exists).
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
-            INSTANCE = instance
+            databaseInstance = instance
             instance
         }
     }

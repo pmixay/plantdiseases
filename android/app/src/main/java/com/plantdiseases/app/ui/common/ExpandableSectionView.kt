@@ -284,6 +284,7 @@ class ExpandableSectionView @JvmOverloads constructor(
     private companion object {
         const val EXPAND_MS = 420L
         const val COLLAPSE_MS = 300L
+
         /** Fraction of the expand spent opening the box before the body starts fading in. */
         const val FADE_DELAY = 0.28f
     }
