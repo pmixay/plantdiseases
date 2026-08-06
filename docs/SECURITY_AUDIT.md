@@ -144,15 +144,38 @@ better guarded than the first pass assumed. These two survived:
 | Same geotagged original forwarded off-platform to third-party PlantNet. | Low | `ScanRepository.kt:238` |
 | Per-install pseudo-id — a bearer capability — travels in GET paths and query strings, so it lands in server and proxy access logs. | Low | `ScanRepository.kt:775` |
 
-### 3.4 Requires action outside this repo
+### 3.4 Infrastructure disclosure (not a credential leak)
 
-**The production host's SSH profile is in git history**
-(`admin-panel/app/static/app.js`, removed in #149 but still reachable via
-`git log --all -p`): host address, `root` login, deploy paths, systemd unit.
-Deleting the file did not un-publish it. Treat as disclosed — disable password
-auth and `PermitRootLogin`, move to a key-only non-root account, rotate any keys
-authorised for root, firewall the host. History rewriting is optional and
-secondary to rotation.
+**The production host's connection profile is in git history** — added in
+`cd4bda2`, removed with the admin panel in #149, still reachable via
+`git log --all -p`. It names the host IP, SSH user `root`, the deploy paths,
+the systemd unit and the health endpoint (`admin-panel/README.md:34`,
+`app/static/app.js:15`, `static/index.html:209`, `tests/test_models_security.py:37`).
+
+**No credentials leaked, and this was originally over-stated in this report.**
+Verified across the whole history: no private key (`git grep "BEGIN … PRIVATE
+KEY"` over `git rev-list --all` returns nothing) and no password.
+`admin-panel/app/ssh_client.py:309-318` takes the key path or password at
+runtime as a per-connection `SecretStr`, with `look_for_keys=False`, and the
+README explicitly calls the committed values "non-secret settings" that still
+require a verified fingerprint plus a local key or password. That
+classification was correct.
+
+So the exposure is **recon value, not access**: a public repo points at a
+specific host and tells an attacker that `root` is the SSH user to target. The
+action is therefore ordinary hardening, made more urgent by having a named
+target — not rotation, since there is nothing to rotate:
+
+- `PermitRootLogin prohibit-password` (or `no`, with a sudo-capable non-root
+  account), and `PasswordAuthentication no`;
+- rate-limit/ban SSH (fail2ban or equivalent) and firewall port 22 to known
+  source addresses if practical;
+- if the host IP is worth un-publishing, that requires a history rewrite —
+  optional, and lower value than the two items above.
+
+Severity: **Low**. Recorded because "your production host and its SSH username
+are public" is worth someone deciding about deliberately, not because anything
+was compromised.
 
 ---
 
