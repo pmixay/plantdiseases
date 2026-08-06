@@ -1030,4 +1030,83 @@
     <string name="fertiliser_interval_none">No regular feeding needed for this plant.</string>
     <string name="fertiliser_npk">Fertiliser: %1$s</string>
     <string name="fertiliser_soil">Soil mix: %1$s</string>
+
+    <!-- Fertiliser guide: substrate per group -->
+<string name="feed_soil_fruiting">Rich loam with compost, pH 6.0–6.8, free-draining</string>
+<string name="feed_soil_root">Loose, stone-free, sandy loam, pH 6.0–7.0</string>
+<string name="feed_soil_leafy">Moisture-retentive compost, pH 6.0–7.0</string>
+<string name="feed_soil_flowering">Peat-free mix with 20% perlite, pH 5.8–6.5</string>
+<string name="feed_soil_succulent">Half mineral grit, pH 6.0–7.5, never peat-heavy</string>
+<string name="feed_soil_foliage">Bark-and-coir mix with 20% perlite, pH 5.5–6.5</string>
+<string name="feed_soil_herb">Light, gritty compost, pH 6.0–7.0</string>
+<string name="feed_caution_fruiting_nitrogen">Cut nitrogen once the first flowers open, or you get a large leafy plant and almost no fruit.</string>
+<string name="feed_caution_fruiting_calcium">Add calcium and keep watering even: blossom-end rot is a calcium-transport problem caused by drying out, not a disease.</string>
+<string name="feed_caution_root_nitrogen">High nitrogen grows tops at the expense of the root. Keep N low and potassium high.</string>
+<string name="feed_caution_root_fresh_manure">Never use fresh manure — it forks and splits developing roots.</string>
+<string name="feed_caution_leafy_nitrate">Stop feeding 10–14 days before harvest so nitrates do not accumulate in the leaves.</string>
+<string name="feed_caution_leafy_harvest">Cut-and-come-again crops need a light feed after every second harvest, not a heavy one once.</string>
+<string name="feed_caution_flowering_switch">Switch to a high-phosphorus bloom feed as buds form, then back to balanced once flowering ends.</string>
+<string name="feed_caution_flowering_rest">Most flowering houseplants need a cool, unfed rest period to set buds at all — do not feed through it.</string>
+<string name="feed_caution_succulent_winter">No feeding at all from November to February. A fed succulent in low winter light stretches and never recovers its shape.</string>
+<string name="feed_caution_succulent_etiolation">Pale, stretched new growth means too much nitrogen and too little light, not too little fertiliser.</string>
+<string name="feed_caution_foliage_salt">White crust on the soil or pot rim is fertiliser salt. Flush the pot with plain water until it runs clear.</string>
+<string name="feed_caution_foliage_lowlight">In a low-light spot halve the dose again — the plant cannot use what it cannot photosynthesise.</string>
+<string name="feed_caution_herb_aroma">Over-feeding gives big, bland leaves. Aromatic oils are strongest in slightly lean soil.</string>
+<string name="feed_caution_herb_edible">Use a fertiliser cleared for edible crops and observe its harvest interval.</string>
+<string name="feed_rule_never_dry">Never feed dry soil — water first, feed 20–30 minutes later, or you will burn the roots.</string>
+<string name="feed_rule_never_sick">Do not feed a sick, wilting or pest-infested plant. Feeding a stressed root system makes the damage worse.</string>
+<string name="feed_rule_after_repot">Wait 6–8 weeks after repotting: fresh potting mix already contains a starter charge of fertiliser.</string>
+<string name="feed_rule_flush">Flush the pot with plain water every third month to wash out accumulated salts.</string>
+<string name="feed_rule_cold">Below 15 degrees C growth stops — stop feeding until it warms up.</string>
+
+    <!-- Fertiliser guide / tips: per-category tip lists -->
+<string-array name="tips_fruiting">
+        <item>Fruiting needs 6+ hours of direct light. Under artificial light budget 12–14 hours a day at 20 cm from the leaves.</item>
+        <item>Water deeply and on a schedule. Alternating drought and flood is what splits fruit and causes blossom-end rot.</item>
+        <item>Indoors there is no wind and no bees: shake the flowering stems daily, or touch each open flower with a soft brush.</item>
+        <item>Remove the side shoots that form in the leaf axils of indeterminate varieties, or the plant spends everything on foliage.</item>
+        <item>Keep night temperature above 13 degrees C. Cold nights abort flowers before you notice anything is wrong.</item>
+    </string-array>
+<string-array name="tips_root">
+        <item>Depth beats width: the container must be deeper than the mature root, or it forks.</item>
+        <item>Thin seedlings early and ruthlessly. Crowded roots stay pencil-thin no matter how well you feed them.</item>
+        <item>Stones, clods and fresh manure all cause forked and hairy roots. Sieve the mix.</item>
+        <item>Keep moisture even. A dry spell followed by a soaking splits the root open.</item>
+        <item>Mound soil over any shoulder that pushes above the surface, or it goes green and bitter.</item>
+    </string-array>
+<string-array name="tips_leafy">
+        <item>Grows in as little as 4 hours of light, but leaves get thin and pale below that.</item>
+        <item>Harvest outer leaves and leave the growing point: one plant then crops for weeks.</item>
+        <item>Heat makes leafy crops bolt and turn bitter. Keep them under 22 degrees C.</item>
+        <item>Never let the mix dry out completely — one wilt is enough to trigger bolting.</item>
+        <item>Sow a few seeds every two weeks instead of everything at once, so you always have young leaves.</item>
+    </string-array>
+<string-array name="tips_flowering">
+        <item>Buds form on light. A plant that grows well but never flowers is almost always in a spot that is too dark.</item>
+        <item>Do not move or rotate the pot once buds have set — most species drop them.</item>
+        <item>Deadhead spent flowers immediately: seed set switches the plant out of flowering.</item>
+        <item>Most species need a cool, dry rest of 6–8 weeks to initiate the next flowering.</item>
+        <item>Water the soil, not the flowers. Water sitting on petals invites grey mould.</item>
+    </string-array>
+<string-array name="tips_succulent">
+        <item>Water hard, then not at all until the mix is dry all the way through. Small sips rot the collar.</item>
+        <item>Overwatering and underwatering look identical from above. Check the soil, never the leaves.</item>
+        <item>Stretched, pale growth with widening gaps between leaves means not enough light. It cannot be undone — only cut back.</item>
+        <item>Move to direct sun gradually over two weeks. A sudden move sunburns the leaves permanently.</item>
+        <item>Keep it cool and completely dry in winter. That rest is what produces flowers.</item>
+    </string-array>
+<string-array name="tips_foliage">
+        <item>Bright indirect light means a spot where you can read comfortably all day without a lamp, out of direct sun.</item>
+        <item>Water when the top 3–4 cm are dry. Most losses in this group are drowning, not thirst.</item>
+        <item>Brown crisp leaf edges mean dry air or salt build-up. Brown soft patches mean too much water.</item>
+        <item>Dust the leaves monthly. A dusty leaf photosynthesises measurably less.</item>
+        <item>Rotate the pot a quarter turn every week so it grows evenly rather than leaning.</item>
+    </string-array>
+<string-array name="tips_herb">
+        <item>Pinch out the growing tip early and often — it is what makes the plant bushy instead of leggy.</item>
+        <item>Never strip more than a third of the plant at one harvest.</item>
+        <item>Cut flower spikes off as they appear: flowering makes the leaves bitter and coarse.</item>
+        <item>Most culinary herbs want the sunniest windowsill you have, and slightly lean soil.</item>
+        <item>Harvest in the morning, when the aromatic oil content is at its peak.</item>
+    </string-array>
 </resources>
