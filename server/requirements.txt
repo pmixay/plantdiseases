@@ -1,13 +1,21 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
 python-multipart==0.0.32
-# SECURITY: 12.2.0 is affected by 26 published advisories, including
-# CVE-2026-59199 (heap out-of-bounds write in ``Image.paste()`` /
-# ``Image.crop()`` via signed coordinate overflow) — reached directly by the
-# Stage-1 letterbox paste (detector.py) and the Stage-2 box crops
-# (pipeline.py, classifier.py) on every attacker-supplied scan image — plus
-# CVE-2026-54058 (OOB read on the mmap path) and several decompression-bomb
-# bypasses. 12.3.0 clears all of them. Keep this pinned and keep it current.
+# SECURITY: 12.2.0 is affected by 26 published advisories (CVE-2026-59199
+# paste/crop OOB write, CVE-2026-59203 EPS infinite loop, CVE-2026-59204 JP2
+# realloc, CVE-2026-54058 mmap OOB read, several decompression-bomb bypasses).
+# 12.3.0 clears all of them.
+#
+# For the record, since an earlier draft of docs/SECURITY_AUDIT.md overstated
+# this: none of them was shown to be reachable *here*. The paste/crop write
+# needs coordinates near the int32 limit and MAX_IMAGE_DIMENSION=4096 caps them,
+# and the format-specific bugs need formats that neither decode path accepts —
+# _validate_image_bytes (main.py) allows only JPEG/PNG/WebP/BMP, and
+# plant_photos._sniff caches only JPEG/PNG/WebP/GIF. Those two magic-byte gates
+# are doing real work; keep them.
+#
+# Patch anyway: it is free, and it removes the whole class rather than relying
+# on the gates staying correct forever.
 Pillow==12.3.0
 # Perceptual-hash near-duplicate signal stored with each labeling candidate
 # (server/labeling.py phash_bytes). Pulls numpy/scipy/PyWavelets (numpy pinned
