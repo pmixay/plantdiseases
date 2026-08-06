@@ -275,6 +275,14 @@ interface PlantReminderEventDao {
     @Update
     suspend fun update(event: PlantReminderEventEntity)
 
+    /** Undo path for CareRepository.complete(): a day-view "Done" tap on a
+     *  recurring occurrence has no prior notification-fired row to revert to
+     *  pending (unlike the notification action receivers, which always
+     *  resolve an existing row) — it inserts a fresh done event, so undoing
+     *  it means deleting exactly that row. */
+    @Query("DELETE FROM plant_reminder_events WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM plant_reminder_events WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PlantReminderEventEntity?
 
@@ -609,7 +617,27 @@ interface TreatmentStepDao {
 
     @Query("SELECT * FROM treatment_steps WHERE status = 'pending' AND due_at < :cutoff")
     suspend fun pendingDueBefore(cutoff: Long): List<TreatmentStepEntity>
+
+    /** Steps carry no `plant_id` of their own (only `plan_id`) — CareRepository's
+     *  cross-garden queue needs the owning plant, hence the join. */
+    @Query(
+        """
+        SELECT treatment_steps.*, treatment_plans.plant_id AS plant_id
+        FROM treatment_steps
+        JOIN treatment_plans ON treatment_steps.plan_id = treatment_plans.id
+        WHERE treatment_steps.due_at >= :from AND treatment_steps.due_at < :to
+        """
+    )
+    suspend fun getAllInRangeWithPlantId(from: Long, to: Long): List<StepWithPlantId>
+
+    @Query("SELECT COUNT(*) FROM treatment_steps WHERE plan_id = :planId")
+    suspend fun countForPlan(planId: Long): Int
 }
+
+data class StepWithPlantId(
+    @Embedded val step: TreatmentStepEntity,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+)
 
 // ─── One-off Care Task Entity ──────────────────────────────────────────────
 //

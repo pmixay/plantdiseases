@@ -10,9 +10,12 @@ import com.plantdiseases.app.data.local.PlantReminderDao
 import com.plantdiseases.app.data.local.PlantReminderEntity
 import com.plantdiseases.app.data.local.PlantReminderEventDao
 import com.plantdiseases.app.data.local.PlantReminderEventEntity
+import com.plantdiseases.app.data.local.RoomDao
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.local.TreatmentPlanDao
 import com.plantdiseases.app.util.CareSchedule
+import com.plantdiseases.app.util.PlantHealth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,20 +26,60 @@ class PlantRepository(
     private val reminderDao: PlantReminderDao,
     private val reminderEventDao: PlantReminderEventDao,
     private val chatMessageDao: ChatMessageDao,
+    private val roomDao: RoomDao,
+    private val treatmentPlanDao: TreatmentPlanDao,
 ) {
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
+        val roomNamesById = roomDao.getAll().associate { it.id to it.name }
+        val nowMs = System.currentTimeMillis()
         plantDao.getAllPlants().map { plant ->
             val scans = scanDao.getScansForPlant(plant.id)
             val journal = journalDao.getEntriesForPlant(plant.id)
             val reminders = reminderDao.getForPlant(plant.id)
+            val activePlan = treatmentPlanDao.getActiveForPlant(plant.id)
             PlantSummary(
                 plant = plant,
                 scanCount = scans.size,
                 latestScan = scans.maxByOrNull { it.timestamp },
                 lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
+                roomName = plant.roomId?.let { roomNamesById[it] },
+                health = healthVerdict(plant.id, scans, activePlan != null, nowMs),
             )
         }
+    }
+
+    /** Care adherence over the last [ADHERENCE_WINDOW_DAYS] days, from the
+     *  already-logged reminder-firing history — cheaper than re-projecting
+     *  CareQueue for every plant in the garden list, and only actually
+     *  consulted when there's an active treatment plan (PlantHealth.evaluate
+     *  ignores it otherwise). "Fired" reminders are the ones that were due;
+     *  "done" ones were kept up with. */
+    private suspend fun healthVerdict(
+        plantId: Long,
+        scans: List<ScanEntity>,
+        hasActivePlan: Boolean,
+        nowMs: Long,
+    ): PlantHealth.Verdict {
+        val adherence = if (hasActivePlan) {
+            val cutoff = nowMs - ADHERENCE_WINDOW_DAYS * CareSchedule.DAY_MS
+            val events = reminderEventDao.recentForPlant(plantId, limit = 50)
+                .filter { it.firedAt >= cutoff }
+            PlantHealth.Adherence(due = events.size, done = events.count { it.action == "done" })
+        } else {
+            PlantHealth.Adherence(due = 0, done = 0)
+        }
+        val scanInputs = scans.map { scan ->
+            val isNotAPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+                scan.diseaseName.equals("Не растение", ignoreCase = true)
+            PlantHealth.ScanInput(
+                atMs = scan.timestamp,
+                isHealthy = scan.isHealthy,
+                confidence = scan.confidence,
+                isNotAPlant = isNotAPlant,
+            )
+        }
+        return PlantHealth.evaluate(scanInputs, hasActivePlan, adherence, nowMs)
     }
 
     /** Compute the soonest reminder due-time across all enabled reminders
@@ -62,7 +105,10 @@ class PlantRepository(
         }.minByOrNull { it.dueAt }
     }
 
-    private fun reminderTypeToJournalType(reminderType: String): JournalType? =
+    /** internal, not private: CareRepository.queue() reuses this exact
+     *  mapping to compute the same anchor for the projected care queue —
+     *  duplicating it would let the two drift apart. */
+    internal fun reminderTypeToJournalType(reminderType: String): JournalType? =
         when (reminderType) {
             "watering" -> JournalType.WATERING
             "fertilize" -> JournalType.FERTILISING
@@ -87,12 +133,11 @@ class PlantRepository(
         existing: PlantEntity? = null,
         scientificName: String? = null,
         commonName: String? = null,
-        room: String? = null,
+        roomId: Long? = null,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
         val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
         val cleanCommon = commonName?.trim()?.takeIf { it.isNotEmpty() }
-        val cleanRoom = room?.trim()?.takeIf { it.isNotEmpty() }
         if (existing == null) {
             plantDao.insert(
                 PlantEntity(
@@ -100,7 +145,7 @@ class PlantRepository(
                     species = cleanSpecies,
                     scientificName = cleanScientific,
                     commonName = cleanCommon,
-                    room = cleanRoom,
+                    roomId = roomId,
                 )
             )
         } else {
@@ -113,7 +158,12 @@ class PlantRepository(
                     // re-identification step).
                     scientificName = cleanScientific ?: existing.scientificName,
                     commonName = cleanCommon ?: existing.commonName,
-                    room = cleanRoom ?: existing.room,
+                    // Unlike the names above, roomId is always overwritten,
+                    // never defaulted to the existing value — the room picker
+                    // always sends the plant's current selection (including
+                    // an explicit null for "unassign"), so falling back here
+                    // would make unassigning a plant from its room impossible.
+                    roomId = roomId,
                 )
             )
             existing.id
@@ -365,6 +415,14 @@ class PlantRepository(
         val latestScan: ScanEntity?,
         val lastJournalEntry: PlantJournalEntity?,
         val nextAction: NextAction? = null,
+        val roomName: String? = null,
+        val health: PlantHealth.Verdict = PlantHealth.Verdict(
+            status = PlantHealth.Status.UNKNOWN,
+            score = null,
+            weekDelta = null,
+            series = emptyList(),
+            scanCount = 0,
+        ),
     )
 
     /** Soonest "do something" hint for a plant, computed off the most
@@ -387,5 +445,9 @@ class PlantRepository(
         companion object {
             fun from(value: String) = entries.firstOrNull { it.value == value } ?: NOTE
         }
+    }
+
+    private companion object {
+        const val ADHERENCE_WINDOW_DAYS = 30L
     }
 }

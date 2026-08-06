@@ -178,7 +178,11 @@ object CareQueue {
         return cal.timeInMillis
     }
 
-    private fun epochDayOf(ms: Long): Long {
+    /** Public so CareRepository can bucket a `plant_reminder_events.fired_at`
+     *  / `done_at` timestamp into the same day-buckets this object uses
+     *  internally when building [DoneEvent]s — duplicating the calculation
+     *  risks the two drifting out of sync. */
+    fun epochDayOf(ms: Long): Long {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = ms }
         // Days since epoch in LOCAL time — two timestamps on the same wall-clock
         // day (regardless of hour) must map to the same bucket, and this must

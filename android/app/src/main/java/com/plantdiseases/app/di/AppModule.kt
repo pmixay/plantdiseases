@@ -3,8 +3,10 @@ package com.plantdiseases.app.di
 import android.content.Context
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.OnboardingStateStore
@@ -86,6 +88,34 @@ object AppModule {
         database.plantReminderDao(),
         database.plantReminderEventDao(),
         database.chatMessageDao(),
+        database.roomDao(),
+        database.treatmentPlanDao(),
+    )
+
+    @Provides
+    @Singleton
+    fun provideRoomRepository(database: AppDatabase): RoomRepository = RoomRepository(
+        database.roomDao(),
+        database.plantDao(),
+        database.scanDao(),
+    )
+
+    @Provides
+    @Singleton
+    fun provideCareRepository(
+        database: AppDatabase,
+        plantRepository: PlantRepository,
+    ): CareRepository = CareRepository(
+        plantDao = database.plantDao(),
+        roomDao = database.roomDao(),
+        scanDao = database.scanDao(),
+        reminderDao = database.plantReminderDao(),
+        reminderEventDao = database.plantReminderEventDao(),
+        journalDao = database.plantJournalDao(),
+        treatmentPlanDao = database.treatmentPlanDao(),
+        treatmentStepDao = database.treatmentStepDao(),
+        careTaskDao = database.careTaskDao(),
+        plantRepository = plantRepository,
     )
 
     @Provides
