@@ -4,7 +4,7 @@ import androidx.room.*
 
 @Entity(
     tableName = "plants",
-    indices = [Index(value = ["created_at"])]
+    indices = [Index(value = ["created_at"]), Index(value = ["room_id"])]
 )
 data class PlantEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -27,6 +27,12 @@ data class PlantEntity(
      *  "Unassigned" group at the bottom. Re-added by MIGRATION_5_6 after
      *  MIGRATION_4_5 previously dropped it. */
     @ColumnInfo(name = "room") val room: String? = null,
+    /** FK into `rooms` (no ForeignKey constraint: deleting a room must NOT
+     *  cascade-delete plants, so RoomRepository nulls this column instead).
+     *  Replaces the free-text `room` column above, which MIGRATION_6_7
+     *  backfills from and then leaves in place, unread, since SQLite has
+     *  no cheap DROP COLUMN. NULL = unassigned. */
+    @ColumnInfo(name = "room_id") val roomId: Long? = null,
     /** Most recent peak lux reading from the Light Meter, captured
      *  on a session launched WITH this plant's context. Null until
      *  the user runs the meter from plant detail. */
@@ -435,6 +441,228 @@ interface PlantJournalDao {
     suspend fun deleteById(id: Long)
 }
 
+// ─── Room Entity ──────────────────────────────────────────────────────────
+//
+// A plant's location. First-class rather than the free-text `plants.room`
+// column: the Garden refactor makes rooms creatable/renameable/deletable
+// objects that own a plant collection and (later) a light baseline, none of
+// which a plain string column supports without a rewrite on every rename.
+
+@Entity(tableName = "rooms", indices = [Index(value = ["name"], unique = true)])
+data class RoomEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "name") val name: String,
+    /** RoomPresets key (living/bedroom/kitchen/office/balcony/bathroom/other).
+     *  Drives the room card icon; NULL renders the generic ic_room. */
+    @ColumnInfo(name = "icon") val icon: String? = null,
+    /** Optional per-room light baseline in lux, seeded by the Light Meter.
+     *  NULL until measured. Not read by anything yet — reserved for the
+     *  room-level care defaults ROADMAP §4 describes. */
+    @ColumnInfo(name = "baseline_lux") val baselineLux: Int? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
+)
+
+@Dao
+interface RoomDao {
+    @Query("SELECT * FROM rooms ORDER BY sort_order ASC, name ASC")
+    suspend fun getAll(): List<RoomEntity>
+
+    @Query("SELECT * FROM rooms WHERE id = :id")
+    suspend fun getById(id: Long): RoomEntity?
+
+    @Query("SELECT * FROM rooms WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): RoomEntity?
+
+    @Insert
+    suspend fun insert(room: RoomEntity): Long
+
+    @Update
+    suspend fun update(room: RoomEntity)
+
+    @Query("DELETE FROM rooms WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+// ─── Treatment Plan / Step Entities ────────────────────────────────────────
+//
+// Materialises the treatment checklist a disease-diagnosing scan produces
+// (server `/api/care-plan` -> `treatment: List<String>`) so its steps can be
+// tracked over the recovery window instead of being read once and forgotten.
+// See util/TreatmentPlanFactory.kt for the DTO -> rows construction.
+
+@Entity(
+    tableName = "treatment_plans",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = ScanEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["scan_id"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+    indices = [
+        Index(value = ["plant_id"]),
+        Index(value = ["scan_id"]),
+        Index(value = ["plant_id", "status"]),
+    ],
+)
+data class TreatmentPlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    /** The scan that diagnosed it. NULL if that scan is later deleted
+     *  (ON DELETE SET NULL) — the plan and its history survive. */
+    @ColumnInfo(name = "scan_id") val scanId: Long? = null,
+    /** Canonical model class key (e.g. "botrytis"). Keys the product
+     *  catalogue lookup and the step icon. */
+    @ColumnInfo(name = "disease_key") val diseaseKey: String,
+    /** Both locales snapshotted at creation: the plan must render
+     *  correctly after a language switch, and the offline device can't
+     *  re-fetch /api/care-plan to re-derive the label later. */
+    @ColumnInfo(name = "disease_label_en") val diseaseLabelEn: String,
+    @ColumnInfo(name = "disease_label_ru") val diseaseLabelRu: String,
+    @ColumnInfo(name = "started_at") val startedAt: Long = System.currentTimeMillis(),
+    /** "active" | "completed" | "abandoned". At most one "active" row per
+     *  plant — enforced by CareRepository.startTreatmentPlan, not by a
+     *  DB constraint (SQLite partial unique indices are awkward via Room). */
+    @ColumnInfo(name = "status") val status: String = "active",
+    @ColumnInfo(name = "completed_at") val completedAt: Long? = null,
+)
+
+@Dao
+interface TreatmentPlanDao {
+    @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId AND status = 'active' LIMIT 1")
+    suspend fun getActiveForPlant(plantId: Long): TreatmentPlanEntity?
+
+    @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId ORDER BY started_at DESC")
+    suspend fun getAllForPlant(plantId: Long): List<TreatmentPlanEntity>
+
+    @Query("SELECT * FROM treatment_plans WHERE id = :id")
+    suspend fun getById(id: Long): TreatmentPlanEntity?
+
+    @Query("SELECT * FROM treatment_plans WHERE status = 'active'")
+    suspend fun getAllActive(): List<TreatmentPlanEntity>
+
+    @Insert
+    suspend fun insert(plan: TreatmentPlanEntity): Long
+
+    @Update
+    suspend fun update(plan: TreatmentPlanEntity)
+}
+
+@Entity(
+    tableName = "treatment_steps",
+    foreignKeys = [
+        ForeignKey(
+            entity = TreatmentPlanEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plan_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["plan_id"]),
+        Index(value = ["due_at"]),
+        Index(value = ["plan_id", "step_index"], unique = true),
+    ],
+)
+data class TreatmentStepEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plan_id") val planId: Long,
+    /** 0-based; the UI renders stepIndex + 1 ("Step 2 of 5"). */
+    @ColumnInfo(name = "step_index") val stepIndex: Int,
+    /** Short imperative title — the first sentence of care-plan
+     *  `treatment[i]`. See TreatmentPlanFactory for the split rule. */
+    @ColumnInfo(name = "title") val title: String,
+    /** Full step text, or NULL when it's identical to `title` (nothing
+     *  left to say twice). */
+    @ColumnInfo(name = "detail") val detail: String? = null,
+    /** JSON array of strings — the "What to do" checklist. */
+    @ColumnInfo(name = "bullets") val bullets: String? = null,
+    /** JSON array of product-catalogue keys (server `products[].key`). */
+    @ColumnInfo(name = "product_keys") val productKeys: String? = null,
+    @ColumnInfo(name = "due_at") val dueAt: Long,
+    /** "pending" | "done" | "skipped" */
+    @ColumnInfo(name = "status") val status: String = "pending",
+    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
+)
+
+@Dao
+interface TreatmentStepDao {
+    @Query("SELECT * FROM treatment_steps WHERE plan_id = :planId ORDER BY step_index ASC")
+    suspend fun getForPlan(planId: Long): List<TreatmentStepEntity>
+
+    @Query("SELECT * FROM treatment_steps WHERE id = :id")
+    suspend fun getById(id: Long): TreatmentStepEntity?
+
+    @Insert
+    suspend fun insertAll(steps: List<TreatmentStepEntity>): List<Long>
+
+    @Update
+    suspend fun update(step: TreatmentStepEntity)
+
+    @Query("SELECT * FROM treatment_steps WHERE status = 'pending' AND due_at < :cutoff")
+    suspend fun pendingDueBefore(cutoff: Long): List<TreatmentStepEntity>
+}
+
+// ─── One-off Care Task Entity ──────────────────────────────────────────────
+//
+// User-typed one-off tasks only. Recurring care lives in `plant_reminders`
+// and is projected forward by util/CareQueue.kt — it is NOT materialised
+// here. This table exists solely for tasks with nowhere else to live.
+
+@Entity(
+    tableName = "care_tasks",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["plant_id"]), Index(value = ["due_at"])],
+)
+data class CareTaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    /** ReminderPresets key: watering / fertilize / check / mist / … / custom. */
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "title") val title: String,
+    @ColumnInfo(name = "note") val note: String? = null,
+    @ColumnInfo(name = "due_at") val dueAt: Long,
+    @ColumnInfo(name = "status") val status: String = "pending",
+    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface CareTaskDao {
+    @Query("SELECT * FROM care_tasks WHERE plant_id = :plantId ORDER BY due_at ASC")
+    suspend fun getForPlant(plantId: Long): List<CareTaskEntity>
+
+    @Query("SELECT * FROM care_tasks WHERE id = :id")
+    suspend fun getById(id: Long): CareTaskEntity?
+
+    @Query("SELECT * FROM care_tasks WHERE due_at >= :from AND due_at < :to ORDER BY due_at ASC")
+    suspend fun inRange(from: Long, to: Long): List<CareTaskEntity>
+
+    @Insert
+    suspend fun insert(task: CareTaskEntity): Long
+
+    @Update
+    suspend fun update(task: CareTaskEntity)
+
+    @Query("DELETE FROM care_tasks WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
     entities = [
         ScanEntity::class,
@@ -444,12 +672,16 @@ interface PlantJournalDao {
         PlantReminderEventEntity::class,
         ChatMessageEntity::class,
         ScanChatMessageEntity::class,
+        RoomEntity::class,
+        TreatmentPlanEntity::class,
+        TreatmentStepEntity::class,
+        CareTaskEntity::class,
     ],
     // The schema is treated as ephemeral while the app is in pre-release
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -460,6 +692,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantReminderEventDao(): PlantReminderEventDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun scanChatMessageDao(): ScanChatMessageDao
+    abstract fun roomDao(): RoomDao
+    abstract fun treatmentPlanDao(): TreatmentPlanDao
+    abstract fun treatmentStepDao(): TreatmentStepDao
+    abstract fun careTaskDao(): CareTaskDao
 
     companion object {
         @Volatile
@@ -560,13 +796,152 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Rooms become first-class rows, and treatment plans/steps + one-off
+         *  tasks get storage. Entirely additive — three CREATE TABLEs and one
+         *  ADD COLUMN, then a backfill that turns each distinct trimmed
+         *  `plants.room` value into a `rooms` row and points `room_id` at it.
+         *  No table is rebuilt, so no existing garden, scan, journal or
+         *  reminder is touched, and the legacy `room` column is left in
+         *  place (unread) rather than dropped. */
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `rooms` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `icon` TEXT,
+                        `baseline_lux` INTEGER,
+                        `created_at` INTEGER NOT NULL,
+                        `sort_order` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_rooms_name` ON `rooms` (`name`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `treatment_plans` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `plant_id` INTEGER NOT NULL,
+                        `scan_id` INTEGER,
+                        `disease_key` TEXT NOT NULL,
+                        `disease_label_en` TEXT NOT NULL,
+                        `disease_label_ru` TEXT NOT NULL,
+                        `started_at` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL DEFAULT 'active',
+                        `completed_at` INTEGER,
+                        FOREIGN KEY(`plant_id`) REFERENCES `plants`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`scan_id`) REFERENCES `scans`(`id`)
+                            ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_treatment_plans_plant_id` " +
+                        "ON `treatment_plans` (`plant_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_treatment_plans_scan_id` " +
+                        "ON `treatment_plans` (`scan_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_treatment_plans_plant_id_status` " +
+                        "ON `treatment_plans` (`plant_id`, `status`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `treatment_steps` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `plan_id` INTEGER NOT NULL,
+                        `step_index` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `detail` TEXT,
+                        `bullets` TEXT,
+                        `product_keys` TEXT,
+                        `due_at` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL DEFAULT 'pending',
+                        `done_at` INTEGER,
+                        FOREIGN KEY(`plan_id`) REFERENCES `treatment_plans`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_treatment_steps_plan_id` " +
+                        "ON `treatment_steps` (`plan_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_treatment_steps_due_at` " +
+                        "ON `treatment_steps` (`due_at`)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_treatment_steps_plan_id_step_index` " +
+                        "ON `treatment_steps` (`plan_id`, `step_index`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `care_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `plant_id` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `note` TEXT,
+                        `due_at` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL DEFAULT 'pending',
+                        `done_at` INTEGER,
+                        `created_at` INTEGER NOT NULL,
+                        FOREIGN KEY(`plant_id`) REFERENCES `plants`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_plant_id` ON `care_tasks` (`plant_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_due_at` ON `care_tasks` (`due_at`)"
+                )
+
+                db.execSQL("ALTER TABLE `plants` ADD COLUMN `room_id` INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_plants_room_id` ON `plants` (`room_id`)")
+
+                // Backfill: every distinct non-blank trimmed room string
+                // becomes a row, then each matching plant points at it.
+                // TRIM collapses "Kitchen " and "Kitchen" into one room,
+                // which the old free-text grouping never did.
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `rooms` (`name`, `created_at`, `sort_order`)
+                    SELECT DISTINCT TRIM(`room`), strftime('%s','now') * 1000, 0
+                    FROM `plants`
+                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    UPDATE `plants`
+                    SET `room_id` = (
+                        SELECT `r`.`id` FROM `rooms` `r` WHERE `r`.`name` = TRIM(`plants`.`room`)
+                    )
+                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase = databaseInstance ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "plantdiseases_db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                )
                 // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                 // true` preserves the previous behaviour (wipe everything
                 // when no migration path exists).
