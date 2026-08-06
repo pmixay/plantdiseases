@@ -26,7 +26,7 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@v4
@@ -55,7 +55,7 @@ jobs:
     # that has no business holding the app-signing key. Each secret is now
     # attached to the single step that needs it (see below).
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Stops checkout from writing the GITHUB_TOKEN into .git/config, where
           # it stays readable by every subsequent step — including the Gradle
@@ -236,7 +236,7 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
