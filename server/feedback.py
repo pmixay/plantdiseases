@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import secrets
 import sqlite3
 import threading
 import time
@@ -44,10 +45,60 @@ FEEDBACK_DB_PATH = Path(get_str("FEEDBACK_DB_PATH", str(_DEFAULT_DB_PATH)))
 _DEFAULT_IMG_DIR = Path(__file__).resolve().parent / "feedback_images"
 FEEDBACK_IMG_DIR = Path(get_str("FEEDBACK_IMG_DIR", str(_DEFAULT_IMG_DIR)))
 
-# Stable IP hashing pepper. When the env var is unset we still hash so
-# raw IPs never land on disk; the operator can rotate the pepper to
-# break correlation across deployments.
-_IP_HASH_PEPPER = get_str("FEEDBACK_IP_PEPPER", "plantvision-static-pepper-v1")
+# Stable IP hashing pepper. The operator can rotate it to break correlation
+# across deployments.
+#
+# There is deliberately NO hard-coded default. IPv4 is a 32-bit space, so an
+# unsalted-or-publicly-salted SHA-256 of an IP is not a one-way token at all —
+# the whole space enumerates in seconds, which made every stored
+# ``client_ip_hash`` reversible to the raw IP for anyone who read this file.
+# When FEEDBACK_IP_PEPPER is unset we mint a random pepper instead and persist
+# it beside the DB, so the hash is genuinely irreversible without the operator
+# having to configure anything (and without the server refusing to boot).
+_generated_pepper: str | None = None
+_pepper_lock = threading.Lock()
+
+
+def _ip_hash_pepper() -> str:
+    """The active pepper: configured value, else a persisted random one.
+
+    Resolved per call rather than at import so a deployment (or a test) can set
+    FEEDBACK_IP_PEPPER at any point and have it take effect.
+    """
+    configured = get_str("FEEDBACK_IP_PEPPER", "").strip()
+    if configured:
+        return configured
+    global _generated_pepper
+    with _pepper_lock:
+        if _generated_pepper:
+            return _generated_pepper
+        path = FEEDBACK_DB_PATH.parent / ".ip_hash_pepper"
+        try:
+            if path.is_file():
+                existing = path.read_text(encoding="utf-8").strip()
+                if existing:
+                    _generated_pepper = existing
+                    return _generated_pepper
+        except OSError:
+            pass
+        _generated_pepper = secrets.token_hex(32)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_generated_pepper, encoding="utf-8")
+            path.chmod(0o600)
+            logger.warning(
+                "FEEDBACK_IP_PEPPER is not set; generated a random pepper and "
+                "stored it at %s. Set FEEDBACK_IP_PEPPER explicitly to control "
+                "rotation and to share one pepper across replicas.", path,
+            )
+        except OSError as exc:
+            logger.error(
+                "FEEDBACK_IP_PEPPER is not set and the generated pepper could "
+                "not be persisted (%s); falling back to a process-lifetime "
+                "pepper, so IP hashes will not correlate across restarts.", exc,
+            )
+        return _generated_pepper
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
@@ -169,7 +220,7 @@ def hash_client_ip(client_ip: str | None) -> str | None:
     if not client_ip:
         return None
     digest = hashlib.sha256(
-        f"{_IP_HASH_PEPPER}|{client_ip}".encode()
+        f"{_ip_hash_pepper()}|{client_ip}".encode()
     ).hexdigest()
     # 16 hex chars (64 bits) is plenty of entropy for abuse tracking
     # without giving a colour-by-numbers re-identification surface.

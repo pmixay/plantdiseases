@@ -294,7 +294,7 @@ class SpotlightOverlay private constructor(
 
     private fun styleIconButton(button: ImageButton, icon: Int, description: Int) {
         button.setImageResource(icon)
-        button.setColorFilter(resolveColor(com.google.android.material.R.attr.colorPrimary))
+        button.setColorFilter(resolveColor(androidx.appcompat.R.attr.colorPrimary))
         button.contentDescription = host.getString(description)
         button.background = ColorDrawable(Color.TRANSPARENT)
         button.scaleType = android.widget.ImageView.ScaleType.CENTER
@@ -428,7 +428,7 @@ class SpotlightOverlay private constructor(
                     override fun onClick(widget: View) = callbacks.onInlineAction()
 
                     override fun updateDrawState(ds: TextPaint) {
-                        ds.color = resolveColor(com.google.android.material.R.attr.colorPrimary)
+                        ds.color = resolveColor(androidx.appcompat.R.attr.colorPrimary)
                         ds.isUnderlineText = true
                     }
                 },

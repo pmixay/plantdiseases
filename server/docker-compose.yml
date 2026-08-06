@@ -5,7 +5,14 @@ services:
       dockerfile: Dockerfile
     container_name: plantdiseases-server
     ports:
-      - "8000:8000"
+      # Bound to loopback deliberately. DEPLOYMENT.md terminates TLS in nginx
+      # in front of this container, so nothing outside the host should reach
+      # uvicorn directly. Publishing on 0.0.0.0 (the "8000:8000" short form)
+      # also bypasses a host firewall: Docker's DNAT rules sit in the DOCKER
+      # chain, which is traversed before INPUT, so a ufw rule denying 8000
+      # does not apply. Override PORT_BIND only for a host with no reverse
+      # proxy in front of it.
+      - "${PORT_BIND:-127.0.0.1}:8000:8000"
     volumes:
       # Mount a host ./models dir pre-populated with the trained artefacts
       # (detector.{pt,onnx}, classifier.onnx, classes.json, ...). Models are
@@ -46,6 +53,17 @@ services:
       - FEEDBACK_RETENTION_DAYS=${FEEDBACK_RETENTION_DAYS:-180}
       - COMMUNITY_RETENTION_DAYS=${COMMUNITY_RETENTION_DAYS:-90}
     restart: unless-stopped
+    # The container already runs as the unprivileged `plantd` user (Dockerfile).
+    # no-new-privileges stops any setuid binary inside the image from being used
+    # to regain them, and the memory cap bounds the blast radius of a
+    # decompression-bomb / oversized-image request to this container instead of
+    # letting the host OOM-killer pick a victim.
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_LIMIT:-4g}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)\""]
       interval: 30s

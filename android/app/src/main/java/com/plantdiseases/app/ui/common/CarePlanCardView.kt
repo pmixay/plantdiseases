@@ -312,7 +312,7 @@ class CarePlanCardView @JvmOverloads constructor(
         detailsToggle = MaterialButton(
             context,
             null,
-            com.google.android.material.R.attr.borderlessButtonStyle,
+            androidx.appcompat.R.attr.borderlessButtonStyle,
         ).apply {
             text = context.getString(R.string.care_plan_show_details)
             setTextColor(context.getColor(R.color.on_hero))
