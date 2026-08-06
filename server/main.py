@@ -920,8 +920,35 @@ def _persist_issued_scan_id(scan_id: str) -> None:
         logger.warning("Failed to persist issued scan_id: %s", exc)
 
 
+def _is_trusted_proxy(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True when ``ip`` is one of our own reverse-proxy hops."""
+    if str(ip) in TRUSTED_PROXIES:
+        return True
+    for net in TRUSTED_PROXIES:
+        try:
+            if ip in ipaddress.ip_network(net, strict=False):
+                return True
+        except ValueError:  # malformed TRUSTED_PROXIES entry — ignore it
+            continue
+    return False
+
+
 def _client_ip(request: Request) -> str:
-    """Return the real client IP, honouring X-Forwarded-For only for trusted proxies."""
+    """Return the real client IP, honouring X-Forwarded-For only for trusted proxies.
+
+    This value is the identity every abuse control keys on — the rate-limiter
+    bucket, the request log, and the hashed ``client_ip`` stored with feedback,
+    community opinions and telemetry — so it must not be client-choosable.
+
+    The header is walked RIGHT-to-LEFT. The reverse proxy documented in
+    DEPLOYMENT.md forwards ``$proxy_add_x_forwarded_for``, which *appends* the
+    real peer to whatever the client already sent: a request from 198.51.100.9
+    carrying a forged ``X-Forwarded-For: 203.0.113.7`` arrives here as
+    ``203.0.113.7, 198.51.100.9``. Reading left-to-right therefore returned the
+    attacker's chosen value, letting one header spoof an unlimited number of
+    distinct identities and so bypass the rate limiter and every per-IP quota.
+    Only the rightmost entry that is not itself a trusted hop is trustworthy.
+    """
     peer = request.client.host if request.client else "unknown"
     if not TRUSTED_PROXIES:
         return peer
@@ -930,20 +957,20 @@ def _client_ip(request: Request) -> str:
     except ValueError:
         return peer
     # Only trust the header if the direct peer is a configured proxy.
-    if peer not in TRUSTED_PROXIES and not any(
-        peer_ip in ipaddress.ip_network(net, strict=False) for net in TRUSTED_PROXIES
-    ):
+    if not _is_trusted_proxy(peer_ip):
         return peer
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        # Take the leftmost non-empty entry that parses as an IP
-        for entry in (e.strip() for e in xff.split(",")):
-            if entry:
-                try:
-                    ipaddress.ip_address(entry)
-                    return entry
-                except ValueError:
-                    continue
+        for entry in reversed([e.strip() for e in xff.split(",")]):
+            if not entry:
+                continue
+            try:
+                candidate = ipaddress.ip_address(entry)
+            except ValueError:
+                continue
+            if _is_trusted_proxy(candidate):
+                continue  # one of our own hops — keep walking leftwards
+            return entry
     return peer
 
 
