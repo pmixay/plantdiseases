@@ -182,8 +182,12 @@ first time `val_realworld` contains garden ornamentals, so the 2.6.12 pivot is
 measurable rather than assumed.
 
 - [ ] **Train 2.7.0 and paired-bootstrap vs 2.6.8.** Expect `val_indomain` to
-      recover toward 0.86, and eval/cal slices to **shrink** while train grows
-      (that is `split_hint` working). `viral_disease` is supply-starved (2
+      recover toward 0.86. Measured on the first full §2 with v8 loaded:
+      `split_hint` held **695** rows out of the held-out splits that would
+      otherwise have drained into them, and weak-class eval thickened anyway
+      (nutrient 30→77, scorch 45→107, gray_mold 57→82, powdery 66→99 vs the
+      supplement-less run). The slices grow, not shrink — the supplement adds
+      more than the routing withholds. `viral_disease` is supply-starved (2
       eval-eligible supplement rows) — do **not** read a viral regression as a
       modelling failure.
       **The A/B cannot be corpus-verified**: the inventory gate ships *in*
