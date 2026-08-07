@@ -110,8 +110,8 @@ class Settings:
             raise SettingsError("ACCOUNT_ISSUER must not contain credentials, query, or fragment")
 
         database = urlparse(self.database_url)
-        if database.scheme not in {"postgres", "postgresql", "postgresql+psycopg"}:
-            raise SettingsError("ACCOUNT_DATABASE_URL must use PostgreSQL")
+        if database.scheme != "postgresql+psycopg":
+            raise SettingsError("ACCOUNT_DATABASE_URL must use postgresql+psycopg")
         if not database.hostname or not database.path.strip("/"):
             raise SettingsError("ACCOUNT_DATABASE_URL must include a host and database name")
         if "*" in self.cors_origins:

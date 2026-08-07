@@ -49,10 +49,17 @@ def test_unknown_or_blank_environment_is_rejected(environment: str):
         Settings.from_env(env)
 
 
-def test_non_postgres_database_is_rejected():
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "sqlite:///account.db",
+        "postgresql://account:synthetic@localhost/accounts",
+    ],
+)
+def test_non_psycopg_database_url_is_rejected(database_url: str):
     env = _base_env()
-    env["ACCOUNT_DATABASE_URL"] = "sqlite:///account.db"
-    with pytest.raises(SettingsError, match="PostgreSQL"):
+    env["ACCOUNT_DATABASE_URL"] = database_url
+    with pytest.raises(SettingsError, match=r"postgresql\+psycopg"):
         Settings.from_env(env)
 
 

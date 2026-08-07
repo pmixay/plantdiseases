@@ -6,6 +6,19 @@ from app.config import Settings
 from app.main import create_app
 
 
+class _FakeDatabase:
+    def __init__(self, *, available: bool = True):
+        self.available = available
+        self.closed = False
+
+    def ping(self) -> None:
+        if not self.available:
+            raise RuntimeError("postgresql://private-user:private-password@db.invalid/accounts")
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def _settings() -> Settings:
     return Settings.from_env(
         {
@@ -21,7 +34,8 @@ def _settings() -> Settings:
 
 
 def test_health_and_readiness_contracts():
-    with TestClient(create_app(_settings())) as client:
+    database = _FakeDatabase()
+    with TestClient(create_app(_settings(), database=database)) as client:
         health = client.get("/health")
         assert health.status_code == 200
         assert health.json() == {
@@ -33,11 +47,16 @@ def test_health_and_readiness_contracts():
 
         ready = client.get("/ready")
         assert ready.status_code == 200
-        assert ready.json() == {"status": "ready", "providers": ["vk", "yandex"]}
+        assert ready.json() == {
+            "status": "ready",
+            "providers": ["vk", "yandex"],
+            "database": "ok",
+        }
+    assert database.closed is True
 
 
 def test_every_response_gets_fresh_server_owned_request_id_and_safety_headers():
-    with TestClient(create_app(_settings())) as client:
+    with TestClient(create_app(_settings(), database=_FakeDatabase())) as client:
         first = client.get("/health", headers={"X-Request-ID": "caller-controlled"})
         second = client.get("/health")
 
@@ -54,7 +73,7 @@ def test_every_response_gets_fresh_server_owned_request_id_and_safety_headers():
 
 def test_both_provider_adapters_are_required():
     try:
-        create_app(_settings(), providers={})
+        create_app(_settings(), providers={}, database=_FakeDatabase())
     except ValueError as exc:
         assert str(exc) == "Both yandex and vk provider adapters are required"
     else:
@@ -74,7 +93,7 @@ def test_cors_allows_only_the_explicit_origin():
             "CORS_ORIGINS": "https://allowed.invalid",
         }
     )
-    with TestClient(create_app(settings)) as client:
+    with TestClient(create_app(settings, database=_FakeDatabase())) as client:
         allowed = client.options(
             "/health",
             headers={
@@ -87,3 +106,11 @@ def test_cors_allows_only_the_explicit_origin():
     assert allowed.status_code == 200
     assert allowed.headers["Access-Control-Allow-Origin"] == "https://allowed.invalid"
     assert "Access-Control-Allow-Origin" not in denied.headers
+
+
+def test_readiness_failure_is_redacted():
+    with TestClient(create_app(_settings(), database=_FakeDatabase(available=False))) as client:
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
+    assert "private-password" not in response.text

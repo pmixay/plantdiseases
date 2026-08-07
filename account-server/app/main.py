@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import Settings
+from app.db.database import Database, DatabaseHandle
 from app.providers.base import ProviderAdapter, ProviderName
 from app.providers.mock import build_provider_registry
 
@@ -16,11 +19,20 @@ from app.providers.mock import build_provider_registry
 def create_app(
     settings: Settings | None = None,
     providers: Mapping[ProviderName, ProviderAdapter] | None = None,
+    database: DatabaseHandle | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
     provider_registry = dict(providers) if providers is not None else build_provider_registry(config)
     if set(provider_registry) != {"yandex", "vk"}:
         raise ValueError("Both yandex and vk provider adapters are required")
+    database_handle = database or Database(config.database_url)
+
+    @asynccontextmanager
+    async def lifespan(_application: FastAPI):
+        try:
+            yield
+        finally:
+            database_handle.close()
 
     application = FastAPI(
         title="PlantDiseases Account API",
@@ -28,9 +40,11 @@ def create_app(
         root_path=config.root_path,
         docs_url=None if config.is_production else "/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
     application.state.settings = config
     application.state.providers = provider_registry
+    application.state.database = database_handle
 
     if config.cors_origins:
         application.add_middleware(
@@ -65,11 +79,12 @@ def create_app(
         }
 
     @application.get("/ready", include_in_schema=False)
-    async def ready() -> dict[str, object]:
-        return {
-            "status": "ready",
-            "providers": sorted(provider_registry),
-        }
+    def ready():
+        try:
+            database_handle.ping()
+        except Exception:  # noqa: BLE001 - readiness must redact driver/URL details
+            return JSONResponse(status_code=503, content={"status": "unavailable"})
+        return {"status": "ready", "providers": sorted(provider_registry), "database": "ok"}
 
     return application
 

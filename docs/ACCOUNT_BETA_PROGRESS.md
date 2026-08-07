@@ -99,17 +99,69 @@ Checkpoint commit:
 
 - `feat(account): add fail-closed service scaffold`
 
+### 2 — Private PostgreSQL schema and migration foundation (complete, 2026-08-07)
+
+Completed work:
+
+- Added SQLAlchemy 2.0 models for `accounts`, `account_identities`, `sessions`,
+  `refresh_tokens`, `pending_signups`, `reauth_challenges`,
+  `account_deletion_jobs`, `push_devices`, `account_consents`, and
+  `account_security_events`.
+- Added database-enforced uniqueness for normalized nicknames, random community
+  actors, provider subjects, one provider per account, token hashes/families,
+  push fingerprints, and versioned account consent.
+- Added bounded enum/check constraints, SHA-256-length checks, expiry ordering,
+  cascading private-data ownership, and generic `Android device` session labels.
+- Added an explicit, reversible Alembic `0001` migration and offline PostgreSQL
+  SQL verification; migration tables match ORM columns exactly.
+- Added a short transaction-scoped repository helper with commit/rollback and
+  no process-global session.
+- Added database-aware readiness. Database/driver failures return a redacted
+  `503 {"status":"unavailable"}`; liveness remains independent.
+- Packaged Alembic migrations in the account image and made its container
+  healthcheck use database-backed `/ready` rather than liveness-only `/health`.
+- Pinned SQLAlchemy `2.0.51`, Alembic `1.18.5`, and Psycopg `3.3.4`.
+
+Decisions:
+
+- Token and pending/reauth secrets are stored only as 32-byte SHA-256 hashes.
+- FCM registrations store ciphertext plus a keyed 32-byte fingerprint; there
+  is no plaintext token, phone model, or hardware identifier column.
+- Account security events are allowlisted and expiring, with no provider
+  subject, nickname, token, request body, raw/hashed IP, or arbitrary message.
+- SQLite is used only as a fast migration/constraint test dialect. The next
+  checkpoint must run the same migration against the beta PostgreSQL container
+  before the local foundation is considered complete.
+
+Verification:
+
+- Temporary dependency install into `/tmp/account-beta-dbdeps` — installed the
+  three pinned database/migration packages successfully.
+- `/home/plantdiseases/repo/server/venv/bin/ruff check .` from
+  `account-server/` — passed.
+- `PYTHONPATH=/tmp/account-beta-dbdeps:/tmp/account-beta-pydeps .../pytest -q`
+  — 38 passed in 0.64s.
+- `python -m alembic upgrade head --sql` with explicit synthetic beta settings
+  — passed and rendered transactional PostgreSQL DDL for all 10 tables.
+- Tests cover schema privacy, migration upgrade/downgrade and PostgreSQL SQL,
+  transaction rollback, nickname/actor/provider uniqueness, exact Psycopg URL
+  enforcement, generic sessions, encrypted push storage, hash length checks,
+  and readiness redaction.
+
+Checkpoint commit:
+
+- `feat(account): add private database schema`
+
 ## Remaining work (plan order)
 
-1. Add the account PostgreSQL schema/migrations, repository test fixtures, and
-   database-backed readiness checks.
-2. Add the isolated local Compose stack and prove empty-state health/readiness.
-3. Implement and verify the account API contract, token/session security,
+1. Add the isolated local Compose stack and prove empty-state migration,
+   health, dependency readiness, restart persistence, and volume isolation.
+2. Implement and verify the account API contract, token/session security,
    nickname rules, linking, reauthentication, deletion, and private push data.
-4. Enforce community authentication and migrate authorship to signed actors.
-5. Replace feedback/labeling stores with the anonymous training store/export.
-6. Minimize telemetry and add image-sanitization coverage.
-7. Implement the Android account-beta variant, auth state/client/UI flows, and
+3. Enforce community authentication and migrate authorship to signed actors.
+4. Replace feedback/labeling stores with the anonymous training store/export.
+5. Minimize telemetry and add image-sanitization coverage.
+6. Implement the Android account-beta variant, auth state/client/UI flows, and
    upload sanitization.
-8. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-9. Run the complete acceptance and privacy/security verification matrix.
+7. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+8. Run the complete acceptance and privacy/security verification matrix.
