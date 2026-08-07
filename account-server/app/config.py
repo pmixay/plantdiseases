@@ -236,5 +236,9 @@ class Settings:
         if not path.is_absolute() or not path.is_file():
             raise SettingsError(f"{name} must be an existing absolute file")
         permissions = stat.S_IMODE(path.stat().st_mode)
-        if permissions & 0o077:
+        # The internal service token is intentionally shared read-only with
+        # the application container through a dedicated group/volume. Account
+        # signing and encryption keys remain owner-readable only.
+        forbidden_permissions = 0o027 if name == "INTERNAL_SERVICE_TOKEN_FILE" else 0o077
+        if permissions & forbidden_permissions:
             raise SettingsError(f"{name} must not be group/world accessible")

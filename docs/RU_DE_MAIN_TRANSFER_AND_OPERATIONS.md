@@ -13,7 +13,7 @@ Testing and Android SDK setup are covered by
 | Environment | Public role | Persistent data | Authentication | Current/target runtime |
 |---|---|---|---|---|
 | Existing German main | Existing public app API during transition | Existing legacy application state | Existing behavior; no new real account store | `plantdiseases.service`, Uvicorn on `127.0.0.1:8000`, host nginx |
-| German account beta | Optional `/plantdisease-test/` team staging | Dedicated disposable beta volumes | Mock identities only | Isolated Compose, loopback `18100/18101` |
+| German account beta | Restricted `/plantdisease-test/` team staging | Dedicated disposable beta volumes | Real Yandex/VK, named test accounts only | Isolated branch Compose, loopback `18100/18101` |
 | Russian data plane | Final Android/API ingress and all user-derived storage | Account, community, media, training, telemetry, logs, push and backups | Real Yandex/VK | Reviewed production deployment derived from `compose.russia.template.yml` |
 | German ML worker | Private inference called only from Russia | None; models are read-only, request temp is tmpfs | mTLS service identity only | Reviewed worker derived from `compose.germany-worker.template.yml` |
 
@@ -82,7 +82,7 @@ source filename, metadata, client address, and consent state must not cross.
    the private tunnel address, never `0.0.0.0` or a public nginx location.
 3. Mount models read-only, use tmpfs for request handling, disable request/body
    access logs, and expose aggregate low-cardinality metrics only.
-4. Keep existing German main on `127.0.0.1:8000`. If synthetic beta is active,
+4. Keep existing German main on `127.0.0.1:8000`. If account beta is active,
    retain its dedicated `18100/18101` ports. Use a separate reviewed worker
    port such as the template's `18443`; resolve collisions before starting.
 5. Prove public access fails, valid Russian mTLS succeeds, extra fields fail,
@@ -117,7 +117,7 @@ source filename, metadata, client address, and consent state must not cross.
   accounts.
 - Inspect provider, ingress, application, database, and worker logs for the
   prohibited token/profile/image fields before inviting another tester.
-- Do not use the German synthetic endpoint as a fallback.
+- Do not use the German beta endpoint as a production fallback.
 
 ### Phase 4 — Migrate approved state into fresh Russian targets
 
@@ -164,8 +164,8 @@ curl -fsS https://replace-with-russian-host/api/health
 ```
 
 The German worker health check must be made from the Russian/private mTLS path,
-not from the public Internet. If the German synthetic beta is active, inspect
-it only with its exact project/env file and loopback ports.
+not from the public Internet. If the German account beta is active, inspect it
+only with its exact project/env file and loopback ports.
 
 | Frequency | Existing main | Russian data plane | German worker |
 |---|---|---|---|

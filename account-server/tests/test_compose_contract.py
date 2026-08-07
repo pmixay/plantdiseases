@@ -117,7 +117,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
         == "/run/account-secrets/encryption.key"
     )
     assert account_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
-        "/run/account-secrets/internal.token"
+        "/run/internal-token/internal.token"
     )
     assert account_environment["COMMUNITY_DELETION_URL"].endswith(
         "/api/internal/account-deletions"
@@ -136,6 +136,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["TELEMETRY_ENABLED"] == "false"
     assert app_environment["TELEMETRY_CONSENT_VERSION"] == "telemetry-errors-v1"
     assert app_environment["ACCOUNT_JWKS_URL"].startswith("http://beta-account-api:8000/")
+    assert app_environment["ACCOUNT_INTERNAL_BASE_URL"] == "http://beta-account-api:8000"
     assert app_environment["ACCOUNT_INTROSPECTION_URL"].endswith(
         "/v1/internal/auth/verify"
     )
@@ -143,7 +144,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
         "/v1/internal/notifications/opinion"
     )
     assert app_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
-        "/run/account-secrets/internal.token"
+        "/run/internal-token/internal.token"
     )
     assert "PUSH_DB_PATH" not in app_environment
 
@@ -157,9 +158,14 @@ def test_local_keys_are_generated_once_without_network_or_committed_values():
         "-m",
         "app.generate_test_keys",
         "/run/account-secrets",
+        "--internal-token-directory",
+        "/run/internal-token",
     ]
     assert keygen["network_mode"] == "none"
-    assert keygen["volumes"] == ["beta_account_keys:/run/account-secrets"]
+    assert keygen["volumes"] == [
+        "beta_account_keys:/run/account-secrets",
+        "beta_internal_token:/run/internal-token",
+    ]
 
 
 def test_host_ports_are_loopback_only_and_do_not_publish_postgres():
@@ -197,7 +203,9 @@ def test_every_persistent_mount_is_a_declared_beta_named_volume():
         _mount_target(mount) for mount in compose["services"]["beta-app-api"]["volumes"]
     }
     assert {"/app/models", "/app/data"}.issubset(app_targets)
-    assert "/run/account-secrets" in app_targets
+    assert "/run/internal-token" in app_targets
+    assert "/run/account-secrets" not in app_targets
+    assert compose["services"]["beta-app-api"]["group_add"] == ["10002"]
     assert "/data/legacy-push" not in app_targets
     for volume in declared_volumes.values():
         assert volume["name"].startswith(

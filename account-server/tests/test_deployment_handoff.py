@@ -10,6 +10,7 @@ import yaml
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = REPOSITORY_ROOT / "deploy" / "account-beta-test"
 GERMAN_COMPOSE = DEPLOY / "compose.german-vds.yml"
+GERMAN_BUILD_COMPOSE = DEPLOY / "compose.german-vds.build.yml"
 GERMAN_ENV = DEPLOY / "env.german.example"
 NGINX = DEPLOY / "nginx.location.conf"
 BACKUP = DEPLOY / "backup-test.sh"
@@ -42,7 +43,7 @@ def _mount_source(mount: str) -> str:
     return mount.split(":", maxsplit=1)[0]
 
 
-def test_german_staging_is_mock_synthetic_and_storage_isolated():
+def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     compose = _yaml(GERMAN_COMPOSE)
     services = compose["services"]
     assert set(services) == {
@@ -61,32 +62,71 @@ def test_german_staging_is_mock_synthetic_and_storage_isolated():
         "beta_postgres:/var/lib/postgresql"
     ]
     assert services["beta-account-keygen"]["network_mode"] == "none"
+    assert services["beta-account-keygen"]["command"][-2:] == [
+        "--internal-token-directory",
+        "/run/internal-token",
+    ]
     assert compose["networks"]["beta-private"] == {"internal": True}
+    assert compose["networks"]["beta-edge"] == {
+        "ipam": {
+            "config": [
+                {
+                    "subnet": "${BETA_EDGE_SUBNET:?Set the dedicated "
+                    "non-conflicting beta edge subnet}",
+                    "gateway": "${BETA_EDGE_GATEWAY:?Set the beta edge gateway address}",
+                }
+            ]
+        }
+    }
 
     account = services["beta-account-api"]["environment"]
     app = services["beta-app-api"]["environment"]
     assert account["ENVIRONMENT"] == "staging"
-    assert account["AUTH_PROVIDER_MODE"] == "mock"
-    assert "YANDEX_CLIENT_ID" not in account
-    assert "VKID_CLIENT_ID" not in account
+    assert account["AUTH_PROVIDER_MODE"] == "remote"
+    assert account["YANDEX_CLIENT_ID"].startswith("${YANDEX_CLIENT_ID:?")
+    assert account["VKID_CLIENT_ID"].startswith("${VKID_CLIENT_ID:?")
     assert account["ACCOUNT_ROOT_PATH"] == "/plantdisease-test/id"
     assert account["ACCOUNT_ISSUER"] == (
         "https://pdis.arbuz.lol/plantdisease-test/id"
     )
     assert app["ENVIRONMENT"] == "staging"
-    assert app["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "true"
-    assert app["ACCOUNT_BETA_SYNTHETIC_DATA_ONLY"] == "true"
+    assert app["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "false"
+    assert "ACCOUNT_BETA_SYNTHETIC_DATA_ONLY" not in app
     assert app["APP_ROOT_PATH"] == "/plantdisease-test"
+    assert app["ACCOUNT_INTERNAL_BASE_URL"] == "http://beta-account-api:8000"
+    assert app["MODELS_DIR"] == "/app/models"
+    assert app["AQUA_STATIC_DIR"] == "/app/models/aqua"
+    assert app["ONNX_INTRA_OP_THREADS"] == "1"
+    assert app["INFER_WORKERS"] == "1"
     assert app["TRAINING_CAPTURE_ENABLED"] == "false"
     assert app["TELEMETRY_ENABLED"] == "false"
     assert app["PLANTNET_API_KEY"] == ""
     assert app["OPENROUTER_API_KEY"] == ""
     assert app["FCM_CREDENTIALS_FILE"] == ""
+    assert app["INTERNAL_SERVICE_TOKEN_FILE"] == (
+        "/run/internal-token/internal.token"
+    )
+    assert services["beta-app-api"]["group_add"] == ["10002"]
+    app_mounts = services["beta-app-api"]["volumes"]
+    assert "beta_internal_token:/run/internal-token:ro" in app_mounts
+    assert all(not str(mount).startswith("beta_account_keys:") for mount in app_mounts)
 
     declared = set(compose["volumes"])
     mounted: set[str] = set()
     for service in services.values():
         for mount in service.get("volumes", []):
+            if isinstance(mount, dict):
+                assert service is services["beta-app-api"]
+                assert mount == {
+                    "type": "bind",
+                    "source": (
+                        "${BETA_MODELS_DIR:?Set the absolute host directory "
+                        "containing the PlantVision model bundle}"
+                    ),
+                    "target": "/app/models",
+                    "read_only": True,
+                }
+                continue
             source = _mount_source(mount)
             assert source in declared
             mounted.add(source)
@@ -100,15 +140,14 @@ def test_german_staging_is_mock_synthetic_and_storage_isolated():
         assert str(volume["name"]).startswith("${BETA_VOLUME_PREFIX:?")
 
 
-def test_german_images_are_digest_pinned_and_only_apis_bind_loopback():
+def test_german_images_are_branch_tagged_and_only_apis_bind_loopback():
     compose = _yaml(GERMAN_COMPOSE)
     environment = _environment(GERMAN_ENV)
     for key in ("BETA_ACCOUNT_IMAGE", "BETA_APP_IMAGE"):
         image = environment[key]
-        assert image.startswith("registry.invalid/")
-        assert "@sha256:" in image
-        digest = image.rsplit("@sha256:", maxsplit=1)[1]
-        assert digest == "0" * 64
+        assert image.startswith("plantdiseases-account-beta-")
+        assert image.endswith(":replace-with-git-sha")
+        assert ":latest" not in image
     assert environment["COMPOSE_PROJECT_NAME"] == (
         "plantdisease_account_beta_german"
     )
@@ -117,6 +156,11 @@ def test_german_images_are_digest_pinned_and_only_apis_bind_loopback():
     )
     assert environment["BETA_FORWARDED_ALLOW_IPS"] != "*"
     assert environment["BETA_TRUSTED_PROXIES"] != "*"
+    assert environment["BETA_FORWARDED_ALLOW_IPS"] == environment["BETA_EDGE_GATEWAY"]
+    assert environment["BETA_TRUSTED_PROXIES"] == environment["BETA_EDGE_GATEWAY"]
+    assert environment["YANDEX_CLIENT_ID"].startswith("replace-with-")
+    assert environment["VKID_CLIENT_ID"].isdecimal()
+    assert environment["BETA_MODELS_DIR"].startswith("/absolute/")
 
     published = {
         name: service["ports"]
@@ -128,6 +172,30 @@ def test_german_images_are_digest_pinned_and_only_apis_bind_loopback():
         assert ports[0]["host_ip"] == "127.0.0.1"
         assert ports[0]["target"] == 8000
     assert "ports" not in compose["services"]["beta-postgres"]
+
+
+def test_german_build_overlay_builds_only_branch_application_images():
+    overlay = _yaml(GERMAN_BUILD_COMPOSE)
+    services = overlay["services"]
+    assert set(services) == {
+        "beta-account-keygen",
+        "beta-account-migrate",
+        "beta-account-api",
+        "beta-app-api",
+    }
+    for name in (
+        "beta-account-keygen",
+        "beta-account-migrate",
+        "beta-account-api",
+    ):
+        assert services[name]["build"] == {
+            "context": "../../account-server",
+            "dockerfile": "Dockerfile",
+        }
+    assert services["beta-app-api"]["build"] == {
+        "context": "../../server",
+        "dockerfile": "Dockerfile",
+    }
 
 
 def test_nginx_prefixes_strip_to_distinct_upstreams_without_fallback():

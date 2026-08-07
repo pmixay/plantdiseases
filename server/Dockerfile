@@ -64,9 +64,11 @@ COPY static ./static
 RUN mkdir -p /app/logs /app/models /app/data \
         /data/community /data/community-thumbs /data/training \
         /data/training-images /data/telemetry /data/legacy-push \
-        /data/app-cache /data/logs && \
+        /data/app-cache /data/logs /run/internal-token && \
     adduser --disabled-password --gecos "" --uid 10001 plantd && \
-    chown -R plantd:plantd /app /data
+    chown -R plantd:plantd /app /data && \
+    chown 10002:10002 /run/internal-token && \
+    chmod 0750 /run/internal-token
 
 VOLUME ["/app/models", "/app/data"]
 

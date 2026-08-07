@@ -4,10 +4,10 @@ This runbook defines operator steps; it does not execute them. Ordinary rollback
 must not delete a volume, database, backup, image, or existing production
 configuration.
 
-## German synthetic beta
+## German real-provider beta
 
 1. Stop distributing the `com.plantdiseases.app.accountbeta` APK and notify the
-   named team testers that the synthetic service is unavailable.
+   named team testers that the beta service is unavailable.
 2. Remove only the two reviewed beta `location` blocks from the candidate nginx
    configuration. Run `nginx -t` before a reload. Do not edit the existing
    production upstream or location.
@@ -21,7 +21,9 @@ configuration.
 6. After the agreed debugging window, a named operator and reviewer inventory
    the beta-prefixed volumes and backups. Only after written confirmation may
    the operator remove those exact disposable resources. Record what was
-   removed and whether any encrypted diagnostic backup remains.
+   removed and whether any encrypted diagnostic backup remains. Provider access
+   tokens are not part of any backup; verify no token was logged before closing
+   the incident.
 
 Rollback success means both beta prefixes return the intentionally selected
 closed response, the old production route still passes its pre-change smoke

@@ -124,6 +124,7 @@ services:
       ACCOUNT_API_BASE_URL: http://ru-account-api:8000/
       ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
       ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_INTERNAL_BASE_URL: http://ru-account-api:8000
       ACCOUNT_JWKS_URL: http://ru-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://ru-account-api:8000/v1/internal/auth/verify
       ACCOUNT_NOTIFICATION_URL: http://ru-account-api:8000/v1/internal/notifications/opinion

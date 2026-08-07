@@ -177,6 +177,19 @@ def test_production_rejects_group_readable_secret(tmp_path: Path):
         Settings.from_env(env)
 
 
+def test_internal_service_token_may_be_group_readable_but_not_group_writable(
+    tmp_path: Path,
+):
+    env = _production_env(tmp_path)
+    internal_token = Path(env["INTERNAL_SERVICE_TOKEN_FILE"])
+    internal_token.chmod(0o640)
+    assert Settings.from_env(env).internal_service_token_file == internal_token
+
+    internal_token.chmod(0o660)
+    with pytest.raises(SettingsError, match="group/world"):
+        Settings.from_env(env)
+
+
 def test_safe_production_settings_are_accepted(tmp_path: Path):
     settings = Settings.from_env(_production_env(tmp_path))
     assert settings.is_production is True

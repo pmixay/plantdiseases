@@ -2,11 +2,10 @@
 
 Contract version: `account-beta-ru-de-v1`
 
-Status: application handoff candidate. No deployment, nginx reload, DNS/TLS
-change, OAuth registration, secret creation, backup, migration, APK
-distribution, real-provider flow, or production-data operation was performed by
-this branch work. German staging remains synthetic-only; real processing is
-blocked by the checklists below.
+Status: application and restricted German-beta handoff. The branch defines a
+parallel real-provider/real-model staging service and real-OAuth APK build.
+Public production, Russian migration, final RU/DE split, and German-beta state
+promotion remain blocked by the checklists below.
 
 Operator entry points:
 
@@ -42,8 +41,9 @@ committed example from being a runnable production configuration.
 
 ## Frozen provider verification contract
 
-`AUTH_PROVIDER_MODE=remote` is implemented, but local/German configuration
-never selects it. Production startup requires the two public application IDs.
+`AUTH_PROVIDER_MODE=remote` is selected by German beta and final production;
+local automated testing remains mock-only. Remote startup requires the two
+public application IDs.
 The account API calls only fixed HTTPS provider endpoints with a five-second
 bounded default timeout and a 64 KiB response ceiling; redirects and malformed
 or oversized responses fail closed.
@@ -62,16 +62,16 @@ application binding](https://yandex.com/dev/id/doc/en/user-information) and
 [VK ID's official SDK `user_info` request
 shape](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).
 Tests inject a fake transport and never contact either provider. Provider
-debug/release package/signature registration and real-token smoke tests occur
-only on approved Russian staging.
+package/signature registration and real-token smoke tests occur first on the
+restricted German beta and must be repeated on Russian staging before release.
 
-## German synthetic staging operator sequence
+## German real-provider staging operator sequence
 
-1. Obtain branch-built account/application image digests from trusted CI and
-   verify provenance. Do not build from an unreviewed VDS checkout.
-2. Copy `env.german.example` to a mode-0600 host file. Replace image references
-   and password; retain the exact project and volume prefix. Confirm there is
-   no Yandex/VK/FCM/external-AI credential.
+1. Check out the accepted `account-beta-test` commit and use its git SHA in the
+   two local image tags. Build only through `compose.german-vds.build.yml`.
+2. Copy `env.german.example` to a mode-0600 host file. Set the image tags,
+   password, provider application IDs, and read-only PlantVision model path;
+   retain the exact project and volume prefix. Keep FCM/external-AI disabled.
 3. Inventory current Docker projects, volumes, ports, nginx locations, and
    production paths read-only. Resolve any collision before continuing.
 4. Render `compose.german-vds.yml`. Confirm only `127.0.0.1:18100/18101` are
@@ -85,17 +85,15 @@ only on approved Russian staging.
    upstream/location/error fallback.
 7. The operator may then start the isolated project. Wait for PostgreSQL,
    migration, account readiness, and application health in dependency order.
-8. Run loopback smoke tests with generated identities and deliberately prepared
-   metadata-free plant imagery. Verify public prefixed health/media paths via
-   HTTPS without sending a real token or personal FCM value.
-9. Build/install the branch-only APK from CI for named team testers. Confirm
-   package coexistence, account-beta label, `/plantdisease-test/` defaults, and
-   visible synthetic-auth notice.
+8. Run loopback health/model smoke tests with deliberately prepared metadata-free
+   plant imagery. Verify the beta model family/version matches main.
+9. Build/install the stably signed branch-only real-OAuth APK for named team
+   testers. Confirm package coexistence, account-beta label,
+   `/plantdisease-test/` URLs, and absence of the synthetic-auth notice.
 10. Record image/config digests, schema revision, tests, storage inventory, and
     tester list. Staging data is disposable and never promotable.
 
-The repository implementation stops before step 7 because deployment and VDS
-mutation require the assigned operator and were explicitly outside this work.
+The operator records actual execution of steps 7-10 in the progress/test report.
 
 ## Final inference boundary
 
@@ -205,7 +203,7 @@ German URL or trust credential.
 - separate review of PlantNet/OpenRouter, FCM consent/initialization, location,
   threat model, and any future sync/media changes.
 
-Any attempt to place real Russian account/profile/community/push/training/
-telemetry/user-media/log/backup data in German staging, promote German beta
-state, enable real provider flows there, or expose the worker directly is a
-release-blocking architecture change, not an operator shortcut.
+Any attempt to open German beta beyond named testers, enable personal FCM,
+training/telemetry capture or production user media, promote German beta state,
+or expose the final worker directly is a release-blocking architecture change,
+not an operator shortcut.

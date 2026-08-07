@@ -188,6 +188,17 @@ android {
             versionNameSuffix = "-account-beta"
             resValue("string", "app_name", "PlantDiseases Account Beta")
 
+            // Real provider registrations are bound to the APK signing
+            // certificate. Reuse the stable configured release certificate
+            // for distributable beta builds; keep the normal debug fallback
+            // so contributor builds remain installable without private keys.
+            val releaseConfig = signingConfigs.findByName("release")
+            signingConfig = if (releaseConfig?.storeFile != null) {
+                releaseConfig
+            } else {
+                signingConfigs.getByName("debug")
+            }
+
             val appUrl = configuredValue("APP_API_BASE_URL")
                 .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/" }
             val accountUrl = configuredValue("ACCOUNT_API_BASE_URL")
@@ -199,8 +210,8 @@ android {
             buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
             buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
-            // Synthetic auth remains the safe default for the local/German
-            // mock stack. ACCOUNT_BETA_REAL_OAUTH=true selects the already
+            // Synthetic auth remains the safe default for the local mock
+            // stack. ACCOUNT_BETA_REAL_OAUTH=true selects the already
             // integrated official Yandex/VK SDK flows, after the configuration
             // validation above has proved both clients and an explicit remote
             // account endpoint are present.
@@ -402,9 +413,10 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
 
     // Official mobile OAuth SDKs. Both are inert until build-time client
-    // configuration is supplied; tests use synthetic provider tokens and
-    // never contact either provider.
-    implementation("com.yandex.android:authsdk:3.1.3")
+    // configuration is supplied; automated tests never contact either
+    // provider, while the distributable account-beta CI artifact requires
+    // registered real client values.
+    implementation("com.yandex.android:authsdk:3.2.1")
     implementation("com.vk.id:vkid:2.7.2")
 
     // RuStore in-app updates — installs that came from RuStore get offered new

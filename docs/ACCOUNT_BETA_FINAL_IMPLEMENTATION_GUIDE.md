@@ -1,8 +1,9 @@
 # Account Beta Final Implementation and Test Guide
 
 Status: implementation guide for the `account-beta-test` branch. It explains
-what is implemented and how to validate it. It does not authorize production
-traffic, real-account storage in Germany, or a merge to `main`.
+what is implemented and how to validate it. The German beta is a restricted
+real-provider test deployment, not public production traffic or a merge to
+`main`.
 
 The infrastructure transfer and day-two operations procedure is in
 [RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md](RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md).
@@ -17,16 +18,18 @@ The infrastructure transfer and day-two operations procedure is in
 - `accountBeta` is independently installable as
   `com.plantdiseases.app.accountbeta`; the existing production package remains
   `com.plantdiseases.app`.
-- Synthetic authentication remains the default for local and German beta
-  testing. `ACCOUNT_BETA_REAL_OAUTH=true` selects the real SDK callbacks only
-  when both provider configurations and explicit HTTPS API URLs are present.
+- Synthetic authentication remains the default for local hermetic testing.
+  `ACCOUNT_BETA_REAL_OAUTH=true` selects the real SDK callbacks for the German
+  beta only when both provider configurations and explicit HTTPS API URLs are
+  present.
 - AndroidX Lifecycle is pinned to `2.10.0`. Its AAR requires compile SDK 35 and
   AGP 8.6, which is compatible with this project's compile SDK 36 and AGP
   8.13.2. Lifecycle 2.11 must not be restored until the project performs a
   reviewed API 37/AGP 9 migration.
-- CI compiles the real-OAuth BuildConfig path with inert values, then builds
-  the normal synthetic account-beta APK. Real provider secrets and tokens are
-  never used by automated tests.
+- CI always compiles the real-OAuth BuildConfig path with inert values. When
+  the three provider build values and stable signing key are configured as
+  repository secrets, the branch additionally publishes
+  `account-beta-real-oauth-apk` pointed at the parallel German endpoints.
 
 Implementation entry points:
 
@@ -47,8 +50,9 @@ to pass:
   shell syntax;
 - **Server tests & lint**: Ruff and pytest.
 
-Do not distribute an APK from a failed or cancelled run. The synthetic APK is
-published as the `account-beta-apk` workflow artifact.
+Do not distribute an APK from a failed or cancelled run. With provider and
+signing secrets configured, use only the `account-beta-real-oauth-apk`
+artifact; otherwise CI labels the fallback `account-beta-synthetic-apk`.
 
 ## 2. Test synthetic login first
 
@@ -86,9 +90,8 @@ not add `--volumes` unless disposable data deletion was separately approved.
 
 Real login requires all of the following before building the APK:
 
-1. An approved Russian staging or production account data plane is reachable
-   through HTTPS. The local and German `/plantdisease-test/` stacks are
-   mock-only and must not receive a real provider token.
+1. The isolated German beta is reachable at
+   `https://pdis.arbuz.lol/plantdisease-test/`; local Compose remains mock-only.
 2. Account-api runs with `AUTH_PROVIDER_MODE=remote`, the matching
    `YANDEX_CLIENT_ID` and `VKID_CLIENT_ID`, PostgreSQL readiness, persistent
    signing/encryption keys, and the private app-service credential.
@@ -112,8 +115,8 @@ ACCOUNT_BETA_REAL_OAUTH=true
 YANDEX_CLIENT_ID=replace-with-beta-yandex-client-id
 VKID_CLIENT_ID=12345
 VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
-APP_API_BASE_URL=https://replace-with-russian-app-host/
-ACCOUNT_API_BASE_URL=https://replace-with-russian-app-host/id/
+APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
+ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
 
 The server receives the two client IDs but never uses the Android
@@ -125,26 +128,27 @@ Before installing the APK, verify through the same public host the APK will
 use:
 
 ```sh
-curl -fsS https://replace-with-russian-app-host/id/health
-curl -fsS https://replace-with-russian-app-host/id/ready
-curl -fsS https://replace-with-russian-app-host/api/health
+curl -fsS https://pdis.arbuz.lol/plantdisease-test/id/health
+curl -fsS https://pdis.arbuz.lol/plantdisease-test/id/ready
+curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/health
+curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/capabilities
 ```
 
 Account health must report `provider_mode` as `remote`. Readiness must report
 both `yandex` and `vk` plus a working database. This is only a readiness check;
 the first real-token smoke test is still required.
 
-Render the production contract before any start or update:
+Render the German branch deployment before any start or update:
 
 ```sh
-docker compose --env-file /protected/plantdiseases-ru.env \
-  -f /approved/compose.russia.yml config --quiet
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml \
+  -f deploy/account-beta-test/compose.german-vds.build.yml config --quiet
 ```
 
-The committed `handoff/compose.russia.template.yml` contains `.invalid`
-placeholders and is not a runnable production file. The operator must create a
-reviewed, digest-pinned deployment from it and satisfy
-`ACCOUNT_BETA_HANDOFF.md` first.
+The beta application API must report the same PlantVision model family/version
+as main. Its branch code, account PostgreSQL, community data, caches, logs, and
+media remain isolated; only the model directory is shared read-only.
 
 ## 5. Build and run the real beta APK
 
@@ -188,7 +192,7 @@ token, nickname, provider profile, FCM value, or image body.
 | Account API returns invalid provider token | Server is in mock mode, token expired, or server client ID does not match the issuing application |
 | OAuth succeeds but API is 404 | `ACCOUNT_API_BASE_URL` or ingress `/id/` routing/root path is wrong |
 | Account readiness is 503 | PostgreSQL, migration, key files, or provider configuration is not ready |
-| German beta rejects the token | Expected: that environment is deliberately synthetic-only |
+| German beta rejects the token | Confirm account health says `provider_mode: remote` and both server client IDs match the APK/provider applications |
 
 ## Authoritative supporting documents
 

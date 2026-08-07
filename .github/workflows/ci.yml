@@ -94,6 +94,24 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Presence check only. Real provider values stay scoped to this step and
+      # the eventual real-beta build step; all other actions and Gradle tasks
+      # see only booleans.
+      - name: Detect real account-beta OAuth config
+        id: real_oauth
+        env:
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          VKID_CLIENT_ID: ${{ secrets.VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ secrets.VKID_CLIENT_SECRET }}
+        run: |
+          if [ -n "${YANDEX_CLIENT_ID:-}" ] && \
+             [ -n "${VKID_CLIENT_ID:-}" ] && \
+             [ -n "${VKID_CLIENT_SECRET:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # gradle-wrapper.jar is committed executable code that runs before the
       # build — and, further down, alongside the signing secrets. Validate it
       # against Gradle's published known-good checksums so a swapped-in wrapper
@@ -124,8 +142,6 @@ jobs:
       # Compile and execute the account-beta identity test once with inert
       # client values. This proves the official SDK mode and its BuildConfig
       # branch stay buildable without putting real provider values in CI.
-      # The normal invocation below runs again without these step-scoped values
-      # and therefore produces the synthetic team-test APK.
       - name: Verify real OAuth account-beta build mode
         env:
           ACCOUNT_BETA_REAL_OAUTH: "true"
@@ -166,8 +182,40 @@ jobs:
           testAccountBetaUnitTest assembleRelease assembleAccountBeta
           --build-cache --configuration-cache --stacktrace
 
-      # Prove the published APK is signed with the release key (when one is
-      # configured) instead of silently falling back to the debug key, and
+      - name: Require real OAuth and stable signing for account-beta artifact
+        if: >-
+          github.ref == 'refs/heads/account-beta-test' &&
+          (steps.real_oauth.outputs.configured != 'true' ||
+          steps.signing.outputs.configured != 'true')
+        run: |
+          echo "::error::The account-beta-test branch publishes only a real-OAuth APK signed by the stable registered certificate. Configure YANDEX_CLIENT_ID, VKID_CLIENT_ID, VKID_CLIENT_SECRET, and all RELEASE_* secrets."
+          exit 1
+
+      # Rebuild the independently installable beta with the actual provider
+      # applications and fixed parallel German endpoints. This overwrites only
+      # the accountBeta output produced above; release/main remains untouched.
+      - name: Assemble real-OAuth account-beta APK
+        if: >-
+          github.ref == 'refs/heads/account-beta-test' &&
+          steps.real_oauth.outputs.configured == 'true' &&
+          steps.signing.outputs.configured == 'true'
+        env:
+          ACCOUNT_BETA_REAL_OAUTH: "true"
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          VKID_CLIENT_ID: ${{ secrets.VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ secrets.VKID_CLIENT_SECRET }}
+          APP_API_BASE_URL: https://pdis.arbuz.lol/plantdisease-test/
+          ACCOUNT_API_BASE_URL: https://pdis.arbuz.lol/plantdisease-test/id/
+          RELEASE_STORE_FILE: ${{ format('{0}/release.keystore', runner.temp) }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: >-
+          ./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta
+          --build-cache --stacktrace
+
+      # Prove the release and real-OAuth beta APKs use the configured stable
+      # certificate instead of silently falling back to the debug key, and
       # report whether the FCM client config was injected — without printing
       # the secret values. Fails the build if a keystore secret is set but the
       # APK ended up debug-signed (i.e. a signing misconfiguration).
@@ -202,6 +250,21 @@ jobs:
               exit 1
             fi
             echo "OK: release APK is signed with the configured release key."
+
+            if [ "${{ github.ref }}" = "refs/heads/account-beta-test" ]; then
+              beta_apk=$(find app/build/outputs/apk/accountBeta -name '*.apk' | head -1)
+              beta_certs=$("$apksigner" verify --print-certs "$beta_apk")
+              echo "----- account-beta signing certificate -----"
+              echo "$beta_certs"
+              echo "--------------------------------------------"
+              release_sha=$(echo "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+              beta_sha=$(echo "$beta_certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+              if [ -z "$release_sha" ] || [ "$beta_sha" != "$release_sha" ]; then
+                echo "::error::accountBeta is not signed by the configured stable release certificate"
+                exit 1
+              fi
+              echo "OK: accountBeta uses the stable registered signing certificate."
+            fi
           else
             echo "No release keystore secret set; debug-signed fallback is expected."
           fi
@@ -254,11 +317,14 @@ jobs:
           # gain at a fraction of the CPU of the default 6 — rather than 0.
           compression-level: 3
 
-      - name: Upload account-beta APK (synthetic team testing only)
-        if: success() && github.ref == 'refs/heads/account-beta-test'
+      - name: Upload real-OAuth account-beta APK
+        if: >-
+          success() && github.ref == 'refs/heads/account-beta-test' &&
+          steps.real_oauth.outputs.configured == 'true' &&
+          steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: account-beta-apk
+          name: account-beta-real-oauth-apk
           path: android/app/build/outputs/apk/accountBeta/*.apk
           if-no-files-found: error
           retention-days: 7
@@ -328,7 +394,9 @@ jobs:
         run: |
           docker compose -f ../deploy/account-beta-test/compose.local.yml config --quiet
           docker compose --env-file ../deploy/account-beta-test/env.german.example \
-            -f ../deploy/account-beta-test/compose.german-vds.yml config --quiet
+            -f ../deploy/account-beta-test/compose.german-vds.yml \
+            -f ../deploy/account-beta-test/compose.german-vds.build.yml \
+            config --quiet
           docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \
             -f ../deploy/account-beta-test/handoff/compose.russia.template.yml config --quiet
           docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \

@@ -22,8 +22,9 @@ Development will occur on the dedicated `account-beta-test` branch. During the f
 phase, all backend processes may run together on a developer workstation. During the second phase,
 the same test stack may run as an isolated service on the existing German VDS under the URL prefix
 `/plantdisease-test/`. This German deployment is a **development/staging environment**, not the
-Russian production data plane. It must use mock identities and synthetic or deliberately prepared
-test data until Russian infrastructure and the required legal work are ready.
+Russian production data plane. It uses dedicated real Yandex/VK test applications and named tester
+accounts so the official mobile SDKs and token exchange can be exercised end to end. It is not open
+for public onboarding, its state is disposable, and it does not change the final production split.
 
 The final production topology will be completed as a separate handoff task:
 
@@ -160,10 +161,13 @@ Owner: account-feature implementer for application artefacts; VDS operator for d
    production location.
 3. Use dedicated containers, ports, networks, database names, secrets, volumes, backup policy, and
    log policy. No beta path may reuse production SQLite files or media directories.
-4. Build the Android beta variant with the German test URLs.
-5. Run mock/synthetic team tests only. Do not enable real Yandex/VK account collection or public
-   Russian-user onboarding on this environment.
-6. Treat every test volume as disposable. Do not plan to promote its PostgreSQL or SQLite files to
+4. Mount the already-provisioned PlantVision model bundle read-only and run the branch application
+   server with real inference; do not share main's writable state.
+5. Build the Android beta variant with the German test URLs, official Yandex/VK SDKs, matching
+   provider application IDs, and a stable registered signing certificate.
+6. Run real-provider tests only with named testers and dedicated test accounts. Do not enable public
+   onboarding on this environment.
+7. Treat every test volume as disposable. Do not plan to promote its PostgreSQL or SQLite files to
    production.
 
 ### Phase D — RU/DE production split handoff
@@ -409,24 +413,25 @@ shared only if doing so cannot modify production artefacts.
 
 The German test deployment may contain:
 
-- deterministic mock identities;
-- generated nickname/session fixtures;
+- Yandex/VK provider subjects and minimal profiles for named dedicated test accounts;
+- generated public nicknames and real beta sessions;
 - synthetic community posts;
 - public-dataset or deliberately prepared plant images with metadata removed;
-- short-lived anonymous test telemetry.
+- disabled FCM, training capture, telemetry, PlantNet, and OpenRouter integrations.
 
 It must not be used for:
 
 - public registration;
-- real Russian-user Yandex/VK subjects or provider tokens;
-- real account profile names/avatars;
+- valuable personal accounts or testers outside the named beta group;
+- logging, snapshotting, or persisting provider access tokens;
 - persistent FCM tokens from personal devices;
 - promoting its databases into production;
 - presenting the environment as legally production-ready.
 
-Provider adapters can be contract-tested with mocked HTTP responses on Germany. End-to-end real
-Yandex/VK tests occur on the Russian staging/production data plane unless privacy counsel approves a
-different documented procedure.
+Automated tests continue to inject mocked provider HTTP responses. The German end-to-end matrix uses
+the official SDKs and live provider endpoints only from the separately signed account-beta APK. The
+operator accepts this restricted staging choice; public/production onboarding remains blocked on the
+Russian data-plane and legal gates below.
 
 ### 6.4 German beta rollback
 
@@ -1160,7 +1165,7 @@ wrong-audience token, and deleted account.
 5. produce an account-beta APK;
 6. deploy isolated German staging;
 7. run smoke tests against `/plantdisease-test/`;
-8. distribute only to named team testers with the synthetic-data restriction;
+8. distribute only to named team testers with dedicated provider test accounts;
 9. collect defects without promoting staging data;
 10. freeze the API/data contracts for handoff.
 
@@ -1234,7 +1239,8 @@ Handoff artefacts:
 ## 22. Legal and Public-Release Gates
 
 - The development-team restriction is not treated as an exemption from personal-data law.
-- The German all-in-one test topology is synthetic/mock staging only.
+- The German all-in-one test topology is restricted real-provider staging only; it is not public or
+  production and its data is never promoted.
 - Before processing real account data, submit or update the Article 22 operator notification unless
   counsel documents an applicable exception.
 - Before potential image processing in Germany, complete the Article 12 assessment/notification and
@@ -1253,11 +1259,10 @@ Handoff artefacts:
 - The Russian operator owns the OAuth applications, domain, Russian services, signing keys, and
   production databases.
 - The existing German production service remains available while the beta path is developed.
-- German beta databases are disposable and contain no real provider/account data.
+- German beta databases are disposable and contain only the minimal account data of named testers.
 - The final German worker stores no user-derived state or backup.
 - The final Russian environment is available before real team account onboarding.
 - The infrastructure/server-split participant accepts ownership of Phase D and the legacy migration.
 - Existing local Room data remains device-local and outside the account MVP.
-- Any deviation that would place real Russian-user account or linked-community data on Germany is a
-  release-blocking architecture/legal change requiring explicit review, not an ordinary staging
-  shortcut.
+- Expanding German beta beyond named dedicated test accounts, enabling public onboarding, or
+  promoting its state is a release-blocking architecture/legal change requiring explicit review.

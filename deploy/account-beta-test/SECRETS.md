@@ -5,21 +5,25 @@ or this document. Android OAuth application identifiers—and the VK mobile
 client value commonly named a client secret—are extractable public client
 configuration and are never accepted as proof of identity.
 
-## Synthetic local and German beta
+## Local and German account beta
 
 | Value | Classification | Owner/storage | Consumer | Rotation |
 |---|---|---|---|---|
 | `BETA_ACCOUNT_IMAGE`, `BETA_APP_IMAGE` | Public immutable image references | Mode-0600 operator env file | Compose | Every tested release |
-| `BETA_POSTGRES_PASSWORD` | Synthetic staging secret | Mode-0600 operator env file | PostgreSQL/account API | Recreate with disposable stack |
+| `BETA_POSTGRES_PASSWORD` | Staging secret | Mode-0600 operator env file | PostgreSQL/account API | Recreate with disposable stack |
+| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public beta application IDs | Mode-0600 operator env plus protected Android build config | Account API/Android | Change only with provider registration |
+| Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Protected Android/CI build config, never server env | VK ID SDK | Change only with provider registration |
+| `BETA_MODELS_DIR` | Non-secret absolute model path | Host-only operator env | App API read-only mount | Verify at each model release |
 | `signing.json` | Beta Ed25519 private key ring | Dedicated `*_account_keys` volume, mode 0600 | Account API | Exercise before handoff; never promote |
 | `encryption.key` | Beta AES-256 push key | Same beta-only key volume, mode 0600 | Account API | Recreate with disposable stack |
-| `internal.token` | Beta service credential | Same beta-only key volume, mode 0600 | Account and app APIs | Recreate with disposable stack |
+| `internal.token` | Beta service credential | Dedicated `*_internal_token` volume, mode 0640; read-only in app | Account and app APIs | Recreate with disposable stack |
 | `BETA_FORWARDED_ALLOW_IPS`, `BETA_TRUSTED_PROXIES` | Security configuration, not secret | Mode-0600 operator env file | Uvicorn/application API | Verify whenever Docker networking changes |
 
-The German environment has no Yandex/VK application values, real provider
-tokens, FCM credentials, PlantNet/OpenRouter keys, production signing key, or
-production backup credential. Key generation has no network and refuses to
-overwrite an existing key file.
+The German environment has dedicated Yandex/VK application values. Provider
+tokens pass once through memory for verification and are never persisted or
+logged. It has no FCM credentials, PlantNet/OpenRouter keys, production account
+keys, or production backup credential. Key generation has no network and
+refuses to overwrite an existing key file.
 
 ## Final Russian data plane
 
@@ -38,11 +42,13 @@ overwrite an existing key file.
 | Backup encryption recipient/key | Critical recovery secret | Separate Russian-controlled location | Backup/restore job | Test restore before rotation; escrow separately |
 | TLS private keys | Critical ingress secret | Respective host secret store | Russian ingress/German private worker | Normal certificate lifecycle |
 
-Account-service startup checks all configured account secret files are absolute,
-regular files with no group/world permission bits. Because the account and app
-containers use different non-root UIDs, duplicate `internal.token` into two
-owner-specific mode-0400 directories rather than weakening file permissions.
-The byte values must match; the copies must never be printed for comparison.
+Account-service startup checks every configured account secret is an absolute
+regular file. Signing and encryption keys permit no group/world access. The
+beta internal token may be group-readable, but never group-writable or
+world-accessible, because it lives alone in a dedicated volume mounted
+read-only into the differently-UID app container. The final Russian template
+instead expects owner-specific mode-0400 copies whose byte values match; never
+print them for comparison.
 
 ## Prohibited handling
 

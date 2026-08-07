@@ -247,6 +247,126 @@ def test_unsafe_auth_service_configuration_fails_closed(
     )
 
 
+def test_explicit_private_account_origin_keeps_public_issuer(monkeypatch, tmp_path):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(0o600)
+    values = {
+        "ENVIRONMENT": "production",
+        "ACCOUNT_ISSUER": ISSUER,
+        "ACCOUNT_AUDIENCE": AUDIENCE,
+        "ACCOUNT_INTERNAL_BASE_URL": "http://account-api:8000",
+        "ACCOUNT_JWKS_URL": "http://account-api:8000/.well-known/jwks.json",
+        "ACCOUNT_INTROSPECTION_URL": (
+            "http://account-api:8000/v1/internal/auth/verify"
+        ),
+        "INTERNAL_SERVICE_TOKEN_FILE": str(token_file),
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    authenticator = RemoteAccountAuthenticator.from_env()
+
+    assert isinstance(authenticator, RemoteAccountAuthenticator)
+    assert authenticator.issuer == ISSUER
+    assert authenticator.jwks_url.startswith("http://account-api:8000/")
+
+
+def test_group_readable_internal_token_supports_separate_service_volume(
+    monkeypatch,
+    tmp_path,
+):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(0o640)
+    values = {
+        "ENVIRONMENT": "production",
+        "ACCOUNT_ISSUER": ISSUER,
+        "ACCOUNT_AUDIENCE": AUDIENCE,
+        "ACCOUNT_INTERNAL_BASE_URL": "http://account-api:8000",
+        "ACCOUNT_JWKS_URL": "http://account-api:8000/.well-known/jwks.json",
+        "ACCOUNT_INTROSPECTION_URL": (
+            "http://account-api:8000/v1/internal/auth/verify"
+        ),
+        "ACCOUNT_NOTIFICATION_URL": (
+            "http://account-api:8000/v1/internal/notifications/opinion"
+        ),
+        "INTERNAL_SERVICE_TOKEN_FILE": str(token_file),
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    assert isinstance(
+        RemoteAccountAuthenticator.from_env(), RemoteAccountAuthenticator
+    )
+    assert AccountInternalClient.from_env() is not None
+
+
+@pytest.mark.parametrize("mode", [0o620, 0o604])
+def test_internal_token_rejects_group_write_or_world_access(
+    monkeypatch,
+    tmp_path,
+    mode,
+):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(mode)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
+    monkeypatch.setenv("ACCOUNT_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("ACCOUNT_JWKS_URL", f"{ISSUER}/.well-known/jwks.json")
+    monkeypatch.setenv(
+        "ACCOUNT_INTROSPECTION_URL", f"{ISSUER}/v1/internal/auth/verify"
+    )
+    monkeypatch.setenv(
+        "ACCOUNT_NOTIFICATION_URL", f"{ISSUER}/v1/internal/notifications/opinion"
+    )
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
+
+    assert isinstance(
+        RemoteAccountAuthenticator.from_env(), UnconfiguredAccountAuthenticator
+    )
+    assert AccountInternalClient.from_env() is None
+
+
+@pytest.mark.parametrize(
+    ("internal_base", "jwks_url"),
+    [
+        (
+            "http://accounts.public.invalid",
+            "http://accounts.public.invalid/.well-known/jwks.json",
+        ),
+        ("http://account-api:8000/unsafe", "http://account-api:8000/jwks"),
+        ("http://account-api:8000", "http://other-api:8000/.well-known/jwks.json"),
+    ],
+)
+def test_unsafe_explicit_internal_account_origin_fails_closed(
+    monkeypatch,
+    tmp_path,
+    internal_base,
+    jwks_url,
+):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(0o600)
+    values = {
+        "ENVIRONMENT": "production",
+        "ACCOUNT_ISSUER": ISSUER,
+        "ACCOUNT_AUDIENCE": AUDIENCE,
+        "ACCOUNT_INTERNAL_BASE_URL": internal_base,
+        "ACCOUNT_JWKS_URL": jwks_url,
+        "ACCOUNT_INTROSPECTION_URL": (
+            "http://account-api:8000/v1/internal/auth/verify"
+        ),
+        "INTERNAL_SERVICE_TOKEN_FILE": str(token_file),
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    assert isinstance(
+        RemoteAccountAuthenticator.from_env(), UnconfiguredAccountAuthenticator
+    )
+
+
 @pytest.mark.parametrize(
     "notification_url",
     [
@@ -281,5 +401,25 @@ def test_notification_client_accepts_the_configured_account_origin(
     monkeypatch.setenv("ACCOUNT_NOTIFICATION_URL", notification_url)
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
     client = AccountInternalClient.from_env()
+    assert client is not None
+    assert client.notification_url == notification_url
+
+
+def test_notification_client_accepts_explicit_private_account_origin(
+    monkeypatch,
+    tmp_path,
+):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(0o600)
+    notification_url = "http://account-api:8000/v1/internal/notifications/opinion"
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
+    monkeypatch.setenv("ACCOUNT_INTERNAL_BASE_URL", "http://account-api:8000")
+    monkeypatch.setenv("ACCOUNT_NOTIFICATION_URL", notification_url)
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
+
+    client = AccountInternalClient.from_env()
+
     assert client is not None
     assert client.notification_url == notification_url

@@ -6,11 +6,11 @@ services receive only signed `community_actor_id` and nickname claims; the
 internal account UUID and provider subject never appear in HTTP responses or
 JWTs.
 
-Local and German beta configurations use deterministic mock providers only.
-Remote Yandex/VK verification is implemented for the Russian-data-plane
-handoff, but no real application ID or provider token is committed or used by
-the automated suite. Do not use real provider or FCM tokens in the local or
-German synthetic environments.
+Local automated tests use deterministic mock providers. The isolated German
+account beta uses the remote Yandex/VK adapters with dedicated provider
+applications; no real application ID or provider token is committed or used by
+the automated suite. German testing is restricted to dedicated tester accounts
+and keeps FCM disabled.
 
 In `AUTH_PROVIDER_MODE=remote`, startup requires the public
 `YANDEX_CLIENT_ID` and numeric `VKID_CLIENT_ID`. Yandex tokens are sent only in
@@ -67,13 +67,17 @@ unknown fields.
 `ACCOUNT_SIGNING_KEY_FILE` is a mode-`0600` JSON key ring containing an active
 Ed25519 private seed and optional retired public keys. `ACCOUNT_ENCRYPTION_KEY_FILE`
 is a mode-`0600` base64url-encoded 256-bit AES key.
-`INTERNAL_SERVICE_TOKEN_FILE` is a mode-`0600` random service credential used
-only on the private network. None of these files belongs in Git or an image.
+`INTERNAL_SERVICE_TOKEN_FILE` is a random service credential used only on the
+private network. It is owner-only in production; the isolated beta stack uses
+mode `0640` in its dedicated shared-token volume. None of these files belongs
+in Git or an image.
 
 The local Compose stack runs `app.generate_test_keys` in a network-disabled
-one-shot container. It creates random files once in the beta-only
-`account_keys` volume and refuses non-test environments, relaxed permissions,
-or overwriting existing keys. Production requires operator-provisioned files.
+one-shot container. It creates signing/encryption files once in the beta-only
+`account_keys` volume and the service token in a separate `internal_token`
+volume that the app mounts read-only. It refuses non-test environments, unsafe
+permissions, or overwriting existing values. Production requires
+operator-provisioned files.
 
 ## Verification
 

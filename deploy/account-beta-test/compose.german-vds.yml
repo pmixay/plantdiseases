@@ -8,16 +8,19 @@ x-beta-logging: &beta-logging
 
 x-account-environment: &account-environment
   ENVIRONMENT: staging
-  AUTH_PROVIDER_MODE: mock
+  AUTH_PROVIDER_MODE: remote
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:?Set the beta Yandex application client ID}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:?Set the numeric beta VK ID application ID}
+  PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
   ACCOUNT_ROOT_PATH: /plantdisease-test/id
   ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
   ACCOUNT_AUDIENCE: plantdiseases-app
-  ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:?Set the synthetic beta PostgreSQL password}@beta-postgres/plantdisease_beta
+  ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:?Set the dedicated beta PostgreSQL password}@beta-postgres/plantdisease_beta
   ACCOUNT_DATABASE_LOCAL: "true"
   ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
   ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
   ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
-  INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+  INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ""
 
@@ -27,7 +30,7 @@ services:
     environment:
       POSTGRES_DB: plantdisease_beta
       POSTGRES_USER: beta_account
-      POSTGRES_PASSWORD: ${BETA_POSTGRES_PASSWORD:?Set the synthetic beta PostgreSQL password}
+      POSTGRES_PASSWORD: ${BETA_POSTGRES_PASSWORD:?Set the dedicated beta PostgreSQL password}
       PGDATA: /var/lib/postgresql/18/docker
     expose:
       - "5432"
@@ -50,10 +53,17 @@ services:
     image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
     environment:
       ENVIRONMENT: test
-    command: ["python", "-m", "app.generate_test_keys", "/run/account-secrets"]
+    command:
+      - python
+      - -m
+      - app.generate_test_keys
+      - /run/account-secrets
+      - --internal-token-directory
+      - /run/internal-token
     network_mode: none
     volumes:
       - beta_account_keys:/run/account-secrets
+      - beta_internal_token:/run/internal-token
     read_only: true
     tmpfs:
       - /tmp:size=8m,mode=1777
@@ -75,6 +85,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
     networks:
       - beta-private
     read_only: true
@@ -110,6 +121,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
     ports:
       - name: account-api
         target: 8000
@@ -145,8 +157,7 @@ services:
     image: ${BETA_APP_IMAGE:?Set an immutable application image with an sha256 digest}
     environment:
       ENVIRONMENT: staging
-      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "true"
-      ACCOUNT_BETA_SYNTHETIC_DATA_ONLY: "true"
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "false"
       APP_ROOT_PATH: /plantdisease-test
       POPULAR_WARM_ENABLED: "false"
       FRONTIER_ENABLED: "false"
@@ -157,11 +168,15 @@ services:
       ACCOUNT_API_BASE_URL: http://beta-account-api:8000/
       ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
       ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_INTERNAL_BASE_URL: http://beta-account-api:8000
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
       ACCOUNT_NOTIFICATION_URL: http://beta-account-api:8000/v1/internal/notifications/opinion
-      INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+      INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
+      AQUA_STATIC_DIR: /app/models/aqua
+      ONNX_INTRA_OP_THREADS: "1"
+      INFER_WORKERS: "1"
       LOG_DIR: /data/logs
       COMMUNITY_DB_PATH: /data/community/community-beta.db
       COMMUNITY_THUMB_DIR: /data/community-thumbs
@@ -202,8 +217,11 @@ services:
         host_ip: 127.0.0.1
         protocol: tcp
     volumes:
-      - beta_models:/app/models:ro
-      - beta_account_keys:/run/account-secrets:ro
+      - type: bind
+        source: ${BETA_MODELS_DIR:?Set the absolute host directory containing the PlantVision model bundle}
+        target: /app/models
+        read_only: true
+      - beta_internal_token:/run/internal-token:ro
       - beta_app_data:/app/data
       - beta_community:/data/community
       - beta_thumbnails:/data/community-thumbs
@@ -233,6 +251,8 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - "10002"
     cap_drop:
       - ALL
     logging: *beta-logging
@@ -240,15 +260,19 @@ services:
 networks:
   beta-private:
     internal: true
-  beta-edge: {}
+  beta-edge:
+    ipam:
+      config:
+        - subnet: ${BETA_EDGE_SUBNET:?Set the dedicated non-conflicting beta edge subnet}
+          gateway: ${BETA_EDGE_GATEWAY:?Set the beta edge gateway address}
 
 volumes:
   beta_postgres:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_postgres
   beta_account_keys:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_account_keys
-  beta_models:
-    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_models
+  beta_internal_token:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_internal_token
   beta_app_data:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_data
   beta_community:

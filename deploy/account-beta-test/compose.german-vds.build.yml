@@ -1,0 +1,22 @@
+# Build the German beta images from the checked-out account-beta-test branch.
+# Use only together with compose.german-vds.yml; the base file retains all
+# runtime isolation, ports, volumes, and security settings.
+
+x-account-build: &account-build
+  context: ../../account-server
+  dockerfile: Dockerfile
+
+services:
+  beta-account-keygen:
+    build: *account-build
+
+  beta-account-migrate:
+    build: *account-build
+
+  beta-account-api:
+    build: *account-build
+
+  beta-app-api:
+    build:
+      context: ../../server
+      dockerfile: Dockerfile

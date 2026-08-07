@@ -50,6 +50,33 @@ def test_generator_creates_private_valid_keys_and_never_overwrites(tmp_path: Pat
     assert restarted_process.decrypt(ciphertext) == "synthetic-fcm-token-persistence-check"
 
 
+def test_generator_can_isolate_group_readable_internal_token(tmp_path: Path):
+    key_directory = tmp_path / "account-keys"
+    token_directory = tmp_path / "internal-token"
+
+    signing_path, encryption_path = ensure_test_keys(
+        key_directory,
+        environment="test",
+        internal_token_directory=token_directory,
+    )
+    internal_token_path = token_directory / "internal.token"
+
+    assert stat.S_IMODE(key_directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE(token_directory.stat().st_mode) == 0o750
+    assert stat.S_IMODE(signing_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(encryption_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(internal_token_path.stat().st_mode) == 0o640
+    assert not (key_directory / "internal.token").exists()
+
+    first_token = internal_token_path.read_bytes()
+    ensure_test_keys(
+        key_directory,
+        environment="test",
+        internal_token_directory=token_directory,
+    )
+    assert internal_token_path.read_bytes() == first_token
+
+
 @pytest.mark.parametrize("environment", ["", "development", "staging", "production"])
 def test_generator_refuses_every_non_test_environment(tmp_path: Path, environment: str):
     with pytest.raises(RuntimeError, match="only in ENVIRONMENT=test"):

@@ -10,6 +10,7 @@ access-token lifetime to elapse.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import re
@@ -84,10 +85,37 @@ def _origin(value: str) -> tuple[str, str, int]:
     return parsed.scheme.lower(), (parsed.hostname or "").lower(), port
 
 
+def _internal_base_url(value: str) -> str:
+    """Validate an explicitly configured private account-service origin."""
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("ACCOUNT_INTERNAL_BASE_URL must be an HTTP(S) origin")
+    hostname = parsed.hostname.lower()
+    if parsed.scheme == "http":
+        try:
+            address = ipaddress.ip_address(hostname)
+            private_host = address.is_private or address.is_loopback
+        except ValueError:
+            # A single-label hostname is service discovery inside the private
+            # container network. Public DNS names must use HTTPS.
+            private_host = "." not in hostname
+        if not private_host:
+            raise ValueError("internal account HTTP must use a private host")
+    return value.rstrip("/")
+
+
 def _read_private_token(path: Path) -> str:
     try:
         info = path.lstat()
-        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o027:
             raise ValueError("internal service token file permissions are unsafe")
         if info.st_size > 4096:
             raise ValueError("internal service token file is too large")
@@ -131,6 +159,7 @@ class RemoteAccountAuthenticator:
         audience = os.environ.get("ACCOUNT_AUDIENCE", "").strip()
         jwks_url = os.environ.get("ACCOUNT_JWKS_URL", "").strip()
         introspection_url = os.environ.get("ACCOUNT_INTROSPECTION_URL", "").strip()
+        internal_base_url = os.environ.get("ACCOUNT_INTERNAL_BASE_URL", "").strip()
         token_file = os.environ.get("INTERNAL_SERVICE_TOKEN_FILE", "").strip()
         if not all((environment, issuer, audience, jwks_url, introspection_url, token_file)):
             return UnconfiguredAccountAuthenticator()
@@ -141,20 +170,35 @@ class RemoteAccountAuthenticator:
                 issuer, environment=environment, name="ACCOUNT_ISSUER"
             ).rstrip("/")
             jwks_url = _validated_service_url(
-                jwks_url, environment=environment, name="ACCOUNT_JWKS_URL"
+                jwks_url,
+                environment="staging" if internal_base_url else environment,
+                name="ACCOUNT_JWKS_URL",
             )
             introspection_url = _validated_service_url(
                 introspection_url,
-                environment=environment,
+                # An explicitly configured private service origin may use
+                # plain HTTP inside the isolated container network.
+                environment="staging" if internal_base_url else environment,
                 name="ACCOUNT_INTROSPECTION_URL",
             )
-            issuer_origin = _origin(issuer)
-            if _origin(jwks_url) != issuer_origin:
-                raise ValueError("ACCOUNT_JWKS_URL origin must match ACCOUNT_ISSUER")
-            if _origin(introspection_url) != issuer_origin:
+            if internal_base_url:
+                internal_base_url = _internal_base_url(internal_base_url)
+            endpoint_base = internal_base_url or issuer
+            endpoint_origin = _origin(endpoint_base)
+            if _origin(jwks_url) != endpoint_origin:
                 raise ValueError(
-                    "ACCOUNT_INTROSPECTION_URL origin must match ACCOUNT_ISSUER"
+                    "ACCOUNT_JWKS_URL origin must match account endpoint base"
                 )
+            if _origin(introspection_url) != endpoint_origin:
+                raise ValueError(
+                    "ACCOUNT_INTROSPECTION_URL origin must match account endpoint base"
+                )
+            if jwks_url.rstrip("/") != f"{endpoint_base}/.well-known/jwks.json":
+                raise ValueError("ACCOUNT_JWKS_URL must use the fixed JWKS path")
+            if introspection_url.rstrip("/") != (
+                f"{endpoint_base}/v1/internal/auth/verify"
+            ):
+                raise ValueError("ACCOUNT_INTROSPECTION_URL must use the fixed verify path")
             return cls(
                 issuer=issuer,
                 audience=audience,

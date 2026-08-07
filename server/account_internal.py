@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import secrets
@@ -21,7 +22,7 @@ def _load_internal_token(token_path: str) -> str | None:
     path = Path(token_path)
     try:
         info = path.lstat()
-        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o027:
             return None
         token = path.read_text(encoding="ascii").strip()
     except OSError:
@@ -41,11 +42,24 @@ class AccountInternalClient:
         token_path = os.environ.get("INTERNAL_SERVICE_TOKEN_FILE", "").strip()
         environment = os.environ.get("ENVIRONMENT", "").strip().lower()
         issuer = os.environ.get("ACCOUNT_ISSUER", "").strip().rstrip("/")
+        internal_base = (
+            os.environ.get("ACCOUNT_INTERNAL_BASE_URL", "").strip().rstrip("/")
+        )
         if not url or not token_path or not issuer or environment not in _ENVIRONMENTS:
             return None
         try:
             parsed = urlparse(url)
             issuer_parsed = urlparse(issuer)
+            endpoint_base = internal_base or issuer
+            endpoint_parsed = urlparse(endpoint_base)
+            private_internal_http = True
+            if internal_base and endpoint_parsed.scheme == "http":
+                hostname = (endpoint_parsed.hostname or "").lower()
+                try:
+                    address = ipaddress.ip_address(hostname)
+                    private_internal_http = address.is_private or address.is_loopback
+                except ValueError:
+                    private_internal_http = bool(hostname) and "." not in hostname
             invalid = (
                 parsed.scheme not in {"http", "https"}
                 or not parsed.hostname
@@ -59,18 +73,33 @@ class AccountInternalClient:
                 or issuer_parsed.password
                 or issuer_parsed.query
                 or issuer_parsed.fragment
+                or (environment == "production" and issuer_parsed.scheme != "https")
+                or endpoint_parsed.scheme not in {"http", "https"}
+                or not endpoint_parsed.hostname
+                or endpoint_parsed.username
+                or endpoint_parsed.password
+                or endpoint_parsed.query
+                or endpoint_parsed.fragment
+                or endpoint_parsed.path not in {"", "/"}
+                or not private_internal_http
                 or (
                     parsed.scheme,
                     parsed.hostname.lower(),
                     parsed.port or (443 if parsed.scheme == "https" else 80),
                 )
                 != (
-                    issuer_parsed.scheme,
-                    issuer_parsed.hostname.lower(),
-                    issuer_parsed.port
-                    or (443 if issuer_parsed.scheme == "https" else 80),
+                    endpoint_parsed.scheme,
+                    endpoint_parsed.hostname.lower(),
+                    endpoint_parsed.port
+                    or (443 if endpoint_parsed.scheme == "https" else 80),
                 )
-                or (environment == "production" and parsed.scheme != "https")
+                or url.rstrip("/")
+                != f"{endpoint_base}/v1/internal/notifications/opinion"
+                or (
+                    environment == "production"
+                    and not internal_base
+                    and parsed.scheme != "https"
+                )
             )
         except ValueError:
             return None

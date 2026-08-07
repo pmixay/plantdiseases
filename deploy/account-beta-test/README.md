@@ -1,24 +1,24 @@
 # Account Beta Test Environments
 
-This Compose project is a synthetic-data-only engineering environment for the
-`account-beta-test` branch. It does not contact Yandex or VK, use real OAuth
-tokens, reuse production storage, or download/train model artefacts. The
-account service uses deterministic in-process provider adapters, so a separate
-provider-mock container is unnecessary.
+This directory contains two environments for the `account-beta-test` branch:
+the local stack remains deterministic and synthetic, while the isolated German
+VDS stack uses real Yandex/VK provider verification and the real PlantVision
+model bundle. Neither environment reuses main's database, media, logs, caches,
+account state, or writable model paths.
 
-A one-shot, network-disabled key generator creates random signing, encryption,
-and internal service-authentication keys in a beta-only named volume. It never
-prints or commits them, and it leaves existing keys untouched so
+A one-shot, network-disabled key generator creates random signing/encryption
+keys in an account-only volume plus one internal service token in a separate
+read-only-to-the-app volume. It never prints or commits them, and it leaves
+existing values untouched so
 account/container restarts retain the same JWKS, can decrypt previously
-registered synthetic push tokens, and keep private inter-service calls stable.
+registered beta push tokens, and keep private inter-service calls stable.
 
-The application API uses a deterministic, weight-free response pipeline. The
-local stack requires both `ENVIRONMENT=test` and
-`ACCOUNT_BETA_SYNTHETIC_PIPELINE=true`. The German candidate is the only
-staging exception and additionally requires
-`ACCOUNT_BETA_SYNTHETIC_DATA_ONLY=true`; production, development, and
-unacknowledged staging abort startup. Results are marked
-`synthetic_test_result` and must never be treated as diagnoses.
+The local application API uses a deterministic, weight-free response pipeline
+and requires `ENVIRONMENT=test` plus
+`ACCOUNT_BETA_SYNTHETIC_PIPELINE=true`. German staging explicitly disables
+that switch and mounts the already-provisioned PlantVision model directory
+read-only, so its diagnosis path is the same model as main but its executable
+code and all writable state come from this branch.
 
 Model-improvement capture is disabled in this stack. The application still
 uses isolated beta-only `training.db` and sanitized-image volumes so receipt,
@@ -86,7 +86,7 @@ variant points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
 
 ### Build with the real Yandex and VK ID SDKs
 
-Real-provider testing is opt-in. Register the Android application ID
+Real-provider testing is opt-in at build time. Register the Android application ID
 `com.plantdiseases.app.accountbeta` and the APK signing-certificate fingerprint
 with the providers first. Put the mobile client values in the user's private
 `~/.gradle/gradle.properties` (never in this repository):
@@ -96,8 +96,8 @@ ACCOUNT_BETA_REAL_OAUTH=true
 YANDEX_CLIENT_ID=replace-with-yandex-client-id
 VKID_CLIENT_ID=12345
 VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
-APP_API_BASE_URL=https://replace-with-approved-app-api/
-ACCOUNT_API_BASE_URL=https://replace-with-approved-account-api/
+APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
+ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
 
 Then build from `android/`:
@@ -112,34 +112,45 @@ official SDK callbacks pass the short-lived provider access token directly to
 account-api; the app does not persist it. The configured account-api must use
 `AUTH_PROVIDER_MODE=remote` with the same Yandex/VK application IDs.
 
-The current local and German `/plantdisease-test/id/` stacks remain mock-only
-and must not receive real provider tokens. Real-provider registration and smoke
-tests require the approved Russian account data plane described in `handoff/`;
-the explicit URL requirement prevents a real build from silently using the
-German synthetic default.
+The local stack remains mock-only. The German `/plantdisease-test/id/` stack is
+the dedicated real-provider beta target and must use the same Yandex/VK client
+IDs as the APK. Keep it limited to named testers and dedicated test accounts;
+it is not a public or production account service.
 
-## Render the German synthetic staging candidate
+## Build and run the parallel German real-provider beta
 
-`compose.german-vds.yml` is an operator candidate, not a deployment performed
-by this implementation. It has no build contexts or mutable application image
-tags. Copy `env.german.example` to a host-only mode-0600 file, replace the two
-placeholder image references with digests produced by CI for this branch,
-generate a new synthetic-only PostgreSQL password, and verify the exact Docker
-proxy peer addresses. Wildcard trusted-proxy values are forbidden.
+`compose.german-vds.yml` defines the isolated runtime and
+`compose.german-vds.build.yml` builds its application images from the checked
+out `account-beta-test` branch. Copy `env.german.example` to a host-only
+mode-0600 file, use git-SHA-qualified local image tags, generate a dedicated
+PostgreSQL password, set both provider application IDs and the absolute
+PlantVision model directory, and verify the exact Docker proxy peer addresses.
+Wildcard trusted-proxy values are forbidden.
 
 Render without starting anything:
 
 ```sh
 docker compose --env-file /protected/account-beta-german.env \
-  -f deploy/account-beta-test/compose.german-vds.yml config --quiet
+  -f deploy/account-beta-test/compose.german-vds.yml \
+  -f deploy/account-beta-test/compose.german-vds.build.yml config --quiet
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml \
+  -f deploy/account-beta-test/compose.german-vds.build.yml build
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml \
+  -f deploy/account-beta-test/compose.german-vds.build.yml up -d
 ```
 
 The candidate binds only `127.0.0.1:18100` and `127.0.0.1:18101` for the host
-nginx. PostgreSQL remains internal. It uses `ENVIRONMENT=staging`, mock
-providers, an additional synthetic-data-only acknowledgement, a weight-free
-marked pipeline, disabled training capture/telemetry/FCM/external AI, and
-dedicated `plantdisease_account_beta_german_*` volumes. It cannot contact a
-real provider unless an operator replaces the reviewed configuration.
+nginx. PostgreSQL remains internal. It uses `ENVIRONMENT=staging`, remote
+provider adapters, real read-only PlantVision weights, disabled training
+capture/telemetry/FCM/external AI, and dedicated
+`plantdisease_account_beta_german_*` writable volumes. Main continues on
+`127.0.0.1:8000`; beta uses only `18100/18101`.
+
+The app receives only the group-readable internal service token through its
+dedicated volume. The Ed25519 signing key and AES push-encryption key stay in
+the account-only volume and are not mounted into the app container.
 
 Before nginx reload, add the two rate-limit zones documented at the top of
 `nginx.location.conf`, include its location blocks in a candidate TLS server,
@@ -148,11 +159,11 @@ prefixes strip correctly, overwrite forwarded client context, disable access
 logs, and have no production fallback. `ACCOUNT_ROOT_PATH` and `APP_ROOT_PATH`
 keep generated documentation/media paths under their external prefixes.
 
-The loopback integration checker deliberately rejects the public staging URL.
-On the VDS, run it only against the two loopback ports with a deliberately
-prepared metadata-free test image. Named-team Android testing remains
-synthetic-only. No step in this repository deploys, reloads nginx, distributes
-an APK, or opens a firewall.
+The synthetic integration checker is only for `compose.local.yml`; it sends mock
+provider tokens and therefore must not be run against German remote-provider
+mode. For German staging, check both loopback health endpoints, compare
+`/api/capabilities` with main, then run the real login matrix from the signed
+account-beta APK.
 
 The optional `backup-test.sh` accepts only the exact German beta project and
 volume prefix. It writes a protected custom-format dump to an explicit absolute
@@ -209,10 +220,9 @@ PostgreSQL and migration stay on the private-only network, containers drop
 privilege escalation, and application containers use read-only root
 filesystems with explicit writable volumes and temporary filesystems.
 
-Automated contract tests parse this Compose file and reject unsafe ports,
-mounts, mutable image tags, production paths, or relaxed test guards. CI also
-runs `docker compose config --quiet`; runtime integration uses generated
-fixtures only.
+Automated contract tests parse both Compose environments and reject unsafe
+ports, writable production paths, or relaxed guards. German staging's sole
+shared host path is the immutable PlantVision bundle mounted read-only.
 
 The loopback-only synthetic trust-boundary check can be run after both APIs are
 healthy:
