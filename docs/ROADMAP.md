@@ -142,118 +142,161 @@ histories.
 
 ## Model track
 
-`MODEL_VERSION` is **2.6.13** (notebook §1). `server/models/` holds only
+`MODEL_VERSION` is **2.7.0** (notebook §1). `server/models/` holds only
 `.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed.**
 
 Closed history: **2.6.9** gate-passed but lost a paired A/B vs 2.6.8 (kept
 2.6.8). **2.6.10** recovered leaf_scorch but silently lost a 2.26k-image source
 mid-run, so it cannot anchor an A/B. **2.6.11/v8** superseded by the 2.6.12
-general-plant pivot, whose data-cleaning it folded in. Details in
-`DATASET_LABELING_PLAN.md`.
+general-plant pivot, whose data-cleaning it folded in. The 2.6.12/2.6.13 work
+never trained — it became 2.7.0. Details in `DATASET_LABELING_PLAN.md`.
 
-### 2.6.13 — makes the pivot real
+**Version policy.** 2.7.x is the *stabilise-and-polish* line: the corpus is
+finally clean, so every 2.7.x change is small, independently measurable, and
+A/B-able against 2.7.0. The ambitious work moved to **2.8**, where it belongs —
+each item there changes what the model *is*, and stacking them on an unproven
+baseline is how 2.6.9 happened.
 
-Six fixes have landed in the notebook: fail-fast on a truncated corpus
-(`REQUIRED_SOURCE_FLOORS` + persisted `source_inventory.json`), re-sourced
-ornamental data, a revived MaxLogit OOD floor scored over plant logits only,
-an unpinned conformal grid, and — added 2026-08 — **`split_hint` routing** plus
-**`subject_domain` passthrough + per-split domain reporting**.
+### Training modes (2.7.0)
 
-The last two are the eval-integrity pair. `fetch_kaggle_supplement` used to read
-only `hn_kind`, so every supplement row the offline pipeline had marked
-`train_only` (sub-label-confidence positives — 1,226 of v8b's 3,125, minus the
-~700 boundary negs already handled) still drained into the held-out splits at
-~52%: they were grading the ship gate **and fitting the shipped temperature +
-conformal q̂**. They now route to `supplement_train_only` — train-only, full 0.9
-sampler weight, so aqua loses no volume. Separately, `subject_domain` now rides
-into the sidecar and every split reports its domain mix, so the widening domain
-(houseplants → garden ornamentals → kitchen-garden edibles) is measurable
-instead of assumed. Neither the notebook nor the runtime gates on domain values:
-a new bucket needs no code change. See `DATASET_LABELING_PLAN.md`.
+One knob, `TRAIN_MODE` in §1 — `gamma` (server model alone, cheapest run),
+`combined` (gamma + distilled aqua TFLite from one run; the default and what
+ships), `frontier` (ViT-B/14, GPU). `frontier` is a **plain mode**: nothing
+gates it, no probe go/no-go. `export_family` decides what lands in
+`classes.json → model_family`, so a `combined` run still ships a `gamma` server
+bundle — the mode describes the run, the family describes the artefact.
 
-- [ ] **★ BLOCKER — publish the v8b supplement to Kaggle first.** The dataset the
-      notebook downloads is **version 7 = a v7-era build**: 2,539 rows vs v8b's
-      3,125, **no `leaf_spot` at all**, no `split_hint`, no provenance column, and
-      `subject_domain` limited to `houseplant`/`not_a_plant` — **zero garden
-      ornamentals**. The v8 and v8b rounds never reached the publish step, so none
-      of that work has ever been in a training run, and the domain pivot has never
-      been in a corpus. §2 now fails loud on this (`SUPPLEMENT_MIN_ROWS`). See
-      `DATASET_LABELING_PLAN.md`.
-- [ ] **Train 2.6.13 and paired-bootstrap vs 2.6.8** — expect `val_indomain` to
-      recover toward 0.86. Treat `viral_disease` as known-starved (its 600
-      ornamental train images are gone and unreplaced) — do **not** read a viral
-      regression as a modelling failure. Expect the eval/cal slices to **shrink**
-      and train to grow: that is the `split_hint` fix working.
-      **The vs-2.6.8 A/B cannot be corpus-verified.** The instruction to "diff
-      `source_inventory` first" is unrunnable for that pair — the inventory gate
-      ships *in* 2.6.13, so 2.6.8 has none — and the corpora provably differ
-      (dead `pappu54` → two replacements; supplement v6 → v8b). Worse, ~1,891
-      v8b rows are `carried_from_v5`, i.e. inside 2.6.8's own training set, which
-      biases the comparison **toward** 2.6.8. Read the paired number **only** on
-      supplement rows tagged `carried_from_v7 | carried_from_v8 | new` (1,234
-      rows, ~185 landing in `val_realworld`). The join is mechanical: on-disk
-      stems are `supp_<class>_<original stem>`, so eval images map straight back
-      to `manifest.csv`.
+### 2.7.0 — the data-integrity release (train this)
+
+Six notebook fixes: fail-fast on a truncated corpus (`REQUIRED_SOURCE_FLOORS` +
+persisted `source_inventory.json`), re-sourced ornamental data, a revived
+MaxLogit OOD floor over plant logits only, an unpinned conformal grid,
+**`split_hint` routing**, and **`subject_domain` passthrough + per-split domain
+reporting**. Plus the supplement fetcher no longer runs under a fail-soft
+wrapper, and a `SUPPLEMENT_MIN_ROWS` guard rejects a stale upload.
+
+Supplement **v8 is published and verified** (3,389 rows; 1,907 eval-eligible /
+695 train-only / 787 boundary; 585 `garden_ornamental` of which 353 are
+eval-eligible; `leaf_spot` 184; provenance present with 333 `new`). For the
+first time `val_realworld` contains garden ornamentals, so the 2.6.12 pivot is
+measurable rather than assumed.
+
+- [ ] **Train 2.7.0 and paired-bootstrap vs 2.6.8.** Expect `val_indomain` to
+      recover toward 0.86, and eval/cal slices to **shrink** while train grows
+      (that is `split_hint` working). `viral_disease` is supply-starved (2
+      eval-eligible supplement rows) — do **not** read a viral regression as a
+      modelling failure.
+      **The A/B cannot be corpus-verified**: the inventory gate ships *in*
+      2.7.0, so 2.6.8 has none, and the corpora provably differ. Read the paired
+      number **only** on supplement rows tagged `carried_from_v7 | v8 | v8b |
+      new` (1,557 rows, 585 eval_ok) — the rest are inside 2.6.8's own training
+      set and bias the comparison toward it. On-disk stems are
+      `supp_<class>_<original stem>`, so eval images join straight to
+      `manifest.csv`.
+- [ ] **Ship it or don't, then say which.** 2.7.0 either beats 2.6.8 on the
+      paired bootstrap or it does not. That verdict is the gate for everything
+      below — including whether `frontier` is worth a run.
 
 Run-log checks, each proving one fix landed:
 
 | Look for | Expect | Means |
 |---|---|---|
+| `Kaggle supplement manifest:` | **3389 rows**, `split_hint` in the column list | **Read this first.** A stale upload otherwise trains and grades silently. |
+| `Kaggle supplement: eval/train routing basis =` | `split_hint` | `confidence>=0.8` = the fallback; `none` = every row is grading the model. |
+| `Kaggle supplement routing:` | ≈ `1907 / 695 / 787` | The offline verdict is being honoured. |
+| `per-split subject_domain:` → `val_realworld` | a real `garden_ornamental` count | **The ship gate can finally see the broadened domain.** |
 | `source floors OK: …` | present | §2 gate ran. If it *raised*, a source is down — read it, don't bypass. |
-| `Kaggle ornamental per-class:` | `healthy 600, leaf_spot 600, powdery_mildew 133` | Replacement sources loaded; a missing class is the known gap. |
 | `MaxLogit OOD floor calibrated [plant_only]` | `sep=` **positive** | Fallback alive for the first time since v2.3. Still negative ⇒ flag it. |
 | `conformal: selected alpha=… lambda_reg=…` | **not** the last grid value | Search converged inside the grid. |
 | `head early stop @ epN (best ep=M)` | `M` well above 3 | Best-epoch 3 was the corpus-loss symptom. |
-| `[final val_indomain] disease_macro_f1` | toward **0.86** | The headline regression is undone. |
-| `Kaggle supplement manifest:` | row count matching the build you published | **Read this line first.** A stale upload otherwise trains and grades silently. |
-| `Kaggle supplement: eval/train routing basis =` | `split_hint`, else `confidence>=0.8` | `none` means neither column shipped and every row is grading the model. |
-| `Kaggle supplement routing:` | all three of `supplement` / `supplement_train_only` / `supplement_boundary` non-zero | The verdict is being honoured. Only two keys ⇒ no routing basis (or you flipped `STRICT_SUPPLEMENT_SPLIT_HINT`). |
-| `Kaggle supplement subject_domain:` | the buckets you collected | Domain rides into the sidecars. All `unspecified` ⇒ the manifest column is missing. |
-| `per-split subject_domain:` → `val_realworld` | a non-trivial non-`unspecified` share | **The ship gate can finally see the broadened domain.** If ornamental/edible rows are ~0 here, no number in this repo says whether the pivot worked. |
+| `[final val_indomain] disease_macro_f1` | toward **0.86** | Headline regression undone. |
 
-### Still open from the 2.6.12 pivot
+### 2.7.x — polish, one measurable change at a time
 
-- [ ] **Loosen the supplement's upstream `field_crop`/`orchard_fruit` gate** to
-      admit ornamentals, and collect garden-ornamental scans (weak classes
-      first). The `kaggle_ornamental` up-weight already landed and the dead
-      source was re-pointed in 2.6.13.
-- [ ] **Broaden the eval seed** — **half-closed.** v8b's domain re-judge put 190
-      garden ornamentals into `source=supplement`, which *is* eval-eligible, so
-      the gate now carries some; and the per-split domain report (2.6.13) finally
-      says how many. Still open: every *dedicated* ornamental source
-      (`kaggle_ornamental`) remains train-only, and kitchen-garden edibles have
-      no eval-eligible supply at all. Collect the new domain into the
-      **supplement**, not into a train-only slug — that routing is why the
-      2.26k-image loss was invisible.
-- [ ] **Refresh `MODEL_CARD.md`** — it still says "v2.6.9 (in training — NOT
-      YET TRAINED)" and contradicts this file on aqua export precision. Do not
-      import its numbers until it is rewritten.
+Each is small, cheap, and A/B-able against 2.7.0 on the same corpus. Do them
+one per run, not in a batch — a batch is unreadable.
 
-### 2.7 — the leap
+- [ ] **Report the production-faithful number.** §6's detector-crop eval now
+      defaults ON for `gamma`/`frontier` (OFF for `combined`, where it OOMs).
+      Every headline metric to date scores the classifier on a **whole val
+      image** while production classifies a **detector crop** — publish both in
+      `MODEL_CARD.md` and treat the gap as a first-class finding.
+- [ ] **Aspect-preserving preprocessing (highest-value single experiment).** The
+      eval transform is `Resize(224×1.05) → CenterCrop(224)`, which trims the
+      leaf **margin** — exactly where `leaf_scorch` lives, and its §3 probe
+      recall is 0.39–0.52 across all four runs on record, by far the worst of
+      any class. That says *features*, not supply. Test resize-and-pad, and
+      `IMG` 224 → 308, **on the §3 probe first** (cheap, no full train).
+- [ ] **`USE_REGISTERS`** — `dinov2_vits14_reg` has cleaner features; off today
+      only because the validated 0.91 probe used non-register weights. One flag,
+      one run, one paired bootstrap.
+- [ ] **Revisit `doctorp_pepper` (0.8 / prior 0.5) and `kaggle_ornamental`
+      (1.0)** now that domestic edibles are in-domain — pepper is being
+      down-weighted for being a "crop" the domain now includes.
+- [ ] **Build the comparison set** from the 2,593 exportable production scans —
+      see `DATASET_LABELING_PLAN.md`. `pending` rows + the 111 feedback rows are
+      the eval-eligible half (`auto_yes` is train-only forever). ~150/class gives
+      ±0.06 per-class recall and ±0.023 macro-F1; healthy wants 400 to resolve a
+      2 pp false-fire change. Note it cannot measure NAP or blur — recording
+      excludes both by design.
+- [ ] **Refresh `MODEL_CARD.md`** — still says "v2.6.9 (in training — NOT YET
+      TRAINED)" and contradicts this file on aqua export precision.
+- [ ] **Collect kitchen-garden edibles into the supplement** (not into a
+      train-only slug — that routing is why the 2.26k-image loss was invisible).
+
+### 2.8 — the leap
 
 > From "a good leaf classifier" to a **holistic, trustworthy plant doctor**.
-> Scope + real-world reliability + data scale, not a bigger backbone — the probe
-> says features aren't the ceiling.
+> Ordered by expected effect per unit of risk, with the evidence for each. Not
+> a wishlist: items 1–3 are the ones that change what the model *is*.
 
-1. **Data flywheel** — fold thousands of offline-judged production scans into
-   the next dataset. Bigger lever than any backbone.
-2. **Scope expansion** — activate `edema` + `sunburn` (cards and deferred
-   feedback labels exist); add root rot via image + symptom fusion. Diagnose
-   *conditions*, not leaf classes.
-3. **Multimodal diagnosis** — fuse vision verdict with species ID and symptom
-   Q&A so species + context condition the disease priors.
-4. **`frontier` (DINOv2 ViT-B/14, GPU)** — A/B vs gamma **only if** the probe
-   shows headroom, then distill back to ship cheaply.
-5. **Segmentation** — Stage 1 toward lesion area for severity, not one box.
-6. **Safety at scale** — per-class conformal, explicit abstain →
-   expert/community escalation, calibrated severity that never over-treats.
+**1. Real-distribution data at scale — still the biggest lever.** Every source
+today is scraped or curated; production scans are what users actually shoot.
+2,593 already exportable and growing. The evidence is already in the corpus:
+DoctorP (real app photos) is the source that supplies the starved classes, and
+`val_realworld` is seeded from real-photo sources. Nothing else on this list
+moves reliability as much per unit of effort.
 
-Prep now, in parallel:
+**2. Multi-label instead of single-label — the biggest *modelling* change
+available.** A softmax over 9 classes cannot say "underwatered **and**
+nutrient-deficient", which is the single most common real co-occurrence and
+plausibly a chunk of why `nutrient` over-fires (P 0.670, 1.25× over-prediction)
+and why scorch/nutrient sit on a contested boundary. Sigmoid head + per-class
+thresholds + per-class conformal. Cost is real: multi-label annotations on at
+least a subset, a new loss, and a server contract change. Do it *after* the
+boundary is stable, never during.
 
-- [ ] Wire `frontier` end-to-end in the notebook + a probe-gate (cheap go/no-go).
-- [ ] Stand up the production-scan export→judge loop at volume.
-- [ ] Spike multimodal fusion behind a flag.
-- [ ] Design the segmentation-detector path — research spike.
+**3. Segmentation, not a box.** Stage 1 → lesion **area**, so severity is
+measured instead of heuristic ("12% of leaf area affected" beats "moderate"),
+and a single diseased leaf stops being diluted in a whole frame. Also the
+honest fix for the crop-vs-whole gap item 2.7.x measures.
+
+**4. Capacity — `frontier`, and possibly a newer backbone.** `frontier` is now
+a plain mode, so it costs one run.
+**Trigger: only after 2.7.0 actually beats 2.6.8** — without a trustworthy
+incumbent there is nothing to A/B against, and that is precisely how 2.6.9 got
+shipped-then-reverted. Honest expectation: with a ~0.91 frozen-probe ceiling on
+ViT-S and precision-bound weak classes, a bigger backbone historically buys a
+few points at best; its real value is as a **distillation teacher**, so if it
+wins, distill back into gamma/aqua and ship the win on CPU. Worth checking in
+the same breath: **DINOv3** (2025) reports substantially better dense features
+than DINOv2 and would be a drop-in swap in this exact frozen-backbone recipe —
+**verify its licence terms before committing**, they are not DINOv2's Apache-2.0.
+- [ ] Probe DINOv2-S / DINOv2-B / DINOv3-S under §3's cached-feature probe —
+      one afternoon, no training, tells you whether capacity is the ceiling.
+
+**5. Species-conditioned priors.** Species ID and symptom triage already exist
+and are already called on the same scan. Conditioning the disease posterior on
+species is nearly free (a prior table × logits) and rules out combinations that
+cannot occur on a given genus. Cheapest real accuracy win on this list.
+
+**6. Scope expansion.** Activate `edema` + `sunburn` (content cards and deferred
+feedback labels already exist); add root rot via image + symptom fusion.
+Diagnose *conditions*, not leaf classes. Gated on the scorch/nutrient boundary
+being stable — see Decisions.
+
+**7. Safety at scale.** Per-class conformal, an explicit **abstain →
+expert/community escalation** path, calibrated severity that never over-treats.
 
 ---
 

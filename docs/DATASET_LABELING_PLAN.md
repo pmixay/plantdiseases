@@ -71,7 +71,7 @@ bundle-derived (a rebuilt OOD bank on the broader in-distribution).
 Two weight comments in §4 now lag the policy and should be revisited **with evidence, not
 reflex**: `doctorp_pepper` is down-weighted 0.8 (prior 0.5) because "pepper is a container
 CROP", and `kaggle_ornamental` sits at 1.0. If domestic edibles are in-domain, pepper's
-down-weight is arguing against the deployment distribution. Leave both alone until 2.6.13 gives
+down-weight is arguing against the deployment distribution. Leave both alone until 2.7.0 gives
 a baseline — changing sampler weights and the corpus in the same run makes the A/B unreadable.
 
 ### Original v2.6.12 pivot (kept for the record)
@@ -257,10 +257,15 @@ v7 eval; let v8's clean benchmark guide any further move.
    / 697 boundary**, and the 340 are exactly the sub-floor positives the item asks for
    (gray_mold 75, leaf_scorch 112, nutrient 113, plus 40 hard-negatives).
 
-## ⚠ The published Kaggle supplement is STALE (found 2026-08-05)
+## ✅ RESOLVED — the stale-upload incident (2026-08-05 → 2026-08-07)
 
-`maxayyt5/houseplant-disease-eval-supplement` **version 7** — what the notebook actually
-downloads — is a **v7-era build, not v8b**. The v8 and v8b rounds were finalized locally
+**Version 8 is published and verified: 3,389 rows, `split_hint` + `provenance` present,
+585 `garden_ornamental` (353 eval-eligible), `leaf_spot` 184.** Routing measured on the
+real manifest: **1,907 eval-eligible / 695 train-only / 787 boundary**. Kept below
+because the failure mode is worth remembering.
+
+For two days the published dataset — `maxayyt5/houseplant-disease-eval-supplement`
+**version 7**, what the notebook actually downloaded — was a **v7-era build, not v8b**. The v8 and v8b rounds were finalized locally
 but the `kaggle datasets version` publish step never landed, so none of that work has
 ever reached a training run:
 
@@ -280,8 +285,9 @@ holds only `houseplant` / `not_a_plant` — **zero `garden_ornamental` rows**. S
 v2.6.12 domain pivot has never been in a corpus either, and the non-recycled provenance
 subset that the vs-2.6.8 A/B depends on does not exist upstream.
 
-**Publish the v8b build before training 2.6.13.** Guard added in §2:
-`SUPPLEMENT_MIN_ROWS = 3000` fails the run loud rather than letting a previous era's
+**The lesson, now enforced.** An offline round only reaches training once
+`kaggle datasets version` has actually run, and a stale build is invisible: it loads
+fine and passes every gate. Guard added in §2: `SUPPLEMENT_MIN_ROWS = 3000` fails the run loud rather than letting a previous era's
 corpus train + grade silently — which is the same failure class as the `kaggle_ornamental`
 source loss, just upstream of the notebook. Set it to 0 to train on an older build on
 purpose.
