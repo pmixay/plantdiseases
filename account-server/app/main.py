@@ -20,7 +20,7 @@ from app.config import Settings
 from app.db.database import Database, DatabaseHandle
 from app.db.repository import AccountRepository
 from app.providers.base import ProviderAdapter, ProviderName
-from app.providers.mock import build_provider_registry
+from app.providers.registry import build_provider_registry
 from app.rate_limit import InMemoryRateLimiter
 from app.security.internal import load_internal_service_token
 from app.security.push_crypto import PushTokenProtector

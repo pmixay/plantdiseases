@@ -6,10 +6,24 @@ services receive only signed `community_actor_id` and nickname claims; the
 internal account UUID and provider subject never appear in HTTP responses or
 JWTs.
 
-This branch permits deterministic mock providers only in `ENVIRONMENT=test`.
-Remote Yandex/VK adapters deliberately fail startup until their separately
-reviewed Russian-data-plane implementation exists. Do not use real provider or
-FCM tokens in the local or German synthetic environments.
+Local and German beta configurations use deterministic mock providers only.
+Remote Yandex/VK verification is implemented for the Russian-data-plane
+handoff, but no real application ID or provider token is committed or used by
+the automated suite. Do not use real provider or FCM tokens in the local or
+German synthetic environments.
+
+In `AUTH_PROVIDER_MODE=remote`, startup requires the public
+`YANDEX_CLIENT_ID` and numeric `VKID_CLIENT_ID`. Yandex tokens are sent only in
+the `Authorization: OAuth` header to its fixed HTTPS user-information endpoint;
+the returned `client_id` must match and the app-specific `psuid` is retained as
+subject. VK tokens are sent only in an HTTPS form body to VK ID's
+client-bound `oauth2/user_info` endpoint. Both adapters discard email, phone,
+birthday, gender, and every unrecognized response field. Network, timeout,
+oversize, redirect, malformed-response, wrong-application, invalid-token, and
+incomplete-profile paths fail closed with the stable provider errors.
+
+Provider contracts: [Yandex ID user information](https://yandex.com/dev/id/doc/en/user-information)
+and [VK ID's official SDK user-info request](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).
 
 ## Contract
 

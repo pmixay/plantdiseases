@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from app.config import Settings, SettingsError
+from app.config import SettingsError
 from app.providers.base import (
     ProviderAdapter,
     ProviderErrorCode,
@@ -93,15 +93,6 @@ class MockProviderAdapter(ProviderAdapter):
         suffix = access_token.removeprefix(prefix) if access_token.startswith(prefix) else ""
         error = _ERROR_SUFFIXES.get(suffix, ProviderErrorCode.INVALID_TOKEN)
         raise ProviderVerificationError(error)
-
-
-def build_provider_registry(settings: Settings) -> dict[ProviderName, ProviderAdapter]:
-    if settings.auth_provider_mode != "mock":
-        raise SettingsError("Remote provider adapters are not implemented yet")
-    return {
-        provider: MockProviderAdapter(provider, environment=settings.environment)
-        for provider in ("yandex", "vk")
-    }
 
 
 VALID_MOCK_TOKENS = {

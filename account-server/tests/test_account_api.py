@@ -28,7 +28,7 @@ from app.db.models import (
 )
 from app.db.repository import AccountRepository
 from app.main import create_app
-from app.providers.mock import build_provider_registry
+from app.providers.registry import build_provider_registry
 from app.rate_limit import InMemoryRateLimiter
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import SigningKeyRing, TokenService, hash_opaque_token

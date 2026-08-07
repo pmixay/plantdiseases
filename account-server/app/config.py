@@ -94,6 +94,9 @@ class Settings:
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
     community_deletion_url: str | None = None
+    yandex_client_id: str | None = None
+    vk_client_id: str | None = None
+    provider_http_timeout_seconds: int = 5
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -137,6 +140,15 @@ class Settings:
             community_deletion_url=(
                 source.get("COMMUNITY_DELETION_URL", "").strip() or None
             ),
+            yandex_client_id=source.get("YANDEX_CLIENT_ID", "").strip() or None,
+            vk_client_id=source.get("VKID_CLIENT_ID", "").strip() or None,
+            provider_http_timeout_seconds=_bounded_int(
+                source,
+                "PROVIDER_HTTP_TIMEOUT_SECONDS",
+                default=5,
+                minimum=1,
+                maximum=15,
+            ),
         )
         settings.validate()
         return settings
@@ -150,6 +162,13 @@ class Settings:
             raise SettingsError(f"Unsupported ENVIRONMENT: {self.environment}")
         if self.auth_provider_mode not in _PROVIDER_MODES:
             raise SettingsError(f"Unsupported AUTH_PROVIDER_MODE: {self.auth_provider_mode}")
+        if self.auth_provider_mode == "remote":
+            if not self.yandex_client_id:
+                raise SettingsError("Remote provider mode requires YANDEX_CLIENT_ID")
+            if not self.vk_client_id:
+                raise SettingsError("Remote provider mode requires VKID_CLIENT_ID")
+            if not self.vk_client_id.isdecimal():
+                raise SettingsError("VKID_CLIENT_ID must be a decimal application ID")
 
         issuer = urlparse(self.issuer)
         if issuer.scheme not in {"http", "https"} or not issuer.hostname:

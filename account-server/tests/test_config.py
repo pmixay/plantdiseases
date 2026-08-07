@@ -76,6 +76,8 @@ def test_production_requires_https_issuer():
     env = _base_env() | {
         "ENVIRONMENT": "production",
         "AUTH_PROVIDER_MODE": "remote",
+        "YANDEX_CLIENT_ID": "yandex-public-client",
+        "VKID_CLIENT_ID": "12345",
     }
     with pytest.raises(SettingsError, match="must use HTTPS"):
         Settings.from_env(env)
@@ -134,6 +136,20 @@ def test_malformed_boolean_and_rate_limit_are_rejected():
         Settings.from_env(_base_env() | {"ACCOUNT_DATABASE_LOCAL": "sometimes"})
     with pytest.raises(SettingsError, match="between 1 and 10000"):
         Settings.from_env(_base_env() | {"ACCOUNT_RATE_LIMIT_REQUESTS": "0"})
+    with pytest.raises(SettingsError, match="between 1 and 15"):
+        Settings.from_env(_base_env() | {"PROVIDER_HTTP_TIMEOUT_SECONDS": "30"})
+
+
+def test_remote_provider_mode_requires_both_public_application_ids():
+    remote = _base_env() | {"AUTH_PROVIDER_MODE": "remote"}
+    with pytest.raises(SettingsError, match="YANDEX_CLIENT_ID"):
+        Settings.from_env(remote)
+    remote["YANDEX_CLIENT_ID"] = "yandex-public-client"
+    with pytest.raises(SettingsError, match="VKID_CLIENT_ID"):
+        Settings.from_env(remote)
+    remote["VKID_CLIENT_ID"] = "not-numeric"
+    with pytest.raises(SettingsError, match="decimal application ID"):
+        Settings.from_env(remote)
 
 
 def test_configured_test_secret_file_must_also_be_private(tmp_path: Path):
@@ -171,6 +187,8 @@ def _production_env(tmp_path: Path) -> dict[str, str]:
     return {
         "ENVIRONMENT": "production",
         "AUTH_PROVIDER_MODE": "remote",
+        "YANDEX_CLIENT_ID": "yandex-public-client",
+        "VKID_CLIENT_ID": "12345",
         "ACCOUNT_ISSUER": "https://id.example.invalid",
         "ACCOUNT_AUDIENCE": "plantdiseases-app",
         # Loopback means the DB is on the same host; a remote hostname requires
