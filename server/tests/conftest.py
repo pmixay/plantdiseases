@@ -118,23 +118,52 @@ class FakePipeline:
 @pytest.fixture(autouse=True, scope="session")
 def _stub_pipeline_for_lifespan(tmp_path_factory):
     """Replace ``PlantDiseasePipeline`` with the fake before lifespan runs, and
-    keep the labeling tool hermetic: point its DB/dirs at a session tmp dir so
-    tests never write into ``server/``."""
+    keep every persistent service hermetic: point its DB/directories at session
+    temp paths so tests never write into ``server/`` or depend on the network.
+
+    The production lifespan also warms curated Wikimedia photos.  That is a
+    useful best-effort optimisation in a deployed service, but it would make
+    the local suite depend on external HTTP and can extend ``TestClient``
+    shutdown while worker calls time out. Replacing only that warm-up coroutine
+    keeps HTTP contract tests deterministic while leaving production untouched.
+    """
+    import community
+    import feedback
     import labeling
     import main as server_main
     import pipeline as pipeline_module
+    import push
+    import telemetry
 
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
 
-    lab_dir = tmp_path_factory.mktemp("labeling")
-    labeling.LABELING_DB_PATH = lab_dir / "labeling.db"
-    labeling.LABELING_IMG_DIR = lab_dir / "images"
+    state_dir = tmp_path_factory.mktemp("server-state")
+
+    feedback.FEEDBACK_DB_PATH = state_dir / "feedback.db"
+    feedback.FEEDBACK_IMG_DIR = state_dir / "feedback-images"
+    feedback._initialised = False
+
+    community.COMMUNITY_DB_PATH = state_dir / "community.db"
+    community.COMMUNITY_THUMB_DIR = state_dir / "community-thumbs"
+    community._initialised = False
+    # main imports this path by value for the thumbnail response endpoint.
+    server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
+
+    labeling.LABELING_DB_PATH = state_dir / "labeling.db"
+    labeling.LABELING_IMG_DIR = state_dir / "labeling-images"
     labeling._initialised = False
 
-    import telemetry
-    telemetry.TELEMETRY_DB_PATH = tmp_path_factory.mktemp("telemetry") / "telemetry.db"
+    telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
+
+    push.PUSH_DB_PATH = state_dir / "push.db"
+    push._initialised = False
+
+    async def _skip_external_warmup() -> None:
+        return None
+
+    server_main._warm_placeholder_images = _skip_external_warmup
     yield
 
 

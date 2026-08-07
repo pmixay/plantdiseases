@@ -6,7 +6,7 @@ on:
   # from those branches (#136, #137) reached main with no CI at all — which is
   # how four auto-fixable lint errors blocked the Android suite for two days.
   push:
-    branches: [main, "claude/**", "work/**", "codex/**"]
+    branches: [main, account-beta-test, "claude/**", "work/**", "codex/**"]
 
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
