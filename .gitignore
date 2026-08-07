@@ -3,9 +3,33 @@ android/.gradle/
 android/.gradle-user-home/
 android/build/
 android/app/build/
-android/local.properties
+# Anchored at the root, `android/local.properties` never matched the copy
+# Android Studio actually writes at android/app/local.properties — which is
+# how that file (containing the maintainer's Windows SDK path) ended up
+# committed in #151. Match it wherever it lands.
+**/local.properties
+# Same story for the per-module Gradle cache dir: android/app/.gradle/
+# (containing the maintainer's local JBR path) slipped past the root-only
+# android/.gradle/ entry above and got committed in #151.
+**/.gradle/
 *.iml
 .idea/
+
+# Release signing material. DEPLOYMENT.md walks the developer through
+# `keytool -genkeypair -keystore plantdiseases-release.jks` and
+# `base64 -w0 … > keystore.b64` using relative paths, so both can easily be
+# created inside the repo. Committing either hands over the app-signing key.
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.b64
+keystore.properties
+
+# Local secrets / env overrides (server/config.json is already covered below).
+.env
+.env.*
+!.env.example
 
 # Python
 server/venv/
@@ -21,6 +45,11 @@ server/models/*
 !server/models/MODEL_CARD.md
 server/logs/
 server/feedback.db
+# Auto-generated IP-hashing pepper (feedback._ip_hash_pepper) written beside
+# the DB when FEEDBACK_IP_PEPPER is unset. It is a secret — committing it would
+# make every stored client_ip_hash reversible again.
+server/.ip_hash_pepper
+**/.ip_hash_pepper
 server/feedback.db-journal
 server/feedback.db-wal
 server/feedback.db-shm
@@ -55,7 +84,6 @@ server/push.db-wal
 server/push.db-shm
 server/plant_photo_cache/
 server/ai_cache/
-server/admin_backups/
 
 # Hosted Aqua on-device model (provisioned out of band)
 server/static/aqua/aqua_classifier.tflite

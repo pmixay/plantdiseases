@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Production transport is HTTPS-only. The server base URL is fixed at
-    build time via BuildConfig.API_BASE_URL (default https://pdis.arbuz.lol/);
-    there is no in-app server-URL override, so cleartext is disabled by
-    default. Cleartext is permitted ONLY for local/LAN development hosts
-    (emulator loopback, localhost, RFC-1918 ranges) so a developer can
-    still point a debug build at http://10.0.2.2:8000 via
-    -PAPI_BASE_URL=... without weakening production transport.
+    RELEASE config: HTTPS only, no exceptions.
+
+    The server base URL is fixed at build time via BuildConfig.API_BASE_URL
+    (default https://pdis.arbuz.lol/) and there is no in-app server-URL
+    override, so a shipped build has no legitimate reason to speak cleartext
+    to anything.
+
+    The localhost / 10.0.2.2 cleartext exemption a developer needs for
+    -PAPI_BASE_URL=http://10.0.2.2:8000 now lives in the debug-only variant at
+    app/src/debug/res/xml/network_security_config.xml, which resource merging
+    substitutes for this file in debug builds. It used to live here as a plain
+    <domain-config>, which meant it was compiled into the release APK too.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -14,11 +19,4 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <!-- Exact dev hosts only (Android does not support CIDR ranges here).
-         Add a specific LAN IP below if you serve from one during dev. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-    </domain-config>
 </network-security-config>

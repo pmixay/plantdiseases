@@ -22,6 +22,11 @@ data class PlantEntity(
     @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
     /** Localised common name (e.g. "Rubber Plant"). */
     @ColumnInfo(name = "common_name") val commonName: String? = null,
+    /** Free-text room / location (e.g. "Living room", "Bathroom"). Garden
+     *  list groups by this when populated; null plants land in an
+     *  "Unassigned" group at the bottom. Re-added by MIGRATION_5_6 after
+     *  MIGRATION_4_5 previously dropped it. */
+    @ColumnInfo(name = "room") val room: String? = null,
     /** Most recent peak lux reading from the Light Meter, captured
      *  on a session launched WITH this plant's context. Null until
      *  the user runs the meter from plant detail. */
@@ -444,7 +449,7 @@ interface PlantJournalDao {
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -458,7 +463,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         @Volatile
-        private var INSTANCE: AppDatabase? = null
+        private var databaseInstance: AppDatabase? = null
 
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
@@ -546,19 +551,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun getInstance(context: android.content.Context): AppDatabase = INSTANCE ?: synchronized(this) {
+        /** Re-add the plant-location column MIGRATION_4_5 dropped. ADD COLUMN is
+         *  additive, so — unlike the 4→5 table rebuild — no row is copied and no
+         *  garden is lost. */
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `plants` ADD COLUMN `room` TEXT")
+            }
+        }
+
+        fun getInstance(context: android.content.Context): AppDatabase = databaseInstance ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "plantdiseases_db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                 // true` preserves the previous behaviour (wipe everything
                 // when no migration path exists).
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
-            INSTANCE = instance
+            databaseInstance = instance
             instance
         }
     }

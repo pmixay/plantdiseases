@@ -11,7 +11,9 @@ Guards:
 - only Wikimedia/Wikipedia hosts are ever fetched (SSRF — the source URL rides
   in from server-resolved Wikipedia metadata, but the proxy endpoint is public);
 - only raster images Glide can render (JPEG/PNG/WebP/GIF) are cached — Wikipedia
-  mixes in SVGs, which the app can't decode.
+  mixes in SVGs, which the app can't decode;
+- thumbnail widths are snapped to the ladder Wikimedia will actually render
+  (see ``normalize_thumb_url``), with the full-size original as a fallback.
 
 Best-effort throughout: any miss returns ``None`` so the card falls back to its
 placeholder, exactly as it did before this proxy existed.
@@ -21,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import re
 import threading
 import urllib.parse
 from pathlib import Path
@@ -91,6 +94,63 @@ def name_proxy_path(name: str, locale: str) -> str:
     )
 
 
+# Wikimedia renders thumbnails only at a fixed ladder of widths and, since
+# phab:T414805, rejects a *direct* request for any other width with HTTP 400
+# ("Use thumbnail sizes listed on
+# https://www.mediawiki.org/wiki/Common_thumbnail_sizes"). Hotlinking is
+# precisely what this module does, so an off-ladder width is not a smaller
+# photo — it is no photo at all.
+#
+# species_info now only ever asks for ladder widths, but URLs also reach us
+# second-hand and we cannot re-issue those: an installed app caches
+# /api/species-info for 7 days, so its stored `?u=…/1024px-…` links keep
+# arriving here long after the server is fixed, and Wikipedia's own media-list
+# srcset hands back whatever width it likes. Snapping in the one place every
+# photo URL passes through heals all of them at once.
+_STANDARD_THUMB_WIDTHS = (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+_THUMB_WIDTH_RE = re.compile(r"/(\d+)px-")
+
+
+def normalize_thumb_url(url: str) -> str:
+    """Snap a ``/NNNpx-`` Wikimedia thumbnail width up to the nearest width
+    Wikimedia will actually render. Returned unchanged when the URL carries no
+    width or already uses a ladder step."""
+    match = _THUMB_WIDTH_RE.search(url)
+    if match is None:
+        return url
+    width = int(match.group(1))
+    if width in _STANDARD_THUMB_WIDTHS:
+        return url
+    snapped = next(
+        (w for w in _STANDARD_THUMB_WIDTHS if w >= width), _STANDARD_THUMB_WIDTHS[-1],
+    )
+    return f"{url[:match.start()]}/{snapped}px-{url[match.end():]}"
+
+
+def _original_from_thumb(url: str) -> str | None:
+    """The full-size file behind a Wikimedia thumbnail URL
+    (``…/commons/thumb/a/ab/Name.jpg/960px-Name.jpg`` →
+    ``…/commons/a/ab/Name.jpg``), or ``None`` when ``url`` is not a thumbnail.
+
+    Last resort only — originals are routinely 6-11 MB, which is why we ask for
+    a render in the first place. But which widths Wikimedia will render is
+    theirs to change (it just did), and a photo that arrives slowly beats a
+    card stuck on its placeholder.
+    """
+    parsed = urllib.parse.urlparse(url)
+    parts = parsed.path.split("/")
+    if "thumb" not in parts or _THUMB_WIDTH_RE.search(url) is None:
+        return None
+    cut = parts.index("thumb")
+    # Drop the "thumb" marker and the trailing "NNNpx-Name.ext" render segment.
+    rest = parts[cut + 1:-1]
+    if not rest:
+        return None
+    return urllib.parse.urlunparse(
+        parsed._replace(path="/".join(parts[:cut] + rest), query=""),
+    )
+
+
 def _digest(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
 
@@ -141,12 +201,21 @@ def get_or_fetch(url: str) -> Path | None:
     bytes aren't a raster image Glide can render."""
     if not is_allowed_url(url):
         return None
+    # Before anything touches the cache, so an off-ladder width and its snapped
+    # form share one cache entry instead of the former permanently missing.
+    url = normalize_thumb_url(url)
     hit = _existing(url)
     if hit is not None:
         with contextlib.suppress(OSError):
             hit.touch()  # bump mtime for the LRU prune
         return hit
     data = _download(url)
+    if data is None:
+        # The render was refused (or has gone away) but the file behind it
+        # hasn't. Cached under the thumbnail's digest either way, so this
+        # costs one extra fetch on a miss and nothing on a hit.
+        original = _original_from_thumb(url)
+        data = _download(original) if original else None
     if data is None:
         return None
     ext = _sniff(data)

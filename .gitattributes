@@ -1,0 +1,7 @@
+# Shell scripts must keep LF endings — a CRLF shebang ("#!/bin/sh\r") is
+# unresolvable on Linux and breaks CI (see gradlew, MIGRATION history).
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows batch scripts want CRLF.
+*.bat text eol=crlf

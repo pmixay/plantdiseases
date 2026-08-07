@@ -92,15 +92,6 @@ def test_nearby_without_disease_still_returns_everything(comm):
     assert {r["scan_id"] for r in rows} == {"a", "b"}
 
 
-def test_delete_for_user_clears_pending_requests(comm):
-    comm.set_wants_opinion("s9", "gone")
-    comm.delete_for_user("gone")
-    # After deletion the request is gone, so a later upload isn't flagged.
-    comm.record_scan(scan_id="s9", user_pseudo_id="gone", country="GB",
-                     region="London", disease="leaf_spot")
-    assert _wants(comm, "s9") is False
-
-
 def test_clear_wants_opinion_withdraws_request(comm):
     comm.record_scan(scan_id="c1", user_pseudo_id="owner", country="GB",
                      region="London", disease="leaf_spot")

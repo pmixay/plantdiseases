@@ -11,8 +11,7 @@ vision-agent that grades scraped images. See ``docs/DATASET_LABELING_PLAN.md``.
 Storage mirrors ``feedback.py`` / ``community.py``: a module-level ``_write_lock``
 (RLock) serialises writers, short-lived WAL connections, an idempotent
 ``init_db`` and ``INSERT OR IGNORE`` for idempotency. The only user linkage is
-the response ``scan_id`` (the user↔scan_id join lives solely in feedback.db,
-swept by the GDPR delete cascade).
+the response ``scan_id`` (the user↔scan_id join lives solely in feedback.db).
 """
 
 from __future__ import annotations
@@ -223,34 +222,6 @@ def mark_feedback(
                 (corrected_class, note, scan_id),
             )
     return True
-
-
-def delete_candidates_for_scan_ids(scan_ids: list[str]) -> int:
-    """GDPR cascade: remove candidates (rows + image files) recorded from the
-    given scans. Returns the number of rows deleted."""
-    ids = [s for s in (scan_ids or []) if s]
-    if not ids:
-        return 0
-    init_db()
-    deleted = 0
-    with _write_lock, _connect() as conn:
-        ph = ",".join("?" * len(ids))
-        rows = conn.execute(
-            f"SELECT id, image_path FROM candidates WHERE scan_id IN ({ph})", ids,
-        ).fetchall()
-        if rows:
-            idph = ",".join("?" * len(rows))
-            conn.execute(
-                f"DELETE FROM candidates WHERE id IN ({idph})",
-                [int(r["id"]) for r in rows],
-            )
-            deleted = len(rows)
-    for r in rows:
-        try:
-            (LABELING_IMG_DIR / r["image_path"]).unlink(missing_ok=True)
-        except OSError:
-            pass
-    return deleted
 
 
 def count_user_scans_today(cls: str) -> int:

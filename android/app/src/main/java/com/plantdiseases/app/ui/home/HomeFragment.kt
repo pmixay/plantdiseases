@@ -379,8 +379,12 @@ class HomeFragment : Fragment() {
         val items = if (popular != null && popular.items.isNotEmpty()) {
             popular.items.take(MAX_POPULAR_CARDS).map { p ->
                 // Pre-seed the image cache so loadSpeciesImage paints instantly,
-                // no per-species Wikipedia call.
-                speciesImageCache[p.scientific] = p.imageUrl
+                // no per-species Wikipedia call. Only a real URL is seeded: a
+                // null one is absence of data, not a resolved "this species has
+                // no photo", and seeding it would trip loadSpeciesImage's
+                // containsKey short-circuit and pin the card to its placeholder
+                // for the rest of the session.
+                p.imageUrl?.let { speciesImageCache[p.scientific] = it }
                 SpeciesCarouselAdapter.Item(
                     scientific = p.scientific,
                     title = if (isRu) p.commonRu else p.commonEn,

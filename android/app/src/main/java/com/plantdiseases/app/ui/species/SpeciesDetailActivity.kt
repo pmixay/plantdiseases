@@ -34,6 +34,11 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
+import com.plantdiseases.app.ui.common.bulletRow
+import com.plantdiseases.app.ui.common.cardColumn
+import com.plantdiseases.app.ui.common.cardHeading
+import com.plantdiseases.app.ui.common.factRow
+import com.plantdiseases.app.ui.common.sectionCard
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
@@ -44,8 +49,13 @@ import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
+import com.plantdiseases.app.util.FertiliserGuide
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.PlantCategory
+import com.plantdiseases.app.util.PlantCategoryClassifier
+import com.plantdiseases.app.util.PlantFacts
+import com.plantdiseases.app.util.PlantTips
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onConnectivityChanged
 import dagger.hilt.android.AndroidEntryPoint
@@ -90,6 +100,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
     /** Inputs to the "saved earlier" caption — see [applySavedDataNote]. */
     private var isOffline = false
     private var hasSpeciesContent = false
+
+    /** Latest care plan / native-range summary seen so far, feeding [bindAboutFacts].
+     *  loadCare() and loadSpeciesProfile() run concurrently and independently, so the
+     *  fact card re-renders from whichever field is populated as each arrives. */
+    private var carePlanSnapshot: CarePlanResponse? = null
+    private var nativeRangeSummary: String? = null
+
+    private val plantCategory: PlantCategory
+        get() = PlantCategoryClassifier.classify(scientificName, commonName)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -137,6 +156,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
         setupExpandableProfileSections(savedInstanceState)
+        bindAboutFacts()
         // Purely local — no load() call to pair with this, unlike the cards above.
         binding.lunarCalendar.setSpecies(scientificName, commonName)
         // Tapping an upcoming-day row selects a date whose detail panel may sit
@@ -226,6 +246,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 restored(STATE_FERTILISER_EXPANDED, default = false),
             ),
             Section(
+                STATE_TIPS_EXPANDED, binding.cardTips, binding.tipsHeader,
+                binding.ivTipsChevron, binding.tipsBody,
+                R.string.section_tips_title, R.string.section_expand, R.string.section_collapse,
+                restored(STATE_TIPS_EXPANDED, default = false),
+            ),
+            Section(
                 STATE_DISEASES_EXPANDED, binding.cardDiseases, binding.diseasesHeader,
                 binding.ivDiseasesSectionChevron, binding.diseasesBody,
                 R.string.section_diseases_title, R.string.section_expand, R.string.section_collapse,
@@ -285,34 +311,190 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /**
-     * Feeding guidance, built from the care plan already fetched for the card
-     * above — `fertilise_weeks` / `fertiliser_npk` / `soil_mix` — so this
-     * section costs no extra request. Hidden entirely when the plan carries
-     * none of them, rather than showing an empty card.
+     * Fact card at the top of About: scientific name, plant group, native range
+     * (once loaded) and a computed care difficulty. Rebuilt from scratch on every
+     * call, so it is safe to invoke again whenever a later response (care plan,
+     * species profile) fills in more of the picture.
+     */
+    private fun bindAboutFacts() {
+        val host = binding.aboutFacts
+        host.removeAllViews()
+        val category = plantCategory
+
+        val card = sectionCard()
+        val column = cardColumn()
+        card.addView(column)
+
+        column.addView(
+            factRow(R.drawable.ic_garden, getString(R.string.about_fact_scientific), scientificName),
+        )
+        column.addView(
+            factRow(
+                R.drawable.ic_guide,
+                getString(R.string.about_fact_group),
+                getString(categoryLabelRes(category)),
+            ),
+        )
+        nativeRangeSummary?.let { range ->
+            column.addView(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
+        }
+        val difficultyRes = when (PlantFacts.difficulty(carePlanSnapshot, category)) {
+            1 -> R.string.about_difficulty_easy
+            2 -> R.string.about_difficulty_moderate
+            else -> R.string.about_difficulty_demanding
+        }
+        column.addView(
+            factRow(
+                R.drawable.ic_shield_check,
+                getString(R.string.about_fact_difficulty),
+                getString(difficultyRes),
+            ),
+        )
+        host.addView(card)
+    }
+
+    /** Maps a category onto the lunar_cat_* label the app already ships in both locales. */
+    private fun categoryLabelRes(category: PlantCategory): Int = when (category) {
+        PlantCategory.FRUITING -> R.string.lunar_cat_fruiting
+        PlantCategory.ROOT -> R.string.lunar_cat_root
+        PlantCategory.LEAFY -> R.string.lunar_cat_leafy
+        PlantCategory.FLOWERING -> R.string.lunar_cat_flowering
+        PlantCategory.SUCCULENT -> R.string.lunar_cat_succulent
+        PlantCategory.FOLIAGE -> R.string.lunar_cat_foliage
+        PlantCategory.HERB -> R.string.lunar_cat_herb
+    }
+
+    /**
+     * Feeding section. Structure and defaults come from [FertiliserGuide] (keyed by
+     * the same [PlantCategory] the lunar calendar uses); anything the care plan
+     * actually supplied overrides the default. Nothing here costs a request, and —
+     * unlike the old flat-text version — there is always something concrete to
+     * show, so the card is unconditionally visible once the plan resolves.
      */
     private fun bindFertiliser(plan: CarePlanResponse) {
-        val lines = buildList {
-            add(
-                if (plan.fertiliseWeeks > 0) {
-                    resources.getQuantityString(
-                        R.plurals.fertiliser_interval,
-                        plan.fertiliseWeeks,
-                        plan.fertiliseWeeks,
-                    )
-                } else {
-                    getString(R.string.fertiliser_interval_none)
-                },
-            )
-            plan.fertiliserNpk?.takeIf { it.isNotBlank() }
-                ?.let { add(getString(R.string.fertiliser_npk, it)) }
-            plan.soilMix?.takeIf { it.isNotBlank() }
-                ?.let { add(getString(R.string.fertiliser_soil, it)) }
+        binding.cardFertiliser.visibility = View.VISIBLE
+        val host = binding.fertiliserBody
+        // Keep the legacy TextView in the tree but stop using it, so no id disappears.
+        binding.tvFertiliserBody.visibility = View.GONE
+        // Remove any card added by a previous bind (index 0 is the legacy TextView).
+        while (host.childCount > 1) host.removeViewAt(1)
+
+        val guide = FertiliserGuide.forCategory(plantCategory)
+
+        val schedule = sectionCard()
+        val scheduleColumn = cardColumn()
+        schedule.addView(scheduleColumn)
+        scheduleColumn.addView(cardHeading(getString(R.string.feed_heading_schedule)))
+
+        val weeks = if (plan.fertiliseWeeks > 0) plan.fertiliseWeeks else guide.intervalWeeks
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_fertilize,
+                getString(R.string.feed_row_interval),
+                resources.getQuantityString(R.plurals.feed_every_weeks, weeks, weeks),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_shield_check,
+                getString(R.string.feed_row_npk),
+                plan.fertiliserNpk?.takeIf { it.isNotBlank() } ?: guide.npk,
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_watering,
+                getString(R.string.feed_row_dose),
+                getString(R.string.feed_dose_percent, guide.dosePercent),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_moon,
+                getString(R.string.feed_row_season),
+                monthRangeLabel(guide.seasonMonths),
+            ),
+        )
+        scheduleColumn.addView(
+            factRow(
+                R.drawable.ic_garden,
+                getString(R.string.feed_row_soil),
+                plan.soilMix?.takeIf { it.isNotBlank() } ?: getString(guide.soilRes),
+            ),
+        )
+        host.addView(schedule)
+
+        val cautions = sectionCard()
+        val cautionColumn = cardColumn()
+        cautions.addView(cautionColumn)
+        cautionColumn.addView(cardHeading(getString(R.string.feed_heading_cautions)))
+        guide.cautionRes.forEach {
+            cautionColumn.addView(bulletRow(getString(it), R.color.warning_amber))
         }
-        // A lone "no regular feeding needed" line is not worth a card of its
-        // own; show the section only once there is something concrete to say.
-        val worthShowing = lines.size > 1 || plan.fertiliseWeeks > 0
-        binding.cardFertiliser.visibility = if (worthShowing) View.VISIBLE else View.GONE
-        binding.tvFertiliserBody.text = lines.joinToString("\n\n")
+        FertiliserGuide.universalRules.forEach {
+            cautionColumn.addView(bulletRow(getString(it)))
+        }
+        plan.seasonNote?.takeIf { it.isNotBlank() }?.let {
+            cautionColumn.addView(bulletRow(it))
+        }
+        host.addView(cautions)
+    }
+
+    /** "March - September" from an IntRange of month numbers, or "all year round". */
+    private fun monthRangeLabel(months: IntRange): String {
+        val names = resources.getStringArray(R.array.flowering_month_names)
+        return if (months.first == 1 && months.last == 12) {
+            getString(R.string.feed_season_year_round)
+        } else {
+            getString(R.string.feed_season_range, names[months.first - 1], names[months.last - 1])
+        }
+    }
+
+    /**
+     * Tips section: local category advice first (always present, so the card is
+     * unconditionally visible), then whatever free-text guidance the care plan
+     * carried, then red flags in warning colour.
+     */
+    private fun bindTips(plan: CarePlanResponse) {
+        binding.cardTips.visibility = View.VISIBLE
+        val host = binding.tipsBody
+        host.removeAllViews()
+
+        val category = plantCategory
+
+        val general = sectionCard()
+        val generalColumn = cardColumn()
+        general.addView(generalColumn)
+        generalColumn.addView(cardHeading(getString(R.string.tips_heading_general)))
+        resources.getStringArray(PlantTips.forCategory(category)).forEach {
+            generalColumn.addView(bulletRow(it))
+        }
+        host.addView(general)
+
+        val fromPlan = listOfNotNull(
+            plan.keyAction,
+            plan.placement,
+            plan.acclimation,
+            plan.wateringMethod,
+        ).filter { it.isNotBlank() }
+        if (fromPlan.isNotEmpty()) {
+            val specific = sectionCard()
+            val specificColumn = cardColumn()
+            specific.addView(specificColumn)
+            specificColumn.addView(cardHeading(getString(R.string.tips_heading_this_plant)))
+            fromPlan.forEach { specificColumn.addView(bulletRow(it)) }
+            host.addView(specific)
+        }
+
+        val flags = plan.redFlags.orEmpty().filter { it.isNotBlank() }
+        if (flags.isNotEmpty()) {
+            val warn = sectionCard()
+            val warnColumn = cardColumn()
+            warn.addView(warnColumn)
+            warnColumn.addView(cardHeading(getString(R.string.tips_heading_red_flags)))
+            flags.forEach { warnColumn.addView(bulletRow(it, R.color.disease_red)) }
+            host.addView(warn)
+        }
     }
 
     /**
@@ -464,8 +646,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Pet toxicity renders as its own card (below), not part of the
             // care card. Hidden when the plan couldn't load / pin toxicity.
             bindToxicity(plan)
-            // Feeding guidance rides on the same response — no extra request.
-            plan?.let { bindFertiliser(it) }
+            // Feeding and tips guidance ride on the same response — no extra request.
+            plan?.let {
+                bindFertiliser(it)
+                bindTips(it)
+                carePlanSnapshot = it
+                bindAboutFacts()
+            }
             careResolved = true
             registerOnboardingAnchorsWhenReady()
         }
@@ -666,10 +853,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
             val hasNativeRange = nativeRange != null && zones.isNotEmpty()
             if (hasNativeRange) {
-                binding.tvNativeRangeSummary.text = localized?.nativeRangeSummary.orEmpty()
+                val summary = localized?.nativeRangeSummary.orEmpty()
                     .ifBlank { nativeRange.summary.orEmpty() }
                     .trim()
+                binding.tvNativeRangeSummary.text = summary
                 binding.worldMap.setZones(zones)
+                nativeRangeSummary = summary.takeIf { it.isNotBlank() }
+                bindAboutFacts()
             }
             finishNativeRangeLoading(hasNativeRange)
             nativeRangeAvailable = hasNativeRange
@@ -831,6 +1021,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         private const val STATE_ABOUT_EXPANDED = "state_about_expanded"
         private const val STATE_CARE_EXPANDED = "state_care_expanded"
         private const val STATE_FERTILISER_EXPANDED = "state_fertiliser_expanded"
+        private const val STATE_TIPS_EXPANDED = "state_tips_expanded"
         private const val STATE_DISEASES_EXPANDED = "state_diseases_expanded"
         private const val STATE_FLOWERING_EXPANDED = "state_flowering_expanded"
         private const val STATE_NATIVE_RANGE_EXPANDED = "state_native_range_expanded"

@@ -14,13 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Three deliverables, each with its own toolchain:
+Two deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
-| `admin-panel/` | Python 3.11, FastAPI, paramiko, vanilla JS | Loopback-only operator console that administers the live VPS over SSH. Internal tool, not shipped to users. **Not covered by CI** — run its tests by hand. |
 
 The bilingual privacy policy is a single standalone page, `privacy.html` (repo
 root) — the canonical data-disclosure surface referenced by the app's consent
@@ -30,8 +29,7 @@ Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next
 steps), `docs/DATASET_LABELING_PLAN.md` (data loop),
 `server/models/MODEL_CARD.md` (**stale — see the roadmap's model track**),
-`server/train_notebook.ipynb` (full training recipe), `admin-panel/README.md`
-(its security model + deployment setup).
+`server/train_notebook.ipynb` (full training recipe).
 
 ## Common commands
 
@@ -80,9 +78,8 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 ### CI (`.github/workflows/ci.yml`)
 Push-only, triggers on `main`, `claude/**`, `work/**`. A `paths-filter` job runs
 the **android** and **server** jobs only when their trees (or the workflow)
-change. Two gaps worth knowing: `admin-panel/` has **no job at all**, and
-`codex/**` branches match no trigger — work merged from them reaches `main`
-with zero CI.
+change. One gap worth knowing: `codex/**` branches match no trigger — work
+merged from them reaches `main` with zero CI.
 
 ## ML work — use the bundled skill
 
