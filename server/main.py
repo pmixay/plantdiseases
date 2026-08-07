@@ -2644,7 +2644,7 @@ except ImportError:
 _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
 # Out-of-head corrections — physiological classes the
-# v2.2 head doesn't carry yet, plus a free-form catch-all. We accept
+# v2.2 head doesn't carry yet, plus a structured catch-all key. We accept
 # them on /api/feedback (otherwise the user has no way to tell us
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.

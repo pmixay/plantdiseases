@@ -1,6 +1,7 @@
 package com.plantdiseases.app.di
 
 import android.content.Context
+import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import dagger.hilt.EntryPoint
@@ -40,6 +41,8 @@ import dagger.hilt.components.SingletonComponent
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface AppEntryPoint {
+    fun authRepository(): AuthRepository
+
     fun scanRepository(): ScanRepository
 
     fun plantRepository(): PlantRepository

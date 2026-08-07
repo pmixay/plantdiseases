@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
@@ -21,19 +22,18 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
-import com.plantdiseases.app.ui.common.SpeciesInfoCardView
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.ui.common.SpeciesInfoCardView
 import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
-import com.plantdiseases.app.util.TelemetryIds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import android.widget.Toast
 import javax.inject.Inject
 
 /**
@@ -50,6 +50,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var authRepository: AuthRepository
 
     private var scanId: String = ""
     private var currentName: String? = null
@@ -117,24 +120,13 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         val ctx = requireContext()
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
-        // One second opinion per scan: once this install has submitted, the
-        // picker is locked and the sheet shows the replies read-only.
-        val alreadyOpined = !viewOnly &&
-            com.plantdiseases.app.util.OpinionPrefs.hasSubmittedOpinion(ctx, scanId)
-
-        if (viewOnly || alreadyOpined) {
-            // Strip the input controls. Owner = "here's what the community
-            // thinks"; a responder who already used their one opinion sees a
-            // "locked" note instead.
-            if (viewOnly) {
-                view.findViewById<TextView>(R.id.tv_opinion_title)
-                    .setText(R.string.community_opinion_replies_title)
-                view.findViewById<TextView>(R.id.tv_opinion_subtitle)
-                    .setText(R.string.community_opinion_replies_subtitle)
-            } else {
-                view.findViewById<TextView>(R.id.tv_opinion_subtitle)
-                    .setText(R.string.community_opinion_locked)
-            }
+        if (viewOnly) {
+            // Strip every mutation control while leaving public consensus and
+            // replies visible to guests and signed-in readers alike.
+            view.findViewById<TextView>(R.id.tv_opinion_title)
+                .setText(R.string.community_opinion_replies_title)
+            view.findViewById<TextView>(R.id.tv_opinion_subtitle)
+                .setText(R.string.community_opinion_replies_subtitle)
             voteRow?.visibility = View.GONE
             view.findViewById<View>(R.id.tv_opinion_pick_label).visibility = View.GONE
             chipGroup?.visibility = View.GONE
@@ -219,7 +211,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
         card.visibility = View.VISIBLE
         Glide.with(this)
-            .load("${ServerConfig.baseUrl}api/community/thumb/$thumb")
+            .load("${ServerConfig.appBaseUrl}api/community/thumb/$thumb")
             .diskCacheStrategy(DiskCacheStrategy.ALL)
             .placeholder(R.drawable.ic_plant_placeholder)
             .error(R.drawable.ic_plant_placeholder)
@@ -288,11 +280,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             getString(R.string.result_second_opinion_waiting)
         }
         stopRequestBtn?.setOnClickListener {
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             stopRequestBtn?.isEnabled = false
             val ctx = requireContext()
             viewLifecycleOwner.lifecycleScope.launch {
                 scanRepository
-                    .cancelSecondOpinion(scanId, TelemetryIds.userPseudoId(ctx))
+                    .cancelSecondOpinion(scanId)
                     .onSuccess {
                         Toast.makeText(ctx, R.string.second_opinion_stopped, Toast.LENGTH_SHORT)
                             .show()
@@ -320,11 +313,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         submitDisease(key, note)
     }
 
-    /** Post one opinion (agree = the model's diagnosis, or a picked disease) and
-     *  lock the input. Carries the author's nickname so the reply is attributed. */
+    /** Post one opinion (agree = the model's diagnosis, or a picked disease)
+     * and lock the input. The server derives attribution from the signed token. */
     private fun submitDisease(key: String, note: String? = null) {
         if (key.isBlank()) return
         val ctx = requireContext()
+        if (!requireAuthenticatedAction()) return
         Haptics.tick(ctx)
         sendBtn?.isEnabled = false
         view?.findViewById<MaterialButton>(R.id.btn_opinion_agree)?.isEnabled = false
@@ -332,17 +326,14 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         val request = CommunityOpinionRequest(
             scanId = scanId,
-            userPseudoId = TelemetryIds.userPseudoId(ctx),
             suggestedDisease = key,
             note = note,
-            nickname = Nicknames.nickname(ctx),
         )
         viewLifecycleOwner.lifecycleScope.launch {
             scanRepository.submitCommunityOpinion(request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
-                    // One opinion per scan — record it and lock the input.
-                    com.plantdiseases.app.util.OpinionPrefs.markSubmittedOpinion(ctx, scanId)
+                    // One opinion per signed actor is enforced server-side.
                     lockInputControls()
                     render(resp.consensus, resp.opinions)
                 }
@@ -355,8 +346,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
     }
 
+    /** Opens login and does not replay the mutation after authentication. */
+    private fun requireAuthenticatedAction(): Boolean {
+        if (authRepository.state.value is AuthState.Authenticated) return true
+        val ctx = requireContext()
+        Toast.makeText(ctx, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+        startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(ctx))
+        return false
+    }
+
     /** Hide the picker / note / send and show the "already opined" note —
-     *  used once this install has left its single opinion on the scan. */
+     *  used once the signed actor has left their single opinion on the scan. */
     private fun lockInputControls() {
         val v = view ?: return
         v.findViewById<TextView>(R.id.tv_opinion_subtitle)

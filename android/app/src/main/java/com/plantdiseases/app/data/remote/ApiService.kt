@@ -1,6 +1,5 @@
 package com.plantdiseases.app.data.remote
 
-import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.PopularResponse
@@ -30,7 +29,6 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -115,20 +113,13 @@ class RetryInterceptor(
  * MockWebServer without a device.
  */
 class PlantApiClient(
-    private val baseUrl: String = ServerConfig.baseUrl,
+    private val baseUrl: String = ServerConfig.appBaseUrl,
     /** Where call outcomes are published. Defaults to a private instance so
      *  tests (and any standalone use) need not wire one up. */
     private val reachabilityReporter: ReachabilityReporter = ReachabilityReporter(),
 ) {
 
     private val client: OkHttpClient = run {
-        val logging = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
-        }
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -150,7 +141,13 @@ class PlantApiClient(
                 }
             }
             .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
-            .addInterceptor(logging)
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("User-Agent", "PlantDiseases-Android")
+                        .build(),
+                )
+            }
             .build()
     }
 

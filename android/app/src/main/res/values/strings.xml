@@ -1,6 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PlantDiseases</string>
+    <string name="account_title">Account</string>
+    <string name="account_manage">Manage account</string>
+    <string name="account_guest">Guest</string>
+    <string name="account_guest_body">Sign in to publish community contributions, receive account push notifications, and manage sessions. Scans and your garden stay on this device.</string>
+    <string name="account_continue_yandex">Continue with Yandex ID</string>
+    <string name="account_continue_vk">Continue with VK ID</string>
+    <string name="account_finish_profile">Choose a nickname</string>
+    <string name="account_finish_profile_body">A public nickname is required before the account is created. You can cancel and return to Guest.</string>
+    <string name="account_nickname">Nickname</string>
+    <string name="account_nickname_required">Enter a nickname</string>
+    <string name="account_create">Create account</string>
+    <string name="account_cancel_signup">Cancel and stay Guest</string>
+    <string name="account_provider_avatar">Private provider avatar</string>
+    <string name="account_provider_name">%1$s · %2$s</string>
+    <string name="account_save_nickname">Save nickname</string>
+    <string name="account_linked_accounts">Linked sign-in methods</string>
+    <string name="account_provider_yandex">Yandex ID</string>
+    <string name="account_provider_vk">VK ID</string>
+    <string name="account_provider_unknown">Sign-in provider</string>
+    <string name="account_link_yandex">Link Yandex ID</string>
+    <string name="account_link_vk">Link VK ID</string>
+    <string name="account_sessions">Active sessions</string>
+    <string name="account_current_session">%1$s (this session)</string>
+    <string name="account_revoke_session">Revoke</string>
+    <string name="account_logout">Log out</string>
+    <string name="account_delete">Delete account</string>
+    <string name="account_delete_warning">You will sign in again to confirm deletion. Sessions are revoked immediately and account data is queued for removal. Local scans, garden entries, and reminders remain on this device.</string>
+    <string name="account_delete_confirm">Reauthenticate and delete</string>
+    <string name="account_provider_unconfigured">This provider is not configured in this synthetic beta build.</string>
+    <string name="account_synthetic_notice">Synthetic team test: these buttons use generated mock identities, never a real Yandex or VK account.</string>
+    <string name="account_oauth_cancelled">Sign-in cancelled</string>
+    <string name="account_error_nickname_taken">That nickname is already in use.</string>
+    <string name="account_error_nickname_cooldown">The nickname can’t be changed again yet.</string>
+    <string name="account_error_provider_unavailable">The sign-in provider is temporarily unavailable.</string>
+    <string name="account_error_identity_linked">That sign-in identity already belongs to an account.</string>
+    <string name="account_error_generic">The account request could not be completed.</string>
+    <string name="feedback_expired">This feedback window has expired. Run a new scan to submit feedback.</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString —
          only reachable through ``R.plurals.X``, never via
@@ -99,10 +136,16 @@
 
     <!-- Onboarding -->
 
-    <!-- Data-use consent (blocking; Play prominent disclosure) -->
-    <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
-    <string name="consent_agree">Agree</string>
+    <!-- Independent optional privacy choices -->
+    <string name="consent_title">Privacy choices</string>
+    <string name="consent_body">Plant diagnosis works without either optional data use below. You can change each choice later in Profile. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
+    <string name="consent_agree">Continue</string>
+    <string name="training_consent_title">Help improve diagnosis models</string>
+    <string name="training_consent_subtitle">Allow de-identified, metadata-free plant images and structured model results to enter the model-improvement store. No account, installation, community, or location identifier is attached. Previously contributed material cannot be tied back to you for withdrawal because it is intentionally unlinkable.</string>
+    <string name="telemetry_consent_title">Send minimal error reports</string>
+    <string name="telemetry_consent_subtitle">Allow errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
+    <string name="community_sign_in_required">Sign in to publish or change community content. Tap the action again after sign-in.</string>
+    <string name="community_location_cta">Allow approximate location</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
@@ -736,8 +779,7 @@
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
     <string name="feedback_nap_subtitle">Did we get it wrong? If there\'s a real plant in this photo, tell us — that\'s exactly what teaches the model.</string>
     <string name="feedback_is_a_plant">This is a plant</string>
-    <string name="feedback_is_a_plant_body">We\'ll use this photo to improve the scanner. You can add a note — what plant it is or what\'s in the frame.</string>
-    <string name="feedback_is_a_plant_note_hint">Note (optional)</string>
+    <string name="feedback_is_a_plant_body">Confirm that this photo contains a plant. The sanitized photo may be retained for model improvement after privacy checks.</string>
 
     <!-- Feedback correction bottom-sheet. Class chips map 1:1 to the
          server's known class keys; reason chips map to the
@@ -747,7 +789,6 @@
     <string name="feedback_sheet_we_thought">We diagnosed</string>
     <string name="feedback_sheet_actual_label">What is it actually?</string>
     <string name="feedback_sheet_reason_label">Why was it wrong?</string>
-    <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
     <!-- Class chips — match server class keys 1:1. -->
     <string name="feedback_class_healthy">Healthy</string>
     <string name="feedback_class_pests">Pests (mealybugs, scale)</string>

@@ -59,6 +59,34 @@ the signed community actor; account-api resolves encrypted device tokens
 without returning them. Account deletion uses the same private credential to
 tombstone community content before private account rows are erased.
 
+## Build the Android account beta
+
+The branch-only `accountBeta` variant has application ID
+`com.plantdiseases.app.accountbeta`, so it can coexist with the production app.
+It is hard-wired to deterministic synthetic authentication: tapping Yandex or
+VK creates a mock-provider credential from the app's random installation UUID.
+It never opens either real provider SDK and does not require OAuth credentials.
+The first use still exercises the pending-signup/nickname flow; later uses of
+the same installation/provider exercise existing-account sign-in.
+
+With this local stack running, build and test the emulator APK from `android/`:
+
+```sh
+./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta \
+  -PAPP_API_BASE_URL=http://10.0.2.2:18000/ \
+  -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
+```
+
+Install the APK from `app/build/outputs/apk/accountBeta/`. Cleartext remains
+limited to emulator loopback (`10.0.2.2`, `localhost`, and `127.0.0.1`) in this
+variant; arbitrary LAN cleartext is not enabled. Without URL properties the
+variant points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
+`id/` account route, never to the production API root.
+
+Do not supply real Yandex/VK credentials to this variant. Real-provider
+registration and smoke tests belong to the later Russian infrastructure/legal
+gate, not this synthetic local/German beta.
+
 ## Stop without deleting data
 
 Ordinary shutdown retains every named beta volume:

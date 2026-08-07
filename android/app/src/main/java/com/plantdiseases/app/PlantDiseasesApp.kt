@@ -30,6 +30,12 @@ class PlantDiseasesApp : Application() {
     @Inject
     lateinit var scanRepository: com.plantdiseases.app.data.repository.ScanRepository
 
+    @Inject
+    lateinit var authRepository: com.plantdiseases.app.auth.AuthRepository
+
+    @Inject
+    lateinit var privacyConsentPrefs: com.plantdiseases.app.util.PrivacyConsentPrefs
+
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
      * must survive the originating activity finishing — e.g. the
@@ -58,36 +64,35 @@ class PlantDiseasesApp : Application() {
      * Wire up error/problem telemetry: register the (consent-gated, best-effort)
      * sender, flush any crash persisted from a previous run, then install the
      * uncaught-exception handler. Errors-only — nothing is sent on the happy
-     * path. Reuses the same data consent as the rest of model improvement.
+     * path. Telemetry has its own versioned opt-in, independent of model
+     * improvement.
      */
     private fun setupTelemetry() {
         com.plantdiseases.app.util.TelemetryReporter.init(
             sender = { report ->
                 appScope.launch { runCatching { scanRepository.reportError(report) } }
             },
-            consent = {
-                com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)
-            },
+            consent = { privacyConsentPrefs.telemetryEnabled },
         )
         flushPendingCrash()
         installCrashHandler()
     }
 
-    /** Persist a fatal crash (with its breadcrumb trail) so the NEXT launch can
-     *  report it — the process is dying, so a network call here is unreliable. */
+    /** Persist only an enum flag and allowlisted breadcrumbs for next launch. */
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching {
-                getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE).edit()
-                    .putString(KEY_CRASH_KIND, error.javaClass.simpleName)
-                    .putString(KEY_CRASH_MESSAGE, error.stackTraceToString().take(2000))
-                    .putString(
-                        KEY_CRASH_CRUMBS,
-                        com.plantdiseases.app.util.TelemetryReporter.breadcrumbs()
-                            .joinToString("\n"),
-                    )
-                    .commit() // sync — the process is about to exit
+            if (privacyConsentPrefs.telemetryEnabled) {
+                runCatching {
+                    getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE).edit()
+                        .putBoolean(KEY_CRASH_PENDING, true)
+                        .putString(
+                            KEY_CRASH_CRUMBS,
+                            com.plantdiseases.app.util.TelemetryReporter.breadcrumbs()
+                                .joinToString(","),
+                        )
+                        .commit() // sync — the process is about to exit
+                }
             }
             previous?.uncaughtException(thread, error)
         }
@@ -95,26 +100,29 @@ class PlantDiseasesApp : Application() {
 
     private fun flushPendingCrash() {
         val prefs = getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE)
-        val kind = prefs.getString(KEY_CRASH_KIND, null) ?: return
-        val message = prefs.getString(KEY_CRASH_MESSAGE, null)
+        val pending = prefs.getBoolean(KEY_CRASH_PENDING, false)
         val crumbs = prefs.getString(KEY_CRASH_CRUMBS, null)
-            ?.split('\n')?.filter { it.isNotBlank() }
+            ?.split(',')?.filter { it.isNotBlank() }
         prefs.edit()
-            .remove(KEY_CRASH_KIND).remove(KEY_CRASH_MESSAGE).remove(KEY_CRASH_CRUMBS)
+            .remove(KEY_CRASH_PENDING)
+            .remove(KEY_CRASH_CRUMBS)
+            // Purge pre-beta crash text without transmitting it.
+            .remove(LEGACY_KEY_CRASH_KIND)
+            .remove(LEGACY_KEY_CRASH_MESSAGE)
             .apply()
-        if (!com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)) {
-            return
-        }
+        if (!pending || !privacyConsentPrefs.telemetryEnabled) return
         appScope.launch {
             runCatching {
                 scanRepository.reportError(
                     com.plantdiseases.app.data.model.ErrorReport(
+                        telemetryConsent = true,
+                        telemetryConsentVersion =
+                            com.plantdiseases.app.util.PrivacyConsentPrefs.TELEMETRY_CONSENT_VERSION,
                         stage = "crash",
-                        kind = kind,
+                        kind = "uncaught_exception",
                         fatal = true,
                         appVersion = com.plantdiseases.app.BuildConfig.VERSION_NAME,
                         androidApi = android.os.Build.VERSION.SDK_INT,
-                        message = message,
                         breadcrumbs = crumbs,
                     ),
                 )
@@ -131,6 +139,10 @@ class PlantDiseasesApp : Application() {
         // test classes in one JVM is naturally safe: there is no shared
         // global container to double-initialise.
         super.onCreate()
+        if (BuildConfig.VK_OAUTH_CONFIGURED && !BuildConfig.SYNTHETIC_AUTH_ENABLED) {
+            com.vk.id.VKID.logsEnabled = false
+            com.vk.id.VKID.init(this)
+        }
         // NB: do NOT wire a HiltWorkerFactory / Configuration.Provider here.
         // It would call WorkManager.initialize(), but the default
         // androidx.startup WorkManagerInitializer (still enabled — the
@@ -153,7 +165,16 @@ class PlantDiseasesApp : Application() {
         // Persistent disk cache for repeatable server responses (care plans,
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
+        purgeLegacyCommunityIdentity()
         setupTelemetry()
+        if (BuildConfig.ACCOUNT_UI_ENABLED) {
+            appScope.launch {
+                authRepository.restore()
+                if (authRepository.state.value is com.plantdiseases.app.auth.AuthState.Authenticated) {
+                    com.plantdiseases.app.push.PushManager.registerIfEnabled(this@PlantDiseasesApp)
+                }
+            }
+        }
         purgeStaleRejectedScans()
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
@@ -176,6 +197,14 @@ class PlantDiseasesApp : Application() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
         }
+    }
+
+    /** Remove the pre-account stable install alias and generated nickname. */
+    private fun purgeLegacyCommunityIdentity() {
+        getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE)
+            .edit().remove("user_pseudo_id").apply()
+        getSharedPreferences("plantdiseases_nickname", MODE_PRIVATE)
+            .edit().clear().apply()
     }
 
     private fun createNotificationChannels() {
@@ -277,10 +306,11 @@ class PlantDiseasesApp : Application() {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
         const val CHANNEL_COMMUNITY = "community"
 
-        // Where a fatal crash is stashed for reporting on the next launch.
+        // Only minimized crash state is stashed for reporting on next launch.
         private const val TELEMETRY_PREFS = "plantdiseases_telemetry"
-        private const val KEY_CRASH_KIND = "crash_kind"
-        private const val KEY_CRASH_MESSAGE = "crash_message"
+        private const val KEY_CRASH_PENDING = "crash_pending_v2"
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
+        private const val LEGACY_KEY_CRASH_KIND = "crash_kind"
+        private const val LEGACY_KEY_CRASH_MESSAGE = "crash_message"
     }
 }

@@ -5,7 +5,7 @@ verified checkpoint; commands use only mock/synthetic data and local resources.
 
 ## Current status
 
-- Active phase: Phase B — local backend/client implementation and integration.
+- Active phase: Phase C — isolated German staging artefacts and handoff.
 - Production services/data touched: none.
 - Deployments performed: none.
 - Blockers: none.
@@ -470,9 +470,88 @@ Checkpoint commit:
 
 - `feat(privacy): replace linked training and telemetry stores`
 
+### 7 — Android account-beta client and privacy boundary (complete, 2026-08-07)
+
+Completed work:
+
+- Added the independently installable `accountBeta` build type with its own
+  application ID suffix, label, account/application URL properties, enabled
+  account UI, and hardcoded synthetic-auth mode. Production/release builds keep
+  account UI and synthetic auth disabled.
+- Added official Yandex LoginSDK and VK ID integrations behind fail-closed
+  build-time configuration. The synthetic beta variant never initializes or
+  starts either real provider flow, even if public OAuth application values are
+  supplied accidentally.
+- Added an application installation UUID, deterministic mock-provider token
+  generator, private account API client, account models, Android Keystore-backed
+  refresh-token vault, provider-session cleanup, and observable Guest,
+  profile-required, and authenticated states.
+- Implemented sign-in, nickname completion/cancellation, private profile,
+  nickname change, session listing/revocation, two-step provider linking,
+  deletion reauthentication, logout, and account deletion UI in English and
+  Russian. Provider access and reauthentication tokens are memory-only; only
+  non-secret flow routing survives activity recreation.
+- Hardened account races so an operation started under one session cannot be
+  replayed under a replacement account, stale unauthorized responses cannot
+  erase newer credentials, cancellation propagates, and one-use mutations are
+  never transport-retried automatically.
+- Changed every community mutation and private count/poll call to use signed
+  account credentials with one bounded refresh retry. Guest reads remain
+  public; explicit Guest mutations open account UI and are never replayed
+  automatically after authentication.
+- Routed FCM registration/removal through the private account API and stopped
+  account opinion polling on logout/deletion. No Android call sends a nickname,
+  pseudo-ID, hardware identifier, or device model as mutation authority.
+- Split model-improvement and telemetry into separate versioned opt-ins,
+  removed the stable telemetry/pseudo identity, gated feedback on current
+  training consent, and constrained telemetry to allowlisted error dimensions.
+- Added one shared fresh JPEG upload sanitizer for server inference, community,
+  and feedback paths. It normalizes orientation, bounds decoding, removes
+  metadata, and prevents original URI/path/filename context entering requests.
+- Replaced feedback linkage with server-issued random receipts plus structured
+  correctness/class/reason fields, and removed free text from the Android
+  contract and UI.
+- Removed or made static Android logs that exposed local paths, URIs, exception
+  text, plant identifiers, provider details, or request context.
+- Extended CI to run ktlint, detekt, both unit-test variants, the release APK,
+  and the account-beta APK; the beta APK is retained only for this branch.
+
+Decisions:
+
+- Synthetic provider tokens are branch/build-type fixtures only. They are
+  accepted by the deterministic mock adapters and cannot trigger provider
+  network access or be promoted into a production build.
+- Provider display name/avatar appear only on the private account screen.
+  Community rendering continues to use the nickname from verified access-token
+  claims.
+- The account client owns exactly one 401 refresh retry. Non-authentication
+  transport failures surface to the user instead of risking duplicate one-use
+  actions.
+- This checkout has no Java/JDK runtime, and repository guidance excludes a
+  full local Gradle build. Android compilation, SDK binary compatibility, unit
+  tests, lint, and APK assembly are therefore explicit CI gates rather than
+  being reported as locally executed.
+
+Verification:
+
+- Complete application-server suite — 572 passed in 11.23s.
+- Complete account-service suite — 122 passed, 1 opt-in PostgreSQL test skipped
+  in 6.62s.
+- Server and account Ruff checks, `git diff --check`, Compose configuration,
+  Android XML parsing, CI YAML parsing, Kotlin import/reference hygiene, and
+  forbidden identity/log-field scans — passed.
+- Android tests added for production/beta build identity, synthetic-token
+  format, account API error/one-use retry behavior, auth lifecycle and race
+  handling, separate consents, telemetry allowlists, upload metadata removal,
+  and updated repository network contracts.
+- No real OAuth flow, provider credential, user image, production service,
+  deployment, model build, or training run was used.
+
+Checkpoint commit:
+
+- `feat(android): add synthetic account beta client`
+
 ## Remaining work (plan order)
 
-1. Implement the Android account-beta variant, auth state/client/UI flows, and
-   upload sanitization.
-2. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-3. Run the complete acceptance and privacy/security verification matrix.
+1. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+2. Run the complete acceptance and privacy/security verification matrix.

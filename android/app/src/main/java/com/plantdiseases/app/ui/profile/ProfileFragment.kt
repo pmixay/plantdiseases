@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.BuildConfig
@@ -22,6 +23,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
@@ -34,6 +36,9 @@ class ProfileFragment : Fragment() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -58,6 +63,25 @@ class ProfileFragment : Fragment() {
 
         binding.root.applyStatusBarTopInset()
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
+        if (BuildConfig.ACCOUNT_UI_ENABLED) {
+            binding.accountCard.visibility = View.VISIBLE
+            binding.btnManageAccount.setOnClickListener {
+                startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(requireContext()))
+            }
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                    val auth = com.plantdiseases.app.di.appEntryPoint(requireContext()).authRepository()
+                    auth.state.collect { state ->
+                        binding.accountStatus.text = when (state) {
+                            com.plantdiseases.app.auth.AuthState.Guest -> getString(R.string.account_guest)
+                            is com.plantdiseases.app.auth.AuthState.ProfileRequired ->
+                                getString(R.string.account_finish_profile)
+                            is com.plantdiseases.app.auth.AuthState.Authenticated -> state.profile.nickname
+                        }
+                    }
+                }
+            }
+        }
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
@@ -84,6 +108,7 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
+        setupPrivacyConsentToggles()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
         }
@@ -228,6 +253,17 @@ class ProfileFragment : Fragment() {
         sw.isChecked = AutosavePrefs.enabled(requireContext())
         sw.setOnCheckedChangeListener { _, isChecked ->
             AutosavePrefs.setEnabled(requireContext(), isChecked)
+        }
+    }
+
+    private fun setupPrivacyConsentToggles() {
+        binding.switchTrainingConsent.isChecked = privacyConsentPrefs.trainingEnabled
+        binding.switchTelemetryConsent.isChecked = privacyConsentPrefs.telemetryEnabled
+        binding.switchTrainingConsent.setOnCheckedChangeListener { _, enabled ->
+            privacyConsentPrefs.setTrainingEnabled(enabled)
+        }
+        binding.switchTelemetryConsent.setOnCheckedChangeListener { _, enabled ->
+            privacyConsentPrefs.setTelemetryEnabled(enabled)
         }
     }
 

@@ -170,8 +170,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun tryPersistRead(uri: Uri): Boolean = try {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         true
-    } catch (e: SecurityException) {
-        android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
+    } catch (_: SecurityException) {
+        android.util.Log.w("PlantDetail", "Persistable image permission refused")
         Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
         false
     }

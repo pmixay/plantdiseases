@@ -1,6 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PlantDiseases</string>
+    <string name="account_title">Аккаунт</string>
+    <string name="account_manage">Управление аккаунтом</string>
+    <string name="account_guest">Гость</string>
+    <string name="account_guest_body">Войдите, чтобы публиковать материалы сообщества, получать уведомления аккаунта и управлять сессиями. Сканирования и ваш сад останутся на устройстве.</string>
+    <string name="account_continue_yandex">Продолжить с Яндекс ID</string>
+    <string name="account_continue_vk">Продолжить с VK ID</string>
+    <string name="account_finish_profile">Выберите псевдоним</string>
+    <string name="account_finish_profile_body">Публичный псевдоним нужен до создания аккаунта. Можно отменить и остаться гостем.</string>
+    <string name="account_nickname">Псевдоним</string>
+    <string name="account_nickname_required">Введите псевдоним</string>
+    <string name="account_create">Создать аккаунт</string>
+    <string name="account_cancel_signup">Отменить и остаться гостем</string>
+    <string name="account_provider_avatar">Приватный аватар провайдера</string>
+    <string name="account_provider_name">%1$s · %2$s</string>
+    <string name="account_save_nickname">Сохранить псевдоним</string>
+    <string name="account_linked_accounts">Связанные способы входа</string>
+    <string name="account_provider_yandex">Яндекс ID</string>
+    <string name="account_provider_vk">VK ID</string>
+    <string name="account_provider_unknown">Провайдер входа</string>
+    <string name="account_link_yandex">Связать Яндекс ID</string>
+    <string name="account_link_vk">Связать VK ID</string>
+    <string name="account_sessions">Активные сессии</string>
+    <string name="account_current_session">%1$s (эта сессия)</string>
+    <string name="account_revoke_session">Отозвать</string>
+    <string name="account_logout">Выйти</string>
+    <string name="account_delete">Удалить аккаунт</string>
+    <string name="account_delete_warning">Для подтверждения удаления потребуется повторный вход. Сессии будут отозваны сразу, а данные аккаунта поставлены в очередь на удаление. Локальные сканирования, сад и напоминания останутся на устройстве.</string>
+    <string name="account_delete_confirm">Войти снова и удалить</string>
+    <string name="account_provider_unconfigured">Провайдер не настроен в этой синтетической бета-сборке.</string>
+    <string name="account_synthetic_notice">Синтетический командный тест: кнопки используют сгенерированные тестовые профили, а не реальный аккаунт Яндекса или VK.</string>
+    <string name="account_oauth_cancelled">Вход отменён</string>
+    <string name="account_error_nickname_taken">Этот псевдоним уже занят.</string>
+    <string name="account_error_nickname_cooldown">Псевдоним пока нельзя изменить снова.</string>
+    <string name="account_error_provider_unavailable">Провайдер входа временно недоступен.</string>
+    <string name="account_error_identity_linked">Эти данные входа уже принадлежат аккаунту.</string>
+    <string name="account_error_generic">Не удалось выполнить запрос аккаунта.</string>
+    <string name="feedback_expired">Срок отправки отзыва истёк. Выполните новое сканирование.</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString. -->
     <!-- %2$s — отдельно склонённая строка scan_count: quantity этого
@@ -100,10 +137,16 @@
 
     <!-- Onboarding -->
 
-    <!-- Согласие на использование данных (блокирующее) -->
-    <string name="consent_title">Ваши данные и наши модели</string>
-    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке (без фото и геолокации), чтобы помочь исправить сбои. Отправленные данные нельзя отозвать — они хранятся защищённо и не содержат аккаунта, имени и точного местоположения.</string>
-    <string name="consent_agree">Принять</string>
+    <!-- Независимые необязательные настройки конфиденциальности -->
+    <string name="consent_title">Настройки конфиденциальности</string>
+    <string name="consent_body">Диагностика растений работает без двух необязательных разрешений ниже. Их можно изменить позже в профиле. Перед отправкой изображения перекодируются без EXIF и GPS.</string>
+    <string name="consent_agree">Продолжить</string>
+    <string name="training_consent_title">Помогать улучшать модели диагностики</string>
+    <string name="training_consent_subtitle">Разрешить добавлять обезличенные фото растений без метаданных и структурированные результаты модели в хранилище улучшения модели. Идентификаторы аккаунта, установки, сообщества и геолокации не прикрепляются. Ранее отправленные материалы нельзя связать с вами для удаления, так как такая связь намеренно не сохраняется.</string>
+    <string name="telemetry_consent_title">Отправлять минимальные отчёты об ошибках</string>
+    <string name="telemetry_consent_subtitle">Разрешить отчёты только с допустимыми техническими категориями, версией приложения, укрупнённой версией Android и безопасными этапами действий. Без текста ошибок, изображений, путей, аккаунта, установки, модели телефона и геолокации.</string>
+    <string name="community_sign_in_required">Войдите, чтобы публиковать или изменять материалы сообщества. После входа нажмите действие ещё раз.</string>
+    <string name="community_location_cta">Разрешить приблизительную геолокацию</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
     <!-- Интерактивные контекстные подсказки -->
@@ -725,7 +768,6 @@
     <string name="feedback_sheet_we_thought">Мы определили</string>
     <string name="feedback_sheet_actual_label">Что это на самом деле?</string>
     <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
-    <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
     <string name="feedback_class_healthy">Здоровое</string>
     <string name="feedback_class_pests">Вредители (мучнистый червец, щитовка)</string>
     <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
@@ -752,8 +794,7 @@
     <string name="feedback_failed">Не удалось отправить отзыв. Попробуйте позже.</string>
     <string name="feedback_nap_subtitle">Мы ошиблись? Если на этом фото действительно растение — сообщите нам: именно это учит модель.</string>
     <string name="feedback_is_a_plant">Это растение</string>
-    <string name="feedback_is_a_plant_body">Мы используем это фото, чтобы улучшить сканер. Можно добавить заметку — какое это растение или что в кадре.</string>
-    <string name="feedback_is_a_plant_note_hint">Заметка (необязательно)</string>
+    <string name="feedback_is_a_plant_body">Подтвердите, что на фото есть растение. После проверки конфиденциальности очищенное фото может быть сохранено для улучшения модели.</string>
 
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Токсично для питомцев</string>

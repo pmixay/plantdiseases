@@ -56,7 +56,6 @@ import com.plantdiseases.app.util.PlantCategory
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.PlantFacts
 import com.plantdiseases.app.util.PlantTips
-import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onConnectivityChanged
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -503,15 +502,14 @@ class SpeciesDetailActivity : AppCompatActivity() {
      * stays hidden when the community has nothing for this species.
      */
     private fun loadCommunityScans() {
-        val pseudoId = TelemetryIds.userPseudoId(this)
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             // Compact preview cells; tapping opens a READ-ONLY view — second
             // opinions are left to the result screen.
             preview = true,
             onClick = { item ->
-                if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
-                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
+                if (item.scanId.isNotBlank()) {
+                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId) }
                 }
                 CommunityOpinionSheet.showReadOnly(
                     supportFragmentManager,
@@ -524,7 +522,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpeciesCommunity.adapter = adapter
         lifecycleScope.launch {
-            scanRepository.communityScansBySpecies(scientificName, pseudoId).onSuccess { resp ->
+            scanRepository.communityScansBySpecies(scientificName).onSuccess { resp ->
                 if (resp.items.isEmpty()) return@onSuccess
                 adapter.submit(resp.items)
                 binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE

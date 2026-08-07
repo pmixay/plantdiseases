@@ -2,9 +2,8 @@
 <!--
     Bottom sheet shown when the user taps "Wrong" on a diagnosis. The
     layout is intentionally heavier-than-a-dialog so the structured
-    payload (class chips + reason chips + free-text note with a live
-    char counter) lands cleanly in one screen without forcing the
-    keyboard up unprompted.
+    payload (class chips + reason chips) lands cleanly in
+    one screen without collecting arbitrary text.
 -->
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -129,33 +128,6 @@
             app:selectionRequired="false"
             app:chipSpacingHorizontal="@dimen/space_xs"
             app:chipSpacingVertical="@dimen/space_xs" />
-
-        <!-- Free-text note + char counter -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_note"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:hint="@string/feedback_sheet_note_hint"
-            app:boxCornerRadiusTopStart="@dimen/radius_md"
-            app:boxCornerRadiusTopEnd="@dimen/radius_md"
-            app:boxCornerRadiusBottomStart="@dimen/radius_md"
-            app:boxCornerRadiusBottomEnd="@dimen/radius_md"
-            app:counterEnabled="true"
-            app:counterMaxLength="2000">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_note"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="top|start"
-                android:inputType="textMultiLine|textCapSentences"
-                android:maxLength="2000"
-                android:minLines="3"
-                android:maxLines="6" />
-
-        </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Action row -->
         <LinearLayout

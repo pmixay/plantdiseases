@@ -58,6 +58,11 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.account.AccountActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.analysis.AnalysisActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

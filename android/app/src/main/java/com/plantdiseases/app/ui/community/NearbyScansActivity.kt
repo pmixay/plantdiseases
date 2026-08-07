@@ -26,7 +26,6 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.enableWhileOnline
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
@@ -68,20 +67,15 @@ class NearbyScansActivity : AppCompatActivity() {
     // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
 
-    // In-context opt-in: tapping Enable requests coarse location only, flips
-    // community on, and reloads the feed. Notifications are deliberately NOT
-    // part of joining — the POST_NOTIFICATIONS prompt fires later, at the one
-    // place it's needed: when the user requests a second opinion on their
-    // own scan (see CommunityController.beginRequest).
+    // Public browsing may request coarse location for the Nearby scope. This
+    // does not enable publication or notifications.
     private val communityPermissionLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { _ ->
-        com.plantdiseases.app.util.CommunityPrefs.enable(this)
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         load(isRefresh = false)
     }
 
-    private fun requestCommunityOptIn() {
+    private fun requestCommunityLocation() {
         communityPermissionLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
@@ -105,8 +99,7 @@ class NearbyScansActivity : AppCompatActivity() {
 
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.offlineNotice.observe(this, connectivity.isOnline)
-        // Joining the community registers a push token and pulls the feed, so
-        // it can't be done offline. The feed itself is guarded inside load().
+        // Location-scoped browsing needs the app API online.
         enableWhileOnline(connectivity.isOnline, binding.btnEnableCommunity)
         onReconnected(connectivity.isOnline) { load(isRefresh = false) }
         setupFilterMenu()
@@ -123,15 +116,14 @@ class NearbyScansActivity : AppCompatActivity() {
                 load(isRefresh = false)
             }
         }
-        binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
+        binding.btnEnableCommunity.setOnClickListener { requestCommunityLocation() }
 
         adapter = NearbyScansAdapter(
             onSecondOpinion = { item ->
-                // Opening someone else's scan counts as a view (deduped per
-                // viewer server-side).
-                val pseudoId = TelemetryIds.userPseudoId(this)
                 lifecycleScope.launch {
-                    scanRepository.recordCommunityView(item.scanId, pseudoId)
+                    // Guests browse without creating a view row; the repository
+                    // sends this only when an account access token is available.
+                    scanRepository.recordCommunityView(item.scanId)
                 }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
@@ -192,21 +184,20 @@ class NearbyScansActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
                 CommunityPrefs.setUploadsEnabled(this, false) // also stops opinions
+                com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, false)
+                lifecycleScope.launch {
+                    com.plantdiseases.app.di.appEntryPoint(this@NearbyScansActivity)
+                        .authRepository().disablePush()
+                }
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check")
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check_now")
                 disableMenuItem?.isVisible = false
-                showEnablePrompt()
+                load(isRefresh = false)
             }
             .show()
     }
 
     private fun load(isRefresh: Boolean) {
-        // Community is opt-in. Until the user opts in, show an Enable prompt
-        // instead of reading their location / hitting the network.
-        if (!CommunityPrefs.uploadsEnabled(this)) {
-            showEnablePrompt()
-            return
-        }
         // The feed is live-only — nothing about it is cached. Offline, say so
         // instead of spinning through a request that can only time out (every
         // scope change and pull-to-refresh would pay for one). The observer
@@ -216,10 +207,9 @@ class NearbyScansActivity : AppCompatActivity() {
             showState(getString(R.string.no_network))
             return
         }
-        disableMenuItem?.isVisible = true
+        disableMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
-            val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             // Refresh location on every (re)load so "nearby" reflects where the
             // user actually is right now. Worldwide needs no anchor, so we skip
             // the location read entirely — the feed then works even when
@@ -238,21 +228,13 @@ class NearbyScansActivity : AppCompatActivity() {
                 lon = region?.lon,
                 // No disease filter — the feed surfaces the whole scope.
                 disease = null,
-                userPseudoId = pseudoId,
                 limit = 100,
                 scope = scope,
             )
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
-                // Belt-and-braces: also drop the user's OWN scans client-side.
-                // The server already excludes by pseudo-id, but a scan uploaded
-                // under a previous install's pseudo-id (after a reinstall) would
-                // slip through — so we additionally hide any item whose globally
-                // unique scan_id matches one in this device's local history.
-                val mine = scanRepository.localClientScanIds()
-                val others = response.items.filter { it.scanId !in mine }
                 when {
-                    others.isNotEmpty() -> showFeed(others)
+                    response.items.isNotEmpty() -> showFeed(response.items)
                     // The server couldn't geo-scope the feed (no coords + no
                     // country) — usually community is on but coarse-location was
                     // never granted / has no fix yet. Prompt to enable location
@@ -266,20 +248,6 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
-    /** Opt-in prompt shown until the user enables community. */
-    private fun showEnablePrompt() {
-        binding.swipeRefresh.isRefreshing = false
-        binding.stateLayout.visibility = View.VISIBLE
-        binding.progress.visibility = View.GONE
-        binding.ivStateIcon.visibility = View.VISIBLE
-        binding.tvState.text = getString(R.string.community_enable_blurb)
-        binding.btnEnableCommunity.visibility = View.VISIBLE
-        binding.cgScope.visibility = View.GONE
-        filterMenuItem?.isVisible = false
-        disableMenuItem?.isVisible = false
-        binding.rvNearby.visibility = View.GONE
-    }
-
     /** Empty-state shown when the feed can't be geo-scoped because we have no
      *  location. Offers the same Enable button so a tap (re)requests the coarse
      *  location permission and reloads. */
@@ -290,6 +258,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = getString(R.string.nearby_location_needed)
         binding.btnEnableCommunity.visibility = View.VISIBLE
+        binding.btnEnableCommunity.setText(R.string.community_location_cta)
         binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE

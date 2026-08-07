@@ -89,8 +89,8 @@ class AquaClassifier private constructor(
                 val std = inf.floatTriple("normalize_std", floatArrayOf(0.229f, 0.224f, 0.225f))
                 val opts = Interpreter.Options().apply { setNumThreads(2) }
                 AquaClassifier(Interpreter(model, opts), classes, size, mean, std)
-            } catch (e: Exception) {
-                Log.w(TAG, "Aqua model unavailable: ${e.message}")
+            } catch (_: Exception) {
+                Log.w(TAG, "Aqua model unavailable")
                 null
             }
         }
@@ -143,8 +143,8 @@ class AquaClassifier private constructor(
                 try {
                     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
                     return BitmapFactory.decodeFile(imagePath, opts)
-                } catch (e: OutOfMemoryError) {
-                    Log.w(TAG, "OOM decoding for inference at sample=$sample; retrying smaller", e)
+                } catch (_: OutOfMemoryError) {
+                    Log.w(TAG, "Inference decode OOM; retrying smaller")
                     sample *= 2
                 }
             }

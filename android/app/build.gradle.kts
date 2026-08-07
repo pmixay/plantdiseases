@@ -32,19 +32,44 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Default API base URL — HTTPS in production (TLS terminated in
-        // front of the uvicorn process). Override at build time, e.g. to
-        // point a debug build at the emulator host over cleartext (only
-        // local/LAN hosts are allowed cleartext, see
-        // res/xml/network_security_config.xml):
-        //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/
-        val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
-            .orElse("https://pdis.arbuz.lol/")
-            .get()
-            .let { if (it.endsWith("/")) it else "$it/" }
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
+        // Public application traffic and private account traffic deliberately
+        // have independent origins. Production defaults stay on the reviewed
+        // public endpoint; the account UI is enabled only in the branch-only
+        // accountBeta build type below.
+        val configuredAppApiBaseUrl = providers.gradleProperty("APP_API_BASE_URL").orNull
+            ?: "https://pdis.arbuz.lol/"
+        val configuredAccountApiBaseUrl = providers.gradleProperty("ACCOUNT_API_BASE_URL").orNull
+            ?: "https://pdis.arbuz.lol/id/"
+        fun quotedUrl(raw: String): String {
+            val normalized = if (raw.endsWith("/")) raw else "$raw/"
+            return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        }
+        buildConfigField("String", "APP_API_BASE_URL", quotedUrl(configuredAppApiBaseUrl))
+        buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(configuredAccountApiBaseUrl))
+        buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
+        buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+
+        // OAuth mobile application values are public/extractable client
+        // configuration, but no real values are committed. Without explicit
+        // Gradle properties the provider buttons fail closed and no SDK flow
+        // is started. Package/signature registration remains an operator step.
+        fun oauthProp(name: String): String = providers.gradleProperty(name).orNull ?: ""
+        val yandexClientId = oauthProp("YANDEX_CLIENT_ID")
+        val vkClientId = oauthProp("VKID_CLIENT_ID")
+        val vkClientSecret = oauthProp("VKID_CLIENT_SECRET")
+        buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexClientId.isNotBlank().toString())
+        buildConfigField(
+            "boolean",
+            "VK_OAUTH_CONFIGURED",
+            (vkClientId.isNotBlank() && vkClientSecret.isNotBlank()).toString(),
+        )
+        manifestPlaceholders += mapOf(
+            "YANDEX_CLIENT_ID" to yandexClientId.ifBlank { "0" },
+            "VKIDClientID" to vkClientId.ifBlank { "0" },
+            "VKIDClientSecret" to vkClientSecret.ifBlank { "unconfigured" },
+            "VKIDRedirectHost" to "vk.ru",
+            "VKIDRedirectScheme" to "vk${vkClientId.ifBlank { "0" }}",
+        )
 
         // Firebase Cloud Messaging client config. These four values are the
         // public client identifiers of a Firebase project (the same ones that
@@ -105,6 +130,30 @@ android {
     }
 
     buildTypes {
+        create("accountBeta") {
+            initWith(getByName("debug"))
+            matchingFallbacks += listOf("debug")
+            applicationIdSuffix = ".accountbeta"
+            versionNameSuffix = "-account-beta"
+            resValue("string", "app_name", "PlantDiseases Account Beta")
+
+            val appUrl = providers.gradleProperty("APP_API_BASE_URL").orNull
+                ?: "https://pdis.arbuz.lol/plantdisease-test/"
+            val accountUrl = providers.gradleProperty("ACCOUNT_API_BASE_URL").orNull
+                ?: "https://pdis.arbuz.lol/plantdisease-test/id/"
+            fun quotedUrl(raw: String): String {
+                val normalized = if (raw.endsWith("/")) raw else "$raw/"
+                return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            }
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+            // This branch-only build is deliberately limited to deterministic
+            // identities accepted by the mock account server. It never starts
+            // a real provider SDK flow, even if OAuth properties are present.
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "true")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -269,11 +318,10 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
-    // logging). Retrofit/converter-gson were removed once the last endpoint
+    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor).
+    // Retrofit/converter-gson were removed once the last endpoint
     // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
     // Uses the OkHttp engine so the existing RetryInterceptor, logging and
@@ -295,6 +343,12 @@ dependencies {
     // the build works with or without credentials.
     implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-messaging")
+
+    // Official mobile OAuth SDKs. Both are inert until build-time client
+    // configuration is supplied; tests use synthetic provider tokens and
+    // never contact either provider.
+    implementation("com.yandex.android:authsdk:3.1.3")
+    implementation("com.vk.id:vkid:2.7.2")
 
     // RuStore in-app updates — installs that came from RuStore get offered new
     // builds in-place (flexible flow, util/InAppUpdateManager). Resolved from

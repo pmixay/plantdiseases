@@ -234,7 +234,7 @@ class GalleryFragment : Fragment() {
 
     /**
      * Lazily fetch community activity (opinions + per-viewer-deduped views) for
-     * this install's shared scans and re-render with badges. Best-effort: when
+     * the signed account's shared scans and re-render with badges. Best-effort: when
      * community is off, nothing was shared, or the call fails, the list simply
      * stays unbadged.
      */

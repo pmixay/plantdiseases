@@ -1,6 +1,15 @@
 package com.plantdiseases.app.di
 
 import android.content.Context
+import com.plantdiseases.app.auth.AndroidKeystoreRefreshTokenVault
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.InstallationIdProvider
+import com.plantdiseases.app.auth.InstallationIdStore
+import com.plantdiseases.app.auth.OfficialProviderSessionCleaner
+import com.plantdiseases.app.auth.ProviderSessionCleaner
+import com.plantdiseases.app.auth.RefreshTokenVault
+import com.plantdiseases.app.data.account.AccountApi
+import com.plantdiseases.app.data.account.AccountApiClient
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CommunityUploader
@@ -8,7 +17,12 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ReachabilityReporter
+import com.plantdiseases.app.util.DefaultUploadImageSanitizer
+import com.plantdiseases.app.util.FeedbackReceiptStore
+import com.plantdiseases.app.util.SharedPreferencesFeedbackReceiptStore
+import com.plantdiseases.app.util.UploadImageSanitizer
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,6 +41,38 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideAccountApi(): AccountApi = AccountApiClient()
+
+    @Provides
+    @Singleton
+    fun provideRefreshTokenVault(@ApplicationContext context: Context): RefreshTokenVault =
+        AndroidKeystoreRefreshTokenVault(context)
+
+    @Provides
+    @Singleton
+    fun provideInstallationId(@ApplicationContext context: Context): InstallationIdProvider =
+        InstallationIdStore(context)
+
+    @Provides
+    @Singleton
+    fun provideProviderSessionCleaner(): ProviderSessionCleaner = OfficialProviderSessionCleaner()
+
+    @Provides
+    @Singleton
+    fun provideAuthRepository(
+        accountApi: AccountApi,
+        refreshTokenVault: RefreshTokenVault,
+        installationId: InstallationIdProvider,
+        providerSessionCleaner: ProviderSessionCleaner,
+    ): AuthRepository = AuthRepository(
+        accountApi,
+        refreshTokenVault,
+        installationId,
+        providerSessionCleaner,
+    )
 
     @Provides
     @Singleton
@@ -68,13 +114,33 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun providePrivacyConsentPrefs(@ApplicationContext context: Context): PrivacyConsentPrefs =
+        PrivacyConsentPrefs(context)
+
+    @Provides
+    @Singleton
+    fun provideUploadImageSanitizer(): UploadImageSanitizer = DefaultUploadImageSanitizer
+
+    @Provides
+    @Singleton
+    fun provideFeedbackReceiptStore(@ApplicationContext context: Context): FeedbackReceiptStore =
+        SharedPreferencesFeedbackReceiptStore(context)
+
+    @Provides
+    @Singleton
     fun provideScanRepository(
         database: AppDatabase,
         apiClient: PlantApiClient,
+        imageSanitizer: UploadImageSanitizer,
+        feedbackReceiptStore: FeedbackReceiptStore,
+        authRepository: AuthRepository,
     ): ScanRepository = ScanRepository(
         database.scanDao(),
         apiClient,
         database.scanChatMessageDao(),
+        imageSanitizer,
+        feedbackReceiptStore,
+        authRepository,
     )
 
     @Provides
@@ -93,5 +159,12 @@ object AppModule {
     fun provideCommunityUploader(
         @ApplicationContext context: Context,
         scanRepository: ScanRepository,
-    ): CommunityUploader = CommunityUploader(context, scanRepository)
+        authRepository: AuthRepository,
+        imageSanitizer: UploadImageSanitizer,
+    ): CommunityUploader = CommunityUploader(
+        context,
+        scanRepository,
+        authRepository,
+        imageSanitizer,
+    )
 }

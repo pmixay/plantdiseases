@@ -3,9 +3,8 @@ package com.plantdiseases.app.push
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.plantdiseases.app.PlantDiseasesApp
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.util.OpinionPrefs
-import com.plantdiseases.app.util.TelemetryIds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -24,7 +23,7 @@ import javax.inject.Inject
 class PlantMessagingService : FirebaseMessagingService() {
 
     @Inject
-    lateinit var scanRepository: ScanRepository
+    lateinit var authRepository: AuthRepository
 
     override fun onNewToken(token: String) {
         val ctx = applicationContext
@@ -32,9 +31,7 @@ class PlantMessagingService : FirebaseMessagingService() {
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
         app.appScope.launch {
-            runCatching {
-                scanRepository.registerPushToken(TelemetryIds.userPseudoId(ctx), token)
-            }
+            authRepository.registerPush(token)
         }
     }
 

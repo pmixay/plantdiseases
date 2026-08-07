@@ -7,9 +7,9 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.util.OpinionPrefs
-import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 
 /**
@@ -49,8 +49,8 @@ object PushManager {
                 .build()
             FirebaseApp.initializeApp(ctx, options)
             true
-        } catch (e: Exception) {
-            Log.w(TAG, "Firebase init failed: ${e.message}")
+        } catch (_: Exception) {
+            Log.w(TAG, "Firebase init failed")
             false
         }
     }
@@ -61,22 +61,18 @@ object PushManager {
     fun registerIfEnabled(context: Context) {
         val ctx = context.applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return
+        val authRepository = appEntryPoint(ctx).authRepository()
+        if (authRepository.state.value !is AuthState.Authenticated) return
         if (!ensureFirebase(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
-        val scanRepository = appEntryPoint(ctx).scanRepository()
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
                 app.appScope.launch {
-                    runCatching {
-                        scanRepository.registerPushToken(
-                            TelemetryIds.userPseudoId(ctx),
-                            token,
-                        )
-                    }
+                    authRepository.registerPush(token)
                 }
             }
-            .addOnFailureListener { e -> Log.w(TAG, "FCM token fetch failed: ${e.message}") }
+            .addOnFailureListener { Log.w(TAG, "FCM token fetch failed") }
     }
 }

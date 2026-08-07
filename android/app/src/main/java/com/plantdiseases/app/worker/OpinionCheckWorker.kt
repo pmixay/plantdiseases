@@ -6,10 +6,9 @@ import androidx.work.WorkerParameters
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.push.OpinionNotifier
 import com.plantdiseases.app.util.OpinionPrefs
-import com.plantdiseases.app.util.TelemetryIds
 
 /**
- * Periodically polls the server for second opinions on THIS install's shared
+ * Periodically polls the server for second opinions on the signed account's
  * scans and posts a notification when a new one appears. The per-scan view
  * already exists (the result screen's "View opinions" button) — this just
  * tells the user there's something new to look at.
@@ -32,9 +31,7 @@ class OpinionCheckWorker(
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return Result.success()
-        val pseudoId = TelemetryIds.userPseudoId(ctx)
-
-        val resp = scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {
+        val resp = scanRepository.fetchMyScanOpinions().getOrElse {
             // Network/server hiccup — retry on the next interval.
             return Result.retry()
         }
