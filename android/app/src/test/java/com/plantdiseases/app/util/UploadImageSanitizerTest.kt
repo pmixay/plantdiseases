@@ -146,8 +146,10 @@ class UploadImageSanitizerTest {
         val exif = jpegSegment(0xe1, exifPayload(thumbnail, orientation))
         val xmp = jpegSegment(
             0xe1,
-            ("http://ns.adobe.com/xap/1.0/\u0000" +
-                "<x:xmpmeta>SENTINEL-XMP</x:xmpmeta>").encodeToByteArray(),
+            (
+                "http://ns.adobe.com/xap/1.0/\u0000" +
+                    "<x:xmpmeta>SENTINEL-XMP</x:xmpmeta>"
+                ).encodeToByteArray(),
         )
         val iptc = jpegSegment(0xed, "Photoshop 3.0\u0000SENTINEL-IPTC".encodeToByteArray())
         return jpeg.copyOfRange(0, 2) + exif + xmp + iptc + jpeg.copyOfRange(2, jpeg.size)

@@ -145,7 +145,7 @@ class AccountApiClient(
         client.put("v1/push/device") {
             bearer(accessToken)
             contentType(ContentType.Application.Json)
-            setBody(PushDeviceRequest(fcmToken))
+            setBody(PushDeviceRequest(fcmToken, platform = "android"))
         }.requireSuccess()
     }
 
@@ -179,13 +179,16 @@ class AccountApiClient(
             )
             "profile_required" -> ExchangeResult.ProfileRequired(
                 provider = AuthProvider.entries.firstOrNull { it.wireName == payload.provider }
-                    ?: throw AccountApiException(500, "invalid_provider_response"),
+                    ?: invalidAuthResponse("invalid_provider_response"),
                 pendingSignupToken = requireNotNull(payload.pendingSignupToken),
                 expiresIn = payload.expiresIn,
             )
-            else -> throw AccountApiException(500, "invalid_auth_response")
+            else -> invalidAuthResponse("invalid_auth_response")
         }
     }
+
+    private fun invalidAuthResponse(errorCode: String): Nothing =
+        throw AccountApiException(500, errorCode)
 
     private fun ExchangeResult.requireAuthenticated(): ExchangeResult.Authenticated =
         this as? ExchangeResult.Authenticated

@@ -45,6 +45,9 @@ object DefaultUploadImageSanitizer : UploadImageSanitizer {
     private const val MAX_DECODED_PIXELS = 40_000_000L
     private const val MAX_SOURCE_DIMENSION = 16_384
 
+    private fun invalidImage(message: String): Nothing =
+        throw ImageUtils.ImageDecodeException(message)
+
     override fun sanitize(source: File, maxDimension: Int, quality: Int): SanitizedImage = try {
         sanitizeChecked(source, maxDimension, quality)
     } catch (error: OutOfMemoryError) {
@@ -54,21 +57,21 @@ object DefaultUploadImageSanitizer : UploadImageSanitizer {
     private fun sanitizeChecked(source: File, maxDimension: Int, quality: Int): SanitizedImage {
         require(maxDimension in 1..4_096)
         require(quality in 40..95)
-        if (!source.isFile) throw ImageUtils.ImageDecodeException("Image is unavailable")
+        if (!source.isFile) invalidImage("Image is unavailable")
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(source.absolutePath, bounds)
         val rawWidth = bounds.outWidth
         val rawHeight = bounds.outHeight
         if (rawWidth <= 0 || rawHeight <= 0) {
-            throw ImageUtils.ImageDecodeException("Image is empty or unsupported")
+            invalidImage("Image is empty or unsupported")
         }
         if (
             rawWidth > MAX_SOURCE_DIMENSION ||
             rawHeight > MAX_SOURCE_DIMENSION ||
             rawWidth.toLong() * rawHeight.toLong() > MAX_DECODED_PIXELS
         ) {
-            throw ImageUtils.ImageDecodeException("Image dimensions are too large")
+            invalidImage("Image dimensions are too large")
         }
 
         var sample = 1
@@ -81,7 +84,7 @@ object DefaultUploadImageSanitizer : UploadImageSanitizer {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             },
-        ) ?: throw ImageUtils.ImageDecodeException("Image could not be decoded")
+        ) ?: invalidImage("Image could not be decoded")
 
         var upright: Bitmap? = null
         var fresh: Bitmap? = null
@@ -119,7 +122,7 @@ object DefaultUploadImageSanitizer : UploadImageSanitizer {
                 encodeQuality -= 10
             } while (encoded.size > MAX_OUTPUT_BYTES && encodeQuality >= 40)
             if (encoded.size > MAX_OUTPUT_BYTES) {
-                throw ImageUtils.ImageDecodeException("Sanitized image is too large")
+                invalidImage("Sanitized image is too large")
             }
             return SanitizedImage(encoded, outputWidth, outputHeight)
         } finally {

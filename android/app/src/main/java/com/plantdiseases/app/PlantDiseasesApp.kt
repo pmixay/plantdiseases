@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OpinionPrefs
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +35,7 @@ class PlantDiseasesApp : Application() {
     lateinit var authRepository: com.plantdiseases.app.auth.AuthRepository
 
     @Inject
-    lateinit var privacyConsentPrefs: com.plantdiseases.app.util.PrivacyConsentPrefs
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -116,8 +117,7 @@ class PlantDiseasesApp : Application() {
                 scanRepository.reportError(
                     com.plantdiseases.app.data.model.ErrorReport(
                         telemetryConsent = true,
-                        telemetryConsentVersion =
-                            com.plantdiseases.app.util.PrivacyConsentPrefs.TELEMETRY_CONSENT_VERSION,
+                        telemetryConsentVersion = PrivacyConsentPrefs.TELEMETRY_CONSENT_VERSION,
                         stage = "crash",
                         kind = "uncaught_exception",
                         fatal = true,
@@ -136,12 +136,11 @@ class PlantDiseasesApp : Application() {
         // returning here — unlike a process-wide service-locator container,
         // each Application instance gets its own freshly-built Dagger
         // component, so Robolectric reinstantiating this Application across
-        // test classes in one JVM is naturally safe: there is no shared
-        // global container to double-initialise.
+        // test classes in one JVM is naturally safe. The process-global VK ID
+        // SDK is guarded separately below.
         super.onCreate()
         if (BuildConfig.VK_OAUTH_CONFIGURED && !BuildConfig.SYNTHETIC_AUTH_ENABLED) {
-            com.vk.id.VKID.logsEnabled = false
-            com.vk.id.VKID.init(this)
+            initializeVkId()
         }
         // NB: do NOT wire a HiltWorkerFactory / Configuration.Provider here.
         // It would call WorkManager.initialize(), but the default
@@ -183,6 +182,21 @@ class PlantDiseasesApp : Application() {
         // provider doesn't run under Robolectric). Scheduling is kicked off
         // from MainActivity instead — the same on-demand pattern ReminderManager
         // uses.
+    }
+
+    private fun initializeVkId() {
+        synchronized(vkIdInitLock) {
+            com.vk.id.VKID.logsEnabled = false
+            val alreadyInitialized = try {
+                com.vk.id.VKID.instance
+                true
+            } catch (_: IllegalStateException) {
+                false
+            }
+            if (!alreadyInitialized) {
+                com.vk.id.VKID.init(this)
+            }
+        }
     }
 
     /**
@@ -312,5 +326,6 @@ class PlantDiseasesApp : Application() {
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
         private const val LEGACY_KEY_CRASH_KIND = "crash_kind"
         private const val LEGACY_KEY_CRASH_MESSAGE = "crash_message"
+        private val vkIdInitLock = Any()
     }
 }

@@ -29,12 +29,14 @@ class AccountApiClientTest {
     fun exchangeSendsNoBearerOrHardware_andParsesProfileRequired() = runBlocking {
         server.enqueue(
             jsonResponse(
-                """{
+                """
+                {
                     "status":"profile_required",
                     "provider":"yandex",
                     "pending_signup_token":"pending",
                     "expires_in":600
-                }""".trimIndent(),
+                }
+                """.trimIndent(),
             ),
         )
 
@@ -56,7 +58,8 @@ class AccountApiClientTest {
     fun protectedProfileRequestCarriesBearerOnlyToAccountOrigin() = runBlocking {
         server.enqueue(
             jsonResponse(
-                """{
+                """
+                {
                     "nickname":"Beta",
                     "community_actor_id":"${FakeAccountApi.ACTOR_ID}",
                     "primary_provider":{
@@ -70,7 +73,8 @@ class AccountApiClientTest {
                     "created_at":"2026-01-01T00:00:00Z",
                     "updated_at":"2026-01-01T00:00:00Z",
                     "state":"active"
-                }""".trimIndent(),
+                }
+                """.trimIndent(),
             ),
         )
 

@@ -115,8 +115,10 @@ class AccountActivity : AppCompatActivity() {
                 setLoading(true)
                 try {
                     authRepository.cancelProfile()
-                } catch (failure: Exception) {
-                    if (failure is CancellationException) throw failure
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Exception) {
+                    return@launch
                 } finally {
                     setLoading(false)
                 }
@@ -181,8 +183,9 @@ class AccountActivity : AppCompatActivity() {
             setLoading(true)
             try {
                 authRepository.completeProfile(nickname)
+            } catch (failure: CancellationException) {
+                throw failure
             } catch (failure: Exception) {
-                if (failure is CancellationException) throw failure
                 showError(failure)
             } finally {
                 setLoading(false)
@@ -356,8 +359,9 @@ class AccountActivity : AppCompatActivity() {
                     OAuthAction.SIGN_IN -> try {
                         authRepository.signIn(provider, token)
                         resetOAuthFlow()
+                    } catch (failure: CancellationException) {
+                        throw failure
                     } catch (failure: Exception) {
-                        if (failure is CancellationException) throw failure
                         showError(failure)
                     }
                     OAuthAction.REAUTH_LINK -> {
@@ -436,8 +440,10 @@ class AccountActivity : AppCompatActivity() {
             setLoading(true)
             try {
                 authRepository.logout()
-            } catch (failure: Exception) {
-                if (failure is CancellationException) throw failure
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                return@launch
             } finally {
                 stopAccountNotifications()
                 setLoading(false)
@@ -459,8 +465,10 @@ class AccountActivity : AppCompatActivity() {
                 setLoading(true)
                 try {
                     authRepository.cancelProfile()
-                } catch (failure: Exception) {
-                    if (failure is CancellationException) throw failure
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Exception) {
+                    return@launch
                 } finally {
                     setLoading(false)
                 }

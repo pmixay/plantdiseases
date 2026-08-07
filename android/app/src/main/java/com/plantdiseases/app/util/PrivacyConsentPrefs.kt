@@ -23,16 +23,22 @@ class PrivacyConsentPrefs(context: Context) {
     fun setTrainingEnabled(enabled: Boolean) {
         preferences.edit().apply {
             putBoolean(KEY_TRAINING_ENABLED, enabled)
-            if (enabled) putString(KEY_TRAINING_VERSION, TRAINING_CONSENT_VERSION)
-            else remove(KEY_TRAINING_VERSION)
+            if (enabled) {
+                putString(KEY_TRAINING_VERSION, TRAINING_CONSENT_VERSION)
+            } else {
+                remove(KEY_TRAINING_VERSION)
+            }
         }.apply()
     }
 
     fun setTelemetryEnabled(enabled: Boolean) {
         preferences.edit().apply {
             putBoolean(KEY_TELEMETRY_ENABLED, enabled)
-            if (enabled) putString(KEY_TELEMETRY_VERSION, TELEMETRY_CONSENT_VERSION)
-            else remove(KEY_TELEMETRY_VERSION)
+            if (enabled) {
+                putString(KEY_TELEMETRY_VERSION, TELEMETRY_CONSENT_VERSION)
+            } else {
+                remove(KEY_TELEMETRY_VERSION)
+            }
         }.apply()
     }
 

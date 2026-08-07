@@ -33,6 +33,8 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # A workflow change intentionally selects every filter. This gives a
+          # final CI-gate commit a complete matrix before APK distribution.
           filters: |
             android:
               - 'android/**'

@@ -152,7 +152,7 @@ internal data class DeletionRequest(@SerialName("reauth_token") val reauthToken:
 @Serializable
 internal data class PushDeviceRequest(
     @SerialName("fcm_token") val fcmToken: String,
-    val platform: String = "android",
+    val platform: String,
 )
 
 @Serializable

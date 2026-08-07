@@ -73,6 +73,5 @@ class OnboardingActivity : AppCompatActivity() {
 
         fun isOnboardingDone(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getBoolean(KEY_ONBOARDING_DONE, false)
-
     }
 }

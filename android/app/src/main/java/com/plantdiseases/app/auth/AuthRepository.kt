@@ -204,9 +204,10 @@ class AuthRepository(
                 ?: return Result.failure(AuthenticationRequiredException())
             try {
                 Result.success(block(nextToken))
-            } catch (second: Exception) {
-                if (second is CancellationException) throw second
-                if (second is AccountApiException && second.statusCode == 401) {
+            } catch (second: CancellationException) {
+                throw second
+            } catch (second: AccountApiException) {
+                if (second.statusCode == 401) {
                     sessionMutex.withLock {
                         val current = mutableState.value as? AuthState.Authenticated
                         if (
@@ -218,9 +219,12 @@ class AuthRepository(
                     }
                 }
                 Result.failure(second)
+            } catch (second: Exception) {
+                Result.failure(second)
             }
+        } catch (failure: CancellationException) {
+            throw failure
         } catch (failure: Exception) {
-            if (failure is CancellationException) throw failure
             Result.failure(failure)
         }
     }
@@ -243,8 +247,9 @@ class AuthRepository(
             val refresh = vault.read() ?: return@withLock clearLocal().let { null }
             try {
                 api.refresh(refresh).also(::acceptAuthenticated).accessToken
-            } catch (failure: Exception) {
-                if (failure is CancellationException) throw failure
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
                 clearLocal()
                 null
             }

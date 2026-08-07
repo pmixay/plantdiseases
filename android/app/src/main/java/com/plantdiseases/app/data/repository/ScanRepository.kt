@@ -676,8 +676,7 @@ class ScanRepository(
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
     class UnsupportedImageException : Exception("Unsupported image format")
     class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
-    class CommunityRequestException(val statusCode: Int) :
-        Exception("Community request failed: $statusCode")
+    class CommunityRequestException(val statusCode: Int) : Exception("Community request failed: $statusCode")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
