@@ -424,6 +424,36 @@
     <string name="treatment_step_overdue">Просрочено · срок был %1$s</string>
     <string name="treatment_finished">Лечение завершено · %1$d из %2$d шагов · отсканируйте растение, чтобы подтвердить выздоровление</string>
     <string name="add_observation">Добавить наблюдение</string>
+
+    <!-- Garden refactor — calendar, day view, task detail -->
+    <string name="calendar_title">Календарь ухода</string>
+    <string name="calendar_legend_pending">Есть задачи</string>
+    <string name="calendar_legend_overdue">Просрочено</string>
+    <string name="calendar_legend_done">Выполнено</string>
+    <string name="calendar_today_prefix">Сегодня, %1$s</string>
+    <string name="calendar_all_caught_up">Всё сделано 🌿</string>
+    <string name="calendar_empty_month">Пока ничего не запланировано · включите напоминание у растения, чтобы увидеть его здесь</string>
+    <string name="calendar_empty_day">На этот день задач нет</string>
+    <string name="calendar_show_done">Показать выполненные (%1$d)</string>
+    <string name="calendar_hide_done">Скрыть выполненные</string>
+    <string name="calendar_overdue_header">Просроченные</string>
+    <string name="task_add">Добавить задачу</string>
+    <string name="task_description">Описание</string>
+    <string name="task_what_to_do">Что нужно сделать</string>
+    <string name="task_recommendations">Рекомендации</string>
+    <string name="task_products">Рекомендованные препараты</string>
+    <string name="task_products_disclaimer">Следуйте инструкции производителя и местным правилам. Это рекомендация, а не назначение.</string>
+    <string name="task_history">История выполнения</string>
+    <string name="task_last_done">Последний раз: %1$s</string>
+    <string name="task_next_step">Следующий шаг: %1$s</string>
+    <string name="task_mark_done">Выполнено</string>
+    <string name="task_undo">Отменить</string>
+    <string name="task_temp_range">Температура воздуха: %1$d–%2$d °C</string>
+    <string name="task_dry_hours">Избегайте осадков в ближайшие %1$d часов</string>
+    <string name="task_type_watering">Полив</string>
+    <string name="task_type_fertilize">Подкормка</string>
+    <string name="task_type_treatment">Обработка</string>
+    <string name="task_type_check">Проверить</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>

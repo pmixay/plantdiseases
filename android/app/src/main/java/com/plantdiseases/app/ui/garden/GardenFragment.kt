@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.garden
 
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -28,12 +29,20 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemRoomCardBinding
+import com.plantdiseases.app.ui.garden.care.CareCalendarView
+import com.plantdiseases.app.ui.garden.care.CareDayActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.util.CareQueue
+import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.RoomPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -456,10 +465,115 @@ class GardenFragment : Fragment() {
         requireActivity().showCreateRoomDialog(roomRepository) { loadGarden(animate = true) }
     }
 
-    // ─── Care-calendar pane — populated in Phase 8 (CareCalendarView) ────
+    // ─── Care-calendar pane ───────────────────────────────────────────────
+
+    private var calendarView: CareCalendarView? = null
+    private var calendarMonthCursor: Calendar = Calendar.getInstance()
 
     private fun loadCalendarPane() {
-        // Wired in ui/garden/care/CareCalendarView.kt + CareDayActivity.
+        ensureCalendarViewAttached()
+        loadMonth(calendarMonthCursor)
+        loadTodayCard()
+    }
+
+    private fun ensureCalendarViewAttached() {
+        if (calendarView != null) return
+        val view = CareCalendarView(requireContext()).apply {
+            onDaySelected = { epochDay -> openDay(epochDay * CareSchedule.DAY_MS) }
+            onMonthChanged = { next ->
+                calendarMonthCursor = next
+                loadMonth(next)
+            }
+        }
+        binding.gardenCalendarContainer.addView(view)
+        calendarView = view
+        buildCalendarLegend()
+    }
+
+    private fun buildCalendarLegend() {
+        binding.gardenCalendarLegend.removeAllViews()
+        listOf(
+            R.color.disease_red to R.string.calendar_legend_overdue,
+            R.color.warning_amber to R.string.calendar_legend_pending,
+            R.color.healthy_green to R.string.calendar_legend_done,
+        ).forEach { (colorRes, labelRes) ->
+            binding.gardenCalendarLegend.addView(
+                LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginStart = 10.dp(); marginEnd = 10.dp() }
+                    addView(
+                        View(requireContext()).apply {
+                            layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp())
+                            background = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(requireContext().getColor(colorRes))
+                            }
+                        }
+                    )
+                    addView(
+                        TextView(requireContext()).apply {
+                            text = getString(labelRes)
+                            textSize = 11f
+                            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                            setPadding(4.dp(), 0, 0, 0)
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    private fun loadMonth(monthCursor: Calendar) {
+        lifecycleScope.launch {
+            val monthStart = (monthCursor.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+            val summary = careRepository.month(monthStart.timeInMillis, monthEnd.timeInMillis, System.currentTimeMillis())
+            if (_binding != null) {
+                calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
+            }
+        }
+    }
+
+    private fun loadTodayCard() {
+        lifecycleScope.launch {
+            val todayStart = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val tasks = careRepository.day(todayStart)
+            val pendingCount = tasks.count { it.task.status == CareQueue.CareTask.Status.PENDING }
+            if (_binding == null) return@launch
+            val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(Date(todayStart))
+            binding.gardenTodayTitle.text = getString(R.string.calendar_today_prefix, dateLabel)
+            binding.gardenTodaySubtitle.text = if (pendingCount == 0) {
+                getString(R.string.calendar_all_caught_up)
+            } else {
+                resources.getQuantityString(R.plurals.care_tasks_count, pendingCount, pendingCount)
+            }
+            binding.gardenTodayCard.setOnClickListener {
+                Haptics.tick(requireContext())
+                openDay(todayStart)
+            }
+        }
+    }
+
+    private fun openDay(dayStartMs: Long) {
+        startActivity(
+            Intent(requireContext(), CareDayActivity::class.java)
+                .putExtra(CareDayActivity.EXTRA_DAY_START_MS, dayStartMs)
+        )
     }
 
     // ─── Add plant (FAB / empty-state CTA) ───────────────────────────────

@@ -541,6 +541,15 @@ data class TreatmentPlanEntity(
      *  DB constraint (SQLite partial unique indices are awkward via Room). */
     @ColumnInfo(name = "status") val status: String = "active",
     @ColumnInfo(name = "completed_at") val completedAt: Long? = null,
+    /** Snapshotted `treatment_conditions` from the care-plan response
+     *  (best_time/temp_c/dry_hours), as JSON — {"best_time":str,
+     *  "temp_c":[min,max]?,"dry_hours":int?}. Plan-level, not per-step:
+     *  the server returns one application-window per disease, not per
+     *  step. NULL when the disease has no curated entry (see
+     *  diseases_data.py TREATMENT_CONDITIONS). Persisted here because,
+     *  unlike the treatment text, the app never re-fetches /api/care-plan
+     *  after plan creation — offline, this is the only copy. */
+    @ColumnInfo(name = "conditions_json") val conditionsJson: String? = null,
 )
 
 @Dao
@@ -593,8 +602,12 @@ data class TreatmentStepEntity(
     @ColumnInfo(name = "detail") val detail: String? = null,
     /** JSON array of strings — the "What to do" checklist. */
     @ColumnInfo(name = "bullets") val bullets: String? = null,
-    /** JSON array of product-catalogue keys (server `products[].key`). */
-    @ColumnInfo(name = "product_keys") val productKeys: String? = null,
+    /** JSON array of the FULL product objects (key, kind, name,
+     *  active_ingredient, note) — not just keys. The app is offline-capable
+     *  and never re-fetches /api/care-plan after plan creation, so this is
+     *  the only copy; a bare key with no local catalogue to resolve it
+     *  against would strand the "Recommended products" section empty. */
+    @ColumnInfo(name = "products_json") val productsJson: String? = null,
     @ColumnInfo(name = "due_at") val dueAt: Long,
     /** "pending" | "done" | "skipped" */
     @ColumnInfo(name = "status") val status: String = "pending",
@@ -859,6 +872,7 @@ abstract class AppDatabase : RoomDatabase() {
                         `started_at` INTEGER NOT NULL,
                         `status` TEXT NOT NULL DEFAULT 'active',
                         `completed_at` INTEGER,
+                        `conditions_json` TEXT,
                         FOREIGN KEY(`plant_id`) REFERENCES `plants`(`id`)
                             ON UPDATE NO ACTION ON DELETE CASCADE,
                         FOREIGN KEY(`scan_id`) REFERENCES `scans`(`id`)
@@ -888,7 +902,7 @@ abstract class AppDatabase : RoomDatabase() {
                         `title` TEXT NOT NULL,
                         `detail` TEXT,
                         `bullets` TEXT,
-                        `product_keys` TEXT,
+                        `products_json` TEXT,
                         `due_at` INTEGER NOT NULL,
                         `status` TEXT NOT NULL DEFAULT 'pending',
                         `done_at` INTEGER,

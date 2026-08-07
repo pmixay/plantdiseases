@@ -4,6 +4,7 @@ import com.plantdiseases.app.data.local.TreatmentPlanEntity
 import com.plantdiseases.app.data.local.TreatmentStepEntity
 import com.plantdiseases.app.data.model.CarePlanResponse
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Calendar
 
 /**
@@ -46,11 +47,27 @@ object TreatmentPlanFactory {
             .filter { it.second > 0 }
             .toMap()
 
-        val productKeysJson = plan.products
-            ?.map { it.key }
-            ?.filter { it.isNotBlank() }
+        // Full product objects, not just keys — see TreatmentStepEntity's
+        // kdoc for why the app can't resolve a bare key against a
+        // catalogue it doesn't ship offline.
+        val productsJson = plan.products
+            ?.filter { it.key.isNotBlank() }
             ?.takeIf { it.isNotEmpty() }
-            ?.let { keys -> JSONArray(keys).toString() }
+            ?.let { products ->
+                val array = JSONArray()
+                products.forEach { p ->
+                    array.put(
+                        JSONObject().apply {
+                            put("key", p.key)
+                            put("kind", p.kind)
+                            put("name", p.name)
+                            put("active_ingredient", p.activeIngredient)
+                            p.note?.let { put("note", it) }
+                        }
+                    )
+                }
+                array.toString()
+            }
 
         val lastIndex = treatment.lastIndex
         val steps = treatment.mapIndexed { index, text ->
@@ -69,9 +86,17 @@ object TreatmentPlanFactory {
                 title = title,
                 detail = detail,
                 bullets = bulletsFor(index, detail ?: text, plan),
-                productKeys = if (index == 0) productKeysJson else null,
+                productsJson = if (index == 0) productsJson else null,
                 dueAt = dueAt,
             )
+        }
+
+        val conditionsJson = plan.treatmentConditions?.let { conditions ->
+            JSONObject().apply {
+                put("best_time", conditions.bestTime)
+                conditions.tempC?.let { put("temp_c", JSONArray(it)) }
+                conditions.dryHours?.let { put("dry_hours", it) }
+            }.toString()
         }
 
         return Built(
@@ -83,6 +108,7 @@ object TreatmentPlanFactory {
                 diseaseLabelRu = diseaseLabelRu,
                 startedAt = startedAtMs,
                 status = "active",
+                conditionsJson = conditionsJson,
             ),
             steps = steps,
         )

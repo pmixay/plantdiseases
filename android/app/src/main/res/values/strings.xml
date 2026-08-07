@@ -431,6 +431,36 @@
     <string name="treatment_step_overdue">Overdue · was due %1$s</string>
     <string name="treatment_finished">Treatment finished · %1$d of %2$d steps · scan again to confirm recovery</string>
     <string name="add_observation">Add observation</string>
+
+    <!-- Garden refactor — calendar, day view, task detail -->
+    <string name="calendar_title">Care calendar</string>
+    <string name="calendar_legend_pending">Has tasks</string>
+    <string name="calendar_legend_overdue">Overdue</string>
+    <string name="calendar_legend_done">Done</string>
+    <string name="calendar_today_prefix">Today, %1$s</string>
+    <string name="calendar_all_caught_up">All caught up 🌿</string>
+    <string name="calendar_empty_month">Nothing scheduled yet · turn on a reminder for a plant to see it here</string>
+    <string name="calendar_empty_day">Nothing scheduled for this day</string>
+    <string name="calendar_show_done">Show completed (%1$d)</string>
+    <string name="calendar_hide_done">Hide completed</string>
+    <string name="calendar_overdue_header">Overdue</string>
+    <string name="task_add">Add task</string>
+    <string name="task_description">Description</string>
+    <string name="task_what_to_do">What to do</string>
+    <string name="task_recommendations">Recommendations</string>
+    <string name="task_products">Recommended products</string>
+    <string name="task_products_disclaimer">Follow the manufacturer\'s instructions and local regulations. This is guidance, not a prescription.</string>
+    <string name="task_history">Completion history</string>
+    <string name="task_last_done">Last time: %1$s</string>
+    <string name="task_next_step">Next step: %1$s</string>
+    <string name="task_mark_done">Done</string>
+    <string name="task_undo">Undo</string>
+    <string name="task_temp_range">Air temperature: %1$d–%2$d °C</string>
+    <string name="task_dry_hours">Avoid rain for the next %1$d hours</string>
+    <string name="task_type_watering">Watering</string>
+    <string name="task_type_fertilize">Feeding</string>
+    <string name="task_type_treatment">Treatment</string>
+    <string name="task_type_check">Check</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>

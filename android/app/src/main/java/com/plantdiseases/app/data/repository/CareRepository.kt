@@ -303,4 +303,22 @@ class CareRepository(
         val plan = treatmentPlanDao.getActiveForPlant(plantId) ?: return@withContext null
         PlanWithSteps(plan, treatmentStepDao.getForPlan(plan.id))
     }
+
+    // ─── Single-row lookups (CareTaskActivity resolving one task by id) ───
+
+    data class StepWithPlan(val step: TreatmentStepEntity, val plan: TreatmentPlanEntity)
+
+    suspend fun getStep(stepId: Long): StepWithPlan? = withContext(Dispatchers.IO) {
+        val step = treatmentStepDao.getById(stepId) ?: return@withContext null
+        val plan = treatmentPlanDao.getById(step.planId) ?: return@withContext null
+        StepWithPlan(step, plan)
+    }
+
+    suspend fun getOneOff(taskId: Long): CareTaskEntity? = withContext(Dispatchers.IO) {
+        careTaskDao.getById(taskId)
+    }
+
+    suspend fun getReminder(reminderId: Long) = withContext(Dispatchers.IO) {
+        reminderDao.getById(reminderId)
+    }
 }
