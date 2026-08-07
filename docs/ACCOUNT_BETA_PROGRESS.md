@@ -1,17 +1,22 @@
 # Account Beta Implementation Progress
 
 This log tracks implementation on `account-beta-test`. It is updated at each
-verified checkpoint; commands use only mock/synthetic data and local resources.
+verified checkpoint. Checkpoints 0–10 used only mock/synthetic data and local
+resources; checkpoint 11 records the explicitly authorized German VDS beta.
 
 ## Current status
 
-- Active phase: repository implementation complete — awaiting external CI,
-  operator, infrastructure, product, and legal gates.
-- Production services/data touched: none.
-- Deployments performed: none.
-- Local implementation blockers: none. Deployment, real-provider, migration,
-  restore/key-rotation, moderation, and legal gates remain deliberately
-  unexecuted external-owner work.
+- Active phase: German loopback beta is running; awaiting registered provider
+  applications/stable APK signing before public prefix activation and real
+  mobile login.
+- Production services/data touched: main was observed for health only; its
+  code, process, nginx, database, writable data, and model files were unchanged.
+- Deployments performed: isolated Compose project
+  `plantdisease_account_beta_german`, commit/image tag `ea5cf0d`, loopback ports
+  `18100/18101`, real PlantVision model mounted read-only.
+- Current blocker: dedicated `YANDEX_CLIENT_ID`, numeric `VKID_CLIENT_ID`,
+  Android `VKID_CLIENT_SECRET`, and the stable provider-registered APK signing
+  certificate. No successful real-user OAuth flow is claimed without them.
 
 ## Checkpoints
 
@@ -683,8 +688,61 @@ Checkpoint commit:
 
 - `test(beta): record final acceptance matrix`
 
+### 11 — Parallel German real-provider/model beta (runtime complete; mobile credentials pending, 2026-08-07)
+
+Completed work:
+
+- Converted the German Compose candidate from mock/weight-free mode to remote
+  Yandex/VK adapters and the existing real PlantVision model bundle, mounted
+  read-only. All writable databases, media, caches, logs, keys, and networks
+  remain beta-prefixed and isolated from main.
+- Added branch-local image builds and deployed exact tag `ea5cf0d` beside main:
+  beta app `127.0.0.1:18100`, beta account `127.0.0.1:18101`, main unchanged on
+  `127.0.0.1:8000`.
+- Split the inter-service token into a dedicated volume. The app UID receives
+  only its `0640` read-only token; Ed25519 signing and AES encryption files stay
+  account-only at `0600`.
+- Preserved the public HTTPS JWT issuer while validating JWKS/introspection and
+  notification calls against an explicitly private Docker service origin.
+- Updated Android to Yandex AuthSDK `3.2.1` and retained current VK ID SDK
+  `2.7.2`. The `accountBeta` build keeps its distinct
+  `com.plantdiseases.app.accountbeta` ID and fixed German beta URLs.
+- Changed CI so the branch cannot publish a synthetic beta APK. Publication
+  requires all real provider values and stable signing secrets, verifies the
+  beta certificate matches the release certificate, and uploads only
+  `account-beta-real-oauth-apk`.
+- Rebased over remote CI fixes and pushed commit `ea5cf0d` to GitHub.
+
+Runtime verification:
+
+- PostgreSQL, account-api, and app-api are healthy; account reports remote mode
+  and both providers ready.
+- `/api/capabilities` reports real Gamma `plantvision` model `2.6.7` and Aqua
+  available. A repository leaf image completed real detector/classifier
+  inference with HTTP 200 in `0.48s`.
+- Live invalid-token smoke reached both real provider endpoints and failed
+  closed: Yandex `invalid_provider_token`, VK
+  `provider_application_mismatch`. No real provider token was used.
+- Main health passed before startup, after startup, and after inference.
+- Complete suites: account `153 passed, 1 skipped`; application `590 passed`.
+  Ruff, Compose rendering, YAML parsing, and `git diff --check` passed.
+
+Boundary:
+
+- Nginx beta prefixes remain inactive until the dedicated provider IDs and
+  matching signed APK exist. The current host env uses deliberately non-runnable
+  bootstrap IDs and is mode `0600`; it is ignored by Git.
+- SDK code is real, but a successful SDK login and distributable APK cannot be
+  truthfully produced without the external provider registrations/signing key.
+
+Checkpoint commit:
+
+- `feat(beta): run real SDK staging beside main`
+
 ## Remaining work (plan order)
 
-No in-scope repository implementation remains. The required external gates are
-listed in `ACCOUNT_BETA_TEST_REPORT.md` and `ACCOUNT_BETA_HANDOFF.md`; they must
-not be inferred as complete from this branch.
+Repository and loopback VDS work are complete. Supply/configure the dedicated
+provider applications and stable signing key to unlock the real APK/login and
+public beta-prefix steps. Remaining production/legal gates are listed in
+`ACCOUNT_BETA_TEST_REPORT.md` and `ACCOUNT_BETA_HANDOFF.md`; they must not be
+inferred as complete from the German team beta.

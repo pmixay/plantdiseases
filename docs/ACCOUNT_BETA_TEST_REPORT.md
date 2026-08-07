@@ -2,31 +2,36 @@
 
 Report date: 2026-08-07 UTC
 
-Candidate checkpoint: `2cb1717` (`ops(beta): add isolated staging handoff`)
+Candidate checkpoint: `ea5cf0d` (`feat(beta): run real SDK staging beside main`)
 
 Branch: `account-beta-test`
 
 ## Result
 
-The repository implementation and synthetic local acceptance matrix pass. The
-candidate is ready for Android CI and the documented infrastructure handoff;
-it is **not deployed and not production-ready**. Android compilation/APK
-assembly, German VDS smoke/restore tests, Russian infrastructure, extracted
-German-worker tests, real-provider smoke tests, legacy-data operations, and
-legal/product release gates require their named external owners.
+The implementation, local acceptance matrix, and loopback German VDS runtime
+pass. Commit `ea5cf0d0d281c7fb24b9619026597e829d8843b1` is pushed to
+`account-beta-test`. A separate Compose project is running beside main on the
+German VDS with remote provider adapters and the real read-only PlantVision
+model. It is **restricted staging, not production-ready**.
 
-No production service, VDS configuration, DNS, nginx process, firewall,
-provider application, real OAuth/FCM token, real user image, backup, legacy
-database, model artefact, or training process was accessed or changed. Test
-identities, credentials, images, databases, IPs, and sentinels were generated
-or documentation-range synthetic values.
+The runtime is intentionally not connected to public nginx yet. Its protected
+host env contains explicit non-runnable bootstrap provider IDs because the
+registered Yandex/VK beta application values and matching stable APK signing
+certificate were not available to this session. CI now refuses to publish a
+synthetic account-beta artifact: it can publish only a real-OAuth APK after
+those values are configured. No successful real-user OAuth flow is claimed.
+
+Main code, process, port, database, media, model files, and nginx configuration
+were not changed. No real provider token, real account, FCM value, user image,
+legacy database, or training process was used. The only inference input was the
+repository's non-user `server/static/guide/leaf_spot.png` fixture.
 
 ## Final local verification
 
 | Check | Result | Evidence |
 |---|---:|---|
-| Complete account-service suite | PASS | `150 passed, 1 skipped in 3.01s` |
-| Complete application-service suite | PASS | `582 passed in 7.99s` |
+| Complete account-service suite | PASS | `153 passed, 1 skipped in 2.59s` |
+| Complete application-service suite | PASS | `590 passed in 7.70s` |
 | Remote provider/config contract | PASS | `41 passed`; fake HTTP transport only |
 | Community authorization/deletion matrix | PASS | `115 passed in 1.83s` |
 | Training/export/migration/telemetry matrix | PASS | `33 passed in 0.73s` |
@@ -36,7 +41,12 @@ or documentation-range synthetic values.
 | Backup script | PASS (static) | `sh -n` passed; `/etc/hosts` was refused as a non-beta env before Docker was invoked |
 | Machine-readable contracts | PASS | CI YAML, account/app/worker JSON, and 219 Android XML files parsed |
 | Android hardware-identifier scan | PASS (static) | No `Build.MODEL`, manufacturer/brand/device/product/serial, Android ID, advertising ID, IMEI, or telephony access in production source/resources |
-| Android compile, unit tests, lint, APKs | CI GATE | No Java/JDK, Kotlin compiler, Android SDK, or ADB exists in this checkout; the workflow runs ktlint, detekt, both unit-test variants, release APK, and account-beta APK |
+| German loopback services | PASS | PostgreSQL, account-api, and app-api healthy; only `127.0.0.1:18101/18100` published |
+| Real PlantVision runtime | PASS | Gamma `plantvision`, model `2.6.7`; repository leaf fixture returned HTTP 200 with detector regions/calibrated probabilities in `0.48s` |
+| Real provider server adapters | PASS (invalid-token smoke only) | Live Yandex endpoint returned stable `invalid_provider_token`; live VK endpoint returned stable `provider_application_mismatch`; no real token used |
+| Main coexistence | PASS | Main remained healthy on `127.0.0.1:8000` before/after startup and real inference |
+| Secret isolation | PASS | App sees only dedicated `internal_token` volume (`0640`); signing/encryption keys remain account-only (`0600`) |
+| Android compile, unit tests, lint, real-OAuth APK | CI/CONFIG GATE | Commit pushed; private workflow result not observable here. Publishing fails unless real provider and stable signing secrets are configured |
 
 The single skipped account test is the deliberately opt-in live-PostgreSQL
 integration. It previously passed against the isolated digest-pinned beta
@@ -55,7 +65,7 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 
 | Plan area | Status | Coverage and boundary |
 |---|---|---|
-| 19.1 Provider/signup | PASS locally; real-token OPERATOR GATE | New/existing Yandex and VK, pending completion/cancel/expiry/replay, wrong app, rejected/invalid token, outage, missing profile, and no pre-nickname session are automated. Remote calls follow [Yandex user info](https://yandex.com/dev/id/doc/en/user-information) and [VK ID's official SDK request](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts), but tests inject fake HTTP and use no real token. |
+| 19.1 Provider/signup | PASS locally; real-token OPERATOR GATE | New/existing Yandex and VK, pending completion/cancel/expiry/replay, wrong app, rejected/invalid token, outage, missing profile, and no pre-nickname session are automated. Contract tests inject fake HTTP; German loopback additionally completed invalid-token smoke against both live providers. No successful real token is claimed. |
 | 19.2 Nickname | PASS | Concurrent uniqueness, NFKC/casefold collision, code-point length, required letter, Latin/Cyrillic mixing, allowed characters, reserved values, cooldown, and fresh authorization version/token are covered. |
 | 19.3 Sessions/tokens | PASS | Generic multi-device sessions, 15-minute signed JWT, 30-day idle/180-day absolute refresh bounds, rotation/replay family revocation, logout/remote revoke, issuer/audience/signature/time/version checks, unknown-`kid` refresh, and key overlap are covered. Android serialized refresh remains a CI test. |
 | 19.4 Linking/reauthentication | PASS | Five-minute one-use scoped challenge, wrong scope/provider, replay/expiry, duplicate provider, other-account ownership, no merge, and no unlink path are covered. |
@@ -64,7 +74,7 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 | 19.7 Training/export | PASS | Client contract plus server decode/re-encode, crop-only capture, unsafe-frame rejection, SHA/pHash deduplication, retention/sampling, structured feedback receipts, out-of-head labels, export metadata/sentinel/privacy checks, checksums, provenance/inventory, and group split locking are covered. Android byte-path tests remain a CI gate. |
 | 19.8 Push/deletion | PASS | Account-only encrypted/deduplicated FCM storage, no phone model, actor-only notification resolution, stale removal, immediate session/push revocation and content hiding, cleanup retry/idempotency, thumbnail removal, and eventual private-profile erasure are covered without an FCM call. |
 | 19.9 Android | IMPLEMENTED; CI GATE | Coexisting account-beta identity, prefixed defaults, Guest/ProfileRequired/Authenticated state, encrypted refresh recovery, one retry/no loop, provider/nickname cancellation, logout with Room preservation, separate consents, minimized telemetry, and shared upload sanitizer have source tests wired into CI. No local Android result is claimed. |
-| 19.10 Environment/deployment | PASS for contracts; OPERATOR GATE for runtime | The local stack previously passed empty-volume startup/restart and synthetic smoke. All final Compose files render and isolation/root-path/nginx contracts are automated. Actual German prefix smoke, backup restore, worker firewall/mTLS/disk inspection, Russian restore/key rotation, and production cutover were not authorized or performed. |
+| 19.10 Environment/deployment | PASS for contracts and German loopback runtime; remaining operator gates | The isolated German project is healthy with real models and remote adapters; loopback and inference smoke pass. Public prefix/nginx, backup restore, worker firewall/mTLS, Russian restore/key rotation, and production cutover remain unexecuted. |
 
 ## Acceptance criteria
 
@@ -79,7 +89,7 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 | Export contains model/disease provenance without user linkage or image metadata | PASS |
 | Client and server image sanitization | Server PASS; Android CI result required |
 | Empty-workspace local Compose with mock providers | PASS at process checkpoint; final render PASS |
-| German staging isolation and `/plantdisease-test/` contract | Static PASS; VDS operator smoke required |
+| German staging isolation and `/plantdisease-test/` contract | Runtime PASS on loopback; public nginx activation intentionally pending real provider config |
 | Production rejects mock auth/development keys/unsafe database config | PASS |
 | Final RU/DE ownership and identity-free network contract | PASS as tested handoff contract; extracted services/operator acceptance required |
 
@@ -91,18 +101,22 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
   access tokens are bounded, never placed in a URL, never persisted, and never
   included in a stable error. Redirect, network, malformed, and oversize paths
   fail closed.
-- Account secret files must be absolute private regular files; production mock
-  auth, ephemeral keys, HTTP issuer, wildcard CORS, unsafe remote PostgreSQL,
-  and missing deletion configuration fail startup.
+- Account secret files must be absolute regular files. Signing/encryption keys
+  are owner-only; the isolated shared-token volume permits group read but no
+  group write/world access. Production mock auth, ephemeral keys, HTTP issuer,
+  wildcard CORS, unsafe remote PostgreSQL, and missing deletion configuration
+  fail startup.
 - Community receives only signed random actor/nickname claims. It cannot resolve
   account UUID/provider identity/FCM values, and it forwards no bearer context
   into inference.
 - Training and telemetry schemas have no account/community/session/installation
   foreign key or raw/hashed IP. Export tests open every image and scan archive
   bytes for metadata, forbidden keys, and seeded linkage values.
-- German beta uses mock auth and explicit synthetic-data acknowledgement. Its
-  APIs publish only loopback ports; PostgreSQL is private; every state volume
-  is beta-named; access logging is disabled; and no production path is mounted.
+- German beta uses remote Yandex/VK verification and real PlantVision weights.
+  Its APIs publish only loopback ports; PostgreSQL is private; every writable
+  state volume is beta-named; access logging is disabled; and no production
+  writable path is mounted. The immutable main model directory is shared
+  read-only.
 - The final German worker request allows exactly `image`, `request_id`,
   `model_family`, `language`, and `result_options` under mTLS with additional
   properties forbidden. The template mounts only read-only models/secrets and
@@ -113,19 +127,23 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 These are not test failures; they require authority, infrastructure, secrets,
 real data, or legal/product decisions outside this implementation:
 
-1. Observe a green GitHub Actions Android job and archive the tested
-   `accountBeta` APK digest/provenance.
-2. Have the VDS operator render reviewed image digests, insert the nginx
-   fragment into the real `http`/TLS context, run `nginx -t`, start only the
-   isolated German project, and execute loopback/prefixed synthetic smoke.
-3. Execute `backup-test.sh` against that disposable stack and record the
-   restore inventory/checksum. The script was not run locally because no
-   candidate deployment/database exists.
+1. Configure dedicated provider applications for
+   `com.plantdiseases.app.accountbeta` plus the stable APK certificate, store
+   `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID`, `VKID_CLIENT_SECRET`, and `RELEASE_*`
+   in GitHub Actions, then observe a green Android job and archive the
+   `account-beta-real-oauth-apk` digest/provenance.
+2. Replace the two VDS bootstrap IDs with the matching registered IDs, restart
+   only the beta project, run successful Yandex and VK login from that signed
+   APK, then install the reviewed nginx fragment after `nginx -t` passes.
+3. Execute `backup-test.sh` against the disposable stack and record the
+   restore inventory/checksum. The script was not run in this pass; it is
+   non-blocking for provider/APK smoke but required before wider staging use.
 4. Provision the Russian data plane and extracted German worker; prove private
    mTLS/firewall behavior, identity stripping against a fake worker, disk/log
    statelessness, encrypted backup restore, and Ed25519/certificate rotation.
-5. Register real provider package signatures and run dedicated real-token smoke
-   only on approved Russian staging.
+5. Repeat real-provider and data-location acceptance on Russian staging before
+   any production/public onboarding; German team staging does not satisfy that
+   production gate.
 6. Freeze/audit real legacy storage, obtain an explicit row/file allowlist,
    dry-run and approve migration into a fresh Russian target, verify restore and
    cutover, then separately authorize German erasure. The committed migration
@@ -134,7 +152,7 @@ real data, or legal/product decisions outside this implementation:
    and English policy/consent text, moderation/reporting/blocking/safety work,
    and the separate PlantNet/OpenRouter/FCM/location/threat-model reviews.
 
-Until every applicable gate is recorded, `.invalid` references and zero
-digests in production examples remain placeholders, real onboarding stays
-disabled, German beta state is disposable and non-promotable, and the project
-must not be described as production or legally approved.
+Until every applicable gate is recorded, production example placeholders stay
+non-runnable, real onboarding stays disabled, German beta state is disposable
+and non-promotable, and the project must not be described as production or
+legally approved.
