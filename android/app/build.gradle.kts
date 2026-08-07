@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -47,7 +49,7 @@ if (accountBetaRealOAuthEnabled) {
         throw GradleException("VKID_CLIENT_ID must be a decimal application ID")
     }
     listOf("APP_API_BASE_URL", "ACCOUNT_API_BASE_URL").forEach { name ->
-        val uri = runCatching { java.net.URI(configuredValue(name)) }.getOrNull()
+        val uri = runCatching { URI(configuredValue(name)) }.getOrNull()
         val valid = uri != null &&
             uri.scheme == "https" &&
             !uri.host.isNullOrBlank() &&
