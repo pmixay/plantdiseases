@@ -898,6 +898,13 @@ data class CarePlanResponse(
     @SerializedName("checkpoints") @SerialName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
     @SerializedName("season") @SerialName("season") val season: String? = null,
     @SerializedName("season_note") @SerialName("season_note") val seasonNote: String? = null,
+    /** Garden refactor v2 addition — curated, hand-maintained catalogue
+     *  entries (never LLM/generated). Absent, not an empty list, when the
+     *  disease has no curated products; see server diseases_data.py
+     *  TREATMENT_PRODUCTS for why an empty list would be misleading. */
+    @SerializedName("products") @SerialName("products") val products: List<CarePlanProduct>? = null,
+    @SerializedName("treatment_conditions") @SerialName("treatment_conditions")
+    val treatmentConditions: TreatmentConditions? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -935,6 +942,29 @@ data class TemperatureBand(
 data class CarePlanCheckpoint(
     @SerializedName("day") @SerialName("day") val day: Int = 0,
     @SerializedName("check") @SerialName("check") val check: String = "",
+)
+
+/** One curated treatment-product catalogue entry — see
+ *  server/diseases_data.py TREATMENT_PRODUCTS. [activeIngredient] is the
+ *  field the UI must always render: brand names differ by market, the
+ *  chemistry doesn't. */
+@Serializable
+data class CarePlanProduct(
+    @SerializedName("key") @SerialName("key") val key: String = "",
+    @SerializedName("kind") @SerialName("kind") val kind: String = "",
+    @SerializedName("name") @SerialName("name") val name: String = "",
+    @SerializedName("active_ingredient") @SerialName("active_ingredient")
+    val activeIngredient: String = "",
+    @SerializedName("note") @SerialName("note") val note: String? = null,
+)
+
+/** Application-window guidance shown alongside [CarePlanProduct]s on the
+ *  treatment task-detail screen. */
+@Serializable
+data class TreatmentConditions(
+    @SerializedName("best_time") @SerialName("best_time") val bestTime: String = "",
+    @SerializedName("temp_c") @SerialName("temp_c") val tempC: List<Int>? = null,
+    @SerializedName("dry_hours") @SerialName("dry_hours") val dryHours: Int? = null,
 )
 
 /**

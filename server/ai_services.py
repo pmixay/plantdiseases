@@ -48,6 +48,14 @@ try:
 except ImportError:
     from config import get_bool, get_float, get_int, get_str
 
+try:
+    from .diseases_data import (  # type: ignore[import-not-found]
+        TREATMENT_CONDITIONS,
+        TREATMENT_PRODUCTS,
+    )
+except ImportError:
+    from diseases_data import TREATMENT_CONDITIONS, TREATMENT_PRODUCTS
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration (config.json + env fallback) ──────────────────────
@@ -2294,6 +2302,42 @@ def _localise(field: str, key: str, default, locale: str):
     return default
 
 
+def _localised_products(protocol_key: str, locale: str) -> list[dict] | None:
+    """Curated product catalogue entry for [protocol_key], localised —
+    see ``diseases_data.TREATMENT_PRODUCTS`` for why this is hand-written
+    rather than generated. ``None`` when the class has no curated entry;
+    the caller must omit the "products" key entirely in that case rather
+    than send an empty list."""
+    entries = TREATMENT_PRODUCTS.get(protocol_key)
+    if not entries:
+        return None
+    lang = "ru" if _is_russian(locale) else "en"
+    return [
+        {
+            "key": entry["key"],
+            "kind": entry["kind"],
+            "name": entry[f"name_{lang}"],
+            "active_ingredient": entry[f"active_ingredient_{lang}"],
+            "note": entry.get(f"note_{lang}"),
+        }
+        for entry in entries
+    ]
+
+
+def _localised_treatment_conditions(protocol_key: str, locale: str) -> dict | None:
+    """Application-window guidance for [protocol_key], localised. ``None``
+    when there's no curated entry (mirrors [_localised_products])."""
+    entry = TREATMENT_CONDITIONS.get(protocol_key)
+    if not entry:
+        return None
+    lang = "ru" if _is_russian(locale) else "en"
+    return {
+        "best_time": entry[f"best_time_{lang}"],
+        "temp_c": entry["temp_c"],
+        "dry_hours": entry["dry_hours"],
+    }
+
+
 def _current_growing_season(today: _dt.date | None = None) -> str:
     """Return ``"growing"`` or ``"dormant"`` for the supplied date.
 
@@ -2821,6 +2865,8 @@ def generate_care_plan(
     red_flags = _localise(
         "red_flags", protocol_key, list(protocol.get("red_flags") or []), locale,
     )
+    products = _localised_products(protocol_key, locale)
+    treatment_conditions = _localised_treatment_conditions(protocol_key, locale)
 
     plan: dict = {
         # ── v1 contract (unchanged) ────────────────────────────────
@@ -2847,6 +2893,14 @@ def generate_care_plan(
         "red_flags": list(red_flags),
         "checkpoints": checkpoints,
     }
+    # Both omitted entirely (not an empty list/dict) when the protocol has
+    # no curated entry — additive v2 fields, older clients ignore unknown
+    # keys either way, but an empty "products": [] would read as "checked,
+    # nothing found" rather than "not curated yet".
+    if products:
+        plan["products"] = products
+    if treatment_conditions:
+        plan["treatment_conditions"] = treatment_conditions
 
     season_key = season if season in ("growing", "dormant") else _current_growing_season(today)
     plan = _apply_season(plan, season_key, locale=locale)

@@ -770,6 +770,48 @@ def test_care_plan_unknown_light_falls_back():
     assert plan["light_tier"] == "bright_indirect"
 
 
+def test_care_plan_curated_disease_carries_products_with_active_ingredient():
+    """A class with a curated catalogue entry gets a products list, and
+    every product names its active ingredient — the load-bearing field,
+    since brand names differ by market."""
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(disease="gray_mold_botrytis", light="bright_indirect")
+    assert plan["products"], "gray_mold_botrytis should carry curated products"
+    for product in plan["products"]:
+        assert product["active_ingredient"], f"product {product['key']} has no active ingredient"
+        assert product["name"]
+        assert product["kind"]
+    assert plan["treatment_conditions"]["temp_c"]
+    assert plan["treatment_conditions"]["best_time"]
+
+
+def test_care_plan_uncurated_disease_omits_products_key_entirely():
+    """A class outside the curated catalogue (no chemical intervention,
+    or a cure-less class) must NOT carry a "products" key at all — not
+    an empty list, which would read as "checked, found nothing"."""
+    import ai_services as ai
+
+    for disease in ("healthy", "viral_disease", "leaf_scorch_underwatering", "not_a_plant"):
+        plan = ai.generate_care_plan(disease=disease, light="bright_indirect")
+        assert "products" not in plan, f"{disease} should have no products key"
+        assert "treatment_conditions" not in plan, f"{disease} should have no treatment_conditions key"
+
+
+def test_care_plan_products_localise_to_russian():
+    """RU locale must return Russian product names/ingredients/notes and
+    a Russian best-time string, not leak the English catalogue text."""
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(disease="powdery_mildew", light="bright_indirect", locale="ru")
+    assert plan["products"], "powdery_mildew should carry curated products"
+    for product in plan["products"]:
+        assert any("а" <= ch <= "я" or ch in "ёЁ" for ch in product["active_ingredient"].lower()), (
+            f"active_ingredient for {product['key']} doesn't look Russian: {product['active_ingredient']!r}"
+        )
+    assert any("а" <= ch <= "я" for ch in plan["treatment_conditions"]["best_time"].lower())
+
+
 def test_progression_baseline_when_no_previous():
     import ai_services as ai
 
