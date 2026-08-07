@@ -202,6 +202,7 @@ try:
         proxy_path as plant_photo_proxy,
     )
     from .popular_plants import popular_for
+    from .runtime_paths import normalize_root_path
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
     from .synthetic_pipeline import SyntheticPipeline
@@ -370,6 +371,7 @@ except ImportError:
         proxy_path as plant_photo_proxy,
     )
     from popular_plants import popular_for
+    from runtime_paths import normalize_root_path
     from species_info import fetch_species_info
     from symptoms import diagnose as symptom_diagnose
     from synthetic_pipeline import SyntheticPipeline
@@ -482,7 +484,12 @@ ENVIRONMENT = get_str("ENVIRONMENT", "").strip().lower()
 ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
     environment=ENVIRONMENT,
     requested=get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
+    synthetic_staging_acknowledged=get_bool(
+        "ACCOUNT_BETA_SYNTHETIC_DATA_ONLY",
+        False,
+    ),
 )
+APP_ROOT_PATH = normalize_root_path(get_str("APP_ROOT_PATH", ""))
 POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
 account_authenticator = build_account_authenticator()
 community_bearer = HTTPBearer(auto_error=False)
@@ -1467,6 +1474,7 @@ app = FastAPI(
     title="PlantDiseases API",
     description="AI-powered plant disease detection — two-stage pipeline",
     version=APP_VERSION,
+    root_path=APP_ROOT_PATH,
     lifespan=lifespan,
 )
 

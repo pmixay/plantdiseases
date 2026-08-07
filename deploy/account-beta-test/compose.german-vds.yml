@@ -1,0 +1,267 @@
+name: ${COMPOSE_PROJECT_NAME:?Set the dedicated German beta Compose project name}
+
+x-beta-logging: &beta-logging
+  driver: local
+  options:
+    max-size: 5m
+    max-file: "3"
+
+x-account-environment: &account-environment
+  ENVIRONMENT: staging
+  AUTH_PROVIDER_MODE: mock
+  ACCOUNT_ROOT_PATH: /plantdisease-test/id
+  ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
+  ACCOUNT_AUDIENCE: plantdiseases-app
+  ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:?Set the synthetic beta PostgreSQL password}@beta-postgres/plantdisease_beta
+  ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+  COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
+  CORS_ORIGINS: ""
+
+services:
+  beta-postgres:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    environment:
+      POSTGRES_DB: plantdisease_beta
+      POSTGRES_USER: beta_account
+      POSTGRES_PASSWORD: ${BETA_POSTGRES_PASSWORD:?Set the synthetic beta PostgreSQL password}
+      PGDATA: /var/lib/postgresql/18/docker
+    expose:
+      - "5432"
+    volumes:
+      - beta_postgres:/var/lib/postgresql
+    networks:
+      - beta-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beta_account -d plantdisease_beta"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *beta-logging
+
+  beta-account-keygen:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment:
+      ENVIRONMENT: test
+    command: ["python", "-m", "app.generate_test_keys", "/run/account-secrets"]
+    network_mode: none
+    volumes:
+      - beta_account_keys:/run/account-secrets
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-account-migrate:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment: *account-environment
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      beta-postgres:
+        condition: service_healthy
+      beta-account-keygen:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+    networks:
+      - beta-private
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-account-api:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment: *account-environment
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - ${BETA_FORWARDED_ALLOW_IPS:?Set the exact trusted Docker proxy peer IPs}
+      - --proxy-headers
+      - --no-access-log
+      - --limit-concurrency
+      - "64"
+      - --timeout-keep-alive
+      - "5"
+    depends_on:
+      beta-account-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+    ports:
+      - name: account-api
+        target: 8000
+        published: ${ACCOUNT_API_PORT:?Set the dedicated account loopback port}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - beta-private
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-app-api:
+    image: ${BETA_APP_IMAGE:?Set an immutable application image with an sha256 digest}
+    environment:
+      ENVIRONMENT: staging
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "true"
+      ACCOUNT_BETA_SYNTHETIC_DATA_ONLY: "true"
+      APP_ROOT_PATH: /plantdisease-test
+      POPULAR_WARM_ENABLED: "false"
+      FRONTIER_ENABLED: "false"
+      TRAINING_CAPTURE_ENABLED: "false"
+      TRAINING_CONSENT_VERSION: model-improvement-v1
+      TELEMETRY_ENABLED: "false"
+      TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
+      ACCOUNT_API_BASE_URL: http://beta-account-api:8000/
+      ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
+      ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
+      ACCOUNT_NOTIFICATION_URL: http://beta-account-api:8000/v1/internal/notifications/opinion
+      INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+      MODELS_DIR: /app/models
+      LOG_DIR: /data/logs
+      COMMUNITY_DB_PATH: /data/community/community-beta.db
+      COMMUNITY_THUMB_DIR: /data/community-thumbs
+      TRAINING_DB_PATH: /data/training/training-beta.db
+      TRAINING_IMAGE_DIR: /data/training-images
+      TELEMETRY_DB_PATH: /data/telemetry/telemetry-beta.db
+      PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
+      AI_CACHE_DIR: /data/app-cache/ai
+      PLANTNET_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      FCM_CREDENTIALS_FILE: ""
+      CORS_ORIGINS: ""
+      TRUSTED_PROXIES: ${BETA_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
+      RATE_LIMIT_RPS: "25"
+      RATE_LIMIT_BURST: "40"
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - ${BETA_FORWARDED_ALLOW_IPS:?Set the exact trusted Docker proxy peer IPs}
+      - --proxy-headers
+      - --no-access-log
+      - --limit-concurrency
+      - "32"
+      - --timeout-keep-alive
+      - "5"
+    depends_on:
+      beta-account-api:
+        condition: service_healthy
+    ports:
+      - name: app-api
+        target: 8000
+        published: ${APP_API_PORT:?Set the dedicated application loopback port}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - beta_models:/app/models:ro
+      - beta_account_keys:/run/account-secrets:ro
+      - beta_app_data:/app/data
+      - beta_community:/data/community
+      - beta_thumbnails:/data/community-thumbs
+      - beta_training:/data/training
+      - beta_training_images:/data/training-images
+      - beta_telemetry:/data/telemetry
+      - beta_app_cache:/data/app-cache
+      - beta_app_logs:/data/logs
+    networks:
+      - beta-private
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+networks:
+  beta-private:
+    internal: true
+  beta-edge: {}
+
+volumes:
+  beta_postgres:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_postgres
+  beta_account_keys:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_account_keys
+  beta_models:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_models
+  beta_app_data:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_data
+  beta_community:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_community
+  beta_thumbnails:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_thumbnails
+  beta_training:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_training
+  beta_training_images:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_training_images
+  beta_telemetry:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_telemetry
+  beta_app_cache:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_cache
+  beta_app_logs:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_logs

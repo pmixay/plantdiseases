@@ -305,8 +305,16 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Validate isolated local Compose configuration
-        run: docker compose -f ../deploy/account-beta-test/compose.local.yml config --quiet
+      - name: Validate local, German staging, and handoff configurations
+        run: |
+          docker compose -f ../deploy/account-beta-test/compose.local.yml config --quiet
+          docker compose --env-file ../deploy/account-beta-test/env.german.example \
+            -f ../deploy/account-beta-test/compose.german-vds.yml config --quiet
+          docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \
+            -f ../deploy/account-beta-test/handoff/compose.russia.template.yml config --quiet
+          docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \
+            -f ../deploy/account-beta-test/handoff/compose.germany-worker.template.yml config --quiet
+          sh -n ../deploy/account-beta-test/backup-test.sh
 
       - name: Lint (ruff)
         run: ruff check .

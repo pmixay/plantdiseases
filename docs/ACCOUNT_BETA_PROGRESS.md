@@ -5,10 +5,12 @@ verified checkpoint; commands use only mock/synthetic data and local resources.
 
 ## Current status
 
-- Active phase: Phase C — isolated German staging artefacts and handoff.
+- Active phase: Phase D — acceptance evidence and infrastructure handoff.
 - Production services/data touched: none.
 - Deployments performed: none.
-- Blockers: none.
+- Local implementation blockers: none. Deployment, real-provider, migration,
+  restore/key-rotation, moderation, and legal gates remain deliberately
+  unexecuted external-owner work.
 
 ## Checkpoints
 
@@ -551,7 +553,106 @@ Checkpoint commit:
 
 - `feat(android): add synthetic account beta client`
 
+### 8 — Remote provider verification contract (complete, 2026-08-07)
+
+Completed work:
+
+- Replaced the deliberate remote-mode startup refusal with separate Yandex ID
+  and VK ID adapters selected only by validated `AUTH_PROVIDER_MODE=remote`.
+- Added required public application IDs, bounded provider timeout settings,
+  fixed HTTPS endpoints, system TLS, disabled redirects, a 64 KiB response
+  ceiling, strict visible-ASCII token/subject validation, and stable
+  non-reflective failures.
+- Yandex sends its opaque token only in `Authorization: OAuth`, verifies the
+  response `client_id`, and retains the app-specific `psuid`. VK sends its
+  token only in the form body to client-bound `oauth2/user_info`.
+- Both adapters retain only provider subject, display name, optional safe HTTPS
+  avatar, and refresh time. Email, phone, birthday, gender, contacts, global
+  Yandex ID, and unknown fields are discarded.
+- Added fake-transport tests for exact request placement, wrong application,
+  invalid/expired-style errors, outages, incomplete profiles, malformed tokens,
+  unvalidated settings, unsafe subjects, oversize/malformed responses, and
+  fixed transport errors. No provider network or real token was used.
+
+Decisions:
+
+- Local and German environments remain `AUTH_PROVIDER_MODE=mock`; remote mode
+  exists solely to prevent Phase D from redesigning the account API.
+- Real provider package/signature registration and token smoke tests remain a
+  Russian-staging operator/legal gate. This checkpoint supersedes the earlier
+  historical decision that remote mode must always refuse startup.
+
+Verification:
+
+- Remote-provider/config focused suite — 41 passed.
+- Complete account-service suite — 150 passed, 1 opt-in PostgreSQL integration
+  test skipped in 3.01s.
+- Account Ruff check and `git diff --check` — passed.
+
+Checkpoint commit:
+
+- `feat(account): verify remote Yandex and VK tokens`
+
+### 9 — German staging candidate and RU/DE handoff (complete, 2026-08-07)
+
+Completed work:
+
+- Added a no-build, digest-pinned German Compose candidate with mock auth,
+  explicit synthetic-staging acknowledgement, weight-free marked inference,
+  disabled collection/external credentials, loopback-only API ports, private
+  PostgreSQL, read-only services, and dedicated named volumes/log policy.
+- Added normalized FastAPI root-path support and strict failure for production,
+  development, or unacknowledged-staging synthetic inference.
+- Added distinct nginx prefix routes, independent limits, overwritten trusted
+  proxy context, disabled access logs, no upstream fallback, and an operator
+  requirement to run `nginx -t` before reload.
+- Added a non-destructive PostgreSQL backup/restore checker that accepts only
+  the exact German beta project/prefix, uses no-clobber output, restores to a
+  uniquely generated database, compares every allowlisted table count, and
+  publishes a checksum only after verification.
+- Added a secret inventory, rollback runbook, private schema diagram, synthetic
+  legacy-migration dry-run report, export privacy report, and comprehensive
+  operator/legal handoff checklist.
+- Added deployment-blocked RU/DE ownership and network manifests, an exact
+  identity-free mTLS worker request schema, and render-tested production
+  templates. The Russian backup contract uses `pg_dump` and SQLite online
+  backups rather than copying live PostgreSQL storage.
+- Extended CI to render local, German, Russian, and German-worker Compose files
+  and parse the backup script before running the complete account suite.
+
+Decisions:
+
+- These are operator candidates and frozen contracts, not a deployment. No VDS,
+  nginx, DNS, firewall, OAuth application, secret, APK distribution, backup,
+  migration, provider, or production-data action was performed.
+- Placeholder `.invalid` image/host values and zero digests are intentionally
+  non-runnable. Extracted Russian app/push/backup and German-worker images are
+  Phase D deliverables with explicit acceptance gates.
+- The German all-in-one candidate is disposable synthetic staging only. No
+  state from it may be promoted to Russia or treated as legal-production proof.
+
+Verification:
+
+- Complete application-server suite — 582 passed in 7.99s.
+- Complete account-service suite — 150 passed, 1 skipped in 3.01s.
+- Handoff/root-path/runtime focused suite — 27 passed.
+- Community authorization/deletion focused suite — 115 passed.
+- Training/export/migration/telemetry focused suite — 33 passed.
+- All four Compose configurations rendered with `config --quiet`; backup
+  script `sh -n` passed and a non-beta environment was refused before Docker.
+- Official Docker metadata confirmed the pinned PostgreSQL 18.4 Alpine tag and
+  digest. The correct `/var/lib/postgresql` parent mount and versioned `PGDATA`
+  path are regression-tested.
+- Ruff, CI YAML, three JSON contracts, 219 Android XML resources, Android
+  hardware-identifier scan, and `git diff --check` passed.
+- Android compilation/tests/APK assembly remain CI gates because this checkout
+  has no JDK/Android SDK and repository guidance excludes a local full build.
+
+Checkpoint commit:
+
+- `ops(beta): add isolated staging handoff`
+
 ## Remaining work (plan order)
 
-1. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-2. Run the complete acceptance and privacy/security verification matrix.
+1. Record the final acceptance matrix and distinguish locally passed checks
+   from CI, operator, infrastructure, product, and legal release gates.

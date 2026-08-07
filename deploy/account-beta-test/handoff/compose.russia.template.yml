@@ -1,0 +1,225 @@
+# Contract template, not a deployment authorization. Extracted app/push/backup
+# images, Russian infrastructure, real secrets, and every release gate in the
+# handoff runbook must exist before an operator renders this file.
+name: ${RU_COMPOSE_PROJECT_NAME:?Set a dedicated Russian project name}
+
+x-account-environment: &account-environment
+  ENVIRONMENT: production
+  AUTH_PROVIDER_MODE: remote
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:?Set the Russian Yandex application ID}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:?Set the Russian VK ID application ID}
+  PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
+  ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
+  ACCOUNT_AUDIENCE: plantdiseases-app
+  ACCOUNT_DATABASE_URL: postgresql+psycopg://account:${RU_POSTGRES_PASSWORD:?Load from the protected host environment}@ru-postgres/plantdisease
+  ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+  COMMUNITY_DELETION_URL: https://ru-app-api:8443/api/internal/account-deletions
+  CORS_ORIGINS: ""
+
+x-service-hardening: &service-hardening
+  read_only: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  ru-ingress:
+    image: ${RU_INGRESS_IMAGE:?Set an immutable digest-pinned ingress image}
+    depends_on:
+      ru-account-api:
+        condition: service_healthy
+      ru-app-api:
+        condition: service_healthy
+    ports:
+      - name: https
+        target: 8443
+        published: "443"
+        protocol: tcp
+    volumes:
+      - ${RU_INGRESS_CONFIG_DIR:?Set the reviewed ingress config directory}:/etc/nginx/conf.d:ro
+      - ${RU_INGRESS_TLS_DIR:?Set the Russian TLS directory}:/run/tls:ro
+    networks:
+      - ru-edge
+      - ru-private
+    tmpfs:
+      - /var/cache/nginx:size=16m
+      - /var/run:size=2m
+      - /tmp:size=8m
+    <<: *service-hardening
+
+  ru-postgres:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    environment:
+      POSTGRES_DB: plantdisease
+      POSTGRES_USER: account
+      POSTGRES_PASSWORD: ${RU_POSTGRES_PASSWORD:?Load from the protected host environment}
+      PGDATA: /var/lib/postgresql/18/docker
+    expose:
+      - "5432"
+    volumes:
+      - ru_postgres:/var/lib/postgresql
+    networks:
+      - ru-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U account -d plantdisease"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  ru-account-migrate:
+    image: ${RU_ACCOUNT_API_IMAGE:?Set an immutable digest-pinned account image}
+    environment: *account-environment
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      ru-postgres:
+        condition: service_healthy
+    volumes:
+      - ${RU_ACCOUNT_SECRETS_DIR:?Set the account-owned mode-0400 secret directory}:/run/account-secrets:ro
+    networks:
+      - ru-private
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ru-account-api:
+    image: ${RU_ACCOUNT_API_IMAGE:?Set an immutable digest-pinned account image}
+    environment: *account-environment
+    depends_on:
+      ru-account-migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+    volumes:
+      - ${RU_ACCOUNT_SECRETS_DIR:?Set the account-owned mode-0400 secret directory}:/run/account-secrets:ro
+    networks:
+      - ru-private
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    <<: *service-hardening
+
+  ru-app-api:
+    image: ${RU_APP_API_IMAGE:?Set the extracted immutable Russian application image}
+    environment:
+      ENVIRONMENT: production
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "false"
+      ACCOUNT_API_BASE_URL: http://ru-account-api:8000/
+      ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
+      ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_JWKS_URL: http://ru-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://ru-account-api:8000/v1/internal/auth/verify
+      ACCOUNT_NOTIFICATION_URL: http://ru-account-api:8000/v1/internal/notifications/opinion
+      INTERNAL_SERVICE_TOKEN_FILE: /run/app-secrets/internal.token
+      FCM_CREDENTIALS_FILE: /run/app-secrets/fcm.json
+      ML_WORKER_URL: ${DE_ML_WORKER_URL:?Set the private German mTLS endpoint}
+      ML_WORKER_CA_FILE: /run/app-secrets/ml-worker-ca.pem
+      ML_WORKER_CLIENT_CERT_FILE: /run/app-secrets/ml-worker-client.pem
+      ML_WORKER_CLIENT_KEY_FILE: /run/app-secrets/ml-worker-client.key
+      ML_WORKER_FORWARD_AUTHORIZATION: "false"
+      ML_WORKER_ALLOWED_FIELDS: image,request_id,model_family,language,result_options
+      COMMUNITY_DB_PATH: /data/community/community.db
+      COMMUNITY_THUMB_DIR: /data/community-thumbs
+      TRAINING_DB_PATH: /data/training/training.db
+      TRAINING_IMAGE_DIR: /data/training-images
+      TELEMETRY_DB_PATH: /data/telemetry/telemetry.db
+      LOG_DIR: /data/logs
+      CORS_ORIGINS: ""
+    depends_on:
+      ru-account-api:
+        condition: service_healthy
+    expose:
+      - "8000"
+      - "8443"
+    volumes:
+      - ${RU_APP_SECRETS_DIR:?Set the app-owned mode-0400 secret directory}:/run/app-secrets:ro
+      - ru_community:/data/community
+      - ru_thumbnails:/data/community-thumbs
+      - ru_training:/data/training
+      - ru_training_images:/data/training-images
+      - ru_telemetry:/data/telemetry
+      - ru_app_logs:/data/logs
+    networks:
+      - ru-private
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    <<: *service-hardening
+
+  ru-push-worker:
+    image: ${RU_PUSH_WORKER_IMAGE:?Set the immutable Russian push-worker image}
+    environment:
+      ENVIRONMENT: production
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://account:${RU_POSTGRES_PASSWORD:?Load from the protected host environment}@ru-postgres/plantdisease
+      ACCOUNT_DATABASE_LOCAL: "true"
+      ACCOUNT_ENCRYPTION_KEY_FILE: /run/push-secrets/encryption.key
+      FCM_CREDENTIALS_FILE: /run/push-secrets/fcm.json
+    volumes:
+      - ${RU_PUSH_SECRETS_DIR:?Set the push-owned mode-0400 secret directory}:/run/push-secrets:ro
+    networks:
+      - ru-private
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    <<: *service-hardening
+
+  ru-backup:
+    image: ${RU_BACKUP_IMAGE:?Set the immutable encrypted-backup image}
+    profiles: ["operations"]
+    environment:
+      BACKUP_DATABASE_URL: postgresql://account:${RU_POSTGRES_PASSWORD:?Load from the protected host environment}@ru-postgres/plantdisease
+      BACKUP_POSTGRES_MODE: pg-dump-custom
+      BACKUP_SQLITE_MODE: online-backup-api
+      BACKUP_RETENTION_DAILY: "7"
+      BACKUP_RETENTION_WEEKLY: "4"
+      BACKUP_ENCRYPTION_KEY_FILE: /run/backup-secrets/recipient.key
+      BACKUP_DESTINATION: ${RU_BACKUP_DESTINATION:?Set a Russian encrypted backup destination}
+    depends_on:
+      ru-postgres:
+        condition: service_healthy
+    volumes:
+      - ${RU_BACKUP_SECRETS_DIR:?Set the backup-owned mode-0400 secret directory}:/run/backup-secrets:ro
+      - ru_community:/source/community:ro
+      - ru_thumbnails:/source/thumbnails:ro
+      - ru_training:/source/training:ro
+      - ru_training_images:/source/training-images:ro
+      - ru_telemetry:/source/telemetry:ro
+    networks:
+      - ru-private
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    <<: *service-hardening
+
+networks:
+  ru-edge: {}
+  ru-private:
+    internal: true
+
+volumes:
+  ru_postgres: {}
+  ru_community: {}
+  ru_thumbnails: {}
+  ru_training: {}
+  ru_training_images: {}
+  ru_telemetry: {}
+  ru_app_logs: {}

@@ -1,4 +1,4 @@
-# Local Account Beta Stack
+# Account Beta Test Environments
 
 This Compose project is a synthetic-data-only engineering environment for the
 `account-beta-test` branch. It does not contact Yandex or VK, use real OAuth
@@ -12,11 +12,13 @@ prints or commits them, and it leaves existing keys untouched so
 account/container restarts retain the same JWKS, can decrypt previously
 registered synthetic push tokens, and keep private inter-service calls stable.
 
-The application API uses a deterministic, weight-free response pipeline. That
-pipeline is guarded by both `ENVIRONMENT=test` and
-`ACCOUNT_BETA_SYNTHETIC_PIPELINE=true`; requesting it in any other environment
-aborts startup. Its results are marked `synthetic_test_result` and must never
-be treated as diagnoses.
+The application API uses a deterministic, weight-free response pipeline. The
+local stack requires both `ENVIRONMENT=test` and
+`ACCOUNT_BETA_SYNTHETIC_PIPELINE=true`. The German candidate is the only
+staging exception and additionally requires
+`ACCOUNT_BETA_SYNTHETIC_DATA_ONLY=true`; production, development, and
+unacknowledged staging abort startup. Results are marked
+`synthetic_test_result` and must never be treated as diagnoses.
 
 Model-improvement capture is disabled in this stack. The application still
 uses isolated beta-only `training.db` and sanitized-image volumes so receipt,
@@ -86,6 +88,61 @@ variant points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
 Do not supply real Yandex/VK credentials to this variant. Real-provider
 registration and smoke tests belong to the later Russian infrastructure/legal
 gate, not this synthetic local/German beta.
+
+## Render the German synthetic staging candidate
+
+`compose.german-vds.yml` is an operator candidate, not a deployment performed
+by this implementation. It has no build contexts or mutable application image
+tags. Copy `env.german.example` to a host-only mode-0600 file, replace the two
+placeholder image references with digests produced by CI for this branch,
+generate a new synthetic-only PostgreSQL password, and verify the exact Docker
+proxy peer addresses. Wildcard trusted-proxy values are forbidden.
+
+Render without starting anything:
+
+```sh
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml config --quiet
+```
+
+The candidate binds only `127.0.0.1:18100` and `127.0.0.1:18101` for the host
+nginx. PostgreSQL remains internal. It uses `ENVIRONMENT=staging`, mock
+providers, an additional synthetic-data-only acknowledgement, a weight-free
+marked pipeline, disabled training capture/telemetry/FCM/external AI, and
+dedicated `plantdisease_account_beta_german_*` volumes. It cannot contact a
+real provider unless an operator replaces the reviewed configuration.
+
+Before nginx reload, add the two rate-limit zones documented at the top of
+`nginx.location.conf`, include its location blocks in a candidate TLS server,
+and run `nginx -t`. The `id/` prefix is routed first to account API; both
+prefixes strip correctly, overwrite forwarded client context, disable access
+logs, and have no production fallback. `ACCOUNT_ROOT_PATH` and `APP_ROOT_PATH`
+keep generated documentation/media paths under their external prefixes.
+
+The loopback integration checker deliberately rejects the public staging URL.
+On the VDS, run it only against the two loopback ports with a deliberately
+prepared metadata-free test image. Named-team Android testing remains
+synthetic-only. No step in this repository deploys, reloads nginx, distributes
+an APK, or opens a firewall.
+
+The optional `backup-test.sh` accepts only the exact German beta project and
+volume prefix. It writes a protected custom-format dump to an explicit absolute
+directory, restores it into a uniquely named temporary database, compares
+allowlisted table counts, and drops only that generated restore database. It
+does not stop the stack or remove volumes.
+
+## Handoff material
+
+- `SECRETS.md` inventories environment and secret ownership without values.
+- `ROLLBACK.md` defines non-destructive beta and final-split rollback evidence.
+- `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.
+- `handoff/ml-worker.openapi.json` is the identity-free mTLS inference request
+  contract.
+- `handoff/compose.russia.template.yml` and
+  `handoff/compose.germany-worker.template.yml` are render-tested contract
+  templates for the separately assigned split participant. They are explicitly
+  blocked until extracted images, infrastructure, secrets, legal gates, backup
+  restore, key rotation, and operator acceptance exist.
 
 ## Stop without deleting data
 

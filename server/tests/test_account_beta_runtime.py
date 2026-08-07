@@ -13,14 +13,24 @@ def test_synthetic_pipeline_disabled_is_always_safe(environment: str):
     assert allow_synthetic_pipeline(environment=environment, requested=False) is False
 
 
-@pytest.mark.parametrize("environment", ["", "development", "staging", "production"])
+@pytest.mark.parametrize("environment", ["", "development", "production"])
 def test_synthetic_pipeline_refuses_every_non_test_environment(environment: str):
-    with pytest.raises(RuntimeError, match="only when ENVIRONMENT=test"):
+    with pytest.raises(RuntimeError, match="Synthetic inference requires"):
         allow_synthetic_pipeline(environment=environment, requested=True)
 
 
 def test_synthetic_pipeline_requires_explicit_test_environment():
     assert allow_synthetic_pipeline(environment=" test ", requested=True) is True
+
+
+def test_synthetic_staging_requires_a_separate_data_only_acknowledgement():
+    with pytest.raises(RuntimeError, match="explicitly acknowledged"):
+        allow_synthetic_pipeline(environment="staging", requested=True)
+    assert allow_synthetic_pipeline(
+        environment="staging",
+        requested=True,
+        synthetic_staging_acknowledged=True,
+    ) is True
 
 
 def test_synthetic_pipeline_matches_taxonomy_and_response_shape():
