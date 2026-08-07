@@ -20,8 +20,9 @@ COPY app ./app
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
 
-RUN adduser --disabled-password --gecos "" --uid 10002 accountd && \
-    chown -R accountd:accountd /app
+RUN mkdir -p /run/account-secrets && \
+    adduser --disabled-password --gecos "" --uid 10002 accountd && \
+    chown -R accountd:accountd /app /run/account-secrets
 
 USER accountd
 EXPOSE 8000

@@ -305,4 +305,5 @@ class AccountSecurityEvent(Base):
 
 
 Index("ix_identity_account_id", AccountIdentity.account_id)
+Index("ix_sessions_absolute_expires_at", Session.absolute_expires_at)
 Index("ix_deletion_jobs_state_next_attempt", AccountDeletionJob.state, AccountDeletionJob.next_attempt_at)

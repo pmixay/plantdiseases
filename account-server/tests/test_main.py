@@ -102,9 +102,18 @@ def test_cors_allows_only_the_explicit_origin():
             },
         )
         denied = client.get("/health", headers={"Origin": "https://denied.invalid"})
+        push_preflight = client.options(
+            "/v1/push/device",
+            headers={
+                "Origin": "https://allowed.invalid",
+                "Access-Control-Request-Method": "PUT",
+            },
+        )
 
     assert allowed.status_code == 200
     assert allowed.headers["Access-Control-Allow-Origin"] == "https://allowed.invalid"
+    assert push_preflight.status_code == 200
+    assert "PUT" in push_preflight.headers["Access-Control-Allow-Methods"]
     assert "Access-Control-Allow-Origin" not in denied.headers
 
 

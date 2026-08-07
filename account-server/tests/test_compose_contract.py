@@ -8,6 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "account-beta-test" / "compose.local.yml"
 EXPECTED_SERVICES = {
     "beta-postgres",
+    "beta-account-keygen",
     "beta-account-migrate",
     "beta-account-api",
     "beta-app-api",
@@ -49,6 +50,8 @@ def test_compose_has_only_isolated_beta_services_and_network():
     services = compose["services"]
     assert services["beta-postgres"]["networks"] == ["beta-private"]
     assert services["beta-account-migrate"]["networks"] == ["beta-private"]
+    assert services["beta-account-keygen"]["network_mode"] == "none"
+    assert "networks" not in services["beta-account-keygen"]
     assert set(services["beta-account-api"]["networks"]) == {"beta-private", "beta-edge"}
     assert set(services["beta-app-api"]["networks"]) == {"beta-private", "beta-edge"}
 
@@ -71,7 +74,10 @@ def test_account_migration_and_readiness_gate_startup():
     app = services["beta-app-api"]
 
     assert migrate["command"] == ["python", "-m", "alembic", "upgrade", "head"]
-    assert migrate["depends_on"] == {"beta-postgres": {"condition": "service_healthy"}}
+    assert migrate["depends_on"] == {
+        "beta-postgres": {"condition": "service_healthy"},
+        "beta-account-keygen": {"condition": "service_completed_successfully"},
+    }
     assert account["depends_on"] == {
         "beta-account-migrate": {"condition": "service_completed_successfully"}
     }
@@ -92,6 +98,12 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert account_environment["ACCOUNT_ISSUER"] == "http://beta-account-api:8000"
     assert "@beta-postgres/plantdisease_beta" in account_environment["ACCOUNT_DATABASE_URL"]
     assert account_environment["ACCOUNT_DATABASE_LOCAL"] == "true"
+    assert account_environment["ACCOUNT_ALLOW_EPHEMERAL_KEYS"] == "false"
+    assert account_environment["ACCOUNT_SIGNING_KEY_FILE"] == "/run/account-secrets/signing.json"
+    assert (
+        account_environment["ACCOUNT_ENCRYPTION_KEY_FILE"]
+        == "/run/account-secrets/encryption.key"
+    )
 
     assert app_environment["ENVIRONMENT"] == "test"
     assert app_environment["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "true"
@@ -100,6 +112,20 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["SCAN_RECORDING_ENABLED"] == "false"
     assert app_environment["TELEMETRY_ENABLED"] == "false"
     assert app_environment["ACCOUNT_JWKS_URL"].startswith("http://beta-account-api:8000/")
+
+
+def test_local_keys_are_generated_once_without_network_or_committed_values():
+    keygen = _load_compose()["services"]["beta-account-keygen"]
+
+    assert keygen["environment"] == {"ENVIRONMENT": "test"}
+    assert keygen["command"] == [
+        "python",
+        "-m",
+        "app.generate_test_keys",
+        "/run/account-secrets",
+    ]
+    assert keygen["network_mode"] == "none"
+    assert keygen["volumes"] == ["beta_account_keys:/run/account-secrets"]
 
 
 def test_host_ports_are_loopback_only_and_do_not_publish_postgres():
@@ -158,7 +184,12 @@ def test_compose_contains_no_production_paths_or_mutable_image_tags():
     ):
         assert forbidden not in text
 
-    for service_name in ("beta-account-migrate", "beta-account-api", "beta-app-api"):
+    for service_name in (
+        "beta-account-keygen",
+        "beta-account-migrate",
+        "beta-account-api",
+        "beta-app-api",
+    ):
         service = _load_compose()["services"][service_name]
         assert service["read_only"] is True
         assert service["tmpfs"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -53,6 +54,7 @@ _ERROR_SUFFIXES: dict[str, ProviderErrorCode] = {
     "unavailable": ProviderErrorCode.UNAVAILABLE,
     "incomplete-profile": ProviderErrorCode.PROFILE_REQUIRED,
 }
+_GENERATED_TOKEN = re.compile(r"mock-(yandex|vk)-generated-([0-9a-f]{32})\Z")
 
 
 class MockProviderAdapter(ProviderAdapter):
@@ -65,6 +67,19 @@ class MockProviderAdapter(ProviderAdapter):
 
     async def verify(self, access_token: str) -> VerifiedProviderIdentity:
         fixture = _VALID_FIXTURES[self.provider].get(access_token)
+        generated = _GENERATED_TOKEN.fullmatch(access_token)
+        if generated is not None and generated.group(1) == self.provider:
+            fixture_id = generated.group(2)
+            provider_title = "Yandex" if self.provider == "yandex" else "VK"
+            return VerifiedProviderIdentity(
+                provider=self.provider,
+                subject=f"{self.provider}-test-generated-{fixture_id}",
+                display_name=f"Synthetic {provider_title} Generated",
+                avatar_url=(
+                    f"https://profiles.invalid/{self.provider}/generated/{fixture_id}.png"
+                ),
+                refreshed_at=datetime.now(UTC),
+            )
         if fixture is not None:
             return VerifiedProviderIdentity(
                 provider=self.provider,

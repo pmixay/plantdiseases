@@ -156,9 +156,9 @@ Checkpoint commit:
 
 Completed work:
 
-- Added the four-service `plantdisease_account_beta_test` Compose project:
-  private PostgreSQL, one-shot account migration, account API, and existing
-  application API.
+- Added the isolated `plantdisease_account_beta_test` Compose project: private
+  PostgreSQL, one-shot account key generation and migration, account API, and
+  existing application API.
 - Kept PostgreSQL/migration private-only and put every service on the internal
   network; the APIs additionally join a project-scoped host-access network and
   their two published ports bind only to `127.0.0.1`.
@@ -221,14 +221,103 @@ Checkpoint commit:
 
 - `test(beta): add isolated local compose foundation`
 
+### 4 — Secure account API and session contract (complete, 2026-08-07)
+
+Completed work:
+
+- Implemented every planned account endpoint for Yandex/VK exchange, pending
+  signup completion/cancellation, refresh, logout, session listing/revocation,
+  scoped reauthentication, identity linking, profile/nickname, deletion, and
+  JWKS publication.
+- Added authenticated push registration/removal to the private account API;
+  tokens use randomized AES-GCM ciphertext and keyed fingerprints, with no
+  device/hardware label accepted or stored.
+- Added Ed25519 access JWTs with `kid`, 15-minute expiry, strict issuer/audience
+  validation, exact allowlisted claims, and active/recently-retired JWKS keys.
+  JWTs contain no account UUID, provider subject/profile, email, phone, or
+  provider token.
+- Added rotating random 256-bit refresh tokens, 30-day idle and 180-day
+  absolute session expiry, retained consumed rows, and family revocation on
+  replay.
+- Added one-use 10-minute pending-signup and five-minute scope-bound reauth
+  tokens; only SHA-256 hashes are persisted.
+- Enforced NFKC-plus-casefold nickname uniqueness, 3–24 code-point/letter/script
+  rules, configured/built-in reserved names, transactional reservation, and a
+  30-day change cooldown. Nickname changes increment authorization version and
+  return a replacement access token.
+- Implemented provider-profile refresh, multiple generic `Android device`
+  sessions, caller-owned revocation, immediate deletion-pending state, global
+  session/push revocation, and queued cleanup jobs.
+- Added strict request schemas that reject extra fields and a non-reflective
+  validation/error format so rejected provider/refresh/pending/reauth/FCM
+  values cannot appear in responses.
+- Added bounded in-memory per-IP/per-provider-subject/session rate limiting with
+  stale-bucket reclamation and no persisted address.
+- Added in-transaction active-account/session rechecks for every sensitive
+  mutation, closing deletion/nickname/session races between HTTP authentication
+  and the domain transaction.
+- Added hourly pruning for expired pending signups, reauth challenges, 30-day
+  security events, and session families only after their 180-day absolute
+  lifetime. Migration `0002_account_retention_index` indexes that bounded scan.
+- Added deterministic UUID-suffixed mock identities for repeatable PostgreSQL
+  integration runs; no adapter has a real provider network path.
+- Added a network-disabled one-shot local key generator. Random Ed25519/AES
+  keys persist in a beta-only named volume with mode `0600`, are never printed
+  or committed, and survive process restarts.
+- Added typed public response schemas and committed a generated, regression-
+  tested `account-server/openapi.json` contract. Request and response validation
+  failures are both redacted without logging token-bearing payloads.
+
+Decisions:
+
+- `AUTH_PROVIDER_MODE=remote` continues to fail closed. Real Yandex/VK OAuth is
+  intentionally outside this synthetic German/local checkpoint and must be
+  implemented only on the separately reviewed Russian data plane.
+- Ephemeral signing/encryption keys require both `ENVIRONMENT=test` and an
+  explicit opt-in, used by hermetic unit tests only. Local Compose uses its
+  persistent generated-key volume instead.
+- The real account UUID remains internal even in profile/session responses.
+  The random community actor is the only account-related public identifier.
+- Account deletion queues the cross-store cleanup job; community content/media
+  cleanup and retry execution are implemented with the next community
+  authorization checkpoint.
+- The opt-in PostgreSQL integration test leaves its uniquely generated
+  synthetic account in the disposable beta volume for inspection.
+
+Verification:
+
+- Installed declared `PyJWT==2.13.0` and `cryptography==49.0.0` into temporary
+  test storage and ran the suite against those exact versions.
+- Account Ruff check — passed.
+- Complete account suite — 113 passed, 1 opt-in PostgreSQL test skipped in
+  2.45s.
+- Opt-in PostgreSQL test — 1 passed in 0.72s against the digest-pinned beta
+  container. It proved generated-identity signup, persisted token hashes,
+  refresh rotation, stable JWKS across account-process reconstruction, and
+  refresh-based profile recovery.
+- Online Alembic upgrade reached `0002_account_retention_index`; PostgreSQL
+  reported both that revision and `ix_sessions_absolute_expires_at`.
+- Account HTTP state-machine tests cover every stable plan error, cancellation,
+  expiration, cooldown, refresh replay, multi-session revocation, linking
+  ownership, deletion, encrypted push, validation redaction, and rate limits.
+- Key tests prove private permissions, non-overwrite, non-test refusal, signing
+  rotation overlap, and push ciphertext decryption after reconstruction.
+- Committed OpenAPI equals the live generated schema; protected operations
+  declare Bearer auth and contain no private identity/hardware fields.
+- `docker compose ... config --quiet` and parsed Compose isolation tests —
+  passed.
+
+Checkpoint commit:
+
+- `feat(account): implement secure account API contract`
+
 ## Remaining work (plan order)
 
-1. Implement and verify the account API contract, token/session security,
-   nickname rules, linking, reauthentication, deletion, and private push data.
-2. Enforce community authentication and migrate authorship to signed actors.
-3. Replace feedback/labeling stores with the anonymous training store/export.
-4. Minimize telemetry and add image-sanitization coverage.
-5. Implement the Android account-beta variant, auth state/client/UI flows, and
+1. Enforce community authentication and migrate authorship to signed actors,
+   including deletion cleanup/retry and private push resolution.
+2. Replace feedback/labeling stores with the anonymous training store/export.
+3. Minimize telemetry and add image-sanitization coverage.
+4. Implement the Android account-beta variant, auth state/client/UI flows, and
    upload sanitization.
-6. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-7. Run the complete acceptance and privacy/security verification matrix.
+5. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+6. Run the complete acceptance and privacy/security verification matrix.

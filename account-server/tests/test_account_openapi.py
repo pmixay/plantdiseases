@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from app.main import app
+
+ACCOUNT_SERVER_ROOT = Path(__file__).resolve().parents[1]
+OPENAPI_PATH = ACCOUNT_SERVER_ROOT / "openapi.json"
+
+EXPECTED_PATHS = {
+    "/.well-known/jwks.json",
+    "/v1/auth/yandex/exchange",
+    "/v1/auth/vk/exchange",
+    "/v1/auth/signup/complete",
+    "/v1/auth/signup/cancel",
+    "/v1/auth/refresh",
+    "/v1/auth/logout",
+    "/v1/auth/sessions",
+    "/v1/auth/sessions/{session_id}",
+    "/v1/auth/reauth",
+    "/v1/auth/yandex/link",
+    "/v1/auth/vk/link",
+    "/v1/me",
+    "/v1/me/nickname",
+    "/v1/push/device",
+}
+
+
+def test_versioned_openapi_matches_the_application_contract():
+    committed = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
+    assert committed == app.openapi()
+    assert set(committed["paths"]) == EXPECTED_PATHS
+
+
+def test_protected_routes_declare_bearer_auth_and_requests_forbid_extra_fields():
+    schema = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
+    assert schema["components"]["securitySchemes"]["HTTPBearer"] == {
+        "type": "http",
+        "scheme": "bearer",
+    }
+
+    protected_operations = (
+        ("/v1/me", "get"),
+        ("/v1/me/nickname", "patch"),
+        ("/v1/auth/sessions", "get"),
+        ("/v1/auth/logout", "post"),
+        ("/v1/push/device", "put"),
+    )
+    for path, method in protected_operations:
+        assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
+
+    for model in schema["components"]["schemas"].values():
+        if model.get("title", "").endswith("Request"):
+            assert model.get("additionalProperties") is False
+
+
+def test_openapi_has_no_private_identity_or_hardware_fields():
+    text = OPENAPI_PATH.read_text(encoding="utf-8").lower()
+    forbidden = (
+        "provider_subject",
+        "account_id",
+        "phone_model",
+        "hardware_model",
+        "manufacturer",
+        "android_id",
+        "advertising_id",
+        "imei",
+        "provider_access_token_example",
+    )
+    for value in forbidden:
+        assert value not in text
+
+
+def test_openapi_documents_the_non_reflective_error_shape():
+    schema = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
+    error_schema = schema["components"]["schemas"]["ErrorResponse"]
+    assert error_schema["additionalProperties"] is False
+    for operation in (
+        schema["paths"]["/v1/auth/yandex/exchange"]["post"],
+        schema["paths"]["/v1/auth/refresh"]["post"],
+        schema["paths"]["/v1/me"]["delete"],
+    ):
+        assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }

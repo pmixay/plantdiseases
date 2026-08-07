@@ -43,6 +43,31 @@ def _csv(source: Mapping[str, str], name: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in source.get(name, "").split(",") if part.strip())
 
 
+def _boolean(source: Mapping[str, str], name: str, *, default: bool = False) -> bool:
+    value = source.get(name)
+    if value is None or not value.strip():
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise SettingsError(f"{name} must be a boolean")
+
+
+def _bounded_int(
+    source: Mapping[str, str], name: str, *, default: int, minimum: int, maximum: int
+) -> int:
+    raw = source.get(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SettingsError(f"{name} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise SettingsError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Validated account-api settings.
@@ -64,6 +89,10 @@ class Settings:
     encryption_key_file: Path | None = None
     internal_service_token_file: Path | None = None
     database_is_local: bool = False
+    allow_ephemeral_keys: bool = False
+    blocked_nicknames: tuple[str, ...] = ()
+    rate_limit_requests: int = 60
+    rate_limit_window_seconds: int = 60
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -87,8 +116,23 @@ class Settings:
             signing_key_file=_optional_path(source, "ACCOUNT_SIGNING_KEY_FILE"),
             encryption_key_file=_optional_path(source, "ACCOUNT_ENCRYPTION_KEY_FILE"),
             internal_service_token_file=_optional_path(source, "INTERNAL_SERVICE_TOKEN_FILE"),
-            database_is_local=source.get("ACCOUNT_DATABASE_LOCAL", "").strip().lower()
-            in {"1", "true", "yes", "on"},
+            database_is_local=_boolean(source, "ACCOUNT_DATABASE_LOCAL"),
+            allow_ephemeral_keys=_boolean(source, "ACCOUNT_ALLOW_EPHEMERAL_KEYS"),
+            blocked_nicknames=_csv(source, "ACCOUNT_BLOCKED_NICKNAMES"),
+            rate_limit_requests=_bounded_int(
+                source,
+                "ACCOUNT_RATE_LIMIT_REQUESTS",
+                default=60,
+                minimum=1,
+                maximum=10_000,
+            ),
+            rate_limit_window_seconds=_bounded_int(
+                source,
+                "ACCOUNT_RATE_LIMIT_WINDOW_SECONDS",
+                default=60,
+                minimum=1,
+                maximum=3_600,
+            ),
         )
         settings.validate()
         return settings
@@ -116,6 +160,17 @@ class Settings:
             raise SettingsError("ACCOUNT_DATABASE_URL must include a host and database name")
         if "*" in self.cors_origins:
             raise SettingsError("Wildcard CORS is forbidden")
+        if self.allow_ephemeral_keys and self.environment != "test":
+            raise SettingsError("Ephemeral account keys are allowed only in test")
+
+        configured_secret_files = (
+            ("ACCOUNT_SIGNING_KEY_FILE", self.signing_key_file),
+            ("ACCOUNT_ENCRYPTION_KEY_FILE", self.encryption_key_file),
+            ("INTERNAL_SERVICE_TOKEN_FILE", self.internal_service_token_file),
+        )
+        for name, path in configured_secret_files:
+            if path is not None:
+                self._validate_secret_file(name, path)
 
         if not self.is_production:
             return
@@ -132,11 +187,9 @@ class Settings:
                 "Production PostgreSQL must use TLS unless ACCOUNT_DATABASE_LOCAL=true is explicit"
             )
 
-        self._validate_secret_file("ACCOUNT_SIGNING_KEY_FILE", self.signing_key_file)
-        self._validate_secret_file("ACCOUNT_ENCRYPTION_KEY_FILE", self.encryption_key_file)
-        self._validate_secret_file(
-            "INTERNAL_SERVICE_TOKEN_FILE", self.internal_service_token_file
-        )
+        for name, path in configured_secret_files:
+            if path is None:
+                raise SettingsError(f"Production requires {name}")
 
     @staticmethod
     def _validate_secret_file(name: str, path: Path | None) -> None:

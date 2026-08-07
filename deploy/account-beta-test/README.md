@@ -6,6 +6,11 @@ tokens, reuse production storage, or download/train model artefacts. The
 account service uses deterministic in-process provider adapters, so a separate
 provider-mock container is unnecessary.
 
+A one-shot, network-disabled key generator creates random signing and
+encryption keys in a beta-only named volume. It never prints or commits them,
+and it leaves existing keys untouched so account/container restarts retain the
+same JWKS and can decrypt previously registered synthetic push tokens.
+
 The application API uses a deterministic, weight-free response pipeline. That
 pipeline is guarded by both `ENVIRONMENT=test` and
 `ACCOUNT_BETA_SYNTHETIC_PIPELINE=true`; requesting it in any other environment

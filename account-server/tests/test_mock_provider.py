@@ -53,6 +53,18 @@ def test_unknown_and_cross_provider_tokens_fail_closed():
 
 
 @pytest.mark.parametrize("provider", ["yandex", "vk"])
+def test_generated_fixture_tokens_create_deterministic_synthetic_subjects(provider: str):
+    fixture_id = "0123456789abcdef0123456789abcdef"
+    token = f"mock-{provider}-generated-{fixture_id}"
+    adapter = MockProviderAdapter(provider, environment="test")
+
+    identity = asyncio.run(adapter.verify(token))
+    assert identity.subject == f"{provider}-test-generated-{fixture_id}"
+    assert identity.display_name.startswith("Synthetic ")
+    assert identity.avatar_url is not None and fixture_id in identity.avatar_url
+
+
+@pytest.mark.parametrize("provider", ["yandex", "vk"])
 def test_mock_adapter_refuses_production(provider: str):
     with pytest.raises(SettingsError, match="forbidden in production"):
         MockProviderAdapter(provider, environment="production")

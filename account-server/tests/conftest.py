@@ -20,6 +20,7 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("AUTH_PROVIDER_MODE", "mock")
 os.environ.setdefault("ACCOUNT_ISSUER", "http://beta-account-api:8000")
 os.environ.setdefault("ACCOUNT_AUDIENCE", "plantdiseases-app")
+os.environ.setdefault("ACCOUNT_ALLOW_EPHEMERAL_KEYS", "true")
 os.environ.setdefault(
     "ACCOUNT_DATABASE_URL",
     "postgresql+psycopg://beta:synthetic-test-only@beta-postgres/plantdisease_beta",

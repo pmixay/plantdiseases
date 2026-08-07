@@ -7,6 +7,9 @@ x-account-environment: &account-environment
   ACCOUNT_AUDIENCE: plantdiseases-app
   ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:-local-synthetic-only}@beta-postgres/plantdisease_beta
   ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
   CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
 
 services:
@@ -33,6 +36,24 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  beta-account-keygen:
+    image: plantdiseases-account-beta-account-api:local
+    build:
+      context: ../../account-server
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: test
+    command: ["python", "-m", "app.generate_test_keys", "/run/account-secrets"]
+    network_mode: none
+    volumes:
+      - beta_account_keys:/run/account-secrets
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
   beta-account-migrate:
     image: plantdiseases-account-beta-account-api:local
     build:
@@ -43,6 +64,10 @@ services:
     depends_on:
       beta-postgres:
         condition: service_healthy
+      beta-account-keygen:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
     networks:
       - beta-private
     read_only: true
@@ -61,6 +86,8 @@ services:
     depends_on:
       beta-account-migrate:
         condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
     ports:
       - name: account-api
         target: 8000
@@ -174,6 +201,8 @@ networks:
 volumes:
   beta_postgres:
     name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_postgres
+  beta_account_keys:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_account_keys
   beta_models:
     name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_models
   beta_app_data:

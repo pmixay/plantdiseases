@@ -18,6 +18,9 @@ ACCOUNT_SERVER_DIR = Path(__file__).resolve().parent.parent
 MIGRATION_PATH = (
     ACCOUNT_SERVER_DIR / "migrations" / "versions" / "0001_private_account_schema.py"
 )
+RETENTION_MIGRATION_PATH = (
+    ACCOUNT_SERVER_DIR / "migrations" / "versions" / "0002_account_retention_index.py"
+)
 
 
 def _load_migration() -> ModuleType:
@@ -28,10 +31,20 @@ def _load_migration() -> ModuleType:
     return module
 
 
+def _load_retention_migration() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "account_retention_v2", RETENTION_MIGRATION_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_single_linear_migration_head():
     config = Config(str(ACCOUNT_SERVER_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0001_private_account_schema"]
+    assert scripts.get_heads() == ["0002_account_retention_index"]
 
 
 def test_migration_upgrade_matches_model_columns_and_downgrades_cleanly():
@@ -103,3 +116,31 @@ def test_postgres_offline_migration_is_explicit_and_contains_no_forbidden_column
     for column_name in forbidden:
         assert column_name not in sql
     assert "synthetic-test-only" not in sql
+    assert "ix_sessions_absolute_expires_at" in sql
+
+
+def test_retention_migration_adds_and_removes_the_session_expiry_index():
+    schema = _load_migration()
+    retention = _load_retention_migration()
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    try:
+        with engine.begin() as connection:
+            context = MigrationContext.configure(connection)
+            operations = Operations(context)
+            schema.op = operations
+            retention.op = operations
+            schema.upgrade()
+            retention.upgrade()
+            index_names = {
+                index["name"] for index in inspect(connection).get_indexes("sessions")
+            }
+            assert "ix_sessions_absolute_expires_at" in index_names
+
+            retention.downgrade()
+            index_names = {
+                index["name"] for index in inspect(connection).get_indexes("sessions")
+            }
+            assert "ix_sessions_absolute_expires_at" not in index_names
+            schema.downgrade()
+    finally:
+        engine.dispose()

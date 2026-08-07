@@ -94,6 +94,32 @@ def test_every_environment_rejects_wildcard_cors():
         Settings.from_env(env)
 
 
+def test_ephemeral_keys_are_rejected_outside_explicit_test_mode():
+    env = _base_env() | {
+        "ENVIRONMENT": "development",
+        "ACCOUNT_ALLOW_EPHEMERAL_KEYS": "true",
+    }
+    with pytest.raises(SettingsError, match="only in test"):
+        Settings.from_env(env)
+
+
+def test_malformed_boolean_and_rate_limit_are_rejected():
+    with pytest.raises(SettingsError, match="must be a boolean"):
+        Settings.from_env(_base_env() | {"ACCOUNT_DATABASE_LOCAL": "sometimes"})
+    with pytest.raises(SettingsError, match="between 1 and 10000"):
+        Settings.from_env(_base_env() | {"ACCOUNT_RATE_LIMIT_REQUESTS": "0"})
+
+
+def test_configured_test_secret_file_must_also_be_private(tmp_path: Path):
+    signing_path = tmp_path / "signing.json"
+    signing_path.write_text("synthetic-invalid-content-is-parsed-at-startup", encoding="utf-8")
+    signing_path.chmod(0o644)
+    with pytest.raises(SettingsError, match="group/world"):
+        Settings.from_env(
+            _base_env() | {"ACCOUNT_SIGNING_KEY_FILE": str(signing_path)}
+        )
+
+
 def test_production_requires_all_secret_files(tmp_path: Path):
     env = _production_env(tmp_path)
     env.pop("ACCOUNT_SIGNING_KEY_FILE")
