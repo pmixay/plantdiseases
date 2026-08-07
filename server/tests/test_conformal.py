@@ -148,7 +148,37 @@ def test_load_conformal_config_round_trip(tmp_path):
     assert cfg is not None
     assert cfg.method == "raps"
     assert cfg.q_hat == pytest.approx(0.84)
-    assert abs(cfg.coverage_target - 0.9) < 1e-6
+    # Measured coverage wins over the nominal 1 - alpha (0.90): alpha is the
+    # grid-search knob that produced q_hat, not the coverage promise.
+    assert cfg.coverage_target == pytest.approx(0.91)
+
+
+def test_coverage_target_falls_back_to_nominal_without_measurement(tmp_path):
+    """A bundle predating `empirical_coverage` still reports 1 - alpha."""
+    (tmp_path / "conformal.json").write_text(json.dumps({
+        "method": "raps", "alpha": 0.1, "q_hat": 0.84,
+    }))
+    cfg = load_conformal_config(tmp_path)
+    assert cfg is not None
+    assert cfg.empirical_coverage is None
+    assert cfg.coverage_target == pytest.approx(0.9)
+
+
+def test_coverage_target_reports_measured_not_nominal_after_grid_search(tmp_path):
+    """The 2.7.0 shape: alpha searched to 0.35, sets actually cover 0.967.
+
+    Reporting 1 - alpha here would advertise 65% coverage for sets that cover
+    ~97%, which understates the model to the user.
+    """
+    (tmp_path / "conformal.json").write_text(json.dumps({
+        "method": "raps", "alpha": 0.35, "q_hat": 0.987,
+        "lambda_reg": 0.75, "k_reg": 1, "calibration_n": 982,
+        "empirical_coverage": 0.9675,
+    }))
+    cfg = load_conformal_config(tmp_path)
+    assert cfg is not None
+    assert cfg.coverage_target == pytest.approx(0.9675)
+    assert cfg.coverage_target > 1.0 - cfg.alpha
 
 
 def test_load_conformal_config_returns_none_when_missing(tmp_path, monkeypatch):
