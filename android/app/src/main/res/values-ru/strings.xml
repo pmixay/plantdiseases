@@ -607,8 +607,8 @@
     <string name="reminder_action_done">Сделал</string>
     <string name="reminder_action_snooze">Отложить на 1 д</string>
     <string name="reminder_streak_last_watered">Последний полив: %s</string>
-    <!-- Вкладка «Фото» + слайдер сравнения «до/после» -->
-    <string name="plant_photos">Фото</string>
+    <!-- Слайдер сравнения «до/после» (ярлык вкладки «Фото» заменён на
+         plant_tab_gallery в новой структуре Обзор/Уход/История/Галерея) -->
     <string name="plant_photos_empty_title">Пока нет фото</string>
     <string name="plant_photos_empty_hint">Здесь появляется каждое сканирование и каждое фото из журнала. Удерживайте тайл, чтобы сравнить два снимка.</string>
     <string name="photo_compare_title">До / после</string>

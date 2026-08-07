@@ -610,8 +610,9 @@
     <string name="reminder_action_done">Done</string>
     <string name="reminder_action_snooze">Snooze 1d</string>
     <string name="reminder_streak_last_watered">Last watered %s</string>
-    <!-- Photos tab + before/after compare slider -->
-    <string name="plant_photos">Photos</string>
+    <!-- Before/after compare slider (the Photos TAB LABEL was superseded by
+         plant_tab_gallery in the Garden refactor's Overview/Care/History/
+         Gallery restructure) -->
     <string name="plant_photos_empty_title">No photos yet</string>
     <string name="plant_photos_empty_hint">Every scan + every photo entry shows up here. Long-press a tile to compare two photos side-by-side.</string>
     <string name="photo_compare_title">Before / after</string>
