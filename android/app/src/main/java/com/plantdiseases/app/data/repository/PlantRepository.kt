@@ -44,7 +44,7 @@ class PlantRepository(
                 lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                health = healthVerdict(plant.id, scans, activePlan != null, nowMs),
+                health = getPlantHealth(plant.id, scans, activePlan != null, nowMs),
             )
         }
     }
@@ -55,11 +55,14 @@ class PlantRepository(
      *  consulted when there's an active treatment plan (PlantHealth.evaluate
      *  ignores it otherwise). "Fired" reminders are the ones that were due;
      *  "done" ones were kept up with. */
-    private suspend fun healthVerdict(
+    /** Public so the plant-detail health card (DetailExtraCardsController)
+     *  can compute the same verdict for a single plant instead of
+     *  duplicating the scoring + adherence logic a second time. */
+    suspend fun getPlantHealth(
         plantId: Long,
         scans: List<ScanEntity>,
         hasActivePlan: Boolean,
-        nowMs: Long,
+        nowMs: Long = System.currentTimeMillis(),
     ): PlantHealth.Verdict {
         val adherence = if (hasActivePlan) {
             val cutoff = nowMs - ADHERENCE_WINDOW_DAYS * CareSchedule.DAY_MS

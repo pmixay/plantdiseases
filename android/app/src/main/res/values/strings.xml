@@ -415,6 +415,22 @@
     <string name="plant_status_recovering">Recovering</string>
     <string name="plant_status_no_scans">No scans yet</string>
     <string name="plant_status_line">%1$d%% · %2$s</string>
+
+    <!-- Garden refactor — plant profile: Overview / Care / History / Gallery -->
+    <string name="plant_tab_overview">Overview</string>
+    <string name="plant_tab_care">Care</string>
+    <string name="plant_tab_history">History</string>
+    <string name="plant_tab_gallery">Gallery</string>
+    <string name="plant_health_title">Health</string>
+    <string name="plant_health_delta_week">%1$s this week</string>
+    <string name="plant_health_need_scans">Scan this plant twice to see its health trend</string>
+    <string name="treatment_plan_current">Current treatment plan</string>
+    <string name="treatment_step_of">Step %1$d of %2$d</string>
+    <string name="treatment_step_done">Done · %1$s</string>
+    <string name="treatment_step_due">Due %1$s</string>
+    <string name="treatment_step_overdue">Overdue · was due %1$s</string>
+    <string name="treatment_finished">Treatment finished · %1$d of %2$d steps · scan again to confirm recovery</string>
+    <string name="add_observation">Add observation</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>

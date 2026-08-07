@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -25,6 +26,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
@@ -37,6 +39,7 @@ import com.plantdiseases.app.ui.garden.detail.dp
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
@@ -58,6 +61,10 @@ class PlantDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPlantDetailBinding
     private lateinit var content: LinearLayout
+    private lateinit var overviewContainer: LinearLayout
+    private lateinit var careContainer: LinearLayout
+    private lateinit var historyContainer: LinearLayout
+    private lateinit var galleryContainer: LinearLayout
     private lateinit var timelineContainer: LinearLayout
     private lateinit var photosContainer: LinearLayout
     private lateinit var journalContainer: LinearLayout
@@ -82,6 +89,9 @@ class PlantDetailActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var careRepository: CareRepository
+
+    @Inject
     lateinit var onboardingState: OnboardingStateStore
 
     private lateinit var onboardingCoordinator: OnboardingCoordinator
@@ -100,6 +110,7 @@ class PlantDetailActivity : AppCompatActivity() {
             activity = this,
             plantRepository = plantRepository,
             scanRepository = scanRepository,
+            careRepository = careRepository,
             content = content,
             onReload = ::loadPlant,
             onClearWateringSuggestion = { wateringSuggestion = null },
@@ -352,7 +363,13 @@ class PlantDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun render(
+    /** Overview / Care / History / Gallery — see docs/ROADMAP.md "Garden
+     *  refactor" §Plant profile. History deliberately stacks Timeline
+     *  then Journal rather than a single chronologically-interleaved
+     *  feed: the two controllers keep their own independent rendering,
+     *  which is far lower-risk than rewriting both to emit into one
+     *  merged list without a working local compiler to verify it. */
+    private suspend fun render(
         plant: PlantEntity,
         scans: List<ScanEntity>,
         journalEntries: List<PlantJournalEntity>,
@@ -365,66 +382,59 @@ class PlantDetailActivity : AppCompatActivity() {
 
         content.removeAllViews()
         toolbarTitle.text = plant.name
-        // Order is primary-first: identity & quick actions; the
-        // time-sensitive nudge; the diagnosis; the care plan; the
-        // contextual guide link; THEN the tabs. Light Meter +
-        // Doctor used to live above the tabs but they're rare
-        // touches — moving them below lets the user reach the core
-        // data (Timeline / Photos / Journal) in one scroll.
         val summaryAnchor = header.buildHeader(plant, scans, journalEntries)
         val actionsAnchor = header.buildActionRow()
         content.addView(summaryAnchor)
         content.addView(actionsAnchor)
-        extraCards.buildLastWateredStrip(lastWateredAt)?.let { content.addView(it) }
-        extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { content.addView(it) }
-        extraCards.buildProgressionCard(scans, currentPlant)?.let { content.addView(it) }
-        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
-        content.addView(careAnchor)
-        extraCards.buildGuideLink(scans)?.let { content.addView(it) }
+
         val historyAnchor = header.buildTabs(
-            timelineContainer = { timelineContainer },
-            photosContainer = { photosContainer },
-            journalContainer = { journalContainer },
+            overviewContainer = { overviewContainer },
+            careContainer = { careContainer },
+            historyContainer = { historyContainer },
+            galleryContainer = { galleryContainer },
         ).also { tabLayout = it }
         content.addView(historyAnchor)
 
-        timelineContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        journalContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        photosContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        content.addView(timelineContainer)
-        content.addView(journalContainer)
-        content.addView(photosContainer)
+        overviewContainer = tabContainer()
+        careContainer = tabContainer().apply { visibility = View.GONE }
+        historyContainer = tabContainer().apply { visibility = View.GONE }
+        galleryContainer = tabContainer().apply { visibility = View.GONE }
+        content.addView(overviewContainer)
+        content.addView(careContainer)
+        content.addView(historyContainer)
+        content.addView(galleryContainer)
         applyRestoredTabSelection()
 
-        // Secondary surfaces — pushed below the tabs so the
-        // primary-actions area stays scannable.
-        content.addView(extraCards.buildLightMeterEntry(plant))
-        content.addView(extraCards.buildWaterCalculatorEntry(plant))
-        val assistantAnchor = extraCards.buildDoctorEntry(plant, scans)
-        content.addView(assistantAnchor)
+        // ── Overview ──────────────────────────────────────────────────
+        overviewContainer.addView(extraCards.buildHealthCard(plant, scans))
+        extraCards.buildTreatmentPlanCard(plant)?.let { overviewContainer.addView(it) }
+        overviewContainer.addView(buildAddObservationEntry())
+        extraCards.buildProgressionCard(scans, currentPlant)?.let { overviewContainer.addView(it) }
+        extraCards.buildGuideLink(scans)?.let { overviewContainer.addView(it) }
 
+        // ── Care ──────────────────────────────────────────────────────
+        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
+        careContainer.addView(careAnchor)
+        extraCards.buildLastWateredStrip(lastWateredAt)?.let { careContainer.addView(it) }
+        extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { careContainer.addView(it) }
+        careContainer.addView(extraCards.buildLightMeterEntry(plant))
+        careContainer.addView(extraCards.buildWaterCalculatorEntry(plant))
+        val assistantAnchor = extraCards.buildDoctorEntry(plant, scans)
+        careContainer.addView(assistantAnchor)
+
+        // ── History — Timeline then Journal, both visible together ──────
+        timelineContainer = tabContainer()
+        historyContainer.addView(sectionLabel(R.string.timeline))
+        historyContainer.addView(timelineContainer)
+        journalContainer = tabContainer()
+        historyContainer.addView(sectionLabel(R.string.plant_journal))
+        historyContainer.addView(journalContainer)
         timeline.renderTimeline(timelineContainer, plantId, scans)
         journal.renderJournal(journalContainer, plantId, journalEntries)
+
+        // ── Gallery ───────────────────────────────────────────────────
+        photosContainer = tabContainer()
+        galleryContainer.addView(photosContainer)
         photos.renderPhotos(photosContainer, scans, journalEntries)
 
         onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_SUMMARY, summaryAnchor)
@@ -439,8 +449,42 @@ class PlantDetailActivity : AppCompatActivity() {
         onboardingCoordinator.setContext(OnboardingContext.GARDEN_PLANT_DETAILS)
     }
 
+    private fun sectionLabel(@StringRes textRes: Int): View = TextView(this).apply {
+        text = getString(textRes).uppercase()
+        textSize = 11f
+        letterSpacing = 0.06f
+        setTextColor(getColor(R.color.on_surface_secondary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = 16.dp(this@PlantDetailActivity) }
+    }
+
+    private fun tabContainer(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
+    }
+
+    private fun buildAddObservationEntry(): View = TextView(this).apply {
+        text = getString(R.string.add_observation)
+        textSize = 13f
+        setTextColor(getColor(R.color.primary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        setPadding(4.dp(this@PlantDetailActivity), 10.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity))
+        isClickable = true
+        isFocusable = true
+        setOnClickListener {
+            Haptics.tick(this@PlantDetailActivity)
+            header.showNoteDialog()
+        }
+    }
+
     private fun applyRestoredTabSelection() {
-        if (restoredTabIndex in 1 until tabLayout.tabCount) {
+        if (restoredTabIndex in 0 until tabLayout.tabCount) {
             tabLayout.getTabAt(restoredTabIndex)?.select()
         }
     }

@@ -314,24 +314,31 @@ class DetailHeaderController(
             .show()
     }
 
+    /** Overview / Care / History / Gallery — Garden refactor's plant-profile
+     *  restructure (docs/ROADMAP.md). Replaces the old Timeline / Photos /
+     *  Journal set; History now carries what Timeline + Journal used to
+     *  cover, Gallery is the renamed Photos tab. */
     fun buildTabs(
-        timelineContainer: () -> LinearLayout,
-        photosContainer: () -> LinearLayout,
-        journalContainer: () -> LinearLayout,
+        overviewContainer: () -> LinearLayout,
+        careContainer: () -> LinearLayout,
+        historyContainer: () -> LinearLayout,
+        galleryContainer: () -> LinearLayout,
     ): TabLayout {
         val tabLayout = TabLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dp() }
-            addTab(newTab().setText(R.string.timeline))
-            addTab(newTab().setText(R.string.plant_photos))
-            addTab(newTab().setText(R.string.plant_journal))
+            addTab(newTab().setText(R.string.plant_tab_overview))
+            addTab(newTab().setText(R.string.plant_tab_care))
+            addTab(newTab().setText(R.string.plant_tab_history))
+            addTab(newTab().setText(R.string.plant_tab_gallery))
             addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
                 override fun onTabSelected(tab: TabLayout.Tab) {
-                    timelineContainer().visibility = if (tab.position == 0) View.VISIBLE else View.GONE
-                    photosContainer().visibility = if (tab.position == 1) View.VISIBLE else View.GONE
-                    journalContainer().visibility = if (tab.position == 2) View.VISIBLE else View.GONE
+                    overviewContainer().visibility = if (tab.position == 0) View.VISIBLE else View.GONE
+                    careContainer().visibility = if (tab.position == 1) View.VISIBLE else View.GONE
+                    historyContainer().visibility = if (tab.position == 2) View.VISIBLE else View.GONE
+                    galleryContainer().visibility = if (tab.position == 3) View.VISIBLE else View.GONE
                 }
 
                 override fun onTabUnselected(tab: TabLayout.Tab) {}
