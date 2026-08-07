@@ -51,8 +51,6 @@
     "plantnet_cache_size": 256
   },
   "security": {
-    "feedback_ip_pepper": "",
-    "_feedback_ip_pepper_note": "Secret used to pepper the SHA-256 of a client IP before it is stored (feedback / community / telemetry client_ip_hash). IPv4 is only a 32-bit space, so a hash with a known or empty pepper enumerates back to the raw IP in seconds \u2014 it MUST be a high-entropy per-deployment secret. Leave blank and the server generates one on first use and persists it beside the feedback DB as .ip_hash_pepper; set it explicitly to control rotation or to share one pepper across replicas.",
     "require_api_key": false,
     "api_keys": {
       "key_dev_abc123": {
@@ -61,15 +59,16 @@
         "quota_daily": 500
       }
     },
-    "_scan_trust_note": "route_scan auto-accepts confident scans (singleton conformal set / high calibrated confidence) as auto_yes; the uncertain tail is tagged pending (always kept). There is NO human review queue — the store is exported offline via tools/export_data.py.",
-    "labeling_trust_conformal": true,
-    "labeling_conf_high": 0.85,
-    "_scan_recording_note": "Anonymized production-scan recording for the model-improvement loop: re-encoded (EXIF/GPS dropped), max side 1024px, no user identifiers — disclosed via the app's blocking consent screen + privacy.html. Model-uncertain (pending) scans and every disease class are always kept; confident healthy scans are sampled at scan_common_keep_rate; per-class daily cap + global image cap bound disk.",
-    "scan_recording_enabled": true,
-    "scan_retention_days": 90,
-    "scan_max_images": 20000,
-    "scan_common_keep_rate": 0.1,
-    "scan_daily_cap_per_class": 50
+    "_training_note": "De-identified model-improvement capture requires both this operator switch and the current per-request consent disclosure version. Only detector-backed leaf crops are retained; no full-frame fallback, user/account/install/scan identifier, IP/hash, filename, URL, or free text enters training.db. Export/review is offline only through tools/export_training_data.py.",
+    "training_capture_enabled": false,
+    "training_consent_version": "model-improvement-v1",
+    "training_trust_conformal": true,
+    "training_conf_high": 0.85,
+    "training_retention_days": 90,
+    "training_max_images": 20000,
+    "training_healthy_keep_rate": 0.1,
+    "training_daily_cap_per_class": 50,
+    "telemetry_consent_version": "telemetry-errors-v1"
   },
   "push": {
     "fcm_credentials_file": "",

@@ -118,6 +118,33 @@
               "default": "gamma",
               "title": "Family"
             }
+          },
+          {
+            "name": "training_consent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Training Consent"
+            }
+          },
+          {
+            "name": "training_consent_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Training Consent Version"
+            }
           }
         ],
         "requestBody": {
@@ -362,7 +389,7 @@
     "/api/feedback": {
       "post": {
         "summary": "Feedback Endpoint",
-        "description": "Capture a thumbs-up / thumbs-down on a diagnosis, with full\ndiagnostic + client context.\n\nAppend-only — there is no update / delete path. The 1 req/s per-IP\nrate limit from the global middleware applies; the endpoint\nadditionally caps ``note`` length via the pydantic model so a\nmalicious client can't bloat the SQLite file with megabytes of\ntext.\n\nThe raw client IP is hashed (peppered SHA-256) before persistence\nso we never store PII at rest. The hash is stable across a single\ndeployment, which is enough for abuse-rate detection.",
+        "description": "Apply one structured correction through a short-lived receipt.\n\nThe receipt is independent from accounts, community publication tokens,\nand client scan identifiers. Only its digest exists at rest. The live\nconnection address is used for an in-process quota and is never written.",
         "operationId": "feedback_endpoint_api_feedback_post",
         "requestBody": {
           "content": {
@@ -399,7 +426,7 @@
     "/api/feedback/image": {
       "post": {
         "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the collection store.",
+        "description": "Apply feedback and optionally retain a detector-backed leaf crop.\n\nFull frames are never stored by this endpoint. If the detector cannot\nprovide a bounded leaf crop, the upload is rejected without retaining\npixels. Re-encoding strips metadata before hashes are calculated.",
         "operationId": "feedback_image_upload_api_feedback_image_post",
         "requestBody": {
           "content": {
@@ -478,7 +505,7 @@
     "/api/telemetry/errors": {
       "post": {
         "summary": "Telemetry Errors",
-        "description": "Record one client error/problem for triage. Errors-only: the app sends\nnothing on the happy path and bundles diagnostic context (stage, kind,\nmodel family, HTTP status, app version, Android API, breadcrumbs) only when\nsomething goes wrong. Fire-and-forget from the client; degrades silently.",
+        "description": "Record minimized error telemetry only under the current consent text.",
         "operationId": "telemetry_errors_api_telemetry_errors_post",
         "requestBody": {
           "content": {
@@ -1769,9 +1796,35 @@
       },
       "Body_feedback_image_upload_api_feedback_image_post": {
         "properties": {
-          "scan_id": {
+          "feedback_receipt": {
             "type": "string",
-            "title": "Scan Id"
+            "title": "Feedback Receipt"
+          },
+          "correct": {
+            "type": "boolean",
+            "title": "Correct"
+          },
+          "corrected_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Class"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "image": {
             "type": "string",
@@ -1781,7 +1834,8 @@
         },
         "type": "object",
         "required": [
-          "scan_id",
+          "feedback_receipt",
+          "correct",
           "image"
         ],
         "title": "Body_feedback_image_upload_api_feedback_image_post"
@@ -1974,11 +2028,11 @@
       },
       "FeedbackRequest": {
         "properties": {
-          "scan_id": {
+          "feedback_receipt": {
             "type": "string",
-            "maxLength": 64,
-            "minLength": 8,
-            "title": "Scan Id"
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Feedback Receipt"
           },
           "correct": {
             "type": "boolean",
@@ -1996,18 +2050,6 @@
             ],
             "title": "Corrected Class"
           },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
           "reason": {
             "anyOf": [
               {
@@ -2019,184 +2061,16 @@
               }
             ],
             "title": "Reason"
-          },
-          "predicted_class": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Class"
-          },
-          "predicted_confidence": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Confidence"
-          },
-          "top3": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array",
-                "maxItems": 3
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Top3"
-          },
-          "model_version": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Version"
-          },
-          "app_version": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "App Version"
-          },
-          "locale": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 8
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locale"
-          },
-          "platform": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 16
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Platform"
-          },
-          "user_pseudo_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "minLength": 8
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Pseudo Id"
-          },
-          "region_count": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 64.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Region Count"
-          },
-          "primary_region_index": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 63.0,
-                "minimum": -1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Primary Region Index"
-          },
-          "feedback_latency_ms": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 2592000000.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feedback Latency Ms"
-          },
-          "image_hash": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Hash"
-          },
-          "prediction_set": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 16
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prediction Set"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "scan_id",
+          "feedback_receipt",
           "correct"
         ],
         "title": "FeedbackRequest",
-        "description": "Single user-feedback signal on a scan.\n\nThe classifier is stateless, so the *scan* lives only on the\nclient. ``scan_id`` is therefore client-generated and just has to\nbe stable across the lifetime of one scan: we de-dupe by\n(user_pseudo_id, scan_id) downstream.\n\nRequired: ``scan_id``, ``correct``.\nOptional: every other field — kept nullable so clients can roll\nout the richer payload progressively. Length bounds protect the\nappend-only SQLite file from runaway clients."
+        "description": "One structured correction authorized by an unlinkable receipt."
       },
       "HTTPValidationError": {
         "properties": {
@@ -2250,15 +2124,32 @@
       },
       "TelemetryErrorRequest": {
         "properties": {
+          "telemetry_consent": {
+            "type": "boolean",
+            "title": "Telemetry Consent",
+            "default": false
+          },
+          "telemetry_consent_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Consent Version"
+          },
           "stage": {
             "type": "string",
-            "maxLength": 64,
+            "maxLength": 32,
             "minLength": 1,
             "title": "Stage"
           },
           "kind": {
             "type": "string",
-            "maxLength": 64,
+            "maxLength": 32,
             "minLength": 1,
             "title": "Kind"
           },
@@ -2272,7 +2163,7 @@
               {
                 "type": "integer",
                 "maximum": 599.0,
-                "minimum": 0.0
+                "minimum": 100.0
               },
               {
                 "type": "null"
@@ -2284,7 +2175,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 32
+                "maxLength": 16
               },
               {
                 "type": "null"
@@ -2309,25 +2200,13 @@
               {
                 "type": "integer",
                 "maximum": 100.0,
-                "minimum": 0.0
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Android Api"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
           },
           "breadcrumbs": {
             "anyOf": [
@@ -2336,7 +2215,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 40
+                "maxItems": 20
               },
               {
                 "type": "null"
@@ -2345,13 +2224,14 @@
             "title": "Breadcrumbs"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "stage",
           "kind"
         ],
         "title": "TelemetryErrorRequest",
-        "description": "One client-side problem report. Errors-only diagnostic context — no\nimages, no precise location, no PII. ``breadcrumbs`` is a short trail of\nrecent app actions leading up to the error."
+        "description": "One consented report containing only allowlisted technical enums."
       },
       "ValidationError": {
         "properties": {

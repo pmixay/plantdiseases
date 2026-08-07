@@ -292,8 +292,8 @@ class _DiskCache:
                 except OSError:
                     pass
                 raise
-        except OSError as exc:
-            logger.debug("disk cache write failed for %s: %s", self.dir.name, exc)
+        except OSError:
+            logger.debug("AI disk cache write failed")
 
 
 def _probe_ai_cache_writable() -> bool:
@@ -313,15 +313,9 @@ def _probe_ai_cache_writable() -> bool:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink()
         return True
-    except OSError as exc:
+    except OSError:
         logger.warning(
-            "AI_CACHE_DIR %s is not writable (%s): LLM care-plan / "
-            "species-diseases results will NOT persist across restarts or be "
-            "shared across workers, so every cold worker re-pays the slow "
-            "OpenRouter call. Point AI_CACHE_DIR at a writable (ideally shared) "
-            "volume so the species card's common problems + short care plan load "
-            "fast for everyone after the first fetch.",
-            _AI_CACHE_DIR, exc,
+            "AI cache is not writable; results will not persist across restarts"
         )
         return False
 
@@ -408,11 +402,11 @@ def identify_species(
                     url, params=params, files=files, data=data,
                     timeout=PLANTNET_TIMEOUT,
                 )
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
                 if attempt + 1 < attempts:
                     logger.info(
-                        "PlantNet attempt %d/%d failed (%s); retrying",
-                        attempt + 1, attempts, type(e).__name__,
+                        "PlantNet transient failure on attempt %d/%d; retrying",
+                        attempt + 1, attempts,
                     )
                     continue
                 raise
@@ -425,8 +419,8 @@ def identify_species(
             r.raise_for_status()
             payload = r.json()
             break
-    except Exception as e:  # noqa: BLE001 — never propagate to client
-        logger.warning("PlantNet identify failed: %s", _redact_key(str(e)))
+    except Exception:  # noqa: BLE001 — provider details may contain credentials
+        logger.warning("PlantNet identify failed")
         return {"available": False, "results": [], "source": "error"}
 
     results: list[dict] = []
@@ -1003,8 +997,8 @@ def chat_reply(
             system_text, user_blocks,
             session_id=session_id, cache_prefix=True,
         )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("OpenRouter chat failed: %s", e)
+    except Exception:  # noqa: BLE001 - prompt/provider details stay out of logs
+        logger.warning("OpenRouter chat failed")
         return {"available": False, "reply": "", "reason": "api_error"}
 
     if not reply_text:
@@ -1283,8 +1277,8 @@ def species_common_diseases(
             json_schema=_SPECIES_DISEASES_SCHEMA,
             schema_name="species_diseases",
         )
-    except Exception as e:  # noqa: BLE001 — never propagate to the client
-        logger.warning("species_common_diseases failed: %s", e)
+    except Exception:  # noqa: BLE001 — never propagate provider details
+        logger.warning("Species common-diseases lookup failed")
         return {"available": False, "diseases": [], "source": "api_error"}
 
     diseases = _parse_species_diseases(text)
@@ -1763,8 +1757,8 @@ def species_profile(
             json_schema=_SPECIES_PROFILE_SCHEMA,
             schema_name="species_profile",
         )
-    except Exception as e:  # noqa: BLE001 — never propagate to the client
-        logger.warning("species_profile failed: %s", e)
+    except Exception:  # noqa: BLE001 — never propagate provider details
+        logger.warning("Species profile lookup failed")
         return {"available": False, "source": "api_error"}
 
     canonical = _parse_species_profile_v2(text)
@@ -2434,10 +2428,7 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
         matched_str = match.group(0)
         matched_nums = re.findall(r"\d+", matched_str)
         if matched_nums != canonical_npk_nums:
-            logger.warning(
-                "LLM polish rejected: NPK ratio mismatch. Polished: %r, Canonical: %r",
-                matched_str, canonical_npk
-            )
+            logger.warning("LLM polish rejected for NPK ratio mismatch")
             return False
 
     # Helper: reject only when an explicit *interval* (a number bound to a
@@ -2448,7 +2439,7 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
     # itself ("Water every 7 days; let the top 2 cm dry…") would be
     # rejected by its own unrelated "2 cm".
     def check_keyword_number(
-        keywords: list[str], canonical_val: int, unit_pattern: str, label: str
+        keywords: list[str], canonical_val: int, unit_pattern: str
     ) -> bool:
         interval_re = re.compile(rf"\b(\d+)\s*(?:{unit_pattern})")
         for kw in keywords:
@@ -2463,10 +2454,7 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
                     if num in (0, 1):
                         continue
                     if num != canonical_val:
-                        logger.warning(
-                            "LLM polish rejected: %s mismatch in window %r around %r. Polished: %d, Canonical: %d",
-                            label, window, kw, num, canonical_val
-                        )
+                        logger.warning("LLM polish rejected for dosage mismatch")
                         return False
         return True
 
@@ -2474,14 +2462,14 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
     watering_val = plan.get("watering_days")
     if isinstance(watering_val, int):
         watering_kws = ["water", "watering", "полив"]
-        if not check_keyword_number(watering_kws, watering_val, r"days?|дн", "watering"):
+        if not check_keyword_number(watering_kws, watering_val, r"days?|дн"):
             return False
 
     # 3. Check fertilising weeks (interval unit: weeks / нед.)
     fertilise_val = plan.get("fertilise_weeks")
     if isinstance(fertilise_val, int):
         fertilise_kws = ["fertiliz", "fertilise", "fertilising", "fertilizer", "удобр"]
-        if not check_keyword_number(fertilise_kws, fertilise_val, r"weeks?|нед", "fertilise"):
+        if not check_keyword_number(fertilise_kws, fertilise_val, r"weeks?|нед"):
             return False
 
     return True
@@ -2631,10 +2619,10 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         else:
             with _care_plan_lock:
                 _care_plan_totals["rejected"] += 1
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - provider response details stay private
         with _care_plan_lock:
             _care_plan_totals["failed"] += 1
-        logger.info("Care-plan polish skipped: %s", e)
+        logger.info("Care-plan polish skipped")
     return plan
 
 

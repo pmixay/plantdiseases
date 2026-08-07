@@ -32,4 +32,5 @@ HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD \
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--forwarded-allow-ips", "127.0.0.1", "--proxy-headers", \
-     "--limit-concurrency", "64", "--timeout-keep-alive", "5"]
+     "--no-access-log", "--limit-concurrency", "64", \
+     "--timeout-keep-alive", "5"]

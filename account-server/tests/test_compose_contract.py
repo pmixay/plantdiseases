@@ -10,6 +10,8 @@ COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "account-beta-test" / "compose.local
 INTEGRATION_CHECK_PATH = (
     REPOSITORY_ROOT / "deploy" / "account-beta-test" / "check_integration.py"
 )
+APP_DOCKERFILE_PATH = REPOSITORY_ROOT / "server" / "Dockerfile"
+ACCOUNT_DOCKERFILE_PATH = REPOSITORY_ROOT / "account-server" / "Dockerfile"
 EXPECTED_SERVICES = {
     "beta-postgres",
     "beta-account-keygen",
@@ -58,6 +60,12 @@ def test_compose_has_only_isolated_beta_services_and_network():
     assert "networks" not in services["beta-account-keygen"]
     assert set(services["beta-account-api"]["networks"]) == {"beta-private", "beta-edge"}
     assert set(services["beta-app-api"]["networks"]) == {"beta-private", "beta-edge"}
+
+
+def test_api_images_disable_raw_uvicorn_access_logs():
+    for path in (APP_DOCKERFILE_PATH, ACCOUNT_DOCKERFILE_PATH):
+        dockerfile = path.read_text(encoding="utf-8")
+        assert '"--no-access-log"' in dockerfile
 
 
 def test_postgres_is_private_versioned_and_persistent():
@@ -119,8 +127,14 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "true"
     assert app_environment["POPULAR_WARM_ENABLED"] == "false"
     assert app_environment["FRONTIER_ENABLED"] == "false"
-    assert app_environment["SCAN_RECORDING_ENABLED"] == "false"
+    assert app_environment["TRAINING_CAPTURE_ENABLED"] == "false"
+    assert app_environment["TRAINING_CONSENT_VERSION"] == "model-improvement-v1"
+    assert app_environment["TRAINING_DB_PATH"] == "/data/training/training-beta.db"
+    assert app_environment["TRAINING_IMAGE_DIR"] == "/data/training-images"
+    assert "FEEDBACK_DB_PATH" not in app_environment
+    assert "LABELING_DB_PATH" not in app_environment
     assert app_environment["TELEMETRY_ENABLED"] == "false"
+    assert app_environment["TELEMETRY_CONSENT_VERSION"] == "telemetry-errors-v1"
     assert app_environment["ACCOUNT_JWKS_URL"].startswith("http://beta-account-api:8000/")
     assert app_environment["ACCOUNT_INTROSPECTION_URL"].endswith(
         "/v1/internal/auth/verify"

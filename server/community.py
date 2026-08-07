@@ -18,33 +18,34 @@ Privacy posture
 * No raw lat/lon ever lands here. The Android client reverse-geocodes
   the device's *coarse* location to a `City, Country` string and that
   string is what we store.
-* `client_ip_hash` mirrors the feedback store: peppered SHA-256, 64
-  bits, used for abuse-rate windows only.
-* Thumbnails are 512px JPEGs uploaded by the client. The user can opt
-  out from the Android app; uploads default to ON after the consent
-  acknowledgement on first scan.
+* ``client_ip_hash`` is a nullable legacy column only. Account-era writes leave
+  it NULL; abuse limiting uses the live connection address in memory.
+* Optional thumbnails are decoded, orientation-normalized, resized, and
+  re-encoded as fresh 512px RGB JPEGs without source metadata or filenames.
 """
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import logging
 import math
+import os
 import sqlite3
 import threading
 import time
 import uuid
 from pathlib import Path
 
+from PIL import Image, ImageOps, UnidentifiedImageError
+
 try:
     from .config import get_str  # type: ignore[import-not-found]
     from .countries import to_iso_alpha2
-    from .feedback import hash_client_ip
 except ImportError:
     from config import get_str
     from countries import to_iso_alpha2
-    from feedback import hash_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,16 @@ CREATE TABLE IF NOT EXISTS community_cleanup_jobs (
     updated_at      INTEGER NOT NULL,
     completed_at    INTEGER
 );
+
+-- Short-lived proof that an analysis token was minted by this server. It is
+-- used only to authorize a later community publication; feedback receipts are
+-- separate and are deliberately never accepted by community APIs.
+CREATE TABLE IF NOT EXISTS community_analysis_tokens (
+    token      TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_expiry
+    ON community_analysis_tokens(expires_at);
 """
 
 _IDENTITY_INDEXES = """
@@ -169,12 +180,10 @@ _initialised = False
 
 
 # ── Public scan tokens ────────────────────────────────────────────────
-# The real ``scan_id`` is the server-issued id from /api/analyze — the
-# SAME value that authorises /api/feedback writes. Exposing it verbatim
-# in the community feed let any feed reader post feedback (and attach
-# images) against other people's scans, partially defeating the
-# anti-poisoning gate. Viewer-facing feed rows therefore carry a
-# deterministic one-way PUBLIC token instead; the opinion / view
+# The stored ``scan_id`` is a server-issued community publication capability,
+# never a feedback receipt. Viewer-facing feed rows still carry a rotating,
+# deterministic one-way PUBLIC token so the publication capability cannot be
+# replayed or used as a stable cross-window activity handle; opinion / view
 # endpoints accept either form and resolve the token back to the real
 # id server-side, so existing app builds keep working unchanged.
 _PUBLIC_TOKEN_PREFIX = "cs"
@@ -240,6 +249,35 @@ def scan_exists(scan_id: str) -> bool:
             "SELECT 1 FROM community_scans WHERE scan_id = ? "
             "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
             "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1", (sid,),
+        ).fetchone() is not None
+
+
+def record_analysis_token(token: str, *, ttl_days: int = 30) -> None:
+    """Persist a server-minted, short-lived community publication token."""
+    value = (token or "").strip()
+    if not value or len(value) > 128:
+        raise ValueError("invalid analysis token")
+    init_db()
+    expires_at = int(time.time()) + max(1, min(int(ttl_days), 90)) * 86_400
+    with _write_lock, _connect() as connection:
+        connection.execute(
+            "INSERT INTO community_analysis_tokens (token, expires_at) VALUES (?, ?) "
+            "ON CONFLICT(token) DO UPDATE SET expires_at = excluded.expires_at",
+            (value, expires_at),
+        )
+
+
+def is_analysis_token_issued(token: str) -> bool:
+    """Whether a token is current and eligible for community publication."""
+    value = (token or "").strip()
+    if not value:
+        return False
+    init_db()
+    with _connect() as connection:
+        return connection.execute(
+            "SELECT 1 FROM community_analysis_tokens "
+            "WHERE token = ? AND expires_at > ? LIMIT 1",
+            (value, int(time.time())),
         ).fetchone() is not None
 
 
@@ -522,7 +560,7 @@ def init_db() -> None:
             _backfill_public_ids(conn)
             _canonicalize_countries(conn)
         _initialised = True
-        logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+        logger.info("Community DB ready")
 
 
 def _canonicalize_countries(conn: sqlite3.Connection) -> None:
@@ -557,8 +595,7 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
 
     Computes ``public_id`` for every legacy row, and renames legacy
     thumbnails from ``<scan_id>_<digest>.jpg`` to the token-prefixed
-    form — the filename rode through the feed and leaked the real
-    (feedback-authorising) scan_id just as much as the id field did.
+    form so the publication capability does not ride through the feed.
     """
     rows = conn.execute(
         "SELECT id, scan_id, thumb_path FROM community_scans "
@@ -582,33 +619,64 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
 
 
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
-    """Persist a 512px JPEG thumbnail under COMMUNITY_THUMB_DIR.
-
-    Returns the relative file path (suitable for storage in the
-    ``thumb_path`` column) or ``None`` when the bytes are missing /
-    oversized. Image decoding is the caller's job — we only validate
-    the byte ceiling and write the bytes straight through.
-    """
+    """Decode and persist a fresh, metadata-free 512px RGB JPEG."""
     if not image_bytes:
         return None
     if len(image_bytes) > COMMUNITY_MAX_THUMB_BYTES:
-        logger.info(
-            "Community thumb rejected (oversized: %d bytes)", len(image_bytes)
+        logger.info("Community thumbnail rejected as oversized")
+        return None
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as opened:
+            width, height = opened.size
+            if (
+                width < 32
+                or height < 32
+                or width > 8_192
+                or height > 8_192
+                or width * height > 20_000_000
+            ):
+                return None
+            opened.load()
+            image = ImageOps.exif_transpose(opened).convert("RGB")
+    except (Image.DecompressionBombError, OSError, UnidentifiedImageError, ValueError):
+        return None
+    if max(image.size) > 512:
+        image.thumbnail((512, 512), Image.Resampling.LANCZOS)
+    clean = Image.new("RGB", image.size)
+    clean.paste(image)
+    encoded = io.BytesIO()
+    try:
+        clean.save(
+            encoded,
+            format="JPEG",
+            quality=85,
+            optimize=True,
+            progressive=False,
+            subsampling=2,
         )
+    except (OSError, ValueError):
+        return None
+    body = encoded.getvalue()
+    if len(body) > COMMUNITY_MAX_THUMB_BYTES:
         return None
     # Hash-prefix the filename so two scans with the same scan_id (a
     # mis-behaved client) can't collide. Truncate to 24 hex chars —
     # plenty of collision resistance for this bounded corpus.
     # Named by the PUBLIC token, not the raw scan_id: the filename is
     # served to every feed reader via ``thumb_path`` and must not leak
-    # the feedback-authorising id.
-    digest = hashlib.sha256(image_bytes).hexdigest()[:24]
+    # the publication capability.
+    digest = hashlib.sha256(body).hexdigest()[:24]
     filename = f"{public_scan_token(scan_id)}_{digest}.jpg"
     target = COMMUNITY_THUMB_DIR / filename
+    temporary = COMMUNITY_THUMB_DIR / f".{filename}.tmp"
     try:
-        target.write_bytes(image_bytes)
-    except OSError as exc:
-        logger.warning("Failed to write community thumb %s: %s", target, exc)
+        COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(body)
+        temporary.chmod(0o600)
+        os.replace(temporary, target)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        logger.warning("Failed to write community thumbnail")
         return None
     return filename
 
@@ -641,7 +709,9 @@ def record_scan(
     init_db()
     legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
     now = int(time.time())
-    ip_hash = hash_client_ip(client_ip)
+    # The connection address may be used by the in-memory HTTP limiter, but it
+    # is never persisted on account-era community rows.
+    ip_hash = None
     # Canonicalize the country bucket to an ISO alpha-2 code at the write so
     # the corpus never splits one country across code / name / localized-name
     # representations (the HTTP layer already canonicalizes, but a direct
@@ -865,7 +935,7 @@ def record_opinion(
     init_db()
     legacy_id, actor_id = _identity(author_pseudo_id, account_actor_id)
     now = int(time.time())
-    ip_hash = hash_client_ip(client_ip)
+    ip_hash = None
     note_clean = (note or "").strip()[:500] or None
     nick_clean = (nickname or "").strip()[:48] or None
     with _write_lock, _connect() as conn:
@@ -1738,6 +1808,10 @@ def prune_older_than(days: int) -> int:
         return 0
     cutoff = int(time.time()) - days * 86_400
     with _write_lock, _connect() as conn:
+        conn.execute(
+            "DELETE FROM community_analysis_tokens WHERE expires_at <= ?",
+            (int(time.time()),),
+        )
         rows = conn.execute(
             "SELECT thumb_path FROM community_scans WHERE created_at < ?",
             (cutoff,),

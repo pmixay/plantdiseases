@@ -6,6 +6,7 @@ indirection, so no two tests can step on each other's rows.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import sqlite3
 
@@ -46,10 +47,13 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_thumbnail_is_visible = comm.thumbnail_is_visible
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
-    # Community upload now requires a server-issued scan_id (same gate as
-    # /api/feedback). These tests use synthetic ids, so treat every id as
-    # issued; the rejection path is covered explicitly below.
-    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: True)
+    server_main._daily_write_counts.clear()
+    # Community publication uses a server-issued capability that is separate
+    # from the anonymous feedback receipt. Synthetic ids are accepted here;
+    # the rejection path is covered explicitly below.
+    monkeypatch.setattr(
+        server_main, "community_analysis_token_issued", lambda *a, **k: True
+    )
     yield db_path, thumb_dir
 
 
@@ -311,10 +315,12 @@ def test_community_scan_upload_rejects_unissued_scan_id(
 ):
     # Integrity gate: a scan_id the server never issued at /api/analyze is
     # refused (422) so a client can't post a fabricated diagnosis into the
-    # public feed under a made-up or copied id — same gate as /api/feedback.
+    # public feed under a made-up or copied publication capability.
     db_path, _ = isolated_community
     import main as server_main
-    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: False)
+    monkeypatch.setattr(
+        server_main, "community_analysis_token_issued", lambda *a, **k: False
+    )
     r = client.post(
         "/api/community/scan",
         data=_form(
@@ -354,6 +360,61 @@ def test_community_scan_upload_with_thumbnail(client, isolated_community):
     assert r.status_code == 200
     # Thumbnail file was written.
     assert any(thumb_dir.iterdir()), "thumb dir should contain at least one file"
+
+
+def test_community_thumbnail_is_oriented_resized_and_metadata_free(
+    client, isolated_community,
+):
+    db_path, thumb_dir = isolated_community
+    from PIL import Image
+
+    sentinel = "PRIVATE_CAMERA_SENTINEL_7D1C"
+    original_name = "private-family-album-sentinel.jpg"
+    source = Image.new("RGB", (800, 400), color=(35, 145, 55))
+    exif = Image.Exif()
+    exif[274] = 6  # rotate 90 degrees clockwise when orientation is applied
+    exif[271] = sentinel
+    exif[272] = f"{sentinel}-MODEL"
+    exif[306] = "2026:04:03 02:01:00"
+    encoded = io.BytesIO()
+    source.save(
+        encoded,
+        format="JPEG",
+        exif=exif,
+        icc_profile=f"{sentinel}-ICC".encode(),
+    )
+
+    response = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="sanitizedthumb1",
+            country="DE",
+            region="Berlin",
+            disease="healthy",
+        ),
+        files={"image": (original_name, encoded.getvalue(), "image/jpeg")},
+    )
+    assert response.status_code == 200, response.text
+
+    files = list(thumb_dir.iterdir())
+    assert len(files) == 1
+    stored = files[0].read_bytes()
+    assert files[0].name.endswith(
+        f"_{hashlib.sha256(stored).hexdigest()[:24]}.jpg"
+    )
+    assert sentinel.encode() not in stored
+    assert original_name.encode() not in stored
+    with Image.open(io.BytesIO(stored)) as sanitized:
+        assert sanitized.format == "JPEG"
+        assert sanitized.mode == "RGB"
+        assert sanitized.size == (256, 512)
+        assert not sanitized.getexif()
+        assert "icc_profile" not in sanitized.info
+        assert "xmp" not in sanitized.info
+
+    persisted = db_path.read_bytes()
+    assert sentinel.encode() not in persisted
+    assert original_name.encode() not in persisted
 
 
 # ── Validation guard-rails ──────────────────────────────────────────
@@ -494,8 +555,8 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
         params={"region": "Paris", "country": "FR", "user_pseudo_id": "pseudo-self-x"},
     )
     body = r.json()
-    # The feed exposes the PUBLIC token in the scan_id field — never the
-    # real (feedback-authorising) scan_id.
+    # The feed exposes the PUBLIC token in the scan_id field, never the
+    # publication capability returned by analysis.
     import community as comm
     assert {item["scan_id"] for item in body["items"]} \
         == {comm.public_scan_token("scanotherid1")}

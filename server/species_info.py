@@ -159,8 +159,8 @@ def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> st
         if not r.ok:
             return None
         pages = (r.json().get("query") or {}).get("pages") or []
-    except Exception as exc:  # network blip, timeout, bad JSON — all non-fatal
-        logger.info("Wikipedia langlink lookup failed (%s); continuing", exc)
+    except Exception:  # network blip, timeout, bad JSON — all non-fatal
+        logger.info("Wikipedia language lookup failed; continuing")
         return None
 
     for page in pages:
@@ -212,8 +212,8 @@ def _translate(text: str, target_lang: str, source_lang: str = "en") -> str | No
         if not r.ok:
             return None
         data = r.json()
-    except Exception as exc:  # network blip, timeout, bad JSON — all non-fatal
-        logger.info("Translation failed (%s); keeping original-language text", exc)
+    except Exception:  # network blip, timeout, bad JSON — all non-fatal
+        logger.info("Translation failed; keeping original-language text")
         return None
 
     # gtx shape: [[[translated, original, ...], [translated, original, ...]], ...]
@@ -244,8 +244,8 @@ def _fetch(name: str, lang: str) -> dict | None:
             return None
         r.raise_for_status()
         data = r.json()
-    except Exception as exc:  # network blip, timeout, bad JSON — all non-fatal
-        logger.info("Wikipedia fetch failed (%s); species card continues without it", exc)
+    except Exception:  # network blip, timeout, bad JSON — all non-fatal
+        logger.info("Wikipedia fetch failed; species card continues without it")
         return None
 
     if data.get("type") == "disambiguation":

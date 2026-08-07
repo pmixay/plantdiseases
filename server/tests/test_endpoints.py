@@ -130,11 +130,9 @@ def test_analyze_response_contract(client, png_bytes):
     body = r.json()
 
     required = {
-        # ``class_name`` is the canonical post-reroute key — clients
-        # echo it back on /api/feedback as ``predicted_class`` so
-        # per-class accuracy metrics see the same verdict the user
-        # saw rather than argmax(all_probs) (which can disagree
-        # after a weak-healthy reroute).
+        # ``class_name`` is the canonical post-reroute key. The server records
+        # it internally as the weak training prior when consent is present;
+        # clients do not echo it through the feedback receipt API.
         "class_name",
         "disease_name",
         "disease_name_ru",
@@ -352,11 +350,12 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     assert r.json()["organ"] == "flower"
 
 
-def test_analyze_response_carries_issued_scan_id(client, png_bytes):
-    """/api/analyze must mint a scan_id, persist it in the issued
-    log, and surface it in the response. The feedback gate later
-    consults that table to bind feedback rows to real scans."""
-    import feedback as fb
+def test_analyze_response_issues_separate_community_and_feedback_tokens(
+    client, png_bytes
+):
+    """Publication capabilities must never double as feedback receipts."""
+    import community
+    import training_store
 
     r = client.post(
         "/api/analyze",
@@ -364,17 +363,21 @@ def test_analyze_response_carries_issued_scan_id(client, png_bytes):
     )
     assert r.status_code == 200, r.text
     scan_id = r.json().get("scan_id")
+    feedback_receipt = r.json().get("feedback_receipt")
     assert isinstance(scan_id, str) and len(scan_id) >= 16
-    assert fb.is_scan_id_issued(scan_id)
+    assert isinstance(feedback_receipt, str) and len(feedback_receipt) == 43
+    assert scan_id != feedback_receipt
+    assert community.is_analysis_token_issued(scan_id)
+    assert not community.is_analysis_token_issued(feedback_receipt)
+    assert training_store.sample_by_receipt(feedback_receipt) is None
 
 
-def test_feedback_rejects_unissued_scan_id(client, png_bytes):
-    """A feedback POST whose scan_id wasn't seen on /api/analyze must
-    422 instead of being quietly persisted — that's the gate that
-    keeps test/poison rows out of the retraining corpus."""
+def test_feedback_rejects_legacy_scan_id_payload(client, png_bytes):
+    """Identifier-rich legacy payloads are rejected, not silently ignored."""
     r = client.post(
         "/api/feedback",
         json={"scan_id": "neverissuedXYZ", "correct": True},
     )
     assert r.status_code == 422, r.text
-    assert "scan_id" in r.json()["detail"].lower()
+    errors = r.json()["detail"]
+    assert any(error["loc"][-1] == "scan_id" for error in errors)

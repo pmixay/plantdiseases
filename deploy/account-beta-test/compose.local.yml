@@ -128,8 +128,10 @@ services:
       ACCOUNT_BETA_SYNTHETIC_PIPELINE: "true"
       POPULAR_WARM_ENABLED: "false"
       FRONTIER_ENABLED: "false"
-      SCAN_RECORDING_ENABLED: "false"
+      TRAINING_CAPTURE_ENABLED: "false"
+      TRAINING_CONSENT_VERSION: model-improvement-v1
       TELEMETRY_ENABLED: "false"
+      TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
       ACCOUNT_API_BASE_URL: http://beta-account-api:8000/
       ACCOUNT_ISSUER: http://beta-account-api:8000
       ACCOUNT_AUDIENCE: plantdiseases-app
@@ -141,10 +143,8 @@ services:
       LOG_DIR: /data/logs
       COMMUNITY_DB_PATH: /data/community/community-beta.db
       COMMUNITY_THUMB_DIR: /data/community-thumbs
-      FEEDBACK_DB_PATH: /data/training/feedback-beta.db
-      FEEDBACK_IMG_DIR: /data/training-images/feedback
-      LABELING_DB_PATH: /data/training/labeling-beta.db
-      LABELING_IMG_DIR: /data/training-images/labeling
+      TRAINING_DB_PATH: /data/training/training-beta.db
+      TRAINING_IMAGE_DIR: /data/training-images
       TELEMETRY_DB_PATH: /data/telemetry/telemetry-beta.db
       PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
       AI_CACHE_DIR: /data/app-cache/ai

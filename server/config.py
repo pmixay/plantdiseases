@@ -33,18 +33,18 @@ _CONFIG_PATH = Path(os.getenv("PLANTDISEASES_CONFIG", _CONFIG_DIR / "config.json
 
 def _load_file() -> dict[str, Any]:
     if not _CONFIG_PATH.exists():
-        logger.info("No config.json at %s — falling back to env vars / defaults", _CONFIG_PATH)
+        logger.info("No server config file; using environment and safe defaults")
         return {}
     try:
         with _CONFIG_PATH.open("r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
-            logger.error("config.json must be a JSON object; got %s", type(data).__name__)
+            logger.error("Server config must be a JSON object; using safe defaults")
             return {}
-        logger.info("Loaded server config from %s", _CONFIG_PATH)
+        logger.info("Loaded server config")
         return _flatten(data)
-    except Exception as e:  # noqa: BLE001
-        logger.error("Failed to parse %s: %s — ignoring", _CONFIG_PATH, e)
+    except Exception:  # noqa: BLE001 - config contents and paths stay out of logs
+        logger.error("Failed to parse server config; using safe defaults")
         return {}
 
 
@@ -91,7 +91,7 @@ def get(key: str, default: Any = None, cast: type | None = None) -> Any:
             return raw.strip().lower() in ("1", "true", "yes", "on")
         return cast(raw)
     except (TypeError, ValueError):
-        logger.warning("Bad value for %s=%r; using default %r", key, raw, default)
+        logger.warning("Invalid server configuration value; using safe default")
         return default
 
 

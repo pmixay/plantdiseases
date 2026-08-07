@@ -18,6 +18,12 @@ pipeline is guarded by both `ENVIRONMENT=test` and
 aborts startup. Its results are marked `synthetic_test_result` and must never
 be treated as diagnoses.
 
+Model-improvement capture is disabled in this stack. The application still
+uses isolated beta-only `training.db` and sanitized-image volumes so receipt,
+export, retention, and migration contracts can be exercised with generated
+fixtures. Feedback and community capabilities are unrelated, and no legacy
+`feedback.db` or `labeling.db` is mounted.
+
 ## Start and inspect
 
 From the repository root:

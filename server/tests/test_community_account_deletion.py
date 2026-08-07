@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import importlib
+import io
 import sqlite3
 import time
 import uuid
 
 import pytest
+from PIL import Image
+
+
+def _thumbnail_bytes() -> bytes:
+    encoded = io.BytesIO()
+    Image.new("RGB", (64, 64), color=(45, 135, 60)).save(encoded, format="PNG")
+    return encoded.getvalue()
 
 
 @pytest.fixture
@@ -32,7 +40,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         country="GB",
         region="London",
         disease="leaf_spot",
-        image_bytes=b"synthetic-thumbnail",
+        image_bytes=_thumbnail_bytes(),
     )
     community.record_scan(
         scan_id="keep-legacy-scan",
@@ -116,7 +124,7 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
         country="GB",
         region="London",
         disease="healthy",
-        image_bytes=b"synthetic-thumbnail",
+        image_bytes=_thumbnail_bytes(),
     )
     community.request_actor_deletion(owner, now=1_000)
 

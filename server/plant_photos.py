@@ -229,8 +229,8 @@ def get_or_fetch(url: str) -> Path | None:
             tmp.write_bytes(data)
             tmp.replace(out)
             _prune()
-    except OSError as exc:
-        logger.info("Plant photo cache write failed (%s)", exc)
+    except OSError:
+        logger.info("Plant photo cache write failed")
         return None
     return out
 
@@ -254,15 +254,15 @@ def _download(url: str) -> bytes | None:
             # allowlist; anything that leaves it is not something this proxy
             # should be fetching on a public endpoint's behalf.
             if not is_allowed_url(resp.url):
-                logger.info("Plant photo redirected off-allowlist (%s); skipping", resp.url)
+                logger.info("Plant photo redirected off allowlist; skipping")
                 return None
             buf = bytearray()
             for chunk in resp.iter_content(64 * 1024):
                 buf.extend(chunk)
                 if len(buf) > _MAX_BYTES:
-                    logger.info("Plant photo over %d B; not caching %s", _MAX_BYTES, url)
+                    logger.info("Plant photo exceeded cache size limit")
                     return None
             return bytes(buf)
-    except Exception as exc:  # network blip / timeout / HTTP error — all non-fatal
-        logger.info("Plant photo fetch failed (%s); card falls back to placeholder", exc)
+    except Exception:  # network blip / timeout / HTTP error — all non-fatal
+        logger.info("Plant photo fetch failed; card falls back to placeholder")
         return None

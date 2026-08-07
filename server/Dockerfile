@@ -85,4 +85,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
 # letting a slowloris-style flood exhaust the event loop.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--forwarded-allow-ips", "127.0.0.1", "--proxy-headers", \
-     "--limit-concurrency", "64", "--timeout-keep-alive", "5"]
+     "--no-access-log", "--limit-concurrency", "64", \
+     "--timeout-keep-alive", "5"]

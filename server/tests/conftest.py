@@ -132,6 +132,9 @@ class _FakeClassifier:
 class _FakeDetector:
     is_loaded = True
 
+    def detect(self, _img: Image.Image) -> dict:
+        return {"detections": [], "confidence": 0.0, "primary_box": None}
+
 
 class FakePipeline:
     """Minimal stand-in for ``PlantDiseasePipeline`` used in tests.
@@ -187,12 +190,11 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     keeps HTTP contract tests deterministic while leaving production untouched.
     """
     import community
-    import feedback
-    import labeling
     import main as server_main
     import pipeline as pipeline_module
     import push
     import telemetry
+    import training_store
 
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
@@ -200,19 +202,15 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
 
     state_dir = tmp_path_factory.mktemp("server-state")
 
-    feedback.FEEDBACK_DB_PATH = state_dir / "feedback.db"
-    feedback.FEEDBACK_IMG_DIR = state_dir / "feedback-images"
-    feedback._initialised = False
+    training_store.TRAINING_DB_PATH = state_dir / "training.db"
+    training_store.TRAINING_IMAGE_DIR = state_dir / "training-images"
+    training_store._initialised = False
 
     community.COMMUNITY_DB_PATH = state_dir / "community.db"
     community.COMMUNITY_THUMB_DIR = state_dir / "community-thumbs"
     community._initialised = False
     # main imports this path by value for the thumbnail response endpoint.
     server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
-
-    labeling.LABELING_DB_PATH = state_dir / "labeling.db"
-    labeling.LABELING_IMG_DIR = state_dir / "labeling-images"
-    labeling._initialised = False
 
     telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
@@ -224,6 +222,7 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
         return None
 
     server_main._warm_placeholder_images = _skip_external_warmup
+    server_main._daily_write_counts.clear()
     yield
 
 

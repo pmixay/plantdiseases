@@ -58,6 +58,11 @@ server/feedback.db-journal
 server/feedback.db-wal
 server/feedback.db-shm
 server/feedback_images/
+server/training.db
+server/training.db-journal
+server/training.db-wal
+server/training.db-shm
+server/training_images/
 # Top-level logs/ is created when main.py is imported from the repo
 # root (LOG_DIR defaults to a relative path).
 /logs/
@@ -94,7 +99,7 @@ server/static/aqua/aqua_classifier.tflite
 server/static/aqua/classes.json
 /server/static/guide/.webp/
 
-# Data-labeling tool runtime artifacts (created at runtime, never committed)
+# Legacy data-labeling runtime artifacts retained only for explicit migration.
 server/labeling.db*
 server/labeling_images/
 server/labeling_exports/

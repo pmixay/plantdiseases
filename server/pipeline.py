@@ -262,10 +262,10 @@ def _load_temperature(classifier_path: Path | None) -> float:
                 data = json.loads(p.read_text(encoding="utf-8"))
                 T = float(data.get("temperature", 1.0))
                 if T > 0:
-                    logger.info("Loaded temperature T=%.3f from %s", T, p)
+                    logger.info("Loaded model calibration temperature T=%.3f", T)
                     return T
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Could not load temperature from %s: %s", p, e)
+        except Exception:  # noqa: BLE001 - artifact paths/errors stay out of logs
+            logger.warning("Could not load model calibration temperature")
     return 1.0
 
 
@@ -312,10 +312,7 @@ def _resolve_max_logit_scope(meta: dict) -> str:
     if scope in _MAX_LOGIT_SCOPES:
         return str(scope)
     if scope is not None:
-        logger.warning(
-            "Unknown ood.max_logit_scope %r — falling back to %r",
-            scope, MAX_LOGIT_SCOPE_DEFAULT,
-        )
+        logger.warning("Unknown OOD max-logit scope; using safe default")
     return MAX_LOGIT_SCOPE_DEFAULT
 
 
@@ -466,19 +463,13 @@ class PlantDiseasePipeline:
         # instead of a confident wrong diagnosis.
         focus_score = _variance_of_laplacian(img)
         if focus_score < BLUR_LAPLACIAN_FLOOR:
-            logger.info(
-                "Blur gate triggered: var-of-Laplacian=%.1f < %.1f → not_a_plant",
-                focus_score, BLUR_LAPLACIAN_FLOOR,
-            )
+            logger.info("Blur gate triggered")
             return self._too_blurry_response(img, focus_score, t0)
 
         stage1 = self.detector.detect(img)
         detections = stage1["detections"]
 
-        logger.info(
-            "Stage 1 → detections=%d  best_conf=%.3f",
-            len(detections), stage1["confidence"],
-        )
+        logger.info("Detector stage completed")
 
         # No leaf bbox from Stage 1: fall back to classifying the full
         # image and let the classifier's dedicated `not_a_plant` head
@@ -502,13 +493,7 @@ class PlantDiseasePipeline:
 
         is_diseased = self._is_diseased(classification)
 
-        logger.info(
-            "Stage 2 → class=%s  confidence=%.3f  primary_box=%s  voted_over=%d",
-            classification["class_name"],
-            classification["confidence"],
-            primary,
-            classification.get("_voted_over", 1),
-        )
+        logger.info("Classifier stage completed")
 
         final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
 
@@ -722,7 +707,7 @@ class PlantDiseasePipeline:
         ood_threshold = (
             self.embedding_ood.threshold if self.embedding_ood is not None else None
         )
-        triggered, desc = _decide_nap_route(
+        triggered, _desc = _decide_nap_route(
             class_name=classification["class_name"],
             class_names=self.classifier.CLASS_NAMES,
             det_conf=det_conf,
@@ -734,7 +719,7 @@ class PlantDiseasePipeline:
             require_classifier_signal=require_classifier_signal,
         )
         if triggered:
-            logger.info("OOD gate triggered (%s) → not_a_plant", desc)
+            logger.info("OOD gate triggered")
         return triggered
 
     def _build_prediction_set(
@@ -1229,13 +1214,7 @@ def _apply_postprocessing_rules(
             and gap < HEALTHY_GAP_MARGIN
         )
         if worst_disease[0] is not None and (absolute_hit or gap_hit):
-            logger.info(
-                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f  "
-                "trigger=%s  gap=%.3f",
-                top1_prob, worst_disease[0], worst_disease[1],
-                "absolute" if absolute_hit else "gap",
-                gap,
-            )
+            logger.info("Weak-healthy safety reroute triggered")
             classification = {
                 **classification,
                 "class_name": worst_disease[0],
@@ -1270,10 +1249,7 @@ def _apply_postprocessing_rules(
             warnings.append("uncertain_healthy")
             if disease_floor_hit and worst_disease[0]:
                 warnings.append(f"disease_suspected:{worst_disease[0]}")
-            logger.info(
-                "healthy gate soft-warning  top1=%.3f  margin=%.3f  worst_disease=%s/%.3f",
-                top1_prob, margin, worst_disease[0], worst_disease[1],
-            )
+            logger.info("Healthy-result uncertainty warning triggered")
 
     if classification.get("_ood_gated"):
         warnings.append("nap_ood_gated")

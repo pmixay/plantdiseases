@@ -386,11 +386,93 @@ Checkpoint commit:
 
 - `feat(community): bind mutations to signed accounts`
 
+### 6 — Anonymous training, minimal telemetry, and media/log privacy (complete, 2026-08-07)
+
+Completed work:
+
+- Replaced the linked `feedback.db`/`labeling.db` design with one internal
+  `training_store.py`, one privacy-minimized schema, and a sanitized image
+  directory. Removed the legacy storage modules, review-queue tests, and old
+  exporter/analyser instead of leaving two active write paths.
+- Added random server sample UUIDs and independent random 256-bit feedback
+  receipts whose hashes alone are stored. Receipts expire, reject replay, and
+  cannot authorize community or account operations.
+- Made automatic collection fail closed by default and require both an
+  operator switch and the exact per-request model-improvement consent version.
+  It rejects `not_a_plant`, blur/private full frames, and any capture without a
+  detector-backed leaf crop.
+- Added bounded decode/decompression checks, EXIF orientation, fresh RGB JPEG
+  rendering, metadata-free encoding, post-sanitization SHA/pHash calculation,
+  deterministic healthy sampling, disease/uncertainty retention, per-class
+  daily caps, structured correction/out-of-head fields, and two-phase pruning
+  that does not drop a row when its image deletion fails.
+- Replaced feedback request linkage/free text with strict structured receipt,
+  correctness, corrected-class, and allowlisted-reason contracts. Negative
+  feedback with a usable crop is protected; positive feedback promotes the
+  weak label; negative feedback reopens it for offline review.
+- Added a read-only timestamped training exporter with sanitized images,
+  manifest, schema/version/split policy, class/source/model inventory,
+  checksums, and pHash near-duplicate groups. `auto_yes` remains train-only so
+  related images cannot leak into evaluation/calibration groups.
+- Added an offline analysis tool for inventory, feedback quality, calibration,
+  top-k/conformal coverage, out-of-head corrections, and overconfident errors.
+  No serving-side retraining or human-review endpoint was added.
+- Added an explicit-approval, dry-run-by-default legacy migration tool. It
+  opens legacy databases read-only, joins old scan IDs only in memory,
+  re-sanitizes selected images, preserves authoritative offline verdicts, and
+  refuses an existing destination. All migration tests use seeded synthetic
+  legacy databases and media only.
+- Rebuilt telemetry as an errors-only, explicit-consent schema containing only
+  allowlisted stage/kind/fatal/status bucket/model family/app version/API
+  bucket/breadcrumb dimensions and a coarse day. It rejects messages,
+  identifiers, hardware models, images, unknown enums, and legacy linked
+  schemas; quotas retain live addresses in memory only.
+- Made community thumbnails orientation-normalized, bounded 512px fresh JPEGs
+  with no EXIF/ICC/source filename and hashes calculated over stored bytes.
+- Minimized application/config/provider logs, ignored client correlation IDs,
+  logged route templates without query strings or addresses, redacted
+  exception details, and disabled raw Uvicorn access logs in both API images.
+- Regenerated the application OpenAPI contract and updated local/standard
+  Compose configuration, example settings, volumes, and documentation for the
+  unified stores and separate consent versions.
+
+Decisions:
+
+- The records remain described as de-identified, not anonymous, pending the
+  required legal/security review of retained pixels.
+- Feedback uploads follow the same detector-crop-only rule as automatic
+  capture; the server never falls back to storing a full room/background frame.
+- Legacy databases and media are not migrated automatically. An operator must
+  first audit and list exact approved row IDs, and apply into a fresh beta-only
+  destination.
+- Precise per-request diagnostic values remain in API responses where needed,
+  but are not copied into request logs. Aggregated operational dimensions stay
+  available through bounded metrics and the offline analyser.
+
+Verification:
+
+- Complete application-server suite — 572 passed in 7.25s.
+- Complete account-service suite — 122 passed, 1 opt-in PostgreSQL test skipped
+  in 2.85s.
+- Tests cover no-consent no-write, safe crops/unsafe-frame rejection,
+  orientation and metadata removal, SHA/pHash idempotency, balanced retention,
+  receipt expiry/replay/promotion/reopening, pruning failures, legacy migration,
+  export sentinels/checksums/duplicate grouping, telemetry schema and retention,
+  thumbnail deletion, and route/header/filename/exception log redaction.
+- Server and account Ruff checks, `git diff --check`, JSON contract/example
+  parsing, parsed Compose contracts, and
+  `docker compose -f deploy/account-beta-test/compose.local.yml config --quiet`
+  — passed.
+- No external provider, real user image, production database, deployment,
+  model build, or training run was used.
+
+Checkpoint commit:
+
+- `feat(privacy): replace linked training and telemetry stores`
+
 ## Remaining work (plan order)
 
-1. Replace feedback/labeling stores with the anonymous training store/export.
-2. Minimize telemetry and add image-sanitization coverage.
-3. Implement the Android account-beta variant, auth state/client/UI flows, and
+1. Implement the Android account-beta variant, auth state/client/UI flows, and
    upload sanitization.
-4. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-5. Run the complete acceptance and privacy/security verification matrix.
+2. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+3. Run the complete acceptance and privacy/security verification matrix.

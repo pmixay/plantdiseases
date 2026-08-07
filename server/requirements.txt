@@ -17,10 +17,6 @@ python-multipart==0.0.32
 # Patch anyway: it is free, and it removes the whole class rather than relying
 # on the gates staying correct forever.
 Pillow==12.3.0
-# Perceptual-hash near-duplicate signal stored with each labeling candidate
-# (server/labeling.py phash_bytes). Pulls numpy/scipy/PyWavelets (numpy pinned
-# below).
-ImageHash>=4.3.2
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
 # matches the training notebook, which already runs on numpy 2.x. Floor

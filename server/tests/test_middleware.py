@@ -18,6 +18,45 @@ def test_security_headers_present(client):
     assert r.headers["X-Frame-Options"] == "DENY"
 
 
+def test_request_log_uses_route_template_and_server_correlation_id(client, caplog):
+    import logging
+
+    client_trace = "CLIENT_TRACE_SENTINEL_A91F"
+    query_secret = "QUERY_TOKEN_SENTINEL_14B7"
+    auth_secret = "AUTHORIZATION_SENTINEL_70CC"
+    forwarded_address = "198.51.100.187"
+    caplog.set_level(logging.INFO, logger="plantdiseases")
+
+    response = client.get(
+        f"/api/health?token={query_secret}",
+        headers={
+            "Authorization": f"Bearer {auth_secret}",
+            "X-Trace-ID": client_trace,
+            "X-Request-ID": client_trace,
+            "X-Forwarded-For": forwarded_address,
+        },
+    )
+    assert response.status_code == 200
+    server_trace = response.headers["X-Trace-ID"]
+    assert server_trace != client_trace
+    assert len(server_trace) == 32
+    assert all(character in "0123456789abcdef" for character in server_trace)
+
+    application_logs = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "plantdiseases"
+    )
+    assert "REQUEST GET /api/health -> 200" in application_logs
+    for forbidden in (
+        client_trace,
+        query_secret,
+        auth_secret,
+        forwarded_address,
+    ):
+        assert forbidden not in application_logs
+
+
 def test_health_capabilities_not_rate_limited(client):
     # Hammer free endpoints — none should ever produce a 429.
     for _ in range(5):
@@ -100,7 +139,7 @@ def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
     POSTs to /api/feedback must all succeed even though the steady-
     state rate is 1 req/s — that's what the burst bucket is for.
     """
-    body = {"scan_id": "burst-scan-001", "correct": True}
+    body = {"feedback_receipt": "x" * 43, "correct": True}
     for i in range(5):
         r = client.post("/api/feedback", json=body)
         assert r.status_code in (200, 422), f"burst[{i}] got {r.status_code}: {r.text}"
