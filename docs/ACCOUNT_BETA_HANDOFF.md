@@ -8,6 +8,13 @@ distribution, real-provider flow, or production-data operation was performed by
 this branch work. German staging remains synthetic-only; real processing is
 blocked by the checklists below.
 
+Operator entry points:
+
+- implementation and test procedure:
+  [ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md](ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md);
+- source promotion, RU/DE transfer, and joint maintenance:
+  [RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md](RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md).
+
 ## Delivered application contracts
 
 - Account OpenAPI: `account-server/openapi.json`

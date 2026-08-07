@@ -162,6 +162,10 @@ does not stop the stack or remove volumes.
 
 ## Handoff material
 
+- `../../docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md` is the concise
+  implementation, build, synthetic-test, and real-SDK test entry point.
+- `../../docs/RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md` defines source promotion,
+  staged transfer, cutover, and concurrent main/Russian/German maintenance.
 - `SECRETS.md` inventories environment and secret ownership without values.
 - `ROLLBACK.md` defines non-destructive beta and final-split rollback evidence.
 - `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.
