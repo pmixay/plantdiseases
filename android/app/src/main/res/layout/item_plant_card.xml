@@ -100,6 +100,18 @@
 
         </LinearLayout>
 
+        <!-- Only relevant inside RoomDetailActivity's list (tap opens the
+             plant profile) — GardenFragment no longer renders this card
+             directly, so this is unconditionally visible now that the
+             Garden tab shows room cards instead. -->
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="@dimen/space_sm"
+            android:src="@drawable/ic_chevron_right"
+            android:contentDescription="@null"
+            app:tint="@color/on_surface_secondary" />
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

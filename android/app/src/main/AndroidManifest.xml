@@ -73,6 +73,12 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.garden.RoomDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.garden.PhotoViewerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

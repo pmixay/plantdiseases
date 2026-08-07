@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A single room card in the Garden tab's Rooms pane. Deliberately flatter
+    than item_plant_card (surface_container background, no elevation-driven
+    shadow beyond 1dp) so the visual hierarchy reads container-then-item:
+    this card holds plants, item_plant_card-style rows are the plants.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/room_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_md"
+    android:clickable="true"
+    android:focusable="true"
+    android:longClickable="true"
+    app:cardBackgroundColor="@color/surface_container"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="1dp"
+    app:strokeWidth="0dp"
+    app:rippleColor="@color/primary_light">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/space_lg">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/room_icon"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:src="@drawable/ic_room"
+                android:contentDescription="@null"
+                app:tint="@color/primary" />
+
+            <TextView
+                android:id="@+id/room_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_md"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title_sm"
+                android:fontFamily="sans-serif-medium"
+                tools:text="Кабинет" />
+
+            <TextView
+                android:id="@+id/room_plant_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                tools:text="3" />
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="@dimen/space_xs"
+                android:src="@drawable/ic_chevron_right"
+                android:contentDescription="@null"
+                app:tint="@color/on_surface_secondary" />
+
+        </LinearLayout>
+
+        <!-- Up to 3 thumbnails, or a single "no plants yet" line — populated
+             at bind time by GardenFragment.buildRoomCard. -->
+        <LinearLayout
+            android:id="@+id/room_thumb_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:id="@+id/room_empty_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_sm"
+            android:text="@string/room_empty_plants"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_body_sm"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

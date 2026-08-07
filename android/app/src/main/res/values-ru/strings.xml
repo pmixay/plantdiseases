@@ -18,6 +18,24 @@
         <item quantity="many">%d сканов</item>
         <item quantity="other">%d скана</item>
     </plurals>
+    <plurals name="room_count">
+        <item quantity="one">%d комната</item>
+        <item quantity="few">%d комнаты</item>
+        <item quantity="many">%d комнат</item>
+        <item quantity="other">%d комнаты</item>
+    </plurals>
+    <plurals name="room_plants_count">
+        <item quantity="one">%d растение</item>
+        <item quantity="few">%d растения</item>
+        <item quantity="many">%d растений</item>
+        <item quantity="other">%d растения</item>
+    </plurals>
+    <plurals name="care_tasks_count">
+        <item quantity="one">%d задача</item>
+        <item quantity="few">%d задачи</item>
+        <item quantity="many">%d задач</item>
+        <item quantity="other">%d задачи</item>
+    </plurals>
 
     <!-- Tabs -->
     <string name="tab_scan">Сканер</string>
@@ -361,6 +379,35 @@
     <string name="plant_species">Вид</string>
     <string name="plant_room">Комната (необязательно)</string>
     <string name="plant_room_unassigned">Без комнаты</string>
+
+    <!-- Garden refactor — Rooms -->
+    <string name="garden_tab_rooms">Комнаты</string>
+    <string name="garden_tab_calendar">Календарь ухода</string>
+    <string name="garden_subtitle_combined">%1$s, %2$s под наблюдением</string>
+    <string name="room_add">Добавить комнату</string>
+    <string name="room_name_hint">Название комнаты</string>
+    <string name="room_name_taken">Комната с таким названием уже есть</string>
+    <string name="room_rename">Переименовать комнату</string>
+    <string name="room_delete">Удалить комнату</string>
+    <string name="room_delete_confirm">Комната будет удалена. Растения останутся в саду и перейдут в «Без комнаты».</string>
+    <string name="room_empty_plants">Пока пусто · нажмите, чтобы добавить</string>
+    <string name="room_why_hint">Свет и влажность в комнатах разные — группировка растений делает график ухода точнее.</string>
+    <string name="room_plus_more">+%1$d</string>
+    <string name="room_preset_living">Гостиная</string>
+    <string name="room_preset_bedroom">Спальня</string>
+    <string name="room_preset_kitchen">Кухня</string>
+    <string name="room_preset_office">Кабинет</string>
+    <string name="room_preset_balcony">Балкон</string>
+    <string name="room_preset_bathroom">Ванная</string>
+    <string name="room_preset_other">Другое</string>
+
+    <!-- Garden refactor — plant health status badge -->
+    <string name="plant_status_healthy">Здорово</string>
+    <string name="plant_status_treatment">Лечение</string>
+    <string name="plant_status_watch">Наблюдение</string>
+    <string name="plant_status_recovering">Восстановление</string>
+    <string name="plant_status_no_scans">Сканов пока нет</string>
+    <string name="plant_status_line">%1$d%% · %2$s</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>

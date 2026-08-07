@@ -17,6 +17,18 @@
         <item quantity="one">%d scan</item>
         <item quantity="other">%d scans</item>
     </plurals>
+    <plurals name="room_count">
+        <item quantity="one">%d room</item>
+        <item quantity="other">%d rooms</item>
+    </plurals>
+    <plurals name="room_plants_count">
+        <item quantity="one">%d plant</item>
+        <item quantity="other">%d plants</item>
+    </plurals>
+    <plurals name="care_tasks_count">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
 
     <!-- Tabs -->
     <string name="tab_scan">Scan</string>
@@ -374,6 +386,35 @@
     <string name="plant_species">Species</string>
     <string name="plant_room">Room (optional)</string>
     <string name="plant_room_unassigned">Unassigned</string>
+
+    <!-- Garden refactor — Rooms (see docs/ROADMAP.md "Garden refactor") -->
+    <string name="garden_tab_rooms">Rooms</string>
+    <string name="garden_tab_calendar">Care calendar</string>
+    <string name="garden_subtitle_combined">%1$s · %2$s under watch</string>
+    <string name="room_add">Add room</string>
+    <string name="room_name_hint">Room name</string>
+    <string name="room_name_taken">A room with this name already exists</string>
+    <string name="room_rename">Rename room</string>
+    <string name="room_delete">Delete room</string>
+    <string name="room_delete_confirm">The room will be deleted. Its plants stay in your garden and move to Unassigned.</string>
+    <string name="room_empty_plants">No plants yet · tap to add</string>
+    <string name="room_why_hint">Light and humidity differ from room to room — grouping plants makes their care schedule smarter.</string>
+    <string name="room_plus_more">+%1$d</string>
+    <string name="room_preset_living">Living room</string>
+    <string name="room_preset_bedroom">Bedroom</string>
+    <string name="room_preset_kitchen">Kitchen</string>
+    <string name="room_preset_office">Office</string>
+    <string name="room_preset_balcony">Balcony</string>
+    <string name="room_preset_bathroom">Bathroom</string>
+    <string name="room_preset_other">Other</string>
+
+    <!-- Garden refactor — plant health status badge (PlantHealth.Status) -->
+    <string name="plant_status_healthy">Healthy</string>
+    <string name="plant_status_treatment">Treatment</string>
+    <string name="plant_status_watch">Watch</string>
+    <string name="plant_status_recovering">Recovering</string>
+    <string name="plant_status_no_scans">No scans yet</string>
+    <string name="plant_status_line">%1$d%% · %2$s</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>
