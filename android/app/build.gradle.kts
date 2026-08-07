@@ -8,6 +8,58 @@ plugins {
     id("io.gitlab.arturbosch.detekt")
 }
 
+// Account-beta OAuth configuration can come from a Gradle property or an
+// environment variable. Environment support keeps extractable mobile client
+// values out of command lines and lets CI inject them without committing a
+// local.properties/gradle.properties file.
+fun configuredValue(name: String): String =
+    providers.gradleProperty(name)
+        .orElse(providers.environmentVariable(name))
+        .orNull
+        ?.trim()
+        .orEmpty()
+
+val yandexClientId = configuredValue("YANDEX_CLIENT_ID")
+val vkClientId = configuredValue("VKID_CLIENT_ID")
+val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
+val accountBetaRealOAuthEnabled = when (
+    val raw = configuredValue("ACCOUNT_BETA_REAL_OAUTH").lowercase()
+) {
+    "", "false" -> false
+    "true" -> true
+    else -> throw GradleException("ACCOUNT_BETA_REAL_OAUTH must be true or false")
+}
+
+if (accountBetaRealOAuthEnabled) {
+    val missing = buildList {
+        if (yandexClientId.isBlank()) add("YANDEX_CLIENT_ID")
+        if (vkClientId.isBlank()) add("VKID_CLIENT_ID")
+        if (vkClientSecret.isBlank()) add("VKID_CLIENT_SECRET")
+        if (configuredValue("APP_API_BASE_URL").isBlank()) add("APP_API_BASE_URL")
+        if (configuredValue("ACCOUNT_API_BASE_URL").isBlank()) add("ACCOUNT_API_BASE_URL")
+    }
+    if (missing.isNotEmpty()) {
+        throw GradleException(
+            "Real account-beta OAuth requires: ${missing.joinToString()}",
+        )
+    }
+    if (!vkClientId.all { it.isDigit() }) {
+        throw GradleException("VKID_CLIENT_ID must be a decimal application ID")
+    }
+    listOf("APP_API_BASE_URL", "ACCOUNT_API_BASE_URL").forEach { name ->
+        val uri = runCatching { java.net.URI(configuredValue(name)) }.getOrNull()
+        val valid = uri != null &&
+            uri.scheme == "https" &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null &&
+            uri.query == null &&
+            uri.fragment == null
+        if (!valid) {
+            throw GradleException("$name must be an absolute credential-free HTTPS URL")
+        }
+    }
+}
+
 android {
     namespace = "com.plantdiseases.app"
     // compileSdk 36 (Android 16) is required by the current AndroidX line —
@@ -36,10 +88,10 @@ android {
         // have independent origins. Production defaults stay on the reviewed
         // public endpoint; the account UI is enabled only in the branch-only
         // accountBeta build type below.
-        val configuredAppApiBaseUrl = providers.gradleProperty("APP_API_BASE_URL").orNull
-            ?: "https://pdis.arbuz.lol/"
-        val configuredAccountApiBaseUrl = providers.gradleProperty("ACCOUNT_API_BASE_URL").orNull
-            ?: "https://pdis.arbuz.lol/id/"
+        val configuredAppApiBaseUrl = configuredValue("APP_API_BASE_URL")
+            .ifBlank { "https://pdis.arbuz.lol/" }
+        val configuredAccountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
+            .ifBlank { "https://pdis.arbuz.lol/id/" }
         fun quotedUrl(raw: String): String {
             val normalized = if (raw.endsWith("/")) raw else "$raw/"
             return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -51,12 +103,9 @@ android {
 
         // OAuth mobile application values are public/extractable client
         // configuration, but no real values are committed. Without explicit
-        // Gradle properties the provider buttons fail closed and no SDK flow
-        // is started. Package/signature registration remains an operator step.
-        fun oauthProp(name: String): String = providers.gradleProperty(name).orNull ?: ""
-        val yandexClientId = oauthProp("YANDEX_CLIENT_ID")
-        val vkClientId = oauthProp("VKID_CLIENT_ID")
-        val vkClientSecret = oauthProp("VKID_CLIENT_SECRET")
+        // Gradle properties/environment values the provider buttons fail closed
+        // and no SDK flow is started. Package/signature registration remains an
+        // operator step.
         buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexClientId.isNotBlank().toString())
         buildConfigField(
             "boolean",
@@ -137,10 +186,10 @@ android {
             versionNameSuffix = "-account-beta"
             resValue("string", "app_name", "PlantDiseases Account Beta")
 
-            val appUrl = providers.gradleProperty("APP_API_BASE_URL").orNull
-                ?: "https://pdis.arbuz.lol/plantdisease-test/"
-            val accountUrl = providers.gradleProperty("ACCOUNT_API_BASE_URL").orNull
-                ?: "https://pdis.arbuz.lol/plantdisease-test/id/"
+            val appUrl = configuredValue("APP_API_BASE_URL")
+                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/" }
+            val accountUrl = configuredValue("ACCOUNT_API_BASE_URL")
+                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/id/" }
             fun quotedUrl(raw: String): String {
                 val normalized = if (raw.endsWith("/")) raw else "$raw/"
                 return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -148,10 +197,16 @@ android {
             buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
             buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
-            // This branch-only build is deliberately limited to deterministic
-            // identities accepted by the mock account server. It never starts
-            // a real provider SDK flow, even if OAuth properties are present.
-            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "true")
+            // Synthetic auth remains the safe default for the local/German
+            // mock stack. ACCOUNT_BETA_REAL_OAUTH=true selects the already
+            // integrated official Yandex/VK SDK flows, after the configuration
+            // validation above has proved both clients and an explicit remote
+            // account endpoint are present.
+            buildConfigField(
+                "boolean",
+                "SYNTHETIC_AUTH_ENABLED",
+                (!accountBetaRealOAuthEnabled).toString(),
+            )
         }
 
         release {
@@ -382,10 +437,19 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
-    // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    // Lifecycle 2.11's Compose artifact is compiled against API 37 and declares
+    // AGP 9.1 as its minimum. Keep the atomic Lifecycle family on 2.10 while
+    // this project intentionally remains on compileSdk 36 / AGP 8.13.2.
+    val lifecycleVersion = "2.10.0"
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
+    constraints {
+        implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion") {
+            version { strictly(lifecycleVersion) }
+            because("Lifecycle 2.11 requires compileSdk 37 and AGP 9.1+")
+        }
+    }
 
     // Lottie animations
     implementation("com.airbnb.android:lottie:6.7.1")

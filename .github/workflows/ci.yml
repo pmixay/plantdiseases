@@ -119,6 +119,23 @@ jobs:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
+      # Compile and execute the account-beta identity test once with inert
+      # client values. This proves the official SDK mode and its BuildConfig
+      # branch stay buildable without putting real provider values in CI.
+      # The normal invocation below runs again without these step-scoped values
+      # and therefore produces the synthetic team-test APK.
+      - name: Verify real OAuth account-beta build mode
+        env:
+          ACCOUNT_BETA_REAL_OAUTH: "true"
+          YANDEX_CLIENT_ID: ci-yandex-placeholder
+          VKID_CLIENT_ID: "12345"
+          VKID_CLIENT_SECRET: ci-vk-mobile-placeholder
+          APP_API_BASE_URL: https://app-api.invalid/
+          ACCOUNT_API_BASE_URL: https://account-api.invalid/
+        run: >-
+          ./gradlew :app:testAccountBetaUnitTest
+          --build-cache --configuration-cache --stacktrace
+
       # One Gradle invocation runs lint, both unit-test variants, the R8 release
       # package, and the independently installable account-beta package while
       # sharing a single configuration phase and warm daemon. With

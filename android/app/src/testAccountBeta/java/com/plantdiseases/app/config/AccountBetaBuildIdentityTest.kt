@@ -6,13 +6,19 @@ import org.junit.Test
 
 class AccountBetaBuildIdentityTest {
     @Test
-    fun betaCanCoexistAndUsesOnlyIsolatedPrefixDefaults() {
+    fun betaCanCoexistAndHasConfigurationForItsSelectedAuthMode() {
         assertThat(BuildConfig.ACCOUNT_UI_ENABLED).isTrue()
-        assertThat(BuildConfig.SYNTHETIC_AUTH_ENABLED).isTrue()
         assertThat(BuildConfig.APPLICATION_ID).isEqualTo("com.plantdiseases.app.accountbeta")
-        assertThat(BuildConfig.APP_API_BASE_URL)
-            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
-        assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
-            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
+        if (BuildConfig.SYNTHETIC_AUTH_ENABLED) {
+            assertThat(BuildConfig.APP_API_BASE_URL)
+                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
+            assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
+                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
+        } else {
+            assertThat(BuildConfig.YANDEX_OAUTH_CONFIGURED).isTrue()
+            assertThat(BuildConfig.VK_OAUTH_CONFIGURED).isTrue()
+            assertThat(BuildConfig.APP_API_BASE_URL).startsWith("https://")
+            assertThat(BuildConfig.ACCOUNT_API_BASE_URL).startsWith("https://")
+        }
     }
 }

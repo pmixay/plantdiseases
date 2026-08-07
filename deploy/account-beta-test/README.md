@@ -65,9 +65,8 @@ tombstone community content before private account rows are erased.
 
 The branch-only `accountBeta` variant has application ID
 `com.plantdiseases.app.accountbeta`, so it can coexist with the production app.
-It is hard-wired to deterministic synthetic authentication: tapping Yandex or
-VK creates a mock-provider credential from the app's random installation UUID.
-It never opens either real provider SDK and does not require OAuth credentials.
+It defaults to deterministic synthetic authentication: tapping Yandex or VK
+creates a mock-provider credential from the app's random installation UUID.
 The first use still exercises the pending-signup/nickname flow; later uses of
 the same installation/provider exercise existing-account sign-in.
 
@@ -85,9 +84,39 @@ variant; arbitrary LAN cleartext is not enabled. Without URL properties the
 variant points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
 `id/` account route, never to the production API root.
 
-Do not supply real Yandex/VK credentials to this variant. Real-provider
-registration and smoke tests belong to the later Russian infrastructure/legal
-gate, not this synthetic local/German beta.
+### Build with the real Yandex and VK ID SDKs
+
+Real-provider testing is opt-in. Register the Android application ID
+`com.plantdiseases.app.accountbeta` and the APK signing-certificate fingerprint
+with the providers first. Put the mobile client values in the user's private
+`~/.gradle/gradle.properties` (never in this repository):
+
+```properties
+ACCOUNT_BETA_REAL_OAUTH=true
+YANDEX_CLIENT_ID=replace-with-yandex-client-id
+VKID_CLIENT_ID=12345
+VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
+APP_API_BASE_URL=https://replace-with-approved-app-api/
+ACCOUNT_API_BASE_URL=https://replace-with-approved-account-api/
+```
+
+Then build from `android/`:
+
+```sh
+./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta
+```
+
+The real mode fails configuration if either provider value or either explicit
+API URL is absent; both URLs must be credential-free HTTPS origins. The
+official SDK callbacks pass the short-lived provider access token directly to
+account-api; the app does not persist it. The configured account-api must use
+`AUTH_PROVIDER_MODE=remote` with the same Yandex/VK application IDs.
+
+The current local and German `/plantdisease-test/id/` stacks remain mock-only
+and must not receive real provider tokens. Real-provider registration and smoke
+tests require the approved Russian account data plane described in `handoff/`;
+the explicit URL requirement prevents a real build from silently using the
+German synthetic default.
 
 ## Render the German synthetic staging candidate
 
