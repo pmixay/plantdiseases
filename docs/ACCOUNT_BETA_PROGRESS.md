@@ -5,7 +5,8 @@ verified checkpoint; commands use only mock/synthetic data and local resources.
 
 ## Current status
 
-- Active phase: Phase D — acceptance evidence and infrastructure handoff.
+- Active phase: repository implementation complete — awaiting external CI,
+  operator, infrastructure, product, and legal gates.
 - Production services/data touched: none.
 - Deployments performed: none.
 - Local implementation blockers: none. Deployment, real-provider, migration,
@@ -652,7 +653,38 @@ Checkpoint commit:
 
 - `ops(beta): add isolated staging handoff`
 
+### 10 — Final acceptance matrix (complete, 2026-08-07)
+
+Completed work:
+
+- Added `ACCOUNT_BETA_TEST_REPORT.md` with exact final commands/results and a
+  plan-section acceptance matrix.
+- Separated locally passing implementation evidence from Android CI, German
+  VDS, Russian data-plane, stateless worker, real-provider, backup/restore,
+  key/certificate rotation, legacy migration/erasure, moderation, and legal
+  gates.
+- Recorded residual risk without claiming an APK build, deployment, provider
+  end-to-end result, restore, migration, public launch, or legal approval.
+
+Verification:
+
+- Final account suite — 150 passed, 1 intentionally skipped opt-in PostgreSQL
+  integration test.
+- Final application suite — 582 passed.
+- Focused matrices — provider/config 41, community/deletion 115,
+  training/export/migration/telemetry 33, deployment/runtime/root path 27; all
+  passed.
+- Ruff, four Compose renders, shell syntax/negative scope guard, CI YAML,
+  three JSON contracts, 219 Android XML resources, hardware-identifier scan,
+  secret-pattern review (only explicit synthetic unit bearer fixtures), and
+  `git diff --check` passed.
+
+Checkpoint commit:
+
+- `test(beta): record final acceptance matrix`
+
 ## Remaining work (plan order)
 
-1. Record the final acceptance matrix and distinguish locally passed checks
-   from CI, operator, infrastructure, product, and legal release gates.
+No in-scope repository implementation remains. The required external gates are
+listed in `ACCOUNT_BETA_TEST_REPORT.md` and `ACCOUNT_BETA_HANDOFF.md`; they must
+not be inferred as complete from this branch.
