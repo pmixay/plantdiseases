@@ -292,6 +292,9 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      - name: Validate isolated local Compose configuration
+        run: docker compose -f ../deploy/account-beta-test/compose.local.yml config --quiet
+
       - name: Lint (ruff)
         run: ruff check .
 

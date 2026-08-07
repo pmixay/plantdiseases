@@ -74,6 +74,7 @@ try:
         species_common_diseases,
         species_profile,
     )
+    from .beta_runtime import allow_synthetic_pipeline
     from .community import (
         COMMUNITY_THUMB_DIR,
     )
@@ -209,6 +210,7 @@ try:
     )
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
+    from .synthetic_pipeline import SyntheticPipeline
     from .telemetry import (
         daily_writes as telemetry_daily_writes,
     )
@@ -233,6 +235,7 @@ except ImportError:
         species_common_diseases,
         species_profile,
     )
+    from beta_runtime import allow_synthetic_pipeline
     from community import (
         COMMUNITY_THUMB_DIR,
     )
@@ -368,6 +371,7 @@ except ImportError:
     )
     from species_info import fetch_species_info
     from symptoms import diagnose as symptom_diagnose
+    from synthetic_pipeline import SyntheticPipeline
     from telemetry import (
         daily_writes as telemetry_daily_writes,
     )
@@ -456,6 +460,13 @@ logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler]
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
+ENVIRONMENT = get_str("ENVIRONMENT", "").strip().lower()
+ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
+    environment=ENVIRONMENT,
+    requested=get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
+)
+POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
+
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
 # PlantVision classifier. ONNX-only and architecture-neutral — it serves
@@ -868,7 +879,7 @@ def _snapshot_metrics() -> dict:
         }
 
 
-pipeline: PlantDiseasePipeline | None = None
+pipeline: PlantDiseasePipeline | SyntheticPipeline | None = None
 # Optional second pipeline for the frontier family. Stays ``None`` unless
 # FRONTIER_ENABLED is set AND the frontier artefacts load cleanly at boot.
 pipeline_frontier: PlantDiseasePipeline | None = None
@@ -897,7 +908,7 @@ def _family_available(family: str) -> bool:
     return pipeline is not None
 
 
-def _pipeline_for_family(family: str) -> PlantDiseasePipeline | None:
+def _pipeline_for_family(family: str) -> PlantDiseasePipeline | SyntheticPipeline | None:
     """Resolve the pipeline instance that should serve this family."""
     if family == "frontier":
         return pipeline_frontier
@@ -1236,10 +1247,14 @@ async def lifespan(app: FastAPI):
     # Model artefacts must already be present under MODELS_DIR (provisioned
     # out of band). The pipeline constructor is fail-fast and aborts boot
     # if a required weight / classes.json is missing.
-    pipeline = PlantDiseasePipeline(
-        detector_path=DETECTOR_PATH,
-        classifier_path=CLASSIFIER_PATH,
-    )
+    if ACCOUNT_BETA_SYNTHETIC_PIPELINE:
+        pipeline = SyntheticPipeline()
+        logger.warning("Synthetic test-only inference pipeline enabled")
+    else:
+        pipeline = PlantDiseasePipeline(
+            detector_path=DETECTOR_PATH,
+            classifier_path=CLASSIFIER_PATH,
+        )
     logger.info(
         "Pipeline initialised (classifier=%s, %d classes, family=%s)",
         pipeline.classifier.backend,
@@ -1251,7 +1266,7 @@ async def lifespan(app: FastAPI):
     # always-on gamma path still serves. The picker / analyze gate then
     # report frontier unavailable. This keeps "enabled in config but
     # artefacts not provisioned yet" from taking the whole server down.
-    if FRONTIER_ENABLED:
+    if FRONTIER_ENABLED and not ACCOUNT_BETA_SYNTHETIC_PIPELINE:
         try:
             pipeline_frontier = PlantDiseasePipeline(
                 detector_path=DETECTOR_PATH,
@@ -1279,17 +1294,19 @@ async def lifespan(app: FastAPI):
     prune_task = asyncio.create_task(_prune_loop())
     # Warm the curated placeholder plants' lead images so a fresh country
     # (no community scans yet) paints its popular carousel without a wait.
-    warm_task = asyncio.create_task(_warm_placeholder_images())
+    warm_task = asyncio.create_task(_warm_placeholder_images()) if POPULAR_WARM_ENABLED else None
     try:
         yield
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
-        warm_task.cancel()
+        if warm_task is not None:
+            warm_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await warm_task
+        if warm_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await warm_task
         with _executor_lock:
             if _inference_executor is not None:
                 # `wait=True` lets in-flight inferences drain. The bound is

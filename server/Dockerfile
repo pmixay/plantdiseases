@@ -61,9 +61,12 @@ COPY static ./static
 # /app/data is the SQLite + thumbnail bind-mount target — declared here
 # so the container can run unmounted (dev mode) without crashing on a
 # missing path.
-RUN mkdir -p /app/logs /app/models /app/data && \
+RUN mkdir -p /app/logs /app/models /app/data \
+        /data/community /data/community-thumbs /data/training \
+        /data/training-images /data/telemetry /data/legacy-push \
+        /data/app-cache /data/logs && \
     adduser --disabled-password --gecos "" --uid 10001 plantd && \
-    chown -R plantd:plantd /app
+    chown -R plantd:plantd /app /data
 
 VOLUME ["/app/models", "/app/data"]
 

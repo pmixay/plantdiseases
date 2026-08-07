@@ -5,7 +5,7 @@ verified checkpoint; commands use only mock/synthetic data and local resources.
 
 ## Current status
 
-- Active phase: Phase A — local engineering and test foundation.
+- Active phase: Phase B — local backend/client implementation and integration.
 - Production services/data touched: none.
 - Deployments performed: none.
 - Blockers: none.
@@ -152,16 +152,83 @@ Checkpoint commit:
 
 - `feat(account): add private database schema`
 
+### 3 — Isolated local Compose and process foundation (complete, 2026-08-07)
+
+Completed work:
+
+- Added the four-service `plantdisease_account_beta_test` Compose project:
+  private PostgreSQL, one-shot account migration, account API, and existing
+  application API.
+- Kept PostgreSQL/migration private-only and put every service on the internal
+  network; the APIs additionally join a project-scoped host-access network and
+  their two published ports bind only to `127.0.0.1`.
+- Added explicit health/dependency gates so migration waits for PostgreSQL,
+  account startup waits for migration completion, and application startup waits
+  for database-backed account readiness.
+- Added beta-prefixed named volumes for PostgreSQL, models, community data,
+  application compatibility data, thumbnails, legacy training data/images,
+  telemetry, legacy push data, caches, and logs. There are no host bind mounts
+  or production storage paths.
+- Added a deterministic no-weight application pipeline for local process tests.
+  Its switch fails closed unless `ENVIRONMENT=test`, its output is visibly
+  marked `synthetic_test_result`, and production behaviour remains the default.
+- Made optional popular-photo warming independently switchable so the local
+  stack has no external Wikimedia dependency.
+- Prepared the existing server image's beta volume targets for its non-root UID
+  and kept API root filesystems read-only with explicit writable volumes.
+- Documented local start, inspection, endpoints, non-destructive shutdown, and
+  the separate explicitly destructive volume-removal operation.
+- Added parsed-Compose contract tests and CI `docker compose config` validation.
+
+Decisions:
+
+- Deterministic in-process Yandex/VK adapters satisfy the local mock-provider
+  role; an additional network service would add no contract coverage.
+- The committed PostgreSQL service has no published port. Runtime migration
+  verification used a temporary, uncommitted loopback-only port/network
+  override solely so the host test client could reach the container.
+- No server/account Docker image or ML artefact was built locally, consistent
+  with repository guidance. Process tests ran the same entry points from the
+  checked-out source against isolated synthetic state.
+- Ordinary Compose shutdown retained the beta PostgreSQL volume. It remains
+  disposable test state and is never eligible for promotion.
+
+Verification:
+
+- `docker compose -f deploy/account-beta-test/compose.local.yml config --quiet`
+  — passed.
+- Account and server Ruff checks — passed.
+- Synthetic runtime tests — 10 passed; parsed Compose isolation tests — 7
+  passed.
+- Digest-pinned `postgres:18.4-alpine3.23` started healthy with a fresh beta
+  named volume; online Alembic upgrade reached
+  `0001_private_account_schema` and created 11 public tables including
+  `alembic_version`.
+- After a PostgreSQL process restart, the same revision and 11-table count were
+  present.
+- Account `/health` and database-backed `/ready` returned 200 with mock Yandex
+  and VK providers.
+- Application `/api/health`, `/api/capabilities`, and `/api/analyze` returned
+  200 without model weights; analysis used a repository test image and carried
+  the `synthetic_test_result` warning.
+- Ordinary `docker compose down` removed only the beta container/network;
+  `plantdisease_account_beta_test_postgres` remained present.
+- Complete account suite — 45 passed in 2.56s.
+- Complete existing-server suite — 550 passed in 12.21s.
+- `git diff --check` — passed.
+
+Checkpoint commit:
+
+- `test(beta): add isolated local compose foundation`
+
 ## Remaining work (plan order)
 
-1. Add the isolated local Compose stack and prove empty-state migration,
-   health, dependency readiness, restart persistence, and volume isolation.
-2. Implement and verify the account API contract, token/session security,
+1. Implement and verify the account API contract, token/session security,
    nickname rules, linking, reauthentication, deletion, and private push data.
-3. Enforce community authentication and migrate authorship to signed actors.
-4. Replace feedback/labeling stores with the anonymous training store/export.
-5. Minimize telemetry and add image-sanitization coverage.
-6. Implement the Android account-beta variant, auth state/client/UI flows, and
+2. Enforce community authentication and migrate authorship to signed actors.
+3. Replace feedback/labeling stores with the anonymous training store/export.
+4. Minimize telemetry and add image-sanitization coverage.
+5. Implement the Android account-beta variant, auth state/client/UI flows, and
    upload sanitization.
-7. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-8. Run the complete acceptance and privacy/security verification matrix.
+6. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+7. Run the complete acceptance and privacy/security verification matrix.
