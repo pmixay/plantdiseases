@@ -15,6 +15,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
@@ -127,6 +128,7 @@ class DetailExtraCardsController(
                         )
                     },
                 )
+                maybeStartTreatmentPlan(plant, latestScan, classKey, plan)
             }.onFailure {
                 card.showError(onRetry = {
                     val replacement = buildCarePlanSlot(plant, scans)
@@ -150,6 +152,42 @@ class DetailExtraCardsController(
         scanRepository.parseAllProbs(scan.allProbs)
             .entries.maxByOrNull { it.value }?.key
             ?: scan.diseaseName.lowercase().replace(' ', '_')
+
+    /** Materialises a treatment plan from a disease-diagnosing scan, once
+     *  the care plan it's built from has actually loaded (Garden refactor
+     *  §Scan-driven care checklists). Guarded on [scan] being the plant's
+     *  newest AND on the disease key actually changing — this fires every
+     *  time the care-plan card loads, so without the diseaseKey check a
+     *  plant with an unchanged diagnosis would get its treatment progress
+     *  reset (plan abandoned + a fresh one started) on every screen visit. */
+    private fun maybeStartTreatmentPlan(
+        plant: PlantEntity,
+        scan: ScanEntity,
+        classKey: String,
+        carePlan: CarePlanResponse,
+    ) {
+        val isNotAPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            scan.diseaseName.equals("Не растение", ignoreCase = true)
+        if (scan.isHealthy || isNotAPlant) return
+
+        activity.lifecycleScope.launch {
+            val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
+            if (newestScanId != scan.id) return@launch // a newer scan landed while this card was loading
+
+            val existing = careRepository.activePlan(plant.id)
+            if (existing?.plan?.diseaseKey == classKey) return@launch
+
+            careRepository.startTreatmentPlan(
+                plantId = plant.id,
+                scanId = scan.id,
+                carePlan = carePlan,
+                diseaseKey = classKey,
+                diseaseLabelEn = scan.diseaseName,
+                diseaseLabelRu = scan.diseaseNameRu,
+            )
+            onReload()
+        }
+    }
 
     /** One-line "Last watered N days ago" strip directly under the
      *  action row. Reads from the plant_reminder_events log filled
