@@ -88,8 +88,11 @@ def test_expired_tampered_or_wrong_audience_tokens_fail_closed():
 
     with pytest.raises(AccountAPIError, match="auth_required"):
         service.decode_access(token, now=NOW + timedelta(minutes=16))
+    header, payload, signature = token.split(".")
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered = f"{header}.{payload}.{replacement}{signature[1:]}"
     with pytest.raises(AccountAPIError, match="auth_required"):
-        service.decode_access(f"{token[:-1]}x", now=NOW)
+        service.decode_access(tampered, now=NOW)
 
     wrong_audience = TokenService(
         issuer=service.issuer,

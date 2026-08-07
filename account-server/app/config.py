@@ -93,6 +93,7 @@ class Settings:
     blocked_nicknames: tuple[str, ...] = ()
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
+    community_deletion_url: str | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -133,6 +134,9 @@ class Settings:
                 minimum=1,
                 maximum=3_600,
             ),
+            community_deletion_url=(
+                source.get("COMMUNITY_DELETION_URL", "").strip() or None
+            ),
         )
         settings.validate()
         return settings
@@ -162,6 +166,19 @@ class Settings:
             raise SettingsError("Wildcard CORS is forbidden")
         if self.allow_ephemeral_keys and self.environment != "test":
             raise SettingsError("Ephemeral account keys are allowed only in test")
+        if self.community_deletion_url is not None:
+            deletion_url = urlparse(self.community_deletion_url)
+            if (
+                deletion_url.scheme not in {"http", "https"}
+                or not deletion_url.hostname
+                or deletion_url.username
+                or deletion_url.password
+                or deletion_url.query
+                or deletion_url.fragment
+            ):
+                raise SettingsError("COMMUNITY_DELETION_URL must be an absolute safe URL")
+            if self.is_production and deletion_url.scheme != "https":
+                raise SettingsError("Production COMMUNITY_DELETION_URL must use HTTPS")
 
         configured_secret_files = (
             ("ACCOUNT_SIGNING_KEY_FILE", self.signing_key_file),
@@ -179,6 +196,8 @@ class Settings:
             raise SettingsError("AUTH_PROVIDER_MODE=mock is forbidden in production")
         if issuer.scheme != "https":
             raise SettingsError("Production ACCOUNT_ISSUER must use HTTPS")
+        if self.community_deletion_url is None:
+            raise SettingsError("Production requires COMMUNITY_DELETION_URL")
         query = parse_qs(database.query)
         ssl_mode = query.get("sslmode", [""])[-1].lower()
         database_is_loopback = database.hostname in _LOOPBACK_DATABASE_HOSTS

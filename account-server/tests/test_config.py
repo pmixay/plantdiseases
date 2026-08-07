@@ -81,6 +81,32 @@ def test_production_requires_https_issuer():
         Settings.from_env(env)
 
 
+def test_production_requires_community_deletion_url(tmp_path: Path):
+    env = _production_env(tmp_path)
+    env.pop("COMMUNITY_DELETION_URL")
+    with pytest.raises(SettingsError, match="requires COMMUNITY_DELETION_URL"):
+        Settings.from_env(env)
+
+
+def test_production_requires_https_community_deletion_url(tmp_path: Path):
+    env = _production_env(tmp_path)
+    env["COMMUNITY_DELETION_URL"] = (
+        "http://app.example.invalid/api/internal/account-deletions"
+    )
+    with pytest.raises(SettingsError, match="COMMUNITY_DELETION_URL must use HTTPS"):
+        Settings.from_env(env)
+
+
+def test_community_deletion_url_rejects_query_parameters():
+    env = _base_env() | {
+        "COMMUNITY_DELETION_URL": (
+            "http://beta-app-api:8000/api/internal/account-deletions?token=unsafe"
+        )
+    }
+    with pytest.raises(SettingsError, match="absolute safe URL"):
+        Settings.from_env(env)
+
+
 def test_production_rejects_unencrypted_remote_postgres(tmp_path: Path):
     env = _production_env(tmp_path)
     env["ACCOUNT_DATABASE_URL"] = "postgresql+psycopg://account:secret@db.invalid/accounts"
@@ -153,5 +179,8 @@ def _production_env(tmp_path: Path) -> dict[str, str]:
         "ACCOUNT_SIGNING_KEY_FILE": _secret(tmp_path / "signing.key"),
         "ACCOUNT_ENCRYPTION_KEY_FILE": _secret(tmp_path / "encryption.key"),
         "INTERNAL_SERVICE_TOKEN_FILE": _secret(tmp_path / "internal.token"),
+        "COMMUNITY_DELETION_URL": (
+            "https://app.example.invalid/api/internal/account-deletions"
+        ),
         "CORS_ORIGINS": "https://app.example.invalid",
     }

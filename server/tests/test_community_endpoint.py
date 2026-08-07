@@ -11,6 +11,8 @@ import sqlite3
 
 import pytest
 
+from server.tests.conftest import _test_access_token
+
 
 @pytest.fixture
 def isolated_community(tmp_path, monkeypatch):
@@ -32,7 +34,16 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_set_wants_opinion = comm.set_wants_opinion
     server_main.community_clear_wants_opinion = comm.clear_wants_opinion
     server_main.community_wants_opinion = comm.wants_opinion
-    server_main.community_owner_of = comm.owner_of
+    server_main.community_account_owner_of = comm.account_owner_of
+    server_main.community_record_opinion = comm.record_opinion
+    server_main.community_opinions_for = comm.opinions_for
+    server_main.community_scan_exists = comm.scan_exists
+    server_main.community_opinion_open = comm.opinion_open
+    server_main.community_resolve_scan_token = comm.resolve_scan_token
+    server_main.community_record_view = comm.record_view
+    server_main.community_opinion_counts_for_actor = comm.opinion_counts_for_actor
+    server_main.community_scan_counts_for_actor = comm.scan_counts_for_actor
+    server_main.community_thumbnail_is_visible = comm.thumbnail_is_visible
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
     # Community upload now requires a server-issued scan_id (same gate as
@@ -54,7 +65,182 @@ def _png_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _account_headers(identity: str, nickname: str = "Signed Fern") -> dict[str, str]:
+    return {"Authorization": f"Bearer {_test_access_token(identity, nickname)}"}
+
+
 # ── Happy paths ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "is_form"),
+    [
+        (
+            "/api/community/scan",
+            {"scan_id": "authgate001", "disease": "healthy"},
+            True,
+        ),
+        (
+            "/api/community/opinion",
+            {"scan_id": "authgate001", "suggested_disease": "healthy"},
+            False,
+        ),
+        ("/api/community/request-opinion", {"scan_id": "authgate001"}, False),
+        ("/api/community/request-opinion/cancel", {"scan_id": "authgate001"}, False),
+        ("/api/community/view", {"scan_id": "authgate001"}, False),
+        ("/api/community/scan-counts", {"scan_ids": ["authgate001"]}, False),
+    ],
+)
+def test_community_mutations_require_bearer_account(
+    client, isolated_community, path, body, is_form,
+):
+    kwargs = {"data" if is_form else "json": body, "headers": {"Authorization": ""}}
+    response = client.post(path, **kwargs)
+    assert response.status_code == 401
+    assert response.json()["detail"] == "auth_required"
+
+
+def test_signed_claims_override_spoofed_legacy_identity_fields(
+    client, isolated_community,
+):
+    db_path, _ = isolated_community
+    response = client.post(
+        "/api/community/scan",
+        headers=_account_headers("real-owner", "Signed Orchid"),
+        data=_form(
+            scan_id="claimbound01",
+            user_pseudo_id="spoofed-victim",
+            nickname="Spoofed Nickname",
+            country="GB",
+            region="London",
+            disease="healthy",
+        ),
+    )
+    assert response.status_code == 200, response.text
+    import uuid
+
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            "SELECT user_pseudo_id, account_actor_id, nickname "
+            "FROM community_scans WHERE scan_id = 'claimbound01'"
+        ).fetchone()
+    assert row == (
+        None,
+        str(uuid.uuid5(uuid.NAMESPACE_URL, "test-account:real-owner")),
+        "Signed Orchid",
+    )
+
+
+def test_anonymous_reads_create_no_stable_viewer_records(client, isolated_community):
+    db_path, _ = isolated_community
+    uploaded = client.post(
+        "/api/community/scan",
+        headers=_account_headers("reader-test-owner"),
+        data=_form(
+            scan_id="anonymousread1",
+            country="GB",
+            region="London",
+            disease="healthy",
+        ),
+    )
+    assert uploaded.status_code == 200
+    feed = client.get(
+        "/api/community/nearby",
+        headers={"Authorization": ""},
+        params={"country": "GB", "scope": "country", "user_pseudo_id": "ignored"},
+    )
+    assert feed.status_code == 200 and len(feed.json()["items"]) == 1
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM community_scan_views").fetchone()[0] == 0
+
+
+def test_legacy_rows_remain_readable_but_are_never_mutable(
+    client, isolated_community,
+):
+    import community as comm
+
+    comm.record_scan(
+        scan_id="legacyreadonly1",
+        user_pseudo_id="legacy-install",
+        country="GB",
+        region="London",
+        disease="healthy",
+    )
+    feed = client.get(
+        "/api/community/nearby",
+        headers={"Authorization": ""},
+        params={"country": "GB", "scope": "country"},
+    )
+    assert any(item["scan_id"] == comm.public_scan_token("legacyreadonly1") for item in feed.json()["items"])
+
+    headers = _account_headers("new-account-viewer")
+    opinion = client.post(
+        "/api/community/opinion",
+        headers=headers,
+        json={"scan_id": "legacyreadonly1", "suggested_disease": "healthy"},
+    )
+    view = client.post(
+        "/api/community/view",
+        headers=headers,
+        json={"scan_id": "legacyreadonly1"},
+    )
+    assert opinion.status_code == 409
+    assert view.status_code == 409
+
+
+def test_legacy_push_registration_endpoint_is_removed(client, isolated_community):
+    response = client.post(
+        "/api/push/register",
+        headers=_account_headers("push-owner"),
+        json={"user_pseudo_id": "legacy", "token": "synthetic-token"},
+    )
+    assert response.status_code == 404
+
+
+def test_internal_deletion_hook_is_secret_guarded_and_idempotent(
+    client, isolated_community, monkeypatch,
+):
+    import uuid
+
+    import main as server_main
+
+    client.post(
+        "/api/community/scan",
+        headers=_account_headers("delete-hook-owner"),
+        data=_form(
+            scan_id="deletehook001",
+            country="GB",
+            region="London",
+            disease="healthy",
+        ),
+    )
+    actor = str(uuid.uuid5(uuid.NAMESPACE_URL, "test-account:delete-hook-owner"))
+
+    monkeypatch.setattr(
+        server_main,
+        "internal_service_authorized",
+        lambda supplied: supplied == "synthetic-internal-secret",
+    )
+    denied = client.post(
+        "/api/internal/account-deletions",
+        headers={"X-Internal-Service-Token": "wrong"},
+        json={"actor_id": actor},
+    )
+    assert denied.status_code == 401
+
+    for _attempt in range(2):
+        accepted = client.post(
+            "/api/internal/account-deletions",
+            headers={"X-Internal-Service-Token": "synthetic-internal-secret"},
+            json={"actor_id": actor},
+        )
+        assert accepted.status_code == 202
+    feed = client.get(
+        "/api/community/nearby",
+        headers={"Authorization": ""},
+        params={"country": "GB", "scope": "country"},
+    )
+    assert feed.json()["items"] == []
 
 
 def test_community_scan_upload_minimal(client, isolated_community):
@@ -470,7 +656,7 @@ def test_community_request_opinion_flags_owner_scan(client, isolated_community):
         json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-not-owner"},
     )
     assert r_wrong.status_code == 200, r_wrong.text
-    assert r_wrong.json() == {"ok": True, "flagged": True}
+    assert r_wrong.json() == {"ok": True, "flagged": False}
     assert feed_wants_opinion() is False
 
     # The owner flags it → the flag surfaces to other users on the feed.
@@ -963,7 +1149,7 @@ def test_opinion_push_only_when_owner_requested(client, isolated_community, monk
 
     pushes: list[tuple] = []
     monkeypatch.setattr(
-        server_main, "push_send_opinion",
+        server_main, "_send_account_opinion_notification",
         lambda owner, sid, disease, note, nickname: pushes.append((owner, sid, disease)),
     )
 
@@ -995,7 +1181,10 @@ def test_opinion_push_only_when_owner_requested(client, isolated_community, monk
 
     # Only the requested scan triggered a push to the owner.
     assert [p[1] for p in pushes] == ["nudgeon00001"]
-    assert pushes[0][0] == "pseudo-owner-9"
+    import uuid
+    assert pushes[0][0] == str(
+        uuid.uuid5(uuid.NAMESPACE_URL, "test-account:pseudo-owner-9")
+    )
 
 
 def test_opinion_on_unknown_scan_rejected(client, isolated_community):

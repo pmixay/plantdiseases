@@ -14,9 +14,12 @@ list so all contract tests still bite.
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -30,6 +33,62 @@ if str(SERVER_DIR) not in sys.path:
 # want to exercise the 429 path re-tune the middleware through the
 # ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
+
+
+def _test_access_token(identity: str, nickname: str | None = None) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps([identity, nickname or "Test Fern"], ensure_ascii=False).encode("utf-8")
+    ).rstrip(b"=").decode("ascii")
+    return f"test.{encoded}.signature"
+
+
+class _TestAccountAuthenticator:
+    def authenticate(self, token: str):
+        from account_auth import AccountAuthenticationError, AccountPrincipal
+
+        try:
+            prefix, encoded, signature = token.split(".")
+            if prefix != "test":
+                raise ValueError
+            if signature != "signature":
+                raise ValueError
+            identity, nickname = json.loads(
+                base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+            )
+            actor = uuid.uuid5(uuid.NAMESPACE_URL, f"test-account:{identity}")
+            session = uuid.uuid5(uuid.NAMESPACE_URL, f"test-session:{identity}")
+            return AccountPrincipal(
+                session_id=str(session),
+                actor_id=str(actor),
+                nickname=str(nickname),
+                authorization_version=1,
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise AccountAuthenticationError from None
+
+
+class _AccountAwareTestClientMixin:
+    """Translate legacy test identity fields into signed-test principals.
+
+    Production handlers never inspect these fields; this adapter keeps older
+    endpoint fixtures readable while exercising the new claim-derived path.
+    """
+
+    def request(self, method, url, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        if not any(name.lower() == "authorization" for name in headers):
+            data = kwargs.get("data") if isinstance(kwargs.get("data"), dict) else {}
+            body = kwargs.get("json") if isinstance(kwargs.get("json"), dict) else {}
+            params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}
+            identity = (
+                data.get("user_pseudo_id")
+                or body.get("user_pseudo_id")
+                or params.get("user_pseudo_id")
+                or "default-account"
+            )
+            nickname = data.get("nickname") or body.get("nickname") or "Test Fern"
+            headers["Authorization"] = f"Bearer {_test_access_token(str(identity), str(nickname))}"
+        return super().request(method, url, headers=headers, **kwargs)
 
 
 def _encode_image(img: Image.Image, fmt: str) -> bytes:
@@ -137,6 +196,7 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
 
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
+    server_main.account_authenticator = _TestAccountAuthenticator()
 
     state_dir = tmp_path_factory.mktemp("server-state")
 
@@ -191,9 +251,12 @@ def client():
     """
     from fastapi.testclient import TestClient
 
+    class AccountAwareTestClient(_AccountAwareTestClientMixin, TestClient):
+        pass
+
     import main as server_main
 
-    with TestClient(server_main.app) as c:
+    with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
             mw.min_interval = 0.0
@@ -220,9 +283,12 @@ def rate_limited_client():
     """
     from fastapi.testclient import TestClient
 
+    class AccountAwareTestClient(_AccountAwareTestClientMixin, TestClient):
+        pass
+
     import main as server_main
 
-    with TestClient(server_main.app) as c:
+    with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
             mw.min_interval = 1.0

@@ -6,6 +6,7 @@ import argparse
 import base64
 import json
 import os
+import secrets
 import stat
 from pathlib import Path
 
@@ -41,6 +42,7 @@ def ensure_test_keys(directory: Path, *, environment: str) -> tuple[Path, Path]:
     directory.chmod(0o700)
     signing_path = directory / "signing.json"
     encryption_path = directory / "encryption.key"
+    internal_token_path = directory / "internal.token"
 
     if not signing_path.exists():
         private_key = Ed25519PrivateKey.generate()
@@ -59,9 +61,12 @@ def ensure_test_keys(directory: Path, *, environment: str) -> tuple[Path, Path]:
             encryption_path,
             _b64url(AESGCM.generate_key(bit_length=256)),
         )
+    if not internal_token_path.exists():
+        _write_new_private_file(internal_token_path, secrets.token_urlsafe(32))
 
     _require_private_file(signing_path)
     _require_private_file(encryption_path)
+    _require_private_file(internal_token_path)
     SigningKeyRing.from_file(signing_path)
     encoded_encryption_key = encryption_path.read_text(encoding="ascii").strip()
     padding = "=" * (-len(encoded_encryption_key) % 4)

@@ -6,10 +6,11 @@ tokens, reuse production storage, or download/train model artefacts. The
 account service uses deterministic in-process provider adapters, so a separate
 provider-mock container is unnecessary.
 
-A one-shot, network-disabled key generator creates random signing and
-encryption keys in a beta-only named volume. It never prints or commits them,
-and it leaves existing keys untouched so account/container restarts retain the
-same JWKS and can decrypt previously registered synthetic push tokens.
+A one-shot, network-disabled key generator creates random signing, encryption,
+and internal service-authentication keys in a beta-only named volume. It never
+prints or commits them, and it leaves existing keys untouched so
+account/container restarts retain the same JWKS, can decrypt previously
+registered synthetic push tokens, and keep private inter-service calls stable.
 
 The application API uses a deterministic, weight-free response pipeline. That
 pipeline is guarded by both `ENVIRONMENT=test` and
@@ -44,6 +45,13 @@ PostgreSQL has no host port and joins only the internal `beta-private` network.
 The APIs additionally join a project-scoped edge network so Docker can publish
 their loopback ports. Startup order is PostgreSQL health, one-shot Alembic
 migration, account readiness, then application readiness.
+
+Community writes verify the account JWT locally from account-api's JWKS and
+then confirm the live session/authorization version through a private internal
+route. Opinion notifications travel in the opposite direction keyed only by
+the signed community actor; account-api resolves encrypted device tokens
+without returning them. Account deletion uses the same private credential to
+tombstone community content before private account rows are erased.
 
 ## Stop without deleting data
 
@@ -81,3 +89,16 @@ Automated contract tests parse this Compose file and reject unsafe ports,
 mounts, mutable image tags, production paths, or relaxed test guards. CI also
 runs `docker compose config --quiet`; runtime integration uses generated
 fixtures only.
+
+The loopback-only synthetic trust-boundary check can be run after both APIs are
+healthy:
+
+```sh
+python deploy/account-beta-test/check_integration.py \
+  --account-url http://127.0.0.1:18001 \
+  --app-url http://127.0.0.1:18000 \
+  --image server/static/guide/healthy.png
+```
+
+It creates only generated mock-provider identities, deletes its owner account,
+and never accepts non-loopback URLs.

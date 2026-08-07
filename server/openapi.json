@@ -436,7 +436,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``nickname`` is the author's generated handle.\nThe image is optional.",
+        "description": "Append one community-shared scan to the corpus.\n\nIdentity and nickname come exclusively from the verified access token.\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation.\nThe image is optional.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {
@@ -467,7 +467,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/telemetry/errors": {
@@ -541,13 +546,18 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/request-opinion": {
       "post": {
         "summary": "Community Request Opinion",
-        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches a row owned by ``user_pseudo_id``) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
+        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches the signed account actor) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
         "operationId": "community_request_opinion_api_community_request_opinion_post",
         "requestBody": {
           "content": {
@@ -578,7 +588,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/request-opinion/cancel": {
@@ -615,7 +630,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/opinions/{scan_id}": {
@@ -656,22 +676,11 @@
         }
       }
     },
-    "/api/community/my-scan-opinions/{user_pseudo_id}": {
+    "/api/community/my-scan-opinions": {
       "get": {
         "summary": "Community My Scan Opinions",
         "description": "Opinion counts on the caller's OWN shared scans. The client polls this\non a schedule to notify the user when someone leaves a second opinion on a\nscan they shared (the per-scan view already exists via /opinions/{scan_id}).",
-        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions__user_pseudo_id__get",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
+        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -680,55 +689,13 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
-      }
-    },
-    "/api/push/register": {
-      "post": {
-        "summary": "Push Register Endpoint",
-        "description": "Register this install's FCM token under its pseudo-id so the server can\npush opinion notifications to a closed / idle device. Upserts by token.",
-        "operationId": "push_register_endpoint_api_push_register_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PushRegisterRequest"
-              }
-            }
-          },
-          "required": true
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+        "security": [
+          {
+            "HTTPBearer": []
           }
-        }
+        ]
       }
     },
     "/api/community/view": {
@@ -765,7 +732,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/scan-counts": {
@@ -802,13 +774,18 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -918,22 +895,6 @@
             }
           },
           {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
-            }
-          },
-          {
             "name": "scope",
             "in": "query",
             "required": false,
@@ -1038,22 +999,6 @@
               "type": "integer",
               "default": 30,
               "title": "Days"
-            }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
             }
           },
           {
@@ -1211,22 +1156,6 @@
               "default": 12,
               "title": "Limit"
             }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
-            }
           }
         ],
         "responses": {
@@ -1360,7 +1289,7 @@
     "/api/species-profile": {
       "get": {
         "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side per species and carries both EN/RU text copies,\nso a locale switch cannot change the map. ``profile_version`` is a cache-busting\nquery parameter for clients/CDNs.",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.",
         "operationId": "species_profile_endpoint_api_species_profile_get",
         "parameters": [
           {
@@ -1609,7 +1538,7 @@
     "/api/popular": {
       "get": {
         "summary": "Popular Endpoint",
-        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
+        "description": "Personalized popular-plants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
         "operationId": "popular_endpoint_api_popular_get",
         "parameters": [
           {
@@ -1732,10 +1661,6 @@
             "type": "string",
             "title": "Scan Id"
           },
-          "user_pseudo_id": {
-            "type": "string",
-            "title": "User Pseudo Id"
-          },
           "country": {
             "anyOf": [
               {
@@ -1822,17 +1747,6 @@
             ],
             "title": "Locale"
           },
-          "nickname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nickname"
-          },
           "image": {
             "anyOf": [
               {
@@ -1849,7 +1763,6 @@
         "type": "object",
         "required": [
           "scan_id",
-          "user_pseudo_id",
           "disease"
         ],
         "title": "Body_community_scan_upload_api_community_scan_post"
@@ -1986,12 +1899,6 @@
             "minLength": 1,
             "title": "Scan Id"
           },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
-          },
           "suggested_disease": {
             "type": "string",
             "maxLength": 64,
@@ -2009,24 +1916,11 @@
               }
             ],
             "title": "Note"
-          },
-          "nickname": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nickname"
           }
         },
         "type": "object",
         "required": [
           "scan_id",
-          "user_pseudo_id",
           "suggested_disease"
         ],
         "title": "CommunityOpinionRequest"
@@ -2038,18 +1932,11 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
           }
         },
         "type": "object",
         "required": [
-          "scan_id",
-          "user_pseudo_id"
+          "scan_id"
         ],
         "title": "CommunityRequestOpinionRequest"
       },
@@ -2077,18 +1964,11 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
           }
         },
         "type": "object",
         "required": [
-          "scan_id",
-          "user_pseudo_id"
+          "scan_id"
         ],
         "title": "CommunityViewRequest"
       },
@@ -2349,34 +2229,6 @@
         "title": "ProgressionRequest",
         "description": "Time-ordered list of scans (oldest first) for the disease-\nprogression sparkline + trend the plant-detail screen renders."
       },
-      "PushRegisterRequest": {
-        "properties": {
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
-          },
-          "token": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Token"
-          },
-          "platform": {
-            "type": "string",
-            "maxLength": 16,
-            "title": "Platform",
-            "default": "android"
-          }
-        },
-        "type": "object",
-        "required": [
-          "user_pseudo_id",
-          "token"
-        ],
-        "title": "PushRegisterRequest"
-      },
       "SymptomDiagnoseRequest": {
         "properties": {
           "answers": {
@@ -2540,6 +2392,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

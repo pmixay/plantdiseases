@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from typing import Annotated, Literal
 
@@ -88,6 +89,14 @@ class PushDeviceRequest(StrictRequest):
     platform: Literal["android"] = "android"
 
 
+class InternalOpinionNotificationRequest(StrictRequest):
+    actor_id: uuid.UUID
+    scan_id: str = Field(min_length=1, max_length=128)
+    disease: str = Field(min_length=1, max_length=64)
+    note: str = Field(default="", max_length=240)
+    nickname: str = Field(min_length=1, max_length=64)
+
+
 def _service(request: Request) -> AccountService:
     service = getattr(request.app.state, "account_service", None)
     if service is None:
@@ -115,6 +124,18 @@ def _current_account(
 def _limit_ip(request: Request, service: AccountService, operation: str) -> None:
     address = request.client.host if request.client is not None else "unknown"
     service.limit_ip(operation, address)
+
+
+def _require_internal_service(request: Request) -> None:
+    expected = getattr(request.app.state, "internal_service_token", None)
+    supplied = request.headers.get("x-internal-service-token", "")
+    if (
+        not isinstance(expected, str)
+        or not supplied
+        or len(supplied) > 512
+        or not secrets.compare_digest(supplied, expected)
+    ):
+        raise AccountAPIError("auth_required", status_code=401)
 
 
 async def _exchange(
@@ -386,3 +407,41 @@ def disable_push(
 )
 def jwks(service: Annotated[AccountService, Depends(_service)]) -> dict:
     return service.token_service.jwks()
+
+
+@router.post("/v1/internal/auth/verify", include_in_schema=False)
+def verify_internal_access(request: Request) -> dict:
+    """Confirm live session/account state after the app API verifies the JWT.
+
+    This route is intentionally absent from the public OpenAPI document and
+    requires a separate file-backed service credential before it performs any
+    account lookup.
+    """
+    _require_internal_service(request)
+    authorization = request.headers.get("authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "bearer" or not token or len(token) > 8192:
+        raise AccountAPIError("auth_required", status_code=401)
+    current = _service(request).authenticate(token)
+    return {
+        "session_id": str(current.session_id),
+        "actor_id": str(current.community_actor_id),
+        "nickname": current.nickname,
+        "authorization_version": current.authorization_version,
+    }
+
+
+@router.post(
+    "/v1/internal/notifications/opinion",
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+def notify_opinion(body: InternalOpinionNotificationRequest, request: Request) -> dict:
+    _require_internal_service(request)
+    return _service(request).dispatch_opinion_notification(
+        community_actor_id=body.actor_id,
+        scan_id=body.scan_id,
+        disease=body.disease,
+        note=body.note,
+        nickname=body.nickname,
+    )

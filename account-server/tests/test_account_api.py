@@ -712,6 +712,10 @@ def test_push_is_authenticated_encrypted_and_disabled_on_deletion(api: ApiHarnes
         assert all(item.revoked_at is not None for item in sessions)
         assert device is not None and device.disabled_at is not None
         assert job is not None and job.community_actor_id == account.community_actor_id
+        assert job.state == "retry"
+        assert job.attempt_count == 1
+        assert job.next_attempt_at is not None
+        assert job.last_error_code == "community_unavailable"
         assert challenge is not None and challenge.consumed_at is not None
         assert event is not None
 
@@ -817,3 +821,147 @@ def test_private_state_pruning_respects_expiry_and_refresh_family_lifetime(api: 
         assert transaction.scalar(
             select(RefreshToken).where(RefreshToken.session_id == second_session_id)
         ) is not None
+
+
+def test_internal_introspection_requires_service_secret_and_live_session(api: ApiHarness):
+    tokens = _signup(api)
+    internal_token = api.client.app.state.internal_service_token
+    headers = {
+        "Authorization": f"Bearer {tokens['access_token']}",
+        "X-Internal-Service-Token": internal_token,
+    }
+
+    denied = api.client.post(
+        "/v1/internal/auth/verify",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        json={},
+    )
+    assert denied.status_code == 401
+
+    verified = api.client.post("/v1/internal/auth/verify", headers=headers, json={})
+    assert verified.status_code == 200
+    assert set(verified.json()) == {
+        "session_id",
+        "actor_id",
+        "nickname",
+        "authorization_version",
+    }
+    assert tokens["access_token"] not in verified.text
+
+    logout = api.client.post("/v1/auth/logout", headers=api.headers(tokens["access_token"]))
+    assert logout.status_code == 204
+    revoked = api.client.post("/v1/internal/auth/verify", headers=headers, json={})
+    assert revoked.status_code == 401
+    assert _error(revoked) == "session_revoked"
+
+
+def test_internal_opinion_notification_resolves_tokens_without_returning_them(
+    api: ApiHarness,
+):
+    tokens = _signup(api)
+    fcm_token = "synthetic-fcm-token-private-resolution-12345"
+    registered = api.client.put(
+        "/v1/push/device",
+        headers=api.headers(tokens["access_token"]),
+        json={"fcm_token": fcm_token, "platform": "android"},
+    )
+    assert registered.status_code == 200
+    delivered: list[tuple[list[str], dict[str, str]]] = []
+    api.service.notification_sink = lambda targets, payload: (
+        delivered.append((targets, payload)) or len(targets)
+    )
+    current = api.service.authenticate(tokens["access_token"])
+    response = api.client.post(
+        "/v1/internal/notifications/opinion",
+        headers={"X-Internal-Service-Token": api.client.app.state.internal_service_token},
+        json={
+            "actor_id": str(current.community_actor_id),
+            "scan_id": "synthetic-scan",
+            "disease": "leaf_spot",
+            "note": "synthetic note",
+            "nickname": "Synthetic Responder",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted", "target_count": 1}
+    assert fcm_token not in response.text
+    assert delivered == [
+        (
+            [fcm_token],
+            {
+                "type": "opinion",
+                "scan_id": "synthetic-scan",
+                "disease": "leaf_spot",
+                "note": "synthetic note",
+                "nickname": "Synthetic Responder",
+            },
+        )
+    ]
+
+
+def test_corrupt_push_ciphertext_is_disabled_without_aborting_notification(
+    api: ApiHarness,
+):
+    tokens = _signup(api)
+    assert api.client.put(
+        "/v1/push/device",
+        headers=api.headers(tokens["access_token"]),
+        json={"fcm_token": "synthetic-corrupt-target-token", "platform": "android"},
+    ).status_code == 200
+    current = api.service.authenticate(tokens["access_token"])
+    with api.service.repository.transaction() as transaction:
+        device = transaction.scalar(select(PushDevice))
+        assert device is not None
+        device.token_ciphertext = b"x" * 40
+
+    response = api.client.post(
+        "/v1/internal/notifications/opinion",
+        headers={"X-Internal-Service-Token": api.client.app.state.internal_service_token},
+        json={
+            "actor_id": str(current.community_actor_id),
+            "scan_id": "synthetic-scan",
+            "disease": "leaf_spot",
+            "note": "synthetic note",
+            "nickname": "Synthetic Responder",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted", "target_count": 0}
+    with api.service.repository.transaction() as transaction:
+        device = transaction.scalar(select(PushDevice))
+        assert device is not None
+        assert device.disabled_at is not None
+
+
+def test_successful_community_tombstone_completes_private_account_erasure(
+    api: ApiHarness,
+):
+    delivered: list[uuid.UUID] = []
+    api.service.deletion_dispatcher = lambda actor: delivered.append(actor) or True
+    tokens = _signup(api)
+    current = api.service.authenticate(tokens["access_token"])
+    reauth = api.client.post(
+        "/v1/auth/reauth",
+        headers=api.headers(tokens["access_token"]),
+        json={
+            "provider": "yandex",
+            "provider_access_token": "mock-yandex-new",
+            "scope": "deletion",
+        },
+    )
+    response = api.client.request(
+        "DELETE",
+        "/v1/me",
+        headers=api.headers(tokens["access_token"]),
+        json={"reauth_token": reauth.json()["reauth_token"]},
+    )
+    assert response.status_code == 202
+    assert delivered == [current.community_actor_id]
+    with api.service.repository.transaction() as transaction:
+        assert transaction.scalar(select(Account)) is None
+        assert transaction.scalar(select(PushDevice)) is None
+        job = transaction.scalar(select(AccountDeletionJob))
+        assert job is not None
+        assert job.state == "completed"
+        assert job.account_id is None
+        assert job.community_actor_id is None

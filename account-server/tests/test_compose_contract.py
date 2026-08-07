@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "account-beta-test" / "compose.local.yml"
+INTEGRATION_CHECK_PATH = (
+    REPOSITORY_ROOT / "deploy" / "account-beta-test" / "check_integration.py"
+)
 EXPECTED_SERVICES = {
     "beta-postgres",
     "beta-account-keygen",
@@ -104,6 +108,12 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
         account_environment["ACCOUNT_ENCRYPTION_KEY_FILE"]
         == "/run/account-secrets/encryption.key"
     )
+    assert account_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
+        "/run/account-secrets/internal.token"
+    )
+    assert account_environment["COMMUNITY_DELETION_URL"].endswith(
+        "/api/internal/account-deletions"
+    )
 
     assert app_environment["ENVIRONMENT"] == "test"
     assert app_environment["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "true"
@@ -112,6 +122,16 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["SCAN_RECORDING_ENABLED"] == "false"
     assert app_environment["TELEMETRY_ENABLED"] == "false"
     assert app_environment["ACCOUNT_JWKS_URL"].startswith("http://beta-account-api:8000/")
+    assert app_environment["ACCOUNT_INTROSPECTION_URL"].endswith(
+        "/v1/internal/auth/verify"
+    )
+    assert app_environment["ACCOUNT_NOTIFICATION_URL"].endswith(
+        "/v1/internal/notifications/opinion"
+    )
+    assert app_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
+        "/run/account-secrets/internal.token"
+    )
+    assert "PUSH_DB_PATH" not in app_environment
 
 
 def test_local_keys_are_generated_once_without_network_or_committed_values():
@@ -163,6 +183,8 @@ def test_every_persistent_mount_is_a_declared_beta_named_volume():
         _mount_target(mount) for mount in compose["services"]["beta-app-api"]["volumes"]
     }
     assert {"/app/models", "/app/data"}.issubset(app_targets)
+    assert "/run/account-secrets" in app_targets
+    assert "/data/legacy-push" not in app_targets
     for volume in declared_volumes.values():
         assert volume["name"].startswith(
             "${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_"
@@ -193,3 +215,28 @@ def test_compose_contains_no_production_paths_or_mutable_image_tags():
         service = _load_compose()["services"][service_name]
         assert service["read_only"] is True
         assert service["tmpfs"]
+
+
+def test_integration_checker_refuses_every_non_loopback_target():
+    spec = importlib.util.spec_from_file_location(
+        "account_beta_check_integration", INTEGRATION_CHECK_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module._loopback_url("http://127.0.0.1:18000/") == (
+        "http://127.0.0.1:18000"
+    )
+    for unsafe in (
+        "https://127.0.0.1:18000",
+        "http://beta-app-api:8000",
+        "http://192.0.2.1:8000",
+        "https://production.invalid",
+    ):
+        try:
+            module._loopback_url(unsafe)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"integration checker accepted unsafe URL: {unsafe}")

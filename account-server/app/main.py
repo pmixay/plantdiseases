@@ -15,18 +15,21 @@ from fastapi.responses import JSONResponse
 
 from app.api.errors import AccountAPIError
 from app.api.routes import router as account_router
+from app.community_deletion import build_community_deletion_dispatcher
 from app.config import Settings
 from app.db.database import Database, DatabaseHandle
 from app.db.repository import AccountRepository
 from app.providers.base import ProviderAdapter, ProviderName
 from app.providers.mock import build_provider_registry
 from app.rate_limit import InMemoryRateLimiter
+from app.security.internal import load_internal_service_token
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import TokenService
 from app.services.accounts import AccountService
 
 logger = logging.getLogger("plantdiseases.account")
-_MAINTENANCE_INTERVAL_SECONDS = 60 * 60
+_MAINTENANCE_INTERVAL_SECONDS = 60
+_PRIVATE_PRUNE_EVERY_TICKS = 60
 
 
 def create_app(
@@ -36,6 +39,7 @@ def create_app(
     account_service: AccountService | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
+    internal_service_token = load_internal_service_token(config)
     provider_registry = dict(providers) if providers is not None else build_provider_registry(config)
     if set(provider_registry) != {"yandex", "vk"}:
         raise ValueError("Both yandex and vk provider adapters are required")
@@ -52,6 +56,9 @@ def create_app(
                 window_seconds=config.rate_limit_window_seconds,
             ),
             blocked_nicknames=config.blocked_nicknames,
+            deletion_dispatcher=build_community_deletion_dispatcher(
+                config, service_token=internal_service_token
+            ),
         )
 
     @asynccontextmanager
@@ -60,6 +67,7 @@ def create_app(
         maintenance_stop = asyncio.Event()
         if domain_service is not None:
             async def maintenance_loop() -> None:
+                tick = 0
                 while not maintenance_stop.is_set():
                     try:
                         await asyncio.wait_for(
@@ -68,9 +76,12 @@ def create_app(
                         )
                     except TimeoutError:
                         try:
-                            await asyncio.to_thread(
-                                domain_service.prune_expired_private_state
-                            )
+                            await asyncio.to_thread(domain_service.process_deletion_jobs)
+                            if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
+                                await asyncio.to_thread(
+                                    domain_service.prune_expired_private_state
+                                )
+                            tick += 1
                         except Exception:  # noqa: BLE001 - fixed, private-safe message
                             logger.warning("Account private-state maintenance failed")
 
@@ -95,6 +106,7 @@ def create_app(
     application.state.providers = provider_registry
     application.state.database = database_handle
     application.state.account_service = domain_service
+    application.state.internal_service_token = internal_service_token
 
     if config.cors_origins:
         application.add_middleware(

@@ -40,6 +40,7 @@ from pathlib import Path
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Depends,
     FastAPI,
     File,
     Form,
@@ -51,6 +52,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPBearer
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -64,6 +66,18 @@ from starlette.responses import Response as StarletteResponse
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
     from . import labeling
+    from .account_auth import (
+        AccountAuthenticationError,
+        AccountAuthenticationUnavailable,
+        AccountPrincipal,
+        build_account_authenticator,
+    )
+    from .account_internal import (
+        internal_service_authorized,
+    )
+    from .account_internal import (
+        send_account_opinion_notification as _send_account_opinion_notification,
+    )
     from .ai_services import (  # type: ignore[import-not-found]
         care_plan_metrics_snapshot,
         chat_metrics_snapshot,
@@ -77,6 +91,9 @@ try:
     from .beta_runtime import allow_synthetic_pipeline
     from .community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from .community import (
+        account_owner_of as community_account_owner_of,
     )
     from .community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -103,7 +120,7 @@ try:
         opinion_counts as community_opinion_counts,
     )
     from .community import (
-        opinion_counts_for_user as community_opinion_counts_for_user,
+        opinion_counts_for_actor as community_opinion_counts_for_actor,
     )
     from .community import (
         opinion_open as community_opinion_open,
@@ -112,10 +129,10 @@ try:
         opinions_for as community_opinions_for,
     )
     from .community import (
-        owner_of as community_owner_of,
+        popular_snapshot as community_popular_snapshot,
     )
     from .community import (
-        popular_snapshot as community_popular_snapshot,
+        process_cleanup_jobs as community_process_cleanup_jobs,
     )
     from .community import (
         prune_older_than as community_prune_older_than,
@@ -133,10 +150,13 @@ try:
         region_summary as community_region_summary,
     )
     from .community import (
+        request_actor_deletion as community_request_actor_deletion,
+    )
+    from .community import (
         resolve_scan_token as community_resolve_scan_token,
     )
     from .community import (
-        scan_counts as community_scan_counts,
+        scan_counts_for_actor as community_scan_counts_for_actor,
     )
     from .community import (
         scan_exists as community_scan_exists,
@@ -149,6 +169,9 @@ try:
     )
     from .community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from .community import (
+        thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from .community import (
         view_counts as community_view_counts,
@@ -202,12 +225,6 @@ try:
         proxy_path as plant_photo_proxy,
     )
     from .popular_plants import popular_for
-    from .push import (
-        register as push_register,
-    )
-    from .push import (
-        send_opinion_push as push_send_opinion,
-    )
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
     from .synthetic_pipeline import SyntheticPipeline
@@ -225,6 +242,18 @@ try:
     )
 except ImportError:
     import labeling
+    from account_auth import (
+        AccountAuthenticationError,
+        AccountAuthenticationUnavailable,
+        AccountPrincipal,
+        build_account_authenticator,
+    )
+    from account_internal import (
+        internal_service_authorized,
+    )
+    from account_internal import (
+        send_account_opinion_notification as _send_account_opinion_notification,
+    )
     from ai_services import (
         care_plan_metrics_snapshot,
         chat_metrics_snapshot,
@@ -238,6 +267,9 @@ except ImportError:
     from beta_runtime import allow_synthetic_pipeline
     from community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from community import (
+        account_owner_of as community_account_owner_of,
     )
     from community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -264,7 +296,7 @@ except ImportError:
         opinion_counts as community_opinion_counts,
     )
     from community import (
-        opinion_counts_for_user as community_opinion_counts_for_user,
+        opinion_counts_for_actor as community_opinion_counts_for_actor,
     )
     from community import (
         opinion_open as community_opinion_open,
@@ -273,10 +305,10 @@ except ImportError:
         opinions_for as community_opinions_for,
     )
     from community import (
-        owner_of as community_owner_of,
+        popular_snapshot as community_popular_snapshot,
     )
     from community import (
-        popular_snapshot as community_popular_snapshot,
+        process_cleanup_jobs as community_process_cleanup_jobs,
     )
     from community import (
         prune_older_than as community_prune_older_than,
@@ -294,10 +326,13 @@ except ImportError:
         region_summary as community_region_summary,
     )
     from community import (
+        request_actor_deletion as community_request_actor_deletion,
+    )
+    from community import (
         resolve_scan_token as community_resolve_scan_token,
     )
     from community import (
-        scan_counts as community_scan_counts,
+        scan_counts_for_actor as community_scan_counts_for_actor,
     )
     from community import (
         scan_exists as community_scan_exists,
@@ -310,6 +345,9 @@ except ImportError:
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
+        thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from community import (
         view_counts as community_view_counts,
@@ -363,12 +401,6 @@ except ImportError:
         proxy_path as plant_photo_proxy,
     )
     from popular_plants import popular_for
-    from push import (
-        register as push_register,
-    )
-    from push import (
-        send_opinion_push as push_send_opinion,
-    )
     from species_info import fetch_species_info
     from symptoms import diagnose as symptom_diagnose
     from synthetic_pipeline import SyntheticPipeline
@@ -466,6 +498,8 @@ ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
     requested=get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
 )
 POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
+account_authenticator = build_account_authenticator()
+community_bearer = HTTPBearer(auto_error=False)
 
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
@@ -748,8 +782,50 @@ def _extract_api_key(request: Request) -> str | None:
         return key.strip()
     auth = request.headers.get("authorization")
     if auth and auth.lower().startswith("bearer "):
-        return auth[7:].strip()
+        token = auth[7:].strip()
+        # Account access tokens are JWTs and have their own Ed25519/session
+        # validation path. Never compare or log them as legacy API keys.
+        if token.count(".") == 2:
+            return None
+        return token
     return None
+
+
+def _bearer_token(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "bearer":
+        return None
+    token = token.strip()
+    return token or None
+
+
+async def _require_account(request: Request) -> AccountPrincipal:
+    token = _bearer_token(request)
+    if token is None:
+        raise HTTPException(
+            status_code=401,
+            detail="auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        return await asyncio.get_running_loop().run_in_executor(
+            _get_net_executor(), account_authenticator.authenticate, token,
+        )
+    except AccountAuthenticationError:
+        raise HTTPException(
+            status_code=401,
+            detail="auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except AccountAuthenticationUnavailable:
+        raise HTTPException(status_code=503, detail="account_auth_unavailable") from None
+
+
+async def _optional_account(request: Request) -> AccountPrincipal | None:
+    if _bearer_token(request) is None:
+        return None
+    return await _require_account(request)
 
 # Daily per-IP write quotas. Stops one bad actor from filling the
 # feedback / community SQLite files with spam (which would also
@@ -1087,15 +1163,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_ip = _client_ip(request)
         api_key = _extract_api_key(request)
+        bearer = _bearer_token(request)
+        internal_service_path = path == "/api/internal/account-deletions"
+        account_token_allowed = bool(
+            bearer
+            and bearer.count(".") == 2
+            and (
+                path.startswith("/api/community/")
+                or internal_service_path
+            )
+        )
 
         # 1. API Key validation and requirement check
         if REQUIRE_API_KEY:
-            if not api_key:
+            if not api_key and not account_token_allowed and not internal_service_path:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "API key required. Provide via X-API-Key or Authorization header."},
                 )
-            if api_key not in API_KEYS:
+            if api_key and api_key not in API_KEYS:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid API key."},
@@ -1335,13 +1421,17 @@ async def _prune_loop() -> None:
             removed_cm = await asyncio.get_running_loop().run_in_executor(
                 None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
             )
+            cleanup = await asyncio.get_running_loop().run_in_executor(
+                None, community_process_cleanup_jobs,
+            )
             removed_tm = await asyncio.get_running_loop().run_in_executor(
                 None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,
             )
-            if removed_fb or removed_cm or removed_tm:
+            if removed_fb or removed_cm or removed_tm or cleanup["completed"] or cleanup["retried"]:
                 logger.info(
-                    "Prune pass: feedback=%d community=%d telemetry=%d",
+                    "Prune pass: feedback=%d community=%d telemetry=%d cleanup=%d/%d",
                     removed_fb, removed_cm, removed_tm,
+                    cleanup["completed"], cleanup["retried"],
                 )
         except asyncio.CancelledError:
             raise
@@ -2436,7 +2526,6 @@ class CommunityScanRequest(BaseModel):
     """
 
     scan_id: str = Field(..., min_length=8, max_length=64)
-    user_pseudo_id: str = Field(..., min_length=8, max_length=64)
     country: str | None = Field(default=None, min_length=2, max_length=80)
     region: str = Field(default="", max_length=80)
     disease: str = Field(..., min_length=1, max_length=64)
@@ -2444,14 +2533,7 @@ class CommunityScanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     species_score: float | None = Field(default=None, ge=0.0, le=1.0)
     locale: str | None = Field(default=None, max_length=8)
-    nickname: str | None = Field(default=None, max_length=64)
-
-    @field_validator("nickname")
-    @classmethod
-    def _clean_nickname(cls, v: str | None) -> str | None:
-        return _normalise_nickname(v)
-
-    @field_validator("scan_id", "user_pseudo_id")
+    @field_validator("scan_id")
     @classmethod
     def _safe_token(cls, v: str) -> str:
         if any(ch not in _SCAN_ID_ALLOWED for ch in v):
@@ -3153,11 +3235,42 @@ async def feedback_image_upload(
 _COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
-@api_router.post("/community/scan")
+class InternalActorDeletionRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+
+
+@api_router.post(
+    "/internal/account-deletions",
+    status_code=202,
+    include_in_schema=False,
+)
+async def internal_account_deletion(
+    payload: InternalActorDeletionRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Immediately tombstone an actor; physical removal is retryable."""
+    if not internal_service_authorized(
+        request.headers.get("x-internal-service-token", "")
+    ):
+        raise HTTPException(status_code=401, detail="auth_required")
+    try:
+        actor_id = str(uuid.UUID(payload.actor_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_request") from None
+    accepted = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_request_actor_deletion(actor_id)
+    )
+    if not accepted:
+        raise HTTPException(status_code=422, detail="invalid_request")
+    background_tasks.add_task(community_process_cleanup_jobs)
+    return JSONResponse(status_code=202, content={"status": "accepted"})
+
+
+@api_router.post("/community/scan", dependencies=[Depends(community_bearer)])
 async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
-    user_pseudo_id: str = Form(...),
     country: str | None = Form(None),
     region: str = Form(""),
     lat: float | None = Form(None),
@@ -3167,21 +3280,21 @@ async def community_scan_upload(
     species: str | None = Form(None),
     species_score: float | None = Form(None),
     locale: str | None = Form(None),
-    nickname: str | None = Form(None),
     image: UploadFile | None = File(None),
 ):
     """Append one community-shared scan to the corpus.
 
+    Identity and nickname come exclusively from the verified access token.
     Location is supplied by the opted-in client from its coarse location
     (``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no
-    server-side IP geolocation. ``nickname`` is the author's generated handle.
+    server-side IP geolocation.
     The image is optional.
     """
 
+    principal = await _require_account(request)
     try:
         payload = CommunityScanRequest(
             scan_id=scan_id,
-            user_pseudo_id=user_pseudo_id,
             country=country,
             region=region,
             disease=disease,
@@ -3189,7 +3302,6 @@ async def community_scan_upload(
             species=species,
             species_score=species_score,
             locale=locale,
-            nickname=nickname,
         )
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
         logger.info("Community scan validation failed: %s", exc)
@@ -3272,7 +3384,7 @@ async def community_scan_upload(
             None,
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
-                user_pseudo_id=payload.user_pseudo_id,
+                account_actor_id=principal.actor_id,
                 country=geo["country"] or "",
                 region=geo["city"] or "",
                 city=geo["city"],
@@ -3281,7 +3393,7 @@ async def community_scan_upload(
                 disease=payload.disease,
                 confidence=payload.confidence,
                 species=payload.species,
-                nickname=payload.nickname,
+                nickname=principal.nickname,
                 species_score=payload.species_score,
                 image_bytes=image_bytes,
                 locale=payload.locale,
@@ -3348,24 +3460,18 @@ async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
 
 class CommunityOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
     suggested_disease: str = Field(..., min_length=1, max_length=64)
     note: str | None = Field(default=None, max_length=500)
-    nickname: str | None = Field(default=None, max_length=64)
-
-    @field_validator("nickname")
-    @classmethod
-    def _clean_opinion_nickname(cls, v: str | None) -> str | None:
-        return _normalise_nickname(v)
 
 
-@api_router.post("/community/opinion")
+@api_router.post("/community/opinion", dependencies=[Depends(community_bearer)])
 async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
     """Record one community 'second opinion' on a shared scan.
 
     The suggested disease must be a known classifier class so the consensus
     tally stays clean; any free text lives only in the optional note.
     """
+    principal = await _require_account(request)
     disease = payload.suggested_disease.strip()
     if disease not in DISEASES_DATABASE:
         raise HTTPException(status_code=422, detail="Unknown suggested disease")
@@ -3390,6 +3496,11 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
     if not known:
         raise HTTPException(status_code=422, detail="Unknown scan")
+    owner_actor = await loop.run_in_executor(
+        None, lambda: community_account_owner_of(sid)
+    )
+    if owner_actor is None:
+        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
     # Public handles rotate every 30 days; a scan older than that goes
     # read-only so stale photos can't keep collecting opinions.
     fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
@@ -3400,10 +3511,10 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
             None,
             lambda: community_record_opinion(
                 scan_id=sid,
-                author_pseudo_id=payload.user_pseudo_id.strip(),
+                account_actor_id=principal.actor_id,
                 suggested_disease=disease,
                 note=payload.note,
-                nickname=payload.nickname,
+                nickname=principal.nickname,
                 client_ip=client_ip,
             ),
         )
@@ -3415,15 +3526,20 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     # configured). Skip self-opinions — you don't get pinged for your own note.
     # Only owners who explicitly REQUESTED a second opinion get pushed: sharing
     # a scan to the corpus is not a request to be notified.
-    author = payload.user_pseudo_id.strip()
+    author = principal.actor_id
 
     def _push_owner() -> None:
         try:
             if not community_wants_opinion(sid):
                 return
-            owner = community_owner_of(sid)
+            owner = owner_actor
             if owner and owner != author:
-                push_send_opinion(owner, sid, disease, payload.note, payload.nickname)
+                # Delivery is delegated to the account service, which resolves
+                # encrypted device registrations privately. Wired below via
+                # the internal notification client.
+                _send_account_opinion_notification(
+                    owner, sid, disease, payload.note, principal.nickname
+                )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
@@ -3440,10 +3556,11 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
 
 class CommunityRequestOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
 
 
-@api_router.post("/community/request-opinion")
+@api_router.post(
+    "/community/request-opinion", dependencies=[Depends(community_bearer)]
+)
 async def community_request_opinion(
     payload: CommunityRequestOpinionRequest, request: Request,
 ):
@@ -3452,7 +3569,7 @@ async def community_request_opinion(
     Unlike ``/community/opinion`` (where a *viewer* suggests a diagnosis
     for someone else's scan), this is the *scanner* raising their hand:
     "I'm unsure — community, please weigh in." The flag is owner-scoped
-    (the update only matches a row owned by ``user_pseudo_id``) and
+    (the update only matches the signed account actor) and
     idempotent.
 
     Degrades gracefully: the community upload is fire-and-forget and the
@@ -3460,8 +3577,8 @@ async def community_request_opinion(
     yet. We still return 200 with ``flagged: false`` — the client shows
     its local "waiting for the community" state regardless.
     """
+    principal = await _require_account(request)
     sid = payload.scan_id.strip()
-    pid = payload.user_pseudo_id.strip()
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
@@ -3474,7 +3591,9 @@ async def community_request_opinion(
     try:
         flagged = await loop.run_in_executor(
             None,
-            lambda: community_set_wants_opinion(sid, pid),
+            lambda: community_set_wants_opinion(
+                sid, account_actor_id=principal.actor_id
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Community request-opinion failed: %s", exc)
@@ -3484,8 +3603,12 @@ async def community_request_opinion(
     return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
 
 
-@api_router.post("/community/request-opinion/cancel")
-async def community_request_opinion_cancel(payload: CommunityRequestOpinionRequest):
+@api_router.post(
+    "/community/request-opinion/cancel", dependencies=[Depends(community_bearer)]
+)
+async def community_request_opinion_cancel(
+    payload: CommunityRequestOpinionRequest, request: Request,
+):
     """Withdraw an open second-opinion request on the caller's own scan.
 
     The inverse of ``/community/request-opinion``: drops the durable
@@ -3498,13 +3621,15 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
     (Requests also lapse on their own after
     ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
     """
+    principal = await _require_account(request)
     sid = payload.scan_id.strip()
-    pid = payload.user_pseudo_id.strip()
     loop = asyncio.get_running_loop()
     try:
         cleared = await loop.run_in_executor(
             None,
-            lambda: community_clear_wants_opinion(sid, pid),
+            lambda: community_clear_wants_opinion(
+                sid, account_actor_id=principal.actor_id
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Community cancel-request-opinion failed: %s", exc)
@@ -3534,59 +3659,43 @@ async def community_opinions_list(scan_id: str):
     return JSONResponse(content={"scan_id": sid, **result})
 
 
-@api_router.get("/community/my-scan-opinions/{user_pseudo_id}")
-async def community_my_scan_opinions(user_pseudo_id: str):
+@api_router.get(
+    "/community/my-scan-opinions", dependencies=[Depends(community_bearer)]
+)
+async def community_my_scan_opinions(request: Request):
     """Opinion counts on the caller's OWN shared scans. The client polls this
     on a schedule to notify the user when someone leaves a second opinion on a
     scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
-    uid = (user_pseudo_id or "").strip()
-    if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
-        raise HTTPException(status_code=422, detail="Invalid user id")
+    principal = await _require_account(request)
     result = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinion_counts_for_user(uid),
+        None, lambda: community_opinion_counts_for_actor(principal.actor_id),
     )
     return JSONResponse(content=result)
 
 
-class PushRegisterRequest(BaseModel):
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
-    token: str = Field(..., min_length=1, max_length=512)
-    platform: str = Field(default="android", max_length=16)
-
-
-@api_router.post("/push/register")
-async def push_register_endpoint(payload: PushRegisterRequest):
-    """Register this install's FCM token under its pseudo-id so the server can
-    push opinion notifications to a closed / idle device. Upserts by token."""
-    await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: push_register(
-            payload.user_pseudo_id.strip(),
-            payload.token.strip(),
-            payload.platform.strip() or "android",
-        ),
-    )
-    return JSONResponse(content={"ok": True})
-
-
 class CommunityViewRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
 
 
-@api_router.post("/community/view")
-async def community_record_scan_view(payload: CommunityViewRequest):
+@api_router.post("/community/view", dependencies=[Depends(community_bearer)])
+async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
     """Record that the caller opened someone else's shared scan. Deduped per
     viewer server-side; a scan owner viewing their own scan and views of an
     unknown scan never count, so this is safe to fire on every open."""
+    principal = await _require_account(request)
     loop = asyncio.get_running_loop()
     # Viewers send the feed's public token — resolve it to the real id.
     sid = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
     )
+    owner_actor = await loop.run_in_executor(
+        None, lambda: community_account_owner_of(sid)
+    )
+    if owner_actor is None:
+        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
     counted = await loop.run_in_executor(
         None,
-        lambda: community_record_view(sid, payload.user_pseudo_id.strip()),
+        lambda: community_record_view(sid, account_actor_id=principal.actor_id),
     )
     return JSONResponse(content={"ok": True, "counted": bool(counted)})
 
@@ -3595,14 +3704,17 @@ class CommunityScanCountsRequest(BaseModel):
     scan_ids: list[str] = Field(..., max_length=500)
 
 
-@api_router.post("/community/scan-counts")
-async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
+@api_router.post("/community/scan-counts", dependencies=[Depends(community_bearer)])
+async def community_scan_counts_endpoint(
+    payload: CommunityScanCountsRequest, request: Request,
+):
     """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
     caller's own rows in one round-trip. Unknown/zero scans are omitted."""
+    principal = await _require_account(request)
     ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
     counts = (
         await asyncio.get_running_loop().run_in_executor(
-            None, lambda: community_scan_counts(ids),
+            None, lambda: community_scan_counts_for_actor(principal.actor_id, ids),
         )
         if ids else {}
     )
@@ -3619,7 +3731,6 @@ async def community_scan_nearby(
     disease: str | None = None,
     species: str | None = None,
     limit: int = 20,
-    user_pseudo_id: str | None = None,
     scope: str | None = None,
 ):
     """List the most recent community-shared scans near the requester.
@@ -3632,6 +3743,7 @@ async def community_scan_nearby(
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
     """
+    principal = await _optional_account(request)
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -3656,7 +3768,7 @@ async def community_scan_nearby(
         disease=(disease or None),
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
-        exclude_user_pseudo_id=user_pseudo_id,
+        exclude_account_actor_id=principal.actor_id if principal else None,
         scope=scope_norm,
     )
     # Country-level overview for the chip row (the coords feed itself is
@@ -3666,7 +3778,7 @@ async def community_scan_nearby(
     summary = community_region_summary(
         country_norm or "",
         None,
-        exclude_user_pseudo_id=user_pseudo_id,
+        exclude_account_actor_id=principal.actor_id if principal else None,
     )
     # Annotate each cell with how many second opinions it has so the carousel
     # can show a badge, then swap the real scan_id for the public token —
@@ -3723,10 +3835,10 @@ def _valid_bbox(
 
 @api_router.get("/community/map")
 async def community_map(
+    request: Request,
     min_lat: float, min_lon: float, max_lat: float, max_lon: float,
     disease: str | None = None,
     days: int = 30,
-    user_pseudo_id: str | None = None,
     limit: int = 300,
 ):
     """Individual community scans inside a bbox — the zoomed-in map markers.
@@ -3735,6 +3847,7 @@ async def community_map(
     real scan_id), so the app can pin a marker and open the existing opinion
     sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
     signals an over-full bbox."""
+    principal = await _optional_account(request)
     box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
@@ -3746,7 +3859,7 @@ async def community_map(
             disease=(disease or None),
             days=days,
             limit=max(1, min(int(limit), 500)),
-            exclude_user_pseudo_id=user_pseudo_id,
+            exclude_account_actor_id=principal.actor_id if principal else None,
         ),
     )
     rows = data["items"]
@@ -3787,12 +3900,13 @@ async def community_heatmap(
 
 @api_router.get("/community/by-species")
 async def community_by_species(
+    request: Request,
     species: str | None = None,
     limit: int = 12,
-    user_pseudo_id: str | None = None,
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
+    principal = await _optional_account(request)
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
@@ -3801,7 +3915,7 @@ async def community_by_species(
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
-            exclude_user_pseudo_id=user_pseudo_id,
+            exclude_account_actor_id=principal.actor_id if principal else None,
         ),
     )
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
@@ -3959,6 +4073,11 @@ async def community_scan_thumb(filename: str, request: Request):
     """
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid thumbnail name")
+    visible = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_thumbnail_is_visible(filename)
+    )
+    if not visible:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
@@ -3967,7 +4086,7 @@ async def community_scan_thumb(filename: str, request: Request):
     return _cached_image_response(
         request, path,
         media_type="image/jpeg",
-        cache_control="public, max-age=86400",
+        cache_control="public, max-age=300, must-revalidate",
     )
 
 

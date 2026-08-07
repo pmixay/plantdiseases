@@ -10,6 +10,8 @@ x-account-environment: &account-environment
   ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
   ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
   ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+  COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
 
 services:
@@ -132,6 +134,9 @@ services:
       ACCOUNT_ISSUER: http://beta-account-api:8000
       ACCOUNT_AUDIENCE: plantdiseases-app
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
+      ACCOUNT_NOTIFICATION_URL: http://beta-account-api:8000/v1/internal/notifications/opinion
+      INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
       MODELS_DIR: /app/models
       LOG_DIR: /data/logs
       COMMUNITY_DB_PATH: /data/community/community-beta.db
@@ -141,7 +146,6 @@ services:
       LABELING_DB_PATH: /data/training/labeling-beta.db
       LABELING_IMG_DIR: /data/training-images/labeling
       TELEMETRY_DB_PATH: /data/telemetry/telemetry-beta.db
-      PUSH_DB_PATH: /data/legacy-push/push-beta.db
       PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
@@ -162,13 +166,13 @@ services:
         protocol: tcp
     volumes:
       - beta_models:/app/models:ro
+      - beta_account_keys:/run/account-secrets:ro
       - beta_app_data:/app/data
       - beta_community:/data/community
       - beta_thumbnails:/data/community-thumbs
       - beta_training:/data/training
       - beta_training_images:/data/training-images
       - beta_telemetry:/data/telemetry
-      - beta_legacy_push:/data/legacy-push
       - beta_app_cache:/data/app-cache
       - beta_app_logs:/data/logs
     networks:
@@ -217,8 +221,6 @@ volumes:
     name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_training_images
   beta_telemetry:
     name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_telemetry
-  beta_legacy_push:
-    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_legacy_push
   beta_app_cache:
     name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_app_cache
   beta_app_logs:

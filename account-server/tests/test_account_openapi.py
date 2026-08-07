@@ -31,6 +31,8 @@ def test_versioned_openapi_matches_the_application_contract():
     committed = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
     assert committed == app.openapi()
     assert set(committed["paths"]) == EXPECTED_PATHS
+    assert "/v1/internal/auth/verify" not in committed["paths"]
+    assert "/v1/internal/notifications/opinion" not in committed["paths"]
 
 
 def test_protected_routes_declare_bearer_auth_and_requests_forbid_extra_fields():

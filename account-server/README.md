@@ -25,10 +25,18 @@ The versioned schema is [`openapi.json`](openapi.json). Main flows are:
 - reauthentication challenges are one-use, scope-bound, and valid for five
   minutes;
 - deletion immediately marks the account pending, increments authorization
-  version, revokes all sessions, disables push, and creates a cleanup job;
+  version, revokes all sessions, disables push, and creates a retryable cleanup
+  job. Community acknowledgement tombstones public content before private
+  provider/profile/session rows are hard-deleted;
 - push registrations are authenticated, AES-GCM encrypted, and deduplicated by
   a keyed fingerprint. Hardware names/identifiers are neither accepted nor
   stored.
+
+The application API validates JWT signatures locally and then calls the hidden
+`/v1/internal/auth/verify` route with a separate service credential to confirm
+the current session and authorization version. Actor-keyed opinion events use
+another hidden route; device tokens are decrypted and resolved only inside this
+service and are never returned to community code.
 
 Errors have one non-reflective shape:
 
@@ -44,8 +52,9 @@ unknown fields.
 
 `ACCOUNT_SIGNING_KEY_FILE` is a mode-`0600` JSON key ring containing an active
 Ed25519 private seed and optional retired public keys. `ACCOUNT_ENCRYPTION_KEY_FILE`
-is a mode-`0600` base64url-encoded 256-bit AES key. Neither file belongs in Git
-or an image.
+is a mode-`0600` base64url-encoded 256-bit AES key.
+`INTERNAL_SERVICE_TOKEN_FILE` is a mode-`0600` random service credential used
+only on the private network. None of these files belongs in Git or an image.
 
 The local Compose stack runs `app.generate_test_keys` in a network-disabled
 one-shot container. It creates random files once in the beta-only

@@ -37,6 +37,8 @@ server/__pycache__/
 server/*.pyc
 account-server/**/__pycache__/
 account-server/**/*.pyc
+deploy/**/__pycache__/
+deploy/**/*.pyc
 server/data/
 # Model weights + calibration artefacts are NOT committed and are never
 # auto-downloaded: the server is fail-fast and refuses to boot without them

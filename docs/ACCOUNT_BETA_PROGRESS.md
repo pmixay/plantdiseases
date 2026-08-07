@@ -167,7 +167,7 @@ Completed work:
   for database-backed account readiness.
 - Added beta-prefixed named volumes for PostgreSQL, models, community data,
   application compatibility data, thumbnails, legacy training data/images,
-  telemetry, legacy push data, caches, and logs. There are no host bind mounts
+  telemetry, caches, and logs. There are no host bind mounts
   or production storage paths.
 - Added a deterministic no-weight application pipeline for local process tests.
   Its switch fails closed unless `ENVIRONMENT=test`, its output is visibly
@@ -311,13 +311,86 @@ Checkpoint commit:
 
 - `feat(account): implement secure account API contract`
 
+### 5 — Community authorization, private push, and deletion cleanup (complete, 2026-08-07)
+
+Completed work:
+
+- Added local Ed25519 JWT verification in the application API with exact claim,
+  issuer, audience, time, algorithm, and `kid` validation. An unknown `kid`
+  receives exactly one bounded JWKS refresh; malformed/unknown keys fail
+  closed.
+- Added private account-session introspection after local JWT verification, so
+  logout, authorization-version changes, revoked sessions, and deletion take
+  effect immediately rather than at access-token expiry.
+- Gated scan publication, opinions, opinion request/cancel, view tracking,
+  private owner polling, and batched owner counts behind Bearer accounts.
+  Public feeds, maps, thumbnails, heatmaps, and opinion reads remain anonymous.
+- Removed caller-controlled pseudo-ID/nickname fields from the active community
+  contract. New authorship is derived only from signed actor/nickname claims;
+  spoofed legacy fields are ignored and cannot influence stored ownership.
+- Migrated community tables transactionally to nullable legacy identity columns
+  plus separate nullable account actor columns. Existing pseudo-ID rows remain
+  readable, unlinked, read-only, and unclaimable; new rows leave pseudo-ID
+  columns NULL.
+- Made account-private opinion/view counts owner-filtered and ensured anonymous
+  reads create no stable per-view record. Public reads may optionally use a
+  valid account token only to exclude the caller's own rows.
+- Removed the plaintext `/api/push/register` route and its beta `push.db`
+  volume. Community now emits an internal actor-keyed event; only account-api
+  resolves and decrypts live device registrations, and no FCM token returns to
+  the community process.
+- Extended the network-disabled key generator with a persistent random
+  mode-`0600` internal service credential shared through the beta key volume.
+  Internal auth, notification, and deletion routes are excluded from public
+  OpenAPI and require that separate credential.
+- Implemented deletion tombstones that hide actor content and thumbnails before
+  returning success, plus idempotent cleanup jobs with bounded exponential
+  retry. Successful community acknowledgement hard-deletes private account,
+  identity, session, and push rows while retaining a minimal completed job.
+- Added a deterministic loopback integration checker and regenerated the
+  versioned application OpenAPI contract. No JWT/account context enters the ML
+  pipeline.
+
+Decisions:
+
+- JWT signature validation and live session introspection are both required;
+  either dependency failing keeps community mutations closed.
+- Anonymous reads never synthesize or persist a guest identity. Legacy query or
+  body identity fields have no authority in the account-era handlers.
+- Community deletion uses logical hiding before asynchronous physical cleanup,
+  so a filesystem retry cannot make deleted content visible again.
+- Push delivery remains a replaceable account-owned sink. Local tests resolve
+  only synthetic registrations and perform no real FCM call.
+- The dormant legacy push module remains outside the active route graph for
+  compatibility with the pre-existing standalone unit tests; beta Compose no
+  longer configures or mounts its plaintext store.
+
+Verification:
+
+- Complete server suite — 581 passed in 7.81s.
+- Complete account suite — 121 passed, 1 opt-in PostgreSQL test skipped in
+  2.94s.
+- Latest focused contract/auth/deletion/config matrices — 66 passed.
+- Account/server Ruff checks, `git diff --check`, parsed Compose contract, and
+  `docker compose ... config --quiet` — passed.
+- Host-process integration against the digest-pinned loopback beta PostgreSQL
+  container — passed signup, signed upload, public Guest read, Guest mutation
+  rejection, private counts, encrypted push resolution, deletion callback,
+  immediate hiding, private profile erasure, and revoked-token rejection.
+- Temporary processes and generated key/state directory were removed after the
+  smoke test. Ordinary Compose shutdown retained
+  `plantdisease_account_beta_test_postgres`; no production service or data was
+  touched.
+
+Checkpoint commit:
+
+- `feat(community): bind mutations to signed accounts`
+
 ## Remaining work (plan order)
 
-1. Enforce community authentication and migrate authorship to signed actors,
-   including deletion cleanup/retry and private push resolution.
-2. Replace feedback/labeling stores with the anonymous training store/export.
-3. Minimize telemetry and add image-sanitization coverage.
-4. Implement the Android account-beta variant, auth state/client/UI flows, and
+1. Replace feedback/labeling stores with the anonymous training store/export.
+2. Minimize telemetry and add image-sanitization coverage.
+3. Implement the Android account-beta variant, auth state/client/UI flows, and
    upload sanitization.
-5. Add German staging artefacts and final RU/DE handoff contracts/checklists.
-6. Run the complete acceptance and privacy/security verification matrix.
+4. Add German staging artefacts and final RU/DE handoff contracts/checklists.
+5. Run the complete acceptance and privacy/security verification matrix.

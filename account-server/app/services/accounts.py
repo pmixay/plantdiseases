@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from cryptography.exceptions import InvalidTag
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -99,6 +100,8 @@ class AccountService:
         limiter: InMemoryRateLimiter,
         blocked_nicknames: tuple[str, ...] = (),
         clock: Callable[[], datetime] = utc_now,
+        notification_sink: Callable[[list[str], dict[str, str]], int] | None = None,
+        deletion_dispatcher: Callable[[uuid.UUID], bool] | None = None,
     ):
         self.repository = repository
         self.providers = dict(providers)
@@ -107,6 +110,8 @@ class AccountService:
         self.limiter = limiter
         self.blocked_nicknames = blocked_nicknames
         self.clock = clock
+        self.notification_sink = notification_sink or (lambda _tokens, _payload: 0)
+        self.deletion_dispatcher = deletion_dispatcher or (lambda _actor_id: False)
 
     def limit_ip(self, operation: str, address: str) -> None:
         self.limiter.check(f"ip:{operation}", address)
@@ -705,7 +710,80 @@ class AccountService:
                 outcome="accepted",
                 now=now,
             )
-            return {"status": "deletion_pending"}
+        # The committed tombstone is delivered synchronously so community
+        # content disappears before this request returns when both local
+        # services are healthy. A durable job retries safely if delivery fails.
+        self.process_deletion_jobs(actor_ids=(current.community_actor_id,), limit=1)
+        return {"status": "deletion_pending"}
+
+    def process_deletion_jobs(
+        self,
+        *,
+        actor_ids: tuple[uuid.UUID, ...] | None = None,
+        limit: int = 20,
+    ) -> dict[str, int]:
+        """Deliver community tombstones, then erase private account rows."""
+        now = self.clock()
+        bounded_limit = max(1, min(int(limit), 100))
+        with self.repository.transaction() as transaction:
+            statement = (
+                select(AccountDeletionJob)
+                .where(
+                    AccountDeletionJob.state.in_(("pending", "retry")),
+                    AccountDeletionJob.next_attempt_at <= now,
+                )
+                .order_by(AccountDeletionJob.next_attempt_at, AccountDeletionJob.created_at)
+                .limit(bounded_limit)
+            )
+            if actor_ids:
+                statement = statement.where(
+                    AccountDeletionJob.community_actor_id.in_(actor_ids)
+                )
+            due = [
+                (job.id, job.community_actor_id, job.attempt_count)
+                for job in transaction.scalars(statement).all()
+            ]
+
+        completed = 0
+        retried = 0
+        for job_id, actor_id, previous_attempts in due:
+            delivered = False
+            if actor_id is not None:
+                try:
+                    delivered = bool(self.deletion_dispatcher(actor_id))
+                except Exception:  # noqa: BLE001 - fixed retry code, no payload logging
+                    delivered = False
+            with self.repository.transaction() as transaction:
+                job = transaction.scalar(
+                    select(AccountDeletionJob)
+                    .where(AccountDeletionJob.id == job_id)
+                    .with_for_update()
+                )
+                if job is None or job.state == "completed":
+                    continue
+                attempts = max(int(previous_attempts), job.attempt_count) + 1
+                job.attempt_count = attempts
+                job.updated_at = now
+                if not delivered:
+                    delay_seconds = min(86_400, 60 * (2 ** min(attempts - 1, 10)))
+                    job.state = "retry"
+                    job.next_attempt_at = now + timedelta(seconds=delay_seconds)
+                    job.last_error_code = "community_unavailable"
+                    retried += 1
+                    continue
+
+                if job.account_id is not None:
+                    transaction.execute(
+                        delete(Account).where(Account.id == job.account_id)
+                    )
+                    job.account_id = None
+                job.state = "completed"
+                job.community_actor_id = None
+                job.next_attempt_at = now
+                job.last_error_code = None
+                job.completed_at = now
+                completed += 1
+        return {"completed": completed, "retried": retried}
 
     def register_push(
         self, current: CurrentAccount, *, fcm_token: str, platform: str
@@ -785,6 +863,58 @@ class AccountService:
                 )
                 .values(disabled_at=now, updated_at=now)
             )
+
+    def dispatch_opinion_notification(
+        self,
+        *,
+        community_actor_id: uuid.UUID,
+        scan_id: str,
+        disease: str,
+        note: str,
+        nickname: str,
+    ) -> dict[str, int | str]:
+        """Resolve an actor to live encrypted registrations and deliver privately."""
+        now = self.clock()
+        with self.repository.transaction() as transaction:
+            account = transaction.scalar(
+                select(Account).where(
+                    Account.community_actor_id == community_actor_id,
+                    Account.state == "active",
+                )
+            )
+            if account is None:
+                return {"status": "accepted", "target_count": 0}
+            devices = transaction.scalars(
+                select(PushDevice)
+                .join(AccountSession, AccountSession.id == PushDevice.session_id)
+                .where(
+                    PushDevice.account_id == account.id,
+                    PushDevice.disabled_at.is_(None),
+                    AccountSession.revoked_at.is_(None),
+                    AccountSession.idle_expires_at > now,
+                    AccountSession.absolute_expires_at > now,
+                )
+            ).all()
+            tokens: list[str] = []
+            for device in devices:
+                try:
+                    tokens.append(self.push_protector.decrypt(device.token_ciphertext))
+                except (InvalidTag, UnicodeDecodeError, ValueError):
+                    device.disabled_at = now
+                    device.updated_at = now
+        payload = {
+            "type": "opinion",
+            "scan_id": scan_id[:128],
+            "disease": disease[:64],
+            "note": note[:240],
+            "nickname": nickname[:64],
+        }
+        if tokens:
+            try:
+                self.notification_sink(tokens, payload)
+            except Exception:  # noqa: BLE001 - best effort; never log plaintext tokens
+                pass
+        return {"status": "accepted", "target_count": len(tokens)}
 
     def prune_expired_private_state(self) -> dict[str, int]:
         """Apply expiry policy without deleting a still-valid token family."""

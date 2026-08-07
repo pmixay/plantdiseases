@@ -14,17 +14,22 @@ from app.security.tokens import SigningKeyRing
 def test_generator_creates_private_valid_keys_and_never_overwrites(tmp_path: Path):
     directory = tmp_path / "account-keys"
     signing_path, encryption_path = ensure_test_keys(directory, environment="test")
+    internal_token_path = directory / "internal.token"
     first_signing = signing_path.read_bytes()
     first_encryption = encryption_path.read_bytes()
+    first_internal_token = internal_token_path.read_bytes()
 
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
     assert stat.S_IMODE(signing_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(encryption_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(internal_token_path.stat().st_mode) == 0o600
+    assert len(first_internal_token.strip()) >= 32
     assert SigningKeyRing.from_file(signing_path).jwks()["keys"][0]["kid"] == "local-beta-v1"
 
     ensure_test_keys(directory, environment="test")
     assert signing_path.read_bytes() == first_signing
     assert encryption_path.read_bytes() == first_encryption
+    assert internal_token_path.read_bytes() == first_internal_token
 
     settings = Settings.from_env(
         {
