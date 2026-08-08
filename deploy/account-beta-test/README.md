@@ -1,4 +1,4 @@
-# Account Beta Test Environments
+# Account System Test Environments
 
 This directory contains two environments for the `account-beta-test` branch:
 the local stack remains deterministic and synthetic, while the isolated German
@@ -61,38 +61,44 @@ the signed community actor; account-api resolves encrypted device tokens
 without returning them. Account deletion uses the same private credential to
 tombstone community content before private account rows are erased.
 
-## Build the Android account beta
+## Build PlantDiseases 1.9 for staging
 
-The branch-only `accountBeta` variant has application ID
-`com.plantdiseases.app.accountbeta`, so it can coexist with the production app.
-It defaults to deterministic synthetic authentication: tapping Yandex or VK
-creates a mock-provider credential from the app's random installation UUID.
-The first use still exercises the pending-signup/nickname flow; later uses of
-the same installation/provider exercise existing-account sign-in.
+The branch-only `staging` build type is an endpoint-selecting build of the real
+app: package `com.plantdiseases.app`, launcher name `PlantDiseases`, version
+name `1.9`, and version code `19`. It does not coexist with 1.8; with the same
+permanent certificate it updates 1.8 in place. The complete one-time signing
+and provider registration procedure is in
+[`docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md`](../../docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
+
+Without real-provider configuration, local `staging` builds use deterministic
+synthetic authentication: tapping Yandex or VK creates a mock-provider
+credential from the app's random installation UUID. The first use still
+exercises the pending-signup/nickname flow; later uses of the same
+installation/provider exercise existing-account sign-in.
 
 With this local stack running, build and test the emulator APK from `android/`:
 
 ```sh
-./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta \
+./gradlew :app:testStagingUnitTest :app:assembleStaging \
   -PAPP_API_BASE_URL=http://10.0.2.2:18000/ \
   -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
 ```
 
-Install the APK from `app/build/outputs/apk/accountBeta/`. Cleartext remains
+Install the APK from `app/build/outputs/apk/staging/`. Cleartext remains
 limited to emulator loopback (`10.0.2.2`, `localhost`, and `127.0.0.1`) in this
 variant; arbitrary LAN cleartext is not enabled. Without URL properties the
-variant points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
+build points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
 `id/` account route, never to the production API root.
 
 ### Build with the real Yandex and VK ID SDKs
 
-Real-provider testing is opt-in at build time. Register the Android application ID
-`com.plantdiseases.app.accountbeta` and the APK signing-certificate fingerprint
-with the providers first. Put the mobile client values in the user's private
+Real-provider testing is opt-in at build time. Register Android application ID
+`com.plantdiseases.app` and the permanent PlantDiseases signing-certificate
+fingerprint with both providers first. Put the mobile client values in the user's private
 `~/.gradle/gradle.properties` (never in this repository):
 
 ```properties
-ACCOUNT_BETA_REAL_OAUTH=true
+ACCOUNT_REAL_OAUTH=true
 YANDEX_CLIENT_ID=replace-with-yandex-client-id
 VKID_CLIENT_ID=12345
 VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
@@ -103,17 +109,19 @@ ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 Then build from `android/`:
 
 ```sh
-./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta
+./gradlew :app:testStagingUnitTest :app:assembleStaging
 ```
 
 The real mode fails configuration if either provider value or either explicit
 API URL is absent; both URLs must be credential-free HTTPS origins. The
 official SDK callbacks pass the short-lived provider access token directly to
 account-api; the app does not persist it. The configured account-api must use
-`AUTH_PROVIDER_MODE=remote` with the same Yandex/VK application IDs.
+`AUTH_PROVIDER_MODE=remote` with the same Yandex/VK application IDs. A real
+distributable build must use the permanent certificate; a debug-signed local
+APK is not an acceptable substitute.
 
 The local stack remains mock-only. The German `/plantdisease-test/id/` stack is
-the dedicated real-provider beta target and must use the same Yandex/VK client
+the dedicated real-provider staging target and must use the same Yandex/VK client
 IDs as the APK. Keep it limited to named testers and dedicated test accounts;
 it is not a public or production account service.
 
@@ -162,8 +170,8 @@ keep generated documentation/media paths under their external prefixes.
 The synthetic integration checker is only for `compose.local.yml`; it sends mock
 provider tokens and therefore must not be run against German remote-provider
 mode. For German staging, check both loopback health endpoints, compare
-`/api/capabilities` with main, then run the real login matrix from the signed
-account-beta APK.
+`/api/capabilities` with main, then run the real login matrix from the
+permanently signed PlantDiseases 1.9 staging APK.
 
 The optional `backup-test.sh` accepts only the exact German beta project and
 volume prefix. It writes a protected custom-format dump to an explicit absolute

@@ -5,19 +5,21 @@ Open work only; the code is the record. Companions: `DATASET_LABELING_PLAN.md`
 `../server/models/MODEL_CARD.md` (**stale — see the model track**).
 
 Every status here was verified against the tree. Two independently releasable
-tracks: the **app** (`versionName` 1.8 / `versionCode` 18 already set, tag not
-cut) and the **model** (bundle version, moves per training run).
+tracks: the **app** (`versionName` 1.9 / `versionCode` 19 on the account-system
+staging branch; permanent 1.8 signing identity still needs owner confirmation)
+and the **model** (bundle version, moves per training run).
 
 ---
 
-## App 1.8
+## App 1.9
 
 Everything else has landed: AI-doctor chat subtitle via `localizedSpeciesName`,
 shared `ConnectivityObserver`, `GET /api/species-profile` returning all three
 fields, flowering chart, native-range map, coach-mark onboarding, and the
 species-info consolidation onto one screen behind one reusable card.
 
-- [ ] **Cut the 1.8 tag and the RuStore build** — human-only.
+- [ ] **Cut the 1.9 tag and the RuStore build** — human-only, after the
+      permanent signing/provider and real account-system gates pass.
 - [ ] **First-launch intro video** — *externally blocked.* Server-hosted
       (~3 MB, background download, `/api/aqua`-style manifest), above the
       consent page, existing Lottie as offline fallback. Blocked on the

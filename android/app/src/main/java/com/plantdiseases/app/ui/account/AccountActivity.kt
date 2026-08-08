@@ -42,7 +42,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** Account-beta identity/profile surface. Production builds never expose its entry point. */
+/** PlantDiseases 1.9 identity and profile surface. */
 @AndroidEntryPoint
 class AccountActivity : AppCompatActivity() {
     @Inject

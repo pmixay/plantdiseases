@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Account-beta permits cleartext only to emulator/loopback local integration. -->
+<!--
+    STAGING-ONLY local-development exceptions. The distributable staging APK
+    uses HTTPS endpoints; these hosts allow an explicitly configured emulator
+    build to reach the synthetic loopback Compose stack without permitting
+    arbitrary LAN cleartext.
+-->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>

@@ -10,10 +10,10 @@
 
     The localhost / 10.0.2.2 cleartext exemption a developer needs for
     -PAPP_API_BASE_URL=http://10.0.2.2:18000 and
-    -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001 now live in debug-only variants at
-    app/src/debug/res/xml/network_security_config.xml, which resource merging
-    substitutes for this file in debug builds. It used to live here as a plain
-    <domain-config>, which meant it was compiled into the release APK too.
+    -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001 lives in the debug and staging
+    source sets, which resource merging substitutes for this file in those
+    builds. It used to live here as a plain <domain-config>, which meant it was
+    compiled into the production release APK too.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">

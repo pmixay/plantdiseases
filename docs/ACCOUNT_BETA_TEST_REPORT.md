@@ -2,7 +2,13 @@
 
 Report date: 2026-08-07 UTC
 
-Candidate checkpoint: `ea5cf0d` (`feat(beta): run real SDK staging beside main`)
+Runtime checkpoint: `ea5cf0d` (`feat(beta): run real SDK staging beside main`)
+
+Android identity correction: as of 2026-08-08, the APK described by this
+runtime report is PlantDiseases 1.9 (`com.plantdiseases.app`) using the
+permanent app certificate. Any older separate-package statement in historical
+checkpoint text is superseded by
+[ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
 
 Branch: `account-beta-test`
 
@@ -16,9 +22,10 @@ model. It is **restricted staging, not production-ready**.
 
 The runtime is intentionally not connected to public nginx yet. Its protected
 host env contains explicit non-runnable bootstrap provider IDs because the
-registered Yandex/VK beta application values and matching stable APK signing
+registered Yandex/VK Android application values and matching permanent app-signing
 certificate were not available to this session. CI now refuses to publish a
-synthetic account-beta artifact: it can publish only a real-OAuth APK after
+synthetic staging artifact: it can publish only a real-OAuth PlantDiseases 1.9
+APK after
 those values are configured. No successful real-user OAuth flow is claimed.
 
 Main code, process, port, database, media, model files, and nginx configuration
@@ -46,7 +53,7 @@ repository's non-user `server/static/guide/leaf_spot.png` fixture.
 | Real provider server adapters | PASS (invalid-token smoke only) | Live Yandex endpoint returned stable `invalid_provider_token`; live VK endpoint returned stable `provider_application_mismatch`; no real token used |
 | Main coexistence | PASS | Main remained healthy on `127.0.0.1:8000` before/after startup and real inference |
 | Secret isolation | PASS | App sees only dedicated `internal_token` volume (`0640`); signing/encryption keys remain account-only (`0600`) |
-| Android compile, unit tests, lint, real-OAuth APK | CI/CONFIG GATE | Commit pushed; private workflow result not observable here. Publishing fails unless real provider and stable signing secrets are configured |
+| Android compile, unit tests, lint, real-OAuth APK | CI/CONFIG GATE | Commit pushed; private workflow result not observable here. Publishing fails unless real provider and permanent signing configuration is present |
 
 The single skipped account test is the deliberately opt-in live-PostgreSQL
 integration. It previously passed against the isolated digest-pinned beta
@@ -73,7 +80,7 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 | 19.6 Guest minimization | PASS | No-consent inference/training and telemetry no-write, no Guest view row, Guest push refusal, no persisted IP/pseudo/account/session/actor/device/file linkage, and in-memory-only rate limiting are covered. |
 | 19.7 Training/export | PASS | Client contract plus server decode/re-encode, crop-only capture, unsafe-frame rejection, SHA/pHash deduplication, retention/sampling, structured feedback receipts, out-of-head labels, export metadata/sentinel/privacy checks, checksums, provenance/inventory, and group split locking are covered. Android byte-path tests remain a CI gate. |
 | 19.8 Push/deletion | PASS | Account-only encrypted/deduplicated FCM storage, no phone model, actor-only notification resolution, stale removal, immediate session/push revocation and content hiding, cleanup retry/idempotency, thumbnail removal, and eventual private-profile erasure are covered without an FCM call. |
-| 19.9 Android | IMPLEMENTED; CI GATE | Coexisting account-beta identity, prefixed defaults, Guest/ProfileRequired/Authenticated state, encrypted refresh recovery, one retry/no loop, provider/nickname cancellation, logout with Room preservation, separate consents, minimized telemetry, and shared upload sanitizer have source tests wired into CI. No local Android result is claimed. |
+| 19.9 Android | IMPLEMENTED; CI GATE | Same-package PlantDiseases 1.9 staging identity, prefixed endpoints, Guest/ProfileRequired/Authenticated state, encrypted refresh recovery, one retry/no loop, provider/nickname cancellation, logout with Room preservation, separate consents, minimized telemetry, and shared upload sanitizer have source tests wired into CI. No local Android result is claimed. |
 | 19.10 Environment/deployment | PASS for contracts and German loopback runtime; remaining operator gates | The isolated German project is healthy with real models and remote adapters; loopback and inference smoke pass. Public prefix/nginx, backup restore, worker firewall/mTLS, Russian restore/key rotation, and production cutover remain unexecuted. |
 
 ## Acceptance criteria
@@ -127,11 +134,11 @@ and tests lock PostgreSQL 18 to the `/var/lib/postgresql` parent volume with
 These are not test failures; they require authority, infrastructure, secrets,
 real data, or legal/product decisions outside this implementation:
 
-1. Configure dedicated provider applications for
-   `com.plantdiseases.app.accountbeta` plus the stable APK certificate, store
+1. Configure provider Android applications for `com.plantdiseases.app` plus
+   the permanent PlantDiseases certificate, store
    `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID`, `VKID_CLIENT_SECRET`, and `RELEASE_*`
-   in GitHub Actions, then observe a green Android job and archive the
-   `account-beta-real-oauth-apk` digest/provenance.
+   in GitHub Actions, pin `RELEASE_CERT_SHA256`, then observe a green Android
+   job and archive the `plantdiseases-1.9-staging-apk` digest/provenance.
 2. Replace the two VDS bootstrap IDs with the matching registered IDs, restart
    only the beta project, run successful Yandex and VK login from that signed
    APK, then install the reviewed nginx fragment after `nginx -t` passes.

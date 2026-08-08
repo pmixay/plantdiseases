@@ -6,7 +6,8 @@ configuration.
 
 ## German real-provider beta
 
-1. Stop distributing the `com.plantdiseases.app.accountbeta` APK and notify the
+1. Stop distributing the PlantDiseases 1.9 staging APK
+   (`com.plantdiseases.app`) and notify the
    named team testers that the beta service is unavailable.
 2. Remove only the two reviewed beta `location` blocks from the candidate nginx
    configuration. Run `nginx -t` before a reload. Do not edit the existing

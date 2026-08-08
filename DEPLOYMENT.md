@@ -525,40 +525,38 @@ Run this on a real device with the production URL configured. Target: under 5 mi
 
 ## 8. Android release: signing & FCM
 
-The Android CI job (`.github/workflows/ci.yml`) runs lint + unit tests and assembles
-the **R8-minified release APK** on every push touching `android/**`. It works with
-**no** secrets — it falls back to the debug signing key and leaves push messaging
-dormant. Add the secrets below to ship an APK signed with your own key and to enable
-FCM. All Android secrets live in **GitHub → repo → Settings → Secrets and variables →
-Actions**; `app/build.gradle.kts` reads each from a Gradle property **or** the
-same-named env var, so nothing is committed.
+The Android CI job (`.github/workflows/ci.yml`) runs lint + unit tests and
+assembles R8-minified APKs on every push touching `android/**`. Contributor
+compilation can fall back to a debug key, but the PlantDiseases 1.9 staging
+artifact is published only with real provider configuration and the pinned
+permanent app certificate. All Android secrets live in **GitHub → repo →
+Settings → Secrets and variables → Actions**; `app/build.gradle.kts` reads each
+from a Gradle property **or** the same-named env var, so nothing is committed.
 
 ### 8.1 Release signing
 
-Generate an upload keystore (needs JDK `keytool`; keep the file + passwords safe — lose
-it and you can't publish updates to the same Play app):
-
-```bash
-keytool -genkeypair -v -keystore plantdiseases-release.jks -storetype PKCS12 \
-  -alias plantdiseases -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 plantdiseases-release.jks > keystore.b64   # macOS: base64 -i … -o keystore.b64
-```
+Do **not** generate a key until the certificate that signed PlantDiseases 1.8
+has been identified. If 1.8 was distributed, 1.9 must use that same signing
+identity to update it. The authoritative recovery check, one-time generation
+command, provider registration fields, backup rules, and local verification
+are in
+[docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
 
 Create these repo secrets (with PKCS12 the key password equals the store password):
 
 | Secret | Value |
 |---|---|
-| `RELEASE_KEYSTORE_BASE64` | contents of `keystore.b64` |
+| `RELEASE_KEYSTORE_BASE64` | one-line base64 of the permanent keystore |
 | `RELEASE_STORE_PASSWORD` | keystore password |
 | `RELEASE_KEY_ALIAS` | the alias (e.g. `plantdiseases`) |
-| `RELEASE_KEY_PASSWORD` | key password (= store password for PKCS12) |
+| `RELEASE_KEY_PASSWORD` | permanent key password |
 
-With all four set, CI decodes the keystore and emits a release-signed APK (artifact
-`app-release-apk`); absent them it uses the debug key (sideload-installable, not for
-Play). Don't commit the `.jks`/`keystore.b64`; delete `keystore.b64` after copying.
-Build locally with `./gradlew :app:assembleRelease -PRELEASE_STORE_FILE=/abs/path.jks
--PRELEASE_STORE_PASSWORD=… -PRELEASE_KEY_ALIAS=plantdiseases -PRELEASE_KEY_PASSWORD=…`
-(or put the props in `~/.gradle/gradle.properties`, outside the repo).
+Also create repository variable `RELEASE_CERT_SHA256` with the public SHA-256
+fingerprint. With all four secrets and that variable set, CI decodes the
+keystore and refuses the distributable artifact if the APK certificate differs
+from the pinned fingerprint. Never commit the keystore or its base64 encoding.
+Put local signing properties in `~/.gradle/gradle.properties`, outside the
+repository, as shown in the dedicated guide.
 
 ### 8.2 Firebase Cloud Messaging (FCM)
 
@@ -581,10 +579,12 @@ Two distinct credential sets:
 ### 8.3 CI
 
 The `android` job exposes the secrets as env vars; the keystore is decoded only when
-`RELEASE_KEYSTORE_BASE64` is set, and one Gradle invocation runs everything:
+the complete permanent signing configuration is set, and one Gradle invocation
+runs everything:
 
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
+./gradlew ktlintCheck detekt testDebugUnitTest testStagingUnitTest \
+  assembleRelease assembleStaging --build-cache --configuration-cache --stacktrace
 ```
 
 ### 8.4 RuStore in-app updates
@@ -607,4 +607,3 @@ The app bundles the [RuStore in-app updates SDK](https://www.rustore.ru/help/gui
   was installed *from the store* and a published build with a higher
   `versionCode` — it cannot be exercised from a sideloaded debug build (the
   SDK reports `RuStoreNotInstalledException`/`ERROR_APP_NOT_OWNED` instead).
-

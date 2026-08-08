@@ -1,17 +1,17 @@
-# Account Beta Environment and Secret Inventory
+# Account System Staging Environment and Secret Inventory
 
 No secret value belongs in Git, an image layer, an APK, a command line, a log,
 or this document. Android OAuth application identifiers—and the VK mobile
 client value commonly named a client secret—are extractable public client
 configuration and are never accepted as proof of identity.
 
-## Local and German account beta
+## Local and German account-system staging
 
 | Value | Classification | Owner/storage | Consumer | Rotation |
 |---|---|---|---|---|
 | `BETA_ACCOUNT_IMAGE`, `BETA_APP_IMAGE` | Public immutable image references | Mode-0600 operator env file | Compose | Every tested release |
 | `BETA_POSTGRES_PASSWORD` | Staging secret | Mode-0600 operator env file | PostgreSQL/account API | Recreate with disposable stack |
-| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public beta application IDs | Mode-0600 operator env plus protected Android build config | Account API/Android | Change only with provider registration |
+| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Mode-0600 operator env plus protected Android build config | Account API/Android | Change only with provider registration |
 | Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Protected Android/CI build config, never server env | VK ID SDK | Change only with provider registration |
 | `BETA_MODELS_DIR` | Non-secret absolute model path | Host-only operator env | App API read-only mount | Verify at each model release |
 | `signing.json` | Beta Ed25519 private key ring | Dedicated `*_account_keys` volume, mode 0600 | Account API | Exercise before handoff; never promote |

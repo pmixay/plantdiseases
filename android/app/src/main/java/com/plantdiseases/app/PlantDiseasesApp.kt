@@ -107,7 +107,7 @@ class PlantDiseasesApp : Application() {
         prefs.edit()
             .remove(KEY_CRASH_PENDING)
             .remove(KEY_CRASH_CRUMBS)
-            // Purge pre-beta crash text without transmitting it.
+            // Purge legacy crash text without transmitting it.
             .remove(LEGACY_KEY_CRASH_KIND)
             .remove(LEGACY_KEY_CRASH_MESSAGE)
             .apply()

@@ -1,4 +1,13 @@
-# PlantDiseases Account Beta and RU/DE Deployment Plan
+# PlantDiseases Account System Staging and RU/DE Deployment Plan
+
+> **Superseding Android identity decision (2026-08-08):** “Account beta” is a
+> workstream/environment name only. The tester APK is PlantDiseases 1.9,
+> package `com.plantdiseases.app`, version code 19, signed by the one permanent
+> PlantDiseases app key. The internal Gradle build type is `staging`; it changes
+> endpoints but has no package suffix, version suffix, or alternate app label.
+> It updates a same-signed 1.8 install and cannot coexist with it. Any older
+> requirement below implying `.accountbeta` or a second installed app is
+> replaced by this decision.
 
 **Working branch:** `account-beta-test`
 
@@ -137,14 +146,15 @@ Owner: account-feature implementer.
 4. Keep production `main` behaviour and the current production VDS untouched.
 5. Use only generated provider subjects and generated profile fields in local automated tests.
 
-### Phase B — Local integration and Android account-beta build
+### Phase B — Local integration and Android 1.9 staging build
 
 Owner: account-feature implementer.
 
-1. Introduce an `accountBeta` Android build variant or an equivalent branch-only configuration:
-   - `applicationIdSuffix = ".accountbeta"`;
-   - app label `PlantDiseases Account Beta`;
-   - distinct launcher/build identity so production and beta can coexist;
+1. Introduce a `staging` Android build type:
+   - application ID remains `com.plantdiseases.app`;
+   - app label remains `PlantDiseases`;
+   - version name/code are `1.9`/`19`;
+   - use the permanent PlantDiseases signing certificate so it updates 1.8;
    - account UI enabled;
    - URLs supplied by Gradle properties, never scattered constants.
 2. Point emulator builds at the local Compose stack.
@@ -339,9 +349,10 @@ APP_API_BASE_URL=http://10.0.2.2:18000/
 ACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
 ```
 
-A physical device on the same LAN may use the developer workstation's LAN address. Cleartext HTTP
-remains limited to debug/account-beta builds through the existing debug network security policy.
-Production/release variants require HTTPS.
+A USB-connected physical device may use `adb reverse` and the permitted
+`127.0.0.1` URLs. Arbitrary LAN cleartext is not enabled. Loopback cleartext is
+limited to debug and internal staging builds through their source-set network
+security policy; production release builds require HTTPS.
 
 ### 5.4 Local developer workflow
 
@@ -429,7 +440,8 @@ It must not be used for:
 - presenting the environment as legally production-ready.
 
 Automated tests continue to inject mocked provider HTTP responses. The German end-to-end matrix uses
-the official SDKs and live provider endpoints only from the separately signed account-beta APK. The
+the official SDKs and live provider endpoints only from the permanently signed PlantDiseases 1.9
+staging APK. The
 operator accepts this restricted staging choice; public/production onboarding remains blocked on the
 Russian data-plane and legal gates below.
 
@@ -437,7 +449,7 @@ Russian data-plane and legal gates below.
 
 Rollback is operationally simple:
 
-1. remove the beta Android build from testers;
+1. stop distributing the PlantDiseases 1.9 staging build to testers;
 2. disable the two nginx beta locations;
 3. stop the beta Compose project;
 4. retain volumes only for the agreed short debugging window;
@@ -880,7 +892,9 @@ Authenticated(profile, session)
 ### 14.3 OAuth and UI
 
 - Integrate official Yandex ID and VK ID mobile flows without email scope.
-- Register debug, account-beta, and release package signatures separately.
+- Register the permanent release signature for `com.plantdiseases.app` with
+  both providers. Debug registrations may be used only for local development;
+  there is no `.accountbeta` package registration.
 - Show a non-skippable nickname completion screen after first OAuth.
 - Cancelling nickname completion invokes signup cancellation if reachable, clears pending state, and
   returns to Guest.
@@ -1133,8 +1147,8 @@ wrong-audience token, and deleted account.
 
 ### 19.9 Android
 
-- account-beta and production installs coexist;
-- branch beta defaults point only to `/plantdisease-test/`;
+- PlantDiseases 1.9 staging updates a same-signed 1.8 install;
+- the staging defaults point only to `/plantdisease-test/`;
 - process restart restores through encrypted refresh token;
 - logout removes account credentials without deleting Room data;
 - Guest/ProfileRequired/Authenticated UI transitions;
@@ -1162,7 +1176,7 @@ wrong-audience token, and deleted account.
 2. land Android unit/Robolectric tests;
 3. make GitHub Actions run on `account-beta-test`;
 4. run local Compose integration tests;
-5. produce an account-beta APK;
+5. produce the permanently signed PlantDiseases 1.9 staging APK;
 6. deploy isolated German staging;
 7. run smoke tests against `/plantdisease-test/`;
 8. distribute only to named team testers with dedicated provider test accounts;

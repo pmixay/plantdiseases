@@ -10,8 +10,8 @@ plugins {
     id("io.gitlab.arturbosch.detekt")
 }
 
-// Account-beta OAuth configuration can come from a Gradle property or an
-// environment variable. Environment support keeps extractable mobile client
+// OAuth configuration can come from a Gradle property or an environment
+// variable. Environment support keeps extractable mobile client
 // values out of command lines and lets CI inject them without committing a
 // local.properties/gradle.properties file.
 fun configuredValue(name: String): String =
@@ -24,15 +24,15 @@ fun configuredValue(name: String): String =
 val yandexClientId = configuredValue("YANDEX_CLIENT_ID")
 val vkClientId = configuredValue("VKID_CLIENT_ID")
 val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
-val accountBetaRealOAuthEnabled = when (
-    val raw = configuredValue("ACCOUNT_BETA_REAL_OAUTH").lowercase()
+val realOAuthEnabled = when (
+    val raw = configuredValue("ACCOUNT_REAL_OAUTH").lowercase()
 ) {
     "", "false" -> false
     "true" -> true
-    else -> throw GradleException("ACCOUNT_BETA_REAL_OAUTH must be true or false")
+    else -> throw GradleException("ACCOUNT_REAL_OAUTH must be true or false")
 }
 
-if (accountBetaRealOAuthEnabled) {
+if (realOAuthEnabled) {
     val missing = buildList {
         if (yandexClientId.isBlank()) add("YANDEX_CLIENT_ID")
         if (vkClientId.isBlank()) add("VKID_CLIENT_ID")
@@ -42,7 +42,7 @@ if (accountBetaRealOAuthEnabled) {
     }
     if (missing.isNotEmpty()) {
         throw GradleException(
-            "Real account-beta OAuth requires: ${missing.joinToString()}",
+            "Real OAuth requires: ${missing.joinToString()}",
         )
     }
     if (!vkClientId.all { it.isDigit() }) {
@@ -81,15 +81,16 @@ android {
         // make on its own terms — not a side effect of a dependency refresh.
         // Compiling against 36 while targeting 35 is the supported combination.
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.8"
+        versionCode = 19
+        versionName = "1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Public application traffic and private account traffic deliberately
         // have independent origins. Production defaults stay on the reviewed
-        // public endpoint; the account UI is enabled only in the branch-only
-        // accountBeta build type below.
+        // public endpoint. The release build contains the 1.9 account system;
+        // the staging build below points the same app identity at the parallel
+        // German test stack.
         val configuredAppApiBaseUrl = configuredValue("APP_API_BASE_URL")
             .ifBlank { "https://pdis.arbuz.lol/" }
         val configuredAccountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
@@ -181,47 +182,6 @@ android {
     }
 
     buildTypes {
-        create("accountBeta") {
-            initWith(getByName("debug"))
-            matchingFallbacks += listOf("debug")
-            applicationIdSuffix = ".accountbeta"
-            versionNameSuffix = "-account-beta"
-            resValue("string", "app_name", "PlantDiseases Account Beta")
-
-            // Real provider registrations are bound to the APK signing
-            // certificate. Reuse the stable configured release certificate
-            // for distributable beta builds; keep the normal debug fallback
-            // so contributor builds remain installable without private keys.
-            val releaseConfig = signingConfigs.findByName("release")
-            signingConfig = if (releaseConfig?.storeFile != null) {
-                releaseConfig
-            } else {
-                signingConfigs.getByName("debug")
-            }
-
-            val appUrl = configuredValue("APP_API_BASE_URL")
-                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/" }
-            val accountUrl = configuredValue("ACCOUNT_API_BASE_URL")
-                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/id/" }
-            fun quotedUrl(raw: String): String {
-                val normalized = if (raw.endsWith("/")) raw else "$raw/"
-                return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-            }
-            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
-            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
-            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
-            // Synthetic auth remains the safe default for the local mock
-            // stack. ACCOUNT_BETA_REAL_OAUTH=true selects the already
-            // integrated official Yandex/VK SDK flows, after the configuration
-            // validation above has proved both clients and an explicit remote
-            // account endpoint are present.
-            buildConfigField(
-                "boolean",
-                "SYNTHETIC_AUTH_ENABLED",
-                (!accountBetaRealOAuthEnabled).toString(),
-            )
-        }
-
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -242,6 +202,38 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+        }
+
+        // This is an endpoint-selecting build type, not another application.
+        // It deliberately keeps the release application ID, launcher label,
+        // version and signing certificate, so PlantDiseases 1.9 updates the
+        // installed 1.8 app instead of coexisting with it.
+        create("staging") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+
+            val appUrl = configuredValue("APP_API_BASE_URL")
+                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/" }
+            val accountUrl = configuredValue("ACCOUNT_API_BASE_URL")
+                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/id/" }
+            fun quotedUrl(raw: String): String {
+                val normalized = if (raw.endsWith("/")) raw else "$raw/"
+                return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            }
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+            // Synthetic auth remains available only for local mock-stack
+            // development. ACCOUNT_REAL_OAUTH=true selects the integrated
+            // official Yandex/VK SDK flows after validating both provider
+            // applications and explicit HTTPS endpoints above.
+            buildConfigField(
+                "boolean",
+                "SYNTHETIC_AUTH_ENABLED",
+                (!realOAuthEnabled).toString(),
+            )
         }
     }
 
@@ -414,7 +406,7 @@ dependencies {
 
     // Official mobile OAuth SDKs. Both are inert until build-time client
     // configuration is supplied; automated tests never contact either
-    // provider, while the distributable account-beta CI artifact requires
+    // provider, while the distributable 1.9 staging artifact requires
     // registered real client values.
     implementation("com.yandex.android:authsdk:3.2.1")
     implementation("com.vk.id:vkid:2.7.2")

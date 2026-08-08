@@ -14,9 +14,10 @@ resources; checkpoint 11 records the explicitly authorized German VDS beta.
 - Deployments performed: isolated Compose project
   `plantdisease_account_beta_german`, commit/image tag `ea5cf0d`, loopback ports
   `18100/18101`, real PlantVision model mounted read-only.
-- Current blocker: dedicated `YANDEX_CLIENT_ID`, numeric `VKID_CLIENT_ID`,
-  Android `VKID_CLIENT_SECRET`, and the stable provider-registered APK signing
-  certificate. No successful real-user OAuth flow is claimed without them.
+- Current blocker: `YANDEX_CLIENT_ID`, numeric `VKID_CLIENT_ID`, Android
+  `VKID_CLIENT_SECRET`, and the permanent provider-registered
+  `com.plantdiseases.app` signing certificate. No successful real-user OAuth
+  flow is claimed without them.
 
 ## Checkpoints
 
@@ -739,10 +740,40 @@ Checkpoint commit:
 
 - `feat(beta): run real SDK staging beside main`
 
+### 12 — Correct PlantDiseases 1.9 identity and permanent signing contract (implemented, 2026-08-08)
+
+Completed work:
+
+- Superseded the separate installed beta identity. The internal Android build
+  type is now `staging`, but its package is `com.plantdiseases.app`, launcher
+  label is `PlantDiseases`, version name is `1.9`, and version code is `19`.
+  It is intended to update a same-signed 1.8 installation, not coexist.
+- Replaced `ACCOUNT_BETA_REAL_OAUTH` with `ACCOUNT_REAL_OAUTH`, renamed the
+  staging test/tasks/output paths, and removed `.accountbeta`, the version
+  suffix, and the Account Beta launcher label.
+- Changed the branch artifact to `plantdiseases-1.9-staging-apk`. CI requires
+  all permanent signing fields, all real provider values, and the pinned
+  public `RELEASE_CERT_SHA256`; it verifies the release and staging APKs use
+  that certificate.
+- Added `ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md` with the mandatory 1.8
+  certificate recovery check, one-time key creation procedure, exact Yandex/VK
+  registration identity, GitHub configuration, VDS values, and local real-SDK
+  test procedure.
+
+Boundary:
+
+- No private key was generated. The repository has no existing APK/keystore,
+  so the owner must first establish whether a distributed 1.8 already has a
+  permanent signing identity. Generating a different key would break the
+  update path.
+- Provider IDs, protected VK mobile configuration, GitHub signing secrets,
+  public nginx activation, and successful real-user OAuth remain operator
+  gates.
+
 ## Remaining work (plan order)
 
-Repository and loopback VDS work are complete. Supply/configure the dedicated
-provider applications and stable signing key to unlock the real APK/login and
+Repository and loopback VDS work are complete. Supply/configure the provider
+applications and permanent PlantDiseases signing key to unlock the real APK/login and
 public beta-prefix steps. Remaining production/legal gates are listed in
 `ACCOUNT_BETA_TEST_REPORT.md` and `ACCOUNT_BETA_HANDOFF.md`; they must not be
 inferred as complete from the German team beta.

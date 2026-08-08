@@ -1,9 +1,15 @@
-# Account Beta Final Implementation and Test Guide
+# Account System Staging Implementation and Test Guide
 
 Status: implementation guide for the `account-beta-test` branch. It explains
-what is implemented and how to validate it. The German beta is a restricted
+what is implemented and how to validate it. The German environment is a restricted
 real-provider test deployment, not public production traffic or a merge to
 `main`.
+
+The installed Android artifact is not named Account Beta and is not a second
+package. It is PlantDiseases 1.9 (`com.plantdiseases.app`) signed with the
+permanent PlantDiseases certificate. Read
+[ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md)
+before creating or registering any key.
 
 The infrastructure transfer and day-two operations procedure is in
 [RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md](RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md).
@@ -15,21 +21,22 @@ The infrastructure transfer and day-two operations procedure is in
   reauthentication, push registration, and account deletion.
 - Android uses the official Yandex LoginSDK and VK ID SDK. Provider access
   tokens are sent once to account-api and are not persisted by the app.
-- `accountBeta` is independently installable as
-  `com.plantdiseases.app.accountbeta`; the existing production package remains
-  `com.plantdiseases.app`.
+- The internal `staging` build type keeps package `com.plantdiseases.app`, app
+  label `PlantDiseases`, version name `1.9`, and version code `19`. With the
+  existing permanent certificate it updates 1.8 rather than coexisting.
 - Synthetic authentication remains the default for local hermetic testing.
-  `ACCOUNT_BETA_REAL_OAUTH=true` selects the real SDK callbacks for the German
-  beta only when both provider configurations and explicit HTTPS API URLs are
+  `ACCOUNT_REAL_OAUTH=true` selects the real SDK callbacks for German staging
+  only when both provider configurations and explicit HTTPS API URLs are
   present.
 - AndroidX Lifecycle is pinned to `2.10.0`. Its AAR requires compile SDK 35 and
   AGP 8.6, which is compatible with this project's compile SDK 36 and AGP
   8.13.2. Lifecycle 2.11 must not be restored until the project performs a
   reviewed API 37/AGP 9 migration.
 - CI always compiles the real-OAuth BuildConfig path with inert values. When
-  the three provider build values and stable signing key are configured as
-  repository secrets, the branch additionally publishes
-  `account-beta-real-oauth-apk` pointed at the parallel German endpoints.
+  the three provider build values and permanent signing key are configured as
+  repository secrets, and the permanent certificate fingerprint is pinned,
+  the branch publishes `plantdiseases-1.9-staging-apk` pointed at the parallel
+  German endpoints.
 
 Implementation entry points:
 
@@ -44,15 +51,16 @@ Implementation entry points:
 Push the branch and require all applicable jobs in `.github/workflows/ci.yml`
 to pass:
 
-- **Android build & lint**: ktlint, detekt, production tests, account-beta tests,
-  release APK, and account-beta APK;
+- **Android build & lint**: ktlint, detekt, production tests, staging tests,
+  release APK, and staging APK;
 - **Account API tests & lint**: Ruff, pytest, Compose/template rendering, and
   shell syntax;
 - **Server tests & lint**: Ruff and pytest.
 
 Do not distribute an APK from a failed or cancelled run. With provider and
-signing secrets configured, use only the `account-beta-real-oauth-apk`
-artifact; otherwise CI labels the fallback `account-beta-synthetic-apk`.
+signing/provider configuration complete, use only the
+`plantdiseases-1.9-staging-apk` artifact. CI does not publish a synthetic
+fallback from this branch.
 
 ## 2. Test synthetic login first
 
@@ -76,7 +84,7 @@ python deploy/account-beta-test/check_integration.py \
 Build from `android/` for an emulator:
 
 ```sh
-./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta \
+./gradlew :app:testStagingUnitTest :app:assembleStaging \
   -PAPP_API_BASE_URL=http://10.0.2.2:18000/ \
   -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
 ```
@@ -95,11 +103,9 @@ Real login requires all of the following before building the APK:
 2. Account-api runs with `AUTH_PROVIDER_MODE=remote`, the matching
    `YANDEX_CLIENT_ID` and `VKID_CLIENT_ID`, PostgreSQL readiness, persistent
    signing/encryption keys, and the private app-service credential.
-3. Yandex and VK applications are registered for the exact Android package and
-   signing certificate:
-   - beta: `com.plantdiseases.app.accountbeta`;
-   - eventual production: `com.plantdiseases.app` (separate registration and
-     release-key fingerprint).
+3. Yandex and VK applications are registered for Android package
+   `com.plantdiseases.app` and the one permanent app-signing certificate. There
+   is no `.accountbeta` provider registration.
 4. The APK is signed by the certificate registered with each provider. Use
    `./gradlew :app:signingReport` to obtain the fingerprint; a CI-generated
    disposable debug key is not a stable provider registration.
@@ -111,8 +117,8 @@ Put build values in the developer's private
 `~/.gradle/gradle.properties`, not in this repository:
 
 ```properties
-ACCOUNT_BETA_REAL_OAUTH=true
-YANDEX_CLIENT_ID=replace-with-beta-yandex-client-id
+ACCOUNT_REAL_OAUTH=true
+YANDEX_CLIENT_ID=replace-with-yandex-client-id
 VKID_CLIENT_ID=12345
 VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
 APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
@@ -150,18 +156,20 @@ The beta application API must report the same PlantVision model family/version
 as main. Its branch code, account PostgreSQL, community data, caches, logs, and
 media remain isolated; only the model directory is shared read-only.
 
-## 5. Build and run the real beta APK
+## 5. Build and run the real PlantDiseases 1.9 APK
 
 From `android/`:
 
 ```sh
-./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta
+./gradlew :app:testStagingUnitTest :app:assembleStaging
 ```
 
-Install the APK under `app/build/outputs/apk/accountBeta/` using Android Studio
-or ADB. Confirm the installed application ID is
-`com.plantdiseases.app.accountbeta` and that the synthetic-auth notice is not
-visible.
+Install the APK under `app/build/outputs/apk/staging/` using Android Studio or
+`adb install -r`. Confirm the installed application ID is
+`com.plantdiseases.app`, the installed version is 1.9/19, its certificate is
+the pinned permanent certificate, and the synthetic-auth notice is not
+visible. A signature mismatch over 1.8 is a stop condition, not a reason to
+uninstall and lose local app data.
 
 Use a dedicated test account and execute this minimum matrix:
 
@@ -186,7 +194,7 @@ token, nickname, provider profile, FCM value, or image body.
 | Symptom | Check |
 |---|---|
 | Lifecycle AAR asks for API 37/AGP 9.1 | Confirm every resolved Lifecycle artifact is `2.10.0`; do not suppress AAR metadata checks |
-| Synthetic notice is still visible | `ACCOUNT_BETA_REAL_OAUTH` was absent/false or a different APK was installed |
+| Synthetic notice is still visible | `ACCOUNT_REAL_OAUTH` was absent/false or a different APK was installed |
 | Provider button says unconfigured | Client values were not available during that APK build |
 | Yandex/VK application mismatch | Client ID, package ID, redirect scheme, or signing fingerprint differs between APK, provider console, and server |
 | Account API returns invalid provider token | Server is in mock mode, token expired, or server client ID does not match the issuing application |

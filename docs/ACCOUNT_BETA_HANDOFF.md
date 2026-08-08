@@ -87,9 +87,10 @@ restricted German beta and must be repeated on Russian staging before release.
    migration, account readiness, and application health in dependency order.
 8. Run loopback health/model smoke tests with deliberately prepared metadata-free
    plant imagery. Verify the beta model family/version matches main.
-9. Build/install the stably signed branch-only real-OAuth APK for named team
-   testers. Confirm package coexistence, account-beta label,
-   `/plantdisease-test/` URLs, and absence of the synthetic-auth notice.
+9. Build/install the permanently signed PlantDiseases 1.9 real-OAuth staging
+   APK for named team testers. Confirm it is `com.plantdiseases.app`, updates a
+   same-signed 1.8 install, uses `/plantdisease-test/` URLs, and does not show
+   the synthetic-auth notice.
 10. Record image/config digests, schema revision, tests, storage inventory, and
     tester list. Staging data is disposable and never promotable.
 

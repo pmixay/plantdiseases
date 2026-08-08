@@ -29,7 +29,7 @@
     <string name="account_delete">Delete account</string>
     <string name="account_delete_warning">You will sign in again to confirm deletion. Sessions are revoked immediately and account data is queued for removal. Local scans, garden entries, and reminders remain on this device.</string>
     <string name="account_delete_confirm">Reauthenticate and delete</string>
-    <string name="account_provider_unconfigured">This provider is not configured in this synthetic beta build.</string>
+    <string name="account_provider_unconfigured">This sign-in provider is not configured in this build.</string>
     <string name="account_synthetic_notice">Synthetic team test: these buttons use generated mock identities, never a real Yandex or VK account.</string>
     <string name="account_oauth_cancelled">Sign-in cancelled</string>
     <string name="account_error_nickname_taken">That nickname is already in use.</string>

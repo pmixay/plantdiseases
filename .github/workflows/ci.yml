@@ -80,24 +80,33 @@ jobs:
         with:
           cmdline-tools-version: latest
 
-      # Presence check only. The secret is scoped to this step and never
-      # leaves it; later steps branch on the boolean output instead, so the
-      # keystore blob is not in scope for the build or the verify step.
-      - name: Detect release signing config
+      # Presence check only. The private values are scoped to this step and
+      # never printed; later steps branch on a boolean. The expected SHA-256
+      # certificate digest is public and pins CI to the one permanent
+      # com.plantdiseases.app signing identity.
+      - name: Detect permanent app signing config
         id: signing
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
         run: |
-          if [ -n "${RELEASE_KEYSTORE_BASE64:-}" ]; then
+          if [ -n "${RELEASE_KEYSTORE_BASE64:-}" ] && \
+             [ -n "${RELEASE_STORE_PASSWORD:-}" ] && \
+             [ -n "${RELEASE_KEY_ALIAS:-}" ] && \
+             [ -n "${RELEASE_KEY_PASSWORD:-}" ] && \
+             [ -n "${RELEASE_CERT_SHA256:-}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
       # Presence check only. Real provider values stay scoped to this step and
-      # the eventual real-beta build step; all other actions and Gradle tasks
+      # the eventual real staging build step; all other actions and Gradle tasks
       # see only booleans.
-      - name: Detect real account-beta OAuth config
+      - name: Detect real OAuth config
         id: real_oauth
         env:
           YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
@@ -133,33 +142,33 @@ jobs:
         run: chmod +x gradlew
 
       # Decode the upload keystore from a secret only when one is configured.
-      - name: Decode release keystore
+      - name: Decode permanent app keystore
         if: steps.signing.outputs.configured == 'true'
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-        run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+        run: printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
 
-      # Compile and execute the account-beta identity test once with inert
+      # Compile and execute the staging identity test once with inert
       # client values. This proves the official SDK mode and its BuildConfig
       # branch stay buildable without putting real provider values in CI.
-      - name: Verify real OAuth account-beta build mode
+      - name: Verify real OAuth staging build mode
         env:
-          ACCOUNT_BETA_REAL_OAUTH: "true"
+          ACCOUNT_REAL_OAUTH: "true"
           YANDEX_CLIENT_ID: ci-yandex-placeholder
           VKID_CLIENT_ID: "12345"
           VKID_CLIENT_SECRET: ci-vk-mobile-placeholder
           APP_API_BASE_URL: https://app-api.invalid/
           ACCOUNT_API_BASE_URL: https://account-api.invalid/
         run: >-
-          ./gradlew :app:testAccountBetaUnitTest
+          ./gradlew :app:testStagingUnitTest
           --build-cache --configuration-cache --stacktrace
 
       # One Gradle invocation runs lint, both unit-test variants, the R8 release
-      # package, and the independently installable account-beta package while
-      # sharing a single configuration phase and warm daemon. With
+      # package, and the same-identity staging package while sharing a single
+      # configuration phase and warm daemon. With
       # RELEASE_STORE_FILE set the release APK uses that key; otherwise it falls
-      # back to the debug key. Account beta is always a debug-derived test build.
-      - name: Lint, test production + account beta, and assemble both APKs
+      # back to the debug key for non-distributable contributor builds.
+      - name: Lint, test production + staging, and assemble both APKs
         env:
           RELEASE_STORE_FILE: ${{ steps.signing.outputs.configured == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
           # Scoped to this step: the Gradle build is the only thing that needs
@@ -179,28 +188,28 @@ jobs:
         # configuration phase when nothing structural changed.
         run: >-
           ./gradlew ktlintCheck detekt testDebugUnitTest
-          testAccountBetaUnitTest assembleRelease assembleAccountBeta
+          testStagingUnitTest assembleRelease assembleStaging
           --build-cache --configuration-cache --stacktrace
 
-      - name: Require real OAuth and stable signing for account-beta artifact
+      - name: Require real OAuth and permanent signing for PlantDiseases 1.9 staging artifact
         if: >-
           github.ref == 'refs/heads/account-beta-test' &&
           (steps.real_oauth.outputs.configured != 'true' ||
           steps.signing.outputs.configured != 'true')
         run: |
-          echo "::error::The account-beta-test branch publishes only a real-OAuth APK signed by the stable registered certificate. Configure YANDEX_CLIENT_ID, VKID_CLIENT_ID, VKID_CLIENT_SECRET, and all RELEASE_* secrets."
+          echo "::error::This branch publishes only PlantDiseases 1.9 with real OAuth and the permanent com.plantdiseases.app certificate. Configure YANDEX_CLIENT_ID, VKID_CLIENT_ID, VKID_CLIENT_SECRET, all RELEASE_* secrets, and the RELEASE_CERT_SHA256 repository variable."
           exit 1
 
-      # Rebuild the independently installable beta with the actual provider
+      # Rebuild PlantDiseases 1.9 staging with the actual provider
       # applications and fixed parallel German endpoints. This overwrites only
-      # the accountBeta output produced above; release/main remains untouched.
-      - name: Assemble real-OAuth account-beta APK
+      # the staging output produced above; release/main remains untouched.
+      - name: Assemble real-OAuth PlantDiseases 1.9 staging APK
         if: >-
           github.ref == 'refs/heads/account-beta-test' &&
           steps.real_oauth.outputs.configured == 'true' &&
           steps.signing.outputs.configured == 'true'
         env:
-          ACCOUNT_BETA_REAL_OAUTH: "true"
+          ACCOUNT_REAL_OAUTH: "true"
           YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
           VKID_CLIENT_ID: ${{ secrets.VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ secrets.VKID_CLIENT_SECRET }}
@@ -211,10 +220,32 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: >-
-          ./gradlew :app:testAccountBetaUnitTest :app:assembleAccountBeta
+          ./gradlew :app:testStagingUnitTest :app:assembleStaging
           --build-cache --stacktrace
 
-      # Prove the release and real-OAuth beta APKs use the configured stable
+      # A production release is also the same package/certificate. Rebuild it
+      # with the real provider configuration only on main; ordinary branch
+      # builds remain non-distributable compilation evidence.
+      - name: Assemble real-OAuth PlantDiseases 1.9 production APK
+        if: >-
+          github.ref == 'refs/heads/main' &&
+          steps.real_oauth.outputs.configured == 'true' &&
+          steps.signing.outputs.configured == 'true'
+        env:
+          ACCOUNT_REAL_OAUTH: "true"
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          VKID_CLIENT_ID: ${{ secrets.VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ secrets.VKID_CLIENT_SECRET }}
+          APP_API_BASE_URL: https://pdis.arbuz.lol/
+          ACCOUNT_API_BASE_URL: https://pdis.arbuz.lol/id/
+          RELEASE_STORE_FILE: ${{ format('{0}/release.keystore', runner.temp) }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: >-
+          ./gradlew :app:assembleRelease --build-cache --stacktrace
+
+      # Prove the release and real-OAuth staging APKs use the configured permanent
       # certificate instead of silently falling back to the debug key, and
       # report whether the FCM client config was injected — without printing
       # the secret values. Fails the build if a keystore secret is set but the
@@ -223,6 +254,7 @@ jobs:
         env:
           # Boolean only — the keystore blob itself is not in scope here.
           RELEASE_CONFIGURED: ${{ steps.signing.outputs.configured }}
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
         run: |
           set -eu
           apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
@@ -249,21 +281,29 @@ jobs:
               echo "::error::RELEASE_KEYSTORE_BASE64 is set but the APK is debug-signed"
               exit 1
             fi
-            echo "OK: release APK is signed with the configured release key."
+            release_sha=$(echo "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+            expected_sha=$(printf '%s' "$RELEASE_CERT_SHA256" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+            expected_sha=${expected_sha#sha256}
+            normalized_release_sha=$(printf '%s' "$release_sha" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+            if [ -z "$normalized_release_sha" ] || [ "$normalized_release_sha" != "$expected_sha" ]; then
+              echo "::error::Release APK certificate does not match the pinned RELEASE_CERT_SHA256"
+              exit 1
+            fi
+            echo "OK: release APK uses the pinned permanent app certificate."
 
             if [ "${{ github.ref }}" = "refs/heads/account-beta-test" ]; then
-              beta_apk=$(find app/build/outputs/apk/accountBeta -name '*.apk' | head -1)
-              beta_certs=$("$apksigner" verify --print-certs "$beta_apk")
-              echo "----- account-beta signing certificate -----"
-              echo "$beta_certs"
-              echo "--------------------------------------------"
-              release_sha=$(echo "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
-              beta_sha=$(echo "$beta_certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
-              if [ -z "$release_sha" ] || [ "$beta_sha" != "$release_sha" ]; then
-                echo "::error::accountBeta is not signed by the configured stable release certificate"
+              staging_apk=$(find app/build/outputs/apk/staging -name '*.apk' | head -1)
+              staging_certs=$("$apksigner" verify --print-certs "$staging_apk")
+              echo "----- staging signing certificate -----"
+              echo "$staging_certs"
+              echo "---------------------------------------"
+              staging_sha=$(echo "$staging_certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+              normalized_staging_sha=$(printf '%s' "$staging_sha" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+              if [ -z "$normalized_staging_sha" ] || [ "$normalized_staging_sha" != "$expected_sha" ]; then
+                echo "::error::Staging APK is not signed by the pinned permanent app certificate"
                 exit 1
               fi
-              echo "OK: accountBeta uses the stable registered signing certificate."
+              echo "OK: staging uses the same pinned permanent app certificate."
             fi
           else
             echo "No release keystore secret set; debug-signed fallback is expected."
@@ -287,9 +327,9 @@ jobs:
           name: unit-test-report
           path: |
             android/app/build/reports/tests/testDebugUnitTest/**
-            android/app/build/reports/tests/testAccountBetaUnitTest/**
+            android/app/build/reports/tests/testStagingUnitTest/**
             android/app/build/test-results/testDebugUnitTest/**
-            android/app/build/test-results/testAccountBetaUnitTest/**
+            android/app/build/test-results/testStagingUnitTest/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -304,11 +344,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload release APK (R8, signed with release or debug key)
-        if: success()
+      - name: Upload permanently signed real-OAuth production APK
+        if: >-
+          success() && github.ref == 'refs/heads/main' &&
+          steps.real_oauth.outputs.configured == 'true' &&
+          steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: app-release-apk
+          name: plantdiseases-1.9-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
           retention-days: 7
@@ -317,15 +360,15 @@ jobs:
           # gain at a fraction of the CPU of the default 6 — rather than 0.
           compression-level: 3
 
-      - name: Upload real-OAuth account-beta APK
+      - name: Upload real-OAuth PlantDiseases 1.9 staging APK
         if: >-
           success() && github.ref == 'refs/heads/account-beta-test' &&
           steps.real_oauth.outputs.configured == 'true' &&
           steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: account-beta-real-oauth-apk
-          path: android/app/build/outputs/apk/accountBeta/*.apk
+          name: plantdiseases-1.9-staging-apk
+          path: android/app/build/outputs/apk/staging/*.apk
           if-no-files-found: error
           retention-days: 7
           compression-level: 3

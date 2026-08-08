@@ -29,7 +29,7 @@
     <string name="account_delete">Удалить аккаунт</string>
     <string name="account_delete_warning">Для подтверждения удаления потребуется повторный вход. Сессии будут отозваны сразу, а данные аккаунта поставлены в очередь на удаление. Локальные сканирования, сад и напоминания останутся на устройстве.</string>
     <string name="account_delete_confirm">Войти снова и удалить</string>
-    <string name="account_provider_unconfigured">Провайдер не настроен в этой синтетической бета-сборке.</string>
+    <string name="account_provider_unconfigured">Провайдер входа не настроен в этой сборке.</string>
     <string name="account_synthetic_notice">Синтетический командный тест: кнопки используют сгенерированные тестовые профили, а не реальный аккаунт Яндекса или VK.</string>
     <string name="account_oauth_cancelled">Вход отменён</string>
     <string name="account_error_nickname_taken">Этот псевдоним уже занят.</string>

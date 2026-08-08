@@ -54,9 +54,9 @@ source filename, metadata, client address, and consent state must not cross.
    current production Android build has account UI disabled; enabling it,
    adding production OAuth configuration, and pointing it to Russian URLs is a
    separate reviewed release change.
-5. Register the production package `com.plantdiseases.app` and stable release
-   signing fingerprint separately from the beta package
-   `com.plantdiseases.app.accountbeta`.
+5. Register only package `com.plantdiseases.app` with the permanent
+   PlantDiseases signing fingerprint. The staging build is version 1.9 of the
+   same app, not a separately installed beta package.
 
 ## 4. Controlled transfer sequence
 
@@ -111,8 +111,9 @@ source filename, metadata, client address, and consent state must not cross.
 ### Phase 3 — Real-provider Russian staging
 
 - Configure remote Yandex/VK verification with staging application IDs.
-- Register the beta package/signing fingerprint and build `accountBeta` with
-  Russian HTTPS URLs as described in the final implementation guide.
+- Register `com.plantdiseases.app` with the permanent PlantDiseases signing
+  fingerprint and build the internal `staging` type with Russian HTTPS URLs as
+  described in the signing and final implementation guides.
 - Run the full real-provider test matrix with named testers and dedicated test
   accounts.
 - Inspect provider, ingress, application, database, and worker logs for the
