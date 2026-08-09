@@ -15,7 +15,10 @@ from fastapi.responses import JSONResponse
 
 from app.api.errors import AccountAPIError
 from app.api.routes import router as account_router
-from app.community_deletion import build_community_deletion_dispatcher
+from app.community_deletion import (
+    build_community_deletion_dispatcher,
+    build_community_nickname_dispatcher,
+)
 from app.config import Settings
 from app.db.database import Database, DatabaseHandle
 from app.db.repository import AccountRepository
@@ -59,6 +62,9 @@ def create_app(
             deletion_dispatcher=build_community_deletion_dispatcher(
                 config, service_token=internal_service_token
             ),
+            nickname_dispatcher=build_community_nickname_dispatcher(
+                config, service_token=internal_service_token
+            ),
         )
 
     @asynccontextmanager
@@ -75,15 +81,20 @@ def create_app(
                             timeout=_MAINTENANCE_INTERVAL_SECONDS,
                         )
                     except TimeoutError:
-                        try:
-                            await asyncio.to_thread(domain_service.process_deletion_jobs)
-                            if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
+                        operations = [
+                            domain_service.process_nickname_jobs,
+                            domain_service.process_deletion_jobs,
+                        ]
+                        if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
+                            operations.append(domain_service.prune_expired_private_state)
+                        for operation in operations:
+                            try:
                                 await asyncio.to_thread(
-                                    domain_service.prune_expired_private_state
+                                    operation
                                 )
-                            tick += 1
-                        except Exception:  # noqa: BLE001 - fixed, private-safe message
-                            logger.warning("Account private-state maintenance failed")
+                            except Exception:  # noqa: BLE001 - isolate independent jobs
+                                logger.warning("Account private-state maintenance failed")
+                        tick += 1
 
             maintenance_task = asyncio.create_task(maintenance_loop())
         try:
@@ -175,7 +186,17 @@ def create_app(
             database_handle.ping()
         except Exception:  # noqa: BLE001 - readiness must redact driver/URL details
             return JSONResponse(status_code=503, content={"status": "unavailable"})
-        return {"status": "ready", "providers": sorted(provider_registry), "database": "ok"}
+        return {
+            "status": "ready",
+            "providers": sorted(provider_registry),
+            "database": "ok",
+            "push_delivery": (
+                "configured"
+                if domain_service is not None
+                and domain_service.notification_sink is not None
+                else "disabled"
+            ),
+        }
 
     application.include_router(account_router)
 

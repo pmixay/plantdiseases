@@ -15,7 +15,6 @@ x-account-environment: &account-environment
   ACCOUNT_ROOT_PATH: /plantdisease-test/id
   ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
   ACCOUNT_AUDIENCE: plantdiseases-app
-  ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:?Set the dedicated beta PostgreSQL password}@beta-postgres/plantdisease_beta
   ACCOUNT_DATABASE_LOCAL: "true"
   ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
   ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
@@ -29,13 +28,22 @@ services:
     image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
     environment:
       POSTGRES_DB: plantdisease_beta
+      # Keep the original bootstrap role name so an existing beta volume can
+      # be upgraded in place. This superuser is never used by an API.
       POSTGRES_USER: beta_account
-      POSTGRES_PASSWORD: ${BETA_POSTGRES_PASSWORD:?Set the dedicated beta PostgreSQL password}
+      POSTGRES_PASSWORD: ${BETA_POSTGRES_ADMIN_PASSWORD:?Set the beta bootstrap password}
+      BETA_POSTGRES_RUNTIME_PASSWORD: ${BETA_POSTGRES_RUNTIME_PASSWORD:?Set the beta runtime password}
+      BETA_POSTGRES_MIGRATOR_PASSWORD: ${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set the beta migrator password}
+      BETA_POSTGRES_BACKUP_PASSWORD: ${BETA_POSTGRES_BACKUP_PASSWORD:?Set the beta backup password}
       PGDATA: /var/lib/postgresql/18/docker
     expose:
       - "5432"
     volumes:
       - beta_postgres:/var/lib/postgresql
+      - type: bind
+        source: ./postgres-init
+        target: /docker-entrypoint-initdb.d
+        read_only: true
     networks:
       - beta-private
     healthcheck:
@@ -45,8 +53,46 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
     security_opt:
       - no-new-privileges:true
+    logging: *beta-logging
+
+  # docker-entrypoint-initdb.d runs only for a fresh volume. This explicit,
+  # idempotent pass also provisions least-privilege roles and transfers the
+  # existing beta_account-owned schema before every Alembic migration.
+  beta-account-role-upgrade:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    entrypoint: ["/bin/sh", "/role-init/10-account-roles.sh"]
+    environment:
+      PGHOST: beta-postgres
+      PGPORT: "5432"
+      PGPASSWORD: ${BETA_POSTGRES_ADMIN_PASSWORD:?Set the existing beta bootstrap password}
+      POSTGRES_DB: plantdisease_beta
+      POSTGRES_USER: beta_account
+      BETA_POSTGRES_RUNTIME_PASSWORD: ${BETA_POSTGRES_RUNTIME_PASSWORD:?Set a 64-hex runtime password}
+      BETA_POSTGRES_MIGRATOR_PASSWORD: ${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set a 64-hex migrator password}
+      BETA_POSTGRES_BACKUP_PASSWORD: ${BETA_POSTGRES_BACKUP_PASSWORD:?Set a 64-hex backup password}
+    depends_on:
+      beta-postgres:
+        condition: service_healthy
+    volumes:
+      - ./postgres-init:/role-init:ro
+    networks:
+      - beta-private
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 32
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     logging: *beta-logging
 
   beta-account-keygen:
@@ -68,6 +114,9 @@ services:
     tmpfs:
       - /tmp:size=8m,mode=1777
     restart: "no"
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -76,22 +125,33 @@ services:
 
   beta-account-migrate:
     image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
-    environment: *account-environment
-    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account_migrator:${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set the beta migrator password}@beta-postgres/plantdisease_beta
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        python -m alembic upgrade head
+        python /role-contract/converge-runtime-grants.py --contract german-beta
     depends_on:
-      beta-postgres:
-        condition: service_healthy
+      beta-account-role-upgrade:
+        condition: service_completed_successfully
       beta-account-keygen:
         condition: service_completed_successfully
     volumes:
       - beta_account_keys:/run/account-secrets:ro
       - beta_internal_token:/run/internal-token:ro
+      - ./converge-runtime-grants.py:/role-contract/converge-runtime-grants.py:ro
     networks:
       - beta-private
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
     restart: "no"
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -100,7 +160,9 @@ services:
 
   beta-account-api:
     image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
-    environment: *account-environment
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account_runtime:${BETA_POSTGRES_RUNTIME_PASSWORD:?Set the beta runtime password}@beta-postgres/plantdisease_beta
     command:
       - uvicorn
       - app.main:app
@@ -147,6 +209,9 @@ services:
     tmpfs:
       - /tmp:size=16m,mode=1777
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -158,6 +223,7 @@ services:
     environment:
       ENVIRONMENT: staging
       ACCOUNT_BETA_SYNTHETIC_PIPELINE: "false"
+      ACCOUNT_FEATURE_EXPECTED: "true"
       APP_ROOT_PATH: /plantdisease-test
       POPULAR_WARM_ENABLED: "false"
       FRONTIER_ENABLED: "false"
@@ -171,7 +237,8 @@ services:
       ACCOUNT_INTERNAL_BASE_URL: http://beta-account-api:8000
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
-      ACCOUNT_NOTIFICATION_URL: http://beta-account-api:8000/v1/internal/notifications/opinion
+      # Push is intentionally disabled for this beta; owner updates are polled.
+      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       AQUA_STATIC_DIR: /app/models/aqua
@@ -231,7 +298,6 @@ services:
       - beta_app_cache:/data/app-cache
       - beta_app_logs:/data/logs
     networks:
-      - beta-private
       - beta-edge
     healthcheck:
       test:
@@ -249,6 +315,9 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     restart: unless-stopped
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 256
     security_opt:
       - no-new-privileges:true
     group_add:

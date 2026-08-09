@@ -62,17 +62,56 @@ object PushManager {
         val ctx = context.applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return
         val authRepository = appEntryPoint(ctx).authRepository()
-        if (authRepository.state.value !is AuthState.Authenticated) return
+        val expectedSessionId = (authRepository.state.value as? AuthState.Authenticated)
+            ?.session
+            ?.sessionId
+            ?: return
         if (!ensureFirebase(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
+                if (!registrationStillAllowed(ctx, authRepository.state.value, expectedSessionId)) {
+                    return@addOnSuccessListener
+                }
                 app.appScope.launch {
-                    authRepository.registerPush(token)
+                    if (!registrationStillAllowed(ctx, authRepository.state.value, expectedSessionId)) {
+                        return@launch
+                    }
+                    authRepository.registerPush(token, expectedSessionId) {
+                        registrationStillAllowed(ctx, authRepository.state.value, expectedSessionId)
+                    }
                 }
             }
             .addOnFailureListener { Log.w(TAG, "FCM token fetch failed") }
+    }
+
+    internal fun registrationStillAllowed(
+        context: Context,
+        state: AuthState,
+        expectedSessionId: String,
+    ): Boolean = registrationStillAllowed(
+        notificationsEnabled = OpinionPrefs.notificationsEnabled(context),
+        state = state,
+        expectedSessionId = expectedSessionId,
+    )
+
+    internal fun registrationStillAllowed(
+        notificationsEnabled: Boolean,
+        state: AuthState,
+        expectedSessionId: String,
+    ): Boolean = notificationsEnabled &&
+        (state as? AuthState.Authenticated)?.session?.sessionId == expectedSessionId
+
+    internal fun notificationBelongsToAuthenticatedActor(
+        targetCommunityActorId: String?,
+        state: AuthState,
+    ): Boolean {
+        val currentActorId = (state as? AuthState.Authenticated)
+            ?.profile
+            ?.communityActorId
+            ?: return false
+        return !targetCommunityActorId.isNullOrBlank() && targetCommunityActorId == currentActorId
     }
 }

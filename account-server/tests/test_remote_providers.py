@@ -126,6 +126,7 @@ def test_urllib_transport_has_fixed_tls_no_redirect_contract(monkeypatch):
         (b"x" * (64 * 1024 + 1), "too large"),
         (b"not-json", "invalid"),
     ],
+    ids=("oversized-body", "invalid-json"),
 )
 def test_urllib_transport_rejects_unsafe_provider_responses(
     monkeypatch,

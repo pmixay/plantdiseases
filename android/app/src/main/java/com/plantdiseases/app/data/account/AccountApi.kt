@@ -9,15 +9,30 @@ interface AccountApi {
 
     suspend fun completeSignup(
         pendingSignupToken: String,
+        completionId: String,
         nickname: String,
         installationId: String,
     ): ExchangeResult.Authenticated
 
-    suspend fun cancelSignup(pendingSignupToken: String)
+    suspend fun confirmSignup(
+        pendingSignupToken: String,
+        completionId: String,
+        installationId: String,
+    )
 
-    suspend fun refresh(refreshToken: String): ExchangeResult.Authenticated
+    suspend fun cancelSignup(
+        pendingSignupToken: String,
+        completionId: String,
+        installationId: String,
+    )
 
-    suspend fun logout(accessToken: String)
+    suspend fun refresh(
+        refreshToken: String,
+        rotationId: String,
+    ): ExchangeResult.Authenticated
+
+    /** Idempotently revokes the session family identified by this refresh credential. */
+    suspend fun logout(refreshToken: String)
 
     suspend fun sessions(accessToken: String): List<AccountSession>
 

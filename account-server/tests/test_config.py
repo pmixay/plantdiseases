@@ -90,12 +90,43 @@ def test_production_requires_community_deletion_url(tmp_path: Path):
         Settings.from_env(env)
 
 
-def test_production_requires_https_community_deletion_url(tmp_path: Path):
+def test_production_rejects_http_public_community_deletion_url(tmp_path: Path):
     env = _production_env(tmp_path)
     env["COMMUNITY_DELETION_URL"] = (
         "http://app.example.invalid/api/internal/account-deletions"
     )
-    with pytest.raises(SettingsError, match="COMMUNITY_DELETION_URL must use HTTPS"):
+    with pytest.raises(SettingsError, match="private service hostname"):
+        Settings.from_env(env)
+
+
+def test_production_accepts_fixed_path_on_explicit_private_http_service(
+    tmp_path: Path,
+):
+    env = _production_env(tmp_path)
+    env["COMMUNITY_DELETION_URL"] = (
+        "http://ru-app-api:8000/api/internal/account-deletions"
+    )
+
+    settings = Settings.from_env(env)
+
+    assert settings.community_deletion_url.startswith("http://ru-app-api:8000/")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8000/api/internal/account-deletions",
+        "http://2130706433:8000/api/internal/account-deletions",
+        "http://ru-app-api:8000/api/internal/other",
+        "http://ru-app-api/api/internal/account-deletions",
+    ],
+)
+def test_production_private_http_deletion_url_is_narrowly_scoped(
+    tmp_path: Path, url: str,
+):
+    env = _production_env(tmp_path)
+    env["COMMUNITY_DELETION_URL"] = url
+    with pytest.raises(SettingsError):
         Settings.from_env(env)
 
 
@@ -114,6 +145,28 @@ def test_production_rejects_unencrypted_remote_postgres(tmp_path: Path):
     env["ACCOUNT_DATABASE_URL"] = "postgresql+psycopg://account:secret@db.invalid/accounts"
     with pytest.raises(SettingsError, match="must use TLS"):
         Settings.from_env(env)
+
+
+def test_database_local_flag_only_accepts_internal_service_hostnames(tmp_path: Path):
+    env = _production_env(tmp_path) | {
+        "ACCOUNT_DATABASE_URL": (
+            "postgresql+psycopg://account:secret@db.example.invalid/accounts"
+        ),
+        "ACCOUNT_DATABASE_LOCAL": "true",
+    }
+    with pytest.raises(SettingsError, match="single-label"):
+        Settings.from_env(env)
+
+    env["ACCOUNT_DATABASE_URL"] = (
+        "postgresql+psycopg://account:secret@2130706433/accounts"
+    )
+    with pytest.raises(SettingsError, match="single-label"):
+        Settings.from_env(env)
+
+    env["ACCOUNT_DATABASE_URL"] = (
+        "postgresql+psycopg://account:secret@ru-postgres/accounts"
+    )
+    assert Settings.from_env(env).database_is_local is True
 
 
 def test_every_environment_rejects_wildcard_cors():

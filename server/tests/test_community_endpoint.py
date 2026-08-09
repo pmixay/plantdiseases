@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import sqlite3
+import uuid
 
 import pytest
 
@@ -29,6 +30,30 @@ def isolated_community(tmp_path, monkeypatch):
     importlib.reload(comm)
     import main as server_main
     server_main.community_record_scan = comm.record_scan
+    server_main.AnalysisImageMismatchError = comm.AnalysisImageMismatchError
+    server_main.AnalysisTokenConflictError = comm.AnalysisTokenConflictError
+    server_main.AnalysisTokenUnknownError = comm.AnalysisTokenUnknownError
+    server_main.OpinionTargetUnavailableError = comm.OpinionTargetUnavailableError
+
+    def legacy_analysis_write(**kwargs):
+        return comm.record_scan(
+            scan_id=kwargs["scan_id"],
+            account_actor_id=kwargs["account_actor_id"],
+            country=kwargs["country"],
+            region=kwargs.get("region", ""),
+            city=kwargs.get("city"),
+            lat=kwargs.get("lat"),
+            lon=kwargs.get("lon"),
+            disease=kwargs.get("client_disease") or "healthy",
+            confidence=kwargs.get("client_confidence"),
+            species=kwargs.get("client_species"),
+            species_score=kwargs.get("client_species_score"),
+            image_bytes=kwargs.get("image_bytes"),
+            locale=kwargs.get("locale"),
+            nickname=kwargs.get("nickname"),
+        )
+
+    server_main.community_record_analysis_scan = legacy_analysis_write
     server_main.community_nearby_scans = comm.nearby_scans
     server_main.community_region_summary = comm.region_summary
     server_main.community_stats_snapshot = comm.stats_snapshot
@@ -36,7 +61,7 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_clear_wants_opinion = comm.clear_wants_opinion
     server_main.community_wants_opinion = comm.wants_opinion
     server_main.community_account_owner_of = comm.account_owner_of
-    server_main.community_record_opinion = comm.record_opinion
+    server_main.community_record_opinion = comm.record_opinion_with_status
     server_main.community_opinions_for = comm.opinions_for
     server_main.community_scan_exists = comm.scan_exists
     server_main.community_opinion_open = comm.opinion_open
@@ -45,6 +70,7 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_opinion_counts_for_actor = comm.opinion_counts_for_actor
     server_main.community_scan_counts_for_actor = comm.scan_counts_for_actor
     server_main.community_thumbnail_is_visible = comm.thumbnail_is_visible
+    server_main.community_record_analysis_token = comm.record_analysis_token
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
     server_main._daily_write_counts.clear()
@@ -195,7 +221,7 @@ def test_legacy_rows_remain_readable_but_are_never_mutable(
 def test_legacy_push_registration_endpoint_is_removed(client, isolated_community):
     response = client.post(
         "/api/push/register",
-        headers=_account_headers("push-owner"),
+        headers={"Authorization": ""},
         json={"user_pseudo_id": "legacy", "token": "synthetic-token"},
     )
     assert response.status_code == 404
@@ -245,6 +271,65 @@ def test_internal_deletion_hook_is_secret_guarded_and_idempotent(
         params={"country": "GB", "scope": "country"},
     )
     assert feed.json()["items"] == []
+
+
+def test_internal_nickname_hook_replaces_historical_actor_rows(
+    client, isolated_community, monkeypatch,
+):
+    import uuid
+
+    import main as server_main
+
+    owner_headers = _account_headers("nickname-owner", "Old Fern")
+    responder_headers = _account_headers("nickname-responder", "Old Moss")
+    client.post(
+        "/api/community/scan",
+        headers=owner_headers,
+        data=_form(
+            scan_id="nicknamehist01",
+            country="GB",
+            region="London",
+            disease="healthy",
+        ),
+    )
+    opinion = client.post(
+        "/api/community/opinion",
+        headers=responder_headers,
+        json={"scan_id": "nicknamehist01", "suggested_disease": "leaf_spot"},
+    )
+    assert opinion.status_code == 200, opinion.text
+    owner_actor = str(uuid.uuid5(uuid.NAMESPACE_URL, "test-account:nickname-owner"))
+    responder_actor = str(
+        uuid.uuid5(uuid.NAMESPACE_URL, "test-account:nickname-responder")
+    )
+    monkeypatch.setattr(
+        server_main,
+        "internal_service_authorized",
+        lambda supplied: supplied == "synthetic-internal-secret",
+    )
+
+    for actor, nickname in (
+        (owner_actor, "New Fern"),
+        (responder_actor, "New Moss"),
+    ):
+        response = client.post(
+            "/api/internal/account-nicknames",
+            headers={"X-Internal-Service-Token": "synthetic-internal-secret"},
+            json={"actor_id": actor, "nickname": nickname},
+        )
+        assert response.status_code == 202
+
+    feed = client.get(
+        "/api/community/nearby",
+        headers={"Authorization": ""},
+        params={"country": "GB", "scope": "country"},
+    ).json()
+    opinions = client.get(
+        "/api/community/opinions/nicknamehist01",
+        headers={"Authorization": ""},
+    ).json()
+    assert feed["items"][0]["nickname"] == "New Fern"
+    assert opinions["opinions"][0]["nickname"] == "New Moss"
 
 
 def test_community_scan_upload_minimal(client, isolated_community):
@@ -339,6 +424,230 @@ def test_community_scan_upload_rejects_unissued_scan_id(
         params={"country": "NL", "scope": "country", "user_pseudo_id": "pseudo-check"},
     )
     assert all(item["disease"] != "gray_mold_botrytis" for item in feed.json()["items"])
+
+
+def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
+    client, isolated_community, monkeypatch,
+):
+    db_path, _ = isolated_community
+    import community as comm
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
+    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
+    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
+    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
+    image_bytes = _png_bytes()
+    comm.record_analysis_token(
+        "bound-analysis-1",
+        disease="leaf_spot",
+        confidence=0.73,
+        species="Server species",
+        species_score=0.81,
+        image_sha256=hashlib.sha256(image_bytes).hexdigest(),
+    )
+    upload = _form(
+        scan_id="bound-analysis-1",
+        disease="healthy",
+        confidence=0.99,
+        species="Spoofed species",
+        species_score=0.98,
+        country="GB",
+    )
+    first = client.post(
+        "/api/community/scan",
+        headers=_account_headers("claim-owner"),
+        data=upload,
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+    replay = client.post(
+        "/api/community/scan",
+        headers=_account_headers("claim-owner"),
+        data=upload,
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+    conflict = client.post(
+        "/api/community/scan",
+        headers=_account_headers("other-owner"),
+        data=upload,
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+
+    assert first.status_code == replay.status_code == 200, (first.text, replay.text)
+    assert first.json()["id"] == replay.json()["id"]
+    assert conflict.status_code == 409
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            "SELECT disease, confidence, species, species_score, account_actor_id "
+            "FROM community_scans WHERE scan_id = 'bound-analysis-1'"
+        ).fetchall()
+        claimed_actor = connection.execute(
+            "SELECT claimed_actor_id FROM community_analysis_tokens "
+            "WHERE token = 'bound-analysis-1'"
+        ).fetchone()[0]
+    expected_actor = str(uuid.uuid5(uuid.NAMESPACE_URL, "test-account:claim-owner"))
+    assert rows == [("leaf_spot", 0.73, "Server species", 0.81, expected_actor)]
+    assert claimed_actor == expected_actor
+
+
+def test_analysis_publication_rejects_missing_or_substituted_image(
+    client, isolated_community, monkeypatch,
+):
+    db_path, thumb_dir = isolated_community
+    import community as comm
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
+    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
+    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
+    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
+    analyzed_bytes = _png_bytes()
+    different = io.BytesIO()
+    from PIL import Image
+
+    Image.new("RGB", (32, 32), color=(180, 35, 30)).save(different, format="PNG")
+    substituted_bytes = different.getvalue()
+    comm.record_analysis_token(
+        "image-bound-analysis-1",
+        disease="leaf_spot",
+        confidence=0.73,
+        species=None,
+        species_score=None,
+        image_sha256=hashlib.sha256(analyzed_bytes).hexdigest(),
+    )
+    payload = _form(
+        scan_id="image-bound-analysis-1",
+        disease="leaf_spot",
+        country="GB",
+    )
+
+    substituted = client.post(
+        "/api/community/scan",
+        headers=_account_headers("image-owner"),
+        data=payload,
+        files={"image": ("other.png", substituted_bytes, "image/png")},
+    )
+    missing = client.post(
+        "/api/community/scan",
+        headers=_account_headers("image-owner"),
+        data=payload,
+    )
+    assert substituted.status_code == missing.status_code == 422
+    assert substituted.json()["detail"] == "Community image does not match the analyzed image."
+    assert missing.json()["detail"] == "Community image does not match the analyzed image."
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT claimed_actor_id FROM community_analysis_tokens "
+            "WHERE token = 'image-bound-analysis-1'"
+        ).fetchone()[0] is None
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE scan_id = 'image-bound-analysis-1'"
+        ).fetchone()[0] == 0
+    assert not thumb_dir.exists() or not any(thumb_dir.iterdir())
+
+    accepted = client.post(
+        "/api/community/scan",
+        headers=_account_headers("image-owner"),
+        data=payload,
+        files={"image": ("scan.png", analyzed_bytes, "image/png")},
+    )
+    wrong_replay = client.post(
+        "/api/community/scan",
+        headers=_account_headers("image-owner"),
+        data=payload,
+        files={"image": ("other.png", substituted_bytes, "image/png")},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert wrong_replay.status_code == 422
+
+
+def test_failed_analysis_insert_does_not_burn_publication_token(
+    client, isolated_community, monkeypatch,
+):
+    db_path, _ = isolated_community
+    import community as comm
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
+    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
+    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
+    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
+    image_bytes = _png_bytes()
+    comm.record_analysis_token(
+        "retry-analysis-1",
+        disease="healthy",
+        confidence=0.9,
+        species=None,
+        species_score=None,
+        image_sha256=hashlib.sha256(image_bytes).hexdigest(),
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TRIGGER fail_analysis_insert BEFORE INSERT ON community_scans "
+            "WHEN NEW.scan_id = 'retry-analysis-1' BEGIN "
+            "SELECT RAISE(ABORT, 'synthetic insert failure'); END"
+        )
+    payload = _form(scan_id="retry-analysis-1", disease="healthy", country="GB")
+    failed = client.post(
+        "/api/community/scan",
+        headers=_account_headers("retry-owner"),
+        data=payload,
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+    assert failed.status_code == 500, failed.text
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT claimed_actor_id FROM community_analysis_tokens "
+            "WHERE token = 'retry-analysis-1'"
+        ).fetchone()[0] is None
+        connection.execute("DROP TRIGGER fail_analysis_insert")
+
+    retry = client.post(
+        "/api/community/scan",
+        headers=_account_headers("retry-owner"),
+        data=payload,
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+    assert retry.status_code == 200
+
+
+def test_unclaimed_analysis_token_scan_id_collision_is_conflict(
+    client, isolated_community, monkeypatch,
+):
+    import community as comm
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
+    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
+    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
+    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
+    image_bytes = _png_bytes()
+    comm.record_analysis_token(
+        "collision-analysis-1",
+        disease="healthy",
+        confidence=0.9,
+        species=None,
+        species_score=None,
+        image_sha256=hashlib.sha256(image_bytes).hexdigest(),
+    )
+    comm.record_scan(
+        scan_id="collision-analysis-1",
+        user_pseudo_id="legacy-collision",
+        country="GB",
+        disease="leaf_spot",
+    )
+
+    response = client.post(
+        "/api/community/scan",
+        headers=_account_headers("collision-owner"),
+        data=_form(scan_id="collision-analysis-1", disease="healthy", country="GB"),
+        files={"image": ("scan.png", image_bytes, "image/png")},
+    )
+    assert response.status_code == 409
 
 
 def test_community_scan_upload_with_thumbnail(client, isolated_community):
@@ -531,7 +840,9 @@ def test_community_nearby_lists_recent_rows(client, isolated_community):
     assert body["summary"]["last_7d"] == 4
 
 
-def test_community_nearby_excludes_requesting_user(client, isolated_community):
+def test_community_nearby_is_identity_independent_public_read(
+    client, isolated_community,
+):
     client.post(
         "/api/community/scan",
         data=_form(
@@ -558,17 +869,19 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
     # The feed exposes the PUBLIC token in the scan_id field, never the
     # publication capability returned by analysis.
     import community as comm
-    assert {item["scan_id"] for item in body["items"]} \
-        == {comm.public_scan_token("scanotherid1")}
+    assert {item["scan_id"] for item in body["items"]} == {
+        comm.public_scan_token("scanselfid01"),
+        comm.public_scan_token("scanotherid1"),
+    }
     # The summary block must apply the same exclusion. Otherwise the
     # chip row on Android shows a phantom disease — the user's own
     # scan they just uploaded — alongside the carousel that already
     # filters them out, which was confusing in practice.
     summary = body["summary"]
-    assert summary["total"] == 1
-    assert summary["last_7d"] == 1
+    assert summary["total"] == 2
+    assert summary["last_7d"] == 2
     assert [d["disease"] for d in summary["top_diseases"]] == ["healthy"]
-    assert summary["top_diseases"][0]["count"] == 1
+    assert summary["top_diseases"][0]["count"] == 2
 
 
 def test_community_nearby_hides_not_a_plant(client, isolated_community):
@@ -1148,6 +1461,110 @@ def test_prune_sweeps_orphaned_companion_rows(isolated_community):
         conn.close()
 
 
+def test_prune_transaction_removes_fresh_companion_that_won_write_race(
+    isolated_community,
+):
+    """A writer that commits first is swept with the expiring target scan."""
+    import time as _time
+
+    import community as comm
+
+    comm.init_db()
+    old = int(_time.time()) - 200 * 86_400
+    fresh = int(_time.time())
+    db_path, _ = isolated_community
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO community_scans (scan_id, user_pseudo_id, country, "
+            "region, disease, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("prune-raced", "owner", "GB", "", "leaf_spot", old),
+        )
+        connection.execute(
+            "INSERT INTO community_opinions (scan_id, author_pseudo_id, "
+            "suggested_disease, created_at) VALUES (?, ?, ?, ?)",
+            ("prune-raced", "responder", "healthy", fresh),
+        )
+        connection.execute(
+            "INSERT INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            ("prune-raced", "viewer", fresh),
+        )
+        connection.execute(
+            "INSERT INTO community_opinion_requests "
+            "(scan_id, user_pseudo_id, created_at) VALUES (?, ?, ?)",
+            ("prune-raced", "owner", fresh),
+        )
+
+    assert comm.prune_older_than(90) == 1
+    with sqlite3.connect(db_path) as connection:
+        for table in (
+            "community_scans",
+            "community_opinions",
+            "community_scan_views",
+            "community_opinion_requests",
+        ):
+            assert connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE scan_id = ?",
+                ("prune-raced",),
+            ).fetchone()[0] == 0
+
+
+def test_prune_retains_thumbnail_row_when_file_deletion_fails(
+    isolated_community,
+    monkeypatch,
+):
+    import time as _time
+    from pathlib import Path
+
+    import community as comm
+
+    comm.init_db()
+    old = int(_time.time()) - 200 * 86_400
+    db_path, thumb_dir = isolated_community
+    thumbnail = thumb_dir / "retained-on-unlink-error.jpg"
+    thumbnail.write_bytes(b"private-thumbnail")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO community_scans (scan_id, user_pseudo_id, country, "
+            "region, disease, thumb_path, created_at) VALUES "
+            "('scanunlink001','u0000000001','GB','','leaf_spot',?,?)",
+            (thumbnail.name, old),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    original_unlink = Path.unlink
+
+    def fail_target(path: Path, *args, **kwargs):
+        if path == thumbnail:
+            raise OSError("synthetic unlink failure")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_target)
+
+    assert comm.prune_older_than(90) == 0
+    assert thumbnail.exists()
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT thumb_path FROM community_scans WHERE scan_id = 'scanunlink001'"
+        ).fetchone() == (thumbnail.name,)
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+    assert comm.prune_older_than(90) == 1
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE scan_id = 'scanunlink001'"
+        ).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
 # ── Public scan tokens (feedback-gate leak closed) ──────────────────
 
 
@@ -1242,6 +1659,17 @@ def test_opinion_push_only_when_owner_requested(client, isolated_community, monk
 
     # Only the requested scan triggered a push to the owner.
     assert [p[1] for p in pushes] == ["nudgeon00001"]
+
+    replay = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": "nudgeon00001",
+            "user_pseudo_id": "pseudo-viewer-9",
+            "suggested_disease": "powdery_mildew",
+        },
+    )
+    assert replay.status_code == 200
+    assert [p[1] for p in pushes] == ["nudgeon00001"]
     import uuid
     assert pushes[0][0] == str(
         uuid.uuid5(uuid.NAMESPACE_URL, "test-account:pseudo-owner-9")
@@ -1260,9 +1688,127 @@ def test_opinion_on_unknown_scan_rejected(client, isolated_community):
     assert r.status_code == 422
 
 
-def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
-    """Public handles rotate every 30 days; a scan older than that goes
-    read-only and a new opinion against it is refused with 410 Gone."""
+def test_opinion_rechecks_target_after_cleanup_between_http_checks_and_write(
+    client, isolated_community, monkeypatch,
+):
+    """Deletion after the last HTTP precheck cannot recreate an orphan row."""
+    import community as comm
+    import main as server_main
+
+    db_path, _ = isolated_community
+    owner_identity = "raced-delete-owner"
+    scan_id = "raceddelete01"
+    uploaded = client.post(
+        "/api/community/scan",
+        headers=_account_headers(owner_identity, "Owner"),
+        data=_form(
+            scan_id=scan_id,
+            country="GB",
+            region="London",
+            disease="leaf_spot",
+        ),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    owner_actor = str(uuid.uuid5(uuid.NAMESPACE_URL, f"test-account:{owner_identity}"))
+
+    def cleanup_after_precheck(candidate: str) -> bool:
+        assert candidate == scan_id
+        assert comm.opinion_open(candidate)
+        assert comm.request_actor_deletion(owner_actor)
+        assert comm.process_cleanup_jobs() == {"completed": 1, "retried": 0}
+        # Reproduce the stale result already returned by the HTTP precheck.
+        return True
+
+    monkeypatch.setattr(
+        server_main,
+        "community_opinion_open",
+        cleanup_after_precheck,
+    )
+    response = client.post(
+        "/api/community/opinion",
+        headers=_account_headers("raced-delete-responder", "Responder"),
+        json={"scan_id": scan_id, "suggested_disease": "healthy"},
+    )
+
+    assert response.status_code == 410, response.text
+    assert response.json()["detail"] == "Scan no longer accepts opinions"
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_opinions WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_cleanup_jobs WHERE actor_id = ?",
+            (owner_actor,),
+        ).fetchone()[0] == 0
+
+
+def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
+    client, isolated_community, monkeypatch,
+):
+    """A retention pass that wins the race makes the final write fail closed."""
+    import time as _time
+
+    import community as comm
+    import main as server_main
+
+    db_path, _ = isolated_community
+    scan_id = "racedprune001"
+    uploaded = client.post(
+        "/api/community/scan",
+        headers=_account_headers("raced-prune-owner", "Owner"),
+        data=_form(
+            scan_id=scan_id,
+            country="GB",
+            region="London",
+            disease="leaf_spot",
+        ),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    two_days_old = int(_time.time()) - 2 * 86_400
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (two_days_old, scan_id),
+        )
+
+    def prune_after_precheck(candidate: str) -> bool:
+        assert candidate == scan_id
+        assert comm.opinion_open(candidate)
+        assert comm.prune_older_than(1) == 1
+        # Reproduce the stale result already returned by the HTTP precheck.
+        return True
+
+    monkeypatch.setattr(
+        server_main,
+        "community_opinion_open",
+        prune_after_precheck,
+    )
+    response = client.post(
+        "/api/community/opinion",
+        headers=_account_headers("raced-prune-responder", "Responder"),
+        json={"scan_id": scan_id, "suggested_disease": "healthy"},
+    )
+
+    assert response.status_code == 410, response.text
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_opinions WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()[0] == 0
+
+
+def test_opinion_on_stale_scan_rejected_410(client, isolated_community):
+    """A scan older than 30 days is read-only even though its public handle
+    remains stable, so a new opinion is refused with 410 Gone."""
     import time as _time
 
     import community as comm

@@ -23,6 +23,7 @@ from app.api.schemas import (
     PushRegistrationResponse,
     ReauthResponse,
     SessionListResponse,
+    SignupCompletionResponse,
 )
 from app.providers.base import ProviderName
 from app.services.accounts import AccountService, CurrentAccount
@@ -53,15 +54,29 @@ class ExchangeRequest(StrictRequest):
 
 class CompleteSignupRequest(StrictRequest):
     pending_signup_token: SecretStr = Field(min_length=1, max_length=256)
+    completion_id: uuid.UUID
     nickname: str = Field(min_length=1, max_length=64)
     installation_id: uuid.UUID
 
 
 class CancelSignupRequest(StrictRequest):
     pending_signup_token: SecretStr = Field(min_length=1, max_length=256)
+    completion_id: uuid.UUID
+    installation_id: uuid.UUID
+
+
+class ConfirmSignupRequest(StrictRequest):
+    pending_signup_token: SecretStr = Field(min_length=1, max_length=256)
+    completion_id: uuid.UUID
+    installation_id: uuid.UUID
 
 
 class RefreshRequest(StrictRequest):
+    refresh_token: SecretStr = Field(min_length=1, max_length=256)
+    rotation_id: uuid.UUID
+
+
+class LogoutRequest(StrictRequest):
     refresh_token: SecretStr = Field(min_length=1, max_length=256)
 
 
@@ -181,7 +196,7 @@ async def exchange_vk(
 @router.post(
     "/v1/auth/signup/complete",
     status_code=status.HTTP_201_CREATED,
-    response_model=AuthenticatedResponse,
+    response_model=SignupCompletionResponse,
     tags=["authentication"],
 )
 def complete_signup(
@@ -192,9 +207,29 @@ def complete_signup(
     _limit_ip(request, service, "signup-complete")
     return service.complete_signup(
         pending_token=body.pending_signup_token.get_secret_value(),
+        completion_id=body.completion_id,
         nickname=body.nickname,
         installation_id=body.installation_id,
     )
+
+
+@router.post(
+    "/v1/auth/signup/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["authentication"],
+)
+def confirm_signup(
+    body: ConfirmSignupRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> Response:
+    _limit_ip(request, service, "signup-confirm")
+    service.confirm_signup(
+        pending_token=body.pending_signup_token.get_secret_value(),
+        completion_id=body.completion_id,
+        installation_id=body.installation_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -208,7 +243,11 @@ def cancel_signup(
     service: Annotated[AccountService, Depends(_service)],
 ) -> Response:
     _limit_ip(request, service, "signup-cancel")
-    service.cancel_signup(pending_token=body.pending_signup_token.get_secret_value())
+    service.cancel_signup(
+        pending_token=body.pending_signup_token.get_secret_value(),
+        completion_id=body.completion_id,
+        installation_id=body.installation_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -223,7 +262,10 @@ def refresh(
     service: Annotated[AccountService, Depends(_service)],
 ) -> dict:
     _limit_ip(request, service, "refresh")
-    return service.refresh(refresh_token=body.refresh_token.get_secret_value())
+    return service.refresh(
+        refresh_token=body.refresh_token.get_secret_value(),
+        rotation_id=body.rotation_id,
+    )
 
 
 @router.post(
@@ -232,10 +274,12 @@ def refresh(
     tags=["authentication"],
 )
 def logout(
-    current: Annotated[CurrentAccount, Depends(_current_account)],
+    body: LogoutRequest,
+    request: Request,
     service: Annotated[AccountService, Depends(_service)],
 ) -> Response:
-    service.logout(current)
+    _limit_ip(request, service, "logout")
+    service.logout_with_refresh(refresh_token=body.refresh_token.get_secret_value())
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -377,9 +421,11 @@ def delete_me(
 )
 def register_push(
     body: PushDeviceRequest,
+    request: Request,
     current: Annotated[CurrentAccount, Depends(_current_account)],
     service: Annotated[AccountService, Depends(_service)],
 ) -> dict:
+    _limit_ip(request, service, "push-register")
     return service.register_push(
         current,
         fcm_token=body.fcm_token.get_secret_value(),

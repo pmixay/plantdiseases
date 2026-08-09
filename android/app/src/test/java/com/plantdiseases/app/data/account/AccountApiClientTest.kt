@@ -3,6 +3,7 @@ package com.plantdiseases.app.data.account
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.testutil.FakeAccountApi
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -94,12 +95,52 @@ class AccountApiClientTest {
                 .setBody("""{"error":{"code":"refresh_expired"}}"""),
         )
 
-        val failure = runCatching { api.refresh("expired-refresh") }.exceptionOrNull()
+        val failure = runCatching {
+            api.refresh("expired-refresh", "00000000-0000-4000-8000-000000000010")
+        }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(AccountApiException::class.java)
         assertThat((failure as AccountApiException).statusCode).isEqualTo(401)
         assertThat(failure.errorCode).isEqualTo("refresh_expired")
-        assertThat(server.takeRequest().getHeader("Authorization")).isNull()
+        val request = server.takeRequest()
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(request.body.readUtf8()).isEqualTo(
+            """{"refresh_token":"expired-refresh","rotation_id":"00000000-0000-4000-8000-000000000010"}""",
+        )
+    }
+
+    @Test
+    fun logoutUsesRefreshProofWithoutBearerHeader() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        api.logout("refresh-proof")
+
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/id/v1/auth/logout")
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(request.body.readUtf8()).isEqualTo("{\"refresh_token\":\"refresh-proof\"}")
+    }
+
+    @Test
+    fun credentialedRedirectIsRejectedWithoutContactingRedirectOrigin() = runBlocking {
+        val redirectOrigin = MockWebServer()
+        redirectOrigin.start()
+        try {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(307)
+                    .setHeader("Location", redirectOrigin.url("/collect")),
+            )
+
+            val failure = runCatching { api.logout("must-not-leave-account-origin") }
+                .exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(AccountApiException::class.java)
+            assertThat(server.requestCount).isEqualTo(1)
+            assertThat(redirectOrigin.requestCount).isEqualTo(0)
+        } finally {
+            redirectOrigin.shutdown()
+        }
     }
 
     @Test
@@ -112,11 +153,116 @@ class AccountApiClientTest {
         server.enqueue(jsonResponse("""{"status":"authenticated"}"""))
 
         val failure = runCatching {
-            api.completeSignup("one-use-pending", "Beta Gardener", FakeAccountApi.INSTALLATION_ID)
+            api.completeSignup(
+                "one-use-pending",
+                "00000000-0000-4000-8000-000000000011",
+                "Beta Gardener",
+                FakeAccountApi.INSTALLATION_ID,
+            )
         }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(AccountApiException::class.java)
         assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun signupCompletionCarriesTheSameLogicalIdentityThroughCompleteAndConfirm() = runBlocking {
+        val completionId = "00000000-0000-4000-8000-000000000011"
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                    "status":"confirmation_required",
+                    "access_token":"access",
+                    "refresh_token":"refresh",
+                    "token_type":"Bearer",
+                    "expires_in":900,
+                    "profile":{
+                        "nickname":"Beta Gardener",
+                        "community_actor_id":"${FakeAccountApi.ACTOR_ID}"
+                    },
+                    "session":{
+                        "session_id":"${FakeAccountApi.SESSION_ID}",
+                        "installation_id":"${FakeAccountApi.INSTALLATION_ID}",
+                        "device_label":"Android device",
+                        "created_at":"2026-01-01T00:00:00Z",
+                        "last_used_at":"2026-01-01T00:00:00Z",
+                        "idle_expires_at":"2026-02-01T00:00:00Z",
+                        "absolute_expires_at":"2026-03-01T00:00:00Z",
+                        "current":true
+                    }
+                }
+                """.trimIndent(),
+            ),
+        )
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        api.completeSignup(
+            "pending-proof",
+            completionId,
+            "Beta Gardener",
+            FakeAccountApi.INSTALLATION_ID,
+        )
+        api.confirmSignup(
+            "pending-proof",
+            completionId,
+            FakeAccountApi.INSTALLATION_ID,
+        )
+
+        val complete = server.takeRequest()
+        assertThat(complete.path).isEqualTo("/id/v1/auth/signup/complete")
+        assertThat(complete.body.readUtf8()).isEqualTo(
+            """{"pending_signup_token":"pending-proof","completion_id":"$completionId","nickname":"Beta Gardener","installation_id":"${FakeAccountApi.INSTALLATION_ID}"}""",
+        )
+        val confirm = server.takeRequest()
+        assertThat(confirm.path).isEqualTo("/id/v1/auth/signup/confirm")
+        assertThat(confirm.body.readUtf8()).isEqualTo(
+            """{"pending_signup_token":"pending-proof","completion_id":"$completionId","installation_id":"${FakeAccountApi.INSTALLATION_ID}"}""",
+        )
+    }
+
+    @Test
+    fun authResponseStatusCannotBeConfusedAcrossEndpoints() = runBlocking {
+        val completionId = "00000000-0000-4000-8000-000000000011"
+        server.enqueue(jsonResponse(authResponseBody("confirmation_required")))
+        val exchangeFailure = runCatching {
+            api.exchange(
+                AuthProvider.YANDEX,
+                "provider-proof",
+                FakeAccountApi.INSTALLATION_ID,
+            )
+        }.exceptionOrNull()
+
+        server.enqueue(jsonResponse(authResponseBody("authenticated")))
+        val completionFailure = runCatching {
+            api.completeSignup(
+                "pending-proof",
+                completionId,
+                "Beta Gardener",
+                FakeAccountApi.INSTALLATION_ID,
+            )
+        }.exceptionOrNull()
+
+        server.enqueue(jsonResponse(authResponseBody("confirmation_required")))
+        val refreshFailure = runCatching {
+            api.refresh("refresh", completionId)
+        }.exceptionOrNull()
+
+        assertThat((exchangeFailure as AccountApiException).errorCode)
+            .isEqualTo("invalid_auth_response")
+        assertThat((completionFailure as AccountApiException).errorCode)
+            .isEqualTo("invalid_signup_completion_response")
+        assertThat((refreshFailure as AccountApiException).errorCode)
+            .isEqualTo("invalid_auth_response")
+    }
+
+    @Test
+    fun oneUseAccountMutationDisablesOkHttpConnectionRetries() {
+        val field = AccountApiClient::class.java.getDeclaredField("okHttp")
+            .apply { isAccessible = true }
+        val transport = field.get(api) as OkHttpClient
+
+        assertThat(transport.retryOnConnectionFailure).isFalse()
     }
 
     @Test
@@ -140,4 +286,29 @@ class AccountApiClientTest {
         .setResponseCode(200)
         .setHeader("Content-Type", "application/json")
         .setBody(body)
+
+    private fun authResponseBody(status: String) =
+        """
+        {
+            "status":"$status",
+            "access_token":"access",
+            "refresh_token":"refresh",
+            "token_type":"Bearer",
+            "expires_in":900,
+            "profile":{
+                "nickname":"Beta Gardener",
+                "community_actor_id":"${FakeAccountApi.ACTOR_ID}"
+            },
+            "session":{
+                "session_id":"${FakeAccountApi.SESSION_ID}",
+                "installation_id":"${FakeAccountApi.INSTALLATION_ID}",
+                "device_label":"Android device",
+                "created_at":"2026-01-01T00:00:00Z",
+                "last_used_at":"2026-01-01T00:00:00Z",
+                "idle_expires_at":"2026-02-01T00:00:00Z",
+                "absolute_expires_at":"2026-03-01T00:00:00Z",
+                "current":true
+            }
+        }
+        """.trimIndent()
 }

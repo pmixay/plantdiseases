@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -34,7 +35,13 @@ _MAX_TOKEN_BYTES = 8192
 _MAX_DOCUMENT_BYTES = 64 * 1024
 _DEFAULT_TIMEOUT_SECONDS = 2.0
 _DEFAULT_JWKS_TTL_SECONDS = 300
+_UNKNOWN_KID_TTL_SECONDS = 5.0
+_UNKNOWN_KID_CACHE_SIZE = 128
+_REFRESH_FAILURE_BACKOFF_SECONDS = 2.0
 _ENVIRONMENTS = frozenset({"test", "development", "staging", "production"})
+_INTERNAL_SERVICE_HOST = re.compile(
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
+)
 
 
 class AccountAuthenticationError(Exception):
@@ -58,8 +65,23 @@ class AccountAuthenticator(Protocol):
 
 
 class UnconfiguredAccountAuthenticator:
+    configured = False
+
     def authenticate(self, _token: str) -> AccountPrincipal:
         raise AccountAuthenticationUnavailable
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects before urllib can replay credentialed headers."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _open_no_redirect(request: urllib.request.Request, *, timeout: float):
+    return urllib.request.build_opener(_NoRedirectHandler()).open(
+        request, timeout=timeout
+    )
 
 
 def _decode_b64url(value: str) -> bytes:
@@ -106,7 +128,7 @@ def _internal_base_url(value: str) -> str:
         except ValueError:
             # A single-label hostname is service discovery inside the private
             # container network. Public DNS names must use HTTPS.
-            private_host = "." not in hostname
+            private_host = bool(_INTERNAL_SERVICE_HOST.fullmatch(hostname))
         if not private_host:
             raise ValueError("internal account HTTP must use a private host")
     return value.rstrip("/")
@@ -130,6 +152,8 @@ def _read_private_token(path: Path) -> str:
 class RemoteAccountAuthenticator:
     """Verify locally, refresh an unknown key once, then introspect privately."""
 
+    configured = True
+
     def __init__(
         self,
         *,
@@ -151,6 +175,10 @@ class RemoteAccountAuthenticator:
         self._keys: dict[str, Ed25519PublicKey] = {}
         self._keys_loaded_at = 0.0
         self._refresh_lock = threading.Lock()
+        self._refresh_generation = 0
+        self._refresh_failed_until = 0.0
+        self._unknown_refresh_after = 0.0
+        self._unknown_kids: OrderedDict[str, float] = OrderedDict()
 
     @classmethod
     def from_env(cls) -> AccountAuthenticator:
@@ -268,29 +296,67 @@ class RemoteAccountAuthenticator:
         now = time.monotonic()
         refreshed = False
         if now - self._keys_loaded_at >= self.jwks_ttl_seconds:
-            self._refresh_keys()
+            self._refresh_keys(missing_kid=kid)
             refreshed = True
-        key = self._keys.get(kid)
+        with self._refresh_lock:
+            key = self._keys.get(kid)
+            miss_expires = self._unknown_kids.get(kid, 0.0)
+            if miss_expires > now:
+                raise ValueError("unknown signing key")
+            self._unknown_kids.pop(kid, None)
+            generation = self._refresh_generation
         if key is None and not refreshed:
             # A rotation may have introduced the key between cache refreshes.
-            # Exactly one forced, bounded refresh is attempted per validation.
-            self._refresh_keys(force=True)
-            key = self._keys.get(kid)
+            # Concurrent misses share one fetch, and a bounded negative cache
+            # stops attacker-chosen kids from turning every request into I/O.
+            self._refresh_keys(
+                force=True,
+                expected_generation=generation,
+                missing_kid=kid,
+            )
+            with self._refresh_lock:
+                key = self._keys.get(kid)
         if key is None:
             raise ValueError("unknown signing key")
         return key
 
-    def _refresh_keys(self, *, force: bool = False) -> None:
+    def _refresh_keys(
+        self,
+        *,
+        force: bool = False,
+        expected_generation: int | None = None,
+        missing_kid: str | None = None,
+    ) -> None:
         with self._refresh_lock:
-            if not force and time.monotonic() - self._keys_loaded_at < self.jwks_ttl_seconds:
+            now = time.monotonic()
+            if now < self._refresh_failed_until:
+                raise AccountAuthenticationUnavailable
+            if force and (
+                expected_generation is not None
+                and expected_generation != self._refresh_generation
+            ):
                 return
+            if force and missing_kid is not None and now < self._unknown_refresh_after:
+                # A per-kid cache alone is bypassable with random kid values.
+                # Bound forced refreshes globally as well, while remembering
+                # this miss for the remainder of the same short window.
+                self._unknown_kids[missing_kid] = self._unknown_refresh_after
+                self._unknown_kids.move_to_end(missing_kid)
+                while len(self._unknown_kids) > _UNKNOWN_KID_CACHE_SIZE:
+                    self._unknown_kids.popitem(last=False)
+                return
+            if not force and now - self._keys_loaded_at < self.jwks_ttl_seconds:
+                return
+            # Increment before I/O. Threads that were queued for the same cache
+            # generation will observe the attempt and will not each fetch.
+            self._refresh_generation += 1
             request = urllib.request.Request(
                 self.jwks_url,
                 headers={"Accept": "application/json", "User-Agent": "plantdiseases-app-api"},
                 method="GET",
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                with _open_no_redirect(request, timeout=self.timeout_seconds) as response:
                     if response.status != 200:
                         raise ValueError
                     raw = response.read(_MAX_DOCUMENT_BYTES + 1)
@@ -320,9 +386,23 @@ class RemoteAccountAuthenticator:
                         raise ValueError
                     parsed[kid] = Ed25519PublicKey.from_public_bytes(raw_key)
             except (OSError, urllib.error.URLError, json.JSONDecodeError, KeyError, ValueError):
+                self._refresh_failed_until = (
+                    time.monotonic() + _REFRESH_FAILURE_BACKOFF_SECONDS
+                )
                 raise AccountAuthenticationUnavailable from None
             self._keys = parsed
             self._keys_loaded_at = time.monotonic()
+            self._refresh_failed_until = 0.0
+            self._unknown_kids.clear()
+            if missing_kid is not None:
+                self._unknown_refresh_after = (
+                    self._keys_loaded_at + _UNKNOWN_KID_TTL_SECONDS
+                )
+            if missing_kid is not None and missing_kid not in parsed:
+                self._unknown_kids[missing_kid] = self._unknown_refresh_after
+                self._unknown_kids.move_to_end(missing_kid)
+                while len(self._unknown_kids) > _UNKNOWN_KID_CACHE_SIZE:
+                    self._unknown_kids.popitem(last=False)
 
     def _introspect(self, token: str) -> AccountPrincipal:
         request = urllib.request.Request(
@@ -338,7 +418,7 @@ class RemoteAccountAuthenticator:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            with _open_no_redirect(request, timeout=self.timeout_seconds) as response:
                 raw = response.read(_MAX_DOCUMENT_BYTES + 1)
                 status = response.status
         except urllib.error.HTTPError as exc:
@@ -369,8 +449,11 @@ class RemoteAccountAuthenticator:
             raise AccountAuthenticationUnavailable from None
 
 
-def build_account_authenticator() -> AccountAuthenticator:
-    return RemoteAccountAuthenticator.from_env()
+def build_account_authenticator(*, expected: bool = False) -> AccountAuthenticator:
+    authenticator = RemoteAccountAuthenticator.from_env()
+    if expected and not getattr(authenticator, "configured", False):
+        raise RuntimeError("Account authentication is required but misconfigured")
+    return authenticator
 
 
 __all__ = [

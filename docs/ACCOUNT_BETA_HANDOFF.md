@@ -19,7 +19,8 @@ Operator entry points:
 - Account OpenAPI: `account-server/openapi.json`
 - Application OpenAPI: `server/openapi.json`
 - Private schema/migrations: `account-server/migrations/` and
-  `ACCOUNT_BETA_SCHEMA.md`
+  `ACCOUNT_BETA_SCHEMA.md`; the reviewed head is
+  `0006_signup_completion_idempotency`
 - Local stack: `deploy/account-beta-test/compose.local.yml`
 - German staging candidate: `compose.german-vds.yml`, `env.german.example`,
   and `nginx.location.conf`
@@ -27,15 +28,15 @@ Operator entry points:
 - Final ownership/network manifest:
   `handoff/ru-de-service-manifest.yml`
 - Stateless worker request contract: `handoff/ml-worker.openapi.json`
-- Final render-tested templates: `handoff/compose.russia.template.yml` and
-  `handoff/compose.germany-worker.template.yml`
+- Final render-tested templates: `handoff/compose.russia-template.yml` and
+  `handoff/compose.germany-worker-template.yml`
 - Migration/export evidence: `ACCOUNT_BETA_LEGACY_MIGRATION_DRY_RUN.md` and
   `ACCOUNT_BETA_EXPORT_PRIVACY_REPORT.md`
 - Verification evidence: `ACCOUNT_BETA_TEST_REPORT.md` and the checkpoint log.
 
 The production Compose files are contract templates. The Phase D owner must
-produce digest-pinned extracted `RU_APP_API_IMAGE`, `RU_PUSH_WORKER_IMAGE`,
-`RU_BACKUP_IMAGE`, and `DE_ML_WORKER_IMAGE` artifacts. Placeholder `.invalid`
+produce digest-pinned extracted `RU_APP_API_IMAGE`, `RU_BACKUP_IMAGE`, and
+`DE_ML_WORKER_IMAGE` artifacts. Placeholder `.invalid`
 references, nonexistent paths, and required variable guards prevent the
 committed example from being a runnable production configuration.
 
@@ -84,15 +85,30 @@ restricted German beta and must be repeated on Russian staging before release.
    candidate. `nginx -t` must pass. Diff must show no change to production
    upstream/location/error fallback.
 7. The operator may then start the isolated project. Wait for PostgreSQL,
-   migration, account readiness, and application health in dependency order.
+   bootstrap role provisioning, Alembic, migrator-owned grant convergence,
+   account readiness, and application health in dependency order. Convergence
+   must reject an unexpected table/sequence and leave runtime SELECT-only on
+   `alembic_version` before the account API starts.
 8. Run loopback health/model smoke tests with deliberately prepared metadata-free
    plant imagery. Verify the beta model family/version matches main.
-9. Build/install the permanently signed PlantDiseases 1.9 real-OAuth staging
-   APK for named team testers. Confirm it is `com.plantdiseases.app`, updates a
-   same-signed 1.8 install, uses `/plantdisease-test/` URLs, and does not show
-   the synthetic-auth notice.
+9. After the legal/product gates below are resolved, archive the signed
+   versionCode 20 `recovery-staging` artifact, then build/install the permanently
+   signed PlantDiseases 1.9 real-OAuth staging APK for named team testers.
+   Confirm both artifacts use the same explicit reviewed `STAGING_*` endpoint
+   pair, and that 1.9 is `com.plantdiseases.app`, updates a same-signed 1.8
+   install, uses `/plantdisease-test/` URLs, and does not show the synthetic-auth
+   notice.
 10. Record image/config digests, schema revision, tests, storage inventory, and
     tester list. Staging data is disposable and never promotable.
+
+The first-account flow is intentionally two phase. The client durably chooses
+one completion UUID, sends it with the installation-bound pending signup and
+nickname, persists the returned provisional credential bundle, then calls
+`/v1/auth/signup/confirm`. A lost completion response is retried with the exact
+same inputs. It must never generate a replacement completion UUID or treat the
+provisional bundle as a normal signed-in session. Explicit cancellation and
+expiry remove the provisional account; production operations must prune the
+bounded completion records.
 
 The operator records actual execution of steps 7-10 in the progress/test report.
 
@@ -127,27 +143,42 @@ German URL or trust credential.
 
 - [ ] Infrastructure and every persistent volume/backup physically reside in
   Russia under the Russian operator.
-- [ ] Account/application/push/backup/ingress images are immutable digests from
+- [ ] Account/application/backup/ingress/egress-proxy images are immutable digests from
   the accepted commit; SBOM/provenance and vulnerability review are recorded.
 - [ ] Production renders with `AUTH_PROVIDER_MODE=remote`; mock/synthetic or
   ephemeral keys cause startup refusal.
-- [ ] Account signing, encryption, internal, database, FCM, mTLS, TLS, and
+- [ ] Alembic reports exactly `0006_signup_completion_idempotency`; the account
+  table inventory includes `signup_completions`, and the backup restore probe
+  confirms the same head, exact table set, row counts, and least-privilege
+  runtime/backup grants. Runtime has application-table DML but cannot UPDATE or
+  DELETE `alembic_version`; the migrator remains its owner/writer.
+- [ ] Account signing, encryption, internal, split database-role, mTLS, TLS, and
   backup keys follow `SECRETS.md`; secret files pass non-root ownership and
   mode-0400 checks.
 - [ ] PostgreSQL/internal services have no host/public port; strict CORS and
-  exact trusted proxies are configured.
+   exact trusted proxies are configured.
+- [ ] Only the allowlisting egress proxy joins a non-internal network. Its ACL
+  permits exact Yandex/VK, German ML and Russian backup hosts on TLS port 443,
+  denies private/link-local destinations, and application containers cannot
+  bypass it.
 - [ ] Application, community, user media, push, training, telemetry, logs, and
   backups all use Russian-owned paths. German paths are absent.
 - [ ] Russian app reconstructs the identity-free worker request and a negative
   test proves injected Authorization/account/actor/session/nickname fields do
   not reach a fake worker.
-- [ ] Community Guest/read and account/write matrix, encrypted push, deletion
-  outage/retry/hide/erase, media removal, and stale-token cleanup pass in RU
-  staging.
+- [ ] Community Guest/read and account/write matrix, polling notifications,
+  deletion outage/retry/hide/erase, media removal, and stale-token cleanup pass
+  in RU staging. No push-worker service or FCM credential is present; adding
+  either requires a durable observable notification sink, exact Google egress
+  ACLs, invalid-token cleanup, and a separate review.
 - [ ] Nightly encrypted backup retention is seven daily/four weekly; a restore
   into a fresh target and an Ed25519 overlap/rotation exercise pass. PostgreSQL
   is captured with a consistent `pg_dump`, never by copying live `PGDATA`;
-  SQLite stores use their online backup API before encryption.
+   SQLite stores use their online backup API before encryption.
+- [ ] **Deferred decision:** a coordinated cross-store backup epoch and durable
+  deletion replay journal are not implemented yet. Production restore approval
+  remains blocked until an owner accepts and tests that design; do not infer
+  acceptance from a successful row-count restore.
 - [ ] Metrics contain only allowlisted low-cardinality dimensions; logs and
   exception paths pass the token/profile/nickname/image/IP inspection.
 - [ ] Real Yandex/VK smoke tests use dedicated Russian staging fixtures after
@@ -200,9 +231,26 @@ German URL or trust credential.
 - accurate Russian and English policies plus separately versioned account,
   community, push, telemetry, model-improvement, export, retention, deletion,
   and external-service disclosures;
+- an operator-controlled private contact for data and incomplete-deletion
+  requests published in both policies (a public issue tracker is forbidden);
+- an approved retention period or documented legal basis for the pseudonymous
+  deleted-actor tombstone, reflected accurately in both policies;
 - external community reporting, blocking, moderation, and safety controls;
 - separate review of PlantNet/OpenRouter, FCM consent/initialization, location,
-  threat model, and any future sync/media changes.
+threat model, and any future sync/media changes.
+
+The protected Android workflow enforces the machine-readable
+`deploy/account-beta-test/release-policy-gates.json` private-contact and
+deleted-actor gates for real-provider staging and production, and verifies that
+schema-2 approval metadata exactly matches the stable contact link and
+bilingual tombstone marker in `privacy.html`. The contact must be a real
+`mailto:` or HTTPS `href`; tombstone approval must select `fixed_days` or
+`legal_basis` and carry an HTTPS decision reference plus UTC approval time.
+Copyediting or matching unrelated policy prose cannot clear either gate.
+Production is also hard-blocked
+while the cross-store backup epoch and durable deletion replay journal remain
+the deferred decision recorded above. Both account-disabled recovery channels
+remain buildable during these holds.
 
 Any attempt to open German beta beyond named testers, enable personal FCM,
 training/telemetry capture or production user media, promote German beta state,

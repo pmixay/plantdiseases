@@ -53,6 +53,7 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
 
     assert "/api/push/register" not in schema["paths"]
     assert "/api/internal/account-deletions" not in schema["paths"]
+    assert "/api/internal/account-nicknames" not in schema["paths"]
     community_contract = json.dumps(
         {
             path: value

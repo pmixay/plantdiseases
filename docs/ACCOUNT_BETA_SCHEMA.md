@@ -1,8 +1,9 @@
 # Account Beta Private Schema
 
-The authoritative definitions are Alembic migrations `0001` and `0002` plus
+The authoritative definitions are Alembic migrations `0001` through `0006` plus
 `account-server/app/db/models.py`. This diagram is a handoff view, not a second
-schema source.
+schema source. The reviewed Alembic head is
+`0006_signup_completion_idempotency`.
 
 ```mermaid
 erDiagram
@@ -10,9 +11,14 @@ erDiagram
     accounts ||--o{ sessions : opens
     sessions ||--o{ refresh_tokens : rotates
     refresh_tokens o|--o| refresh_tokens : replaces
+    pending_signups ||--o| signup_completions : starts
+    accounts o|--o{ signup_completions : provisions
+    sessions o|--o{ signup_completions : provisions
     accounts ||--o{ reauth_challenges : authorizes
     sessions ||--o{ reauth_challenges : scopes
     accounts ||--o| account_deletion_jobs : queues
+    accounts ||--o| account_nickname_jobs : propagates
+    accounts ||--o{ account_nickname_claims : reserves
     accounts ||--o{ push_devices : owns
     sessions ||--o{ push_devices : registers
     accounts ||--o{ account_consents : records
@@ -63,8 +69,20 @@ erDiagram
         string provider_subject
         string private_display_name
         string private_avatar_url
+        uuid installation_id
         timestamp expires_at
         timestamp consumed_or_cancelled_at
+    }
+    signup_completions {
+        uuid id PK
+        uuid pending_signup_id FK,UK
+        uuid installation_id
+        bytes sha256_request_fingerprint
+        uuid account_id FK
+        uuid session_id FK
+        timestamp expires_at
+        timestamp confirmed_at
+        timestamp cancelled_at
     }
     reauth_challenges {
         uuid id PK
@@ -84,6 +102,23 @@ erDiagram
         int attempt_count
         string allowlisted_error_code
         timestamp next_attempt_at
+    }
+    account_nickname_jobs {
+        uuid id PK
+        uuid account_id FK,UK
+        uuid community_actor_id
+        string nickname
+        enum state
+        int attempt_count
+        string allowlisted_error_code
+        timestamp next_attempt_at
+    }
+    account_nickname_claims {
+        uuid id PK
+        uuid account_id FK
+        string normalized_nickname UK
+        enum state
+        timestamp updated_at
     }
     push_devices {
         uuid id PK
@@ -111,11 +146,23 @@ erDiagram
     }
 ```
 
-`pending_signups` intentionally has no account foreign key: a new identity does
-not become an account or receive a normal session until nickname reservation
-succeeds. The database stores only hashes of refresh, pending-signup, and
-reauthentication tokens. FCM values are randomized AES-GCM ciphertext plus a
-keyed deduplication fingerprint; no phone model or hardware ID is present.
+`pending_signups` intentionally has no account foreign key. Its installation
+binding is established during provider exchange. Nickname completion creates a
+provisional `signup_pending` account/session plus one bounded
+`signup_completions` row. An exact retry with the same random completion ID,
+installation ID, pending bearer, and normalized nickname recovers the same
+derived credentials after a lost response; a mismatched retry fails closed.
+Those provisional credentials cannot authorize normal account or community
+operations until `/v1/auth/signup/confirm` atomically activates the account.
+Cancellation or expiry removes the provisional account and its cascade-owned
+private records, while a confirmed account remains active. Completion metadata
+expires after the seven-day idempotency window.
+
+The completion row stores a keyed request fingerprint, not a recoverable
+pending or refresh bearer. The database otherwise stores only hashes of
+refresh, pending-signup, and reauthentication tokens. FCM values are randomized
+AES-GCM ciphertext plus a keyed deduplication fingerprint; no phone model or
+hardware ID is present.
 
 The real account UUID and private provider profile never cross into community.
 The random `community_actor_id` and current nickname are the only account-owned

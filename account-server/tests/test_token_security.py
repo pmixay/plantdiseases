@@ -193,6 +193,78 @@ def test_push_tokens_use_randomized_aead_and_keyed_fingerprints():
     assert protector.fingerprint(token) != protector.fingerprint(f"{token}-different")
 
 
+def test_refresh_successor_derivation_is_deterministic_and_purpose_separated():
+    first = PushTokenProtector(b"k" * 32)
+    same_key = PushTokenProtector(b"k" * 32)
+    other_key = PushTokenProtector(b"z" * 32)
+
+    rotation_id = uuid.uuid4()
+    successor = first.derive_refresh_replacement(
+        "refresh-one", rotation_id=rotation_id
+    )
+
+    assert successor == same_key.derive_refresh_replacement(
+        "refresh-one", rotation_id=rotation_id
+    )
+    assert successor != first.derive_refresh_replacement(
+        "refresh-two", rotation_id=rotation_id
+    )
+    assert successor != other_key.derive_refresh_replacement(
+        "refresh-one", rotation_id=rotation_id
+    )
+    assert successor != first.derive_refresh_replacement(
+        "refresh-one", rotation_id=uuid.uuid4()
+    )
+    assert len(successor) == 43
+
+
+def test_signup_completion_derivations_bind_every_input_without_plaintext_storage():
+    first = PushTokenProtector(b"k" * 32)
+    same_key = PushTokenProtector(b"k" * 32)
+    other_key = PushTokenProtector(b"z" * 32)
+    completion_id = uuid.uuid4()
+    installation_id = uuid.uuid4()
+    token = "pending-bearer"
+
+    refresh = first.derive_signup_refresh(
+        token,
+        completion_id=completion_id,
+        installation_id=installation_id,
+    )
+    fingerprint = first.signup_request_fingerprint(
+        token,
+        completion_id=completion_id,
+        installation_id=installation_id,
+        normalized_nickname="retryfern",
+    )
+
+    assert refresh == same_key.derive_signup_refresh(
+        token,
+        completion_id=completion_id,
+        installation_id=installation_id,
+    )
+    assert refresh != other_key.derive_signup_refresh(
+        token,
+        completion_id=completion_id,
+        installation_id=installation_id,
+    )
+    assert refresh != first.derive_signup_refresh(
+        token,
+        completion_id=uuid.uuid4(),
+        installation_id=installation_id,
+    )
+    assert len(refresh) == 43
+    assert len(fingerprint) == 32
+    assert token.encode() not in fingerprint
+    assert b"retryfern" not in fingerprint
+    assert fingerprint != first.signup_request_fingerprint(
+        token,
+        completion_id=completion_id,
+        installation_id=installation_id,
+        normalized_nickname="otherfern",
+    )
+
+
 def test_ephemeral_keys_are_explicit_and_test_only():
     base = {
         "ENVIRONMENT": "development",

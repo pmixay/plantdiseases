@@ -47,6 +47,18 @@ class AuthenticatedResponse(StrictResponse):
     session: SessionView
 
 
+class SignupCompletionResponse(StrictResponse):
+    """Provisional credentials which are unusable until explicit confirmation."""
+
+    status: Literal["confirmation_required"]
+    access_token: str
+    refresh_token: str
+    token_type: Literal["Bearer"]
+    expires_in: int
+    profile: TokenProfile
+    session: SessionView
+
+
 class PendingSignupResponse(StrictResponse):
     status: Literal["profile_required"]
     provider: Literal["yandex", "vk"]

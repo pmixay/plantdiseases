@@ -525,13 +525,19 @@ Run this on a real device with the production URL configured. Target: under 5 mi
 
 ## 8. Android release: signing & FCM
 
-The Android CI job (`.github/workflows/ci.yml`) runs lint + unit tests and
-assembles R8-minified APKs on every push touching `android/**`. Contributor
-compilation can fall back to a debug key, but the PlantDiseases 1.9 staging
-artifact is published only with real provider configuration and the pinned
-permanent app certificate. All Android secrets live in **GitHub → repo →
-Settings → Secrets and variables → Actions**; `app/build.gradle.kts` reads each
-from a Gradle property **or** the same-named env var, so nothing is committed.
+The Android CI job (`.github/workflows/ci.yml`) runs lint, unit tests and
+non-distributable compilation on pushes and pull requests. It never receives
+the permanent keystore or live provider configuration. Distributable
+same-package APKs come only from the manually dispatched
+`.github/workflows/android-release.yml` workflow. Its unprotected build job
+uses public/extractable provider variables to produce and verify a genuinely
+unsigned APK. Only that exact artifact crosses into the protected,
+required-reviewer `android-signing` job. The signing job has no checkout or
+Gradle invocation, but its inline shell is repository-controlled workflow code;
+every channel therefore dispatches only from protected `main`, and the reviewer
+must inspect that exact SHA. `app/build.gradle.kts` reads environment values
+before local Gradle-property fallbacks so a committed property cannot shadow a
+reviewed distribution input.
 
 ### 8.1 Release signing
 
@@ -542,7 +548,8 @@ command, provider registration fields, backup rules, and local verification
 are in
 [docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
 
-Create these repo secrets (with PKCS12 the key password equals the store password):
+Create these **`android-signing` environment secrets** (with PKCS12 the key
+password equals the store password):
 
 | Secret | Value |
 |---|---|
@@ -551,16 +558,41 @@ Create these repo secrets (with PKCS12 the key password equals the store passwor
 | `RELEASE_KEY_ALIAS` | the alias (e.g. `plantdiseases`) |
 | `RELEASE_KEY_PASSWORD` | permanent key password |
 
-Also create repository variable `RELEASE_CERT_SHA256` with the public SHA-256
-fingerprint. With all four secrets and that variable set, CI decodes the
-keystore and refuses the distributable artifact if the APK certificate differs
-from the pinned fingerprint. Never commit the keystore or its base64 encoding.
+Also create `RELEASE_CERT_SHA256` as a variable in that environment and configure
+required reviewers, prevent self-review, and restrict deployment branches to
+`main` only. The protected workflow refuses an APK whose
+certificate differs from the pinned fingerprint. Never commit the keystore or
+its base64 encoding.
+
+Create the following public/extractable **repository Actions variables**, not
+environment secrets: `STAGING_YANDEX_CLIENT_ID`, `STAGING_VKID_CLIENT_ID`,
+`STAGING_VKID_CLIENT_SECRET`, the equivalent three `PRODUCTION_*` provider
+variables, the exact reviewed `STAGING_APP_API_BASE_URL` /
+`STAGING_ACCOUNT_API_BASE_URL` German pair, and the reviewed
+`PRODUCTION_APP_API_BASE_URL` / `PRODUCTION_ACCOUNT_API_BASE_URL`. Both the
+normal staging APK and `recovery-staging` consume the same explicit staging
+pair; the workflow refuses any drift from the reviewed URLs. Copy the two
+production values into the
+protected `android-signing` environment under the distinct names
+`APPROVED_PRODUCTION_APP_API_BASE_URL` and
+`APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL`. The protected environment contains
+only the four permanent-key secrets above plus those approved URL variables,
+`RELEASE_CERT_SHA256`, and `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`. Keep the last
+variable `false` until the exact production HTTPS routes have passed the Russian
+ingress/account smoke matrix. The checkout-free signing job requires the
+repository URLs to match the protected approved URLs exactly. It also rejects
+the German staging prefix, reserved `.invalid`/localhost names, IP literals,
+non-443 ports, and any path other than the application origin plus `id/`.
+Missing production values fail; they never fall back to staging.
 Put local signing properties in `~/.gradle/gradle.properties`, outside the
 repository, as shown in the dedicated guide.
 
-### 8.2 Firebase Cloud Messaging (FCM)
+### 8.2 Notifications and future Firebase Cloud Messaging (FCM)
 
-Two distinct credential sets:
+PlantDiseases 1.9 is deliberately built with all `FCM_*` values empty and uses
+the bounded WorkManager polling path. Do not enable FCM until the account system
+has a durable, observable notification sink/worker with invalid-token cleanup.
+When that work is accepted, two distinct credential sets will be required:
 
 - **Android client config** — `FCM_APP_ID`, `FCM_API_KEY`, `FCM_PROJECT_ID`,
   `FCM_SENDER_ID` (from `google-services.json`: `mobilesdk_app_id`,
@@ -576,16 +608,58 @@ Two distinct credential sets:
   (config.json) / `FCM_CREDENTIALS_FILE` (env), read in `server/push.py`. **Not** in
   this repo; empty → `/api/push/register` and sends are graceful no-ops.
 
-### 8.3 CI
+### 8.3 CI and protected signing
 
-The `android` job exposes the secrets as env vars; the keystore is decoded only when
-the complete permanent signing configuration is set, and one Gradle invocation
-runs everything:
+Ordinary `android` CI runs this credential-free evidence command:
 
 ```bash
 ./gradlew ktlintCheck detekt testDebugUnitTest testStagingUnitTest \
-  assembleRelease assembleStaging --build-cache --configuration-cache --stacktrace
+  testRecoveryProductionUnitTest testRecoveryStagingUnitTest \
+  assembleRelease assembleStaging assembleRecoveryProduction \
+  assembleRecoveryStaging \
+  --build-cache --configuration-cache --stacktrace
 ```
+
+After it passes, dispatch `protected Android signing`, select the required
+normal or recovery channel, and inspect the exact commit. The first job builds with
+`ANDROID_UNSIGNED_DISTRIBUTION=true`, proves that the APK has no signature, and
+uploads its package/version/endpoint provenance. Approve the environment only
+after that immutable artifact exists. The second job downloads it by artifact
+ID, records GitHub's archive digest, independently verifies the APK SHA-256
+anchored in the build-job output, and checks provenance, package/version and
+unsigned state before it uses the runner's fixed Android Build Tools to align
+and sign it. It has no checkout or Gradle invocation. Its inline signing shell
+is trusted code from protected `main`, so approval includes review of the exact
+workflow SHA as well as the artifact. The signed artifact
+includes APK SHA-256, signing-certificate fingerprint, and provenance and is
+retained for 90 days; copy accepted releases to the operator's immutable
+release archive.
+
+The same protected workflow has distinct `recovery-production` and
+`recovery-staging` channels. Both build the same package/certificate at
+versionCode 20 and disable account UI. Production recovery consumes the reviewed
+`PRODUCTION_APP_API_BASE_URL` / `PRODUCTION_ACCOUNT_API_BASE_URL` pair and the
+signing job binds it to the protected `APPROVED_PRODUCTION_*` values. Staging
+and staging recovery both consume the same explicit, exact reviewed `STAGING_*`
+German pair. This separation keeps
+the endpoint-scoped encrypted vault and queued revocations on their original
+service; neither recovery artifact redirects them to the other environment.
+Missing, mismatched, or invalid production endpoint variables fail the
+production-recovery build. Archive the matching recovery artifact before each
+versionCode 19 channel is distributed. After either recovery is published, the
+next mandatory normal release must use versionCode 21 or higher.
+
+Real-provider staging and production are intentionally blocked while the
+committed privacy policy still contains the private-contact or deleted-actor
+retention placeholder. Production is additionally blocked while the handoff
+records the cross-store backup epoch and durable deletion replay journal as a
+deferred decision. The two recovery channels stay available during these holds.
+An approval changes `release-policy-gates.json` schema 2 and the matching
+structured markers in `privacy.html`: the contact must be an exact visible
+`mailto:` or HTTPS link, and the English/Russian tombstone disclosures must
+exactly match the approved retention mode. The JSON also requires an HTTPS
+decision reference and UTC approval timestamp. Prose substring matches cannot
+clear the gate.
 
 ### 8.4 RuStore in-app updates
 

@@ -53,7 +53,8 @@ class Account(TimestampMixin, Base):
             "primary_provider IN ('yandex', 'vk')", name="primary_provider_allowed"
         ),
         CheckConstraint(
-            "state IN ('active', 'deletion_pending')", name="state_allowed"
+            "state IN ('signup_pending', 'active', 'deletion_pending')",
+            name="state_allowed",
         ),
         CheckConstraint("authorization_version >= 1", name="authorization_version_positive"),
     )
@@ -161,11 +162,67 @@ class PendingSignup(Base):
     provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     provider_avatar_url: Mapped[str | None] = mapped_column(String(2048))
+    # A random, issuer-scoped application installation identifier supplied in
+    # the same provider-proof exchange. Older beta rows remain nullable and
+    # deliberately cannot use the new completion contract.
+    installation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SignupCompletion(Base):
+    """Recoverable, two-phase signup completion without recoverable bearers."""
+
+    __tablename__ = "signup_completions"
+    __table_args__ = (
+        UniqueConstraint("pending_signup_id", name="uq_signup_completions_pending_signup_id"),
+        CheckConstraint("length(request_fingerprint) = 32", name="request_fingerprint_sha256"),
+        CheckConstraint("created_at < expires_at", name="expiry_order"),
+        CheckConstraint(
+            "confirmed_at IS NULL OR cancelled_at IS NULL",
+            name="single_terminal_state",
+        ),
+        CheckConstraint(
+            "(account_id IS NULL AND session_id IS NULL) OR "
+            "(account_id IS NOT NULL AND session_id IS NOT NULL)",
+            name="resource_pair",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR (account_id IS NULL AND session_id IS NULL)",
+            name="cancelled_resources_cleared",
+        ),
+        CheckConstraint(
+            "confirmed_at IS NULL OR (account_id IS NOT NULL AND session_id IS NOT NULL)",
+            name="confirmed_resources_present",
+        ),
+    )
+
+    # This UUID is generated and durably stored by the client before its first
+    # completion request. It is the logical operation identity, not a secret.
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    pending_signup_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("pending_signups.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    request_fingerprint: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    # Destructive service paths clear both references in one update before
+    # deleting provisional resources. Restrictive FKs ensure an unreviewed
+    # account/session delete cannot partially corrupt this credential marker.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id"), index=True
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("sessions.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -227,10 +284,69 @@ class AccountDeletionJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AccountNicknameJob(Base):
+    """Durable latest-value delivery to denormalized community rows."""
+
+    __tablename__ = "account_nickname_jobs"
+    __table_args__ = (
+        UniqueConstraint("account_id", name="uq_nickname_jobs_account_id"),
+        CheckConstraint("state IN ('pending', 'retry')", name="state_allowed"),
+        CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    community_actor_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    nickname: Mapped[str] = mapped_column(String(24), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AccountNicknameClaim(Base):
+    """The unique nickname namespace, including pending remote aliases."""
+
+    __tablename__ = "account_nickname_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "normalized_nickname",
+            name="uq_nickname_claims_normalized_nickname",
+        ),
+        CheckConstraint("state IN ('current', 'reserved')", name="state_allowed"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    normalized_nickname: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PushDevice(Base):
     __tablename__ = "push_devices"
     __table_args__ = (
         UniqueConstraint("token_fingerprint", name="uq_push_devices_token_fingerprint"),
+        UniqueConstraint("session_id", name="uq_push_devices_session_id"),
         CheckConstraint("length(token_fingerprint) = 32", name="token_fingerprint_sha256"),
         CheckConstraint("platform = 'android'", name="platform_allowed"),
     )
@@ -307,3 +423,5 @@ class AccountSecurityEvent(Base):
 Index("ix_identity_account_id", AccountIdentity.account_id)
 Index("ix_sessions_absolute_expires_at", Session.absolute_expires_at)
 Index("ix_deletion_jobs_state_next_attempt", AccountDeletionJob.state, AccountDeletionJob.next_attempt_at)
+Index("ix_nickname_jobs_state_next_attempt", AccountNicknameJob.state, AccountNicknameJob.next_attempt_at)
+Index("ix_nickname_claims_account_state", AccountNicknameClaim.account_id, AccountNicknameClaim.state)

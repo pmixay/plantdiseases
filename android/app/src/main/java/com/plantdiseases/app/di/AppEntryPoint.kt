@@ -2,6 +2,7 @@ package com.plantdiseases.app.di
 
 import android.content.Context
 import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.LogoutRetryScheduler
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import dagger.hilt.EntryPoint
@@ -42,6 +43,8 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 interface AppEntryPoint {
     fun authRepository(): AuthRepository
+
+    fun logoutRetryScheduler(): LogoutRetryScheduler
 
     fun scanRepository(): ScanRepository
 

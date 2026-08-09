@@ -13,6 +13,7 @@ EXPECTED_PATHS = {
     "/v1/auth/yandex/exchange",
     "/v1/auth/vk/exchange",
     "/v1/auth/signup/complete",
+    "/v1/auth/signup/confirm",
     "/v1/auth/signup/cancel",
     "/v1/auth/refresh",
     "/v1/auth/logout",
@@ -46,11 +47,24 @@ def test_protected_routes_declare_bearer_auth_and_requests_forbid_extra_fields()
         ("/v1/me", "get"),
         ("/v1/me/nickname", "patch"),
         ("/v1/auth/sessions", "get"),
-        ("/v1/auth/logout", "post"),
         ("/v1/push/device", "put"),
     )
     for path, method in protected_operations:
         assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
+
+    logout = schema["paths"]["/v1/auth/logout"]["post"]
+    assert "security" not in logout
+    assert logout["requestBody"]["required"] is True
+    assert logout["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/LogoutRequest"
+    }
+    refresh_request = schema["components"]["schemas"]["RefreshRequest"]
+    assert refresh_request["required"] == ["refresh_token", "rotation_id"]
+    assert refresh_request["properties"]["rotation_id"] == {
+        "format": "uuid",
+        "title": "Rotation Id",
+        "type": "string",
+    }
 
     for model in schema["components"]["schemas"].values():
         if model.get("title", "").endswith("Request"):

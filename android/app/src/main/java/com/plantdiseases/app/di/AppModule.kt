@@ -1,13 +1,23 @@
 package com.plantdiseases.app.di
 
 import android.content.Context
+import com.plantdiseases.app.BuildConfig
+import com.plantdiseases.app.auth.AccountEndpointScope
+import com.plantdiseases.app.auth.AccountLogoutEndpointRegistry
+import com.plantdiseases.app.auth.AdditionalLogoutRevocationTargets
+import com.plantdiseases.app.auth.AndroidLogoutRevocationStore
 import com.plantdiseases.app.auth.AndroidKeystoreRefreshTokenVault
+import com.plantdiseases.app.auth.AndroidKeystoreSignupCompletionStore
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.InstallationIdProvider
 import com.plantdiseases.app.auth.InstallationIdStore
+import com.plantdiseases.app.auth.LogoutRevocationStore
+import com.plantdiseases.app.auth.LogoutRevocationTarget
+import com.plantdiseases.app.auth.LogoutRetryScheduler
 import com.plantdiseases.app.auth.OfficialProviderSessionCleaner
 import com.plantdiseases.app.auth.ProviderSessionCleaner
 import com.plantdiseases.app.auth.RefreshTokenVault
+import com.plantdiseases.app.auth.SignupCompletionStore
 import com.plantdiseases.app.data.account.AccountApi
 import com.plantdiseases.app.data.account.AccountApiClient
 import com.plantdiseases.app.data.local.AppDatabase
@@ -15,14 +25,17 @@ import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.ConnectivityObserver
+import com.plantdiseases.app.util.DefaultUploadImageSanitizer
+import com.plantdiseases.app.util.FeedbackReceiptStore
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ReachabilityReporter
-import com.plantdiseases.app.util.DefaultUploadImageSanitizer
-import com.plantdiseases.app.util.FeedbackReceiptStore
 import com.plantdiseases.app.util.SharedPreferencesFeedbackReceiptStore
+import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.UploadImageSanitizer
+import com.plantdiseases.app.worker.WorkManagerLogoutRetryScheduler
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -44,21 +57,73 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAccountEndpointScope(): AccountEndpointScope =
+        AccountEndpointScope.from(ServerConfig.accountBaseUrl)
+
+    @Provides
+    @Singleton
     fun provideAccountApi(): AccountApi = AccountApiClient()
 
     @Provides
     @Singleton
-    fun provideRefreshTokenVault(@ApplicationContext context: Context): RefreshTokenVault =
-        AndroidKeystoreRefreshTokenVault(context)
+    fun provideRefreshTokenVault(
+        @ApplicationContext context: Context,
+        accountEndpointScope: AccountEndpointScope,
+    ): RefreshTokenVault = AndroidKeystoreRefreshTokenVault(context, accountEndpointScope)
 
     @Provides
     @Singleton
-    fun provideInstallationId(@ApplicationContext context: Context): InstallationIdProvider =
-        InstallationIdStore(context)
+    fun provideSignupCompletionStore(
+        @ApplicationContext context: Context,
+        accountEndpointScope: AccountEndpointScope,
+    ): SignupCompletionStore = AndroidKeystoreSignupCompletionStore(context, accountEndpointScope)
+
+    @Provides
+    @Singleton
+    fun provideLogoutRevocationStore(
+        @ApplicationContext context: Context,
+        accountEndpointScope: AccountEndpointScope,
+    ): LogoutRevocationStore = AndroidLogoutRevocationStore(context, accountEndpointScope)
+
+    @Provides
+    @Singleton
+    fun provideInstallationId(
+        @ApplicationContext context: Context,
+        accountEndpointScope: AccountEndpointScope,
+    ): InstallationIdProvider = InstallationIdStore(context, accountEndpointScope)
 
     @Provides
     @Singleton
     fun provideProviderSessionCleaner(): ProviderSessionCleaner = OfficialProviderSessionCleaner()
+
+    @Provides
+    @Singleton
+    fun provideLogoutRetryScheduler(
+        @ApplicationContext context: Context,
+    ): LogoutRetryScheduler = WorkManagerLogoutRetryScheduler(context)
+
+    @Provides
+    @Singleton
+    fun provideAdditionalLogoutTargets(
+        @ApplicationContext context: Context,
+    ): AdditionalLogoutRevocationTargets = AdditionalLogoutRevocationTargets(
+        AccountLogoutEndpointRegistry.additionalEndpoints(ServerConfig.accountBaseUrl).map { endpoint ->
+            val endpointScope = AccountEndpointScope.from(endpoint)
+            LogoutRevocationTarget(
+                api = AccountApiClient(endpoint),
+                store = AndroidLogoutRevocationStore(
+                    context,
+                    endpointScope,
+                ),
+                previousIssuerVault = AndroidKeystoreRefreshTokenVault(context, endpointScope),
+                previousIssuerInstallationId = InstallationIdStore(context, endpointScope),
+                previousIssuerSignupStore = AndroidKeystoreSignupCompletionStore(
+                    context,
+                    endpointScope,
+                ),
+            )
+        },
+    )
 
     @Provides
     @Singleton
@@ -67,11 +132,20 @@ object AppModule {
         refreshTokenVault: RefreshTokenVault,
         installationId: InstallationIdProvider,
         providerSessionCleaner: ProviderSessionCleaner,
+        logoutRevocationStore: LogoutRevocationStore,
+        logoutRetryScheduler: LogoutRetryScheduler,
+        additionalLogoutTargets: AdditionalLogoutRevocationTargets,
+        signupCompletionStore: SignupCompletionStore,
     ): AuthRepository = AuthRepository(
         accountApi,
         refreshTokenVault,
         installationId,
         providerSessionCleaner,
+        logoutRevocationStore,
+        logoutRetryScheduler,
+        additionalLogoutTargets.values,
+        signupCompletionStore,
+        accountUiEnabled = BuildConfig.ACCOUNT_UI_ENABLED,
     )
 
     @Provides
@@ -116,6 +190,12 @@ object AppModule {
     @Singleton
     fun providePrivacyConsentPrefs(@ApplicationContext context: Context): PrivacyConsentPrefs =
         PrivacyConsentPrefs(context)
+
+    @Provides
+    @Singleton
+    fun provideAccountDisclosurePrefs(
+        @ApplicationContext context: Context,
+    ): AccountDisclosurePrefs = AccountDisclosurePrefs(context)
 
     @Provides
     @Singleton

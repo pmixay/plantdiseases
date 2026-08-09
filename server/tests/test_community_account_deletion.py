@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import io
 import sqlite3
@@ -33,14 +34,30 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     owner = str(uuid.uuid4())
     responder = str(uuid.uuid4())
     legacy = "legacy-install"
-    community.record_scan(
+    thumbnail_bytes = _thumbnail_bytes()
+    community.record_analysis_token(
+        "delete-account-scan",
+        disease="leaf_spot",
+        confidence=0.91,
+        species="Synthetic fern",
+        species_score=0.88,
+        image_sha256=hashlib.sha256(thumbnail_bytes).hexdigest(),
+    )
+    community.record_analysis_token(
+        "keep-unclaimed-token",
+        disease="healthy",
+        confidence=0.99,
+        species=None,
+        species_score=None,
+        image_sha256=hashlib.sha256(b"unclaimed image").hexdigest(),
+    )
+    community.record_analysis_scan(
         scan_id="delete-account-scan",
         account_actor_id=owner,
         nickname="Private Fern",
         country="GB",
         region="London",
-        disease="leaf_spot",
-        image_bytes=_thumbnail_bytes(),
+        image_bytes=thumbnail_bytes,
     )
     community.record_scan(
         scan_id="keep-legacy-scan",
@@ -84,6 +101,14 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_analysis_tokens "
+            "WHERE claimed_actor_id = ?", (owner,)
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_analysis_tokens "
+            "WHERE token = 'keep-unclaimed-token'"
+        ).fetchone()[0] == 1
 
     result = community.process_cleanup_jobs()
     assert result == {"completed": 1, "retried": 0}
@@ -96,8 +121,8 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
             "SELECT COUNT(*) FROM community_opinions WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 0
         assert connection.execute(
-            "SELECT state FROM community_cleanup_jobs WHERE actor_id = ?", (owner,)
-        ).fetchone()[0] == "completed"
+            "SELECT COUNT(*) FROM community_cleanup_jobs WHERE actor_id = ?", (owner,)
+        ).fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE user_pseudo_id = ?", (legacy,)
         ).fetchone()[0] == 1

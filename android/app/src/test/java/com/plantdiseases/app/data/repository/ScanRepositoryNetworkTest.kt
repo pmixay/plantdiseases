@@ -592,7 +592,7 @@ class ScanRepositoryNetworkTest {
                 disease = "leaf_spot",
                 confidence = 0.8f,
                 species = null, // null → omitted
-                thumbnail = SanitizedImage(sanitizedBytes, 12, 8),
+                analysisImage = SanitizedImage(sanitizedBytes, 12, 8),
             )
         }
 
@@ -782,10 +782,12 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun guestCommunityMutationFailsBeforeNetwork() {
+        val guestAuth = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
+        runBlocking { guestAuth.restore() }
         val guestRepository = ScanRepository(
             FakeScanDao(),
             client,
-            authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
+            authRepository = guestAuth,
         )
 
         val result = runBlocking {
@@ -821,19 +823,30 @@ class ScanRepositoryNetworkTest {
 
     private class FakeVault : RefreshTokenVault {
         private var token: String? = null
+        private var pendingRotationId: String? = null
 
         override fun read(): String? = token
 
+        override fun prepareRefresh(): com.plantdiseases.app.auth.PreparedRefresh? = token?.let {
+            val rotationId = pendingRotationId
+                ?: "00000000-0000-4000-8000-000000000010".also { id -> pendingRotationId = id }
+            com.plantdiseases.app.auth.PreparedRefresh(it, rotationId)
+        }
+
         override fun write(token: String) {
             this.token = token
+            pendingRotationId = null
         }
 
         override fun clear() {
             token = null
+            pendingRotationId = null
         }
     }
 
     private object FakeInstallationId : InstallationIdProvider {
         override fun get(): String = "00000000-0000-4000-8000-000000000099"
+
+        override fun rotate() = Unit
     }
 }

@@ -92,9 +92,9 @@ keytool -list -v \
   -alias plantdiseases
 ```
 
-The SHA-256 value becomes the repository variable
-`RELEASE_CERT_SHA256`. CI compares every distributable staging APK against
-that pinned value, so an accidental replacement keystore fails the build.
+The SHA-256 value becomes the protected `android-signing` environment variable
+`RELEASE_CERT_SHA256`. The signing job compares every distributable APK against
+that pinned value, so an accidental replacement keystore fails the workflow.
 
 ## 3. Register Yandex ID
 
@@ -135,14 +135,14 @@ In the [VK ID integration cabinet](https://id.vk.ru/business/go):
 
 The VK mobile `client_secret` is embedded in the APK as required by the VK ID
 Android SDK and is therefore extractable client configuration, not a server
-credential. It should still be passed through protected build configuration
-and must never be accepted by PlantDiseases as proof of a caller's identity.
+credential. Pass it through a repository Actions variable rather than commit it,
+and never accept it as proof of a caller's identity.
 
 ## 5. Configure GitHub Actions
 
 Open the repository's **Settings → Secrets and variables → Actions**.
 
-Create these repository secrets:
+Create these secrets in the required-reviewer `android-signing` environment:
 
 | Secret | Value |
 |---|---|
@@ -150,15 +150,90 @@ Create these repository secrets:
 | `RELEASE_STORE_PASSWORD` | Permanent keystore password |
 | `RELEASE_KEY_ALIAS` | `plantdiseases`, or the recovered key's actual alias |
 | `RELEASE_KEY_PASSWORD` | Permanent key password |
-| `YANDEX_CLIENT_ID` | Yandex Android Client ID |
-| `VKID_CLIENT_ID` | Numeric VK application ID |
-| `VKID_CLIENT_SECRET` | VK mobile protected value |
 
-Create this repository **variable** (not a secret):
+Create these environment **variables** (not secrets):
 
 | Variable | Value |
 |---|---|
 | `RELEASE_CERT_SHA256` | SHA-256 fingerprint of the permanent app certificate |
+| `PRODUCTION_RUSSIAN_CUTOVER_APPROVED` | `false` until the reviewed Russian cutover smoke matrix passes |
+| `APPROVED_PRODUCTION_APP_API_BASE_URL` | Independently reviewed Russian application HTTPS origin, ending in `/` |
+| `APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` | The same approved origin plus `id/` |
+
+Create these **repository Actions variables**. They are public/extractable
+mobile configuration and must be available to the unsigned build before a
+reviewer grants access to the permanent signing key:
+
+| Variable | Value |
+|---|---|
+| `STAGING_YANDEX_CLIENT_ID` / `PRODUCTION_YANDEX_CLIENT_ID` | Separate Yandex Android Client IDs |
+| `STAGING_VKID_CLIENT_ID` / `PRODUCTION_VKID_CLIENT_ID` | Separate numeric VK application IDs |
+| `STAGING_VKID_CLIENT_SECRET` / `PRODUCTION_VKID_CLIENT_SECRET` | Separate VK mobile values |
+| `STAGING_APP_API_BASE_URL` | Exact reviewed German staging application URL: `https://pdis.arbuz.lol/plantdisease-test/` |
+| `STAGING_ACCOUNT_API_BASE_URL` | Exact reviewed German staging account URL: `https://pdis.arbuz.lol/plantdisease-test/id/` |
+| `PRODUCTION_APP_API_BASE_URL` | Reviewed production application HTTPS base URL |
+| `PRODUCTION_ACCOUNT_API_BASE_URL` | Reviewed production account HTTPS base URL |
+
+Set each repository production URL to exactly the corresponding protected
+`APPROVED_PRODUCTION_*` environment value. The unsigned build uses the
+repository values, while the checkout-free signing job independently refuses
+to sign unless the artifact provenance matches the protected copies. Both
+production and `recovery-production` reject the German staging prefix, `.invalid`
+or localhost names, every IP literal, non-443 ports, and application paths below
+the origin root. Staging and `recovery-staging` require the two explicit
+`STAGING_*` URL variables and reject any value other than the reviewed German
+pair. This keeps their endpoint-derived encrypted stores and revocation queues
+on the same issuer.
+
+All four signing channels must be dispatched from protected `main`. Configure
+the `android-signing` environment deployment-branch rule for `main` only; do
+not allow `account-beta-test` or wildcard branches. Protect `main` with required
+pull-request review and CI, and disallow force pushes and deletion; changes to
+this workflow require the same release-security review as signing code.
+Environment values take precedence over Gradle-property fallbacks for
+distribution inputs. The build
+records SHA-256 values for the exact Yandex client ID, VK application ID and VK
+mobile value found in generated `BuildConfig`; the signing job validates those
+hashes in provenance before decoding or using the permanent key. Raw VK values
+are not written to provenance or logs.
+
+The workflow fails a production build if either provider application ID, or
+the VK mobile value, equals its staging counterpart. This is a security
+boundary: because both channels intentionally use the same Android package and
+certificate, distinct provider projects prevent a provider bearer issued for
+German staging from being accepted by the production account service.
+
+The manual workflow first runs Gradle in an unprotected job with
+`ANDROID_UNSIGNED_DISTRIBUTION=true`. That job receives no `RELEASE_*` value,
+proves that its APK is unsigned, checks package/version/endpoints/provider mode,
+and uploads the APK and provenance. Only then can a reviewer approve the
+`android-signing` job. That job downloads the exact artifact by ID, records the
+GitHub archive digest, independently checks the APK digest anchored in the
+build-job output plus its provenance, and uses fixed runner Android Build Tools
+to align, sign, and verify it. It performs no checkout or Gradle invocation.
+Its inline shell is still repository-controlled workflow code, so it is trusted
+only because every channel runs the workflow from protected `main`; the
+required reviewer must inspect that exact workflow SHA before approval.
+
+Archive both account-disabled rollback artifacts before their corresponding
+versionCode 19 release: `recovery-staging` for staging, and
+`recovery-production` for production. They share the package, permanent
+certificate and versionCode 20, but have distinct version names, endpoint hashes
+and artifact names. They are not interchangeable. The workflow also blocks
+real-provider staging and production while the machine-readable
+`deploy/account-beta-test/release-policy-gates.json` records the private contact
+or deleted-actor-retention decision as blocked. An approved gate must include
+an HTTPS decision reference and UTC approval timestamp. Schema 2 accepts only a
+real `mailto:` or credential-free HTTPS contact whose exact `href` is on the
+stable `privacy-private-contact` policy link; that anchor also carries
+`data-policy-purpose="privacy-and-deletion"`. Tombstone approval selects either
+`fixed_days` or `legal_basis`; the `deleted-actor-tombstone-policy` paragraph's
+status, mode, day count/legal basis, English disclosure and Russian disclosure
+must exactly match the JSON fields. Changing or reusing an
+unrelated policy substring cannot clear it. Production
+alone has an intentional code-level stop until the cross-store backup epoch and
+durable deletion replay journal are implemented and restore-tested; recovery
+remains usable.
 
 Create the one-line base64 value locally:
 
@@ -266,12 +341,20 @@ After registration, provide only:
 
 - confirmation whether 1.8 has an existing permanent signing identity;
 - the old APK's and selected keystore's SHA-256 fingerprints, which are public;
-- the Yandex Client ID;
-- the numeric VK application ID;
-- confirmation that `VKID_CLIENT_SECRET` was placed in GitHub Actions;
-- confirmation that all four `RELEASE_*` secrets and the
-  `RELEASE_CERT_SHA256` variable were placed in GitHub Actions;
-- confirmation that both provider dashboards show package
+- the separate staging/production Yandex Client IDs;
+- the separate staging/production numeric VK application IDs;
+- confirmation that all provider mobile values, the exact reviewed staging
+  endpoint pair, and both reviewed production base URLs were placed in
+  repository Actions variables;
+- confirmation that all four `RELEASE_*` secrets plus `RELEASE_CERT_SHA256`,
+  `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and both `APPROVED_PRODUCTION_*` URL
+  variables were placed in the protected environment;
+- confirmation that the reviewed production app/account base URLs point to
+  Russian ingress and that the cutover gate stays false until the smoke matrix
+  passes;
+- confirmation that both channel-matched recovery artifacts and their
+  provenance were archived before either versionCode 19 artifact was distributed;
+- confirmation that all four provider dashboards show package
   `com.plantdiseases.app` and the selected permanent certificate;
 - whether the test should use the German public staging URL or a local
   account-server URL.

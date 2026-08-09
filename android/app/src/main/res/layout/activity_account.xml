@@ -47,6 +47,15 @@
                     android:textColor="@color/on_surface_secondary"
                     android:visibility="gone" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_retry_account"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:text="@string/account_retry"
+                    android:visibility="gone" />
+
                 <LinearLayout
                     android:id="@+id/guest_group"
                     android:layout_width="match_parent"

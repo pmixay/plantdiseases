@@ -8,15 +8,19 @@ x-account-build: &account-build
 
 services:
   beta-account-keygen:
+    image: ${BETA_ACCOUNT_BUILD_IMAGE:?Set the temporary account build tag}
     build: *account-build
 
   beta-account-migrate:
+    image: ${BETA_ACCOUNT_BUILD_IMAGE:?Set the temporary account build tag}
     build: *account-build
 
   beta-account-api:
+    image: ${BETA_ACCOUNT_BUILD_IMAGE:?Set the temporary account build tag}
     build: *account-build
 
   beta-app-api:
+    image: ${BETA_APP_BUILD_IMAGE:?Set the temporary application build tag}
     build:
       context: ../../server
       dockerfile: Dockerfile

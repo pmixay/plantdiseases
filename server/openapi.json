@@ -463,7 +463,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nIdentity and nickname come exclusively from the verified access token.\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation.\nThe image is optional.",
+        "description": "Append one community-shared scan to the corpus.\n\nIdentity and nickname come exclusively from the verified access token.\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation.\nThe image is required and must be byte-for-byte identical to the upload\naccepted by ``/api/analyze`` when ``scan_id`` was issued. The server derives\nthe stored thumbnail from that already-sanitized upload.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {

@@ -519,6 +519,9 @@ revokes the entire session family.
 - `pending_signups`;
 - `reauth_challenges`;
 - `account_deletion_jobs`;
+- `account_nickname_jobs` for durable, retryable propagation of the latest nickname;
+- `account_nickname_claims` for the current nickname and aliases reserved until
+  their last possible community display has been replaced;
 - `push_devices`;
 - `account_consents` where a versioned account-level consent record is required;
 - minimal `account_security_events` if required for incident response, with no request body, token,
@@ -1062,8 +1065,15 @@ relationship before real use.
 - valid/new/existing Yandex and VK identity;
 - forged, expired, wrong-application, missing-profile, and provider-rejected token;
 - provider timeout/outage;
-- pending signup expiry, replay, and cancel;
-- no normal session before nickname completion;
+- installation-bound pending signup expiry, replay, and cancel;
+- durable completion UUID survives process death and an exact retry after a
+  lost completion response recovers the same provisional account/session;
+- a changed completion UUID, installation ID, pending bearer, or nickname fails
+  closed without creating a second account/session;
+- explicit confirmation is idempotent and is required before provisional
+  credentials can authorize normal account or community operations;
+- cancellation before or after provisional completion is idempotent and removes
+  the provisional account/session; expiry pruning does the same;
 - no forbidden OAuth scope or stored profile field.
 
 ### 19.2 Nickname

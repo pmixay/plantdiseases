@@ -51,6 +51,7 @@ def test_health_and_readiness_contracts():
             "status": "ready",
             "providers": ["vk", "yandex"],
             "database": "ok",
+            "push_delivery": "disabled",
         }
     assert database.closed is True
 

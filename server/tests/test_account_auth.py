@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 import time
 import urllib.error
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -17,6 +19,9 @@ from account_auth import (
     AccountAuthenticationUnavailable,
     RemoteAccountAuthenticator,
     UnconfiguredAccountAuthenticator,
+    _NoRedirectHandler,
+    _open_no_redirect,
+    build_account_authenticator,
 )
 from account_internal import AccountInternalClient
 
@@ -111,7 +116,7 @@ def test_valid_token_is_verified_locally_then_confirmed_live(monkeypatch):
         assert request.get_header("X-internal-service-token") == "s" * 43
         return _Response(introspection)
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
     principal = _authenticator().authenticate(token)
     assert principal.actor_id == introspection["actor_id"]
     assert principal.nickname == "Synthetic Fern"
@@ -135,8 +140,63 @@ def test_unknown_kid_gets_exactly_one_bounded_refresh(monkeypatch):
             return _Response(jwks)
         return _Response(introspection)
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
     assert authenticator.authenticate(token).authorization_version == 3
+    assert jwks_calls == 1
+
+
+def test_repeated_and_concurrent_unknown_kid_uses_one_negative_cached_refresh(
+    monkeypatch,
+):
+    token, _unknown_jwks, _introspection, _public = _fixture_token(kid="unknown-v9")
+    _old_token, old_jwks, _old_introspection, old_public = _fixture_token(kid="old-v1")
+    authenticator = _authenticator()
+    authenticator._keys = {"old-v1": old_public}
+    authenticator._keys_loaded_at = time.monotonic()
+    jwks_calls = 0
+    call_lock = threading.Lock()
+
+    def urlopen(request, timeout):
+        nonlocal jwks_calls
+        assert request.full_url.endswith("jwks.json")
+        with call_lock:
+            jwks_calls += 1
+        return _Response(old_jwks)
+
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
+
+    def reject_unknown() -> None:
+        with pytest.raises(AccountAuthenticationError):
+            authenticator.authenticate(token)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(lambda _index: reject_unknown(), range(8)))
+    reject_unknown()
+    assert jwks_calls == 1
+
+
+def test_random_unknown_kids_share_the_global_refresh_backoff(monkeypatch):
+    _old_token, old_jwks, _old_introspection, old_public = _fixture_token(
+        kid="old-v1"
+    )
+    authenticator = _authenticator()
+    authenticator._keys = {"old-v1": old_public}
+    authenticator._keys_loaded_at = time.monotonic()
+    jwks_calls = 0
+
+    def urlopen(request, timeout):
+        nonlocal jwks_calls
+        assert request.full_url.endswith("jwks.json")
+        jwks_calls += 1
+        return _Response(old_jwks)
+
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
+
+    with pytest.raises(ValueError, match="unknown signing key"):
+        authenticator._key_for("attacker-kid-one")
+    with pytest.raises(ValueError, match="unknown signing key"):
+        authenticator._key_for("attacker-kid-two")
+
     assert jwks_calls == 1
 
 
@@ -160,7 +220,7 @@ def test_invalid_claim_contract_fails_before_introspection(monkeypatch, override
         calls += 1
         return _Response(jwks)
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
     with pytest.raises(AccountAuthenticationError):
         _authenticator().authenticate(token)
     assert calls == 1
@@ -174,7 +234,7 @@ def test_revoked_or_version_changed_session_fails_closed(monkeypatch):
         assert timeout == 2.0
         return _Response(jwks if request.full_url.endswith("jwks.json") else introspection)
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
     with pytest.raises(AccountAuthenticationError):
         _authenticator().authenticate(token)
 
@@ -187,7 +247,7 @@ def test_malformed_introspection_types_fail_as_dependency_outage(monkeypatch):
         assert timeout == 2.0
         return _Response(jwks if request.full_url.endswith("jwks.json") else introspection)
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("account_auth._open_no_redirect", urlopen)
     with pytest.raises(AccountAuthenticationUnavailable):
         _authenticator().authenticate(token)
 
@@ -199,7 +259,7 @@ def test_account_dependency_outage_is_not_misreported_as_bad_credentials(monkeyp
         assert timeout == 2.0
         raise urllib.error.URLError("synthetic outage")
 
-    monkeypatch.setattr("account_auth.urllib.request.urlopen", unavailable)
+    monkeypatch.setattr("account_auth._open_no_redirect", unavailable)
     with pytest.raises(AccountAuthenticationUnavailable):
         _authenticator().authenticate(token)
 
@@ -217,6 +277,38 @@ def test_missing_configuration_constructs_a_fail_closed_authenticator(monkeypatc
     assert isinstance(
         RemoteAccountAuthenticator.from_env(), UnconfiguredAccountAuthenticator
     )
+    with pytest.raises(RuntimeError, match="required but misconfigured"):
+        build_account_authenticator(expected=True)
+
+
+def test_credentialed_http_helper_installs_a_redirect_rejecting_handler(monkeypatch):
+    installed: list[object] = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            assert timeout == 1.0
+            assert request.get_header("Authorization") == "Bearer secret-jwt"
+            raise urllib.error.HTTPError(
+                request.full_url, 302, "redirect rejected", {}, None
+            )
+
+    def build_opener(handler):
+        installed.append(handler)
+        return Opener()
+
+    monkeypatch.setattr("account_auth.urllib.request.build_opener", build_opener)
+    request = __import__("urllib.request").request.Request(
+        "https://account.invalid/private",
+        data=b"{}",
+        headers={"Authorization": "Bearer secret-jwt"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError):
+        _open_no_redirect(request, timeout=1.0)
+
+    assert len(installed) == 1
+    assert isinstance(installed[0], _NoRedirectHandler)
+    assert installed[0].redirect_request(None, None, 302, "", {}, "https://evil.invalid") is None
 
 
 @pytest.mark.parametrize(
@@ -423,3 +515,35 @@ def test_notification_client_accepts_explicit_private_account_origin(
 
     assert client is not None
     assert client.notification_url == notification_url
+
+
+@pytest.mark.parametrize(
+    "internal_base",
+    [
+        "http://2130706433:8000",
+        "http://-account-api:8000",
+        "http://account_api:8000",
+    ],
+)
+def test_notification_client_rejects_unsafe_single_label_internal_origin(
+    monkeypatch,
+    tmp_path,
+    internal_base,
+):
+    token_file = tmp_path / "internal.token"
+    token_file.write_text("s" * 43, encoding="ascii")
+    token_file.chmod(0o600)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
+    monkeypatch.setenv("ACCOUNT_INTERNAL_BASE_URL", internal_base)
+    monkeypatch.setenv(
+        "ACCOUNT_NOTIFICATION_URL",
+        f"{internal_base}/v1/internal/notifications/opinion",
+    )
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(
+        "account_internal._load_internal_token",
+        lambda _path: "s" * 43,
+    )
+
+    assert AccountInternalClient.from_env() is None

@@ -153,8 +153,15 @@ CREATE TABLE IF NOT EXISTS community_cleanup_jobs (
 -- used only to authorize a later community publication; feedback receipts are
 -- separate and are deliberately never accepted by community APIs.
 CREATE TABLE IF NOT EXISTS community_analysis_tokens (
-    token      TEXT PRIMARY KEY,
-    expires_at INTEGER NOT NULL
+    token             TEXT PRIMARY KEY,
+    expires_at        INTEGER NOT NULL,
+    disease           TEXT,
+    confidence        REAL,
+    species           TEXT,
+    species_score     REAL,
+    image_binding     TEXT,
+    claimed_actor_id  TEXT,
+    claimed_at        INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_expiry
     ON community_analysis_tokens(expires_at);
@@ -179,18 +186,34 @@ _init_lock = threading.Lock()
 _initialised = False
 
 
+class AnalysisTokenUnknownError(ValueError):
+    """The publication capability was not issued here or has expired."""
+
+
+class AnalysisTokenConflictError(ValueError):
+    """The capability or scan id is already bound to another publication."""
+
+
+class AnalysisImageMismatchError(ValueError):
+    """The community image is not the exact upload that was analysed."""
+
+
+class OpinionTargetUnavailableError(ValueError):
+    """The target scan no longer exists or no longer accepts opinions."""
+
+
 # ── Public scan tokens ────────────────────────────────────────────────
 # The stored ``scan_id`` is a server-issued community publication capability,
-# never a feedback receipt. Viewer-facing feed rows still carry a rotating,
-# deterministic one-way PUBLIC token so the publication capability cannot be
-# replayed or used as a stable cross-window activity handle; opinion / view
-# endpoints accept either form and resolve the token back to the real
-# id server-side, so existing app builds keep working unchanged.
+# never a feedback receipt. Viewer-facing feed rows carry a stable per-scan,
+# deterministic one-way PUBLIC token so the publication capability itself is
+# never exposed. It does not link different scans by the same actor; the
+# separate author pseudonym below rotates. Opinion/view endpoints accept either
+# form and resolve the token back to the real id server-side, preserving links.
 _PUBLIC_TOKEN_PREFIX = "cs"
 
-# Public identifiers rotate every 30 days so a user's community activity can't
-# be linked across windows; a scan older than this also stops accepting new
-# opinions (its public handle has rotated).
+# Anonymous author identifiers rotate every 30 days. Independently, a scan
+# older than this stops accepting new opinions while its public read link stays
+# stable for the scan's retention lifetime.
 IDENTITY_ROTATION_DAYS = 30
 _IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
 
@@ -252,18 +275,64 @@ def scan_exists(scan_id: str) -> bool:
         ).fetchone() is not None
 
 
-def record_analysis_token(token: str, *, ttl_days: int = 30) -> None:
-    """Persist a server-minted, short-lived community publication token."""
+def record_analysis_token(
+    token: str,
+    *,
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+    ttl_days: int = 30,
+) -> None:
+    """Persist immutable server-derived claims for a publication capability."""
     value = (token or "").strip()
     if not value or len(value) > 128:
         raise ValueError("invalid analysis token")
+    disease_value = (disease or "").strip()
+    if not disease_value or len(disease_value) > 256:
+        raise ValueError("invalid analysis disease")
+    confidence_value = float(confidence) if confidence is not None else None
+    species_value = (species or "").strip() or None
+    species_score_value = float(species_score) if species_score is not None else None
+    image_sha256_value = (image_sha256 or "").strip().lower()
+    if confidence_value is not None and (
+        not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0
+    ):
+        raise ValueError("invalid analysis confidence")
+    if species_value is not None and len(species_value) > 256:
+        raise ValueError("invalid analysis species")
+    if species_score_value is not None and (
+        not math.isfinite(species_score_value) or not 0.0 <= species_score_value <= 1.0
+    ):
+        raise ValueError("invalid analysis species score")
+    if len(image_sha256_value) != 64:
+        raise ValueError("invalid analysis image digest")
+    try:
+        bytes.fromhex(image_sha256_value)
+    except ValueError as exc:
+        raise ValueError("invalid analysis image digest") from exc
+    # Salt the exact-byte digest with the random capability so identical
+    # photos do not create a reusable, cross-token fingerprint in SQLite.
+    image_binding = hashlib.sha256(
+        value.encode("utf-8") + b"\0" + bytes.fromhex(image_sha256_value)
+    ).hexdigest()
     init_db()
     expires_at = int(time.time()) + max(1, min(int(ttl_days), 90)) * 86_400
     with _write_lock, _connect() as connection:
         connection.execute(
-            "INSERT INTO community_analysis_tokens (token, expires_at) VALUES (?, ?) "
-            "ON CONFLICT(token) DO UPDATE SET expires_at = excluded.expires_at",
-            (value, expires_at),
+            "INSERT INTO community_analysis_tokens ("
+            "token, expires_at, disease, confidence, species, species_score, image_binding"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                value,
+                expires_at,
+                disease_value,
+                confidence_value,
+                species_value,
+                species_score_value,
+                image_binding,
+            ),
         )
 
 
@@ -276,15 +345,16 @@ def is_analysis_token_issued(token: str) -> bool:
     with _connect() as connection:
         return connection.execute(
             "SELECT 1 FROM community_analysis_tokens "
-            "WHERE token = ? AND expires_at > ? LIMIT 1",
+            "WHERE token = ? AND expires_at > ? AND disease IS NOT NULL "
+            "AND image_binding IS NOT NULL LIMIT 1",
             (value, int(time.time())),
         ).fetchone() is not None
 
 
 def opinion_open(scan_id: str, max_age_days: int = IDENTITY_ROTATION_DAYS) -> bool:
     """True when a shared scan still accepts opinions — it exists AND is newer
-    than ``max_age_days``. Old scans go read-only (their public handle has
-    rotated), so the community can't keep weighing in on stale photos."""
+    than ``max_age_days``. Old scans go read-only so the community cannot keep
+    weighing in on stale photos; their public read link remains stable."""
     sid = (scan_id or "").strip()
     if not sid:
         return False
@@ -550,6 +620,22 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "wants_opinion", "INTEGER NOT NULL DEFAULT 0")
             # Public viewer-facing token (see ``public_scan_token``).
             _add_column_if_missing(conn, "community_scans", "public_id", "TEXT")
+            # Publication capabilities originally stored only an expiry. New
+            # rows bind the model verdict and exact analyzed image immutably;
+            # legacy rows retain NULL claims and are no longer publishable.
+            _add_column_if_missing(conn, "community_analysis_tokens", "disease", "TEXT")
+            _add_column_if_missing(conn, "community_analysis_tokens", "confidence", "REAL")
+            _add_column_if_missing(conn, "community_analysis_tokens", "species", "TEXT")
+            _add_column_if_missing(conn, "community_analysis_tokens", "species_score", "REAL")
+            _add_column_if_missing(conn, "community_analysis_tokens", "image_binding", "TEXT")
+            _add_column_if_missing(
+                conn, "community_analysis_tokens", "claimed_actor_id", "TEXT"
+            )
+            _add_column_if_missing(conn, "community_analysis_tokens", "claimed_at", "INTEGER")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_actor "
+                "ON community_analysis_tokens(claimed_actor_id)"
+            )
             _migrate_legacy_identity_columns(conn)
             conn.executescript(_SCHEMA)
             conn.executescript(_IDENTITY_INDEXES)
@@ -782,6 +868,153 @@ def record_scan(
         return int(cur.lastrowid or 0)
 
 
+def record_analysis_scan(
+    *,
+    scan_id: str,
+    account_actor_id: str,
+    country: str,
+    region: str = "",
+    city: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    image_bytes: bytes | None = None,
+    locale: str | None = None,
+    nickname: str | None = None,
+    client_disease: str | None = None,
+    client_confidence: float | None = None,
+    client_species: str | None = None,
+    client_species_score: float | None = None,
+) -> int:
+    """Publish one server analysis with its immutable stored verdict.
+
+    The uploaded image must be byte-for-byte identical to the upload analysed
+    when the capability was issued. Claiming the capability and inserting the
+    scan share one SQLite transaction. A database failure therefore leaves the
+    capability retryable; after success, only the same signed actor receives
+    the existing row id.
+    The ``client_*`` diagnosis fields remain accepted for wire/backward test
+    compatibility but are deliberately ignored in favor of the stored claims.
+    """
+    del client_disease, client_confidence, client_species, client_species_score
+    init_db()
+    token = (scan_id or "").strip()
+    if not token or len(token) > 128:
+        raise AnalysisTokenUnknownError("unknown analysis token")
+    if not image_bytes:
+        raise AnalysisImageMismatchError("analysis image is required")
+    image_binding = hashlib.sha256(
+        token.encode("utf-8") + b"\0" + hashlib.sha256(image_bytes).digest()
+    ).hexdigest()
+    _legacy_id, actor_id = _identity(None, account_actor_id)
+    assert actor_id is not None
+    now = int(time.time())
+    country_value = to_iso_alpha2(country)
+    region_value = region or ""
+    thumb_path: str | None = None
+
+    with _write_lock, _connect() as conn:
+        try:
+            # Serialize token claims and scan-id collision checks even when
+            # multiple application threads/processes reach SQLite together.
+            conn.execute("BEGIN IMMEDIATE")
+            if _actor_is_deleted(conn, actor_id):
+                raise ValueError("deleted account actor")
+            claim = conn.execute(
+                "SELECT expires_at, disease, confidence, species, species_score, image_binding, "
+                "claimed_actor_id FROM community_analysis_tokens WHERE token = ?",
+                (token,),
+            ).fetchone()
+            if (
+                claim is None
+                or int(claim[0]) <= now
+                or claim[1] is None
+                or claim[5] is None
+            ):
+                raise AnalysisTokenUnknownError("unknown analysis token")
+            if image_binding != str(claim[5]).lower():
+                raise AnalysisImageMismatchError("analysis image does not match")
+
+            existing_rows = conn.execute(
+                "SELECT id, account_actor_id FROM community_scans "
+                "WHERE scan_id = ? LIMIT 2",
+                (token,),
+            ).fetchall()
+            claimed_actor = str(claim[6]) if claim[6] is not None else None
+            if claimed_actor is not None:
+                if (
+                    claimed_actor != actor_id
+                    or len(existing_rows) != 1
+                    or existing_rows[0][1] != actor_id
+                ):
+                    raise AnalysisTokenConflictError("analysis token already claimed")
+                conn.execute("COMMIT")
+                return int(existing_rows[0][0])
+
+            # An unclaimed token must not adopt an unrelated/pre-existing row,
+            # even if that row happens to have the same actor id.
+            if existing_rows:
+                raise AnalysisTokenConflictError("scan id collision")
+
+            disease = str(claim[1])
+            confidence = float(claim[2]) if claim[2] is not None else None
+            species = str(claim[3]) if claim[3] is not None else None
+            species_score = float(claim[4]) if claim[4] is not None else None
+            species_lower = species.lower() if species else None
+            thumb_path = _save_thumbnail(token, image_bytes) if image_bytes else None
+            identity_sql, identity_params = _identity_predicate(
+                "user_pseudo_id", "account_actor_id", None, actor_id
+            )
+            pending = conn.execute(
+                "SELECT 1 FROM community_opinion_requests "
+                f"WHERE scan_id = ? AND {identity_sql} AND created_at >= ? LIMIT 1",
+                (token, *identity_params, now - _OPINION_REQUEST_TTL_S),
+            ).fetchone()
+            cur = conn.execute(
+                "INSERT INTO community_scans ("
+                "scan_id, user_pseudo_id, account_actor_id, country, region, city, lat, lon, "
+                "disease, confidence, species, species_lower, species_score, thumb_path, "
+                "locale, nickname, client_ip_hash, wants_opinion, public_id, created_at"
+                ") VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                (
+                    token,
+                    actor_id,
+                    country_value,
+                    region_value,
+                    city,
+                    lat,
+                    lon,
+                    disease,
+                    confidence,
+                    species,
+                    species_lower,
+                    species_score,
+                    thumb_path,
+                    locale,
+                    (nickname or None),
+                    1 if pending else 0,
+                    public_scan_token(token),
+                    now,
+                ),
+            )
+            claimed = conn.execute(
+                "UPDATE community_analysis_tokens "
+                "SET claimed_actor_id = ?, claimed_at = ? "
+                "WHERE token = ? AND claimed_actor_id IS NULL",
+                (actor_id, now, token),
+            ).rowcount
+            if claimed != 1:
+                raise AnalysisTokenConflictError("analysis token already claimed")
+            conn.execute("COMMIT")
+            return int(cur.lastrowid or 0)
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            if thumb_path:
+                with contextlib.suppress(OSError):
+                    (COMMUNITY_THUMB_DIR / thumb_path).unlink(missing_ok=True)
+            raise
+
+
 def set_wants_opinion(
     scan_id: str,
     user_pseudo_id: str | None = None,
@@ -921,6 +1154,73 @@ def _sweep_expired_requests() -> None:
         expire_stale_opinion_requests(int(now))
 
 
+def record_opinion_with_status(
+    *,
+    scan_id: str,
+    author_pseudo_id: str | None = None,
+    account_actor_id: str | None = None,
+    suggested_disease: str,
+    note: str | None = None,
+    nickname: str | None = None,
+    client_ip: str | None = None,
+) -> tuple[int, bool]:
+    """Append an opinion and return ``(row_id, created)`` atomically."""
+    init_db()
+    legacy_id, actor_id = _identity(author_pseudo_id, account_actor_id)
+    now = int(time.time())
+    ip_hash = None
+    note_clean = (note or "").strip()[:500] or None
+    nick_clean = (nickname or "").strip()[:48] or None
+    with _write_lock, _connect() as conn:
+        # The endpoint's existence/owner/freshness checks happen before this
+        # call and can race account cleanup or retention pruning. Acquire a
+        # database-wide write reservation before repeating the target check,
+        # then keep it through the insert. This works across app processes;
+        # the in-process RLock alone cannot close that boundary.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cutoff = now - _IDENTITY_ROTATION_S
+            target_exists = conn.execute(
+                "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? "
+                "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+                "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+                (scan_id, cutoff),
+            ).fetchone()
+            if target_exists is None:
+                raise OpinionTargetUnavailableError(
+                    "opinion target is absent, deleted, or stale"
+                )
+            if _actor_is_deleted(conn, actor_id):
+                raise ValueError("deleted account actor")
+            # One opinion per author per scan. If this install already weighed in,
+            # keep the original (the client locks its input too) and return that
+            # row's id rather than appending a duplicate.
+            author_sql, author_params = _identity_predicate(
+                "author_pseudo_id", "account_actor_id", legacy_id, actor_id
+            )
+            existing = conn.execute(
+                "SELECT id FROM community_opinions "
+                f"WHERE scan_id = ? AND {author_sql} LIMIT 1",
+                (scan_id, *author_params),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("COMMIT")
+                return int(existing[0]), False
+            cur = conn.execute(
+                "INSERT INTO community_opinions ("
+                "  scan_id, author_pseudo_id, account_actor_id, suggested_disease, note, "
+                "  nickname, client_ip_hash, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (scan_id, legacy_id, actor_id, suggested_disease, note_clean,
+                 nick_clean, ip_hash, now),
+            )
+            conn.execute("COMMIT")
+            return int(cur.lastrowid or 0), True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+
 def record_opinion(
     *,
     scan_id: str,
@@ -931,38 +1231,17 @@ def record_opinion(
     nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
-    """Append one community 'second opinion' on a shared scan. Returns row id."""
-    init_db()
-    legacy_id, actor_id = _identity(author_pseudo_id, account_actor_id)
-    now = int(time.time())
-    ip_hash = None
-    note_clean = (note or "").strip()[:500] or None
-    nick_clean = (nickname or "").strip()[:48] or None
-    with _write_lock, _connect() as conn:
-        if _actor_is_deleted(conn, actor_id):
-            raise ValueError("deleted account actor")
-        # One opinion per author per scan. If this install already weighed in,
-        # keep the original (the client locks its input too) and return that
-        # row's id rather than appending a duplicate.
-        author_sql, author_params = _identity_predicate(
-            "author_pseudo_id", "account_actor_id", legacy_id, actor_id
-        )
-        existing = conn.execute(
-            "SELECT id FROM community_opinions "
-            f"WHERE scan_id = ? AND {author_sql} LIMIT 1",
-            (scan_id, *author_params),
-        ).fetchone()
-        if existing is not None:
-            return int(existing[0])
-        cur = conn.execute(
-            "INSERT INTO community_opinions ("
-            "  scan_id, author_pseudo_id, account_actor_id, suggested_disease, note, "
-            "  nickname, client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (scan_id, legacy_id, actor_id, suggested_disease, note_clean,
-             nick_clean, ip_hash, now),
-        )
-        return int(cur.lastrowid or 0)
+    """Backward-compatible row-id-only opinion writer."""
+    row_id, _created = record_opinion_with_status(
+        scan_id=scan_id,
+        author_pseudo_id=author_pseudo_id,
+        account_actor_id=account_actor_id,
+        suggested_disease=suggested_disease,
+        note=note,
+        nickname=nickname,
+        client_ip=client_ip,
+    )
+    return row_id
 
 
 def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
@@ -987,9 +1266,8 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             "SELECT account_actor_id FROM community_scans WHERE scan_id = ? LIMIT 1",
             (scan_id,),
         ).fetchone()
-        if (
-            scan_owner is not None
-            and scan_owner[0] is not None
+        if scan_owner is None or (
+            scan_owner[0] is not None
             and _actor_is_deleted(conn, str(scan_owner[0]))
         ):
             return {
@@ -1812,36 +2090,81 @@ def prune_older_than(days: int) -> int:
             "DELETE FROM community_analysis_tokens WHERE expires_at <= ?",
             (int(time.time()),),
         )
+        # The durable deletion tombstone is the sole replay-suppression record.
+        # Completed cleanup jobs duplicate the same actor UUID without serving
+        # a retry purpose, so remove rows left by older deployments.
+        conn.execute("DELETE FROM community_cleanup_jobs WHERE state = 'completed'")
         rows = conn.execute(
-            "SELECT thumb_path FROM community_scans WHERE created_at < ?",
+            "SELECT id, thumb_path FROM community_scans WHERE created_at < ?",
             (cutoff,),
         ).fetchall()
-        deleted = conn.execute(
-            "DELETE FROM community_scans WHERE created_at < ?",
-            (cutoff,),
-        ).rowcount
-        # Sweep companion-table rows that have aged past retention AND no
-        # longer reference a live scan — without this, opinions / views /
-        # requests outlive the scan they belong to indefinitely (unbounded
-        # growth + data retained past the stated window). The age guard
-        # keeps a request or opinion that legitimately arrived BEFORE its
-        # scan upload (the supported ordering) from being swept early.
-        for table in (
-            "community_opinions",
-            "community_scan_views",
-            "community_opinion_requests",
-        ):
-            conn.execute(
-                f"DELETE FROM {table} WHERE created_at < ? AND scan_id NOT IN "
-                "(SELECT scan_id FROM community_scans)",
-                (cutoff,),
-            )
-    for row in rows:
-        thumb = row[0]
-        if not thumb:
-            continue
-        with contextlib.suppress(OSError):
-            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
+        removable: list[int] = []
+        # Keep the path discoverable in SQLite until its file is gone. If an
+        # unlink fails, retaining the row lets the next retention/account-
+        # deletion pass retry instead of orphaning private media forever.
+        for row_id, thumb_path in rows:
+            if thumb_path:
+                try:
+                    (COMMUNITY_THUMB_DIR / str(thumb_path)).unlink(missing_ok=True)
+                except OSError:
+                    continue
+            removable.append(int(row_id))
+        # Coordinate each scan removal with all of its companion rows. This
+        # transaction shares the same SQLite write reservation as the opinion
+        # writer, so whichever operation wins leaves a consistent result.
+        deleted = 0
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for row_id in removable:
+                row = conn.execute(
+                    "SELECT scan_id FROM community_scans "
+                    "WHERE id = ? AND created_at < ?",
+                    (row_id, cutoff),
+                ).fetchone()
+                if row is None:
+                    continue
+                scan_id = str(row[0])
+                removed = int(
+                    conn.execute(
+                        "DELETE FROM community_scans WHERE id = ? AND created_at < ?",
+                        (row_id, cutoff),
+                    ).rowcount
+                    or 0
+                )
+                deleted += removed
+                if removed and conn.execute(
+                    "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1",
+                    (scan_id,),
+                ).fetchone() is None:
+                    # Delete every companion for the scan, including one that
+                    # raced in immediately before this transaction. A writer
+                    # that starts later waits for COMMIT and then rejects the
+                    # absent target in its own BEGIN IMMEDIATE transaction.
+                    for table in (
+                        "community_opinions",
+                        "community_scan_views",
+                        "community_opinion_requests",
+                    ):
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id = ?",
+                            (scan_id,),
+                        )
+            # Sweep old orphan rows left by historical versions. The age guard
+            # retains a fresh request that legitimately arrives before upload.
+            for table in (
+                "community_opinions",
+                "community_scan_views",
+                "community_opinion_requests",
+            ):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE created_at < ? AND scan_id NOT IN "
+                    "(SELECT scan_id FROM community_scans)",
+                    (cutoff,),
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     return int(deleted or 0)
 
 
@@ -1876,6 +2199,14 @@ def request_actor_deletion(account_actor_id: str, *, now: int | None = None) -> 
                 "VALUES (?, ?)",
                 (actor, timestamp),
             )
+            # Claimed publication capabilities contain the private account
+            # actor link. Erase those rows in the same transaction as the
+            # tombstone so the account service can treat acceptance as the
+            # privacy boundary; never touch unrelated unclaimed capabilities.
+            conn.execute(
+                "DELETE FROM community_analysis_tokens WHERE claimed_actor_id = ?",
+                (actor,),
+            )
             conn.execute(
                 "INSERT INTO community_cleanup_jobs "
                 "(actor_id, state, attempt_count, next_attempt_at, created_at, updated_at) "
@@ -1891,6 +2222,30 @@ def request_actor_deletion(account_actor_id: str, *, now: int | None = None) -> 
             conn.execute("ROLLBACK")
             raise
     return True
+
+
+def update_actor_nickname(account_actor_id: str, nickname: str) -> int:
+    """Replace denormalized historical nicknames for one stable account actor."""
+    init_db()
+    try:
+        actor = str(uuid.UUID(account_actor_id))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+    cleaned = (nickname or "").strip()[:48]
+    if not cleaned:
+        return 0
+    with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor):
+            return 0
+        scans = conn.execute(
+            "UPDATE community_scans SET nickname = ? WHERE account_actor_id = ?",
+            (cleaned, actor),
+        ).rowcount
+        opinions = conn.execute(
+            "UPDATE community_opinions SET nickname = ? WHERE account_actor_id = ?",
+            (cleaned, actor),
+        ).rowcount
+    return int(scans or 0) + int(opinions or 0)
 
 
 def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str, int]:
@@ -1971,11 +2326,15 @@ def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str
                     "DELETE FROM community_scans WHERE account_actor_id = ?", (actor,)
                 )
                 conn.execute(
-                    "UPDATE community_cleanup_jobs SET state = 'completed', "
-                    "attempt_count = attempt_count + 1, next_attempt_at = ?, "
-                    "last_error_code = NULL, updated_at = ?, completed_at = ? "
-                    "WHERE actor_id = ?",
-                    (timestamp, timestamp, timestamp, actor),
+                    "DELETE FROM community_analysis_tokens WHERE claimed_actor_id = ?",
+                    (actor,),
+                )
+                # community_deleted_actors is the durable suppression marker.
+                # Once physical cleanup succeeds this retry row has no further
+                # purpose and would only duplicate the deleted actor UUID.
+                conn.execute(
+                    "DELETE FROM community_cleanup_jobs WHERE actor_id = ?",
+                    (actor,),
                 )
                 conn.execute("COMMIT")
             except Exception:
@@ -2068,6 +2427,9 @@ def stats_snapshot() -> dict:
 
 
 __all__ = [
+    "AnalysisTokenConflictError",
+    "AnalysisImageMismatchError",
+    "AnalysisTokenUnknownError",
     "COMMUNITY_DB_PATH",
     "COMMUNITY_THUMB_DIR",
     "OPINION_REQUEST_TTL_HOURS",
@@ -2089,7 +2451,10 @@ __all__ = [
     "process_cleanup_jobs",
     "prune_older_than",
     "public_scan_token",
+    "record_analysis_scan",
+    "record_analysis_token",
     "record_opinion",
+    "record_opinion_with_status",
     "record_scan",
     "record_view",
     "region_summary",
@@ -2102,5 +2467,6 @@ __all__ = [
     "set_wants_opinion",
     "stats_snapshot",
     "thumbnail_is_visible",
+    "update_actor_nickname",
     "wants_opinion",
 ]

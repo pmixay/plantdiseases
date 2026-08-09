@@ -135,6 +135,7 @@ services:
     environment:
       ENVIRONMENT: test
       ACCOUNT_BETA_SYNTHETIC_PIPELINE: "true"
+      ACCOUNT_FEATURE_EXPECTED: "true"
       POPULAR_WARM_ENABLED: "false"
       FRONTIER_ENABLED: "false"
       TRAINING_CAPTURE_ENABLED: "false"
@@ -147,7 +148,8 @@ services:
       ACCOUNT_INTERNAL_BASE_URL: http://beta-account-api:8000
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
-      ACCOUNT_NOTIFICATION_URL: http://beta-account-api:8000/v1/internal/notifications/opinion
+      # No durable notification sink exists yet; clients poll for owner updates.
+      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       LOG_DIR: /data/logs

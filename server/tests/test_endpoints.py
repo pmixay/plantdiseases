@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import sqlite3
+
 
 def test_health_contract(client):
     from classifier import DEFAULT_CLASS_NAMES
@@ -370,6 +373,65 @@ def test_analyze_response_issues_separate_community_and_feedback_tokens(
     assert community.is_analysis_token_issued(scan_id)
     assert not community.is_analysis_token_issued(feedback_receipt)
     assert training_store.sample_by_receipt(feedback_receipt) is None
+
+
+def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
+    client, png_bytes
+):
+    import community
+
+    first = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    second = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert first.status_code == second.status_code == 200
+    assert second.json()["is_repeat"] is True
+    tokens = [first.json()["scan_id"], second.json()["scan_id"]]
+    assert all(isinstance(token, str) for token in tokens)
+
+    raw_digest = hashlib.sha256(png_bytes).digest()
+    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+        rows = connection.execute(
+            "SELECT token, image_binding FROM community_analysis_tokens "
+            "WHERE token IN (?, ?)",
+            tokens,
+        ).fetchall()
+    bindings = {str(token): str(binding) for token, binding in rows}
+    assert set(bindings) == set(tokens)
+    for token in tokens:
+        expected = hashlib.sha256(token.encode("utf-8") + b"\0" + raw_digest).hexdigest()
+        assert bindings[token] == expected
+        assert bindings[token] != raw_digest.hex()
+    assert bindings[tokens[0]] != bindings[tokens[1]]
+
+
+def test_analyze_omits_unpersisted_publication_capability_on_cache_miss_and_hit(
+    client, png_bytes, monkeypatch,
+):
+    import main as server_main
+
+    def fail_persistence(*_args, **_kwargs):
+        raise sqlite3.OperationalError("synthetic persistence failure")
+
+    monkeypatch.setattr(server_main, "community_record_analysis_token", fail_persistence)
+    first = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    second = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert first.status_code == second.status_code == 200
+    assert first.json()["scan_id"] is None
+    assert second.json()["scan_id"] is None
+    assert second.json()["is_repeat"] is True
+    assert isinstance(first.json()["feedback_receipt"], str)
+    assert isinstance(second.json()["feedback_receipt"], str)
 
 
 def test_feedback_rejects_legacy_scan_id_payload(client, png_bytes):

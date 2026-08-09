@@ -173,6 +173,11 @@ class PlantDiseasesApp : Application() {
                     com.plantdiseases.app.push.PushManager.registerIfEnabled(this@PlantDiseasesApp)
                 }
             }
+        } else {
+            // Recovery builds actively destroy/queue the current credential,
+            // revoke it remotely when reachable, drain every approved issuer
+            // queue, and expose Guest semantics to public/community flows.
+            appScope.launch { runCatching { authRepository.enterAccountDisabledMode() } }
         }
         purgeStaleRejectedScans()
         // NB: do NOT touch WorkManager here. The default androidx.startup
@@ -210,6 +215,7 @@ class PlantDiseasesApp : Application() {
     private fun purgeStaleRejectedScans() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
+            runCatching { scanRepository.purgeExpiredRetainedAnalysisImages() }
         }
     }
 
@@ -246,7 +252,7 @@ class PlantDiseasesApp : Application() {
      *  KEEP) so installs created under the old 6h schedule adopt the new one.
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
     fun scheduleOpinionChecks() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
+        if (!BuildConfig.ACCOUNT_UI_ENABLED || !OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >(
@@ -296,7 +302,7 @@ class PlantDiseasesApp : Application() {
      *  waiting for the next periodic tick. Expedited, degrading to a normal job
      *  if the expedited quota is spent. */
     fun checkOpinionsNow() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
+        if (!BuildConfig.ACCOUNT_UI_ENABLED || !OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >()
@@ -314,6 +320,11 @@ class PlantDiseasesApp : Application() {
             androidx.work.ExistingWorkPolicy.REPLACE,
             request,
         )
+    }
+
+    /** Retry encrypted remote-logout proofs whenever the app returns to use. */
+    fun retryPendingAccountLogouts() {
+        appScope.launch { authRepository.retryPendingLogoutRevocations() }
     }
 
     companion object {

@@ -91,6 +91,10 @@ try:
     from .beta_runtime import allow_synthetic_pipeline
     from .community import (
         COMMUNITY_THUMB_DIR,
+        AnalysisImageMismatchError,
+        AnalysisTokenConflictError,
+        AnalysisTokenUnknownError,
+        OpinionTargetUnavailableError,
     )
     from .community import (
         account_owner_of as community_account_owner_of,
@@ -135,13 +139,13 @@ try:
         prune_older_than as community_prune_older_than,
     )
     from .community import (
+        record_analysis_scan as community_record_analysis_scan,
+    )
+    from .community import (
         record_analysis_token as community_record_analysis_token,
     )
     from .community import (
-        record_opinion as community_record_opinion,
-    )
-    from .community import (
-        record_scan as community_record_scan,
+        record_opinion_with_status as community_record_opinion,
     )
     from .community import (
         record_view as community_record_view,
@@ -174,6 +178,9 @@ try:
         thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from .community import (
+        update_actor_nickname as community_update_actor_nickname,
+    )
+    from .community import (
         view_counts as community_view_counts,
     )
     from .community import (
@@ -201,6 +208,7 @@ try:
     from .plant_photos import (
         proxy_path as plant_photo_proxy,
     )
+    from .plant_photos import prune_cache as plant_photo_prune_cache
     from .popular_plants import popular_for
     from .runtime_paths import normalize_root_path
     from .species_info import fetch_species_info
@@ -260,6 +268,10 @@ except ImportError:
     from beta_runtime import allow_synthetic_pipeline
     from community import (
         COMMUNITY_THUMB_DIR,
+        AnalysisImageMismatchError,
+        AnalysisTokenConflictError,
+        AnalysisTokenUnknownError,
+        OpinionTargetUnavailableError,
     )
     from community import (
         account_owner_of as community_account_owner_of,
@@ -304,13 +316,13 @@ except ImportError:
         prune_older_than as community_prune_older_than,
     )
     from community import (
+        record_analysis_scan as community_record_analysis_scan,
+    )
+    from community import (
         record_analysis_token as community_record_analysis_token,
     )
     from community import (
-        record_opinion as community_record_opinion,
-    )
-    from community import (
-        record_scan as community_record_scan,
+        record_opinion_with_status as community_record_opinion,
     )
     from community import (
         record_view as community_record_view,
@@ -343,6 +355,9 @@ except ImportError:
         thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from community import (
+        update_actor_nickname as community_update_actor_nickname,
+    )
+    from community import (
         view_counts as community_view_counts,
     )
     from community import (
@@ -370,6 +385,7 @@ except ImportError:
     from plant_photos import (
         proxy_path as plant_photo_proxy,
     )
+    from plant_photos import prune_cache as plant_photo_prune_cache
     from popular_plants import popular_for
     from runtime_paths import normalize_root_path
     from species_info import fetch_species_info
@@ -491,7 +507,14 @@ ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
 )
 APP_ROOT_PATH = normalize_root_path(get_str("APP_ROOT_PATH", ""))
 POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
-account_authenticator = build_account_authenticator()
+ACCOUNT_FEATURE_EXPECTED = get_bool(
+    "ACCOUNT_FEATURE_EXPECTED",
+    bool(
+        get_str("ACCOUNT_API_BASE_URL", "").strip()
+        or get_str("ACCOUNT_ISSUER", "").strip()
+    ),
+)
+account_authenticator = build_account_authenticator(expected=ACCOUNT_FEATURE_EXPECTED)
 community_bearer = HTTPBearer(auto_error=False)
 
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
@@ -751,18 +774,31 @@ def _record_violation(identifier: str) -> None:
             _in_memory_bans[identifier] = now + BAN_DURATION
             logger.warning("Temporary in-memory abuse ban applied")
 
-def _extract_api_key(request: Request) -> str | None:
+_PUBLIC_COMMUNITY_READ_PATHS = frozenset(
+    {
+        "/api/community/nearby",
+        "/api/community/map",
+        "/api/community/heatmap",
+        "/api/community/by-species",
+    }
+)
+
+
+def _is_public_community_read(method: str, path: str) -> bool:
+    return method in {"GET", "HEAD"} and (
+        path in _PUBLIC_COMMUNITY_READ_PATHS
+        or path.startswith("/api/community/opinions/")
+        or path.startswith("/api/community/thumb/")
+    )
+
+
+def _extract_api_key(request: Request, *, allow_bearer: bool = True) -> str | None:
     key = request.headers.get("x-api-key")
     if key:
         return key.strip()
     auth = request.headers.get("authorization")
-    if auth and auth.lower().startswith("bearer "):
-        token = auth[7:].strip()
-        # Account access tokens are JWTs and have their own Ed25519/session
-        # validation path. Never compare or log them as legacy API keys.
-        if token.count(".") == 2:
-            return None
-        return token
+    if allow_bearer and auth and auth.lower().startswith("bearer "):
+        return auth[7:].strip()
     return None
 
 
@@ -796,11 +832,6 @@ async def _require_account(request: Request) -> AccountPrincipal:
     except AccountAuthenticationUnavailable:
         raise HTTPException(status_code=503, detail="account_auth_unavailable") from None
 
-
-async def _optional_account(request: Request) -> AccountPrincipal | None:
-    if _bearer_token(request) is None:
-        return None
-    return await _require_account(request)
 
 # Daily write quotas use the live connection address only in process memory.
 # Addresses and hashes never enter feedback, training, or account-era
@@ -991,25 +1022,54 @@ def _pipeline_for_family(family: str) -> PlantDiseasePipeline | SyntheticPipelin
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
-def _persist_community_analysis_token(token: str) -> None:
-    """Persist a short-lived community publication proof, fail-soft."""
+def _persist_community_analysis_token(
+    token: str,
+    *,
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+) -> bool:
+    """Persist a publication proof; report failure without leaking a phantom token."""
     try:
         community_record_analysis_token(
-            token, ttl_days=COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS
+            token,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            image_sha256=image_sha256,
+            ttl_days=COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS,
         )
     except Exception:  # noqa: BLE001 - fixed message; never log the token
         logger.warning("Failed to persist community analysis token")
+        return False
+    return True
 
 
 async def _issue_interaction_tokens(
     *,
     capture_pending: bool,
-) -> tuple[str, str | None]:
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+) -> tuple[str | None, str | None]:
     """Mint unrelated community and feedback capabilities for one response."""
     loop = asyncio.get_running_loop()
     community_token = uuid.uuid4().hex
-    await loop.run_in_executor(
-        None, _persist_community_analysis_token, community_token
+    community_token_persisted = await loop.run_in_executor(
+        None,
+        lambda: _persist_community_analysis_token(
+            community_token,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            image_sha256=image_sha256,
+        ),
     )
     try:
         feedback_receipt = await loop.run_in_executor(
@@ -1021,7 +1081,7 @@ async def _issue_interaction_tokens(
     except Exception:  # noqa: BLE001 - inference remains available, fixed log
         logger.warning("Feedback receipt issuance failed")
         feedback_receipt = None
-    return community_token, feedback_receipt
+    return community_token if community_token_persisted else None, feedback_receipt
 
 
 def _is_trusted_proxy(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -1178,20 +1238,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         client_ip = _client_ip(request)
-        api_key = _extract_api_key(request)
         bearer = _bearer_token(request)
-        internal_service_path = path == "/api/internal/account-deletions"
+        public_community_read = _is_public_community_read(request.method, path)
+        internal_service_path = path in {
+            "/api/internal/account-deletions",
+            "/api/internal/account-nicknames",
+        }
+        protected_account_path = bool(
+            path.startswith("/api/community/") and not public_community_read
+        )
+        # Public reads intentionally ignore both account credentials and API
+        # keys. Protected account routes reserve Authorization for the JWT;
+        # legacy bearer API keys remain accepted everywhere else.
+        api_key = (
+            None
+            if public_community_read or protected_account_path or internal_service_path
+            else _extract_api_key(request, allow_bearer=not protected_account_path)
+        )
         account_token_allowed = bool(
             bearer
-            and bearer.count(".") == 2
-            and (
-                path.startswith("/api/community/")
-                or internal_service_path
-            )
+            and protected_account_path
         )
 
         # 1. API Key validation and requirement check
-        if REQUIRE_API_KEY:
+        if REQUIRE_API_KEY and not public_community_read:
             if not api_key and not account_token_allowed and not internal_service_path:
                 return JSONResponse(
                     status_code=401,
@@ -1202,7 +1272,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                     content={"detail": "Invalid API key."},
                 )
-        elif api_key and api_key not in API_KEYS:
+        elif not public_community_read and api_key and api_key not in API_KEYS:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid API key."},
@@ -1694,6 +1764,10 @@ async def health_check():
         "num_classes": len(pipeline.classifier.CLASS_NAMES),
         "uptime_seconds": round(uptime, 1),
         "total_requests": _snapshot_metrics()["total_requests"],
+        "account_feature_expected": ACCOUNT_FEATURE_EXPECTED,
+        "account_auth_configured": bool(
+            getattr(account_authenticator, "configured", False)
+        ),
     }
 
 
@@ -1826,6 +1900,10 @@ async def capabilities():
     return {
         "default": DEFAULT_FAMILY,
         "families": families,
+        "account": {
+            "expected": ACCOUNT_FEATURE_EXPECTED,
+            "available": bool(getattr(account_authenticator, "configured", False)),
+        },
         "version": APP_VERSION,
         "server_version": APP_VERSION,
         "model_version": model_version,
@@ -2132,8 +2210,14 @@ async def analyze_image(
             and training_consent
             and cached_payload.get("class_name") != "not_a_plant"
         )
+        cached_species = (cached_payload.get("species") or {}).get("best") or {}
         community_token, feedback_receipt = await _issue_interaction_tokens(
-            capture_pending=capture_pending
+            capture_pending=capture_pending,
+            disease=str(cached_payload.get("class_name") or ""),
+            confidence=cached_payload.get("confidence"),
+            species=cached_species.get("scientific_name"),
+            species_score=cached_species.get("score"),
+            image_sha256=image_sha,
         )
         cached_payload["scan_id"] = community_token
         cached_payload["feedback_receipt"] = feedback_receipt
@@ -2309,7 +2393,12 @@ async def analyze_image(
         and class_name != "not_a_plant"
     )
     community_token, feedback_receipt = await _issue_interaction_tokens(
-        capture_pending=capture_pending
+        capture_pending=capture_pending,
+        disease=class_name,
+        confidence=round(confidence, 3),
+        species=auto_best.get("scientific_name"),
+        species_score=auto_best.get("score"),
+        image_sha256=image_sha,
     )
 
     cached_response_payload = {
@@ -3056,15 +3145,20 @@ async def feedback_image_upload(
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-# Same magic-byte set the analyze endpoint accepts. We rely on
+# Same content-type and magic-byte set the analyze endpoint accepts. We rely on
 # Content-Type for the multipart form parse, then re-validate the
 # bytes; an attacker can lie about Content-Type but the magic bytes
 # don't lie.
-_COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_COMMUNITY_ALLOWED_TYPES = set(ALLOWED_CONTENT_TYPES)
 
 
 class InternalActorDeletionRequest(BaseModel):
     actor_id: str = Field(..., min_length=36, max_length=36)
+
+
+class InternalActorNicknameRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+    nickname: str = Field(..., min_length=1, max_length=48)
 
 
 @api_router.post(
@@ -3095,6 +3189,34 @@ async def internal_account_deletion(
     return JSONResponse(status_code=202, content={"status": "accepted"})
 
 
+@api_router.post(
+    "/internal/account-nicknames",
+    status_code=202,
+    include_in_schema=False,
+)
+async def internal_account_nickname(
+    payload: InternalActorNicknameRequest,
+    request: Request,
+):
+    """Idempotently replace an actor's denormalized historical nickname."""
+    if not internal_service_authorized(
+        request.headers.get("x-internal-service-token", "")
+    ):
+        raise HTTPException(status_code=401, detail="auth_required")
+    try:
+        actor_id = str(uuid.UUID(payload.actor_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_request") from None
+    updated = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_update_actor_nickname(actor_id, payload.nickname),
+    )
+    return JSONResponse(
+        status_code=202,
+        content={"status": "accepted", "updated": updated},
+    )
+
+
 @api_router.post("/community/scan", dependencies=[Depends(community_bearer)])
 async def community_scan_upload(
     request: Request,
@@ -3116,7 +3238,9 @@ async def community_scan_upload(
     Location is supplied by the opted-in client from its coarse location
     (``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no
     server-side IP geolocation.
-    The image is optional.
+    The image is required and must be byte-for-byte identical to the upload
+    accepted by ``/api/analyze`` when ``scan_id`` was issued. The server derives
+    the stored thumbnail from that already-sanitized upload.
     """
 
     principal = await _require_account(request)
@@ -3173,34 +3297,24 @@ async def community_scan_upload(
         if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail="Community thumbnail must be JPEG / PNG / WebP",
+                detail="Community image must be JPEG / PNG / WebP / BMP",
             )
         try:
             image_bytes = await _read_upload(image)
         except HTTPException:
             raise
         except Exception:  # noqa: BLE001
-            logger.info("Community thumbnail read failed")
+            logger.info("Community image read failed")
             image_bytes = None
         # Re-validate the actual bytes — Content-Type is attacker-controlled
-        # (and optional), but the magic bytes don't lie. Anything that isn't
-        # a real JPEG/PNG/WebP is refused so arbitrary bytes can never be
-        # stored and re-served from /api/community/thumb/.
+        # (and optional), but the magic bytes don't lie. The exact bytes are
+        # also matched against the digest stored with the analysis capability.
         if image_bytes:
-            head = image_bytes[:16]
-            if not (
-                head.startswith(b"\xff\xd8\xff")
-                or head.startswith(b"\x89PNG\r\n\x1a\n")
-                or _is_webp(head, image_bytes)
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Community thumbnail must be JPEG / PNG / WebP",
-                )
+            _validate_image_bytes(image_bytes)
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: community_record_scan(
+            lambda: community_record_analysis_scan(
                 scan_id=payload.scan_id,
                 account_actor_id=principal.actor_id,
                 country=geo["country"] or "",
@@ -3208,15 +3322,30 @@ async def community_scan_upload(
                 city=geo["city"],
                 lat=geo["lat"],
                 lon=geo["lon"],
-                disease=payload.disease,
-                confidence=payload.confidence,
-                species=payload.species,
+                client_disease=payload.disease,
+                client_confidence=payload.confidence,
+                client_species=payload.species,
                 nickname=principal.nickname,
-                species_score=payload.species_score,
+                client_species_score=payload.species_score,
                 image_bytes=image_bytes,
                 locale=payload.locale,
             ),
         )
+    except AnalysisTokenUnknownError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — re-scan before sharing to the community.",
+        ) from exc
+    except AnalysisImageMismatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Community image does not match the analyzed image.",
+        ) from exc
+    except AnalysisTokenConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This scan_id has already been published.",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.error("Community scan write failed")
         raise HTTPException(status_code=500, detail="Failed to record scan") from exc
@@ -3366,13 +3495,13 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     )
     if owner_actor is None:
         raise HTTPException(status_code=409, detail="legacy_scan_read_only")
-    # Public handles rotate every 30 days; a scan older than that goes
-    # read-only so stale photos can't keep collecting opinions.
+    # A scan older than 30 days goes read-only so stale photos cannot keep
+    # collecting opinions. Its per-scan public read handle remains stable.
     fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
     if not fresh:
         raise HTTPException(status_code=410, detail="Scan too old for new opinions")
     try:
-        await loop.run_in_executor(
+        _opinion_id, created = await loop.run_in_executor(
             None,
             lambda: community_record_opinion(
                 scan_id=sid,
@@ -3382,6 +3511,11 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
                 nickname=principal.nickname,
             ),
         )
+    except OpinionTargetUnavailableError as exc:
+        raise HTTPException(
+            status_code=410,
+            detail="Scan no longer accepts opinions",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.error("Community opinion write failed")
         raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
@@ -3394,6 +3528,8 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
 
     def _push_owner() -> None:
         try:
+            if not created:
+                return
             if not community_wants_opinion(sid):
                 return
             owner = owner_actor
@@ -3584,7 +3720,6 @@ async def community_scan_counts_endpoint(
 
 @api_router.get("/community/nearby")
 async def community_scan_nearby(
-    request: Request,
     country: str | None = None,
     region: str | None = None,
     lat: float | None = None,
@@ -3604,7 +3739,6 @@ async def community_scan_nearby(
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
     """
-    principal = await _optional_account(request)
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -3629,7 +3763,7 @@ async def community_scan_nearby(
         disease=(disease or None),
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
-        exclude_account_actor_id=principal.actor_id if principal else None,
+        exclude_account_actor_id=None,
         scope=scope_norm,
     )
     # Country-level overview for the chip row (the coords feed itself is
@@ -3639,11 +3773,12 @@ async def community_scan_nearby(
     summary = community_region_summary(
         country_norm or "",
         None,
-        exclude_account_actor_id=principal.actor_id if principal else None,
+        exclude_account_actor_id=None,
     )
     # Annotate each cell with how many second opinions it has so the carousel
-    # can show a badge, then swap the publication capability for its rotating
-    # public token. Feedback uses a separate receipt.
+    # can show a badge, then swap the publication capability for its stable,
+    # per-scan public token. The author pseudonym rotates independently;
+    # feedback uses a separate receipt.
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
     counts = community_opinion_counts(scan_ids)
     views = community_view_counts(scan_ids)
@@ -3695,7 +3830,6 @@ def _valid_bbox(
 
 @api_router.get("/community/map")
 async def community_map(
-    request: Request,
     min_lat: float, min_lon: float, max_lat: float, max_lon: float,
     disease: str | None = None,
     days: int = 30,
@@ -3707,7 +3841,6 @@ async def community_map(
     real scan_id), so the app can pin a marker and open the existing opinion
     sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
     signals an over-full bbox."""
-    principal = await _optional_account(request)
     box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
@@ -3719,7 +3852,7 @@ async def community_map(
             disease=(disease or None),
             days=days,
             limit=max(1, min(int(limit), 500)),
-            exclude_account_actor_id=principal.actor_id if principal else None,
+            exclude_account_actor_id=None,
         ),
     )
     rows = data["items"]
@@ -3760,13 +3893,11 @@ async def community_heatmap(
 
 @api_router.get("/community/by-species")
 async def community_by_species(
-    request: Request,
     species: str | None = None,
     limit: int = 12,
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
-    principal = await _optional_account(request)
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
@@ -3775,7 +3906,7 @@ async def community_by_species(
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
-            exclude_account_actor_id=principal.actor_id if principal else None,
+            exclude_account_actor_id=None,
         ),
     )
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
@@ -3992,8 +4123,25 @@ async def plant_photo(request: Request, u: str | None = None,
     # and serve that; fall back to the original bytes if transcoding fails.
     # Backward compatible: Glide decodes WebP transparently on any app version.
     webp = await loop.run_in_executor(
-        None, lambda: _webp_variant(path, _PLANT_PHOTO_MAX_SIDE, _PLANT_PHOTO_QUALITY),
+        None,
+        lambda: _webp_variant(
+            path,
+            _PLANT_PHOTO_MAX_SIDE,
+            _PLANT_PHOTO_QUALITY,
+            plant_photo_prune_cache,
+        ),
     )
+    if webp is None:
+        # A transcode failure normally falls back to the original. Dimension
+        # policy failures are different: returning that compressed source
+        # would pass a decompression bomb or extreme allocation risk through
+        # to the mobile decoder, defeating the pre-load guard above.
+        dimensions_allowed = await loop.run_in_executor(
+            None,
+            lambda: _webp_source_dimensions_allowed(path),
+        )
+        if dimensions_allowed is False:
+            raise HTTPException(status_code=404, detail="Photo unavailable")
     serve, media = (
         (webp, "image/webp") if webp is not None
         else (path, plant_photo_media_type(path))
@@ -4016,15 +4164,43 @@ async def plant_photo(request: Request, u: str | None = None,
 # compatible with already-shipped clients.
 _WEBP_DIR_NAME = ".webp"
 _webp_lock = threading.Lock()
+_WEBP_MAX_SOURCE_SIDE = 16_384
+_WEBP_MAX_SOURCE_PIXELS = 20_000_000
 
 
-def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
+def _webp_source_dimensions_allowed(src: Path) -> bool | None:
+    """Return False only for a source that violates the decode-size policy.
+
+    ``None`` preserves the historical raw-file fallback for unrelated Pillow
+    failures. Oversized sources, including Pillow's decompression-bomb error,
+    must never be served as that fallback.
+    """
+    try:
+        with Image.open(src) as opened:
+            width, height = opened.size
+    except Image.DecompressionBombError:
+        return False
+    except Exception:  # noqa: BLE001 - caller may safely use the old fallback
+        return None
+    return (
+        width > 0
+        and height > 0
+        and max(width, height) <= _WEBP_MAX_SOURCE_SIDE
+        and width * height <= _WEBP_MAX_SOURCE_PIXELS
+    )
+
+
+def _webp_variant(
+    src: Path,
+    max_side: int,
+    quality: int,
+    after_write=None,
+) -> Path | None:
     """Return a cached downscaled-WebP variant of ``src`` (``max_side`` px on
     the longest edge, ``quality`` 0–100), generating it if stale.
 
-    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the caller
-    falls back to serving the original — the optimisation must never take the
-    endpoint down.
+    Any failure (PIL hiccup, unwritable dir) returns ``None``. Callers may fall
+    back to the original after enforcing their own source-safety policy.
     """
     try:
         out_dir = src.parent / _WEBP_DIR_NAME
@@ -4043,10 +4219,17 @@ def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
             if out.is_file():
                 return out
             out_dir.mkdir(parents=True, exist_ok=True)
-            img = Image.open(src)
-            img.load()
-            img = img.convert("RGB")
-            w, h = img.size
+            with Image.open(src) as opened:
+                w, h = opened.size
+                if (
+                    w <= 0
+                    or h <= 0
+                    or max(w, h) > _WEBP_MAX_SOURCE_SIDE
+                    or w * h > _WEBP_MAX_SOURCE_PIXELS
+                ):
+                    raise ValueError("image dimensions exceed WebP source limit")
+                opened.load()
+                img = opened.convert("RGB")
             scale = max_side / float(max(w, h))
             if scale < 1.0:
                 img = img.resize(
@@ -4056,6 +4239,8 @@ def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
             tmp = out.with_suffix(".webp.tmp")
             img.save(tmp, format="WEBP", quality=quality, method=4)
             tmp.replace(out)
+            if after_write is not None:
+                after_write()
         return out
     except Exception:  # noqa: BLE001 — fall back to the original
         logger.warning("WebP transcode failed")

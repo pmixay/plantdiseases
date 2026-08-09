@@ -48,6 +48,16 @@
       "CancelSignupRequest": {
         "additionalProperties": false,
         "properties": {
+          "completion_id": {
+            "format": "uuid",
+            "title": "Completion Id",
+            "type": "string"
+          },
+          "installation_id": {
+            "format": "uuid",
+            "title": "Installation Id",
+            "type": "string"
+          },
           "pending_signup_token": {
             "format": "password",
             "maxLength": 256,
@@ -58,7 +68,9 @@
           }
         },
         "required": [
-          "pending_signup_token"
+          "pending_signup_token",
+          "completion_id",
+          "installation_id"
         ],
         "title": "CancelSignupRequest",
         "type": "object"
@@ -66,6 +78,11 @@
       "CompleteSignupRequest": {
         "additionalProperties": false,
         "properties": {
+          "completion_id": {
+            "format": "uuid",
+            "title": "Completion Id",
+            "type": "string"
+          },
           "installation_id": {
             "format": "uuid",
             "title": "Installation Id",
@@ -88,10 +105,41 @@
         },
         "required": [
           "pending_signup_token",
+          "completion_id",
           "nickname",
           "installation_id"
         ],
         "title": "CompleteSignupRequest",
+        "type": "object"
+      },
+      "ConfirmSignupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_id": {
+            "format": "uuid",
+            "title": "Completion Id",
+            "type": "string"
+          },
+          "installation_id": {
+            "format": "uuid",
+            "title": "Installation Id",
+            "type": "string"
+          },
+          "pending_signup_token": {
+            "format": "password",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Pending Signup Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "pending_signup_token",
+          "completion_id",
+          "installation_id"
+        ],
+        "title": "ConfirmSignupRequest",
         "type": "object"
       },
       "DeletionRequest": {
@@ -311,6 +359,24 @@
           "refreshed_at"
         ],
         "title": "LinkedProvider",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "format": "password",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "LogoutRequest",
         "type": "object"
       },
       "MeResponse": {
@@ -628,10 +694,16 @@
             "title": "Refresh Token",
             "type": "string",
             "writeOnly": true
+          },
+          "rotation_id": {
+            "format": "uuid",
+            "title": "Rotation Id",
+            "type": "string"
           }
         },
         "required": [
-          "refresh_token"
+          "refresh_token",
+          "rotation_id"
         ],
         "title": "RefreshRequest",
         "type": "object"
@@ -706,6 +778,51 @@
           "current"
         ],
         "title": "SessionView",
+        "type": "object"
+      },
+      "SignupCompletionResponse": {
+        "additionalProperties": false,
+        "description": "Provisional credentials which are unusable until explicit confirmation.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/TokenProfile"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionView"
+          },
+          "status": {
+            "const": "confirmation_required",
+            "title": "Status",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "access_token",
+          "refresh_token",
+          "token_type",
+          "expires_in",
+          "profile",
+          "session"
+        ],
+        "title": "SignupCompletionResponse",
         "type": "object"
       },
       "TokenProfile": {
@@ -846,6 +963,16 @@
     "/v1/auth/logout": {
       "post": {
         "operationId": "logout_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -931,11 +1058,6 @@
             "description": "Provider or service unavailable"
           }
         },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
         "summary": "Logout",
         "tags": [
           "authentication"
@@ -1508,7 +1630,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthenticatedResponse"
+                  "$ref": "#/components/schemas/SignupCompletionResponse"
                 }
               }
             },
@@ -1596,6 +1718,110 @@
           }
         },
         "summary": "Complete Signup",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/v1/auth/signup/confirm": {
+      "post": {
+        "operationId": "confirm_signup_v1_auth_signup_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmSignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "summary": "Confirm Signup",
         "tags": [
           "authentication"
         ]

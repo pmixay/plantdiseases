@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.repository
 
+import android.util.AtomicFile
 import com.google.gson.Gson
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthenticationRequiredException
@@ -54,6 +55,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.security.MessageDigest
 
 class ScanRepository(
     private val scanDao: ScanDao,
@@ -66,7 +68,15 @@ class ScanRepository(
     private val feedbackReceiptStore: FeedbackReceiptStore = NoOpFeedbackReceiptStore,
     private val authRepository: AuthRepository? = null,
 ) {
+    companion object {
+        internal const val RETAINED_ANALYSIS_IMAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
+        internal const val MAX_PENDING_ANALYSIS_IMAGES = 2
+    }
+
     private val gson = Gson()
+    private val retainedAnalysisImageLock = Any()
+    private val pendingAnalysisImages = LinkedHashMap<PendingAnalysisImageKey, SanitizedImage>()
+    private val scanArtifactMutex = Mutex()
 
     // Serialises Aqua model installs so two concurrent syncAquaModel calls
     // (e.g. rapid config-change recreations each firing one) can't race the
@@ -164,7 +174,16 @@ class ScanRepository(
                     )
                 }
                 when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<AnalysisResponse>())
+                    in 200..299 -> {
+                        val analysis = response.body<AnalysisResponse>()
+                        analysis.scanId?.takeIf { it.isNotBlank() }?.let { scanId ->
+                            // Hold only a small in-memory handoff until saveScan creates
+                            // the owning Room row. A process death then fails publication
+                            // closed instead of leaving an unowned private disk sidecar.
+                            rememberPendingAnalysisImage(imageFile, scanId, image)
+                        }
+                        Result.success(analysis)
+                    }
                     // 403 = a temporary abuse-control cooldown (the server bans
                     // an IP that briefly burst past the rate limit). Treat it
                     // like 429: show the "server busy, retry shortly" card
@@ -742,7 +761,21 @@ class ScanRepository(
                 toxicitySource = result.toxicitySource,
                 severity = result.severity ?: "low",
             )
-            val rowId = scanDao.insert(entity)
+            val rowId = scanArtifactMutex.withLock {
+                val inserted = try {
+                    scanDao.insert(entity)
+                } catch (error: Throwable) {
+                    discardPendingAnalysisImage(File(imagePath), clientScanId)
+                    throw error
+                }
+                takePendingAnalysisImage(File(imagePath), clientScanId)?.let { image ->
+                    // The exact bytes reach disk only after Room established their
+                    // owner. AtomicFile makes a crash either retain the old complete
+                    // object or no publishable object, never a partial JPEG.
+                    runCatching { retainAnalysisImage(File(imagePath), clientScanId, image) }
+                }
+                inserted
+            }
             result.feedbackReceipt?.takeIf { it.isNotBlank() }?.let { receipt ->
                 feedbackReceiptStore.put(rowId.toString(), receipt)
             }
@@ -841,8 +874,16 @@ class ScanRepository(
 
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
-        feedbackReceiptStore.remove(id.toString())
-        scanDao.deleteById(id)
+        scanArtifactMutex.withLock {
+            val scan = scanDao.getScanById(id)
+            if (scan != null) {
+                check(deleteRetainedAnalysisImage(scan) != ArtifactDeletion.FAILED) {
+                    "Unable to delete retained analysis image"
+                }
+            }
+            feedbackReceiptStore.remove(id.toString())
+            scanDao.deleteById(id)
+        }
     }
 
     // ─── AI Plant Doctor chat persistence (scan-keyed sessions) ──────
@@ -968,8 +1009,15 @@ class ScanRepository(
 
     /** Clear all scan history */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
-        feedbackReceiptStore.clear()
-        scanDao.deleteAll()
+        scanArtifactMutex.withLock {
+            clearPendingAnalysisImages()
+            val scans = scanDao.getAllScans()
+            check(scans.none { deleteRetainedAnalysisImage(it) == ArtifactDeletion.FAILED }) {
+                "Unable to delete retained analysis images"
+            }
+            feedbackReceiptStore.clear()
+            scanDao.deleteAll()
+        }
     }
 
     /**
@@ -983,14 +1031,143 @@ class ScanRepository(
     suspend fun purgeNotAPlantScans(
         olderThanMs: Long = 48L * 60 * 60 * 1000,
     ): Int = withContext(Dispatchers.IO) {
-        val cutoff = System.currentTimeMillis() - olderThanMs
-        val stale = scanDao.getAllScans()
-            .filter { it.timestamp < cutoff && isNotAPlantScan(it) }
-        for (s in stale) {
-            feedbackReceiptStore.remove(s.id.toString())
-            scanDao.deleteById(s.id)
+        scanArtifactMutex.withLock {
+            val cutoff = System.currentTimeMillis() - olderThanMs
+            val stale = scanDao.getAllScans()
+                .filter { it.timestamp < cutoff && isNotAPlantScan(it) }
+            var removed = 0
+            for (s in stale) {
+                if (deleteRetainedAnalysisImage(s) == ArtifactDeletion.FAILED) continue
+                feedbackReceiptStore.remove(s.id.toString())
+                scanDao.deleteById(s.id)
+                removed++
+            }
+            removed
         }
-        stale.size
+    }
+
+    /**
+     * Delete exact analysis bytes once the server's community-publication
+     * capability has expired. The scan row and ordinary history image remain;
+     * only the additional SHA-bound upload sidecar is removed.
+     */
+    suspend fun purgeExpiredRetainedAnalysisImages(
+        nowMs: Long = System.currentTimeMillis(),
+        olderThanMs: Long = RETAINED_ANALYSIS_IMAGE_TTL_MS,
+    ): Int = withContext(Dispatchers.IO) {
+        scanArtifactMutex.withLock {
+            val cutoff = nowMs - olderThanMs
+            scanDao.getAllScans()
+                .asSequence()
+                .filter { it.timestamp <= cutoff }
+                .count { deleteRetainedAnalysisImage(it) == ArtifactDeletion.DELETED }
+        }
+    }
+
+    /**
+     * Retrieve the byte-for-byte /api/analyze upload retained for this server
+     * scan. Returning null is deliberate: old rows and interrupted disk writes
+     * cannot safely publish an independently encoded substitute because the
+     * server binds publication to the original image digest.
+     */
+    fun retainedAnalysisImage(scan: ScanEntity): SanitizedImage? =
+        synchronized(retainedAnalysisImageLock) {
+            val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
+                ?: return@synchronized null
+            val file = retainedAnalysisImageFile(File(scan.imagePath), scanId)
+                ?: return@synchronized null
+            val length = file.length()
+            if (!file.isFile || length !in 1..DefaultUploadImageSanitizer.MAX_OUTPUT_BYTES.toLong()) {
+                return@synchronized null
+            }
+            runCatching {
+                SanitizedImage(
+                    bytes = file.readBytes(),
+                    width = scan.detectionImageWidth.coerceAtLeast(1),
+                    height = scan.detectionImageHeight.coerceAtLeast(1),
+                )
+            }.getOrNull()
+        }
+
+    private fun retainAnalysisImage(
+        source: File,
+        scanId: String,
+        image: SanitizedImage,
+    ) = synchronized(retainedAnalysisImageLock) {
+        val file = retainedAnalysisImageFile(source, scanId)
+            ?: error("Analysis image has no parent directory")
+        val atomicFile = AtomicFile(file)
+        val output = atomicFile.startWrite()
+        try {
+            output.write(image.bytes)
+            atomicFile.finishWrite(output)
+        } catch (error: Throwable) {
+            atomicFile.failWrite(output)
+            throw error
+        }
+    }
+
+    private fun rememberPendingAnalysisImage(
+        source: File,
+        scanId: String,
+        image: SanitizedImage,
+    ) = synchronized(retainedAnalysisImageLock) {
+        val key = PendingAnalysisImageKey(source.absolutePath, scanId)
+        pendingAnalysisImages[key] = image.copy(bytes = image.bytes.copyOf())
+        while (pendingAnalysisImages.size > MAX_PENDING_ANALYSIS_IMAGES) {
+            pendingAnalysisImages.remove(pendingAnalysisImages.keys.first())
+        }
+    }
+
+    private fun takePendingAnalysisImage(source: File, scanId: String): SanitizedImage? =
+        synchronized(retainedAnalysisImageLock) {
+            pendingAnalysisImages.remove(PendingAnalysisImageKey(source.absolutePath, scanId))
+        }
+
+    private fun discardPendingAnalysisImage(source: File, scanId: String) {
+        synchronized(retainedAnalysisImageLock) {
+            pendingAnalysisImages.remove(PendingAnalysisImageKey(source.absolutePath, scanId))
+        }
+    }
+
+    private fun clearPendingAnalysisImages() {
+        synchronized(retainedAnalysisImageLock) { pendingAnalysisImages.clear() }
+    }
+
+    private fun deleteRetainedAnalysisImage(scan: ScanEntity): ArtifactDeletion {
+        if (scan.clientScanId.isBlank()) return ArtifactDeletion.ABSENT
+        return synchronized(retainedAnalysisImageLock) {
+            val file = retainedAnalysisImageFile(File(scan.imagePath), scan.clientScanId)
+                ?: return@synchronized ArtifactDeletion.ABSENT
+            val atomicArtifacts = listOf(file, File("${file.path}.new"), File("${file.path}.bak"))
+            val existed = atomicArtifacts.any(File::exists)
+            if (!existed) return@synchronized ArtifactDeletion.ABSENT
+            runCatching { AtomicFile(file).delete() }
+            if (atomicArtifacts.any(File::exists)) {
+                ArtifactDeletion.FAILED
+            } else {
+                ArtifactDeletion.DELETED
+            }
+        }
+    }
+
+    private fun retainedAnalysisImageFile(source: File, scanId: String): File? {
+        val parent = source.parentFile ?: return null
+        val key = MessageDigest.getInstance("SHA-256")
+            .digest(scanId.encodeToByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return File(parent, ".${source.name}.analysis-$key.jpg")
+    }
+
+    private data class PendingAnalysisImageKey(
+        val sourcePath: String,
+        val scanId: String,
+    )
+
+    private enum class ArtifactDeletion {
+        ABSENT,
+        DELETED,
+        FAILED,
     }
 
     data class ScanStats(
@@ -1047,9 +1224,9 @@ class ScanRepository(
      * (network, server, validation) is logged but never thrown — a
      * failed upload must not block the user's normal scan flow.
      *
-     * The caller decides whether to send a thumbnail; see
-     * [CommunityUploader.uploadIfEnabled] which handles the
-     * opt-out pref + thumbnail downscale before reaching this hop.
+     * The caller must send the retained /api/analyze image bytes; see
+     * [CommunityUploader.uploadIfEnabled]. The publication capability is
+     * SHA-bound, so a separately encoded thumbnail is never valid here.
      */
     suspend fun uploadCommunityScan(
         scanId: String,
@@ -1062,7 +1239,7 @@ class ScanRepository(
         species: String? = null,
         speciesScore: Float? = null,
         locale: String? = null,
-        thumbnail: SanitizedImage? = null,
+        analysisImage: SanitizedImage,
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
             authenticatedAppCall { token ->
@@ -1084,19 +1261,17 @@ class ScanRepository(
                                 species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
                                 speciesScore?.let { append("species_score", it.toString()) }
                                 locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
-                                thumbnail?.let { image ->
-                                    append(
-                                        "image",
-                                        image.bytes,
-                                        Headers.build {
-                                            append(HttpHeaders.ContentType, "image/jpeg")
-                                            append(
-                                                HttpHeaders.ContentDisposition,
-                                                "filename=\"${image.filename}\"",
-                                            )
-                                        },
-                                    )
-                                }
+                                append(
+                                    "image",
+                                    analysisImage.bytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${analysisImage.filename}\"",
+                                        )
+                                    },
+                                )
                             },
                         ),
                     )

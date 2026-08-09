@@ -118,6 +118,7 @@ internal data class ExchangeRequest(
 @Serializable
 internal data class CompleteSignupRequest(
     @SerialName("pending_signup_token") val pendingSignupToken: String,
+    @SerialName("completion_id") val completionId: String,
     val nickname: String,
     @SerialName("installation_id") val installationId: String,
 )
@@ -125,10 +126,25 @@ internal data class CompleteSignupRequest(
 @Serializable
 internal data class CancelSignupRequest(
     @SerialName("pending_signup_token") val pendingSignupToken: String,
+    @SerialName("completion_id") val completionId: String,
+    @SerialName("installation_id") val installationId: String,
 )
 
 @Serializable
-internal data class RefreshRequest(@SerialName("refresh_token") val refreshToken: String)
+internal data class ConfirmSignupRequest(
+    @SerialName("pending_signup_token") val pendingSignupToken: String,
+    @SerialName("completion_id") val completionId: String,
+    @SerialName("installation_id") val installationId: String,
+)
+
+@Serializable
+internal data class RefreshRequest(
+    @SerialName("refresh_token") val refreshToken: String,
+    @SerialName("rotation_id") val rotationId: String,
+)
+
+@Serializable
+internal data class LogoutRequest(@SerialName("refresh_token") val refreshToken: String)
 
 @Serializable
 internal data class ReauthRequest(

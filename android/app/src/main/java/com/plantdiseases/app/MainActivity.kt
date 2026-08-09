@@ -161,12 +161,29 @@ class MainActivity : AppCompatActivity() {
         // Application.onCreate, which would touch WorkManager too early), plus
         // an immediate catch-up check so a reply that arrived while the app was
         // closed notifies now instead of at the next periodic tick.
-        if (com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this)) {
-            (application as PlantDiseasesApp).apply {
-                scheduleOpinionChecks()
-                checkOpinionsNow()
+        val opinionAction = opinionWorkAction(
+            BuildConfig.ACCOUNT_UI_ENABLED,
+            com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this),
+        )
+        when (opinionAction) {
+            OpinionWorkAction.CANCEL -> {
+                // Recovery/account-disabled builds must remove work inherited
+                // from v19 before it can touch private account endpoints.
+                androidx.work.WorkManager.getInstance(this).apply {
+                    cancelUniqueWork("opinion_check")
+                    cancelUniqueWork("opinion_check_now")
+                }
             }
-            com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+
+            OpinionWorkAction.SCHEDULE -> {
+                (application as PlantDiseasesApp).apply {
+                    scheduleOpinionChecks()
+                    checkOpinionsNow()
+                }
+                com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+            }
+
+            OpinionWorkAction.NONE -> Unit
         }
         // Warm the guide/disease example photos into Glide's disk cache so they
         // render offline (they're server-hosted, not bundled). Independent of
@@ -429,6 +446,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        (application as PlantDiseasesApp).retryPendingAccountLogouts()
         // Check if there's a new scan result to show badge
         val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
         if (prefs.getBoolean("new_scan_result", false)) {

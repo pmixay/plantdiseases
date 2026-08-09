@@ -4,7 +4,16 @@
     <string name="account_title">Account</string>
     <string name="account_manage">Manage account</string>
     <string name="account_guest">Guest</string>
+    <string name="account_restoring">Restoring account…</string>
+    <string name="account_temporarily_unavailable">Account temporarily unavailable. Check your connection and try again later.</string>
+    <string name="account_retry">Retry account connection</string>
     <string name="account_guest_body">Sign in to publish community contributions, receive account push notifications, and manage sessions. Scans and your garden stay on this device.</string>
+    <string name="account_disclosure_title">Before you sign in</string>
+    <string name="account_disclosure_body">Signing in shares your provider identity, display name, and avatar with PlantDiseases. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked providers, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
+    <string name="account_disclosure_acknowledge">Acknowledge and continue</string>
+    <string name="account_disclosure_privacy">Privacy policy</string>
+    <string name="account_disclosure_save_failed">The acknowledgement could not be saved. Sign-in was not started.</string>
+    <string name="account_privacy_open_failed">The privacy policy could not be opened.</string>
     <string name="account_continue_yandex">Continue with Yandex ID</string>
     <string name="account_continue_vk">Continue with VK ID</string>
     <string name="account_finish_profile">Choose a nickname</string>
@@ -23,20 +32,30 @@
     <string name="account_link_yandex">Link Yandex ID</string>
     <string name="account_link_vk">Link VK ID</string>
     <string name="account_sessions">Active sessions</string>
+    <string name="account_device_android">Android device</string>
     <string name="account_current_session">%1$s (this session)</string>
+    <string name="account_session_details">Signed in %1$s\nLast active %2$s\nExpires after inactivity %3$s</string>
+    <string name="account_session_summary">%1$s\n%2$s</string>
+    <string name="account_session_time_unknown">Unknown</string>
     <string name="account_revoke_session">Revoke</string>
     <string name="account_logout">Log out</string>
     <string name="account_delete">Delete account</string>
     <string name="account_delete_warning">You will sign in again to confirm deletion. Sessions are revoked immediately and account data is queued for removal. Local scans, garden entries, and reminders remain on this device.</string>
     <string name="account_delete_confirm">Reauthenticate and delete</string>
+    <string name="account_choose_reauth_provider">Confirm with a linked sign-in method</string>
+    <string name="account_link_restart_required">Linking was interrupted. Start the link again to keep your account secure.</string>
     <string name="account_provider_unconfigured">This sign-in provider is not configured in this build.</string>
     <string name="account_synthetic_notice">Synthetic team test: these buttons use generated mock identities, never a real Yandex or VK account.</string>
     <string name="account_oauth_cancelled">Sign-in cancelled</string>
     <string name="account_error_nickname_taken">That nickname is already in use.</string>
+    <string name="account_error_nickname_invalid">Choose a different nickname and try again.</string>
     <string name="account_error_nickname_cooldown">The nickname can’t be changed again yet.</string>
     <string name="account_error_provider_unavailable">The sign-in provider is temporarily unavailable.</string>
     <string name="account_error_identity_linked">That sign-in identity already belongs to an account.</string>
     <string name="account_error_generic">The account request could not be completed.</string>
+    <string name="account_error_logout_not_durable">Signed out for now, but the app could not securely save or finish sign-out. Reopen the app while online and try again.</string>
+    <string name="account_error_retry_online">The account request is still pending. Check your connection and try again.</string>
+    <string name="account_signup_already_confirmed">Account creation had already completed. If the account is not shown, sign in again to manage or delete it.</string>
     <string name="feedback_expired">This feedback window has expired. Run a new scan to submit feedback.</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString —

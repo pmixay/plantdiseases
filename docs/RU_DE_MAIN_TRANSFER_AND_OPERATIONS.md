@@ -14,8 +14,8 @@ Testing and Android SDK setup are covered by
 |---|---|---|---|---|
 | Existing German main | Existing public app API during transition | Existing legacy application state | Existing behavior; no new real account store | `plantdiseases.service`, Uvicorn on `127.0.0.1:8000`, host nginx |
 | German account beta | Restricted `/plantdisease-test/` team staging | Dedicated disposable beta volumes | Real Yandex/VK, named test accounts only | Isolated branch Compose, loopback `18100/18101` |
-| Russian data plane | Final Android/API ingress and all user-derived storage | Account, community, media, training, telemetry, logs, push and backups | Real Yandex/VK | Reviewed production deployment derived from `compose.russia.template.yml` |
-| German ML worker | Private inference called only from Russia | None; models are read-only, request temp is tmpfs | mTLS service identity only | Reviewed worker derived from `compose.germany-worker.template.yml` |
+| Russian data plane | Final Android/API ingress and all user-derived storage | Account, community, media, training, telemetry, logs, polling state, and backups; push is disabled in 1.9 | Real Yandex/VK | Reviewed production deployment derived from `compose.russia-template.yml` |
+| German ML worker | Private inference called only from Russia | None; models are read-only, request temp is tmpfs | mTLS service identity only | Reviewed worker derived from `compose.germany-worker-template.yml` |
 
 The existing main service and German beta may remain online while Russian
 staging is prepared. After production cutover, Germany may keep only the
@@ -94,19 +94,28 @@ source filename, metadata, client address, and consent state must not cross.
 1. Replace every `.invalid` image, host, directory, and destination in
    `handoff/env.production.example` with protected operator configuration.
 2. Provision Russian PostgreSQL and persistent paths for account, community,
-   media, training, telemetry, logs, push, and encrypted backups.
-3. Create separate owner-readable secret directories for account, app, push,
-   backup, ingress, and mTLS material. Do not weaken permissions to share one
+   media, training, telemetry, logs, polling state, and encrypted backups.
+3. Create separate owner-readable secret directories for account, app, backup,
+   ingress, and mTLS material. Add a push-owned directory only after a durable
+   push worker is implemented and reviewed. Do not weaken permissions to share one
    file; copy the internal token into owner-specific files with identical
    bytes.
 4. Render the final Compose/configuration before starting. Run migrations as a
-   one-shot job, then require account readiness before app readiness.
+   one-shot job, require the exact reviewed head
+   `0006_signup_completion_idempotency` and its `signup_completions` table, then
+   run grant convergence over the same migrator-owned connection. It must
+   reject unexpected tables/sequences, grant runtime DML only to the 13
+   application tables, and leave `alembic_version` SELECT-only before account
+   readiness and app readiness.
 5. Confirm internal services and PostgreSQL have no public host port. Expose
    only Russian TLS ingress to Android.
 6. Test the Russian reconstruction of the worker request with malicious extra
    headers/fields and prove none reaches a fake German worker.
 7. Complete encrypted backup and restore into a fresh target before accepting
-   any real account.
+   any real account. The restore evidence must match the exact revision, exact
+   13-table application inventory plus `alembic_version`, row counts (including
+   `signup_completions`), runtime denial of migration-metadata UPDATE/DELETE,
+   migrator ownership/write, and backup-role probes.
 
 ### Phase 3 — Real-provider Russian staging
 
@@ -186,8 +195,10 @@ test and rollback plan.
 For a backward-compatible release:
 
 1. deploy a German worker that accepts both old and new request contracts;
-2. deploy Russian database expand-only migration;
-3. deploy Russian account API, then Russian app/push services;
+2. deploy the Russian database expand-only migration and its mandatory
+   migrator-owned privilege convergence;
+3. deploy the Russian account API, then the Russian app and polling services;
+   deploy no push service until its durable worker has been implemented and reviewed;
 4. run server and real-beta smoke tests;
 5. release Android last;
 6. remove old fields/schema only in a later release after old clients and the
@@ -203,8 +214,16 @@ copy and require explicit approval for any stateful rollback.
 - **Ed25519 account signing:** publish old and new public keys together, issue
   with the new key, wait through token/rollback overlap, then retire the old
   key.
-- **Account encryption key:** use an explicit re-encryption plan for stored push
-  tokens; never simply replace the file.
+- **Account encryption/refresh-derivation key:** this is not push-only. Even in
+  polling-only 1.9 it purpose-separates `ACCOUNT_ENCRYPTION_KEY_FILE` to derive
+  deterministic refresh successors for lost-response retries. Those retries
+  remain eligible for seven days. The current runtime has no old/new key ring,
+  so replacement during that window cannot reproduce the stored successor; the
+  retry is treated as reuse and its session is revoked. Either implement and
+  test key overlap first, or schedule and communicate mandatory session
+  revocation and provider reauthentication. Future push-token ciphertext and
+  fingerprints must be migrated under the same reviewed plan; never simply
+  replace the file.
 - **Internal service token:** rotate account and app owner-specific copies
   atomically.
 - **RU/DE mTLS:** overlap CA/cert trust, verify both paths, switch, then revoke
@@ -260,5 +279,5 @@ rollback without access to the implementer's workstation.
 - [../deploy/account-beta-test/ROLLBACK.md](../deploy/account-beta-test/ROLLBACK.md)
 - `deploy/account-beta-test/handoff/ru-de-service-manifest.yml`
 - `deploy/account-beta-test/handoff/ml-worker.openapi.json`
-- `deploy/account-beta-test/handoff/compose.russia.template.yml`
-- `deploy/account-beta-test/handoff/compose.germany-worker.template.yml`
+- `deploy/account-beta-test/handoff/compose.russia-template.yml`
+- `deploy/account-beta-test/handoff/compose.germany-worker-template.yml`

@@ -23,6 +23,26 @@ def mapenv(tmp_path, monkeypatch):
     importlib.reload(comm)
     import main as server_main
     server_main.community_record_scan = comm.record_scan
+
+    def legacy_analysis_write(**kwargs):
+        return comm.record_scan(
+            scan_id=kwargs["scan_id"],
+            account_actor_id=kwargs["account_actor_id"],
+            country=kwargs["country"],
+            region=kwargs.get("region", ""),
+            city=kwargs.get("city"),
+            lat=kwargs.get("lat"),
+            lon=kwargs.get("lon"),
+            disease=kwargs.get("client_disease") or "healthy",
+            confidence=kwargs.get("client_confidence"),
+            species=kwargs.get("client_species"),
+            species_score=kwargs.get("client_species_score"),
+            image_bytes=kwargs.get("image_bytes"),
+            locale=kwargs.get("locale"),
+            nickname=kwargs.get("nickname"),
+        )
+
+    server_main.community_record_analysis_scan = legacy_analysis_write
     server_main.community_map_scans = comm.map_scans
     server_main.community_density_grid = comm.density_grid
     server_main.community_opinion_counts = comm.opinion_counts

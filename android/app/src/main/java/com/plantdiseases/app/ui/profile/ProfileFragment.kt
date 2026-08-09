@@ -73,7 +73,11 @@ class ProfileFragment : Fragment() {
                     val auth = com.plantdiseases.app.di.appEntryPoint(requireContext()).authRepository()
                     auth.state.collect { state ->
                         binding.accountStatus.text = when (state) {
+                            com.plantdiseases.app.auth.AuthState.Restoring ->
+                                getString(R.string.account_restoring)
                             com.plantdiseases.app.auth.AuthState.Guest -> getString(R.string.account_guest)
+                            is com.plantdiseases.app.auth.AuthState.Unavailable ->
+                                getString(R.string.account_temporarily_unavailable)
                             is com.plantdiseases.app.auth.AuthState.ProfileRequired ->
                                 getString(R.string.account_finish_profile)
                             is com.plantdiseases.app.auth.AuthState.Authenticated -> state.profile.nickname

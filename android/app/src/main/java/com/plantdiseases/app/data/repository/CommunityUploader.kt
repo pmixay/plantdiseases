@@ -10,11 +10,9 @@ import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.SanitizedImage
 import com.plantdiseases.app.util.UploadImageSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Glue between a freshly-saved [ScanEntity] and the server's community
@@ -23,9 +21,9 @@ import java.io.File
  * Responsibilities, in order:
  *   1. Confirm uploads are enabled (opt-in, default OFF — the user
  *      enables community in-context; see [CommunityPrefs]).
- *   2. Generate a metadata-free 512px JPEG thumbnail in memory so the upload
- *      stays under the server's COMMUNITY_MAX_THUMB_BYTES ceiling.
- *   3. POST the row + thumb via [ScanRepository.uploadCommunityScan].
+ *   2. Load the exact metadata-free JPEG bytes submitted to /api/analyze.
+ *      Publication is SHA-bound, so a second JPEG encode is invalid.
+ *   3. POST the row + retained image via [ScanRepository.uploadCommunityScan].
  *      Location is client-supplied (coarse country/city + rounded coords);
  *      there is no server-side IP geolocation. Only scans with a
  *      server-issued scan_id are shared — on-device Aqua scans stay private.
@@ -37,7 +35,11 @@ class CommunityUploader(
     private val context: Context,
     private val scanRepository: ScanRepository,
     private val authRepository: AuthRepository,
-    private val imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
+    // Source-compatible until the independently owned DI module is updated.
+    // Never call this here: a second encode cannot satisfy the server's
+    // byte-for-byte /api/analyze publication binding.
+    @Suppress("UNUSED_PARAMETER")
+    imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
 ) {
     suspend fun uploadIfEnabled(
         scan: ScanEntity,
@@ -67,11 +69,15 @@ class CommunityUploader(
         if (disease in HIDDEN_COMMUNITY_DISEASES) {
             return@withContext UploadOutcome.HiddenDisease
         }
-        val thumb = makeThumbnail(scan)
         val species = analysis.species?.best?.scientificName
         val score = analysis.species?.best?.score?.takeIf { it > 0f }
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
+        if (analysis.scanId != scanId) {
+            return@withContext UploadOutcome.MissingScanId
+        }
+        val analysisImage = scanRepository.retainedAnalysisImage(scan)
+            ?: return@withContext UploadOutcome.MissingAnalysisImage
         // Opt-in is confirmed above, so reading the coarse location here is the
         // "check user location on every scan" step — attaches where the scan
         // was taken so it can be grouped by the 30 km nearby radius.
@@ -88,7 +94,7 @@ class CommunityUploader(
             species = species,
             speciesScore = score,
             locale = locale,
-            thumbnail = thumb,
+            analysisImage = analysisImage,
         )
         result.fold(
             onSuccess = { UploadOutcome.Uploaded },
@@ -134,7 +140,8 @@ class CommunityUploader(
             return@withContext UploadOutcome.HiddenDisease
         }
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
-        val thumb = makeThumbnail(scan)
+        val analysisImage = scanRepository.retainedAnalysisImage(scan)
+            ?: return@withContext UploadOutcome.MissingAnalysisImage
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
         val result = scanRepository.uploadCommunityScan(
@@ -148,7 +155,7 @@ class CommunityUploader(
             species = scan.speciesScientific,
             speciesScore = scan.speciesScore,
             locale = locale,
-            thumbnail = thumb,
+            analysisImage = analysisImage,
         )
         result.fold(
             onSuccess = { UploadOutcome.Uploaded },
@@ -165,6 +172,7 @@ class CommunityUploader(
         Uploaded,
         OptedOut,
         MissingScanId,
+        MissingAnalysisImage,
         Failed,
         HiddenDisease,
         AuthRequired,
@@ -202,18 +210,8 @@ class CommunityUploader(
             .takeIf { it.isNotBlank() }
     }
 
-    private fun makeThumbnail(scan: ScanEntity): SanitizedImage? {
-        val src = File(scan.imagePath)
-        if (!src.exists()) return null
-        return runCatching {
-            imageSanitizer.sanitize(src, THUMB_LONG_EDGE, THUMB_QUALITY)
-        }.getOrNull()
-    }
-
     companion object {
         private const val TAG = "CommunityUploader"
-        private const val THUMB_LONG_EDGE = 512
-        private const val THUMB_QUALITY = 78
 
         // Mirrors the server's ``_HIDDEN_COMMUNITY_DISEASES`` set —
         // diagnoses we never surface in the community feed and so

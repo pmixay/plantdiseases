@@ -1,7 +1,9 @@
 package com.plantdiseases.app.ui.account
 
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
@@ -15,31 +17,40 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.auth.InstallationIdProvider
+import com.plantdiseases.app.auth.LogoutNotDurableException
+import com.plantdiseases.app.auth.SignupAlreadyConfirmedException
 import com.plantdiseases.app.auth.SyntheticProviderToken
 import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.account.AccountProfile
 import com.plantdiseases.app.data.account.AccountSession
 import com.plantdiseases.app.data.account.AuthProvider
 import com.plantdiseases.app.databinding.ActivityAccountBinding
+import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.vk.id.AccessToken
 import com.vk.id.VKID
 import com.vk.id.VKIDAuthFail
+import com.vk.id.auth.Prompt
 import com.vk.id.auth.VKIDAuthCallback
 import com.vk.id.auth.VKIDAuthParams
 import com.yandex.authsdk.YandexAuthLoginOptions
 import com.yandex.authsdk.YandexAuthOptions
 import com.yandex.authsdk.YandexAuthResult
 import com.yandex.authsdk.YandexAuthSdk
+import java.io.IOException
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.time.Instant
+import java.util.Date
 import javax.inject.Inject
 
 /** PlantDiseases 1.9 identity and profile surface. */
@@ -50,6 +61,9 @@ class AccountActivity : AppCompatActivity() {
 
     @Inject
     lateinit var installationId: InstallationIdProvider
+
+    @Inject
+    lateinit var accountDisclosurePrefs: AccountDisclosurePrefs
 
     private lateinit var binding: ActivityAccountBinding
     private var yandexSdk: YandexAuthSdk? = null
@@ -91,13 +105,23 @@ class AccountActivity : AppCompatActivity() {
             finish()
             return
         }
-        oauthAction = savedInstanceState?.getString(STATE_OAUTH_ACTION)
+        val restoredAction = savedInstanceState?.getString(STATE_OAUTH_ACTION)
             ?.let { stored -> OAuthAction.entries.firstOrNull { it.name == stored } }
             ?: OAuthAction.SIGN_IN
-        linkTarget = savedInstanceState?.getString(STATE_LINK_TARGET)
-            ?.let { stored -> AuthProvider.entries.firstOrNull { it.name == stored } }
+        val interruptedTargetExchange = restoredAction == OAuthAction.LINK_TARGET ||
+            restoredAction == OAuthAction.DISCARD_LINK_RESULT
+        oauthAction = if (interruptedTargetExchange) OAuthAction.DISCARD_LINK_RESULT else restoredAction
+        linkTarget = if (!interruptedTargetExchange && restoredAction == OAuthAction.REAUTH_LINK) {
+            savedInstanceState?.getString(STATE_LINK_TARGET)
+                ?.let { stored -> AuthProvider.entries.firstOrNull { it.name == stored } }
+        } else {
+            null
+        }
         binding = ActivityAccountBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        if (interruptedTargetExchange) {
+            Toast.makeText(this, R.string.account_link_restart_required, Toast.LENGTH_LONG).show()
+        }
         binding.tvSyntheticNotice.isVisible = BuildConfig.SYNTHETIC_AUTH_ENABLED
         binding.toolbar.setNavigationOnClickListener { handleBack() }
         onBackPressedDispatcher.addCallback(
@@ -107,8 +131,8 @@ class AccountActivity : AppCompatActivity() {
             },
         )
 
-        binding.btnYandex.setOnClickListener { launchOAuth(AuthProvider.YANDEX, OAuthAction.SIGN_IN) }
-        binding.btnVk.setOnClickListener { launchOAuth(AuthProvider.VK, OAuthAction.SIGN_IN) }
+        binding.btnYandex.setOnClickListener { beginSignIn(AuthProvider.YANDEX) }
+        binding.btnVk.setOnClickListener { beginSignIn(AuthProvider.VK) }
         binding.btnCompleteNickname.setOnClickListener { completeNickname() }
         binding.btnCancelNickname.setOnClickListener {
             lifecycleScope.launch {
@@ -117,8 +141,8 @@ class AccountActivity : AppCompatActivity() {
                     authRepository.cancelProfile()
                 } catch (failure: CancellationException) {
                     throw failure
-                } catch (_: Exception) {
-                    return@launch
+                } catch (failure: Exception) {
+                    showError(failure)
                 } finally {
                     setLoading(false)
                 }
@@ -129,6 +153,7 @@ class AccountActivity : AppCompatActivity() {
         binding.btnLinkVk.setOnClickListener { beginLink(AuthProvider.VK) }
         binding.btnLogout.setOnClickListener { logout() }
         binding.btnDeleteAccount.setOnClickListener { confirmDeletion() }
+        binding.btnRetryAccount.setOnClickListener { retryAccountRestore() }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -138,11 +163,23 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun renderState(state: AuthState) {
-        binding.guestGroup.isVisible = state is AuthState.Guest
+        binding.guestGroup.isVisible = state is AuthState.Guest ||
+            (state is AuthState.Unavailable && state.lastAuthenticated == null)
         binding.nicknameGroup.isVisible = state is AuthState.ProfileRequired
         binding.accountGroup.isVisible = state is AuthState.Authenticated
+        binding.btnRetryAccount.isVisible = state is AuthState.Unavailable
+        if (state is AuthState.ProfileRequired) {
+            state.pendingNickname?.let { durableNickname ->
+                if (binding.etSignupNickname.text?.toString() != durableNickname) {
+                    binding.etSignupNickname.setText(durableNickname)
+                }
+            }
+        }
+        applySignupNicknameEditingPolicy(state)
         binding.tvState.text = when (state) {
             AuthState.Guest -> getString(R.string.account_guest)
+            AuthState.Restoring -> getString(R.string.account_restoring)
+            is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
             is AuthState.Authenticated -> state.profile.nickname
         }
@@ -183,6 +220,7 @@ class AccountActivity : AppCompatActivity() {
             setLoading(true)
             try {
                 authRepository.completeProfile(nickname)
+                com.plantdiseases.app.push.PushManager.registerIfEnabled(this@AccountActivity)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
@@ -233,7 +271,12 @@ class AccountActivity : AppCompatActivity() {
             Glide.with(this@AccountActivity).clear(binding.ivAvatar)
             binding.ivAvatar.setImageResource(R.drawable.ic_profile)
             profile.primaryProvider.avatarUrl?.takeIf { it.startsWith("https://") }?.let { url ->
-                Glide.with(this@AccountActivity).load(url).circleCrop().into(binding.ivAvatar)
+                Glide.with(this@AccountActivity)
+                    .load(url)
+                    .diskCacheStrategy(DiskCacheStrategy.NONE)
+                    .skipMemoryCache(true)
+                    .circleCrop()
+                    .into(binding.ivAvatar)
             }
             authRepository.sessions()
                 .onSuccess { sessions ->
@@ -254,11 +297,19 @@ class AccountActivity : AppCompatActivity() {
             }
             row.addView(
                 TextView(this).apply {
-                    text = if (session.current) {
-                        getString(R.string.account_current_session, AccountSession.GENERIC_DEVICE_LABEL)
+                    val deviceLabel = getString(R.string.account_device_android)
+                    val title = if (session.current) {
+                        getString(R.string.account_current_session, deviceLabel)
                     } else {
-                        AccountSession.GENERIC_DEVICE_LABEL
+                        deviceLabel
                     }
+                    val details = getString(
+                        R.string.account_session_details,
+                        formatSessionTimestamp(session.createdAt),
+                        formatSessionTimestamp(session.lastUsedAt),
+                        formatSessionTimestamp(session.idleExpiresAt),
+                    )
+                    text = getString(R.string.account_session_summary, title, details)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 },
             )
@@ -303,9 +354,46 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun beginLink(target: AuthProvider) {
-        val primary = privateProfile?.primaryProvider?.provider.toProvider() ?: return
         linkTarget = target
-        launchOAuth(primary, OAuthAction.REAUTH_LINK)
+        chooseReauthProvider(OAuthAction.REAUTH_LINK)
+    }
+
+    private fun beginSignIn(provider: AuthProvider) {
+        if (accountDisclosurePrefs.acknowledged) {
+            launchOAuth(provider, OAuthAction.SIGN_IN)
+            return
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.account_disclosure_title)
+            .setMessage(R.string.account_disclosure_body)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.account_disclosure_privacy, null)
+            .setPositiveButton(R.string.account_disclosure_acknowledge) { _, _ ->
+                val acknowledgementSaved = try {
+                    accountDisclosurePrefs.acknowledge()
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+                if (acknowledgementSaved) {
+                    launchOAuth(provider, OAuthAction.SIGN_IN)
+                } else {
+                    Toast.makeText(this, R.string.account_disclosure_save_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener { openPrivacyPolicy() }
+        }
+        dialog.show()
+    }
+
+    private fun openPrivacyPolicy() {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.consent_privacy_url))))
+        }.onFailure {
+            Toast.makeText(this, R.string.account_privacy_open_failed, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun confirmDeletion() {
@@ -314,11 +402,33 @@ class AccountActivity : AppCompatActivity() {
             .setMessage(R.string.account_delete_warning)
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.account_delete_confirm) { _, _ ->
-                val primary = privateProfile?.primaryProvider?.provider.toProvider()
-                    ?: return@setPositiveButton
-                launchOAuth(primary, OAuthAction.REAUTH_DELETE)
+                chooseReauthProvider(OAuthAction.REAUTH_DELETE)
             }
             .show()
+    }
+
+    private fun chooseReauthProvider(action: OAuthAction) {
+        val providers = privateProfile?.reauthProviders().orEmpty()
+        if (providers.isEmpty()) {
+            showError(null)
+            return
+        }
+        if (providers.size == 1) {
+            launchOAuth(providers.single(), action)
+            return
+        }
+        val labels = providers.map(::providerLabel).toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.account_choose_reauth_provider)
+            .setItems(labels) { _, index -> launchOAuth(providers[index], action) }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> resetOAuthFlow() }
+            .setOnCancelListener { resetOAuthFlow() }
+            .show()
+    }
+
+    private fun providerLabel(provider: AuthProvider): String = when (provider) {
+        AuthProvider.YANDEX -> getString(R.string.account_provider_yandex)
+        AuthProvider.VK -> getString(R.string.account_provider_vk)
     }
 
     private fun launchOAuth(provider: AuthProvider, action: OAuthAction) {
@@ -335,6 +445,7 @@ class AccountActivity : AppCompatActivity() {
             AuthProvider.VK -> BuildConfig.VK_OAUTH_CONFIGURED
         }
         if (!configured) {
+            resetOAuthFlow()
             Toast.makeText(this, R.string.account_provider_unconfigured, Toast.LENGTH_LONG).show()
             return
         }
@@ -343,11 +454,20 @@ class AccountActivity : AppCompatActivity() {
                 val sdk = getOrCreateYandexSdk() ?: return
                 yandexLauncher.launch(sdk.contract.createIntent(this, YandexAuthLoginOptions()))
             }
-            AuthProvider.VK -> VKID.instance.authorize(
-                lifecycleOwner = this,
-                callback = vkCallback,
-                params = VKIDAuthParams { scopes = emptySet() },
-            )
+            AuthProvider.VK -> {
+                val requireFreshLogin = action.requiresFreshProviderLogin()
+                VKID.instance.authorize(
+                    lifecycleOwner = this,
+                    callback = vkCallback,
+                    params = VKIDAuthParams {
+                        scopes = emptySet()
+                        if (requireFreshLogin) {
+                            useOAuthProviderIfPossible = false
+                            prompt = Prompt.LOGIN
+                        }
+                    },
+                )
+            }
         }
     }
 
@@ -358,6 +478,7 @@ class AccountActivity : AppCompatActivity() {
                 when (oauthAction) {
                     OAuthAction.SIGN_IN -> try {
                         authRepository.signIn(provider, token)
+                        com.plantdiseases.app.push.PushManager.registerIfEnabled(this@AccountActivity)
                         resetOAuthFlow()
                     } catch (failure: CancellationException) {
                         throw failure
@@ -397,6 +518,7 @@ class AccountActivity : AppCompatActivity() {
                             }
                             .onFailure(::showError)
                     }.onFailure(::showError)
+                    OAuthAction.DISCARD_LINK_RESULT -> resetOAuthFlow()
                 }
             } finally {
                 setLoading(false)
@@ -435,6 +557,13 @@ class AccountActivity : AppCompatActivity() {
     private fun currentSessionId(): String? =
         (authRepository.state.value as? AuthState.Authenticated)?.session?.sessionId
 
+    private fun formatSessionTimestamp(timestamp: String): String {
+        val instant = parseAccountTimestamp(timestamp)
+            ?: return getString(R.string.account_session_time_unknown)
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            .format(Date.from(instant))
+    }
+
     private fun logout() {
         lifecycleScope.launch {
             setLoading(true)
@@ -442,10 +571,21 @@ class AccountActivity : AppCompatActivity() {
                 authRepository.logout()
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: Exception) {
-                return@launch
+            } catch (failure: Exception) {
+                showError(failure)
             } finally {
                 stopAccountNotifications()
+                setLoading(false)
+            }
+        }
+    }
+
+    private fun retryAccountRestore() {
+        lifecycleScope.launch {
+            setLoading(true)
+            try {
+                authRepository.restore()
+            } finally {
                 setLoading(false)
             }
         }
@@ -465,10 +605,11 @@ class AccountActivity : AppCompatActivity() {
                 setLoading(true)
                 try {
                     authRepository.cancelProfile()
+                    if (authRepository.state.value is AuthState.Guest) finish()
                 } catch (failure: CancellationException) {
                     throw failure
-                } catch (_: Exception) {
-                    return@launch
+                } catch (failure: Exception) {
+                    showError(failure)
                 } finally {
                     setLoading(false)
                 }
@@ -489,6 +630,14 @@ class AccountActivity : AppCompatActivity() {
             binding.btnSaveNickname.isEnabled = false
             binding.btnDeleteAccount.isEnabled = false
         }
+        applySignupNicknameEditingPolicy(authRepository.state.value)
+    }
+
+    private fun applySignupNicknameEditingPolicy(state: AuthState) {
+        binding.etSignupNickname.isEnabled = signupNicknameIsEditable(
+            state = state,
+            loading = loadingOperations > 0,
+        )
     }
 
     private fun setEnabledRecursively(view: android.view.View, enabled: Boolean) {
@@ -507,24 +656,31 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun showError(failure: Throwable?) {
-        val message = when ((failure as? AccountApiException)?.errorCode) {
-            "nickname_taken" -> R.string.account_error_nickname_taken
-            "nickname_cooldown" -> R.string.account_error_nickname_cooldown
-            "provider_unavailable" -> R.string.account_error_provider_unavailable
-            "identity_already_linked" -> R.string.account_error_identity_linked
-            else -> R.string.account_error_generic
+        val message = when (failure) {
+            is LogoutNotDurableException -> R.string.account_error_logout_not_durable
+            is SignupAlreadyConfirmedException -> R.string.account_signup_already_confirmed
+            is IOException -> R.string.account_error_retry_online
+            else -> when ((failure as? AccountApiException)?.errorCode) {
+                "nickname_invalid" -> R.string.account_error_nickname_invalid
+                "nickname_taken" -> R.string.account_error_nickname_taken
+                "nickname_cooldown" -> R.string.account_error_nickname_cooldown
+                "provider_unavailable" -> R.string.account_error_provider_unavailable
+                "identity_already_linked" -> R.string.account_error_identity_linked
+                else -> R.string.account_error_generic
+            }
         }
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
-
-    private fun String?.toProvider(): AuthProvider? =
-        AuthProvider.entries.firstOrNull { it.wireName == this }
 
     private enum class OAuthAction {
         SIGN_IN,
         REAUTH_LINK,
         LINK_TARGET,
         REAUTH_DELETE,
+        DISCARD_LINK_RESULT,
+        ;
+
+        fun requiresFreshProviderLogin(): Boolean = this != SIGN_IN
     }
 
     companion object {
@@ -534,3 +690,22 @@ class AccountActivity : AppCompatActivity() {
         fun intent(context: Context): Intent = Intent(context, AccountActivity::class.java)
     }
 }
+
+internal fun AccountProfile.reauthProviders(): List<AuthProvider> = buildList {
+    val providerNames = listOf(primaryProvider.provider) + linkedProviders.map { it.provider }
+    providerNames.forEach { providerName ->
+        AuthProvider.entries
+            .firstOrNull { it.wireName == providerName }
+            ?.takeIf { it !in this }
+            ?.let(::add)
+    }
+}
+
+internal fun parseAccountTimestamp(timestamp: String): Instant? =
+    runCatching { Instant.parse(timestamp) }.getOrNull()
+
+internal fun signupNicknameIsEditable(
+    state: AuthState,
+    loading: Boolean,
+): Boolean = !loading &&
+    (state !is AuthState.ProfileRequired || state.pendingNickname == null)

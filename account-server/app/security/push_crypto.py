@@ -1,4 +1,4 @@
-"""Authenticated encryption and keyed deduplication for FCM tokens."""
+"""Authenticated encryption and purpose-separated account token helpers."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import binascii
 import hashlib
 import hmac
 import secrets
+import uuid
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -33,6 +34,15 @@ class PushTokenProtector:
         self._key = key
         self._cipher = AESGCM(key)
         self._fingerprint_key = hmac.digest(key, b"fingerprint-v1", "sha256")
+        self._refresh_rotation_key = hmac.digest(
+            key, b"refresh-rotation-v1", "sha256"
+        )
+        self._signup_fingerprint_key = hmac.digest(
+            key, b"signup-completion-fingerprint-v1", "sha256"
+        )
+        self._signup_refresh_key = hmac.digest(
+            key, b"signup-completion-refresh-v1", "sha256"
+        )
 
     @classmethod
     def from_settings(cls, settings: Settings) -> PushTokenProtector:
@@ -60,3 +70,61 @@ class PushTokenProtector:
             raise ValueError("Invalid push token ciphertext")
         nonce, encrypted = ciphertext[:12], ciphertext[12:]
         return self._cipher.decrypt(nonce, encrypted, _AAD).decode("utf-8")
+
+    def derive_refresh_replacement(
+        self,
+        refresh_token: str,
+        *,
+        rotation_id: uuid.UUID,
+    ) -> str:
+        """Derive the same opaque successor for a bounded refresh retry.
+
+        The purpose-separated keyed derivation lets the service reproduce a
+        replacement after a response is lost without storing that bearer
+        credential in recoverable form. The database still stores only its
+        SHA-256 lookup hash.
+        """
+        retry_context = b"\x01" + rotation_id.bytes
+        digest = hmac.digest(
+            self._refresh_rotation_key,
+            retry_context + refresh_token.encode("utf-8"),
+            "sha256",
+        )
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+    def signup_request_fingerprint(
+        self,
+        pending_token: str,
+        *,
+        completion_id: uuid.UUID,
+        installation_id: uuid.UUID,
+        normalized_nickname: str,
+    ) -> bytes:
+        """Bind one logical completion to all security-relevant inputs."""
+        nickname = normalized_nickname.encode("utf-8")
+        context = (
+            b"\x01"
+            + completion_id.bytes
+            + installation_id.bytes
+            + len(nickname).to_bytes(2, "big")
+            + nickname
+            + pending_token.encode("utf-8")
+        )
+        return hmac.digest(self._signup_fingerprint_key, context, "sha256")
+
+    def derive_signup_refresh(
+        self,
+        pending_token: str,
+        *,
+        completion_id: uuid.UUID,
+        installation_id: uuid.UUID,
+    ) -> str:
+        """Reconstruct a signup refresh bearer for a bounded exact retry."""
+        context = (
+            b"\x01"
+            + completion_id.bytes
+            + installation_id.bytes
+            + pending_token.encode("utf-8")
+        )
+        digest = hmac.digest(self._signup_refresh_key, context, "sha256")
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

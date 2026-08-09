@@ -1,4 +1,5 @@
 import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
@@ -10,20 +11,36 @@ plugins {
     id("io.gitlab.arturbosch.detekt")
 }
 
-// OAuth configuration can come from a Gradle property or an environment
-// variable. Environment support keeps extractable mobile client
-// values out of command lines and lets CI inject them without committing a
-// local.properties/gradle.properties file.
+// OAuth configuration can come from an environment variable or a Gradle
+// property. Environment values deliberately win: the protected distribution
+// workflow must not be shadowed by a committed or runner-local
+// gradle.properties value. This also keeps extractable mobile client values
+// out of command lines and lets CI inject them without committing local state.
 fun configuredValue(name: String): String =
-    providers.gradleProperty(name)
-        .orElse(providers.environmentVariable(name))
+    providers.environmentVariable(name)
+        .orElse(providers.gradleProperty(name))
         .orNull
         ?.trim()
         .orEmpty()
 
+fun sha256(value: String): String =
+    MessageDigest
+        .getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
 val yandexClientId = configuredValue("YANDEX_CLIENT_ID")
 val vkClientId = configuredValue("VKID_CLIENT_ID")
 val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
+val appApiBaseUrl = configuredValue("APP_API_BASE_URL")
+val accountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
+val stagingAppApiBaseUrl = configuredValue("STAGING_APP_API_BASE_URL")
+val stagingAccountApiBaseUrl = configuredValue("STAGING_ACCOUNT_API_BASE_URL")
+val productionAppApiBaseUrl = configuredValue("PRODUCTION_APP_API_BASE_URL")
+val productionAccountApiBaseUrl = configuredValue("PRODUCTION_ACCOUNT_API_BASE_URL")
+val reviewedStagingAppApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/"
+val reviewedStagingAccountApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/id/"
+val recoveryVersionCode = 20
 val realOAuthEnabled = when (
     val raw = configuredValue("ACCOUNT_REAL_OAUTH").lowercase()
 ) {
@@ -31,14 +48,106 @@ val realOAuthEnabled = when (
     "true" -> true
     else -> throw GradleException("ACCOUNT_REAL_OAUTH must be true or false")
 }
+val unsignedDistributionBuild = when (
+    val raw = configuredValue("ANDROID_UNSIGNED_DISTRIBUTION").lowercase()
+) {
+    "", "false" -> false
+    "true" -> true
+    else -> throw GradleException("ANDROID_UNSIGNED_DISTRIBUTION must be true or false")
+}
+val distributionChannel = configuredValue("ANDROID_DISTRIBUTION_CHANNEL").lowercase()
+val distributionChannels =
+    setOf("staging", "production", "recovery-production", "recovery-staging")
+if (distributionChannel.isNotBlank() && distributionChannel !in distributionChannels) {
+    throw GradleException(
+        "ANDROID_DISTRIBUTION_CHANNEL must be staging, production, " +
+            "recovery-production, or recovery-staging",
+    )
+}
+if (unsignedDistributionBuild && distributionChannel.isBlank()) {
+    throw GradleException("ANDROID_DISTRIBUTION_CHANNEL is required for an unsigned distribution build")
+}
+
+fun validateHttpsEndpoint(name: String, raw: String): URI {
+    val uri = runCatching { URI(raw) }.getOrNull()
+    val valid = uri != null &&
+        uri.scheme == "https" &&
+        !uri.host.isNullOrBlank() &&
+        uri.userInfo == null &&
+        uri.query == null &&
+        uri.fragment == null &&
+        raw.endsWith("/") &&
+        raw.none(Char::isWhitespace)
+    if (!valid) {
+        throw GradleException("$name must be an absolute credential-free HTTPS URL ending in /")
+    }
+    return checkNotNull(uri)
+}
+
+val recoveryEndpointsConfigured =
+    productionAppApiBaseUrl.isNotBlank() && productionAccountApiBaseUrl.isNotBlank()
+if (productionAppApiBaseUrl.isNotBlank() || productionAccountApiBaseUrl.isNotBlank()) {
+    if (!recoveryEndpointsConfigured) {
+        throw GradleException(
+            "PRODUCTION_APP_API_BASE_URL and PRODUCTION_ACCOUNT_API_BASE_URL must be set together",
+        )
+    }
+    validateHttpsEndpoint("PRODUCTION_APP_API_BASE_URL", productionAppApiBaseUrl)
+    validateHttpsEndpoint("PRODUCTION_ACCOUNT_API_BASE_URL", productionAccountApiBaseUrl)
+    if (!productionAccountApiBaseUrl.endsWith("/id/")) {
+        throw GradleException("PRODUCTION_ACCOUNT_API_BASE_URL must end in /id/")
+    }
+    if (productionAppApiBaseUrl.removeSuffix("/") != productionAccountApiBaseUrl.removeSuffix("/id/")) {
+        throw GradleException("Production app and account endpoints must use the same reviewed base URL")
+    }
+}
+if (distributionChannel == "recovery-production" && !recoveryEndpointsConfigured) {
+    throw GradleException(
+        "Recovery distribution requires explicit PRODUCTION_APP_API_BASE_URL and " +
+            "PRODUCTION_ACCOUNT_API_BASE_URL; no staging or hard-coded fallback is allowed",
+    )
+}
+
+val stagingEndpointsConfigured =
+    stagingAppApiBaseUrl.isNotBlank() && stagingAccountApiBaseUrl.isNotBlank()
+if (stagingAppApiBaseUrl.isNotBlank() || stagingAccountApiBaseUrl.isNotBlank()) {
+    if (!stagingEndpointsConfigured) {
+        throw GradleException(
+            "STAGING_APP_API_BASE_URL and STAGING_ACCOUNT_API_BASE_URL must be set together",
+        )
+    }
+    validateHttpsEndpoint("STAGING_APP_API_BASE_URL", stagingAppApiBaseUrl)
+    validateHttpsEndpoint("STAGING_ACCOUNT_API_BASE_URL", stagingAccountApiBaseUrl)
+    if (stagingAccountApiBaseUrl != "${stagingAppApiBaseUrl}id/") {
+        throw GradleException("Staging account endpoint must be the staging app endpoint plus id/")
+    }
+}
+if (distributionChannel == "staging" || distributionChannel == "recovery-staging") {
+    if (!stagingEndpointsConfigured) {
+        throw GradleException(
+            "Staging distribution requires explicit STAGING_APP_API_BASE_URL and " +
+                "STAGING_ACCOUNT_API_BASE_URL",
+        )
+    }
+    if (
+        stagingAppApiBaseUrl != reviewedStagingAppApiBaseUrl ||
+        stagingAccountApiBaseUrl != reviewedStagingAccountApiBaseUrl
+    ) {
+        throw GradleException("Staging distribution endpoints must equal the reviewed German staging pair")
+    }
+}
 
 if (realOAuthEnabled) {
+    val oauthAppApiBaseUrl =
+        if (distributionChannel == "staging") stagingAppApiBaseUrl else appApiBaseUrl
+    val oauthAccountApiBaseUrl =
+        if (distributionChannel == "staging") stagingAccountApiBaseUrl else accountApiBaseUrl
     val missing = buildList {
         if (yandexClientId.isBlank()) add("YANDEX_CLIENT_ID")
         if (vkClientId.isBlank()) add("VKID_CLIENT_ID")
         if (vkClientSecret.isBlank()) add("VKID_CLIENT_SECRET")
-        if (configuredValue("APP_API_BASE_URL").isBlank()) add("APP_API_BASE_URL")
-        if (configuredValue("ACCOUNT_API_BASE_URL").isBlank()) add("ACCOUNT_API_BASE_URL")
+        if (oauthAppApiBaseUrl.isBlank()) add("APP_API_BASE_URL")
+        if (oauthAccountApiBaseUrl.isBlank()) add("ACCOUNT_API_BASE_URL")
     }
     if (missing.isNotEmpty()) {
         throw GradleException(
@@ -48,8 +157,11 @@ if (realOAuthEnabled) {
     if (!vkClientId.all { it.isDigit() }) {
         throw GradleException("VKID_CLIENT_ID must be a decimal application ID")
     }
-    listOf("APP_API_BASE_URL", "ACCOUNT_API_BASE_URL").forEach { name ->
-        val uri = runCatching { URI(configuredValue(name)) }.getOrNull()
+    listOf(
+        "APP_API_BASE_URL" to oauthAppApiBaseUrl,
+        "ACCOUNT_API_BASE_URL" to oauthAccountApiBaseUrl,
+    ).forEach { (name, raw) ->
+        val uri = runCatching { URI(raw) }.getOrNull()
         val valid = uri != null &&
             uri.scheme == "https" &&
             !uri.host.isNullOrBlank() &&
@@ -91,9 +203,9 @@ android {
         // public endpoint. The release build contains the 1.9 account system;
         // the staging build below points the same app identity at the parallel
         // German test stack.
-        val configuredAppApiBaseUrl = configuredValue("APP_API_BASE_URL")
+        val configuredAppApiBaseUrl = appApiBaseUrl
             .ifBlank { "https://pdis.arbuz.lol/" }
-        val configuredAccountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
+        val configuredAccountApiBaseUrl = accountApiBaseUrl
             .ifBlank { "https://pdis.arbuz.lol/id/" }
         fun quotedUrl(raw: String): String {
             val normalized = if (raw.endsWith("/")) raw else "$raw/"
@@ -110,11 +222,14 @@ android {
         // and no SDK flow is started. Package/signature registration remains an
         // operator step.
         buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexClientId.isNotBlank().toString())
+        buildConfigField("String", "YANDEX_CLIENT_ID_SHA256", "\"${sha256(yandexClientId)}\"")
         buildConfigField(
             "boolean",
             "VK_OAUTH_CONFIGURED",
             (vkClientId.isNotBlank() && vkClientSecret.isNotBlank()).toString(),
         )
+        buildConfigField("String", "VKID_CLIENT_ID_SHA256", "\"${sha256(vkClientId)}\"")
+        buildConfigField("String", "VKID_CLIENT_SECRET_SHA256", "\"${sha256(vkClientSecret)}\"")
         manifestPlaceholders += mapOf(
             "YANDEX_CLIENT_ID" to yandexClientId.ifBlank { "0" },
             "VKIDClientID" to vkClientId.ifBlank { "0" },
@@ -128,7 +243,7 @@ android {
         // normally live in google-services.json). They are NOT injected with
         // any default here — they must be supplied at build time via a Gradle
         // property, a same-named environment variable, or (in CI) a GitHub
-        // Actions secret. See DEPLOYMENT.md (Android release).
+        // Actions variable. See DEPLOYMENT.md (Android release).
         //   ./gradlew :app:assembleRelease -PFCM_APP_ID=... -PFCM_API_KEY=...
         // When any of them is blank the app builds fine and push messaging
         // simply stays dormant (PushManager.isConfigured() returns false and
@@ -190,17 +305,19 @@ android {
                 "proguard-rules.pro"
             )
             val releaseConfig = signingConfigs.findByName("release")
-            // Always sign the release APK so it is INSTALLABLE. A real
-            // keystore (pass -PRELEASE_STORE_FILE=… for a store build) is used
-            // when present; otherwise (CI, local sideload) fall back to the
-            // auto-provisioned debug key. An UNSIGNED release APK fails to
-            // install with "App not installed as package appears to be
-            // invalid" — which is what packaging only the release variant in
-            // CI (no keystore) exposed.
-            signingConfig = if (releaseConfig?.storeFile != null) {
-                releaseConfig
-            } else {
-                signingConfigs.getByName("debug")
+            // Local and ordinary CI APKs stay installable: a configured store
+            // key wins, otherwise they use the auto-provisioned debug key.
+            // The manual distribution workflow is the sole exception and sets
+            // ANDROID_UNSIGNED_DISTRIBUTION=true so signing happens later in a
+            // checkout-free protected job.
+            signingConfig = when {
+                // The protected release workflow compiles in a credential-free
+                // job, proves this APK has no signer, then passes only that
+                // immutable artifact to a checkout-free signing job. Gradle
+                // must never receive the permanent app key in that flow.
+                unsignedDistributionBuild -> null
+                releaseConfig?.storeFile != null -> releaseConfig
+                else -> signingConfigs.getByName("debug")
             }
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
             buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
@@ -214,10 +331,12 @@ android {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")
 
-            val appUrl = configuredValue("APP_API_BASE_URL")
-                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/" }
-            val accountUrl = configuredValue("ACCOUNT_API_BASE_URL")
-                .ifBlank { "https://pdis.arbuz.lol/plantdisease-test/id/" }
+            val appUrl = stagingAppApiBaseUrl.ifBlank {
+                appApiBaseUrl.ifBlank { reviewedStagingAppApiBaseUrl }
+            }
+            val accountUrl = stagingAccountApiBaseUrl.ifBlank {
+                accountApiBaseUrl.ifBlank { reviewedStagingAccountApiBaseUrl }
+            }
             fun quotedUrl(raw: String): String {
                 val normalized = if (raw.endsWith("/")) raw else "$raw/"
                 return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -235,6 +354,51 @@ android {
                 (!realOAuthEnabled).toString(),
             )
         }
+
+        // Same-package, same-certificate emergency rollback targets. Both use
+        // versionCode 20 and disable account UI, but each stays bound to one
+        // endpoint scope so its encrypted vault and queued remote revocations
+        // are never silently redirected to the other environment.
+        create("recoveryProduction") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-recovery-production"
+            val appUrl = productionAppApiBaseUrl.ifBlank { "https://invalid.invalid/" }
+            val accountUrl = productionAccountApiBaseUrl.ifBlank { "https://invalid.invalid/id/" }
+            fun quotedUrl(raw: String) = "\"${raw.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("String", "RECOVERY_ENDPOINT_SCOPE", "\"production\"")
+            buildConfigField(
+                "boolean",
+                "RECOVERY_ENDPOINTS_CONFIGURED",
+                recoveryEndpointsConfigured.toString(),
+            )
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
+        }
+
+        create("recoveryStaging") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-recovery-staging"
+            val appUrl = stagingAppApiBaseUrl.ifBlank { reviewedStagingAppApiBaseUrl }
+            val accountUrl = stagingAccountApiBaseUrl.ifBlank { reviewedStagingAccountApiBaseUrl }
+            fun quotedUrl(raw: String) = "\"${raw.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("String", "RECOVERY_ENDPOINT_SCOPE", "\"staging\"")
+            buildConfigField("boolean", "RECOVERY_ENDPOINTS_CONFIGURED", "true")
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
+        }
+    }
+
+    sourceSets {
+        getByName("testRecoveryProduction").java.srcDir("src/testRecovery/java")
+        getByName("testRecoveryStaging").java.srcDir("src/testRecovery/java")
     }
 
     buildFeatures {
@@ -303,6 +467,16 @@ android {
                     showStackTraces = true
                     showCauses = true
                 }
+            }
+        }
+    }
+}
+
+androidComponents {
+    listOf("recoveryProduction", "recoveryStaging").forEach { recoveryBuildType ->
+        onVariants(selector().withBuildType(recoveryBuildType)) { variant ->
+            variant.outputs.forEach { output ->
+                output.versionCode.set(recoveryVersionCode)
             }
         }
     }

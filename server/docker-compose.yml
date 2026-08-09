@@ -54,6 +54,20 @@ services:
       - TRAINING_RETENTION_DAYS=${TRAINING_RETENTION_DAYS:-90}
       - TRAINING_MAX_IMAGES=${TRAINING_MAX_IMAGES:-20000}
       - COMMUNITY_RETENTION_DAYS=${COMMUNITY_RETENTION_DAYS:-90}
+      # Account support is explicitly disabled in this standalone compose.
+      # To enable it, a production override must set EXPECTED=true, configure
+      # every fixed account-service endpoint below, and mount a mode-0400/0640
+      # shared service token at INTERNAL_SERVICE_TOKEN_FILE. Startup fails if
+      # EXPECTED=true and that contract is incomplete.
+      - ACCOUNT_FEATURE_EXPECTED=${ACCOUNT_FEATURE_EXPECTED:-false}
+      - ACCOUNT_API_BASE_URL=${ACCOUNT_API_BASE_URL:-}
+      - ACCOUNT_ISSUER=${ACCOUNT_ISSUER:-}
+      - ACCOUNT_AUDIENCE=${ACCOUNT_AUDIENCE:-}
+      - ACCOUNT_INTERNAL_BASE_URL=${ACCOUNT_INTERNAL_BASE_URL:-}
+      - ACCOUNT_JWKS_URL=${ACCOUNT_JWKS_URL:-}
+      - ACCOUNT_INTROSPECTION_URL=${ACCOUNT_INTROSPECTION_URL:-}
+      - ACCOUNT_NOTIFICATION_URL=${ACCOUNT_NOTIFICATION_URL:-}
+      - INTERNAL_SERVICE_TOKEN_FILE=${INTERNAL_SERVICE_TOKEN_FILE:-}
     restart: unless-stopped
     # The container already runs as the unprivileged `plantd` user (Dockerfile).
     # no-new-privileges stops any setuid binary inside the image from being used

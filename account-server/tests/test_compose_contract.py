@@ -125,6 +125,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
 
     assert app_environment["ENVIRONMENT"] == "test"
     assert app_environment["ACCOUNT_BETA_SYNTHETIC_PIPELINE"] == "true"
+    assert app_environment["ACCOUNT_FEATURE_EXPECTED"] == "true"
     assert app_environment["POPULAR_WARM_ENABLED"] == "false"
     assert app_environment["FRONTIER_ENABLED"] == "false"
     assert app_environment["TRAINING_CAPTURE_ENABLED"] == "false"
@@ -140,9 +141,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["ACCOUNT_INTROSPECTION_URL"].endswith(
         "/v1/internal/auth/verify"
     )
-    assert app_environment["ACCOUNT_NOTIFICATION_URL"].endswith(
-        "/v1/internal/notifications/opinion"
-    )
+    assert app_environment["ACCOUNT_NOTIFICATION_URL"] == ""
     assert app_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
         "/run/internal-token/internal.token"
     )

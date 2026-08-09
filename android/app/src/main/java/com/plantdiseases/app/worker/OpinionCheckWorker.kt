@@ -3,6 +3,7 @@ package com.plantdiseases.app.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.push.OpinionNotifier
 import com.plantdiseases.app.util.OpinionPrefs
@@ -25,12 +26,13 @@ class OpinionCheckWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
-
-    private val scanRepository = appEntryPoint(context).scanRepository()
-
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        if (!OpinionPrefs.notificationsEnabled(ctx)) return Result.success()
+        if (!shouldRunOpinionCheck(BuildConfig.ACCOUNT_UI_ENABLED, OpinionPrefs.notificationsEnabled(ctx))) {
+            return Result.success()
+        }
+        // Resolve the account-aware graph only after the recovery-build gate.
+        val scanRepository = appEntryPoint(ctx).scanRepository()
         val resp = scanRepository.fetchMyScanOpinions().getOrElse {
             // Network/server hiccup — retry on the next interval.
             return Result.retry()
@@ -53,3 +55,8 @@ class OpinionCheckWorker(
         return Result.success()
     }
 }
+
+internal fun shouldRunOpinionCheck(
+    accountUiEnabled: Boolean,
+    notificationsEnabled: Boolean,
+): Boolean = accountUiEnabled && notificationsEnabled

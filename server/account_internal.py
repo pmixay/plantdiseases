@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import secrets
 import stat
 import urllib.error
@@ -13,7 +14,15 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    from .account_auth import _open_no_redirect
+except ImportError:  # flat Docker/module import
+    from account_auth import _open_no_redirect
+
 _ENVIRONMENTS = frozenset({"test", "development", "staging", "production"})
+_INTERNAL_SERVICE_HOST = re.compile(
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
+)
 
 
 def _load_internal_token(token_path: str) -> str | None:
@@ -59,7 +68,12 @@ class AccountInternalClient:
                     address = ipaddress.ip_address(hostname)
                     private_internal_http = address.is_private or address.is_loopback
                 except ValueError:
-                    private_internal_http = bool(hostname) and "." not in hostname
+                    # Reject numeric legacy IP spellings and malformed labels;
+                    # only a valid single-label service-discovery hostname may
+                    # use cleartext on the isolated container network.
+                    private_internal_http = bool(
+                        _INTERNAL_SERVICE_HOST.fullmatch(hostname)
+                    )
             invalid = (
                 parsed.scheme not in {"http", "https"}
                 or not parsed.hostname
@@ -141,7 +155,7 @@ class AccountInternalClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with _open_no_redirect(request, timeout=self.timeout) as response:
                 response.read(4097)
                 return response.status == 202
         except (OSError, urllib.error.URLError):

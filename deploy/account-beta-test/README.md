@@ -51,8 +51,9 @@ The loopback-only endpoints are:
 
 PostgreSQL has no host port and joins only the internal `beta-private` network.
 The APIs additionally join a project-scoped edge network so Docker can publish
-their loopback ports. Startup order is PostgreSQL health, one-shot Alembic
-migration, account readiness, then application readiness.
+their loopback ports. Startup order is PostgreSQL health, bootstrap role
+provisioning, one-shot Alembic migration plus migrator-owned grant convergence,
+account readiness, then application readiness.
 
 Community writes verify the account JWT locally from account-api's JWKS and
 then confirm the live session/authorization version through a private internal
@@ -130,12 +131,25 @@ it is not a public or production account service.
 `compose.german-vds.yml` defines the isolated runtime and
 `compose.german-vds.build.yml` builds its application images from the checked
 out `account-beta-test` branch. Copy `env.german.example` to a host-only
-mode-0600 file, use git-SHA-qualified local image tags, generate a dedicated
-PostgreSQL password, set both provider application IDs and the absolute
+mode-0600 file, use git-SHA-qualified local image tags, generate the three
+URL-facing PostgreSQL role passwords with `openssl rand -hex 32`, set both
+provider application IDs and the absolute
 PlantVision model directory, and verify the exact Docker proxy peer addresses.
 Wildcard trusted-proxy values are forbidden.
 
-Render without starting anything:
+For an existing beta volume, set `BETA_POSTGRES_ADMIN_PASSWORD` to its original
+`beta_account` password. Compose runs `beta-account-role-upgrade` before
+Alembic; that idempotent job creates/rotates the least-privilege roles, moves
+existing schema ownership to the migrator, and removes stale grants. The
+migrator command then upgrades to the exact reviewed head and, using that same
+non-superuser owner connection, runs `converge-runtime-grants.py`. Convergence
+requires the exact 13 application tables plus `alembic_version`, rejects any
+sequence or unexpected table, grants runtime DML only on application tables,
+and grants runtime SELECT-only on `alembic_version`. Account API startup waits
+for both operations. A failed role upgrade, migration, or grant convergence is
+a stop condition—do not delete the volume to make it pass.
+
+Build into temporary commit-specific registry tags without starting anything:
 
 ```sh
 docker compose --env-file /protected/account-beta-german.env \
@@ -146,8 +160,26 @@ docker compose --env-file /protected/account-beta-german.env \
   -f deploy/account-beta-test/compose.german-vds.build.yml build
 docker compose --env-file /protected/account-beta-german.env \
   -f deploy/account-beta-test/compose.german-vds.yml \
-  -f deploy/account-beta-test/compose.german-vds.build.yml up -d
+  -f deploy/account-beta-test/compose.german-vds.build.yml push
 ```
+
+Resolve the two pushed manifest references as
+`registry/project/image@sha256:<64 hex>` and replace
+`BETA_ACCOUNT_IMAGE` / `BETA_APP_IMAGE` in the protected environment file.
+The all-zero example digests are a stop condition. Render the runtime file and
+start it **without** the build overlay, so a later tag move cannot change what
+will execute:
+
+```sh
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml config --quiet
+docker compose --env-file /protected/account-beta-german.env \
+  -f deploy/account-beta-test/compose.german-vds.yml up -d
+```
+
+Record the two resolved manifest digests with the tested commit. If the
+operator cannot push to and resolve an approved registry, real-provider staging
+remains blocked; a mutable local tag is not an equivalent provenance boundary.
 
 The candidate binds only `127.0.0.1:18100` and `127.0.0.1:18101` for the host
 nginx. PostgreSQL remains internal. It uses `ENVIRONMENT=staging`, remote
@@ -155,6 +187,11 @@ provider adapters, real read-only PlantVision weights, disabled training
 capture/telemetry/FCM/external AI, and dedicated
 `plantdisease_account_beta_german_*` writable volumes. Main continues on
 `127.0.0.1:8000`; beta uses only `18100/18101`.
+
+The Compose file caps CPU, memory, PIDs, and local logs. Before `up`, the host
+owner must also place the beta volumes on a monitored filesystem/project quota
+with an explicit byte limit and alert threshold; Compose cannot portably cap a
+named volume. Missing disk isolation is a stop condition on the shared VDS.
 
 The app receives only the group-readable internal service token through its
 dedicated volume. The Ed25519 signing key and AES push-encryption key stay in
@@ -173,11 +210,27 @@ mode. For German staging, check both loopback health endpoints, compare
 `/api/capabilities` with main, then run the real login matrix from the
 permanently signed PlantDiseases 1.9 staging APK.
 
-The optional `backup-test.sh` accepts only the exact German beta project and
-volume prefix. It writes a protected custom-format dump to an explicit absolute
-directory, restores it into a uniquely named temporary database, compares
-allowlisted table counts, and drops only that generated restore database. It
-does not stop the stack or remove volumes.
+The optional `backup-test.sh` requires Bash (for fail-closed pipeline status),
+Docker Compose, age, and age-keygen. It accepts only the exact German beta project and
+volume prefix plus an absolute mode-0400/0600 age identity. It streams the
+custom-format dump directly through age encryption, writes only ciphertext to
+the explicit absolute output directory, decrypts as a pipe into a uniquely
+named temporary restore database owned by the migrator, reapplies the canonical
+runtime/backup grants, compares the exact reviewed table set and allowlisted
+row counts through the read-only backup role, requires both source and restore
+to be at Alembic revision `0006_signup_completion_idempotency` (including the
+durable nickname outbox/claim registry and two-phase signup completion table),
+and actively verifies runtime DML on the restored signup table, denied runtime
+DDL, denied runtime UPDATE/DELETE of `alembic_version`, retained migrator
+ownership/write, and denied
+backup writes before dropping only that generated restore database. It pins the
+Compose project and rendered volume namespace against ambient overrides, takes
+an atomic per-output-directory lock, and rejects stale `beta_restore_*`
+databases left by a hard-killed earlier check, and prunes only its own encrypted
+backup/checksum namespace after four weeks inside the canonical non-root output
+directory. It never writes a plaintext dump file, stops the stack, or removes
+volumes. A stale restore is an incident: inspect it, record the exact name, then
+drop only that database before rerunning the check.
 
 ## Handoff material
 
@@ -190,8 +243,8 @@ does not stop the stack or remove volumes.
 - `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.
 - `handoff/ml-worker.openapi.json` is the identity-free mTLS inference request
   contract.
-- `handoff/compose.russia.template.yml` and
-  `handoff/compose.germany-worker.template.yml` are render-tested contract
+- `handoff/compose.russia-template.yml` and
+  `handoff/compose.germany-worker-template.yml` are render-tested contract
   templates for the separately assigned split participant. They are explicitly
   blocked until extracted images, infrastructure, secrets, legal gates, backup
   restore, key rotation, and operator acceptance exist.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,15 @@ _ENVIRONMENTS = frozenset({"test", "development", "staging", "production"})
 _PROVIDER_MODES = frozenset({"mock", "remote"})
 _TLS_DATABASE_MODES = frozenset({"require", "verify-ca", "verify-full"})
 _LOOPBACK_DATABASE_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_INTERNAL_SERVICE_HOST = re.compile(
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
+)
+
+
+def _is_internal_service_host(hostname: str) -> bool:
+    # Reject numeric/legacy IP spellings (for example a single decimal IPv4
+    # value) even though a resolver may accept them as one DNS label.
+    return bool(_INTERNAL_SERVICE_HOST.fullmatch(hostname))
 
 
 def _required(source: Mapping[str, str], name: str) -> str:
@@ -194,10 +204,21 @@ class Settings:
                 or deletion_url.password
                 or deletion_url.query
                 or deletion_url.fragment
+                or deletion_url.path != "/api/internal/account-deletions"
             ):
                 raise SettingsError("COMMUNITY_DELETION_URL must be an absolute safe URL")
-            if self.is_production and deletion_url.scheme != "https":
-                raise SettingsError("Production COMMUNITY_DELETION_URL must use HTTPS")
+            if self.is_production and deletion_url.scheme == "http":
+                hostname = deletion_url.hostname.lower()
+                private_service = bool(
+                    deletion_url.port
+                    and hostname != "localhost"
+                    and _is_internal_service_host(hostname)
+                )
+                if not private_service:
+                    raise SettingsError(
+                        "Production COMMUNITY_DELETION_URL HTTP is allowed only "
+                        "for an explicit private service hostname and port"
+                    )
 
         configured_secret_files = (
             ("ACCOUNT_SIGNING_KEY_FILE", self.signing_key_file),
@@ -219,8 +240,24 @@ class Settings:
             raise SettingsError("Production requires COMMUNITY_DELETION_URL")
         query = parse_qs(database.query)
         ssl_mode = query.get("sslmode", [""])[-1].lower()
-        database_is_loopback = database.hostname in _LOOPBACK_DATABASE_HOSTS
-        if not (self.database_is_local or database_is_loopback or ssl_mode in _TLS_DATABASE_MODES):
+        database_host = database.hostname.lower()
+        database_is_loopback = database_host in _LOOPBACK_DATABASE_HOSTS
+        database_is_internal_service = bool(
+            database_host != "localhost"
+            and _is_internal_service_host(database_host)
+        )
+        if self.database_is_local and not (
+            database_is_loopback or database_is_internal_service
+        ):
+            raise SettingsError(
+                "ACCOUNT_DATABASE_LOCAL=true requires loopback or an internal "
+                "single-label database hostname"
+            )
+        if not (
+            database_is_loopback
+            or (self.database_is_local and database_is_internal_service)
+            or ssl_mode in _TLS_DATABASE_MODES
+        ):
             raise SettingsError(
                 "Production PostgreSQL must use TLS unless ACCOUNT_DATABASE_LOCAL=true is explicit"
             )

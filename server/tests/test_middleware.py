@@ -71,6 +71,49 @@ def test_metrics_endpoints_not_rate_limited(client):
         assert client.get("/api/metrics/prometheus").status_code == 200
 
 
+def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
+    client, monkeypatch,
+):
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "REQUIRE_API_KEY", True)
+    monkeypatch.setattr(server_main, "API_KEYS", {})
+    monkeypatch.setattr(
+        server_main, "community_density_grid", lambda *_args, **_kwargs: {"cells": []}
+    )
+    assert server_main._is_public_community_read(
+        "GET", "/api/community/thumb/example.webp"
+    )
+    assert not server_main._is_public_community_read(
+        "POST", "/api/community/thumb/example.webp"
+    )
+
+    public = client.get(
+        "/api/community/heatmap",
+        headers={
+            "Authorization": "Bearer a.b.c",
+            "X-API-Key": "deliberately-invalid",
+        },
+        params={"min_lat": 1, "min_lon": 1, "max_lat": 2, "max_lon": 2},
+    )
+    protected = client.post(
+        "/api/community/opinion",
+        headers={
+            "Authorization": "Bearer a.b.c",
+            "X-API-Key": "deliberately-invalid",
+        },
+        json={"scan_id": "unknownscan01", "suggested_disease": "rust"},
+    )
+    legacy = client.get(
+        "/api/version", headers={"Authorization": "Bearer a.b.c"}
+    )
+
+    assert public.status_code == 200
+    assert protected.status_code == 401
+    assert protected.json()["detail"] == "auth_required"
+    assert legacy.status_code == 401
+
+
 def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, png_bytes):
     # With a 1 req/s limit, two back-to-back uploads from the same client
     # trip the limiter on the second request.

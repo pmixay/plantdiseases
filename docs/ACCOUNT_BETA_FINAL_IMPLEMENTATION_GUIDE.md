@@ -33,10 +33,10 @@ The infrastructure transfer and day-two operations procedure is in
   8.13.2. Lifecycle 2.11 must not be restored until the project performs a
   reviewed API 37/AGP 9 migration.
 - CI always compiles the real-OAuth BuildConfig path with inert values. When
-  the three provider build values and permanent signing key are configured as
-  repository secrets, and the permanent certificate fingerprint is pinned,
-  the branch publishes `plantdiseases-1.9-staging-apk` pointed at the parallel
-  German endpoints.
+  the three provider build values are configured as repository Actions
+  variables and the permanent signing key/fingerprint are configured in the
+  protected `android-signing` environment, the manual workflow publishes a
+  signed staging artifact pointed at the parallel German endpoints.
 
 Implementation entry points:
 
@@ -51,16 +51,47 @@ Implementation entry points:
 Push the branch and require all applicable jobs in `.github/workflows/ci.yml`
 to pass:
 
-- **Android build & lint**: ktlint, detekt, production tests, staging tests,
-  release APK, and staging APK;
+- **Android build & lint**: ktlint, detekt, production tests, staging tests and
+  non-distributable release/staging compilation;
 - **Account API tests & lint**: Ruff, pytest, Compose/template rendering, and
   shell syntax;
 - **Server tests & lint**: Ruff and pytest.
 
-Do not distribute an APK from a failed or cancelled run. With provider and
-signing/provider configuration complete, use only the
-`plantdiseases-1.9-staging-apk` artifact. CI does not publish a synthetic
-fallback from this branch.
+Do not distribute an APK from ordinary CI. After every applicable job passes,
+promote the reviewed SHA to protected `main`, then manually dispatch
+`.github/workflows/android-release.yml` for `staging` from `main`. Inspect the
+exact commit and its unsigned artifact/provenance, then have a different
+authorized reviewer approve the protected `android-signing` environment. The
+build job never receives the permanent key; the signing job has no checkout and
+does not run Gradle. Its inline signing shell is nevertheless repository code,
+so every channel must dispatch from protected `main` and the reviewer must
+inspect that exact workflow SHA. Use only that workflow's
+checksum/provenance-carrying signed artifact.
+
+Before the first versionCode 19 staging distribution, dispatch
+`recovery-staging` from reviewed, protected `main` and archive its
+versionCode 20 artifact. Before the first production distribution, dispatch
+`recovery-production` from reviewed `main` and archive that distinct versionCode
+20 artifact. Both use the normal package/certificate and disable account UI,
+but staging recovery is bound to the exact reviewed `STAGING_*` endpoint pair
+while production recovery consumes the reviewed `PRODUCTION_*` pair. The
+checkout-free signing job requires the production repository values to equal
+the protected `APPROVED_PRODUCTION_*` values exactly. Never substitute one
+recovery artifact for the other: endpoint-scoped encrypted state and queued
+revocations must stay with their original issuer. These are the data-preserving
+rollback paths because Android cannot downgrade versionCode 19 to 18. If either
+recovery is used, the next mandatory account release must use versionCode 21 or
+higher.
+
+The workflow intentionally refuses real-provider staging or production while
+`deploy/account-beta-test/release-policy-gates.json` marks the private contact
+or deleted-actor-retention decision as blocked. Approved metadata must match a
+schema-2 contact link and bilingual tombstone marker in `privacy.html` exactly,
+including a real `mailto:`/HTTPS contact, the selected retention mode, decision
+reference and UTC approval time. Prose substring changes cannot clear the gate.
+Production is additionally blocked while the handoff records the
+cross-store backup epoch/deletion replay journal as deferred. Recovery channels
+remain available during those holds.
 
 ## 2. Test synthetic login first
 
@@ -158,25 +189,22 @@ media remain isolated; only the model directory is shared read-only.
 
 ## 5. Build and run the real PlantDiseases 1.9 APK
 
-From `android/`:
-
-```sh
-./gradlew :app:testStagingUnitTest :app:assembleStaging
-```
-
-Install the APK under `app/build/outputs/apk/staging/` using Android Studio or
-`adb install -r`. Confirm the installed application ID is
-`com.plantdiseases.app`, the installed version is 1.9/19, its certificate is
-the pinned permanent certificate, and the synthetic-auth notice is not
-visible. A signature mismatch over 1.8 is a stop condition, not a reason to
-uninstall and lose local app data.
+Dispatch the protected Android signing workflow with channel `staging`. Review
+the exact unsigned artifact/provenance before approving the checkout-free
+signing job. Install its accepted APK using Android Studio or `adb install -r`.
+Confirm the installed application ID is `com.plantdiseases.app`, the installed
+version is 1.9/19, its certificate is the pinned permanent certificate, and the
+synthetic-auth notice is not visible. A signature mismatch over 1.8 is a stop
+condition, not a reason to uninstall and lose local app data.
 
 Use a dedicated test account and execute this minimum matrix:
 
 | Test | Expected result |
 |---|---|
 | First Yandex login, then cancel nickname | Returns to Guest; no account session |
-| First Yandex login, complete nickname | Account and current generic session appear |
+| First Yandex login, complete nickname | The app reuses one durable completion UUID, confirms the provisional bundle, then the active account/current generic session appear |
+| Drop the first completion response, then retry | Exact inputs recover the same provisional account/session; a different completion UUID, installation, or nickname fails closed |
+| Cancel after provisional completion | Provisional account/session are removed and the app returns to Guest |
 | Logout, then Yandex login again | Existing account opens without nickname creation |
 | Link VK after Yandex reauthentication | Both providers appear; no account merge |
 | Restart app | Refresh-backed session restores without provider-token storage |

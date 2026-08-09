@@ -76,7 +76,11 @@ class _AccountAwareTestClientMixin:
 
     def request(self, method, url, **kwargs):
         headers = dict(kwargs.pop("headers", {}) or {})
-        if not any(name.lower() == "authorization" for name in headers):
+        request_path = str(url).split("?", 1)[0]
+        if (
+            request_path.startswith("/api/community/")
+            and not any(name.lower() == "authorization" for name in headers)
+        ):
             data = kwargs.get("data") if isinstance(kwargs.get("data"), dict) else {}
             body = kwargs.get("json") if isinstance(kwargs.get("json"), dict) else {}
             params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}

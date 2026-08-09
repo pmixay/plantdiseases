@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.account
 
+import com.plantdiseases.app.auth.AccountEndpointScope
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit
 class AccountApiClient(
     baseUrl: String = ServerConfig.accountBaseUrl,
 ) : AccountApi {
+    private val accountIssuer = AccountEndpointScope.from(baseUrl).issuer
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
@@ -43,6 +45,15 @@ class AccountApiClient(
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        // Some request bodies carry one-use provider/reauth credentials. A
+        // transport failure after the server commits is ambiguous, so OkHttp
+        // must not replay them on a replacement connection by itself.
+        .retryOnConnectionFailure(false)
+        // Every request can carry a provider, refresh, reauth, or access
+        // credential. Never let an ingress redirect replay it to another
+        // origin (or silently change the reviewed account-service path).
+        .followRedirects(false)
+        .followSslRedirects(false)
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()
@@ -55,8 +66,13 @@ class AccountApiClient(
     private val client = HttpClient(OkHttp) {
         engine { preconfigured = okHttp }
         expectSuccess = false
+        // OkHttp redirect handling is disabled above, but Ktor also has a
+        // client-level redirect plugin which can replay a completed engine
+        // response. Disable both layers so no credential-bearing request can
+        // leave the configured account issuer.
+        followRedirects = false
         install(ContentNegotiation) { json(json) }
-        defaultRequest { url(baseUrl) }
+        defaultRequest { url(accountIssuer) }
     }
 
     override suspend fun exchange(
@@ -66,32 +82,61 @@ class AccountApiClient(
     ): ExchangeResult = client.post("v1/auth/${provider.wireName}/exchange") {
         contentType(ContentType.Application.Json)
         setBody(ExchangeRequest(providerAccessToken, installationId))
-    }.decodeAuth()
+    }.decodeExchange()
 
     override suspend fun completeSignup(
         pendingSignupToken: String,
+        completionId: String,
         nickname: String,
         installationId: String,
     ): ExchangeResult.Authenticated = client.post("v1/auth/signup/complete") {
         contentType(ContentType.Application.Json)
-        setBody(CompleteSignupRequest(pendingSignupToken, nickname, installationId))
-    }.decodeAuth().requireAuthenticated()
+        setBody(
+            CompleteSignupRequest(
+                pendingSignupToken,
+                completionId,
+                nickname,
+                installationId,
+            ),
+        )
+    }.decodeSignupCompletion()
 
-    override suspend fun cancelSignup(pendingSignupToken: String) {
-        client.post("v1/auth/signup/cancel") {
+    override suspend fun confirmSignup(
+        pendingSignupToken: String,
+        completionId: String,
+        installationId: String,
+    ) {
+        client.post("v1/auth/signup/confirm") {
             contentType(ContentType.Application.Json)
-            setBody(CancelSignupRequest(pendingSignupToken))
+            setBody(ConfirmSignupRequest(pendingSignupToken, completionId, installationId))
         }.requireSuccess()
     }
 
-    override suspend fun refresh(refreshToken: String): ExchangeResult.Authenticated =
+    override suspend fun cancelSignup(
+        pendingSignupToken: String,
+        completionId: String,
+        installationId: String,
+    ) {
+        client.post("v1/auth/signup/cancel") {
+            contentType(ContentType.Application.Json)
+            setBody(CancelSignupRequest(pendingSignupToken, completionId, installationId))
+        }.requireSuccess()
+    }
+
+    override suspend fun refresh(
+        refreshToken: String,
+        rotationId: String,
+    ): ExchangeResult.Authenticated =
         client.post("v1/auth/refresh") {
             contentType(ContentType.Application.Json)
-            setBody(RefreshRequest(refreshToken))
-        }.decodeAuth().requireAuthenticated()
+            setBody(RefreshRequest(refreshToken, rotationId))
+        }.decodeAuthenticated()
 
-    override suspend fun logout(accessToken: String) {
-        client.post("v1/auth/logout") { bearer(accessToken) }.requireSuccess()
+    override suspend fun logout(refreshToken: String) {
+        client.post("v1/auth/logout") {
+            contentType(ContentType.Application.Json)
+            setBody(LogoutRequest(refreshToken))
+        }.requireSuccess()
     }
 
     override suspend fun sessions(accessToken: String): List<AccountSession> =
@@ -166,17 +211,11 @@ class AccountApiClient(
         if (!status.isSuccess()) throw asException()
     }
 
-    private suspend fun HttpResponse.decodeAuth(): ExchangeResult {
+    private suspend fun HttpResponse.decodeExchange(): ExchangeResult {
         if (!status.isSuccess()) throw asException()
         val payload = body<AuthResponse>()
         return when (payload.status) {
-            "authenticated" -> ExchangeResult.Authenticated(
-                accessToken = requireNotNull(payload.accessToken),
-                refreshToken = requireNotNull(payload.refreshToken),
-                expiresIn = payload.expiresIn,
-                profile = requireNotNull(payload.profile),
-                session = requireNotNull(payload.session),
-            )
+            "authenticated" -> payload.requireAuthenticated()
             "profile_required" -> ExchangeResult.ProfileRequired(
                 provider = AuthProvider.entries.firstOrNull { it.wireName == payload.provider }
                     ?: invalidAuthResponse("invalid_provider_response"),
@@ -187,12 +226,32 @@ class AccountApiClient(
         }
     }
 
+    private suspend fun HttpResponse.decodeSignupCompletion(): ExchangeResult.Authenticated {
+        if (!status.isSuccess()) throw asException()
+        val payload = body<AuthResponse>()
+        if (payload.status != "confirmation_required") {
+            invalidAuthResponse("invalid_signup_completion_response")
+        }
+        return payload.requireAuthenticated()
+    }
+
+    private suspend fun HttpResponse.decodeAuthenticated(): ExchangeResult.Authenticated {
+        if (!status.isSuccess()) throw asException()
+        val payload = body<AuthResponse>()
+        if (payload.status != "authenticated") invalidAuthResponse("invalid_auth_response")
+        return payload.requireAuthenticated()
+    }
+
+    private fun AuthResponse.requireAuthenticated() = ExchangeResult.Authenticated(
+        accessToken = requireNotNull(accessToken),
+        refreshToken = requireNotNull(refreshToken),
+        expiresIn = expiresIn,
+        profile = requireNotNull(profile),
+        session = requireNotNull(session),
+    )
+
     private fun invalidAuthResponse(errorCode: String): Nothing =
         throw AccountApiException(500, errorCode)
-
-    private fun ExchangeResult.requireAuthenticated(): ExchangeResult.Authenticated =
-        this as? ExchangeResult.Authenticated
-            ?: throw AccountApiException(500, "invalid_auth_response")
 
     private suspend fun HttpResponse.asException(): AccountApiException {
         val code = runCatching {
