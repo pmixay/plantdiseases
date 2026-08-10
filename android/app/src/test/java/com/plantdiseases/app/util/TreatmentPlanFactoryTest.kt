@@ -4,8 +4,15 @@ import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.CarePlanCheckpoint
 import com.plantdiseases.app.data.model.CarePlanResponse
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.Calendar
 
+// TreatmentPlanFactory builds bullets/products via org.json.JSONArray, which
+// on the raw Android stub jar silently returns null (isReturnDefaultValues =
+// true) instead of throwing — Robolectric is required to get a real
+// implementation, not just to avoid a crash.
+@RunWith(RobolectricTestRunner::class)
 class TreatmentPlanFactoryTest {
 
     private fun startedAt(): Long = Calendar.getInstance().apply {
@@ -109,7 +116,17 @@ class TreatmentPlanFactoryTest {
 
         val started = startedAt()
         val step2 = built.steps[2]
-        val expectedDay7 = started + 7L * 24 * 60 * 60 * 1000
+        // TreatmentPlanFactory.addDays re-bases every computed due date onto
+        // 12:00 local, regardless of startedAt's own time-of-day (9:00 here)
+        // — a flat `started + 7 days` would stay at 9:00 and never match.
+        val expectedDay7 = Calendar.getInstance().apply {
+            timeInMillis = started
+            add(Calendar.DAY_OF_MONTH, 7)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
         assertThat(step2.dueAt).isEqualTo(expectedDay7)
     }
 
