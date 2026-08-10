@@ -26,19 +26,19 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
+      # persist-credentials is left at its default (true) here, unlike the
+      # android/server jobs below. This job's only steps are this checkout
+      # and paths-filter — there is no Gradle build or other third-party
+      # action to withhold the token from. paths-filter needs the checkout's
+      # persisted git credential to `git fetch` main for the diff on a
+      # private repo (on any push that isn't to main itself, main isn't
+      # already local); its own `token` input only covers its API-based
+      # file-listing mode, not this local-git code path, so that doesn't
+      # substitute for persist-credentials here.
       - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
       - uses: dorny/paths-filter@v4
         id: filter
         with:
-          # This is a private repo, and checkout above runs with
-          # persist-credentials: false, so no git credential is left on disk.
-          # For pushes to any non-default branch, paths-filter needs to fetch
-          # `main` itself to diff against — pass the job token explicitly so
-          # that fetch is authenticated instead of failing with "could not
-          # read Username for 'https://github.com'".
-          token: ${{ github.token }}
           filters: |
             android:
               - 'android/**'
