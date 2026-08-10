@@ -322,7 +322,7 @@ class DetailExtraCardsController(
             com.google.android.material.button.MaterialButton(
                 activity,
                 null,
-                com.google.android.material.R.attr.borderlessButtonStyle,
+                androidx.appcompat.R.attr.borderlessButtonStyle,
             ).apply {
                 text = activity.getString(R.string.adaptive_watering_dismiss)
                 layoutParams = LinearLayout.LayoutParams(
