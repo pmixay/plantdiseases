@@ -235,9 +235,9 @@ class GardenFragment : Fragment() {
         }
 
         val query = currentQuery()
+        val roomsPastThreshold = allRooms.size + 1 > searchVisibleThreshold || query.isNotEmpty()
         binding.gardenSearchLayout.visibility = if (
-            searchVisible && selectedPane == PANE_ROOMS &&
-            (allRooms.size + 1 > searchVisibleThreshold || query.isNotEmpty())
+            searchVisible && selectedPane == PANE_ROOMS && roomsPastThreshold
         ) {
             View.VISIBLE
         } else {
@@ -286,7 +286,8 @@ class GardenFragment : Fragment() {
         val unassignedMatches = query.isEmpty() ||
             unassigned.any { it.plant.name.contains(query, ignoreCase = true) }
 
-        if (matchingRooms.isEmpty() && (unassigned.isEmpty() || !unassignedMatches) && query.isNotEmpty()) {
+        val noUnassignedMatch = unassigned.isEmpty() || !unassignedMatches
+        if (matchingRooms.isEmpty() && noUnassignedMatch && query.isNotEmpty()) {
             container.addView(
                 TextView(requireContext()).apply {
                     text = getString(R.string.garden_search_empty, query)
@@ -325,7 +326,7 @@ class GardenFragment : Fragment() {
             container.addView(buildNoRoomsHint())
         }
         matchingRooms.forEach { room ->
-            emit(buildRoomCard(room, plantsByRoom[room.room.id].orEmpty()))
+            emit(buildRoomCard(room))
         }
         if (unassigned.isNotEmpty() && unassignedMatches) {
             val unassignedSummary = RoomRepository.RoomSummary(
@@ -338,7 +339,7 @@ class GardenFragment : Fragment() {
                     it.plant.coverPhotoUri ?: it.latestScan?.imagePath
                 }.take(3),
             )
-            emit(buildRoomCard(unassignedSummary, unassigned, isUnassigned = true))
+            emit(buildRoomCard(unassignedSummary, isUnassigned = true))
         }
     }
 
@@ -371,7 +372,6 @@ class GardenFragment : Fragment() {
 
     private fun buildRoomCard(
         summary: RoomRepository.RoomSummary,
-        plants: List<PlantRepository.PlantSummary>,
         isUnassigned: Boolean = false,
     ): View {
         val row = ItemRoomCardBinding.inflate(layoutInflater, binding.gardenRoomsContainer, false)
