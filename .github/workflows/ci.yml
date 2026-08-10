@@ -32,6 +32,13 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # This is a private repo, and checkout above runs with
+          # persist-credentials: false, so no git credential is left on disk.
+          # For pushes to any non-default branch, paths-filter needs to fetch
+          # `main` itself to diff against — pass the job token explicitly so
+          # that fetch is authenticated instead of failing with "could not
+          # read Username for 'https://github.com'".
+          token: ${{ github.token }}
           filters: |
             android:
               - 'android/**'
