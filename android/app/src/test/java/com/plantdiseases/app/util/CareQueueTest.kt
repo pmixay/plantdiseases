@@ -77,12 +77,20 @@ class CareQueueTest {
 
         val window = (now - 1L * CareSchedule.DAY_MS) to (now + 10L * CareSchedule.DAY_MS)
         val before = CareQueue.project(
-            listOf(watering(staleAnchor)), emptyList(), emptyList(), emptyList(),
-            window.first, window.second,
+            listOf(watering(staleAnchor)),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            window.first,
+            window.second,
         )
         val after = CareQueue.project(
-            listOf(watering(freshAnchor)), emptyList(), emptyList(), emptyList(),
-            window.first, window.second,
+            listOf(watering(freshAnchor)),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            window.first,
+            window.second,
         )
 
         // The old schedule's due-right-now occurrence, exactly at `now`.
@@ -112,7 +120,10 @@ class CareQueueTest {
         assertThat(today.status).isEqualTo(CareQueue.CareTask.Status.DONE)
 
         val summary = CareQueue.monthSummary(
-            tasks, now - 1L * CareSchedule.DAY_MS, now + 1L * CareSchedule.DAY_MS, now,
+            tasks,
+            now - 1L * CareSchedule.DAY_MS,
+            now + 1L * CareSchedule.DAY_MS,
+            now,
         )
         val todayState = summary[todayEpochDay]!!
         assertThat(todayState.done).isEqualTo(1)
@@ -126,7 +137,10 @@ class CareQueueTest {
         val reminder = watering(anchorMs = now - 365L * CareSchedule.DAY_MS, intervalDays = 1)
 
         val tasks = CareQueue.project(
-            listOf(reminder), emptyList(), emptyList(), emptyList(),
+            listOf(reminder),
+            emptyList(),
+            emptyList(),
+            emptyList(),
             fromMs = now - 400L * CareSchedule.DAY_MS,
             toMs = now + 400L * CareSchedule.DAY_MS,
         )
@@ -138,8 +152,12 @@ class CareQueueTest {
     fun project_emptyInputs_returnsEmptyList() {
         val now = System.currentTimeMillis()
         val tasks = CareQueue.project(
-            emptyList(), emptyList(), emptyList(), emptyList(),
-            now, now + CareSchedule.DAY_MS,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            now,
+            now + CareSchedule.DAY_MS,
         )
         assertThat(tasks).isEmpty()
     }
@@ -149,8 +167,12 @@ class CareQueueTest {
         val now = System.currentTimeMillis()
         val disabled = watering(anchorMs = now - 100L * CareSchedule.DAY_MS).copy(enabled = false)
         val tasks = CareQueue.project(
-            listOf(disabled), emptyList(), emptyList(), emptyList(),
-            now - 30L * CareSchedule.DAY_MS, now + 30L * CareSchedule.DAY_MS,
+            listOf(disabled),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            now - 30L * CareSchedule.DAY_MS,
+            now + 30L * CareSchedule.DAY_MS,
         )
         assertThat(tasks).isEmpty()
     }
@@ -182,16 +204,28 @@ class CareQueueTest {
     fun forDay_sortsByTimeOfDayThenTitle() {
         val dayStart = cal(2026, Calendar.AUGUST, 15, 0, 0).timeInMillis
         val late = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(1), 1, "check", "Zed",
-            dayStart + 18L * 60 * 60 * 1000, CareQueue.CareTask.Status.PENDING,
+            CareQueue.CareTask.TaskId.OneOff(1),
+            1,
+            "check",
+            "Zed",
+            dayStart + 18L * 60 * 60 * 1000,
+            CareQueue.CareTask.Status.PENDING,
         )
         val early = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(2), 1, "watering", "Alpha",
-            dayStart + 8L * 60 * 60 * 1000, CareQueue.CareTask.Status.PENDING,
+            CareQueue.CareTask.TaskId.OneOff(2),
+            1,
+            "watering",
+            "Alpha",
+            dayStart + 8L * 60 * 60 * 1000,
+            CareQueue.CareTask.Status.PENDING,
         )
         val outside = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(3), 1, "watering", "Tomorrow",
-            dayStart + CareSchedule.DAY_MS + 1000, CareQueue.CareTask.Status.PENDING,
+            CareQueue.CareTask.TaskId.OneOff(3),
+            1,
+            "watering",
+            "Tomorrow",
+            dayStart + CareSchedule.DAY_MS + 1000,
+            CareQueue.CareTask.Status.PENDING,
         )
 
         val result = CareQueue.forDay(listOf(late, early, outside), dayStart)

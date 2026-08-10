@@ -20,8 +20,12 @@ class TreatmentPlanFactoryTest {
             followUpDays = 14,
         )
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = 10, diseaseKey = "botrytis",
-            diseaseLabelEn = "Grey mould", diseaseLabelRu = "Серая гниль",
+            plan,
+            plantId = 1,
+            scanId = 10,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
             startedAtMs = startedAt(),
         )!!
 
@@ -36,8 +40,13 @@ class TreatmentPlanFactoryTest {
     fun build_emptyTreatmentList_returnsNull() {
         val plan = CarePlanResponse(treatment = emptyList())
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "healthy",
-            diseaseLabelEn = "Healthy", diseaseLabelRu = "Здорово", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "healthy",
+            diseaseLabelEn = "Healthy",
+            diseaseLabelRu = "Здорово",
+            startedAtMs = startedAt(),
         )
         assertThat(built).isNull()
     }
@@ -46,8 +55,13 @@ class TreatmentPlanFactoryTest {
     fun build_nullTreatmentList_returnsNull() {
         val plan = CarePlanResponse(treatment = null)
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "healthy",
-            diseaseLabelEn = "Healthy", diseaseLabelRu = "Здорово", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "healthy",
+            diseaseLabelEn = "Healthy",
+            diseaseLabelRu = "Здорово",
+            startedAtMs = startedAt(),
         )
         assertThat(built).isNull()
     }
@@ -59,8 +73,13 @@ class TreatmentPlanFactoryTest {
             followUpDays = 14,
         )
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "botrytis",
-            diseaseLabelEn = "Grey mould", diseaseLabelRu = "Серая гниль", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+            startedAtMs = startedAt(),
         )!!
 
         val started = startedAt()
@@ -79,8 +98,13 @@ class TreatmentPlanFactoryTest {
             followUpDays = 14,
         )
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "botrytis",
-            diseaseLabelEn = "Grey mould", diseaseLabelRu = "Серая гниль", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+            startedAtMs = startedAt(),
         )!!
 
         val started = startedAt()
@@ -93,8 +117,13 @@ class TreatmentPlanFactoryTest {
     fun build_stepTextWithNoSentenceBreak_titleEqualsTextAndDetailIsNull() {
         val plan = CarePlanResponse(treatment = listOf("Water"))
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "healthy",
-            diseaseLabelEn = "Healthy", diseaseLabelRu = "Здорово", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "healthy",
+            diseaseLabelEn = "Healthy",
+            diseaseLabelRu = "Здорово",
+            startedAtMs = startedAt(),
         )!!
 
         val step = built.steps.single()
@@ -107,8 +136,13 @@ class TreatmentPlanFactoryTest {
         val text = "Remove all visibly infected leaves and stems, disposing of them away from the plant."
         val plan = CarePlanResponse(treatment = listOf(text))
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "botrytis",
-            diseaseLabelEn = "Grey mould", diseaseLabelRu = "Серая гниль", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+            startedAtMs = startedAt(),
         )!!
 
         val step = built.steps.single()
@@ -124,8 +158,13 @@ class TreatmentPlanFactoryTest {
             sanitation = listOf("Disinfect pruning shears", "Discard debris in sealed bag"),
         )
         val built = TreatmentPlanFactory.build(
-            plan, plantId = 1, scanId = null, diseaseKey = "botrytis",
-            diseaseLabelEn = "Grey mould", diseaseLabelRu = "Серая гниль", startedAtMs = startedAt(),
+            plan,
+            plantId = 1,
+            scanId = null,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+            startedAtMs = startedAt(),
         )!!
 
         assertThat(built.steps.single().bullets).contains("Disinfect pruning shears")
