@@ -83,9 +83,15 @@ class CareTaskActivity : AppCompatActivity() {
     }
 
     private suspend fun renderStep(stepId: Long) {
-        val stepWithPlan = careRepository.getStep(stepId) ?: run { finish(); return }
+        val stepWithPlan = careRepository.getStep(stepId) ?: run {
+            finish()
+            return
+        }
         val (step, plan) = stepWithPlan
-        val plant = plantRepository.getPlant(plan.plantId) ?: run { finish(); return }
+        val plant = plantRepository.getPlant(plan.plantId) ?: run {
+            finish()
+            return
+        }
         val isRu = LocaleHelper.isRussian(this)
 
         binding.careTaskTypeLabel.text = getString(R.string.task_type_treatment)
@@ -127,8 +133,14 @@ class CareTaskActivity : AppCompatActivity() {
     }
 
     private suspend fun renderRecurring(reminderId: Long, dueAt: Long) {
-        val reminder = careRepository.getReminder(reminderId) ?: run { finish(); return }
-        val plant = plantRepository.getPlant(reminder.plantId) ?: run { finish(); return }
+        val reminder = careRepository.getReminder(reminderId) ?: run {
+            finish()
+            return
+        }
+        val plant = plantRepository.getPlant(reminder.plantId) ?: run {
+            finish()
+            return
+        }
 
         binding.careTaskTypeLabel.text =
             ReminderPresets.displayLabel(reminder.label, reminder.type) { getString(it) }
@@ -171,8 +183,14 @@ class CareTaskActivity : AppCompatActivity() {
     }
 
     private suspend fun renderOneOff(taskId: Long) {
-        val task = careRepository.getOneOff(taskId) ?: run { finish(); return }
-        val plant = plantRepository.getPlant(task.plantId) ?: run { finish(); return }
+        val task = careRepository.getOneOff(taskId) ?: run {
+            finish()
+            return
+        }
+        val plant = plantRepository.getPlant(task.plantId) ?: run {
+            finish()
+            return
+        }
 
         binding.careTaskTypeLabel.text = task.title
         binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(task.dueAt)

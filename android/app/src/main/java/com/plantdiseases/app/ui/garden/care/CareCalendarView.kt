@@ -120,7 +120,10 @@ class CareCalendarView @JvmOverloads constructor(
                 layoutParams = GridLayout.LayoutParams(
                     GridLayout.spec(i / 7, 1f),
                     GridLayout.spec(i % 7, 1f),
-                ).apply { width = 0; height = 44.dp() }
+                ).apply {
+                    width = 0
+                    height = 44.dp()
+                }
                 isClickable = true
                 isFocusable = true
             }

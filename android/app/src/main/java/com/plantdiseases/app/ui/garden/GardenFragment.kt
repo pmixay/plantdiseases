@@ -504,7 +504,10 @@ class GardenFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = 10.dp(); marginEnd = 10.dp() }
+                    ).apply {
+                        marginStart = 10.dp()
+                        marginEnd = 10.dp()
+                    }
                     addView(
                         View(requireContext()).apply {
                             layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp())
