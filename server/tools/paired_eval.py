@@ -89,16 +89,56 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 SUPPLEMENT_PREFIX = "supp_"
 
 
+def _bundle_entry(bundle_dir: Path) -> Path:
+    """DiseaseClassifier keys off ``model_path.parent``, not a directory.
+
+    It expects a path to a file INSIDE the bundle and resolves
+    ``classifier_int8.onnx`` (preferred) or ``classifier.onnx`` next to it, so
+    the CLI takes the natural thing (a directory) and hands the loader the
+    sentinel it wants. Validated here so a wrong --bundle path fails with a
+    readable message instead of an AttributeError three frames down.
+    """
+    bundle_dir = Path(bundle_dir)
+    if not bundle_dir.is_dir():
+        raise SystemExit(f"--bundle {bundle_dir} is not a directory")
+    if not any((bundle_dir / n).exists()
+               for n in ("classifier_int8.onnx", "classifier.onnx")):
+        raise SystemExit(
+            f"{bundle_dir}: no classifier_int8.onnx or classifier.onnx. Point at the "
+            "unpacked bundle root (the directory holding classes.json)."
+        )
+    if not (bundle_dir / "classes.json").exists():
+        raise SystemExit(
+            f"{bundle_dir}: no classes.json — without it the class ORDER is a guess "
+            "and every prediction could be silently mislabelled."
+        )
+    return bundle_dir / "classifier.onnx"
+
+
 def _sanitise_stem(raw: str) -> str:
     """Exactly the notebook's on-disk stem sanitisation."""
     return re.sub(r"[^A-Za-z0-9_.-]", "_", raw)
 
 
-def _manifest_provenance(manifest: Path) -> dict[str, str]:
-    """Map on-disk stem -> provenance for every supplement row.
+def _manifest_provenance(manifest: Path, split_hint: str = "") -> dict[str, str]:
+    """Map on-disk key -> provenance for every supplement row.
 
-    Keyed by the stem the notebook WOULD have written, so the join works
-    without needing the training box's file listing.
+    Two key forms are emitted for each row, because the same manifest has to
+    join against two different trees:
+
+    * ``supp_<class>_<stem>`` — what the NOTEBOOK writes into the split dirs
+      (``_save_archive_member`` prefixes to keep stems unique across archives).
+    * ``<class>/<stem>`` — the RAW Kaggle tree, when the supplement itself is
+      used as the eval substrate because the training box's splits are gone.
+
+    Raw stems are class-qualified: the prefix exists precisely because two class
+    folders can both hold a ``1.jpg``, and an unqualified key would collide.
+
+    ``split_hint`` (e.g. ``eval_ok``) additionally restricts to rows the
+    notebook was willing to hold out. It matters when scoring the raw tree:
+    ``train_only`` and ``boundary`` rows are 100% inside the challenger's
+    training set, so keeping them would compare a model against its own
+    training data.
     """
     import csv
 
@@ -113,15 +153,19 @@ def _manifest_provenance(manifest: Path) -> dict[str, str]:
             "Publish a supplement build that stamps it, or pass --provenance '' and "
             "accept that the comparison is leaky (and say so in the write-up)."
         )
+    if split_hint and "split_hint" not in rows[0]:
+        raise SystemExit(f"{manifest}: --split-hint given but the manifest has no such column")
     out: dict[str, str] = {}
     for r in rows:
         cls = (r.get("class") or "").strip()
         stem = Path((r.get("filename") or "").strip()).stem
         if not cls or not stem:
             continue
-        out[_sanitise_stem(f"{SUPPLEMENT_PREFIX}{cls}_{stem}")] = (
-            r.get("provenance") or ""
-        ).strip()
+        if split_hint and (r.get("split_hint") or "").strip() != split_hint:
+            continue
+        prov = (r.get("provenance") or "").strip()
+        out[_sanitise_stem(f"{SUPPLEMENT_PREFIX}{cls}_{stem}")] = prov
+        out[f"{cls}/{stem}"] = prov
     return out
 
 
@@ -155,7 +199,10 @@ def collect_eval_items(
                 stats["dropped_unknown_class"] += 1
                 continue
             if provenance_ok is not None:
-                prov = (prov_by_stem or {}).get(img.stem)
+                lookup = prov_by_stem or {}
+                prov = lookup.get(img.stem)
+                if prov is None:      # raw supplement tree: class-qualified key
+                    prov = lookup.get(f"{cls_dir.name}/{img.stem}")
                 if prov is None:
                     stats["dropped_not_supplement"] += 1
                     continue
@@ -182,7 +229,7 @@ def predict(bundle: Path, paths: list[Path], batch: int, label: str) -> list[str
 
     from classifier import DiseaseClassifier
 
-    clf = DiseaseClassifier(bundle)
+    clf = DiseaseClassifier(_bundle_entry(bundle))
     print(
         f"  [{label}] classes={len(clf.CLASS_NAMES)} img_size={clf.img_size} "
         f"resize_ratio={clf.eval_resize_ratio} tta={clf.tta} arch={clf.architecture}"
@@ -212,6 +259,12 @@ def main() -> None:
     ap.add_argument("--eval-dir", type=Path, required=True, help="ImageFolder <class>/<img>")
     ap.add_argument("--manifest", type=Path, help="supplement manifest.csv (provenance join)")
     ap.add_argument(
+        "--split-hint", default="",
+        help="restrict to manifest rows with this split_hint (use `eval_ok` when the "
+             "eval tree is the RAW supplement: train_only/boundary rows are 100%% "
+             "inside the challenger's training set)",
+    )
+    ap.add_argument(
         "--provenance",
         default="carried_from_v7,carried_from_v8,carried_from_v8b,new",
         help="comma-separated provenance values to KEEP. Default = the strict "
@@ -237,7 +290,7 @@ def main() -> None:
                 "--provenance needs --manifest (the provenance lives in the "
                 "supplement's manifest.csv). Pass --provenance '' to skip the filter."
             )
-        prov_by_stem = _manifest_provenance(args.manifest)
+        prov_by_stem = _manifest_provenance(args.manifest, args.split_hint)
         print(f"manifest: {len(prov_by_stem)} supplement rows with provenance")
         unknown = prov_filter - set(prov_by_stem.values()) - {"all"}
         if unknown:
@@ -246,10 +299,10 @@ def main() -> None:
     # Class space: the intersection, matched by NAME so class ORDER may differ.
     from classifier import DiseaseClassifier
 
-    clf_a = DiseaseClassifier(args.bundle_a)
+    clf_a = DiseaseClassifier(_bundle_entry(args.bundle_a))
     names_a = list(clf_a.CLASS_NAMES)
     if args.bundle_b:
-        names_b = list(DiseaseClassifier(args.bundle_b).CLASS_NAMES)
+        names_b = list(DiseaseClassifier(_bundle_entry(args.bundle_b)).CLASS_NAMES)
         common = [n for n in names_a if n in set(names_b)]
         if set(names_a) != set(names_b):
             print(f"NOTE: class sets differ. only={sorted(set(names_a) ^ set(names_b))}; "

@@ -197,9 +197,53 @@ measurable rather than assumed.
       set and bias the comparison toward it. On-disk stems are
       `supp_<class>_<original stem>`, so eval images join straight to
       `manifest.csv`.
-- [ ] **Ship it or don't, then say which.** 2.7.0 either beats 2.6.8 on the
-      paired bootstrap or it does not. That verdict is the gate for everything
-      below — including whether `frontier` is worth a run.
+- [x] **Verdict: DO NOT SHIP 2.7.0. Keep 2.6.8.** (paired eval, 2026-08-11,
+      `tools/paired_eval.py`; bundles for 2.6.0 / 2.6.8 / 2.7.0 scored on
+      identical image lists.)
+
+**2.7.0 is better in-domain and much worse out-of-domain.** On supplement rows
+2.6.8 never trained on it wins clearly (disease macro-F1 0.895 vs 0.716, paired
+CI excludes 0) — but 2.7.0 trained on ~48% of those rows, and on the recycled
+rows *both* models trained on, the two are statistically tied (+0.000,
+CI [-0.007, +0.005]). So most of the headline win is contamination.
+
+Then a **never-trained ornamental benchmark** — `shuvokumarbasak4004/flower-leaf-
+diseases-dataset-new-and-update`, MIT, deliberately in no training corpus, 1,200
+healthy + 800 scorch across 6 garden-ornamental species — found a regression the
+ship gate and all four held-out splits missed:
+
+| model | healthy false-disease-fire | leaf_scorch recall |
+|---|---|---|
+| 2.6.0 | 0.093 | 0.638 |
+| **2.6.8 (deployed)** | **0.019** | 0.576 |
+| 2.7.0 | 0.084 | **0.071** |
+
+2.7.0 predicts `leaf_scorch_underwatering` on **7%** of scorch-labelled
+ornamental leaves against 2.6.8's 58%, sending 60% to `healthy` and 22% to
+`leaf_spot` (McNemar 404–0 discordant, p≈5e-122). It also fires disease on
+healthy ornamentals 4.4× more often than 2.6.8 (100–22 discordant, p≈5e-13),
+undoing the false-fire improvement 2.6.8 delivered over 2.6.0. Label noise
+cannot explain it: 2.6.0 and 2.6.8 score ~0.6 on the *same* labels, so the
+collapse is specific to 2.7.0.
+
+**Read:** 2.7.0 learned a scorch representation coupled to its training domain
+(supplement + DoctorP houseplant scorch, where it beats 2.6.8 at 0.862 vs 0.710)
+that does not transfer to ornamental species. The §3 probe already said scorch is
+the class frozen features separate worst (0.39–0.52), so the head carries it and
+can overfit. Suspects, in order: the 787 boundary hard-negatives (healthy
+near-misses of scorch, 2.63% draw), `healthy` at 26.8% of train, and the
+margin-cropping eval transform.
+
+**Why nothing caught it:** every scorch row in `val_realworld` comes from the
+same sources as train. The gate has zero out-of-domain scorch — the "broaden the
+eval seed" item, and this is its first concrete cost.
+
+- [ ] **Make the never-trained benchmark a standing gate.** It is public, MIT,
+      in no training corpus, and it caught on day one what four held-out splits
+      missed. Wire it as a release check, not a one-off.
+- [ ] **Diagnose the scorch collapse before 2.7.1** — ablate the boundary weight
+      (0.35 → 0.2) and the aspect-preserving preprocessing separately, and score
+      each on the never-trained benchmark. One change per run.
 
 Run-log checks, each proving one fix landed:
 
