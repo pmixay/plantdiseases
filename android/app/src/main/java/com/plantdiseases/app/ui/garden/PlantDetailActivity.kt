@@ -44,8 +44,11 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -121,12 +124,11 @@ class PlantDetailActivity : AppCompatActivity() {
     private val photos by lazy { DetailPhotosController(this) }
     private val journal by lazy { DetailJournalController(this, plantRepository, ::loadPlant) }
 
-    /** "New scan" → opens the camera, runs the capture through the normal
-     *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
-     *  resulting scan to THIS plant (via EXTRA_PLANT_ID) so the photo lands
-     *  in the plant's Photos + Timeline without a manual "Add to garden".
-     *  Replaces the old journal-only gallery photo import — a "scan" means
-     *  the camera. The captured file lives in the same plant_images dir the
+    /** "New scan" → lets the user pick camera or gallery, runs either
+     *  through the normal disease-analysis flow ([AnalysisActivity]) and
+     *  auto-attaches the resulting scan to THIS plant (via EXTRA_PLANT_ID)
+     *  so the photo lands in the plant's Photos + Timeline without a manual
+     *  "Add to garden". Both paths write into the same plant_images dir the
      *  in-app scanner uses, so the saved scan persists identically. */
     private var pendingScanFile: java.io.File? = null
 
@@ -151,6 +153,31 @@ class PlantDetailActivity : AppCompatActivity() {
                 R.string.camera_permission_needed,
                 Toast.LENGTH_SHORT,
             ).show()
+        }
+    }
+
+    /** Gallery-import branch of "New scan" — GetContent needs no runtime
+     *  permission, so this has no camera-permission gate. Copies the picked
+     *  Uri into our own files dir the same way CameraFragment's gallery
+     *  import does (a transient content:// grant may not survive the
+     *  activity hop), then runs it through the same analysis path as a
+     *  fresh capture. */
+    private val pickGalleryScan = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importScanFromGallery(uri)
+    }
+
+    private fun importScanFromGallery(uri: Uri) {
+        lifecycleScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                ImageUtils.copyUriToFile(this@PlantDetailActivity, uri)?.also {
+                    ImageUtils.downscaleForCropInPlace(it.absolutePath)
+                }
+            }
+            if (file != null) {
+                launchAnalysisForScan(file)
+            } else {
+                Toast.makeText(this@PlantDetailActivity, R.string.image_load_error, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -188,9 +215,19 @@ class PlantDetailActivity : AppCompatActivity() {
         false
     }
 
-    /** Entry point for the "New scan" action tile: ensure the camera
-     *  permission, then capture. */
+    /** Entry point for the "New scan" action tile: let the user choose a
+     *  fresh camera capture or an existing photo, then run either through
+     *  the same analysis path. */
     private fun requestNewScan() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.new_scan)
+            .setItems(arrayOf(getString(R.string.take_photo), getString(R.string.gallery))) { _, which ->
+                if (which == 0) requestCameraScan() else pickGalleryScan.launch("image/*")
+            }
+            .show()
+    }
+
+    private fun requestCameraScan() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
