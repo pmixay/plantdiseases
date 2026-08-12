@@ -258,9 +258,9 @@ class CarePlanCardView @JvmOverloads constructor(
             }
         )
         noteBody = TextView(context).apply {
-            textSize = 13f
+            textSize = 14f
             setTextColor(context.getColor(R.color.on_hero))
-            setLineSpacing(2.dp().toFloat(), 1f)
+            setLineSpacing(3.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -270,7 +270,7 @@ class CarePlanCardView @JvmOverloads constructor(
         statusContainer.addView(noteContainer)
 
         followUpView = TextView(context).apply {
-            textSize = 12f
+            textSize = 13f
             setTextColor(context.getColor(R.color.on_hero_secondary))
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
@@ -677,9 +677,9 @@ class CarePlanCardView @JvmOverloads constructor(
             outer.addView(
                 TextView(context).apply {
                     text = "•  $item"
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.disease_red))
-                    setLineSpacing(3.dp().toFloat(), 1f)
+                    setLineSpacing(4.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -736,7 +736,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
+            ).apply { topMargin = 18.dp() }
         }
         chips.forEach { chip ->
             outer.addView(chip)
@@ -778,7 +778,7 @@ class CarePlanCardView @JvmOverloads constructor(
         text.addView(
             TextView(context).apply {
                 this.text = label
-                textSize = 10f
+                textSize = 11f
                 letterSpacing = 0.08f
                 setTextColor(context.getColor(R.color.on_surface_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -787,7 +787,7 @@ class CarePlanCardView @JvmOverloads constructor(
         text.addView(
             TextView(context).apply {
                 this.text = value
-                textSize = 14f
+                textSize = 15f
                 setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(
@@ -813,16 +813,16 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(sectionHeader(labelRes, iconRes))
         items.forEach { item ->
             outer.addView(
                 TextView(context).apply {
                     text = "•  $item"
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(3.dp().toFloat(), 1f)
+                    setLineSpacing(4.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -910,7 +910,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(
             sectionHeader(
@@ -935,7 +935,7 @@ class CarePlanCardView @JvmOverloads constructor(
         container.addView(
             TextView(context).apply {
                 text = context.getString(row.labelRes)
-                textSize = 11f
+                textSize = 12f
                 letterSpacing = 0.06f
                 setTextColor(context.getColor(R.color.on_surface_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -944,9 +944,9 @@ class CarePlanCardView @JvmOverloads constructor(
         container.addView(
             TextView(context).apply {
                 text = row.value
-                textSize = 14f
+                textSize = 15f
                 setTextColor(context.getColor(R.color.on_surface))
-                setLineSpacing(2.dp().toFloat(), 1f)
+                setLineSpacing(3.dp().toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -964,7 +964,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(
             sectionHeader(
@@ -985,7 +985,7 @@ class CarePlanCardView @JvmOverloads constructor(
             row.addView(
                 TextView(context).apply {
                     text = context.resources.getString(R.string.care_plan_day_badge, cp.day)
-                    textSize = 12f
+                    textSize = 13f
                     setTextColor(context.getColor(R.color.on_primary))
                     typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                     gravity = Gravity.CENTER
@@ -1007,9 +1007,9 @@ class CarePlanCardView @JvmOverloads constructor(
             row.addView(
                 TextView(context).apply {
                     text = cp.check
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(2.dp().toFloat(), 1f)
+                    setLineSpacing(3.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         0,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1107,7 +1107,7 @@ class CarePlanCardView @JvmOverloads constructor(
         labelRow.addView(
             TextView(context).apply {
                 text = label.uppercase()
-                textSize = 10f
+                textSize = 11f
                 setTextColor(context.getColor(R.color.on_hero_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 letterSpacing = 0.08f
@@ -1121,7 +1121,7 @@ class CarePlanCardView @JvmOverloads constructor(
         box.addView(
             TextView(context).apply {
                 text = value.ifBlank { "—" }
-                textSize = 15f
+                textSize = 16f
                 setTextColor(context.getColor(R.color.on_hero))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 maxLines = 2
