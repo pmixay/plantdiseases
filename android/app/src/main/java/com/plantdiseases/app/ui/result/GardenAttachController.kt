@@ -1,14 +1,25 @@
 package com.plantdiseases.app.ui.result
 
 import android.os.Bundle
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DecodeFormat
+import com.bumptech.glide.load.resource.bitmap.CenterCrop
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.ui.common.dpx
+import com.plantdiseases.app.ui.common.sectionRow
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 
@@ -39,25 +50,69 @@ class GardenAttachController(
                 return@launch
             }
 
-            val labels = plants.map { it.plant.name }.toTypedArray()
-            MaterialAlertDialogBuilder(activity)
+            lateinit var dialog: AlertDialog
+            val column = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(activity.dpx(20), activity.dpx(4), activity.dpx(20), activity.dpx(4))
+            }
+            column.addView(
+                TextView(activity).apply {
+                    text = activity.getString(R.string.add_to_garden_hint)
+                    textSize = 13f
+                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setPadding(0, 0, 0, activity.dpx(12))
+                },
+            )
+            plants.forEach { summary ->
+                column.addView(
+                    activity.sectionRow(
+                        title = summary.plant.name,
+                        subtitle = null,
+                        iconRes = R.drawable.ic_garden,
+                        thumb = { iv -> bindPlantThumb(iv, summary) },
+                        onClick = {
+                            attachScanToPlant(scan, summary.plant.id)
+                            dialog.dismiss()
+                        },
+                    ),
+                )
+            }
+
+            dialog = MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.add_to_garden)
-                .setItems(labels) { _, which ->
-                    activity.lifecycleScope.launch {
-                        plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
-                        binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.scan_added_to_garden),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                }
+                .setView(NestedScrollView(activity).apply { addView(column) })
                 .setPositiveButton(R.string.create_new_plant) { _, _ ->
                     showCreatePlantForScanDialog(scan)
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+        }
+    }
+
+    private fun bindPlantThumb(imageView: ImageView, summary: PlantRepository.PlantSummary) {
+        val source = summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
+        if (source == null) {
+            imageView.setImageResource(R.drawable.ic_garden)
+            return
+        }
+        Glide.with(activity)
+            .load(source)
+            .format(DecodeFormat.PREFER_RGB_565)
+            .transform(CenterCrop(), RoundedCorners(activity.dpx(17)))
+            .placeholder(R.drawable.ic_garden)
+            .error(R.drawable.ic_garden)
+            .into(imageView)
+    }
+
+    private fun attachScanToPlant(scan: ScanEntity, plantId: Long) {
+        activity.lifecycleScope.launch {
+            plantRepository.assignScanToPlant(scan.id, plantId)
+            binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
+            Toast.makeText(
+                activity,
+                activity.getString(R.string.scan_added_to_garden),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
