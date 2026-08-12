@@ -330,7 +330,13 @@ def main() -> None:
         print(f"  WARN: classes under 30 images have paired recall CIs wider than "
               f"±0.14 and cannot settle anything on their own: {thin}")
 
+    # Record the image list. Without it a preds.json cannot be broken down per
+    # species/group afterwards — and the first out-of-domain benchmark's entire
+    # headline delta turned out to be one species, which only became visible by
+    # re-joining predictions to paths. Relative to --eval-dir so the file stays
+    # portable between machines.
     payload: dict = {"class_names": common, "y_true": y_true,
+                     "items": [str(p.relative_to(args.eval_dir)) for p in paths],
                      "label_a": args.label_a}
     name_to_idx = {n: i for i, n in enumerate(common)}
 

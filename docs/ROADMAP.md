@@ -257,11 +257,25 @@ exactly the run that collapsed.
 
 ### 2.7.1 — ordered, one change per run
 
-- [ ] **1. Rebuild the benchmark before trusting any of this** (CPU, hours).
-      pHash-dedup at Hamming ≤ 6, ≥ 4 species per class, per-species reporting,
-      and score with `pipeline.analyze` (served) — not Stage-2 argmax. The
-      current one is 62 scorch clusters across 2 species and cannot carry a
-      release decision.
+- [x] **1. Benchmark rebuilt** — `server/tools/build_ood_benchmark.py` (2026-08-12).
+      pHash-dedup at Hamming ≤ 6 in code, per-species manifest, and warnings when
+      a class is too thin or spans < 3 species. **11,200 source files collapse to
+      213 clusters** (healthy 151 across 6 species, scorch 62 across 2).
+      `paired_eval` now records the image list so any preds.json can be broken
+      down per species. Authoritative argmax numbers, 2.6.8 → 2.7.0:
+
+| class / species | 2.6.8 | 2.7.0 | n |
+|---|---|---|---|
+| **healthy** | 0.967 | 0.960 | 151 |
+| **leaf_scorch** | **0.565** | **0.065** | 62 |
+| └ hibiscus | **1.000** | **0.097** | 31 |
+| └ banana_bush | 0.129 | 0.032 | 31 |
+
+      Healthy is a **tie** — the false-fire retraction is confirmed on clean
+      data. The whole actionable regression is **hibiscus scorch: 31/31 → 3/31**,
+      on a class arm of 2 species. Still open: score end-to-end via
+      `pipeline.analyze` rather than argmax, and widen scorch past 2 species —
+      until then this measures one species well and the domain not at all.
 - [ ] **2. Zero-train precursor** (CPU/Colab, one afternoon). Run the §3
       cached-feature probe **with and without `kaggle_ornamental` rows** and score
       AUC(z_scorch) on the rebuilt benchmark. No LoRA training. If dropping the
