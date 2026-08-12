@@ -2,7 +2,9 @@ package com.plantdiseases.app.util
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import java.time.LocalDate
 import java.util.Calendar
+import java.util.TimeZone
 
 /** Pure-Kotlin — no Robolectric needed; matches CareScheduleTest's style. */
 class CareQueueTest {
@@ -105,7 +107,7 @@ class CareQueueTest {
         val now = cal(2026, Calendar.AUGUST, 15, 12, 0).timeInMillis
         val anchor = now - 7L * CareSchedule.DAY_MS // occurrence 1 due today
         val reminder = watering(anchor, hour = 9)
-        val todayEpochDay = cal(2026, Calendar.AUGUST, 15).timeInMillis / CareSchedule.DAY_MS
+        val todayEpochDay = CareQueue.epochDayOf(cal(2026, Calendar.AUGUST, 15).timeInMillis)
 
         val tasks = CareQueue.project(
             reminders = listOf(reminder),
@@ -193,11 +195,30 @@ class CareQueueTest {
         )
 
         val summary = CareQueue.monthSummary(listOf(task), monthStart, monthEnd, nowMs = monthStart)
-        val lastDayEpoch = cal(2026, Calendar.AUGUST, 31).timeInMillis / CareSchedule.DAY_MS
-        val firstDayNextMonthEpoch = cal(2026, Calendar.SEPTEMBER, 1).timeInMillis / CareSchedule.DAY_MS
+        val lastDayEpoch = CareQueue.epochDayOf(cal(2026, Calendar.AUGUST, 31).timeInMillis)
+        val firstDayNextMonthEpoch = CareQueue.epochDayOf(cal(2026, Calendar.SEPTEMBER, 1).timeInMillis)
 
         assertThat(summary).containsKey(lastDayEpoch)
         assertThat(summary).doesNotContainKey(firstDayNextMonthEpoch)
+    }
+
+    @Test
+    fun epochDayOf_positiveUtcOffsetTimezone_matchesLocalCalendarDate() {
+        // Regression: epochDayOf() used to floor-divide the raw UTC instant
+        // of local midnight, which lands on the PREVIOUS UTC day in any zone
+        // ahead of UTC — the "tap day 15, open day 14" bug reported from
+        // Moscow (UTC+3, no DST). LocalDate.toEpochDay() is the
+        // timezone-independent oracle for what "days since epoch" a calendar
+        // date should map to.
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Europe/Moscow"))
+            val localMidnightAug15 = cal(2026, Calendar.AUGUST, 15).timeInMillis
+            val expected = LocalDate.of(2026, 8, 15).toEpochDay()
+            assertThat(CareQueue.epochDayOf(localMidnightAug15)).isEqualTo(expected)
+        } finally {
+            TimeZone.setDefault(original)
+        }
     }
 
     @Test

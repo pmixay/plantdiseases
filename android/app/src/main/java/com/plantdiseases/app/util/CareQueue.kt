@@ -186,14 +186,21 @@ object CareQueue {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = ms }
         // Days since epoch in LOCAL time — two timestamps on the same wall-clock
         // day (regardless of hour) must map to the same bucket, and this must
-        // stay in lock-step with dayStartMs()/monthSummary() below, which build
-        // their day boundaries the same way (set fields, don't just floor-divide
-        // the UTC millis, which would drift by the zone offset).
+        // stay in lock-step with dayStartMs()/monthSummary() below.
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
         cal.set(java.util.Calendar.MINUTE, 0)
         cal.set(java.util.Calendar.SECOND, 0)
         cal.set(java.util.Calendar.MILLISECOND, 0)
-        return cal.timeInMillis / CareSchedule.DAY_MS
+        // cal.timeInMillis is still an absolute UTC instant (local midnight,
+        // expressed as an instant) — floor-dividing THAT by DAY_MS buckets by
+        // UTC day, not local day. East of UTC, local midnight instants still
+        // fall late on the PREVIOUS UTC day, so the naive division returns the
+        // previous day's index (this was the "tap day 15, open day 14" bug in
+        // any zone ahead of UTC, e.g. Moscow at UTC+3). Adding the zone+DST
+        // offset shifts the instant so the division lands on the correct
+        // local-day boundary regardless of timezone.
+        val offsetMs = cal.get(java.util.Calendar.ZONE_OFFSET) + cal.get(java.util.Calendar.DST_OFFSET)
+        return (cal.timeInMillis + offsetMs) / CareSchedule.DAY_MS
     }
 
     /** Tasks due on the calendar day containing [dayStartMs], sorted by
