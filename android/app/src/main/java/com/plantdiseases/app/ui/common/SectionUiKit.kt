@@ -67,7 +67,11 @@ internal fun Context.cardHeading(text: String): TextView = TextView(this).apply 
 internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        // TOP, not CENTER_VERTICAL: the value can be a full sentence
+        // (server-supplied NPK ratios, soil mixes) that wraps to several
+        // lines, and centering would float the icon/label to the middle
+        // of that wrapped block instead of beside its first line.
+        gravity = Gravity.TOP
         setPadding(0, dpx(7), 0, dpx(7))
         addView(
             ImageView(this@factRow).apply {
@@ -99,10 +103,16 @@ internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
             },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
+            // Weighted like the label (0dp + weight), not WRAP_CONTENT. An
+            // unweighted child in a horizontal LinearLayout measures first
+            // against the FULL row width, before the weighted label gets
+            // anything — a long value then claims nearly the whole row,
+            // leaving the label's weight-1 share at or near zero (a value
+            // with no visible label) and overflowing the row (a value
+            // clipped at the edge). Weighting both means neither can
+            // starve the other; 2f against the label's 1f gives the
+            // (usually longer) value the larger share.
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f),
         )
     }
 
