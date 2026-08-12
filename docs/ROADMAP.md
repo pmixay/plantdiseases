@@ -197,53 +197,91 @@ measurable rather than assumed.
       set and bias the comparison toward it. On-disk stems are
       `supp_<class>_<original stem>`, so eval images join straight to
       `manifest.csv`.
-- [x] **Verdict: DO NOT SHIP 2.7.0. Keep 2.6.8.** (paired eval, 2026-08-11,
-      `tools/paired_eval.py`; bundles for 2.6.0 / 2.6.8 / 2.7.0 scored on
-      identical image lists.)
+- [x] **Verdict: DO NOT SHIP 2.7.0. Keep 2.6.8.** (paired eval 2026-08-11, then a
+      5-hypothesis / 20-agent adversarial investigation 2026-08-12. The verdict
+      held; **several numbers in the first write-up did not** — corrected below.)
 
-**2.7.0 is better in-domain and much worse out-of-domain.** On supplement rows
-2.6.8 never trained on it wins clearly (disease macro-F1 0.895 vs 0.716, paired
-CI excludes 0) — but 2.7.0 trained on ~48% of those rows, and on the recycled
-rows *both* models trained on, the two are statistically tied (+0.000,
-CI [-0.007, +0.005]). So most of the headline win is contamination.
+**⚠ Correction to the 2026-08-11 write-up.** The never-trained benchmark was
+built from 2,000 files that hold only **501 SHA-unique images and 206 pHash
+clusters** (Hamming ≤ 6) — it failed the near-dup gate `DATASET_LABELING_PLAN.md`
+requires of any eval set, and the duplication inflated every count and p-value.
+The scorch arm is **2 species, not 6**. Corrected, on pHash clusters:
 
-Then a **never-trained ornamental benchmark** — `shuvokumarbasak4004/flower-leaf-
-diseases-dataset-new-and-update`, MIT, deliberately in no training corpus, 1,200
-healthy + 800 scorch across 6 garden-ornamental species — found a regression the
-ship gate and all four held-out splits missed:
+| model | scorch recall (argmax, deduped) | served, full pipeline | healthy false-fire (deduped) |
+|---|---|---|---|
+| 2.6.0 | 0.597 | — | 0.078 |
+| **2.6.8 (deployed)** | 0.565 | **71/200** | 0.022 |
+| 2.7.0 | **0.048** | **0/200** | 0.047 |
 
-| model | healthy false-disease-fire | leaf_scorch recall |
-|---|---|---|
-| 2.6.0 | 0.093 | 0.638 |
-| **2.6.8 (deployed)** | **0.019** | 0.576 |
-| 2.7.0 | 0.084 | **0.071** |
+**What survives:** the scorch collapse is real and decisive — McNemar **32–0,
+p=4.7e-10** on n=62 clusters (not the reported 5e-122), and end-to-end the
+production pipeline diagnoses **zero of 200** distinct ornamental scorch images
+against the incumbent's 71 (p=8.5e-22). It is a **separability loss, not a
+threshold shift**.
 
-2.7.0 predicts `leaf_scorch_underwatering` on **7%** of scorch-labelled
-ornamental leaves against 2.6.8's 58%, sending 60% to `healthy` and 22% to
-`leaf_spot` (McNemar 404–0 discordant, p≈5e-122). It also fires disease on
-healthy ornamentals 4.4× more often than 2.6.8 (100–22 discordant, p≈5e-13),
-undoing the false-fire improvement 2.6.8 delivered over 2.6.0. Label noise
-cannot explain it: 2.6.0 and 2.6.8 score ~0.6 on the *same* labels, so the
-collapse is specific to 2.7.0.
+**What does not:** the healthy false-fire finding is **retracted**. Deduped it is
+0.022 vs 0.047, McNemar 17–8, **p=0.108** (pHash: p=1.0) — not significant, and
+2.7.0 (0.047) still beats 2.6.0 (0.078), so "undoes 2.6.8's false-fire
+improvement" was false. Per species the picture is also narrower than reported:
+hibiscus 1.00 / 1.00 / ~0.0 (n=31) but banana_bush 0.19 / 0.13 / 0.03 — **2.6.8
+was already collapsed on banana_bush**, so the entire headline delta is 31
+hibiscus clusters.
 
-**Read:** 2.7.0 learned a scorch representation coupled to its training domain
-(supplement + DoctorP houseplant scorch, where it beats 2.6.8 at 0.862 vs 0.710)
-that does not transfer to ornamental species. The §3 probe already said scorch is
-the class frozen features separate worst (0.39–0.52), so the head carries it and
-can overfit. Suspects, in order: the 787 boundary hard-negatives (healthy
-near-misses of scorch, 2.63% draw), `healthy` at 26.8% of train, and the
-margin-cropping eval transform.
+**Refuted mechanisms** (each re-derived from the bundles, then refuted): the 787
+boundary hard-negatives; the `kaggle_ornamental` volume collapse (2,263 → 1,158)
+as *the* cause; the OOD gate rejecting ornamentals; embedding-bank domain
+coupling; `supplement_train_only` at 0.9.
 
-**Why nothing caught it:** every scorch row in `val_realworld` comes from the
-same sources as train. The gate has zero out-of-domain scorch — the "broaden the
-eval seed" item, and this is its first concrete cost.
+**Surviving mechanism.** 2.7.0 reads ornamentals as out-of-distribution in a
+quantity involving no bank and no detector: AUROC of `plant_max_logit` separating
+an in-domain pool from the benchmark is 0.555/0.607 (2.6.8) vs **0.731/0.890**
+(2.7.0). But the axis is **training-corpus acquisition style, not "ornamentals"**
+— 2.7.0 *beats* 2.6.8 on held-out garden ornamentals from the supplement. The one
+corpus fact that lines up: `kaggle_ornamental` supplies **zero `leaf_scorch`**
+(rose/aloe: healthy, leaf_spot, powdery only) and was up-weighted 0.8 → 1.0 in
+exactly the run that collapsed.
 
-- [ ] **Make the never-trained benchmark a standing gate.** It is public, MIT,
-      in no training corpus, and it caught on day one what four held-out splits
-      missed. Wire it as a release check, not a one-off.
-- [ ] **Diagnose the scorch collapse before 2.7.1** — ablate the boundary weight
-      (0.35 → 0.2) and the aspect-preserving preprocessing separately, and score
-      each on the never-trained benchmark. One change per run.
+**Two defects found that are independent of 2.7.0:**
+
+- [ ] **The served path throws away ~19 pp of the DEPLOYED model's scorch
+      recall.** The NAP AND-gate plus crop voting destroys 19 of 2.6.8's 56
+      argmax-correct scorch calls (p=3.8e-6). Its argmax 0.565 is **0.355
+      served**. This is the "report the production-faithful number" bullet, and
+      it is worth more than the 2.7.1 work.
+- [ ] **The OOD bank has no mass for damaged out-of-domain plants**, so its
+      calibrated 5% plant-FPR is **75–88%** on a real out-of-domain plant and the
+      AND-gate degrades to detector-only exactly where the model is weakest. A
+      data-coverage bug, not a threshold one; present in both bundles. It also
+      means any 2.7.1 ablation can move ornamental recall ~20 pp *through the
+      gate alone* — so score end-to-end, never argmax.
+
+### 2.7.1 — ordered, one change per run
+
+- [ ] **1. Rebuild the benchmark before trusting any of this** (CPU, hours).
+      pHash-dedup at Hamming ≤ 6, ≥ 4 species per class, per-species reporting,
+      and score with `pipeline.analyze` (served) — not Stage-2 argmax. The
+      current one is 62 scorch clusters across 2 species and cannot carry a
+      release decision.
+- [ ] **2. Zero-train precursor** (CPU/Colab, one afternoon). Run the §3
+      cached-feature probe **with and without `kaggle_ornamental` rows** and score
+      AUC(z_scorch) on the rebuilt benchmark. No LoRA training. If dropping the
+      source recovers separability, the driver is its class incompleteness.
+- [ ] **3. First A100 run: `SOURCE_WEIGHTS['kaggle_ornamental']` 1.0 → 0.35**
+      (§4 cell10), leaving `PRIOR_SOURCE_WEIGHTS` at its decoupled 0.8 so exactly
+      one knob moves. Primary read: AUC(z_scorch) on the rebuilt benchmark.
+      Falsified if separability does not move.
+- [ ] **4. Then, separately:** aspect-preserving preprocessing (letterbox vs
+      centre-crop) and `supplement_boundary` 0.35 → 0.2 (draw 2.63% → 1.52%). The
+      boundary premise was **refuted**, so this is a confirmatory ablation, not a
+      lead.
+- [ ] **5. The real fix is 2.8-era data:** re-source ornamental `leaf_scorch`
+      into `KAGGLE_ORNAMENTAL_SLUGS` / the supplement. No sampler weight can
+      supply a class the source does not contain.
+
+**Honest scope.** "Beat 2.6.8 on every axis" is not yet evidenced as reachable:
+2.7.0 is genuinely better in-domain and worse out-of-domain, and the out-of-domain
+evidence rests on 31 hibiscus clusters. Item 1 is what turns that from an opinion
+into a measurement.
 
 Run-log checks, each proving one fix landed:
 
