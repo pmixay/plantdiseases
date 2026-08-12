@@ -291,35 +291,61 @@ class LunarCalendarView @JvmOverloads constructor(
     /** One row per category present in the garden — its own rating for
      *  [date] plus which plants fall under it, so "good for your foliage,
      *  bad for your fruiting" stays visible instead of averaged into the
-     *  single grid colour. */
+     *  single grid colour. Each row is two lines (category + rating word,
+     *  then the plant names) so a long plant list wraps on its own line
+     *  instead of shoving the category off the row, and a top gravity so
+     *  the dot stays beside the first line rather than drifting to the
+     *  middle of a wrapped row. */
     private fun renderCategoryBreakdown(date: LocalDate, entries: List<AggregateEntry>) {
         categoryBreakdown.removeAllViews()
         categoryBreakdown.visibility = View.VISIBLE
+        categoryBreakdown.addView(
+            TextView(context).apply {
+                setText(R.string.lunar_breakdown_heading)
+                setTextColor(context.getColor(R.color.primary))
+                textSize = 13f
+            },
+        )
         entries.groupBy { it.category }.forEach { (cat, plantsInCategory) ->
             val rating = LunarCalendar.rating(date, cat)
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                gravity = Gravity.TOP
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(6) }
+                ).apply { topMargin = dp(10) }
             }
             row.addView(
                 View(context).apply { setBackgroundResource(dayBackgroundRes(rating)) },
-                LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(8) },
+                LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                    marginEnd = dp(8)
+                    topMargin = dp(4)
+                },
             )
-            row.addView(
+            val textColumn = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            textColumn.addView(
                 TextView(context).apply {
                     text = context.getString(
                         R.string.lunar_breakdown_row,
                         context.getString(categoryStringRes(cat)),
-                        plantsInCategory.joinToString(", ") { it.label },
+                        context.getString(ratingWordRes(rating)),
                     )
-                    setTextColor(context.getColor(R.color.on_surface_secondary))
+                    setTextColor(context.getColor(R.color.on_surface))
                     textSize = 13f
                 },
             )
+            textColumn.addView(
+                TextView(context).apply {
+                    text = plantsInCategory.joinToString(", ") { it.label }
+                    setTextColor(context.getColor(R.color.on_surface_secondary))
+                    textSize = 12f
+                },
+            )
+            row.addView(textColumn)
             categoryBreakdown.addView(row)
         }
     }
@@ -437,6 +463,16 @@ class LunarCalendarView @JvmOverloads constructor(
         LunarCalendar.Rating.GOOD -> R.color.lunar_good_fg
         LunarCalendar.Rating.NEUTRAL -> R.color.lunar_neutral_fg
         LunarCalendar.Rating.BAD -> R.color.lunar_bad_fg
+    }
+
+    /** Singular "favourable day" wording for a sentence — distinct from
+     *  [R.string.lunar_legend_good] and its siblings, which are plural
+     *  adjectives built for the legend ("favourable" agreeing with an
+     *  implied "days"), not a standalone sentence. */
+    private fun ratingWordRes(rating: LunarCalendar.Rating): Int = when (rating) {
+        LunarCalendar.Rating.GOOD -> R.string.lunar_rating_good_day
+        LunarCalendar.Rating.NEUTRAL -> R.string.lunar_rating_neutral_day
+        LunarCalendar.Rating.BAD -> R.string.lunar_rating_bad_day
     }
 
     private fun phaseStringRes(phase: LunarCalendar.Phase): Int = when (phase) {

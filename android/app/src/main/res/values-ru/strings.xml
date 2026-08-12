@@ -522,6 +522,7 @@
     <string name="photo_caption_hint">Опциональная подпись к фото</string>
     <string name="journal_text_required">Сначала напишите заметку</string>
     <string name="add_to_garden">В сад</string>
+    <string name="add_to_garden_hint">Нажмите на растение, чтобы прикрепить к нему этот скан</string>
     <string name="added_to_garden">В саду</string>
     <string name="create_new_plant">Создать растение</string>
     <string name="scan_added_to_garden">Скан добавлен в сад</string>
@@ -1079,7 +1080,11 @@
     <string name="lunar_task_watering">Полив</string>
     <string name="lunar_task_pruning">Обрезка</string>
     <string name="lunar_category_note">Подобрано для: %1$s</string>
-    <string name="lunar_breakdown_row">%1$s — %2$s</string>
+    <string name="lunar_breakdown_row">Для %1$s — %2$s</string>
+    <string name="lunar_breakdown_heading">По типам растений</string>
+    <string name="lunar_rating_good_day">благоприятный день</string>
+    <string name="lunar_rating_neutral_day">нейтральный день</string>
+    <string name="lunar_rating_bad_day">неблагоприятный день</string>
     <string name="lunar_cat_fruiting">плодовых</string>
     <string name="lunar_cat_root">корнеплодов</string>
     <string name="lunar_cat_leafy">зелени</string>
