@@ -1,7 +1,6 @@
 package com.plantdiseases.app.ui.garden
 
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -32,9 +31,11 @@ import com.plantdiseases.app.databinding.ItemRoomCardBinding
 import com.plantdiseases.app.ui.garden.care.CareCalendarView
 import com.plantdiseases.app.ui.garden.care.CareDayActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.RoomPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
@@ -66,11 +67,9 @@ class GardenFragment : Fragment() {
      *  fires right after onViewCreated's preload. */
     private var isFirstLoad = true
 
-    /** Plant/room count above which the search box appears. */
-    private val searchVisibleThreshold = 6
-
     private var searchVisible = false
     private var selectedPane = PANE_ROOMS
+    private var selectedCalendarSubPane = SUBPANE_CARE
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -94,6 +93,7 @@ class GardenFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.gardenScroll.applyStatusBarTopInset()
         selectedPane = savedInstanceState?.getInt(KEY_PANE, PANE_ROOMS) ?: PANE_ROOMS
+        selectedCalendarSubPane = savedInstanceState?.getInt(KEY_CALENDAR_SUBPANE, SUBPANE_CARE) ?: SUBPANE_CARE
 
         binding.gardenAddFab.setOnClickListener {
             Haptics.medium(requireContext())
@@ -115,6 +115,7 @@ class GardenFragment : Fragment() {
         }
 
         setupSegmentedControl()
+        setupCalendarSegmentedControl()
 
         binding.gardenSearch.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -147,6 +148,7 @@ class GardenFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(KEY_PANE, selectedPane)
+        outState.putInt(KEY_CALENDAR_SUBPANE, selectedCalendarSubPane)
     }
 
     override fun onDestroyView() {
@@ -157,6 +159,13 @@ class GardenFragment : Fragment() {
         }
         super.onDestroyView()
         _binding = null
+        // gardenCalendarContainer/gardenLunarContainer (and these views)
+        // belong to the view we just tore down. Without this reset,
+        // ensureCalendarViewAttached()/ensureLunarViewAttached() early-return
+        // on the next onCreateView and that pane renders empty until the
+        // Fragment instance itself is recreated.
+        calendarView = null
+        lunarView = null
     }
 
     private fun setupSegmentedControl() {
@@ -176,6 +185,34 @@ class GardenFragment : Fragment() {
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
+    }
+
+    /** Care/Lunar inner toggle inside the Calendars pane — same TabLayout
+     *  widget/styling as [setupSegmentedControl]'s outer control. */
+    private fun setupCalendarSegmentedControl() {
+        val tabs = binding.gardenCalendarSegment
+        tabs.removeAllTabs()
+        tabs.addTab(tabs.newTab().setText(R.string.garden_calendar_tab_care))
+        tabs.addTab(tabs.newTab().setText(R.string.garden_calendar_tab_lunar))
+        tabs.getTabAt(selectedCalendarSubPane)?.select()
+        applyCalendarSubPaneVisibility()
+        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                selectedCalendarSubPane = tab.position
+                applyCalendarSubPaneVisibility()
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+    }
+
+    private fun applyCalendarSubPaneVisibility() {
+        binding.gardenCareSubpane.visibility = if (selectedCalendarSubPane == SUBPANE_CARE) View.VISIBLE else View.GONE
+        val onLunar = selectedCalendarSubPane == SUBPANE_LUNAR
+        binding.gardenLunarContainer.visibility = if (onLunar && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
+        binding.gardenLunarEmpty.visibility = if (onLunar && allSummaries.isEmpty()) View.VISIBLE else View.GONE
+        if (onLunar && allSummaries.isNotEmpty()) refreshLunarAggregate()
     }
 
     private fun applyPaneVisibility() {
@@ -234,11 +271,7 @@ class GardenFragment : Fragment() {
             getString(R.string.garden_subtitle)
         }
 
-        val query = currentQuery()
-        val roomsPastThreshold = allRooms.size + 1 > searchVisibleThreshold || query.isNotEmpty()
-        binding.gardenSearchLayout.visibility = if (
-            searchVisible && selectedPane == PANE_ROOMS && roomsPastThreshold
-        ) {
+        binding.gardenSearchLayout.visibility = if (searchVisible && selectedPane == PANE_ROOMS) {
             View.VISIBLE
         } else {
             View.GONE
@@ -376,16 +409,20 @@ class GardenFragment : Fragment() {
     ): View {
         val row = ItemRoomCardBinding.inflate(layoutInflater, binding.gardenRoomsContainer, false)
         row.roomName.text = summary.room.name
-        row.roomPlantCount.text = summary.plantCount.toString()
+        row.roomPlantCount.text = resources.getQuantityString(
+            R.plurals.room_plants_count,
+            summary.plantCount,
+            summary.plantCount,
+        )
         row.roomIcon.setImageResource(RoomPresets.iconRes(summary.room.icon))
 
         row.roomThumbRow.removeAllViews()
         if (summary.thumbnails.isEmpty()) {
             row.roomThumbRow.visibility = View.GONE
-            row.roomEmptyHint.visibility = View.VISIBLE
+            row.roomEmptyHintRow.visibility = View.VISIBLE
         } else {
             row.roomThumbRow.visibility = View.VISIBLE
-            row.roomEmptyHint.visibility = View.GONE
+            row.roomEmptyHintRow.visibility = View.GONE
             summary.thumbnails.forEachIndexed { index, source ->
                 row.roomThumbRow.addView(buildThumb(source, marginStart = index > 0))
             }
@@ -474,6 +511,10 @@ class GardenFragment : Fragment() {
         ensureCalendarViewAttached()
         loadMonth(calendarMonthCursor)
         loadTodayCard()
+        // Also refreshes the Lunar sub-pane if it's the one currently
+        // selected — allSummaries may have changed (a plant added/removed)
+        // since the last time this pane was shown.
+        applyCalendarSubPaneVisibility()
     }
 
     private fun ensureCalendarViewAttached() {
@@ -490,13 +531,44 @@ class GardenFragment : Fragment() {
         buildCalendarLegend()
     }
 
+    // ─── Lunar sub-pane ─────────────────────────────────────────────────
+
+    private var lunarView: LunarCalendarView? = null
+
+    private fun ensureLunarViewAttached() {
+        if (lunarView != null) return
+        val view = LunarCalendarView(requireContext())
+        binding.gardenLunarContainer.addView(view)
+        lunarView = view
+    }
+
+    /** Feeds every plant the user owns into the aggregate view — cheap
+     *  enough to just recompute on every reveal: allSummaries is already
+     *  in memory (loaded by loadGarden()), classify() is pure, and a
+     *  garden's plant count is never large enough for this to matter. */
+    private fun refreshLunarAggregate() {
+        ensureLunarViewAttached()
+        lunarView?.setAggregate(
+            allSummaries.map { summary ->
+                LunarCalendarView.AggregateEntry(
+                    label = summary.plant.name,
+                    category = PlantCategoryClassifier.classify(summary.plant.scientificName, summary.plant.commonName),
+                )
+            },
+        )
+    }
+
     private fun buildCalendarLegend() {
         binding.gardenCalendarLegend.removeAllViews()
+        // Same soft-tint swatches the Lunar Calendar's own legend uses
+        // (bg_lunar_day_bad/neutral/good) — the day cells below now fill
+        // with these same drawables, so the key should show what's on the
+        // grid instead of the old strong disease_red/warning_amber/healthy_green dots.
         listOf(
-            R.color.disease_red to R.string.calendar_legend_overdue,
-            R.color.warning_amber to R.string.calendar_legend_pending,
-            R.color.healthy_green to R.string.calendar_legend_done,
-        ).forEach { (colorRes, labelRes) ->
+            R.drawable.bg_lunar_day_bad to R.string.calendar_legend_overdue,
+            R.drawable.bg_lunar_day_neutral to R.string.calendar_legend_pending,
+            R.drawable.bg_lunar_day_good to R.string.calendar_legend_done,
+        ).forEach { (drawableRes, labelRes) ->
             binding.gardenCalendarLegend.addView(
                 LinearLayout(requireContext()).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -510,11 +582,8 @@ class GardenFragment : Fragment() {
                     }
                     addView(
                         View(requireContext()).apply {
-                            layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp())
-                            background = GradientDrawable().apply {
-                                shape = GradientDrawable.OVAL
-                                setColor(requireContext().getColor(colorRes))
-                            }
+                            layoutParams = LinearLayout.LayoutParams(12.dp(), 12.dp())
+                            setBackgroundResource(drawableRes)
                         }
                     )
                     addView(
@@ -600,6 +669,9 @@ class GardenFragment : Fragment() {
         const val PANE_ROOMS = 0
         const val PANE_CALENDAR = 1
         const val KEY_PANE = "garden_selected_pane"
+        const val SUBPANE_CARE = 0
+        const val SUBPANE_LUNAR = 1
+        const val KEY_CALENDAR_SUBPANE = "garden_selected_calendar_subpane"
         const val UNASSIGNED_ROOM_ID = -1L
     }
 

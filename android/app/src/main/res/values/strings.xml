@@ -389,7 +389,11 @@
 
     <!-- Garden refactor — Rooms (see docs/ROADMAP.md "Garden refactor") -->
     <string name="garden_tab_rooms">Rooms</string>
-    <string name="garden_tab_calendar">Care calendar</string>
+    <string name="garden_tab_calendar">Calendars</string>
+    <string name="garden_calendar_tab_care">Care</string>
+    <string name="garden_calendar_tab_lunar">Lunar</string>
+    <string name="garden_lunar_empty_title">No plants yet</string>
+    <string name="garden_lunar_empty_body">Add a plant to see how the moon phases line up with its care.</string>
     <string name="garden_subtitle_combined">%1$s · %2$s under watch</string>
     <string name="room_add">Add room</string>
     <string name="room_name_hint">Room name</string>
@@ -1086,6 +1090,7 @@
     <string name="lunar_task_watering">Watering</string>
     <string name="lunar_task_pruning">Pruning</string>
     <string name="lunar_category_note">Tailored for: %1$s</string>
+    <string name="lunar_breakdown_row">%1$s — %2$s</string>
     <string name="lunar_cat_fruiting">fruiting plants</string>
     <string name="lunar_cat_root">root crops</string>
     <string name="lunar_cat_leafy">leafy greens</string>

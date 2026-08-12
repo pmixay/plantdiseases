@@ -269,6 +269,19 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
                     android:orientation="horizontal" />
+
+                <!-- Aggregate mode only (LunarCalendarView.setAggregate) — a
+                     single day can rate differently per plant category, so
+                     the day-color picks the majority but this list keeps
+                     the per-category nuance visible instead of averaging
+                     it away. One row per category present in the garden. -->
+                <LinearLayout
+                    android:id="@+id/lunar_category_breakdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:orientation="vertical"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <LinearLayout
@@ -280,8 +293,11 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Upcoming favourable days -->
+    <!-- Upcoming favourable days — hidden in aggregate mode (setAggregate):
+         "next favourable day" has no single answer across mixed categories,
+         same reason the day grid needs a majority rule instead of one. -->
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/lunar_upcoming_card"
         style="@style/App.GlassCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

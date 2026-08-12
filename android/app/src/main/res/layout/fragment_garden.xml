@@ -64,21 +64,11 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <FrameLayout
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="@drawable/bg_circle_semi">
-
-                        <ImageView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:layout_gravity="center"
-                            android:src="@drawable/ic_garden"
-                            android:contentDescription="@null"
-                            app:tint="@color/on_hero" />
-
-                    </FrameLayout>
-
+                    <!-- No leading icon here — the plant/sprout glyph that
+                         used to sit on this row had no id and no listener
+                         anywhere in the codebase; it was pure decoration
+                         with no evidence of intended behaviour, so it's
+                         removed rather than wired up to something invented. -->
                     <View
                         android:layout_width="0dp"
                         android:layout_height="1dp"
@@ -189,7 +179,7 @@
 
             </LinearLayout>
 
-            <!-- ── Care-calendar pane ─────────────────────────────────── -->
+            <!-- ── Calendars pane ─────────────────────────────────────── -->
             <LinearLayout
                 android:id="@+id/garden_calendar_pane"
                 android:layout_width="match_parent"
@@ -198,77 +188,143 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- CareCalendarView is added here at runtime (see
-                     ui/garden/care/CareCalendarView.kt). -->
-                <FrameLayout
-                    android:id="@+id/garden_calendar_container"
+                <!-- Care / Lunar inner toggle — same TabLayout styling as
+                     garden_segment above, so it reads as part of the same
+                     design language, not a new control. -->
+                <com.google.android.material.tabs.TabLayout
+                    android:id="@+id/garden_calendar_segment"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="@dimen/space_md"
+                    app:tabMode="fixed"
+                    app:tabGravity="fill" />
 
                 <LinearLayout
-                    android:id="@+id/garden_calendar_legend"
+                    android:id="@+id/garden_care_subpane"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:orientation="horizontal"
-                    android:gravity="center" />
+                    android:orientation="vertical">
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/garden_today_card"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:clickable="true"
-                    android:focusable="true"
-                    app:cardBackgroundColor="@color/surface"
-                    app:cardCornerRadius="@dimen/radius_lg"
-                    app:cardElevation="2dp"
-                    app:strokeWidth="0dp"
-                    app:rippleColor="@color/primary_light">
+                    <!-- CareCalendarView is added here at runtime (see
+                         ui/garden/care/CareCalendarView.kt). -->
+                    <FrameLayout
+                        android:id="@+id/garden_calendar_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
 
                     <LinearLayout
+                        android:id="@+id/garden_calendar_legend"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
                         android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:padding="@dimen/space_lg">
+                        android:gravity="center" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/garden_today_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardBackgroundColor="@color/surface"
+                        app:cardCornerRadius="@dimen/radius_lg"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="0dp"
+                        app:rippleColor="@color/primary_light">
 
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:padding="@dimen/space_lg">
 
-                            <TextView
-                                android:id="@+id/garden_today_title"
-                                android:layout_width="match_parent"
+                            <LinearLayout
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm"
-                                android:fontFamily="sans-serif-medium"
-                                tools:text="Today, 8 May" />
+                                android:layout_weight="1"
+                                android:orientation="vertical">
 
-                            <TextView
-                                android:id="@+id/garden_today_subtitle"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xxs"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm"
-                                tools:text="3 tasks" />
+                                <TextView
+                                    android:id="@+id/garden_today_title"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm"
+                                    android:fontFamily="sans-serif-medium"
+                                    tools:text="Today, 8 May" />
+
+                                <TextView
+                                    android:id="@+id/garden_today_subtitle"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_xxs"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm"
+                                    tools:text="3 tasks" />
+
+                            </LinearLayout>
+
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:src="@drawable/ic_chevron_right"
+                                android:contentDescription="@null"
+                                app:tint="@color/on_surface_secondary" />
 
                         </LinearLayout>
 
-                        <ImageView
-                            android:layout_width="20dp"
-                            android:layout_height="20dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:contentDescription="@null"
-                            app:tint="@color/on_surface_secondary" />
+                    </com.google.android.material.card.MaterialCardView>
 
-                    </LinearLayout>
+                </LinearLayout>
 
-                </com.google.android.material.card.MaterialCardView>
+                <!-- Aggregate Lunar Calendar across every plant the user
+                     owns — LunarCalendarView added here at runtime (see
+                     GardenFragment.ensureLunarViewAttached). -->
+                <FrameLayout
+                    android:id="@+id/garden_lunar_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/garden_lunar_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xl"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingHorizontal="@dimen/space_2xl"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/ic_garden"
+                        android:contentDescription="@null"
+                        app:tint="@color/on_surface_secondary" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:text="@string/garden_lunar_empty_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:fontFamily="sans-serif-medium"
+                        android:gravity="center" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/garden_lunar_empty_body"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm"
+                        android:gravity="center" />
+
+                </LinearLayout>
 
             </LinearLayout>
 

@@ -382,7 +382,11 @@
 
     <!-- Garden refactor — Rooms -->
     <string name="garden_tab_rooms">Комнаты</string>
-    <string name="garden_tab_calendar">Календарь ухода</string>
+    <string name="garden_tab_calendar">Календари</string>
+    <string name="garden_calendar_tab_care">Уход</string>
+    <string name="garden_calendar_tab_lunar">Луна</string>
+    <string name="garden_lunar_empty_title">Пока нет растений</string>
+    <string name="garden_lunar_empty_body">Добавьте растение, чтобы увидеть, как фазы луны соотносятся с уходом за ним.</string>
     <string name="garden_subtitle_combined">%1$s, %2$s под наблюдением</string>
     <string name="room_add">Добавить комнату</string>
     <string name="room_name_hint">Название комнаты</string>
@@ -1075,6 +1079,7 @@
     <string name="lunar_task_watering">Полив</string>
     <string name="lunar_task_pruning">Обрезка</string>
     <string name="lunar_category_note">Подобрано для: %1$s</string>
+    <string name="lunar_breakdown_row">%1$s — %2$s</string>
     <string name="lunar_cat_fruiting">плодовых</string>
     <string name="lunar_cat_root">корнеплодов</string>
     <string name="lunar_cat_leafy">зелени</string>

@@ -234,6 +234,22 @@ object LunarCalendar {
     }
 
     /**
+     * A garden-wide day colour for a mixed set of plant categories — the
+     * rating shared by the largest number of plants, counted per plant (not
+     * per distinct category), so six succulents outweigh one herb. Ties
+     * (including a tie that involves NEUTRAL) resolve to NEUTRAL rather than
+     * picking a side arbitrarily; an empty garden is NEUTRAL too, since
+     * there's nothing to disagree about.
+     */
+    fun aggregateRating(date: LocalDate, categories: List<PlantCategory>): Rating {
+        if (categories.isEmpty()) return Rating.NEUTRAL
+        val counts = categories.groupingBy { rating(date, it) }.eachCount()
+        val maxCount = counts.values.max()
+        val leaders = counts.filterValues { it == maxCount }.keys
+        return leaders.singleOrNull() ?: Rating.NEUTRAL
+    }
+
+    /**
      * Tasks the day suits, most-recommended first, capped at three so the row
      * in the UI never wraps. Rules vary by [category]: waxing moon generally
      * favours above-ground growth work, waning favours pruning/root work, and
