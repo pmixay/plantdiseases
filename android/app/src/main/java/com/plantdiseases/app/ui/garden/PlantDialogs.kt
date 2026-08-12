@@ -162,8 +162,10 @@ fun FragmentActivity.confirmDeletePlantDialog(
 /** Tap-to-pick room row: current selection + a chevron; tapping opens a
  *  single-choice list of every room + "Unassigned". No new dropdown widget
  *  needed — reuses the same MaterialAlertDialogBuilder every other dialog
- *  on this screen already depends on. */
-private fun buildRoomPickerRow(
+ *  on this screen already depends on. Internal (not private) so
+ *  [com.plantdiseases.app.ui.result.CreatePlantSheet] can reuse it instead
+ *  of building a second room picker. */
+internal fun buildRoomPickerRow(
     ctx: Context,
     rooms: List<RoomRepository.RoomSummary>,
     initialRoomId: Long?,

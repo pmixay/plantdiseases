@@ -75,12 +75,15 @@ class GardenAttachController(
         val plantName = result.getString(CreatePlantSheet.RESULT_NAME) ?: return
         val scanId = result.getLong(CreatePlantSheet.RESULT_SCAN_ID, -1L)
         if (scanId <= 0L) return
+        val roomId = result.getLong(CreatePlantSheet.RESULT_ROOM_ID, CreatePlantSheet.RESULT_ROOM_ID_UNASSIGNED)
+            .takeIf { it != CreatePlantSheet.RESULT_ROOM_ID_UNASSIGNED }
         activity.lifecycleScope.launch {
             val plantId = plantRepository.savePlant(
                 name = plantName,
                 species = result.getString(CreatePlantSheet.RESULT_SPECIES),
                 scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
                 commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
+                roomId = roomId,
             )
             plantRepository.assignScanToPlant(scanId, plantId)
             binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)

@@ -136,6 +136,15 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- Room picker row is added programmatically once the room
+                 list has loaded (CreatePlantSheet#loadRoomPicker). -->
+            <LinearLayout
+                android:id="@+id/room_picker_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:orientation="vertical" />
+
             <!-- Species-identify CTA + status -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_identify"

@@ -19,7 +19,9 @@ import com.google.android.material.textfield.TextInputLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.ui.garden.buildRoomPickerRow
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -48,11 +50,15 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     @Inject
     lateinit var scanRepository: ScanRepository
 
+    @Inject
+    lateinit var roomRepository: RoomRepository
+
     private var scanId: Long = -1
     private var initialName: String? = null
     private var prefilledScientific: String? = null
     private var prefilledCommon: String? = null
     private var prefilledScore: Float? = null
+    private var selectedRoomId: Long? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -157,6 +163,14 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             }
         }
 
+        val roomPickerContainer = view.findViewById<LinearLayout>(R.id.room_picker_container)
+        lifecycleScope.launch {
+            val rooms = roomRepository.getRooms()
+            roomPickerContainer.addView(
+                buildRoomPickerRow(requireContext(), rooms, selectedRoomId) { picked -> selectedRoomId = picked },
+            )
+        }
+
         cancelBtn.setOnClickListener { dismiss() }
         saveBtn.setOnClickListener {
             val name = etName.text?.toString()?.trim().orEmpty()
@@ -174,6 +188,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                         .orEmpty().ifBlank { null },
                     RESULT_SCIENTIFIC to pickedScientific,
                     RESULT_COMMON to pickedCommon,
+                    RESULT_ROOM_ID to (selectedRoomId ?: RESULT_ROOM_ID_UNASSIGNED),
                 ),
             )
             dismiss()
@@ -282,6 +297,11 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         const val RESULT_SPECIES = "result_species"
         const val RESULT_SCIENTIFIC = "result_scientific"
         const val RESULT_COMMON = "result_common"
+        const val RESULT_ROOM_ID = "result_room_id"
+
+        /** Bundle can't carry a nullable Long cleanly — same sentinel
+         *  convention as [com.plantdiseases.app.ui.garden.RoomDetailActivity.UNASSIGNED_ID]. */
+        const val RESULT_ROOM_ID_UNASSIGNED = -1L
 
         private const val ARG_SCAN_ID = "arg_scan_id"
         private const val ARG_INITIAL_NAME = "arg_initial_name"
