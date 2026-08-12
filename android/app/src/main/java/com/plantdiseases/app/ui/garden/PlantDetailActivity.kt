@@ -39,6 +39,7 @@ import com.plantdiseases.app.ui.garden.detail.dp
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
@@ -411,6 +412,18 @@ class PlantDetailActivity : AppCompatActivity() {
         overviewContainer.addView(buildAddObservationEntry())
         extraCards.buildProgressionCard(scans, currentPlant)?.let { overviewContainer.addView(it) }
         extraCards.buildGuideLink(scans)?.let { overviewContainer.addView(it) }
+        overviewContainer.addView(sectionLabel(R.string.lunar_title))
+        overviewContainer.addView(
+            LunarCalendarView(this).apply {
+                setSpecies(plant.scientificName, plant.commonName)
+                onRequestScrollTo = { target ->
+                    val rect = android.graphics.Rect()
+                    target.getDrawingRect(rect)
+                    binding.detailScroll.offsetDescendantRectToMyCoords(target, rect)
+                    binding.detailScroll.smoothScrollTo(0, rect.top)
+                }
+            },
+        )
 
         // ── Care ──────────────────────────────────────────────────────
         val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
