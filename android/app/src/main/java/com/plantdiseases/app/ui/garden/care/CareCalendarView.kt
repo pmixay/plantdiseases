@@ -1,14 +1,12 @@
 package com.plantdiseases.app.ui.garden.care
 
 import android.content.Context
-import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
-import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -26,6 +24,14 @@ import java.util.Locale
  * complexity (see ui/garden/SparklineView.kt for where a custom-drawn
  * View earns its place instead: a continuous line chart, not 42
  * independently-tappable cells).
+ *
+ * Cells reuse item_lunar_day_cell.xml and its bg_lunar_day_good/neutral/bad
+ * fill drawables — the same fill+ring+day+today-dot layering and the same
+ * soft green/amber/red tints the Lunar Calendar pane uses, just mapped to
+ * done/pending/overdue instead of good/neutral/bad ratings. The "lunar_"
+ * naming is a pre-existing artefact of those resources having shipped for
+ * the lunar pane first; nothing about the layout or drawables is actually
+ * lunar-specific.
  */
 class CareCalendarView @JvmOverloads constructor(
     context: Context,
@@ -48,7 +54,13 @@ class CareCalendarView @JvmOverloads constructor(
     private var monthCursor: Calendar = Calendar.getInstance()
     private var selectedEpochDay: Long? = null
 
-    private data class DayCell(val container: FrameLayout, val number: TextView, val dots: LinearLayout)
+    private data class DayCell(
+        val container: View,
+        val fill: View,
+        val day: TextView,
+        val todayDot: View,
+        val ring: View,
+    )
 
     init {
         orientation = VERTICAL
@@ -116,35 +128,23 @@ class CareCalendarView @JvmOverloads constructor(
             }
         }
         for (i in 0 until 42) {
-            val container = FrameLayout(context).apply {
-                layoutParams = GridLayout.LayoutParams(
-                    GridLayout.spec(i / 7, 1f),
-                    GridLayout.spec(i % 7, 1f),
-                ).apply {
-                    width = 0
-                    height = 44.dp()
-                }
-                isClickable = true
-                isFocusable = true
+            val container = LayoutInflater.from(context).inflate(R.layout.item_lunar_day_cell, grid, false)
+            container.layoutParams = GridLayout.LayoutParams(
+                GridLayout.spec(i / 7, 1f),
+                GridLayout.spec(i % 7, 1f),
+            ).apply {
+                width = 0
+                height = 44.dp()
+                setMargins(2.dp(), 2.dp(), 2.dp(), 2.dp())
             }
-            val number = TextView(context).apply {
-                textSize = 13f
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
-            }
-            val dots = LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-                ).apply { bottomMargin = 4.dp() }
-            }
-            container.addView(number)
-            container.addView(dots)
             grid.addView(container)
-            cells += DayCell(container, number, dots)
+            cells += DayCell(
+                container = container,
+                fill = container.findViewById(R.id.lunar_cell_fill),
+                day = container.findViewById(R.id.lunar_cell_day),
+                todayDot = container.findViewById(R.id.lunar_cell_today_dot),
+                ring = container.findViewById(R.id.lunar_cell_ring),
+            )
         }
         addView(grid)
     }
@@ -173,25 +173,32 @@ class CareCalendarView @JvmOverloads constructor(
             val isToday = isSameDay(cursor, today)
             val isSelected = epochDay == selectedEpochDay
 
-            cell.number.text = cursor.get(Calendar.DAY_OF_MONTH).toString()
-            cell.number.alpha = if (inMonth) 1f else 0.3f
+            cell.day.text = cursor.get(Calendar.DAY_OF_MONTH).toString()
             cell.container.isEnabled = inMonth
-            cell.container.background = when {
-                isToday -> circleBackground(context.getColor(R.color.primary))
-                isSelected -> ringBackground()
+            cell.container.alpha = if (inMonth) 1f else 0.35f
+            cell.ring.visibility = if (inMonth && isSelected) View.VISIBLE else View.GONE
+            cell.todayDot.visibility = if (inMonth && isToday) View.VISIBLE else View.GONE
+
+            // One status per cell, worst-first — a day overdue on even one
+            // task reads as overdue regardless of what else is scheduled.
+            val state = summary[epochDay]
+            val status = when {
+                !inMonth || state == null -> null
+                state.overdue > 0 -> Status.OVERDUE
+                state.pending > 0 -> Status.PENDING
+                state.done > 0 -> Status.DONE
                 else -> null
             }
-            cell.number.setTextColor(
-                context.getColor(if (isToday) R.color.on_hero else R.color.on_surface),
+            cell.fill.setBackgroundResource(status?.bgRes ?: 0)
+            cell.day.setTextColor(
+                context.getColor(
+                    when {
+                        !inMonth -> R.color.on_surface_secondary
+                        status != null -> status.fgRes
+                        else -> R.color.on_surface
+                    },
+                ),
             )
-
-            cell.dots.removeAllViews()
-            val state = summary[epochDay]
-            if (inMonth && state != null) {
-                if (state.overdue > 0) cell.dots.addView(dot(R.color.disease_red))
-                if (state.pending > 0) cell.dots.addView(dot(R.color.warning_amber))
-                if (state.done > 0) cell.dots.addView(dot(R.color.healthy_green))
-            }
 
             val dayEpoch = epochDay
             cell.container.setOnClickListener {
@@ -201,6 +208,14 @@ class CareCalendarView @JvmOverloads constructor(
         }
     }
 
+    /** Same soft-tint pairing the Lunar Calendar uses for good/neutral/bad,
+     *  reused here for done/pending/overdue. */
+    private enum class Status(val bgRes: Int, val fgRes: Int) {
+        OVERDUE(R.drawable.bg_lunar_day_bad, R.color.lunar_bad_fg),
+        PENDING(R.drawable.bg_lunar_day_neutral, R.color.lunar_neutral_fg),
+        DONE(R.drawable.bg_lunar_day_good, R.color.lunar_good_fg),
+    }
+
     private fun shiftMonth(delta: Int) {
         val next = (monthCursor.clone() as Calendar).apply { add(Calendar.MONTH, delta) }
         onMonthChanged?.invoke(next)
@@ -208,25 +223,6 @@ class CareCalendarView @JvmOverloads constructor(
 
     private fun isSameDay(a: Calendar, b: Calendar): Boolean =
         a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
-
-    private fun dot(colorRes: Int): View = View(context).apply {
-        layoutParams = LinearLayout.LayoutParams(4.dp(), 4.dp()).apply { marginStart = 1.dp() }
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(context.getColor(colorRes))
-        }
-    }
-
-    private fun circleBackground(color: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(color)
-    }
-
-    private fun ringBackground() = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.TRANSPARENT)
-        setStroke(2.dp(), context.getColor(R.color.primary))
-    }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,
