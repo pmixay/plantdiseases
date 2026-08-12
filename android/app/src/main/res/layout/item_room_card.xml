@@ -24,6 +24,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="72dp"
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
@@ -33,13 +34,21 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <ImageView
-                android:id="@+id/room_icon"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@drawable/ic_room"
-                android:contentDescription="@null"
-                app:tint="@color/primary" />
+            <FrameLayout
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_icon_circle">
+
+                <ImageView
+                    android:id="@+id/room_icon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_room"
+                    android:contentDescription="@null"
+                    app:tint="@color/primary" />
+
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/room_name"
@@ -50,28 +59,32 @@
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:textColor="@color/on_surface"
-                android:textSize="@dimen/text_title_sm"
+                android:textSize="@dimen/text_title"
                 android:fontFamily="sans-serif-medium"
                 tools:text="Кабинет" />
-
-            <TextView
-                android:id="@+id/room_plant_count"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_sm"
-                android:textColor="@color/on_surface_secondary"
-                android:textSize="@dimen/text_body_sm"
-                tools:text="3" />
 
             <ImageView
                 android:layout_width="18dp"
                 android:layout_height="18dp"
-                android:layout_marginStart="@dimen/space_xs"
+                android:layout_marginStart="@dimen/space_sm"
                 android:src="@drawable/ic_chevron_right"
                 android:contentDescription="@null"
                 app:tint="@color/on_surface_secondary" />
 
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/room_plant_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:layout_marginStart="56dp"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:paddingVertical="2dp"
+            android:background="@drawable/bg_stat_pill"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_body_sm"
+            tools:text="3 plants" />
 
         <!-- Up to 3 thumbnails, or a single "no plants yet" line — populated
              at bind time by GardenFragment.buildRoomCard. -->
@@ -82,16 +95,33 @@
             android:layout_marginTop="@dimen/space_md"
             android:orientation="horizontal" />
 
-        <TextView
-            android:id="@+id/room_empty_hint"
+        <LinearLayout
+            android:id="@+id/room_empty_hint_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
-            android:text="@string/room_empty_plants"
-            android:textColor="@color/on_surface_secondary"
-            android:textSize="@dimen/text_body_sm"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:visibility="gone"
-            tools:visibility="visible" />
+            tools:visibility="visible">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_add"
+                android:contentDescription="@null"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/room_empty_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:text="@string/room_empty_plants"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

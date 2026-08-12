@@ -4,14 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.text.format.DateUtils
 import android.view.MenuItem
 import android.view.View
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.PopupMenu
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -31,7 +28,6 @@ import com.plantdiseases.app.databinding.ItemPlantCardBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PlantHealth
-import com.plantdiseases.app.util.localizedSpeciesName
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -181,26 +177,8 @@ class RoomDetailActivity : AppCompatActivity() {
         applyHealthDot(row.plantHealthDot, summary.health.status)
 
         row.plantName.text = plant.name
-        val speciesText = localizedSpeciesName(
-            plant.scientificName,
-            plant.species ?: plant.commonName,
-            LocaleHelper.isRussian(this),
-        )
-        if (speciesText != null) {
-            row.plantSpecies.text = speciesText
-            row.plantSpecies.visibility = View.VISIBLE
-        } else {
-            row.plantSpecies.visibility = View.GONE
-        }
-
-        row.plantStatusRow.removeAllViews()
-        val statusChip = buildStatusChip(summary.health)
-        if (statusChip != null) {
-            row.plantStatusRow.addView(statusChip)
-            row.plantStatusRow.visibility = View.VISIBLE
-        } else {
-            row.plantStatusRow.visibility = View.GONE
-        }
+        row.plantSubtitle.text = healthSummaryLine(summary.health)
+        row.plantSubtitle.setTextColor(getColor(badgeColorFor(summary.health.status)))
 
         row.plantCard.setOnClickListener {
             Haptics.tick(this)
@@ -230,36 +208,13 @@ class RoomDetailActivity : AppCompatActivity() {
         dot.visibility = View.VISIBLE
     }
 
-    /** Status badge + "76% · 1 day ago" health line — null (no chip) for
-     *  UNKNOWN, matching the mockup's "no scans yet" empty state. */
-    private fun buildStatusChip(health: PlantHealth.Verdict): View? {
-        if (health.status == PlantHealth.Status.UNKNOWN) return null
+    /** Short "label · N%" line for the plant row — the room's subtitle now
+     *  leads with health instead of repeating the plant's own name. UNKNOWN
+     *  (no scans yet) has no score, so it falls back to just the label
+     *  ("No scans yet") rather than a blank line. */
+    private fun healthSummaryLine(health: PlantHealth.Verdict): String {
         val label = getString(badgeLabelFor(health.status))
-        val ageText = health.series.lastOrNull()?.let {
-            DateUtils.getRelativeTimeSpanString(it.atMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-        }
-        val text = if (health.score != null && ageText != null) {
-            "$label · " + getString(R.string.plant_status_line, health.score, ageText)
-        } else {
-            label
-        }
-        val bgRes = badgeBgColorFor(health.status)
-        val fgRes = badgeColorFor(health.status)
-        return AppCompatTextView(this).apply {
-            this.text = text
-            textSize = 12f
-            setTextColor(getColor(fgRes))
-            setPadding(12.dpPx(), 6.dpPx(), 12.dpPx(), 6.dpPx())
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = resources.getDimension(R.dimen.radius_round)
-                setColor(getColor(bgRes))
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
+        return health.score?.let { "$label · $it%" } ?: label
     }
 
     private fun badgeLabelFor(status: PlantHealth.Status): Int = when (status) {
@@ -275,13 +230,6 @@ class RoomDetailActivity : AppCompatActivity() {
         PlantHealth.Status.TREATMENT -> R.color.disease_red
         PlantHealth.Status.WATCH -> R.color.warning_amber
         PlantHealth.Status.UNKNOWN -> R.color.on_surface_secondary
-    }
-
-    private fun badgeBgColorFor(status: PlantHealth.Status): Int = when (status) {
-        PlantHealth.Status.HEALTHY, PlantHealth.Status.RECOVERING -> R.color.healthy_green_bg
-        PlantHealth.Status.TREATMENT -> R.color.disease_red_bg
-        PlantHealth.Status.WATCH -> R.color.warning_amber_bg
-        PlantHealth.Status.UNKNOWN -> R.color.surface_variant
     }
 
     private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {
