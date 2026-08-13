@@ -278,7 +278,7 @@ dependencies {
     // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
     // Uses the OkHttp engine so the existing RetryInterceptor, logging and
     // timeouts (configured on the shared OkHttpClient) carry over unchanged.
-    implementation(platform("io.ktor:ktor-bom:2.3.13"))
+    implementation(platform("io.ktor:ktor-bom:3.5.2"))
     implementation("io.ktor:ktor-client-core")
     implementation("io.ktor:ktor-client-okhttp")
     implementation("io.ktor:ktor-client-content-negotiation")
