@@ -307,10 +307,36 @@ exactly the run that collapsed.
       cached-feature probe **with and without `kaggle_ornamental` rows** and score
       AUC(z_scorch) on the rebuilt benchmark. No LoRA training. If dropping the
       source recovers separability, the driver is its class incompleteness.
-- [ ] **3. First A100 run: `SOURCE_WEIGHTS['kaggle_ornamental']` 1.0 → 0.35**
-      (§4 cell10), leaving `PRIOR_SOURCE_WEIGHTS` at its decoupled 0.8 so exactly
-      one knob moves. Primary read: AUC(z_scorch) on the rebuilt benchmark.
-      Falsified if separability does not move.
+- [x] **3. `kaggle_ornamental` 1.0 → 0.35 — RUN 2026-08-14, FALSIFIED, REVERTED.**
+      The ablation landed cleanly (draw 0.1107 → 0.0415, no other weight moved)
+      and moved the target metric by **exactly nothing**, while costing healthy:
+
+| never-trained benchmark | 2.6.8 | 2.7.0 | **2.7.1** |
+|---|---|---|---|
+| scorch recall, argmax | 0.565 | 0.065 | **0.065** |
+| scorch recall, **served** | **0.371** | 0.000 | **0.000** |
+| healthy recall, served | 0.954 | 0.947 | **0.861** |
+| healthy false-fire, served | 0.046 | 0.046 | **0.119** |
+
+      Scorch is identical to 2.7.0 to three decimals. Healthy false-fire is
+      **2.6× worse than the incumbent** (McNemar 2–13, p=0.0074). In hindsight the
+      source composition predicts this exactly: it supplies healthy / leaf_spot /
+      powdery ornamentals and **zero scorch**, so cutting its weight removes
+      ornamental *healthy* signal and cannot move a class it never contained.
+      **2.7.1 is worse than 2.7.0. Do not ship. Keep 2.6.8.**
+- [ ] **STOP TUNING SAMPLER WEIGHTS.** Four levers are now dead: this one and
+      (by the 2026-08-12 investigation) margin-crop/letterbox at conf 0.95,
+      boundary hard-negatives, and the ornamental *volume* collapse. The only
+      surviving verified mechanism is representational — 2.7.x reads ornamentals
+      as OOD (`plant_max_logit` AUROC 0.607 → 0.890) with no bank or detector
+      involved. Item 5 below is the actual fix, and each further weight guess
+      costs an A100 run and risks another healthy regression.
+- [ ] **Zero-train probe before any further run.** §3 cached-feature probe with
+      and without the **supplement's own 663 scorch rows** (v6 → v8 grew that
+      class sharply, and 2.7.x has far MORE in-domain scorch than 2.6.8 while
+      being far worse out-of-domain — the classic more-data-narrows-the-
+      representation shape). Score AUC(z_scorch) on the benchmark. No LoRA
+      training, no A100.
 - [ ] **4. Then, separately:** aspect-preserving preprocessing (letterbox vs
       centre-crop) and `supplement_boundary` 0.35 → 0.2 (draw 2.63% → 1.52%). The
       boundary premise was **refuted**, so this is a confirmatory ablation, not a
