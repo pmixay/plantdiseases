@@ -240,7 +240,7 @@ dependencies {
     // AndroidX Core
     // core-ktx is capped at 1.18.x: 1.19.0 declares minCompileSdk=37 and
     // minAgp=9.1.0, i.e. it needs the AGP 9 migration, not just an SDK bump.
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
