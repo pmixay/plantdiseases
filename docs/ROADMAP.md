@@ -324,13 +324,41 @@ exactly the run that collapsed.
       powdery ornamentals and **zero scorch**, so cutting its weight removes
       ornamental *healthy* signal and cannot move a class it never contained.
       **2.7.1 is worse than 2.7.0. Do not ship. Keep 2.6.8.**
-- [ ] **STOP TUNING SAMPLER WEIGHTS.** Four levers are now dead: this one and
-      (by the 2026-08-12 investigation) margin-crop/letterbox at conf 0.95,
-      boundary hard-negatives, and the ornamental *volume* collapse. The only
-      surviving verified mechanism is representational — 2.7.x reads ornamentals
-      as OOD (`plant_max_logit` AUROC 0.607 → 0.890) with no bank or detector
-      involved. Item 5 below is the actual fix, and each further weight guess
-      costs an A100 run and risks another healthy regression.
+- [x] **Zero-train feature probe — RUN 2026-08-14. It corrects the diagnosis.**
+      The shipped ONNX graphs export the 384-d DINOv2 CLS embedding, so this
+      needed no torch and no GPU. Linear probes on those embeddings, scorch vs
+      healthy:
+
+| | in-domain CV | **transfer in-domain → OOD** | **OOD-oracle CV** |
+|---|---|---|---|
+| 2.6.8 | 0.994 | **0.925** | 0.994 |
+| 2.7.0 | 0.995 | 0.811 | 0.986 |
+| 2.7.1 | 0.995 | **0.790** | **0.988** |
+
+      **The features are NOT the problem.** A linear probe on 2.7.1's *own*
+      embeddings separates ornamental scorch from ornamental healthy at
+      **AUROC 0.988** — the signal is fully present in the representation. What
+      degraded is the *transfer of the direction the head learned* (0.925 →
+      0.790). So "the surviving mechanism is representational" — written here on
+      2026-08-12 — **was wrong**, and this measurement retires it.
+
+      **But it is not post-hoc fixable either.** Sweeping a constant bias on
+      2.7.1's scorch logit: to reach 2.6.8's recall (0.548) costs false-fire
+      0.358 = **14× the incumbent's 0.026**; at bias 0 it is already 0.073 vs
+      0.026. There is no operating point where 2.7.1 is simultaneously as
+      sensitive and as safe. This independently confirms the investigation's
+      refutation of the "re-fit temperature / logit bias" hypothesis (conf 0.9).
+
+      **Where that leaves 2.8.** The fix is neither the backbone (features are
+      fine, so DINOv3 / `frontier` will not address this) nor calibration. It is
+      the **head's learned decision geometry**: it ties scorch to in-domain
+      acquisition style. That points squarely at item 5 — ornamental scorch data
+      the head can learn a style-invariant direction from — or a domain-robust
+      training objective. It does **not** point at another sampler weight.
+- [ ] **STOP TUNING SAMPLER WEIGHTS.** Four levers dead: `kaggle_ornamental`
+      (by experiment), margin-crop/letterbox (conf 0.95), boundary
+      hard-negatives, ornamental *volume* collapse. Each further guess costs an
+      A100 run and 2.7.1 showed a wrong guess can regress healthy significantly.
 - [ ] **Zero-train probe before any further run.** §3 cached-feature probe with
       and without the **supplement's own 663 scorch rows** (v6 → v8 grew that
       class sharply, and 2.7.x has far MORE in-domain scorch than 2.6.8 while
