@@ -2,7 +2,12 @@ package com.plantdiseases.app.ui.widget
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -28,6 +33,13 @@ import kotlin.math.min
  * projection, which renders as a semi-ellipse sharing the disc's vertical
  * radius. Always drawn in "lit-on-right" geometry and mirrored for the
  * waning half — see [onDraw].
+ *
+ * When a `moon_texture` drawable is present in the APK (a real lunar photo,
+ * transparent outside the disc — provisioned out of band, like every other
+ * binary asset in this repo, see [ensureTexture]), the lit face and a dimmed
+ * "earthshine" copy across the whole disc are drawn from that photo instead
+ * of the flat gradient + [maria] circles, which stays the fallback for
+ * builds that don't have the asset.
  */
 class MoonPhaseView @JvmOverloads constructor(
     context: Context,
@@ -45,6 +57,8 @@ class MoonPhaseView @JvmOverloads constructor(
     private val disc = RectF()
     private val term = RectF()
     private val litPath = Path()
+    private val discClip = Path()
+    private val terminatorPath = Path()
 
     private val darkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.moon_dark)
@@ -61,6 +75,21 @@ class MoonPhaseView @JvmOverloads constructor(
     }
     private var litPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // ── Photo texture (optional — see ensureTexture) ────────────────
+    private var texture: Bitmap? = null
+    private var textureLoadAttempted = false
+    private val texturePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = WARM_FILTER
+    }
+    private val earthshinePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = WARM_FILTER
+        alpha = 46 // ambient light reflected off the Earth, not full sunlight
+    }
+    private val terminatorGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = context.getColor(R.color.moon_terminator_glow)
+    }
 
     /** (normalized x, normalized y, normalized radius) — fixed, deterministic. */
     private val maria = arrayOf(
@@ -103,6 +132,24 @@ class MoonPhaseView @JvmOverloads constructor(
                 Shader.TileMode.CLAMP,
             )
         }
+        terminatorGlowPaint.strokeWidth = r * 0.10f
+        terminatorGlowPaint.maskFilter = BlurMaskFilter(r * 0.12f, BlurMaskFilter.Blur.NORMAL)
+        ensureTexture()
+    }
+
+    /** Looks up an optional `moon_texture` drawable by NAME rather than a
+     *  generated `R.drawable.moon_texture` reference, specifically so this
+     *  class compiles and runs correctly whether or not that binary asset
+     *  has actually been provisioned (it's supplied out of band, like every
+     *  other binary asset in this repo — see CLAUDE.md). Resolves to 0, and
+     *  this silently no-ops, until the file exists in res/drawable-nodpi/;
+     *  the gradient + [maria] rendering stays fully functional either way. */
+    private fun ensureTexture() {
+        if (textureLoadAttempted) return
+        textureLoadAttempted = true
+        val resId = resources.getIdentifier("moon_texture", "drawable", context.packageName)
+        if (resId == 0) return
+        texture = runCatching { BitmapFactory.decodeResource(resources, resId) }.getOrNull()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -113,10 +160,27 @@ class MoonPhaseView @JvmOverloads constructor(
         disc.set(cx - r, cy - r, cx + r, cy + r)
 
         canvas.drawCircle(cx, cy, 1.22f * r, glowPaint)
-        canvas.drawCircle(cx, cy, r, darkPaint)
 
+        val tex = texture
         val save = canvas.save()
         if (cycle >= 0.5f) canvas.scale(-1f, 1f, cx, cy) // mirror for waning
+        // Mirroring, the dark-disc/earthshine layer, the lit crescent and the
+        // terminator glow all share this ONE transform (mirror + libration
+        // applied identically to both). With a real photo texture, drawing
+        // the dark and lit halves under different transforms would show a
+        // seam right at the terminator where the surface orientation jumps.
+
+        if (tex != null) {
+            discClip.reset()
+            discClip.addCircle(cx, cy, r, Path.Direction.CW)
+            canvas.save()
+            canvas.clipPath(discClip)
+            canvas.rotate(libration, cx, cy)
+            canvas.drawBitmap(tex, null, disc, earthshinePaint)
+            canvas.restore()
+        } else {
+            canvas.drawCircle(cx, cy, r, darkPaint)
+        }
 
         val f = cos(2.0 * PI * cycle).toFloat()
         val a = max(abs(f) * r, 0.01f)
@@ -127,15 +191,34 @@ class MoonPhaseView @JvmOverloads constructor(
         litPath.arcTo(term, 90f, if (f >= 0f) -180f else 180f) // terminator back: 6 → 12 o'clock
         litPath.close()
 
-        canvas.drawPath(litPath, litPaint)
+        if (tex != null) {
+            canvas.save()
+            canvas.clipPath(litPath)
+            // Libration rotates the surface, never the terminator itself —
+            // a wobbling terminator would read as broken, not alive.
+            canvas.rotate(libration, cx, cy)
+            canvas.drawBitmap(tex, null, disc, texturePaint)
+            canvas.restore()
+
+            // Soft warm glow along just the terminator edge — a real shadow
+            // line isn't razor sharp. Only this one arc, not the outer limb,
+            // which stays crisp (drawn separately by edgePaint below).
+            terminatorPath.reset()
+            terminatorPath.arcTo(term, 90f, if (f >= 0f) -180f else 180f)
+            canvas.save()
+            canvas.clipPath(discClip)
+            canvas.drawPath(terminatorPath, terminatorGlowPaint)
+            canvas.restore()
+        } else {
+            canvas.drawPath(litPath, litPaint)
+            canvas.save()
+            canvas.clipPath(litPath)
+            canvas.rotate(libration, cx, cy)
+            drawMaria(canvas, cx, cy, r)
+            canvas.restore()
+        }
+
         canvas.drawPath(litPath, edgePaint)
-        canvas.save()
-        canvas.clipPath(litPath)
-        // Libration rotates only the maria layer, never the terminator itself —
-        // a wobbling terminator would read as broken, not alive.
-        canvas.rotate(libration, cx, cy)
-        drawMaria(canvas, cx, cy, r)
-        canvas.restore()
         canvas.restoreToCount(save)
     }
 
@@ -208,11 +291,27 @@ class MoonPhaseView @JvmOverloads constructor(
         stopIdle()
         phaseAnimator?.cancel()
         phaseAnimator = null
+        texture?.recycle()
+        texture = null
+        textureLoadAttempted = false
         super.onDetachedFromWindow()
     }
 
     private companion object {
         const val PHASE_DURATION_MS = 520L
         const val IDLE_DURATION_MS = 9_000L
+
+        /** Nudges a neutral photo toward the warm gold the reference art
+         *  uses, rather than the grey a raw lunar plate actually is. */
+        val WARM_FILTER = ColorMatrixColorFilter(
+            ColorMatrix(
+                floatArrayOf(
+                    1.08f, 0f, 0f, 0f, 6f,
+                    0f, 1.01f, 0f, 0f, 2f,
+                    0f, 0f, 0.90f, 0f, -4f,
+                    0f, 0f, 0f, 1f, 0f,
+                ),
+            ),
+        )
     }
 }
