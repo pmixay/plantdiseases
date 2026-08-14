@@ -8,15 +8,34 @@ on:
   push:
     branches: [main, "claude/**", "work/**", "codex/**"]
 
+  # Branch-name allowlists keep having the same hole, and the last one was
+  # expensive: the automated dependency PRs #163-#167 came from branches that
+  # matched nothing above, so each one arrived with an EMPTY status and was
+  # merged unbuilt. Five of them were mutually incompatible and the Android
+  # build failed at Gradle configuration time on main — nobody found out from
+  # CI. Triggering on the pull_request event covers every branch that will
+  # ever be merged, whatever it is named, so a PR can no longer be green by
+  # virtue of never having run.
+  #
+  # A `claude/**` branch that also has a PR open now builds twice (once per
+  # event). That is the accepted cost of not gating correctness on a glob.
+  pull_request:
+    branches: [main]
+
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
 # contents, packages, issues and pull-requests — handed to every third-party
 # action and to the Gradle build. Nothing in this workflow writes to the repo.
+# `pull-requests: read` is the minimum paths-filter needs to list a PR's
+# changed files through the API on pull_request events.
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Keyed on the PR number when there is one, so successive pushes to a PR
+  # supersede each other instead of piling up runs of stale commits.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,9 +45,26 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
+      # fetch-depth: 0 is load-bearing, not a nicety. On a `push` event
+      # paths-filter diffs against `github.event.before`, and with the default
+      # depth-1 checkout that commit is not in the clone — so paths-filter
+      # shells out to `git fetch` to get it. That fetch has no credentials
+      # (persist-credentials: false, correctly, keeps the token out of
+      # .git/config) and dies with:
+      #   fatal: could not read Username for 'https://github.com'
+      # which failed the `changes` job and, through `needs:`, SKIPPED the
+      # android and server jobs entirely. Every push to main since #158 was
+      # "green" only because nothing ever ran.
+      #
+      # Fetching the full history makes the base commit already present, so
+      # paths-filter never fetches and never needs a credential. The
+      # alternative — re-enabling persist-credentials here — would put the
+      # token back in .git/config to work around a missing object; this keeps
+      # the hardening and fixes the actual cause.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -228,13 +264,28 @@ jobs:
           compression-level: 3
 
   server:
-    name: Server tests & lint
+    name: Server tests & lint (py${{ matrix.python-version }})
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: server
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of the supported range. The server is deployed straight
+        # onto a host (`start.sh` → uvicorn), so the interpreter is whatever
+        # that box has rather than something a base image pins — which makes
+        # testing a single version the wrong shape:
+        #  - 3.11 is the floor, and what the requirement floors
+        #    (numpy>=2.4.6, onnxruntime>=1.28) are still resolvable against.
+        #  - 3.14 is the current release, and what a freshly-provisioned host
+        #    gets. CI used to test 3.11 only, so a newer host ran code no
+        #    test had ever executed on it.
+        # Every dependency in requirements.txt publishes cp311 AND cp314
+        # linux wheels, so neither leg compiles from source.
+        python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -243,7 +294,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             server/requirements.txt
