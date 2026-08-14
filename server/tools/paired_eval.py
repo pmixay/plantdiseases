@@ -223,6 +223,36 @@ def collect_eval_items(
     return paths, y_true, stats
 
 
+def predict_served(bundle: Path, paths: list[Path], label: str) -> list[str]:
+    """Predicted class names through the FULL production pipeline.
+
+    Stage-2 argmax is what the notebook's ``[final val_realworld]`` reports, so
+    it is the number that compares to history — but it is NOT what a user gets.
+    The served path adds the Stage-1 detector crop, mean-voting across crops,
+    the blur gate, the OOD AND-gate and the weak-healthy reroute, and those
+    move out-of-domain recall by ~20pp on their own: measured here, the gate
+    alone destroys a third of the INCUMBENT's argmax-correct scorch calls. A
+    benchmark scored only at argmax can therefore rank two bundles correctly
+    and still misstate the size of the gap a user would feel.
+    """
+    from PIL import Image
+
+    from pipeline import PlantDiseasePipeline
+
+    pipe = PlantDiseasePipeline(bundle / "detector.onnx", _bundle_entry(bundle))
+    print(f"  [{label}] SERVED: detector + classifier + blur/OOD gates + reroute")
+    preds: list[str] = []
+    t0 = time.time()
+    for i, p in enumerate(paths, 1):
+        with Image.open(p) as im:
+            r = pipe.analyze(im.convert("RGB"))
+        preds.append(r.get("class_name") or r.get("disease") or "not_a_plant")
+        if i % 50 == 0 or i == len(paths):
+            print(f"  [{label}] {i}/{len(paths)}  ({i/max(time.time()-t0,1e-6):.1f} img/s)",
+                  flush=True)
+    return preds
+
+
 def predict(bundle: Path, paths: list[Path], batch: int, label: str) -> list[str]:
     """Predicted CLASS NAMES for ``paths`` using one bundle's serving path."""
     from PIL import Image
@@ -276,6 +306,10 @@ def main() -> None:
              "unknown direction and is not valid for a cross-version A/B.",
     )
     ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--served", action="store_true",
+                    help="score through the FULL pipeline (detector crop, blur/OOD gates, "
+                         "reroute) instead of Stage-2 argmax. Slower, and the only mode "
+                         "that reflects what a user actually gets.")
     ap.add_argument("--limit", type=int, default=0, help="smoke-test on the first N images")
     ap.add_argument("--out", type=Path, default=Path("preds.json"))
     ap.add_argument("--run-bootstrap", action="store_true",
@@ -353,14 +387,15 @@ def main() -> None:
                   f"i.e. always wrong — this is honest, not a bug)")
         return out
 
-    print(f"\nscoring {args.label_a}…")
-    payload["y_pred_a"] = _to_idx(predict(args.bundle_a, paths, args.batch, args.label_a),
-                                  args.label_a)
+    _score = ((lambda b, lab: predict_served(b, paths, lab)) if args.served
+              else (lambda b, lab: predict(b, paths, args.batch, lab)))
+    payload["mode"] = "served" if args.served else "argmax"
+    print(f"\nscoring {args.label_a}… (mode={payload['mode']})")
+    payload["y_pred_a"] = _to_idx(_score(args.bundle_a, args.label_a), args.label_a)
     if args.bundle_b:
         print(f"\nscoring {args.label_b}…")
         payload["label_b"] = args.label_b
-        payload["y_pred_b"] = _to_idx(
-            predict(args.bundle_b, paths, args.batch, args.label_b), args.label_b)
+        payload["y_pred_b"] = _to_idx(_score(args.bundle_b, args.label_b), args.label_b)
 
     args.out.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     print(f"\nwrote {args.out}  ({len(paths)} paired predictions)")

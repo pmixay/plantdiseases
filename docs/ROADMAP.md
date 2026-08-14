@@ -271,11 +271,38 @@ exactly the run that collapsed.
 | └ hibiscus | **1.000** | **0.097** | 31 |
 | └ banana_bush | 0.129 | 0.032 | 31 |
 
-      Healthy is a **tie** — the false-fire retraction is confirmed on clean
-      data. The whole actionable regression is **hibiscus scorch: 31/31 → 3/31**,
-      on a class arm of 2 species. Still open: score end-to-end via
-      `pipeline.analyze` rather than argmax, and widen scorch past 2 species —
-      until then this measures one species well and the domain not at all.
+      **Scored end-to-end too** (`paired_eval --served`: detector crop, crop
+      voting, blur + OOD gates, weak-healthy reroute — what a user actually gets):
+
+| | 2.6.8 argmax | 2.6.8 **served** | 2.7.0 argmax | 2.7.0 **served** |
+|---|---|---|---|---|
+| leaf_scorch (n=62) | 0.565 | **0.371** | 0.065 | **0.000** |
+| └ hibiscus (31) | 1.000 | 0.645 | 0.097 | 0.000 |
+| └ banana_bush (31) | 0.129 | 0.097 | 0.032 | 0.000 |
+| healthy false-fire (151) | 0.033 | 0.046 | 0.040 | 0.046 |
+
+      Three things this settles. (1) **The verdict holds end-to-end**: McNemar
+      23–0, p=2.4e-07 served. 2.7.0 gets *zero* of 62 clusters. (2) **The served
+      path costs the DEPLOYED model 0.565 → 0.371** — a 19.4 pp independent
+      confirmation of the "served path destroys a third of 2.6.8's correct scorch
+      calls" finding, now reproduced on clean deduped data. (3) **Healthy is a
+      tie at 0.046 vs 0.046** — the false-fire retraction confirmed a third time,
+      on clean data, end-to-end.
+
+- [ ] **Widen the scorch arm past 2 species — BLOCKED, and the block is
+      informative.** Searched public sources; the only never-trained candidate
+      with an explicit scorch label is *Strawberry leaf scorch*
+      (`mahin661/plant-disease-detection-bounding-box-dataset`, CC BY 4.0), which
+      is the **fungal pathogen** *Diplocarpon earlianum* — not our abiotic
+      `leaf_scorch_underwatering`. Mapping it would inject exactly the label
+      guessing the builder refuses. `tarieretimitimi/houseplant-health-
+      classification` has only coarse Healthy/Unhealthy (67/24). So public
+      abiotic-scorch imagery is genuinely scarce — the same shape as the
+      `gray_mold` supply ceiling, and independent corroboration that **"re-source
+      ornamental `leaf_scorch`" is a real collection problem, not an oversight**.
+      Until it is widened, this benchmark measures **two species well and the
+      domain not at all**: read it per species, and treat "hibiscus scorch
+      recovers" as the 2.7.1 success criterion rather than a domain-level claim.
 - [ ] **2. Zero-train precursor** (CPU/Colab, one afternoon). Run the §3
       cached-feature probe **with and without `kaggle_ornamental` rows** and score
       AUC(z_scorch) on the rebuilt benchmark. No LoRA training. If dropping the
