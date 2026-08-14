@@ -72,7 +72,7 @@ android {
         // exists only for emulators/Chromebooks and the LiteRT interpreter lib
         // for it is ~7.6 MB — on x86_64 the app simply degrades to server
         // inference (the documented Aqua-absent fallback). armeabi-v7a is now
-        // real: LiteRT shipped no 32-bit lib at 2.1.3, but 2.2.0 (below) does,
+        // real: LiteRT shipped no 32-bit lib at 2.1.3, but 2.1.5 (below) does,
         // so this filter keeps it rather than silently matching nothing.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
@@ -377,14 +377,25 @@ dependencies {
     // Was held at 2.1.3 — the newest release the old Kotlin 2.1.21 compiler
     // could read, since 2.1.4+ moved its bundled Kotlin metadata to 2.3.0 and
     // failed with "Module was compiled with an incompatible version of
-    // Kotlin". That was the Kotlin bump's blocker, and it is now gone.
-    // 2.2.0 still exposes the same org.tensorflow.lite Interpreter +
-    // Interpreter.Options(setNumThreads) surface AquaClassifier uses, so no
-    // code change. It also ships an armeabi-v7a libLiteRt.so (2.1.3 shipped
-    // arm64 only), so 32-bit devices now run Aqua on-device instead of
-    // degrading to server inference — which is why armeabi-v7a in the
-    // abiFilters above finally does something.
-    implementation("com.google.ai.edge.litert:litert:2.2.0")
+    // Kotlin". The Kotlin bump cleared that, so this moves to 2.1.5, which
+    // keeps the same org.tensorflow.lite Interpreter +
+    // Interpreter.Options(setNumThreads) surface AquaClassifier uses and adds
+    // an armeabi-v7a libLiteRt.so (2.1.3 was arm64-only) — so 32-bit devices
+    // now run Aqua on-device instead of degrading to server inference, which
+    // is what finally makes armeabi-v7a in the abiFilters above do something.
+    //
+    // NOT 2.1.6+ / 2.2.0, and this is an upstream packaging defect rather
+    // than a version ceiling of ours: 2.1.6 split the artefact into
+    // `litert` + `litert-api`, and BOTH AARs declare the same namespace
+    // `com.google.ai.edge.litert`. AGP 9 flipped android.uniquePackageNames
+    // to true by default, so the merger now rejects it outright:
+    //   Namespace 'com.google.ai.edge.litert' is used in multiple modules
+    //   and/or libraries: litert:2.2.0, litert-api:2.2.0
+    // The alternative is android.uniquePackageNames=false, i.e. switching a
+    // project-wide integrity check off to accommodate one vendor's mistake —
+    // not worth one minor version. Revisit when litert-api gets its own
+    // namespace.
+    implementation("com.google.ai.edge.litert:litert:2.1.5")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
