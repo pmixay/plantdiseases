@@ -486,10 +486,12 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).isEqualTo("/api/feedback/image")
         val body = req.body.readUtf8()
         // multipart carries the scan_id text part and the image part.
-        // (Ktor's formData writes Content-Disposition names unquoted: name=scan_id.)
-        assertThat(body).contains("name=scan_id")
+        // Ktor 3 quotes Content-Disposition parameter values — name="scan_id" —
+        // where Ktor 2 emitted them bare. The quoted form is what RFC 7578
+        // specifies, so this follows the fix rather than working around it.
+        assertThat(body).contains("""name="scan_id"""")
         assertThat(body).contains("scan-7")
-        assertThat(body).contains("name=image")
+        assertThat(body).contains("""name="image"""")
     }
 
     // --- POST /api/community/scan (Ktor multipart) ---
@@ -518,12 +520,17 @@ class ScanRepositoryNetworkTest {
         val req = server.takeRequest()
         assertThat(req.path).isEqualTo("/api/community/scan")
         val body = req.body.readUtf8()
-        assertThat(body).contains("name=scan_id")
-        assertThat(body).doesNotContain("name=country")
-        assertThat(body).contains("name=confidence")
+        // Quoted parameter values — see the note in the feedback-image test.
+        // The doesNotContain assertions have to move with them: against a Ktor
+        // 3 body the bare `name=region` never appears whether or not the part
+        // was sent, so leaving them unquoted would make them pass vacuously
+        // and stop pinning the omit-blanks behaviour they exist for.
+        assertThat(body).contains("""name="scan_id"""")
+        assertThat(body).doesNotContain("""name="country"""")
+        assertThat(body).contains("""name="confidence"""")
         // blank region / null species must NOT be sent.
-        assertThat(body).doesNotContain("name=region")
-        assertThat(body).doesNotContain("name=species")
+        assertThat(body).doesNotContain("""name="region"""")
+        assertThat(body).doesNotContain("""name="species"""")
     }
 
     // --- Community read GETs (Ktor) ---
