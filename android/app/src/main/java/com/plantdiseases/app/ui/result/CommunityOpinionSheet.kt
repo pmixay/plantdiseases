@@ -168,22 +168,21 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             )
         }
 
-        // Vote-first (feedback-style): Agree confirms the model's diagnosis;
-        // Disagree reveals the picker to choose the real disease. The picker +
-        // note + send start hidden and appear on Disagree (or when there is no
-        // known verdict to agree with).
+        // Agree and Disagree both open the same picker + note — Agree just
+        // pre-selects the model's own class, so agreeing silently (no note)
+        // is still one tap, but everyone gets a chance to actually write
+        // something before sending. An instant-submit Agree was the reason
+        // "leave a comment" read as "click Agree or Disagree, nothing else":
+        // there was never a text box in that path.
         showPicker(view, visible = false)
         sendBtn?.isEnabled = false
         chipGroup?.setOnCheckedStateChangeListener { group, _ ->
             sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_agree).setOnClickListener {
-            if (diseaseKey.isNotBlank()) {
-                submitDisease(diseaseKey)
-            } else {
-                voteRow?.visibility = View.GONE
-                showPicker(view, visible = true)
-            }
+            voteRow?.visibility = View.GONE
+            showPicker(view, visible = true)
+            if (diseaseKey.isNotBlank()) preselectChip(diseaseKey)
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_disagree).setOnClickListener {
             voteRow?.visibility = View.GONE
@@ -226,6 +225,18 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             .error(R.drawable.ic_plant_placeholder)
             .transform(CenterCrop(), RoundedCorners(24))
             .into(photo)
+    }
+
+    /** Check the chip matching [key] (the model's own verdict, for the Agree
+     *  shortcut) and enable Send immediately — the user doesn't have to
+     *  re-tap a chip they already implicitly picked by hitting Agree. */
+    private fun preselectChip(key: String) {
+        val group = chipGroup ?: return
+        (0 until group.childCount)
+            .map { group.getChildAt(it) as Chip }
+            .firstOrNull { it.tag == key }
+            ?.let { group.check(it.id) }
+        sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
     }
 
     private fun showPicker(view: View, visible: Boolean) {

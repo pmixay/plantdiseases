@@ -98,13 +98,13 @@ class NearbyScansAdapter(
                 android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
+            // Always show all three counts, zero included — hiding a count at
+            // zero was why the same action row looked different from post to
+            // post ("chaotic"): a like/comment landing on a post made a pill
+            // pop into existence that wasn't there a moment before.
             views.text = item.viewCount.toString()
-            views.visibility = if (item.viewCount > 0) View.VISIBLE else View.GONE
             comments.text = item.opinionCount.toString()
-            comments.visibility = if (item.opinionCount > 0) View.VISIBLE else View.GONE
-
             likes.text = item.likeCount.toString()
-            likes.visibility = if (item.likeCount > 0) View.VISIBLE else View.GONE
             val ctx = itemView.context
             likeIcon.setImageResource(
                 if (item.likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart,
