@@ -168,6 +168,7 @@
 
     <!-- Result -->
     <string name="new_scan">New Scan</string>
+    <string name="new_scan_hint">Take a new photo or pick one from your gallery</string>
     <string name="heatmap_label">Detection Area</string>
 
     <!-- Camera -->

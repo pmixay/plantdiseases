@@ -12,6 +12,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -35,6 +36,7 @@ import com.plantdiseases.app.ui.garden.detail.DetailHeaderController
 import com.plantdiseases.app.ui.garden.detail.DetailJournalController
 import com.plantdiseases.app.ui.garden.detail.DetailPhotosController
 import com.plantdiseases.app.ui.garden.detail.DetailTimelineController
+import com.plantdiseases.app.ui.common.sectionRow
 import com.plantdiseases.app.ui.garden.detail.dp
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
@@ -217,13 +219,50 @@ class PlantDetailActivity : AppCompatActivity() {
 
     /** Entry point for the "New scan" action tile: let the user choose a
      *  fresh camera capture or an existing photo, then run either through
-     *  the same analysis path. */
+     *  the same analysis path. Same icon + title + chevron row style as the
+     *  "To Garden" attach dialog (GardenAttachController) rather than a bare
+     *  setItems list, so the two choices read as tappable instead of as
+     *  disabled-looking text floating over the hero card. */
     private fun requestNewScan() {
-        MaterialAlertDialogBuilder(this)
+        lateinit var dialog: AlertDialog
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity), 20.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity))
+        }
+        column.addView(
+            TextView(this).apply {
+                text = getString(R.string.new_scan_hint)
+                textSize = 13f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                setPadding(0, 0, 0, 12.dp(this@PlantDetailActivity))
+            },
+        )
+        column.addView(
+            sectionRow(
+                title = getString(R.string.take_photo),
+                subtitle = null,
+                iconRes = R.drawable.ic_scan,
+                onClick = {
+                    dialog.dismiss()
+                    requestCameraScan()
+                },
+            ),
+        )
+        column.addView(
+            sectionRow(
+                title = getString(R.string.gallery),
+                subtitle = null,
+                iconRes = R.drawable.ic_gallery,
+                onClick = {
+                    dialog.dismiss()
+                    pickGalleryScan.launch("image/*")
+                },
+            ),
+        )
+        dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.new_scan)
-            .setItems(arrayOf(getString(R.string.take_photo), getString(R.string.gallery))) { _, which ->
-                if (which == 0) requestCameraScan() else pickGalleryScan.launch("image/*")
-            }
+            .setView(column)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
