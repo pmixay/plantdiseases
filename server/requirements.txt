@@ -30,7 +30,7 @@ ImageHash>=4.3.2
 # and this service runs on 3.11 (see Dockerfile), so ``>=2.5`` makes the
 # install unresolvable rather than merely newer. 2.4.x is the newest series
 # that ships 3.11 wheels — revisit only together with the Python base image.
-numpy>=2.4,<3.0
+numpy>=2.4.6,<3.0
 onnxruntime>=1.28.0
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return
