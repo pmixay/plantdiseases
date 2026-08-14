@@ -240,7 +240,7 @@ dependencies {
     // AndroidX Core
     // core-ktx is capped at 1.18.x: 1.19.0 declares minCompileSdk=37 and
     // minAgp=9.1.0, i.e. it needs the AGP 9 migration, not just an SDK bump.
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
@@ -272,13 +272,13 @@ dependencies {
     // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
     // logging). Retrofit/converter-gson were removed once the last endpoint
     // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
-    implementation("com.squareup.okhttp3:okhttp:5.4.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
     // Uses the OkHttp engine so the existing RetryInterceptor, logging and
     // timeouts (configured on the shared OkHttpClient) carry over unchanged.
-    implementation(platform("io.ktor:ktor-bom:3.5.2"))
+    implementation(platform("io.ktor:ktor-bom:2.3.13"))
     implementation("io.ktor:ktor-client-core")
     implementation("io.ktor:ktor-client-okhttp")
     implementation("io.ktor:ktor-client-content-negotiation")
@@ -387,7 +387,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
-    testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.room:room-testing:2.8.4")
 
@@ -402,7 +402,7 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
     androidTestImplementation("androidx.fragment:fragment-testing:1.8.9")
-    androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
