@@ -272,8 +272,8 @@ dependencies {
     // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
     // logging). Retrofit/converter-gson were removed once the last endpoint
     // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
 
     // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
     // Uses the OkHttp engine so the existing RetryInterceptor, logging and
@@ -387,7 +387,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.room:room-testing:2.8.4")
 
@@ -402,7 +402,7 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
     androidTestImplementation("androidx.fragment:fragment-testing:1.8.9")
-    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
