@@ -10,22 +10,22 @@ plugins {
 
 android {
     namespace = "com.plantdiseases.app"
-    // compileSdk 36 (Android 16) is required by the current AndroidX line —
-    // androidx.core 1.17+, activity 1.13.0 and CameraX 1.6.x all declare
-    // minCompileSdk=36 in their AAR metadata and fail the build below it.
-    // AGP 8.13.2 already satisfies their minAgp=8.9.1, so no AGP/Kotlin bump
-    // is needed to get there.
-    compileSdk = 36
+    // compileSdk 37 is required by the current AndroidX line — androidx.core
+    // 1.19.0 declares minCompileSdk=37 / minAgp=9.1.0 in its AAR metadata and
+    // fails the build below either. AGP 9.1.1 (root build.gradle.kts) is the
+    // other half of that requirement; the two only move together.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
         minSdk = 29 // Android 10
-        // Deliberately held one behind compileSdk. targetSdk is what opts the
-        // app into a platform's *behaviour* changes; raising it to 36 would
-        // turn on Android 16's mandatory edge-to-edge enforcement and the
-        // stricter intent/foreground-service rules, which is a UI change to
-        // make on its own terms — not a side effect of a dependency refresh.
-        // Compiling against 36 while targeting 35 is the supported combination.
+        // Deliberately behind compileSdk, and stated explicitly (AGP 9
+        // otherwise defaults targetSdk to compileSdk when unset). targetSdk is
+        // what opts the app into a platform's *behaviour* changes; raising it
+        // would turn on Android 16's mandatory edge-to-edge enforcement and
+        // the stricter intent/foreground-service rules — a UI change to make
+        // on its own terms, not a side effect of a dependency refresh.
+        // Compiling against a newer SDK than you target is supported.
         targetSdk = 35
         versionCode = 18
         versionName = "1.8"
@@ -70,11 +70,10 @@ android {
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real phones use. x86_64 is dropped: it
         // exists only for emulators/Chromebooks and the LiteRT interpreter lib
-        // for it is ~10 MB — on x86_64 the app simply degrades to server
-        // inference (the documented Aqua-absent fallback). LiteRT ships no
-        // armeabi-v7a lib at 2.1.3 either (one first appears in 2.1.5, which
-        // the Kotlin ceiling above rules out), so 32-bit devices also degrade
-        // to the server.
+        // for it is ~7.6 MB — on x86_64 the app simply degrades to server
+        // inference (the documented Aqua-absent fallback). armeabi-v7a is now
+        // real: LiteRT shipped no 32-bit lib at 2.1.3, but 2.2.0 (below) does,
+        // so this filter keeps it rather than silently matching nothing.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
         ndk {
@@ -237,14 +236,13 @@ ktlint {
 }
 
 dependencies {
-    // AndroidX Core
-    // core-ktx is capped at 1.18.x: 1.19.0 declares minCompileSdk=37 and
-    // minAgp=9.1.0, i.e. it needs the AGP 9 migration, not just an SDK bump.
+    // AndroidX Core. 1.19.0 needs compileSdk 37 + AGP 9.1.0, both of which
+    // this build now has.
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation("androidx.fragment:fragment-ktx:1.9.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
@@ -272,23 +270,33 @@ dependencies {
     // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
     // logging). Retrofit/converter-gson were removed once the last endpoint
     // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
+    // OkHttp 5 keeps the OkHttpClient/Interceptor API this project uses, and
+    // com.squareup.okhttp3:mockwebserver still ships the legacy
+    // okhttp3.mockwebserver package, so the network tests below are unchanged.
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
 
     // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
     // Uses the OkHttp engine so the existing RetryInterceptor, logging and
     // timeouts (configured on the shared OkHttpClient) carry over unchanged.
+    // Ktor 3's breaking changes are in the IO/multipart internals and the
+    // server artefacts; the client surface used here (HttpClient(OkHttp),
+    // ContentNegotiation, defaultRequest, get/post/setBody, and
+    // MultiPartFormDataContent + formData over ByteArrays in ScanRepository)
+    // is source-compatible. It needed Kotlin >= 2.2 on the compiler side,
+    // which is what blocked it before — 3.5.2 pulls a 2.3.x stdlib that the
+    // old 2.1.21 compiler refused to read.
     implementation(platform("io.ktor:ktor-bom:3.5.2"))
     implementation("io.ktor:ktor-client-core")
     implementation("io.ktor:ktor-client-okhttp")
     implementation("io.ktor:ktor-client-content-negotiation")
     implementation("io.ktor:ktor-serialization-kotlinx-json")
-    // Pinned to match the Kotlin 2.1.21 serialization compiler plugin (Ktor
-    // 2.3.13 bundles 1.6.3; overriding up keeps the generated serializers and
-    // the runtime in lockstep). 1.8.1 is the newest release still built
-    // against kotlin-stdlib 2.1.x — 1.9.0 moves to 2.2.0 and 1.11.0 to 2.3.20,
-    // so taking those would mean bumping the Kotlin compiler in lockstep too.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    // Still declared explicitly (rather than inherited from the Ktor BOM) so
+    // the runtime and the serialization compiler plugin stay in lockstep.
+    // 1.11.0 is built against kotlin-stdlib 2.3.20 — older than the 2.4.10
+    // compiler now in use, so it reads fine; it was 1.8.1 only because the
+    // 2.1.21 compiler could not.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // Firebase Cloud Messaging (push). No google-services plugin / json:
     // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
@@ -306,9 +314,11 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.14.0")
 
-    // Glide for images
-    implementation("com.github.bumptech.glide:glide:4.16.0")
-    ksp("com.github.bumptech.glide:ksp:4.16.0")
+    // Glide for images. On 5.x — the app only uses the plain
+    // Glide.with(...).load(...) surface (no @GlideModule / generated GlideApp),
+    // which is the part Glide 5 kept source-compatible.
+    implementation("com.github.bumptech.glide:glide:5.0.9")
+    ksp("com.github.bumptech.glide:ksp:5.0.9")
 
     // Hilt (Dagger) dependency injection. Replaces the hand-rolled `by lazy`
     // singletons on PlantDiseasesApp with a Hilt graph (di/AppModule.kt).
@@ -322,11 +332,11 @@ dependencies {
     // Robolectric host in tests, so it can't be `@AndroidEntryPoint`) instead
     // resolve their deps via EntryPointAccessors against the Application's
     // SingletonComponent — see di/AppEntryPoint.kt.
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    ksp("com.google.dagger:hilt-android-compiler:2.57.2")
+    implementation("com.google.dagger:hilt-android:2.60.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.60.1")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
@@ -364,14 +374,17 @@ dependencies {
     // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
     // out of band like the server weights, never committed; AquaClassifier
     // gates on its presence and the app degrades to the server when absent.
-    // Held at 2.1.3: the newest release the Kotlin 2.1.21 compiler above will
-    // read. LiteRT ships Kotlin metadata inside its own classes.jar, and the
-    // compiler only tolerates metadata one minor version ahead of itself —
-    // 2.1.0 through 2.1.3 carry metadata 2.2.0 (accepted, which is why 2.1.0
-    // built), while 2.1.4+ moved to 2.3.0 and fail the build with
-    // "Module was compiled with an incompatible version of Kotlin".
-    // Raising this needs the Kotlin bump, not just a version change.
-    implementation("com.google.ai.edge.litert:litert:2.1.3")
+    // Was held at 2.1.3 — the newest release the old Kotlin 2.1.21 compiler
+    // could read, since 2.1.4+ moved its bundled Kotlin metadata to 2.3.0 and
+    // failed with "Module was compiled with an incompatible version of
+    // Kotlin". That was the Kotlin bump's blocker, and it is now gone.
+    // 2.2.0 still exposes the same org.tensorflow.lite Interpreter +
+    // Interpreter.Options(setNumThreads) surface AquaClassifier uses, so no
+    // code change. It also ships an armeabi-v7a libLiteRt.so (2.1.3 shipped
+    // arm64 only), so 32-bit devices now run Aqua on-device instead of
+    // degrading to server inference — which is why armeabi-v7a in the
+    // abiFilters above finally does something.
+    implementation("com.google.ai.edge.litert:litert:2.2.0")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
@@ -401,10 +414,10 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
-    androidTestImplementation("androidx.fragment:fragment-testing:1.8.9")
+    androidTestImplementation("androidx.fragment:fragment-testing:1.9.0")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
-    debugImplementation("androidx.fragment:fragment-testing-manifest:1.8.9")
+    debugImplementation("androidx.fragment:fragment-testing-manifest:1.9.0")
 }
