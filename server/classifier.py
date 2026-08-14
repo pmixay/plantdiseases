@@ -35,7 +35,7 @@ from PIL import Image
 
 try:
     from .config import get_int
-except ImportError:  # pragma: no cover — flat layout (Docker copies files flat)
+except ImportError:  # pragma: no cover — flat layout (run from server/)
     from config import get_int
 
 logger = logging.getLogger(__name__)
