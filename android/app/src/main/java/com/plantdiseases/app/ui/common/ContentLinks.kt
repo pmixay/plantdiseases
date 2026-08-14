@@ -53,7 +53,12 @@ object ContentLinks {
             linked = true
         }
         out.append(raw, cursor, raw.length)
-        tv.text = out
+        // BufferType.SPANNABLE, not the default NORMAL — TextView.setText with
+        // BufferType.NORMAL stores a Spanned as an immutable SpannedString, so
+        // callers that later try to add spans to tv.text (e.g. the guide
+        // renderer's hanging-indent pass) silently no-op on an `as? Spannable`
+        // cast. Keeping it mutable here costs nothing when no one else touches it.
+        tv.setText(out, TextView.BufferType.SPANNABLE)
         if (linked) {
             tv.movementMethod = LinkMovementMethod.getInstance()
             tv.setLinkTextColor(ContextCompat.getColor(tv.context, R.color.primary))
