@@ -1,7 +1,7 @@
 # Developer-only dependencies (extends requirements.txt).
 # Used for linting and running the test suite in CI.
 -r requirements.txt
-pytest>=9.1
+pytest>=9.1.1
 # httpx 0.28 dropped the ``app=`` shortcut the OLD Starlette TestClient
 # relied on; the current Starlette (>= 1.x, pulled by FastAPI >= 0.136) uses
 # the supported transport API, so the historical ``<0.28`` cap is lifted —
