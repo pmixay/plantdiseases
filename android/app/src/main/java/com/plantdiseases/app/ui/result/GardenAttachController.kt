@@ -64,12 +64,19 @@ class GardenAttachController(
                 },
             )
             plants.forEach { summary ->
+                // Only pass a thumb loader when there's a real photo — sectionRow
+                // skips its own icon padding/tint whenever thumb is non-null (a
+                // photo needs neither), so a plant with no photo must get
+                // thumb = null and fall through to sectionRow's own tinted
+                // fallback icon rather than an untinted ic_garden that renders
+                // as a near-invisible white outline on the pale icon-circle bg.
+                val thumbSource = summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
                 column.addView(
                     activity.sectionRow(
                         title = summary.plant.name,
                         subtitle = null,
                         iconRes = R.drawable.ic_garden,
-                        thumb = { iv -> bindPlantThumb(iv, summary) },
+                        thumb = thumbSource?.let { source -> { iv: ImageView -> bindPlantThumb(iv, source) } },
                         onClick = {
                             attachScanToPlant(scan, summary.plant.id)
                             dialog.dismiss()
@@ -89,12 +96,7 @@ class GardenAttachController(
         }
     }
 
-    private fun bindPlantThumb(imageView: ImageView, summary: PlantRepository.PlantSummary) {
-        val source = summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
-        if (source == null) {
-            imageView.setImageResource(R.drawable.ic_garden)
-            return
-        }
+    private fun bindPlantThumb(imageView: ImageView, source: String) {
         Glide.with(activity)
             .load(source)
             .format(DecodeFormat.PREFER_RGB_565)
