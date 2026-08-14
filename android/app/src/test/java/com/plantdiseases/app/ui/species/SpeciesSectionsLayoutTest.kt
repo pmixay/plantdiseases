@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
@@ -171,24 +172,30 @@ class SpeciesSectionsLayoutTest {
      *  weight, so in a horizontal LinearLayout it measured first against
      *  the FULL row width (the weighted label contributes nothing at that
      *  stage) — a long sentence value then claimed the whole row and the
-     *  weight-1 label was left with little or nothing. Both columns are
-     *  weighted now, so the label's share depends only on the row width,
-     *  never on how long the value happens to be. */
+     *  weight-1 label was left with little or nothing.
+     *
+     *  This asserts the LayoutParams directly rather than a measured width:
+     *  Robolectric's default (non-@GraphicsMode) text layout doesn't measure
+     *  real glyph widths, so a measured-width assertion here would likely
+     *  pass on the old broken code too and prove nothing. The params are
+     *  what actually changed and what actually matters — both columns must
+     *  be 0dp + weighted so neither can starve the other regardless of how
+     *  Robolectric happens to measure text. */
     @Test
-    fun factRowLabelKeepsItsShareAgainstALongWrappingValue() {
+    fun factRowLabelAndValueAreBothWeightedSoNeitherCanStarveTheOther() {
         val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
-        val longValue = "2 части торфа или кокоса + 1 часть перлита + 1 часть коры для хорошего дренажа"
-        val row = activity.factRow(R.drawable.ic_garden, "Концентрация", longValue) as ViewGroup
+        val row = activity.factRow(R.drawable.ic_garden, "Концентрация", "some value") as ViewGroup
 
-        val widthPx = (320 * activity.resources.displayMetrics.density).toInt()
-        row.measure(
-            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        row.layout(0, 0, widthPx, row.measuredHeight)
+        val label = row.getChildAt(1).layoutParams as LinearLayout.LayoutParams
+        val value = row.getChildAt(2).layoutParams as LinearLayout.LayoutParams
 
-        val label = row.getChildAt(1)
-        assertWithMessage("label collapsed under a long value — factRow's weighting regressed")
-            .that(label.measuredWidth).isGreaterThan(0)
+        assertWithMessage("label column should be 0dp + weighted")
+            .that(label.width).isEqualTo(0)
+        assertWithMessage("label column should carry a weight")
+            .that(label.weight).isGreaterThan(0f)
+        assertWithMessage("value column should be 0dp + weighted — WRAP_CONTENT lets a long value starve the label")
+            .that(value.width).isEqualTo(0)
+        assertWithMessage("value column should carry a weight")
+            .that(value.weight).isGreaterThan(0f)
     }
 }
