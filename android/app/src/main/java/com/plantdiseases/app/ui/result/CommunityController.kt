@@ -303,15 +303,32 @@ class CommunityController(
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
             onClick = { item ->
-                // Read-only browse only — the strip itself is gated behind the
-                // community opt-in (handled below), and leaving a second opinion
-                // never happens from here.
+                // Community v2: commenting is unlocked here too — the server
+                // already excludes the caller's own scans from this carousel
+                // (userPseudoId doubles as exclude_user_pseudo_id below), so
+                // the strip itself is gated behind the community opt-in
+                // (handled below), not behind "is this someone else's scan".
+                // The localClientScanIds() check is belt-and-braces for a
+                // reinstalled app whose new pseudo-id doesn't match an old
+                // scan still cached in the feed — same guard NearbyScansActivity
+                // already applies to its own list.
                 recordView(item.scanId, pseudoId)
-                CommunityOpinionSheet.showReadOnly(
-                    activity.supportFragmentManager,
-                    item,
-                    displayName(item.disease, isRu),
-                )
+                activity.lifecycleScope.launch {
+                    val mine = repository.localClientScanIds()
+                    if (item.scanId in mine) {
+                        CommunityOpinionSheet.showForOwner(
+                            activity.supportFragmentManager,
+                            item.scanId,
+                            displayName(item.disease, isRu),
+                        )
+                    } else {
+                        CommunityOpinionSheet.show(
+                            activity.supportFragmentManager,
+                            item,
+                            displayName(item.disease, isRu),
+                        )
+                    }
+                }
             },
         )
         rv.adapter = adapter

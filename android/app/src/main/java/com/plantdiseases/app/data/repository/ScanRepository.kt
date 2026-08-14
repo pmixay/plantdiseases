@@ -355,11 +355,20 @@ class ScanRepository(
             }
         }
 
-    /** List community "second opinions" + consensus for a shared scan. */
-    suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
+    /** List community "second opinions" + consensus for a shared scan.
+     *  [userPseudoId] is optional — pass the caller's own id to get an
+     *  accurate `likedByMe` in the response. */
+    suspend fun getCommunityOpinions(
+        scanId: String,
+        userPseudoId: String? = null,
+    ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiClient.httpClient.get("api/community/opinions/$scanId")
+                val response = apiClient.httpClient.get("api/community/opinions/$scanId") {
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
@@ -824,6 +833,60 @@ class ScanRepository(
         }
     }
 
+    /** Record that this install scrolled past (not necessarily opened) up to
+     *  50 shared scans in the feed. Same fire-and-forget contract as
+     *  [recordCommunityView]; the caller is expected to have already
+     *  filtered out ids already reported this screen session. */
+    suspend fun recordCommunityViews(scanIds: List<String>, viewerPseudoId: String) {
+        if (scanIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            try {
+                apiClient.httpClient.post("api/community/view") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityViewRequest(
+                            scanIds = scanIds.take(50),
+                            userPseudoId = viewerPseudoId,
+                        ),
+                    )
+                }
+            } catch (_: Exception) {
+                // best-effort telemetry; never surface to the user
+            }
+        }
+    }
+
+    /** Like or unlike a shared scan. Returns the resulting liked state on
+     *  success — the caller should already have applied it optimistically
+     *  and only needs to roll back on failure. */
+    suspend fun setCommunityLike(
+        scanId: String,
+        userPseudoId: String,
+        liked: Boolean,
+    ): Result<com.plantdiseases.app.data.model.CommunityLikeResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.post("api/community/like") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityLikeRequest(
+                            scanId = scanId,
+                            userPseudoId = userPseudoId,
+                            liked = liked,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityLikeResponse>(),
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Batched {opinions, views} per scan_id for the Gallery badges. Returns
      *  an empty map on failure so the UI just shows no badges. */
     suspend fun getCommunityScanCounts(
@@ -1135,6 +1198,7 @@ class ScanRepository(
         userPseudoId: String?,
         limit: Int = 12,
         scope: String? = null,
+        before: Long? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -1149,6 +1213,7 @@ class ScanRepository(
                         parameter("user_pseudo_id", it)
                     }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
+                    before?.let { parameter("before", it) }
                     parameter("limit", limit)
                 }
                 when (response.status.value) {

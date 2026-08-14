@@ -621,7 +621,7 @@
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.",
+        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\n``user_pseudo_id`` is optional — pass it to get an accurate\n``liked_by_me`` in the response; omitted, it reads as not-liked.",
         "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
         "parameters": [
           {
@@ -631,6 +631,22 @@
             "schema": {
               "type": "string",
               "title": "Scan Id"
+            }
+          },
+          {
+            "name": "user_pseudo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Pseudo Id"
             }
           }
         ],
@@ -734,13 +750,50 @@
     "/api/community/view": {
       "post": {
         "summary": "Community Record Scan View",
-        "description": "Record that the caller opened someone else's shared scan. Deduped per\nviewer server-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire on every open.",
+        "description": "Record that the caller opened (or merely scrolled past) someone\nelse's shared scan — one id via ``scan_id``, or up to 50 via\n``scan_ids`` for feed-scroll impressions. Deduped per viewer\nserver-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire liberally.",
         "operationId": "community_record_scan_view_api_community_view_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/like": {
+      "post": {
+        "summary": "Community Like Scan",
+        "description": "Like or unlike a shared scan. A self-like is refused (0 either way);\nliking your own scan makes no more sense than viewing it does.",
+        "operationId": "community_like_scan_api_community_like_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityLikeRequest"
               }
             }
           },
@@ -808,7 +861,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``before`` pages the feed: pass the previous page's ``next_before`` to\nfetch older rows. The response's ``next_before`` is null once a page\ncomes back short — that's the end of the scope.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -947,6 +1000,22 @@
                 }
               ],
               "title": "Scope"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
             }
           }
         ],
@@ -1360,7 +1429,7 @@
     "/api/species-profile": {
       "get": {
         "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side per species and carries both EN/RU text copies,\nso a locale switch cannot change the map. ``profile_version`` is a cache-busting\nquery parameter for clients/CDNs.",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.",
         "operationId": "species_profile_endpoint_api_species_profile_get",
         "parameters": [
           {
@@ -1609,7 +1678,7 @@
     "/api/popular": {
       "get": {
         "summary": "Popular Endpoint",
-        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
+        "description": "Personalized popular-plants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
         "operationId": "popular_endpoint_api_popular_get",
         "parameters": [
           {
@@ -1978,6 +2047,33 @@
         ],
         "title": "ChatRequest"
       },
+      "CommunityLikeRequest": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scan Id"
+          },
+          "user_pseudo_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Pseudo Id"
+          },
+          "liked": {
+            "type": "boolean",
+            "title": "Liked",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "user_pseudo_id"
+        ],
+        "title": "CommunityLikeRequest"
+      },
       "CommunityOpinionRequest": {
         "properties": {
           "scan_id": {
@@ -2073,10 +2169,31 @@
       "CommunityViewRequest": {
         "properties": {
           "scan_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Scan Id"
+          },
+          "scan_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Ids"
           },
           "user_pseudo_id": {
             "type": "string",
@@ -2087,7 +2204,6 @@
         },
         "type": "object",
         "required": [
-          "scan_id",
           "user_pseudo_id"
         ],
         "title": "CommunityViewRequest"

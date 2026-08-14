@@ -279,16 +279,15 @@
     <string name="second_opinion_stopped">Запрос отменён — уведомлений по этому скану больше не будет.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
     <string name="community_opinion_replies_subtitle">Что сообщество думает об этом скане.</string>
-    <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_opinion_list_header">Ответы (%1$d)</string>
     <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
+    <string name="community_like_action">Нравится этот скан</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Сканы сообщества</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
-    <string name="nearby_scans_second_opinion">Второе мнение</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
     <string name="community_filter_country">Страна</string>

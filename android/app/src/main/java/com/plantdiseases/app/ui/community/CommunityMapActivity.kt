@@ -43,6 +43,7 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -400,6 +401,20 @@ class CommunityMapActivity : AppCompatActivity() {
         )
     }
 
+    /** Optimistic like toggle for a row in the grouped-scans bottom sheet —
+     *  same contract as [NearbyScansActivity]'s, just parameterised by which
+     *  adapter instance owns the tapped row. */
+    private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
+        val next = !item.likedByMe
+        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
+        adapter.updateLike(item.scanId, optimisticCount, next)
+        lifecycleScope.launch {
+            scanRepository.setCommunityLike(item.scanId, TelemetryIds.userPseudoId(this@CommunityMapActivity), next)
+                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
+                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
+        }
+    }
+
     /** Bottom sheet listing the scans grouped at one point — reuses the feed
      *  adapter so each row opens the same opinion sheet. */
     private fun openGroup(group: List<CommunityScanItem>) {
@@ -416,10 +431,11 @@ class CommunityMapActivity : AppCompatActivity() {
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
-            onSecondOpinion = { item ->
+            onOpen = { item ->
                 dialog.dismiss()
                 openScan(item)
             },
+            onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
         )
         list.adapter = adapter
         adapter.submit(group)

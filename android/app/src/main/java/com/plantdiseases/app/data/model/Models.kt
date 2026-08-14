@@ -303,6 +303,9 @@ data class CommunityScansResponse(
     // showing a misleading "no scans near you" empty state.
     @SerializedName("location_required") @SerialName("location_required")
     val locationRequired: Boolean = false,
+    // Cursor for the next (older) page — pass back as the `before` param.
+    // Null once a page comes back short, meaning the scope is exhausted.
+    @SerializedName("next_before") @SerialName("next_before") val nextBefore: Long? = null,
 )
 
 @Serializable
@@ -351,6 +354,8 @@ data class CommunityScanItem(
     // strips them), so the map can pin a marker. Null elsewhere.
     @SerializedName("lat") @SerialName("lat") val lat: Double? = null,
     @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
+    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
+    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
 )
 
 /** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
@@ -485,6 +490,24 @@ data class CommunityOpinionsResponse(
     @SerializedName("opinion_requested_at") @SerialName("opinion_requested_at") val opinionRequestedAt: Long? = null,
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
     @SerializedName("count") @SerialName("count") val count: Int = 0,
+    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
+    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
+)
+
+/** /api/community/like request body. */
+@Serializable
+data class CommunityLikeRequest(
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("liked") @SerialName("liked") val liked: Boolean = true,
+)
+
+/** /api/community/like response. */
+@Serializable
+data class CommunityLikeResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("liked") @SerialName("liked") val liked: Boolean = false,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** /api/push/register request body — registers this install's FCM token
@@ -500,8 +523,11 @@ data class PushRegisterRequest(
  *  someone else's shared scan (deduped per viewer server-side). */
 @Serializable
 data class CommunityViewRequest(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
     @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    // Single-open shape. `scanIds` (batch, feed-scroll impressions) is the
+    // alternative — the server requires exactly one of the two to be set.
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String? = null,
+    @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>? = null,
 )
 
 /** /api/community/scan-counts request + response: batched {opinions, views}

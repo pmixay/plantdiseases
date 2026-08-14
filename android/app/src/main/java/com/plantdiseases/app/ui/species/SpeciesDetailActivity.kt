@@ -506,18 +506,23 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val pseudoId = TelemetryIds.userPseudoId(this)
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
-            // Compact preview cells; tapping opens a READ-ONLY view — second
-            // opinions are left to the result screen.
+            // Compact preview cells; tapping opens the sheet — commenting is
+            // unlocked here too (Community v2), guarded below for scans that
+            // turn out to be this install's own.
             preview = true,
             onClick = { item ->
                 if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
                     lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
                 }
-                CommunityOpinionSheet.showReadOnly(
-                    supportFragmentManager,
-                    item,
-                    DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
-                )
+                val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
+                lifecycleScope.launch {
+                    val mine = scanRepository.localClientScanIds()
+                    if (item.scanId in mine) {
+                        CommunityOpinionSheet.showForOwner(supportFragmentManager, item.scanId, label)
+                    } else {
+                        CommunityOpinionSheet.show(supportFragmentManager, item, label)
+                    }
+                }
             },
         )
         binding.rvSpeciesCommunity.layoutManager =

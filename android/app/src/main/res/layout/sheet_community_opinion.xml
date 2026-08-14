@@ -30,10 +30,33 @@
             android:layout_marginBottom="@dimen/space_lg"
             android:background="@drawable/bg_handle" />
 
+        <!-- The shared scan photo, full sheet width and the tallest element on
+             the sheet — it's the subject, not an aside. The CARD is shown/hidden
+             programmatically; hidden when this scan has no thumbnail. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_opinion_photo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:cardCornerRadius="@dimen/radius_lg"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="@dimen/glass_stroke_width"
+            tools:visibility="visible">
+
+            <ImageView
+                android:id="@+id/iv_opinion_photo"
+                android:layout_width="match_parent"
+                android:layout_height="280dp"
+                android:contentDescription="@string/community_opinion_photo_desc"
+                android:scaleType="centerCrop" />
+        </com.google.android.material.card.MaterialCardView>
+
         <TextView
             android:id="@+id/tv_opinion_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
             android:text="@string/community_opinion_title"
             android:textAppearance="@style/TextAppearance.App.Headline" />
 
@@ -45,29 +68,6 @@
             android:text="@string/community_opinion_subtitle"
             android:textSize="@dimen/text_body_sm"
             android:textColor="@color/on_surface_secondary" />
-
-        <!-- The shared scan photo, framed like the scan-result screen's image
-             card so the sheet reads like a real result. The CARD is shown/hidden
-             programmatically; hidden when this scan has no thumbnail. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_opinion_photo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:visibility="gone"
-            app:cardCornerRadius="@dimen/radius_lg"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_stroke"
-            app:strokeWidth="@dimen/glass_stroke_width"
-            tools:visibility="visible">
-
-            <ImageView
-                android:id="@+id/iv_opinion_photo"
-                android:layout_width="match_parent"
-                android:layout_height="200dp"
-                android:contentDescription="@string/community_opinion_photo_desc"
-                android:scaleType="centerCrop" />
-        </com.google.android.material.card.MaterialCardView>
 
         <!-- Current diagnosis block — styled like the scan-result status card
              (icon + ALLCAPS label + verdict + confidence/species line) so the
@@ -139,16 +139,40 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- The species this scan is of. Hidden when the upload carried no
-             PlantNet binomial (CommunityScanItem.species is nullable — servers
-             without a PlantNet key never populate it), so the card never
-             becomes a dead-end tap. -->
-        <com.plantdiseases.app.ui.common.SpeciesInfoCardView
-            android:id="@+id/card_opinion_species"
-            android:layout_width="match_parent"
+        <!-- Like control, next to the vote counts it sits above. A plain
+             toggle: icon swaps outline/filled programmatically, no separate
+             "liked" color state needed beyond the icon itself. -->
+        <LinearLayout
+            android:id="@+id/ll_opinion_like"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:visibility="gone" />
+            android:layout_marginTop="@dimen/space_sm"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:paddingVertical="@dimen/space_xs"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/iv_opinion_like"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="@string/community_like_action"
+                android:src="@drawable/ic_heart"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tv_opinion_like_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:textSize="@dimen/text_body_sm"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/on_surface_secondary"
+                tools:text="14" />
+
+        </LinearLayout>
 
         <!-- Owner-only request status: how long the ask stays visible and a
              "Stop request" action — reachable at any point, including after

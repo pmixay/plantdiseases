@@ -11,7 +11,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.StaggeredGridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -26,6 +27,7 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
+import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.enableWhileOnline
 import com.plantdiseases.app.util.onReconnected
@@ -34,14 +36,16 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Social-style community feed. The server scopes it by country when it can,
- * then falls back globally (all diagnoses, not just the current scan's), and
- * renders one card per scan. Tapping a card or
- * its "Second opinion" action opens [CommunityOpinionSheet] — the vote
- * graph + opinions + the user's own vote.
+ * Scrolling-forum community feed (Community v2). A single column, cursor-
+ * paged from the server: the first page loads [FEED_PAGE_SIZE] posts, and
+ * scrolling near the end fetches the next (older) page transparently. Each
+ * post's photo or comments row opens [CommunityOpinionSheet] — the vote
+ * graph + comment thread + the user's own vote; its like control toggles
+ * in place via [toggleLike], never opening the sheet.
  *
  * A toolbar filter action opens a bottom-sheet overlay to sort the feed
- * by date (newest / oldest) and narrow it to a single disease type.
+ * by date (newest / oldest) and narrow it to a single disease type — both
+ * apply over whatever pages are currently loaded, not the whole scope.
  */
 @AndroidEntryPoint
 class NearbyScansActivity : AppCompatActivity() {
@@ -67,6 +71,19 @@ class NearbyScansActivity : AppCompatActivity() {
     // Server-side scope filter: "nearby" (~30 km radius), "country", or
     // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
+
+    // Cursor pagination (Community v2's scrolling forum). nextBefore is the
+    // server's cursor for the next (older) page; null once a page comes back
+    // short, meaning the current scope is exhausted.
+    private var nextBefore: Long? = null
+    private var hasMorePages = true
+    private var isLoadingPage = false
+    private var currentRegion: ResolvedRegion? = null
+
+    // Feed-scroll impressions already reported this screen session, so a
+    // post scrolled past twice doesn't get reported twice from the client
+    // side too (the server also dedupes, this just avoids the round trip).
+    private val reportedImpressions = mutableSetOf<String>()
 
     // In-context opt-in: tapping Enable requests coarse location only, flips
     // community on, and reloads the feed. Notifications are deliberately NOT
@@ -126,7 +143,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
 
         adapter = NearbyScansAdapter(
-            onSecondOpinion = { item ->
+            onOpen = { item ->
                 // Opening someone else's scan counts as a view (deduped per
                 // viewer server-side).
                 val pseudoId = TelemetryIds.userPseudoId(this)
@@ -139,18 +156,65 @@ class NearbyScansActivity : AppCompatActivity() {
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },
+            onLike = { item -> toggleLike(item) },
         )
-        binding.rvNearby.layoutManager =
-            StaggeredGridLayoutManager(
-                resources.getInteger(R.integer.community_span_count),
-                StaggeredGridLayoutManager.VERTICAL,
-            )
+        val layoutManager = LinearLayoutManager(this)
+        binding.rvNearby.layoutManager = layoutManager
         binding.rvNearby.adapter = adapter
+        // Cursor-page the next (older) batch once the user scrolls near the
+        // end of what's loaded — the classic "5 rows from the bottom" trigger.
+        binding.rvNearby.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0 || isLoadingPage || !hasMorePages) return
+                val lastVisible = layoutManager.findLastVisibleItemPosition()
+                if (lastVisible >= adapter.itemCount - 5) loadMore()
+            }
+
+            // Impressions ("scrolled past", not necessarily opened) report
+            // once scrolling actually settles — not per frame — so a fast
+            // flick through the feed doesn't fire a request per pixel.
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState != RecyclerView.SCROLL_STATE_IDLE) return
+                reportVisibleImpressions(layoutManager)
+            }
+        })
 
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)
         binding.swipeRefresh.setOnRefreshListener { load(isRefresh = true) }
 
         load(isRefresh = false)
+    }
+
+    /** Optimistic like toggle: flips the row immediately, then reconciles
+     *  with the server's authoritative count/state (or rolls back on
+     *  failure). [item] is whatever the adapter last bound, so its
+     *  likeCount/likedByMe are the pre-tap truth to roll back to. */
+    private fun toggleLike(item: CommunityScanItem) {
+        val next = !item.likedByMe
+        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
+        adapter.updateLike(item.scanId, optimisticCount, next)
+        lifecycleScope.launch {
+            scanRepository.setCommunityLike(item.scanId, TelemetryIds.userPseudoId(this@NearbyScansActivity), next)
+                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
+                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
+        }
+    }
+
+    /** Batch-report every currently visible post not already reported this
+     *  session, capped to [FEED_PAGE_SIZE] * 2 or so — the actual cap that
+     *  matters is the server's 50 per call, applied in
+     *  [ScanRepository.recordCommunityViews]. */
+    private fun reportVisibleImpressions(layoutManager: LinearLayoutManager) {
+        val first = layoutManager.findFirstVisibleItemPosition()
+        val last = layoutManager.findLastVisibleItemPosition()
+        if (first < 0 || last < 0) return
+        val newIds = (first..last).mapNotNull { adapter.itemAt(it)?.scanId }
+            .filter { it.isNotBlank() && it !in reportedImpressions }
+        if (newIds.isEmpty()) return
+        reportedImpressions.addAll(newIds)
+        lifecycleScope.launch {
+            scanRepository.recordCommunityViews(newIds, TelemetryIds.userPseudoId(this@NearbyScansActivity))
+        }
     }
 
     private fun setupFilterMenu() {
@@ -218,39 +282,29 @@ class NearbyScansActivity : AppCompatActivity() {
         }
         disableMenuItem?.isVisible = true
         if (!isRefresh) showLoading()
+        // Fresh (re)load starts the cursor over.
+        nextBefore = null
+        hasMorePages = true
         lifecycleScope.launch {
-            val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             // Refresh location on every (re)load so "nearby" reflects where the
             // user actually is right now. Worldwide needs no anchor, so we skip
             // the location read entirely — the feed then works even when
-            // coarse-location was never granted.
-            val region = if (scope == "worldwide") {
+            // coarse-location was never granted. The resolved region is reused
+            // by loadMore() so every page of one scroll session shares the same
+            // geo anchor instead of drifting as the device moves mid-scroll.
+            currentRegion = if (scope == "worldwide") {
                 null
             } else {
                 runCatching {
                     RegionResolver.resolveRegion(this@NearbyScansActivity)
                 }.getOrNull()
             }
-            val result = scanRepository.communityNearby(
-                country = region?.country,
-                region = region?.locality,
-                lat = region?.lat,
-                lon = region?.lon,
-                // No disease filter — the feed surfaces the whole scope.
-                disease = null,
-                userPseudoId = pseudoId,
-                limit = 100,
-                scope = scope,
-            )
+            val result = fetchPage(before = null)
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
-                // Belt-and-braces: also drop the user's OWN scans client-side.
-                // The server already excludes by pseudo-id, but a scan uploaded
-                // under a previous install's pseudo-id (after a reinstall) would
-                // slip through — so we additionally hide any item whose globally
-                // unique scan_id matches one in this device's local history.
-                val mine = scanRepository.localClientScanIds()
-                val others = response.items.filter { it.scanId !in mine }
+                nextBefore = response.nextBefore
+                hasMorePages = response.nextBefore != null
+                val others = excludeOwnScans(response.items)
                 when {
                     others.isNotEmpty() -> showFeed(others)
                     // The server couldn't geo-scope the feed (no coords + no
@@ -264,6 +318,48 @@ class NearbyScansActivity : AppCompatActivity() {
                 showState(getString(R.string.community_opinion_error))
             }
         }
+    }
+
+    /** Fetch and append the next (older) page once the user scrolls near the
+     *  end of what's loaded. Silent — no separate loading footer, matching
+     *  the plan's "reuse the existing states" call; a failed page load just
+     *  leaves the feed as it is and lets the next scroll retry. */
+    private fun loadMore() {
+        isLoadingPage = true
+        lifecycleScope.launch {
+            fetchPage(before = nextBefore)
+                .onSuccess { response ->
+                    nextBefore = response.nextBefore
+                    hasMorePages = response.nextBefore != null
+                    allItems = allItems + excludeOwnScans(response.items)
+                    applyFilterAndSort()
+                }
+            isLoadingPage = false
+        }
+    }
+
+    private suspend fun fetchPage(before: Long?) =
+        scanRepository.communityNearby(
+            country = currentRegion?.country,
+            region = currentRegion?.locality,
+            lat = currentRegion?.lat,
+            lon = currentRegion?.lon,
+            // No disease filter — the feed surfaces the whole scope.
+            disease = null,
+            userPseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity),
+            limit = FEED_PAGE_SIZE,
+            scope = scope,
+            before = before,
+        )
+
+    // Belt-and-braces: also drop the user's OWN scans client-side. The
+    // server already excludes by pseudo-id, but a scan uploaded under a
+    // previous install's pseudo-id (after a reinstall) would slip through —
+    // so we additionally hide any item whose globally unique scan_id matches
+    // one in this device's local history.
+    private suspend fun excludeOwnScans(items: List<CommunityScanItem>): List<CommunityScanItem> {
+        val mine = scanRepository.localClientScanIds()
+        return items.filter { it.scanId !in mine }
     }
 
     /** Opt-in prompt shown until the user enables community. */
@@ -388,4 +484,10 @@ class NearbyScansActivity : AppCompatActivity() {
 
     private fun diseaseLabel(key: String): String =
         (DiseaseLabels.displayName(key, isRu) ?: key).lowercase()
+
+    private companion object {
+        // First page + every subsequent page. Small enough that a scroll-
+        // triggered fetch feels instant; the server clamps to 50 regardless.
+        const val FEED_PAGE_SIZE = 20
+    }
 }

@@ -282,17 +282,16 @@
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
     <string name="community_opinion_replies_title">Community second opinions</string>
     <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
-    <string name="community_opinion_locked">You\'ve already shared your second opinion on this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_opinion_list_header">Replies (%1$d)</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
+    <string name="community_like_action">Like this scan</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Community scans</string>
     <string name="nearby_scans_cd">Community scans</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
-    <string name="nearby_scans_second_opinion">Second opinion</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
     <string name="community_filter_country">Country</string>

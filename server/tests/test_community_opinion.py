@@ -43,6 +43,7 @@ def test_opinions_for_unknown_scan_is_empty(comm):
     assert comm.opinions_for("does-not-exist") == {
         "opinions": [], "consensus": [], "views": 0,
         "wants_opinion": False, "opinion_requested_at": None,
+        "like_count": 0, "liked_by_me": False,
     }
 
 
@@ -96,9 +97,10 @@ def test_author_token_rotates_with_identity_epoch(comm):
         _t.time = real_time
 
 
-def test_one_opinion_per_author_per_scan(comm):
-    """A second submit by the same author on the same scan is ignored — the
-    original opinion stands (the client locks its input to match)."""
+def test_repeat_author_keeps_every_comment_but_consensus_takes_latest(comm):
+    """Community v2: comments are a thread, not a single vote slot. The same
+    author posting twice keeps BOTH rows (Community v2 unlocked repeat
+    commenting), but the consensus tally counts their latest pick only."""
     id1 = comm.record_opinion(
         scan_id="s9", author_pseudo_id="bob", suggested_disease="leaf_spot",
     )
@@ -106,13 +108,19 @@ def test_one_opinion_per_author_per_scan(comm):
         scan_id="s9", author_pseudo_id="bob",
         suggested_disease="powdery_mildew", note="changed my mind",
     )
-    assert id1 == id2  # same row, no duplicate
-    res = comm.opinions_for("s9")
-    assert len(res["opinions"]) == 1
-    assert res["opinions"][0]["suggested_disease"] == "leaf_spot"  # original kept
+    assert id1 != id2  # a new row, not a dedupe
 
-    # A different author can still leave their own opinion.
+    res = comm.opinions_for("s9")
+    assert len(res["opinions"]) == 2  # both comments kept, newest first
+    assert res["opinions"][0]["suggested_disease"] == "powdery_mildew"
+    assert res["opinions"][1]["suggested_disease"] == "leaf_spot"
+    # Consensus counts bob once, for his latest pick.
+    assert res["consensus"] == [{"disease": "powdery_mildew", "count": 1}]
+
+    # A different author's own opinion adds a second, independent vote.
     comm.record_opinion(
         scan_id="s9", author_pseudo_id="carol", suggested_disease="viral_disease",
     )
-    assert len(comm.opinions_for("s9")["opinions"]) == 2
+    res = comm.opinions_for("s9")
+    assert len(res["opinions"]) == 3
+    assert sum(c["count"] for c in res["consensus"]) == 2

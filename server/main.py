@@ -52,7 +52,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -81,6 +81,9 @@ try:
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from .community import (
+        daily_like_count_for_ip_hash as community_daily_like_writes,
+    )
+    from .community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from .community import (
@@ -91,6 +94,9 @@ try:
     )
     from .community import (
         init_db as init_community_db,
+    )
+    from .community import (
+        like_counts as community_like_counts,
     )
     from .community import (
         map_scans as community_map_scans,
@@ -142,6 +148,9 @@ try:
     )
     from .community import (
         scans_by_species as community_scans_by_species,
+    )
+    from .community import (
+        set_like as community_set_like,
     )
     from .community import (
         set_wants_opinion as community_set_wants_opinion,
@@ -240,6 +249,9 @@ except ImportError:
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from community import (
+        daily_like_count_for_ip_hash as community_daily_like_writes,
+    )
+    from community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from community import (
@@ -250,6 +262,9 @@ except ImportError:
     )
     from community import (
         init_db as init_community_db,
+    )
+    from community import (
+        like_counts as community_like_counts,
     )
     from community import (
         map_scans as community_map_scans,
@@ -301,6 +316,9 @@ except ImportError:
     )
     from community import (
         scans_by_species as community_scans_by_species,
+    )
+    from community import (
+        set_like as community_set_like,
     )
     from community import (
         set_wants_opinion as community_set_wants_opinion,
@@ -748,6 +766,9 @@ def _extract_api_key(request: Request) -> str | None:
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
 COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
+# Likes are cheap and low-stakes compared to an opinion, so they get their
+# own (looser) daily cap rather than sharing the opinion quota.
+COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
@@ -3498,11 +3519,13 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
 
 
 @api_router.get("/community/opinions/{scan_id}")
-async def community_opinions_list(scan_id: str):
+async def community_opinions_list(scan_id: str, user_pseudo_id: str | None = None):
     """List community opinions + a consensus tally for one shared scan.
 
     Accepts the real scan_id (owner's own app) or the feed's public
     token (viewers); echoes back whichever form the caller sent.
+    ``user_pseudo_id`` is optional — pass it to get an accurate
+    ``liked_by_me`` in the response; omitted, it reads as not-liked.
     """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
@@ -3512,7 +3535,7 @@ async def community_opinions_list(scan_id: str):
         None, lambda: community_resolve_scan_token(sid),
     )
     result = await loop.run_in_executor(
-        None, lambda: community_opinions_for(resolved),
+        None, lambda: community_opinions_for(resolved, user_pseudo_id=user_pseudo_id),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
@@ -3553,25 +3576,80 @@ async def push_register_endpoint(payload: PushRegisterRequest):
 
 
 class CommunityViewRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
+    # ``scan_id`` (singular) is the original single-open shape, kept required
+    # in name only — older installs still send it alone. ``scan_ids`` is the
+    # newer batch shape for reporting many feed impressions in one call. A
+    # request must carry at least one of the two; see the validator below.
+    scan_id: str | None = Field(None, max_length=128)
+    scan_ids: list[str] | None = Field(None, max_length=50)
     user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _require_a_target(self) -> "CommunityViewRequest":
+        if not (self.scan_id or "").strip() and not any(
+            (s or "").strip() for s in (self.scan_ids or [])
+        ):
+            raise ValueError("scan_id or scan_ids is required")
+        return self
 
 
 @api_router.post("/community/view")
 async def community_record_scan_view(payload: CommunityViewRequest):
-    """Record that the caller opened someone else's shared scan. Deduped per
-    viewer server-side; a scan owner viewing their own scan and views of an
-    unknown scan never count, so this is safe to fire on every open."""
+    """Record that the caller opened (or merely scrolled past) someone
+    else's shared scan — one id via ``scan_id``, or up to 50 via
+    ``scan_ids`` for feed-scroll impressions. Deduped per viewer
+    server-side; a scan owner viewing their own scan and views of an
+    unknown scan never count, so this is safe to fire liberally."""
     loop = asyncio.get_running_loop()
-    # Viewers send the feed's public token — resolve it to the real id.
+    ids = [s.strip() for s in (payload.scan_ids or []) if s and s.strip()]
+    if payload.scan_id and payload.scan_id.strip():
+        ids.append(payload.scan_id.strip())
+    uid = payload.user_pseudo_id.strip()
+
+    def _record_all() -> int:
+        counted = 0
+        for raw_id in ids:
+            sid = community_resolve_scan_token(raw_id)
+            if community_record_view(sid, uid):
+                counted += 1
+        return counted
+
+    counted = await loop.run_in_executor(None, _record_all)
+    return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
+
+
+class CommunityLikeRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    liked: bool = True
+
+
+@api_router.post("/community/like")
+async def community_like_scan(payload: CommunityLikeRequest, request: Request):
+    """Like or unlike a shared scan. A self-like is refused (0 either way);
+    liking your own scan makes no more sense than viewing it does."""
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    if payload.liked:
+        today = await loop.run_in_executor(
+            None, lambda: community_daily_like_writes(ip_hash),
+        )
+        if today >= COMMUNITY_LIKE_DAILY_QUOTA:
+            raise HTTPException(status_code=429, detail="Daily like quota reached.")
     sid = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
     )
-    counted = await loop.run_in_executor(
+    liked = await loop.run_in_executor(
         None,
-        lambda: community_record_view(sid, payload.user_pseudo_id.strip()),
+        lambda: community_set_like(
+            sid, payload.user_pseudo_id.strip(), payload.liked, client_ip,
+        ),
     )
-    return JSONResponse(content={"ok": True, "counted": bool(counted)})
+    count = await loop.run_in_executor(
+        None, lambda: community_like_counts([sid]).get(sid, 0),
+    )
+    return JSONResponse(content={"ok": True, "liked": liked, "count": count})
 
 
 class CommunityScanCountsRequest(BaseModel):
@@ -3604,6 +3682,7 @@ async def community_scan_nearby(
     limit: int = 20,
     user_pseudo_id: str | None = None,
     scope: str | None = None,
+    before: int | None = None,
 ):
     """List the most recent community-shared scans near the requester.
 
@@ -3614,6 +3693,10 @@ async def community_scan_nearby(
     the geo filter entirely (every country, newest first — needs no location).
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
+
+    ``before`` pages the feed: pass the previous page's ``next_before`` to
+    fetch older rows. The response's ``next_before`` is null once a page
+    comes back short — that's the end of the scope.
     """
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
@@ -3632,15 +3715,23 @@ async def community_scan_nearby(
     # so it never sets the flag. Storage stays privacy-preserving — there is
     # deliberately no server-side IP geolocation.
     location_required = not worldwide and not (bool(country_norm) or has_coords)
+    effective_limit = max(1, min(int(limit), 50))
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
         lon=geo["lon"] if nearby else None,
         disease=(disease or None),
         species=(species or None),
-        limit=max(1, min(int(limit), 50)),
+        limit=effective_limit,
         exclude_user_pseudo_id=user_pseudo_id,
         scope=scope_norm,
+        before=before,
+    )
+    # A short page means the scope is exhausted; a full page might have more
+    # (the very last page just happens to also be full-sized, and the client
+    # finds out on the follow-up request that comes back empty).
+    next_before = (
+        rows[-1]["created_at"] if rows and len(rows) >= effective_limit else None
     )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
@@ -3684,7 +3775,9 @@ async def community_scan_nearby(
     # compatibility for what's already installed. Only the nested copy is
     # coerced — the top-level `country` field stays nullable.
     summary["country"] = summary.get("country") or ""
-    return JSONResponse(content={"items": rows, "summary": summary, **meta})
+    return JSONResponse(
+        content={"items": rows, "summary": summary, "next_before": next_before, **meta},
+    )
 
 
 def _valid_bbox(

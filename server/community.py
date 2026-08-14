@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS community_scan_views (
     PRIMARY KEY (scan_id, viewer_pseudo_id)
 );
 CREATE INDEX IF NOT EXISTS ix_views_scan ON community_scan_views(scan_id);
+
+CREATE TABLE IF NOT EXISTS community_likes (
+    scan_id          TEXT    NOT NULL,
+    user_pseudo_id   TEXT    NOT NULL,
+    client_ip_hash   TEXT,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, user_pseudo_id)
+);
+CREATE INDEX IF NOT EXISTS ix_likes_scan ON community_likes(scan_id);
+CREATE INDEX IF NOT EXISTS ix_likes_ip   ON community_likes(client_ip_hash, created_at);
 """
 
 _write_lock = threading.RLock()
@@ -624,23 +634,20 @@ def record_opinion(
     nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
-    """Append one community 'second opinion' on a shared scan. Returns row id."""
+    """Append one community 'second opinion' (comment) on a shared scan.
+    Returns the new row id.
+
+    An author may post more than once on the same scan — the thread is a
+    running comment list, not a single vote slot. ``opinions_for`` folds
+    repeat authors down to their latest pick for the consensus tally so a
+    talkative commenter can't inflate it; the comment list itself keeps
+    every row."""
     init_db()
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
     note_clean = (note or "").strip()[:500] or None
     nick_clean = (nickname or "").strip()[:48] or None
     with _write_lock, _connect() as conn:
-        # One opinion per author per scan. If this install already weighed in,
-        # keep the original (the client locks its input too) and return that
-        # row's id rather than appending a duplicate.
-        existing = conn.execute(
-            "SELECT id FROM community_opinions "
-            "WHERE scan_id = ? AND author_pseudo_id = ? LIMIT 1",
-            (scan_id, author_pseudo_id),
-        ).fetchone()
-        if existing is not None:
-            return int(existing[0])
         cur = conn.execute(
             "INSERT INTO community_opinions ("
             "  scan_id, author_pseudo_id, suggested_disease, note, "
@@ -652,13 +659,20 @@ def record_opinion(
         return int(cur.lastrowid or 0)
 
 
-def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
+def opinions_for(
+    scan_id: str, *, limit: int = 50, user_pseudo_id: str | None = None,
+) -> dict:
     """Opinions for one scan plus a per-disease consensus tally.
 
     Shape::
 
         {"opinions":  [{"suggested_disease", "note", "created_at"}, ...],
          "consensus": [{"disease", "count"}, ...]}   # most-voted first
+
+    ``opinions`` lists every comment, newest first — an author may have
+    posted more than once. ``consensus`` folds each author down to their
+    MOST RECENT pick first (a window-function dedupe, not a plain
+    GROUP BY) so a repeat commenter contributes one vote, not one per post.
 
     Also carries ``wants_opinion`` (is there a live, non-expired request?)
     plus ``opinion_requested_at`` (epoch seconds of that request, else
@@ -677,9 +691,14 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             (scan_id, limit),
         ).fetchall()
         tally = conn.execute(
-            "SELECT suggested_disease, COUNT(*) AS n "
-            "FROM community_opinions WHERE scan_id = ? "
-            "GROUP BY suggested_disease ORDER BY n DESC",
+            "SELECT suggested_disease, COUNT(*) AS n FROM ("
+            "  SELECT suggested_disease,"
+            "         ROW_NUMBER() OVER ("
+            "           PARTITION BY author_pseudo_id"
+            "           ORDER BY created_at DESC, id DESC"
+            "         ) AS rn"
+            "  FROM community_opinions WHERE scan_id = ?"
+            ") WHERE rn = 1 GROUP BY suggested_disease ORDER BY n DESC",
             (scan_id,),
         ).fetchall()
         request_row = conn.execute(
@@ -693,12 +712,15 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
+    uid = (user_pseudo_id or "").strip()
     return {
         "opinions": opinions,
         "consensus": consensus,
         "views": view_count_for(scan_id),
         "wants_opinion": request_row is not None,
         "opinion_requested_at": int(request_row[0]) if request_row else None,
+        "like_count": like_counts([scan_id]).get(scan_id, 0),
+        "liked_by_me": bool(uid) and scan_id in liked_scan_ids(uid, [scan_id]),
     }
 
 
@@ -887,6 +909,89 @@ def view_count_for(scan_id: str) -> int:
         ).fetchone()[0])
 
 
+def set_like(scan_id: str, user_pseudo_id: str, liked: bool, client_ip: str | None = None) -> bool:
+    """Like or unlike a shared scan on behalf of ``user_pseudo_id``.
+
+    Mirrors ``record_view``: a scan owner can't like their own scan, and the
+    (scan_id, user_pseudo_id) primary key means a repeat like is a no-op, not
+    a second row. Returns the resulting liked state (mainly useful when the
+    caller raced itself; the state, not a delta, is the source of truth)."""
+    sid = (scan_id or "").strip()
+    uid = (user_pseudo_id or "").strip()
+    if not sid or not uid:
+        return False
+    init_db()
+    with _write_lock, _connect() as conn:
+        owner = conn.execute(
+            "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?",
+            (sid,),
+        ).fetchone()
+        if owner is None or str(owner[0]) == uid:
+            return False
+        if liked:
+            conn.execute(
+                "INSERT OR IGNORE INTO community_likes "
+                "(scan_id, user_pseudo_id, client_ip_hash, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (sid, uid, hash_client_ip(client_ip), int(time.time())),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM community_likes WHERE scan_id = ? AND user_pseudo_id = ?",
+                (sid, uid),
+            )
+        return bool(liked)
+
+
+def like_counts(scan_ids: list[str]) -> dict[str, int]:
+    """Map each scan_id to its like count (zeros omitted)."""
+    ids = [s for s in scan_ids if s]
+    if not ids:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, COUNT(*) FROM community_likes "
+            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            tuple(ids),
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def liked_scan_ids(user_pseudo_id: str, scan_ids: list[str]) -> set[str]:
+    """Which of ``scan_ids`` this user has already liked."""
+    uid = (user_pseudo_id or "").strip()
+    ids = [s for s in scan_ids if s]
+    if not uid or not ids:
+        return set()
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id FROM community_likes "
+            f"WHERE user_pseudo_id = ? AND scan_id IN ({placeholders})",
+            (uid, *ids),
+        ).fetchall()
+    return {str(r[0]) for r in rows}
+
+
+def daily_like_count_for_ip_hash(ip_hash: str | None) -> int:
+    """Likes from this IP in the last 24h — bounds abuse across many scans,
+    the same shape as ``daily_opinion_count_for_ip_hash``."""
+    if not ip_hash:
+        return 0
+    init_db()
+    cutoff = int(time.time()) - 86_400
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM community_likes "
+            "WHERE client_ip_hash = ? AND created_at >= ?",
+            (ip_hash, cutoff),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def scan_counts(scan_ids: list[str]) -> dict[str, dict]:
     """Batched per-scan ``{opinions, views}`` map for a set of scan_ids — the
     Gallery surfaces these badges on the caller's own rows. Scans with neither
@@ -949,6 +1054,7 @@ def nearby_scans(
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
     scope: str = "nearby",
+    before: int | None = None,
 ) -> list[dict]:
     """Most recent shared scans for one scope.
 
@@ -961,6 +1067,11 @@ def nearby_scans(
     crosses to a different disease; the disease-agnostic feed stays strictly
     in its scope so the Nearby/Country/Worldwide toggle actually changes what's
     shown.
+
+    ``before`` is a keyset-pagination cursor: an earlier ``created_at`` epoch
+    second, past which only OLDER rows are returned. Pass the previous page's
+    last row's ``created_at`` to fetch the next page. ``None`` (default)
+    fetches the newest page.
     """
     init_db()
     # Keep the feed's "wants opinion" badge honest: reap expired requests
@@ -984,6 +1095,9 @@ def nearby_scans(
         if _HIDDEN_COMMUNITY_DISEASES:
             common += _hidden_clause()
             cparams.extend(_HIDDEN_COMMUNITY_DISEASES)
+        if before:
+            common += " AND created_at < ?"
+            cparams.append(int(before))
 
         # Geo scopes, most specific first. A disease-scoped carousel widens
         # nearby→country; the plain feed stays in a single scope.
@@ -1058,6 +1172,18 @@ def nearby_scans(
                 row["distance_km"] = None
             row.pop("lat", None)
             row.pop("lon", None)
+        result_ids = [r["scan_id"] for r in result]
+        counts = like_counts(result_ids)
+        # ``exclude_user_pseudo_id`` doubles as the viewer's own pseudo id —
+        # the feed already excludes their own scans by it, so it's the right
+        # identity to check "did I like this one" against.
+        liked = (
+            liked_scan_ids(exclude_user_pseudo_id, result_ids)
+            if exclude_user_pseudo_id else set()
+        )
+        for row in result:
+            row["like_count"] = counts.get(row["scan_id"], 0)
+            row["liked_by_me"] = row["scan_id"] in liked
         return result
 
 

@@ -1057,6 +1057,141 @@ def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
     assert r.status_code == 410, r.text
 
 
+def test_nearby_before_cursor_pages_without_overlap(client, isolated_community):
+    """Keyset pagination: page 1 (limit=2) then page 2 (before=next_before)
+    together cover all 3 rows with no repeats, and the short second page
+    reports next_before=null."""
+    db_path, _ = isolated_community
+    for sid in ("pagescan0001", "pagescan0002", "pagescan0003"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-pager-1",
+                region="Lyon", country="FR", disease="leaf_spot",
+            ),
+        )
+    # Give each row a distinct, ordered created_at — same-second inserts in a
+    # tight loop would otherwise tie and make DESC order undefined.
+    with sqlite3.connect(str(db_path)) as conn:
+        base = 1_700_000_000
+        for i, sid in enumerate(("pagescan0001", "pagescan0002", "pagescan0003")):
+            conn.execute(
+                "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+                (base + i, sid),
+            )
+
+    page1 = client.get(
+        "/api/community/nearby",
+        params={"country": "FR", "scope": "country", "limit": 2, "user_pseudo_id": "x"},
+    ).json()
+    assert len(page1["items"]) == 2
+    assert page1["next_before"] is not None
+
+    page2 = client.get(
+        "/api/community/nearby",
+        params={
+            "country": "FR", "scope": "country", "limit": 2,
+            "user_pseudo_id": "x", "before": page1["next_before"],
+        },
+    ).json()
+    assert len(page2["items"]) == 1
+    assert page2["next_before"] is None
+
+    ids1 = {i["scan_id"] for i in page1["items"]}
+    ids2 = {i["scan_id"] for i in page2["items"]}
+    assert not (ids1 & ids2)
+    assert len(ids1) + len(ids2) == 3
+
+
+def test_consensus_counts_latest_pick_per_author(client, isolated_community):
+    """One author posting twice contributes ONE vote to the consensus tally
+    (their latest pick), even though both comments stay in the thread."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="consensusscan1", user_pseudo_id="pseudo-owner-c",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    for disease in ("powdery_mildew", "healthy"):
+        r = client.post(
+            "/api/community/opinion",
+            json={
+                "scan_id": "consensusscan1",
+                "user_pseudo_id": "pseudo-flip-flop",
+                "suggested_disease": disease,
+            },
+        )
+        assert r.status_code == 200, r.text
+
+    result = client.get("/api/community/opinions/consensusscan1").json()
+    # Both comments are kept in the thread...
+    assert len(result["opinions"]) == 2
+    # ...but the consensus tally counts one vote, for the latest pick.
+    assert sum(c["count"] for c in result["consensus"]) == 1
+    assert result["consensus"] == [{"disease": "healthy", "count": 1}]
+
+
+def test_like_toggle_and_self_like_rejected(client, isolated_community):
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="likescan00001", user_pseudo_id="pseudo-owner-l",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    liked = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": True},
+    )
+    assert liked.status_code == 200, liked.text
+    assert liked.json() == {"ok": True, "liked": True, "count": 1}
+
+    unliked = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": False},
+    )
+    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
+
+    self_like = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-owner-l", "liked": True},
+    )
+    assert self_like.json() == {"ok": True, "liked": False, "count": 0}
+
+
+def test_batch_impression_views_counted_once(client, isolated_community):
+    for sid in ("viewbatch0001", "viewbatch0002"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-owner-v",
+                region="Turin", country="IT", disease="leaf_spot",
+            ),
+        )
+    first = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewbatch0001", "viewbatch0002"],
+            "user_pseudo_id": "pseudo-scroller-1",
+        },
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["counted_n"] == 2
+
+    # Same two ids again — both are already-seen, so nothing new is counted.
+    second = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewbatch0001", "viewbatch0002"],
+            "user_pseudo_id": "pseudo-scroller-1",
+        },
+    )
+    assert second.json()["counted_n"] == 0
+    counts = client.get("/api/community/opinions/viewbatch0001").json()
+    assert counts["views"] == 1
+
+
 def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
     """Rows + thumbnails created before the public_id column existed get
     migrated on init: token assigned, thumbnail renamed off the real id."""

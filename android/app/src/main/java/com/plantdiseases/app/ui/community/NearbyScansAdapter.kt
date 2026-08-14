@@ -6,9 +6,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.facebook.shimmer.ShimmerFrameLayout
-import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.Avatars
@@ -17,27 +17,38 @@ import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
 /**
- * Vertical, social-feed adapter for the "Scans near you" screen. Each
- * post renders the scan photo full-width with the author's nickname, the
- * place, a distance·time line and a "Second opinion" action. The model's
- * diagnosis is intentionally NOT on the card — it would anchor voters
- * before they look at the photo; it appears inside the opinion sheet.
- * Both the photo and the action open the community opinion sheet
- * (vote graph + opinions + your own vote) for that scan.
+ * Single-column, scrolling-forum adapter for the community feed (Community
+ * v2 — replaced the staggered photo grid). Each post renders the scan photo
+ * full-width under the author's nickname/place/time header, then a like +
+ * comments + views action row. The model's diagnosis is intentionally NOT on
+ * the card — it would anchor voters before they look at the photo; it
+ * appears inside the opinion sheet, which the photo and the comments/views
+ * rows all open. Liking is handled here directly, optimistically, via
+ * [onLike] + [updateLike] rather than round-tripping through the sheet.
  *
  * Thumbnails load via Glide from /api/community/thumb/<filename>; posts
  * without a thumb_path fall back to a tinted leaf icon so the card stays
  * usable when the server didn't persist a thumbnail.
  */
 class NearbyScansAdapter(
-    private val onSecondOpinion: (CommunityScanItem) -> Unit,
+    private val onOpen: (CommunityScanItem) -> Unit,
+    private val onLike: (CommunityScanItem) -> Unit,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
 
-    private var items: List<CommunityScanItem> = emptyList()
+    private var items: MutableList<CommunityScanItem> = mutableListOf()
 
     fun submit(newItems: List<CommunityScanItem>) {
-        items = newItems
+        items = newItems.toMutableList()
         notifyDataSetChanged()
+    }
+
+    /** Patch one row's like state in place (optimistic update + the eventual
+     *  server-confirmed value) without reloading the whole list. */
+    fun updateLike(scanId: String, likeCount: Int, likedByMe: Boolean) {
+        val index = items.indexOfFirst { it.scanId == scanId }
+        if (index < 0) return
+        items[index] = items[index].copy(likeCount = likeCount, likedByMe = likedByMe)
+        notifyItemChanged(index)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -50,17 +61,21 @@ class NearbyScansAdapter(
 
     override fun getItemCount(): Int = items.size
 
+    fun itemAt(position: Int): CommunityScanItem? = items.getOrNull(position)
+
     inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val shimmer: ShimmerFrameLayout = itemView.findViewById(R.id.shimmer_nearby_photo)
         private val photo: ImageView = itemView.findViewById(R.id.iv_nearby_photo)
         private val label: TextView = itemView.findViewById(R.id.tv_nearby_label)
         private val meta: TextView = itemView.findViewById(R.id.tv_nearby_meta)
         private val whenLine: TextView = itemView.findViewById(R.id.tv_nearby_when)
-        private val countsPill: View = itemView.findViewById(R.id.ll_nearby_counts)
+        private val likeRow: View = itemView.findViewById(R.id.ll_nearby_like)
+        private val likeIcon: ImageView = itemView.findViewById(R.id.iv_nearby_like)
+        private val likes: TextView = itemView.findViewById(R.id.tv_nearby_likes)
+        private val commentsRow: View = itemView.findViewById(R.id.ll_nearby_comments)
         private val views: TextView = itemView.findViewById(R.id.tv_nearby_views)
         private val comments: TextView = itemView.findViewById(R.id.tv_nearby_comments)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
-        private val opinionBtn: MaterialButton = itemView.findViewById(R.id.btn_nearby_opinion)
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
@@ -83,18 +98,28 @@ class NearbyScansAdapter(
                 android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
-            // Views + comments(opinions) overlay on the photo. Each part shows
-            // only when its count is non-zero; the pill hides when both are 0.
             views.text = item.viewCount.toString()
             views.visibility = if (item.viewCount > 0) View.VISIBLE else View.GONE
             comments.text = item.opinionCount.toString()
             comments.visibility = if (item.opinionCount > 0) View.VISIBLE else View.GONE
-            countsPill.visibility =
-                if (item.viewCount > 0 || item.opinionCount > 0) View.VISIBLE else View.GONE
 
-            val click = View.OnClickListener { onSecondOpinion(item) }
-            opinionBtn.setOnClickListener(click)
-            photo.setOnClickListener(click)
+            likes.text = item.likeCount.toString()
+            likes.visibility = if (item.likeCount > 0) View.VISIBLE else View.GONE
+            val ctx = itemView.context
+            likeIcon.setImageResource(
+                if (item.likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart,
+            )
+            likeIcon.imageTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(
+                    ctx,
+                    if (item.likedByMe) R.color.primary else R.color.on_surface_secondary,
+                ),
+            )
+
+            val open = View.OnClickListener { onOpen(item) }
+            photo.setOnClickListener(open)
+            commentsRow.setOnClickListener(open)
+            likeRow.setOnClickListener { onLike(item) }
 
             // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
