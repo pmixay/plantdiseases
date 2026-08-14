@@ -45,10 +45,19 @@ August 2026 audit: 49 raised, 38 verified, 22 confirmed. Fixed items are in git
 history. Theme is **cost and availability, not compromise** — an unauthenticated
 caller is throttled only by a 2 req/s bucket, and staying under it is free.
 
-- [ ] **`/api/feedback/image` unbounded** (`main.py:3043,3068`) — quota reads a
-      counter this endpoint never increments so it can never fire; no
-      magic-byte/decode validation; files never deleted. Disk fill **and**
-      arbitrary bytes into the retraining corpus. *Highest value here.*
+Items checked off below were fixed in the dependency/CI pass; where a finding
+was only partly addressed the remaining half is called out inline rather than
+closed.
+
+- [x] **`/api/feedback/image` unbounded** — fixed. The magic-byte allowlist
+      (`_validate_image_bytes`) now gates the endpoint, and the stored
+      extension is sniffed from the bytes rather than taken from the client's
+      `Content-Type` (whose `.bin` fallback is what let arbitrary content in).
+      The quota gap is closed by binding one image per feedback row: image
+      count can no longer exceed row count, which *is* quota-limited, while an
+      identical re-upload stays idempotent for retrying clients.
+      **Still open:** files are never deleted — retention prune covers rows,
+      not the image directory.
 - [ ] **No inference admission control** (`main.py:2004`) — at `INFER_WORKERS=1`
       a client within the rate limit pins RAM and starves everyone. Wants a
       semaphore before decode → 503.
@@ -56,11 +65,15 @@ caller is throttled only by a 2 req/s bucket, and staying under it is free.
       client-chosen strings, so every distinct `name` is a guaranteed miss and a
       billable call. *OpenRouter has a monthly dollar cap, so bounded; stricter
       per-endpoint limits planned.* PlantNet has no server-side budget.
-- [ ] **`/api/metrics`** (`main.py:1711`) — rate-limit exempt, full-table SQLite
-      aggregates on the event loop.
-- [ ] **`/api/plant-photo` amplifier** (`main.py:4041`, `plant_photos.py:184`) —
-      unbounded WebP variants; LRU caps file *count*, not bytes, so any client
-      can evict every warm photo.
+- [x] **`/api/metrics`** — the rate-limit exemption is removed, so the most
+      expensive unauthenticated request is no longer the only unmetered one.
+      **Still open:** the aggregates themselves still run full-table SQLite on
+      the event loop; they want a short TTL cache or a threadpool hop.
+- [x] **`/api/plant-photo` amplifier** (partly) — the LRU now enforces a byte
+      budget (`_CACHE_MAX_BYTES`, 2 GB) alongside the file cap, so the cache
+      can no longer reach ~24 GB or be flushed by a handful of large files.
+      **Still open:** the WebP variants on the serving side are still
+      unbounded.
 - [ ] **Unbounded list on `/api/progression`** (`main.py:2491`), on the event
       loop; every comparable field is capped.
 - [ ] **Prompt-cache poisoning** (`ai_services.py:1257`) — `common` reaches the
@@ -81,6 +94,9 @@ caller is throttled only by a 2 req/s bucket, and staying under it is free.
 - [ ] **Dependency constraints** — `starlette` unconstrained above 0.46.0
       (resolves clean today, range does not); `firebase-admin` pins
       `httpx==0.28.1`, colliding with `httpx>=0.28` once 0.29 ships; no lockfile.
+      Now that CI runs the suite on both ends of the supported Python range
+      (3.11 and 3.14), a resolution break shows up as a red matrix leg rather
+      than at deploy time — but a lockfile is still the actual fix.
 - [ ] **Host named publicly** — host IP + SSH user `root` in git history
       (`cd4bda2`, removed with the admin panel in #149). **No credentials
       leaked** — no key or password was ever committed. Action is ordinary
@@ -287,11 +303,25 @@ constraints, then get out of the way).
 wrong in ways tests never catch. Review the `values-ru/strings.xml` diff on
 every merge.
 
-**CI** (`.github/workflows/ci.yml`) is push-only, on `main`, `claude/**`,
-`work/**` and `codex/**`, with a `paths-filter` running the **android** and
-**server** jobs only when their trees change. Deliberately no `pull_request`
-trigger: every branch that reaches a PR was pushed here first, so a PR trigger
-only duplicates runs (they land under a different `github.ref`, so `concurrency`
-does not cancel them). Android:
-`ktlintCheck` + `detekt` + `testDebugUnitTest` + R8 `assembleRelease`. Server:
-`ruff` + `pytest`. Dependency updates arrive via `.github/dependabot.yml`.
+**CI** (`.github/workflows/ci.yml`) runs on pushes to `main`, `claude/**`,
+`work/**` and `codex/**`, **and** on `pull_request` against `main`, with a
+`paths-filter` running the **android** and **server** jobs only when their
+trees change. Android: `ktlintCheck` + `detekt` + `testDebugUnitTest` + R8
+`assembleRelease`. Server: `ruff` + `pytest`, on Python 3.11 and 3.14.
+Dependency updates are made by hand.
+
+The `pull_request` trigger replaced a deliberate "push-only, every branch that
+reaches a PR was pushed here first" stance. That premise held for
+human-authored branches and failed for automated ones: the dependency PRs
+#158-#167 came from branches matching none of the globs above, so each was
+merged with an *empty* status, and five mutually-incompatible bumps broke the
+Android build at Gradle configuration time on `main`. Duplicate runs on a
+`claude/**` branch that also has a PR open are the accepted cost of not gating
+correctness on a branch-name glob; `concurrency` is now keyed on the PR number
+when there is one, so successive pushes to a PR supersede each other.
+
+Two failure modes worth remembering, both of which produced a *green-looking*
+repo with nothing running: the glob gap above, and `paths-filter` being unable
+to `git fetch` its diff base under `persist-credentials: false` (fixed with
+`fetch-depth: 0` — the base commit is then already local). When the `changes`
+job dies, `needs:` silently skips android and server.

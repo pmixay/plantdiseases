@@ -7,7 +7,7 @@ pytest>=9.1.1
 # the supported transport API, so the historical ``<0.28`` cap is lifted —
 # the suite runs green on httpx 0.28.x.
 httpx>=0.28.1
-ruff>=0.16.2
+ruff>=0.16.3
 # Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for
 # macro-F1; an eval/report-only dependency, deliberately kept out of the
 # runtime requirements.txt so it never lands in the production image.
