@@ -362,6 +362,26 @@ def _normalise_prediction_set(
     return json.dumps(cleaned, separators=(",", ":"))
 
 
+def image_ext_from_magic(data: bytes) -> str | None:
+    """File extension for a raster image, sniffed from the leading bytes.
+
+    ``None`` for anything not recognised — which is the point. The extension
+    used to come from the request's ``Content-Type``, i.e. from the client,
+    with a ``.bin`` fallback for unknown types; between them that accepted
+    ARBITRARY bytes into the retraining corpus under a filename of the
+    sender's choosing. The bytes decide now.
+    """
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:2] == b"BM":
+        return "bmp"
+    return None
+
+
 def save_feedback_image(
     image_bytes: bytes,
     *,
@@ -370,14 +390,14 @@ def save_feedback_image(
 ) -> tuple[str, str] | None:
     """Persist the bytes of a negative-feedback image under
     ``FEEDBACK_IMG_DIR``. Returns ``(filename, sha256_hex)`` on
-    success, or ``None`` when the bytes are empty / oversized / fail
-    to write.
+    success, or ``None`` when the bytes are empty / oversized / not a
+    recognised image / fail to write.
 
-    The filename is ``<sha256>.<ext>`` where ``<ext>`` is derived
-    from ``content_type`` (jpeg/png/webp); unknown types fall back to
-    ``.bin`` so we still keep the bytes for retraining even when the
-    client didn't send a Content-Type. The hash collapses duplicate
-    uploads to a single artefact.
+    The filename is ``<sha256>.<ext>`` with ``<ext>`` sniffed from the bytes
+    themselves (see :func:`image_ext_from_magic`); the hash collapses
+    duplicate uploads to a single artefact. ``content_type`` is accepted for
+    call-compatibility and logged on a mismatch, but is never trusted to
+    name the file.
     """
     if not image_bytes:
         return None
@@ -386,14 +406,14 @@ def save_feedback_image(
             "Feedback image rejected (oversized: %d bytes)", len(image_bytes),
         )
         return None
+    ext = image_ext_from_magic(image_bytes)
+    if ext is None:
+        logger.info(
+            "Feedback image rejected (not a JPEG/PNG/WebP/BMP; declared %r)",
+            content_type,
+        )
+        return None
     digest = hashlib.sha256(image_bytes).hexdigest()
-    ext_by_type = {
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-    }
-    ext = ext_by_type.get((content_type or "").strip().lower(), "bin")
     filename = f"{digest}.{ext}"
     FEEDBACK_IMG_DIR.mkdir(parents=True, exist_ok=True)
     target = FEEDBACK_IMG_DIR / filename

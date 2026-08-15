@@ -1,13 +1,13 @@
 # Developer-only dependencies (extends requirements.txt).
 # Used for linting and running the test suite in CI.
 -r requirements.txt
-pytest>=9.1
+pytest>=9.1.1
 # httpx 0.28 dropped the ``app=`` shortcut the OLD Starlette TestClient
 # relied on; the current Starlette (>= 1.x, pulled by FastAPI >= 0.136) uses
 # the supported transport API, so the historical ``<0.28`` cap is lifted —
 # the suite runs green on httpx 0.28.x.
-httpx>=0.28
-ruff>=0.16
+httpx>=0.28.1
+ruff>=0.16.3
 # Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for
 # macro-F1; an eval/report-only dependency, deliberately kept out of the
 # runtime requirements.txt so it never lands in the production image.

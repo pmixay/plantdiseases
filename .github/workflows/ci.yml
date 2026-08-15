@@ -8,6 +8,20 @@ on:
   push:
     branches: [main, "claude/**", "work/**", "codex/**"]
 
+# Push-only, deliberately — there is no `pull_request` trigger. Every branch
+# that reaches a PR here is pushed to one of the globs above first, so a PR
+# trigger would only duplicate runs (a PR event lands under a different
+# `github.ref`, so `concurrency` does not cancel the push run).
+#
+# The failure mode to keep in mind is the one that hit #158-#167: those came
+# from automated branches that matched none of the globs, so each PR carried
+# an EMPTY status and merged unbuilt — five mutually-incompatible dependency
+# bumps that broke the Android build at Gradle configuration time on main.
+# That specific hole is closed by the bot being gone (dependency updates are
+# manual now), NOT by the trigger list. If any automation is reintroduced,
+# add its branch prefix here in the same commit, or its PRs will be green by
+# virtue of never having run.
+
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
 # contents, packages, issues and pull-requests — handed to every third-party
@@ -26,18 +40,25 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
+      # fetch-depth: 0 is load-bearing, not a nicety. On a `push` event
+      # paths-filter diffs against `github.event.before`, and with the default
+      # depth-1 checkout that commit is not in the clone — so paths-filter
+      # shells out to `git fetch` to get it. That fetch has no credentials
+      # (persist-credentials: false, correctly, keeps the token out of
+      # .git/config) and dies with:
+      #   fatal: could not read Username for 'https://github.com'
+      # which failed the `changes` job and, through `needs:`, SKIPPED the
+      # android and server jobs entirely. Every push to main since #158 was
+      # "green" only because nothing ever ran.
+      #
+      # Fetching the full history makes the base commit already present, so
+      # paths-filter never fetches and never needs a credential. The
+      # alternative — re-enabling persist-credentials here — would put the
+      # token back in .git/config to work around a missing object; this keeps
+      # the hardening and fixes the actual cause.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # paths-filter finds the merge-base against `main` itself, and with
-          # `persist-credentials: false` its own `git fetch` has no token:
-          # `fatal: could not read Username for 'https://github.com'`. That
-          # failed this job — and SKIPPED both test jobs — on every push to
-          # claude/** from 2026-08-11 to 2026-08-15. Fifteen runs showed a red X
-          # that looked like a test failure and was really "no tests ran".
-          # Fetching the full history (and therefore origin/main) here means the
-          # action has the refs locally and never needs credentials, so the
-          # security property this flag exists for is kept.
           fetch-depth: 0
       - uses: dorny/paths-filter@v4
         id: filter
@@ -53,12 +74,14 @@ jobs:
   android:
     name: Android build & lint
     needs: changes
-    # FAIL OPEN. A broken filter must run the tests, not skip them. The old
-    # `needs.changes.outputs.android == 'true'` meant any failure in `changes`
-    # left this job skipped, which is indistinguishable at a glance from "this
-    # push didn't touch android" — the same silent-no-CI shape as the `codex/**`
-    # gap noted above, and it hid four days of unrun server tests. When `changes`
-    # does not succeed we can't know what was touched, so we assume everything.
+    # FAIL OPEN — the second half of the fix above. `fetch-depth: 0` removes the
+    # known cause of a `changes` failure; this removes the CONSEQUENCE of any
+    # future one. A plain `needs.changes.outputs.android == 'true'` leaves this
+    # job *skipped* whenever `changes` fails for any reason, and a skipped job is
+    # indistinguishable at a glance from "this push didn't touch android" —
+    # which is exactly why nobody noticed that nothing had run since #158. When
+    # `changes` does not succeed we cannot know what was touched, so assume
+    # everything.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.android == 'true') }}
     runs-on: ubuntu-latest
     defaults:
@@ -244,7 +267,7 @@ jobs:
           compression-level: 3
 
   server:
-    name: Server tests & lint
+    name: Server tests & lint (py${{ matrix.python-version }})
     needs: changes
     # Fail open — see the android job.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.server == 'true') }}
@@ -252,6 +275,21 @@ jobs:
     defaults:
       run:
         working-directory: server
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of the supported range. The server is deployed straight
+        # onto a host (`start.sh` → uvicorn), so the interpreter is whatever
+        # that box has rather than something a base image pins — which makes
+        # testing a single version the wrong shape:
+        #  - 3.11 is the floor, and what the requirement floors
+        #    (numpy>=2.4.6, onnxruntime>=1.28) are still resolvable against.
+        #  - 3.14 is the current release, and what a freshly-provisioned host
+        #    gets. CI used to test 3.11 only, so a newer host ran code no
+        #    test had ever executed on it.
+        # Every dependency in requirements.txt publishes cp311 AND cp314
+        # linux wheels, so neither leg compiles from source.
+        python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -260,7 +298,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             server/requirements.txt

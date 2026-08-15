@@ -1,5 +1,5 @@
 fastapi==0.141.1
-uvicorn[standard]==0.52.1
+uvicorn[standard]==0.52.3
 python-multipart==0.0.32
 # SECURITY: 12.2.0 is affected by 26 published advisories (CVE-2026-59199
 # paste/crop OOB write, CVE-2026-59203 EPS infinite loop, CVE-2026-59204 JP2
@@ -23,14 +23,18 @@ Pillow==12.3.0
 ImageHash>=4.3.2
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
-# matches the training notebook, which already runs on numpy 2.x. Floor
-# raised to the current 2.4 series; cap kept at <3 for the next ABI break.
+# matches the training notebook, which already runs on numpy 2.x. Cap kept
+# at <3 for the next ABI break.
 #
-# Do NOT raise this floor to 2.5: numpy 2.5.0 declares Requires-Python >=3.12
-# and this service runs on 3.11 (see Dockerfile), so ``>=2.5`` makes the
-# install unresolvable rather than merely newer. 2.4.x is the newest series
-# that ships 3.11 wheels — revisit only together with the Python base image.
-numpy>=2.4,<3.0
+# The floor stays at 2.4.6 even though 2.5.x exists, and this is deliberate:
+# 2.4.x is the newest series that still ships cp311 wheels, and 3.11 is the
+# floor of the supported range (`start.sh` builds its venv from whatever
+# `python3` is on the box; CI runs the suite on 3.11 and 3.14). A floor of
+# >=2.5 declares Requires-Python >=3.12 and would make the 3.11 install
+# unresolvable rather than merely older. This is a floor, not a pin — pip
+# still takes the newest compatible numpy on every interpreter, so a 3.14
+# host resolves 2.5.x from this same line.
+numpy>=2.4.6,<3.0
 onnxruntime>=1.28.0
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return

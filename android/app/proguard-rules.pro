@@ -24,7 +24,13 @@
 -keep class com.google.gson.stream.** { *; }
 -keep class com.plantdiseases.app.data.model.** { *; }
 -keep class com.google.gson.reflect.TypeToken { *; }
--keep class * extends com.google.gson.reflect.TypeToken
+# The `{ <init>(); }` member spec is load-bearing under AGP 9: R8's
+# strictFullModeForKeepRules defaults to true there, and a bare `-keep class`
+# with no member spec no longer implies the default constructor. Gson
+# instantiates these anonymous TypeToken subclasses reflectively, so without
+# it the constructor is stripped and every generic decode fails — in the
+# minified release build only, which is the worst place to find out.
+-keep class * extends com.google.gson.reflect.TypeToken { <init>(); }
 
 # Belt-and-suspenders for any @SerializedName field on a model that R8 might
 # otherwise rename — without the keep, Gson would silently deserialise null
@@ -47,8 +53,10 @@
 # collapse the sealed hierarchy.
 -keep class com.plantdiseases.app.data.repository.** { *; }
 
-# Room
--keep class * extends androidx.room.RoomDatabase
+# Room. Room loads the generated `<Database>_Impl` by name and calls its
+# no-arg constructor, so the same AGP 9 strict-full-mode note as above
+# applies — keep the constructor explicitly, not just the class.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
 -dontwarn androidx.room.paging.**
 
 # Glide

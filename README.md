@@ -154,7 +154,7 @@ and serves FastAPI on `http://localhost:8000`.
 Model weights are **not committed** and **not auto-downloaded** — drop the trained
 bundle (`detector.{pt,onnx}`, `classifier.onnx`, `classes.json`, calibration JSON)
 into `server/models/` first; the server is **fail-fast** without them, and
-`train_notebook.ipynb` §6b tars them for you. Production setup (Docker, nginx/TLS,
+`train_notebook.ipynb` §6b tars them for you. Production setup (systemd, nginx/TLS,
 systemd, API keys, Android signing/FCM) lives in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ### Android client
@@ -250,7 +250,7 @@ plantdiseases/
 
 ## Documentation
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production config, Docker Compose, nginx +
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production config, systemd, nginx +
   Let's Encrypt, systemd, monitoring, pre-launch checklist, smoke QA, and Android
   release signing / FCM.
 - [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) — classifier
