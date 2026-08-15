@@ -142,8 +142,11 @@ histories.
 
 ## Model track
 
-`MODEL_VERSION` is **2.7.0** (notebook §1). `server/models/` holds only
-`.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed.**
+`MODEL_VERSION` is **2.7.2** (notebook §1), with `RUN_272` selecting which of
+the three planned runs a given execution is. `server/models/` holds only
+`.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed**, and 2.6.8 now
+runs behind the NAP head veto (`pipeline.py`), which is a server-side change
+requiring no new weights.
 
 Closed history: **2.6.9** gate-passed but lost a paired A/B vs 2.6.8 (kept
 2.6.8). **2.6.10** recovered leaf_scorch but silently lost a 2.26k-image source
@@ -605,7 +608,7 @@ It does **not** cover the 2.7.0 cliff (0 gained / 31 lost).
 
 #### Order of work — nothing on the A100 until R0 and Z1 are done
 
-- [ ] **R0 — build the instruments (notebook, no GPU). Blocking.**
+- [x] **R0 — build the instruments (notebook, no GPU). DONE 2026-08-15.**
       **(a)** A permanent never-trained in-domain **holdout**: a third
       `split_hint` value or a stable `phash` bucket, ~500–600 rows stratified
       over class × `subject_domain`, excluded from train / temperature_cal /
@@ -617,14 +620,31 @@ It does **not** cover the 2.7.0 cliff (0 gained / 31 lost).
       insensitive: the same subset does catch 2.6.9's real regression, 31–67,
       p=2e-4.)
       **(b)** Split the benchmark's scorch arm **by taxonomy**. 2.6.8 + veto
-      scores hibiscus **31/31** and banana_bush **4/31**; a brown-pixel measure
-      puts banana_bush "scorch" at median 0.036 vs hibiscus 0.238 — the healthy
-      `dwarf_white_bauhinia` arm (0.177) is browner than banana_bush scorch. So
-      report hibiscus as the *necrosis regression* arm (saturated — it can only
-      measure loss now) and banana_bush separately as a turgor-loss / healthy-
-      precision probe. **(c)** Publish the replicate band above in §6 as the
-      noise floor any benchmark claim must clear.
-- [ ] **Z1 — per-class decision bias, cached logits, no GPU.** *Not* the refuted
+      scores hibiscus **31/31** and banana_bush **4/31**. Report hibiscus as the
+      *necrosis regression* arm (saturated — it can only measure loss now) and
+      banana_bush separately as a turgor-loss probe. **(c)** Publish the
+      replicate band above in §6 as the noise floor any benchmark claim must
+      clear.
+      **Shipped:** `HOLDOUT` + `make_holdout()` (§2, drawn *before* the four
+      ratio splits; **535 rows** on v8), `final_metrics['holdout']`, the
+      four-population block and `REPLICATE_BAND` (§6), `SPECIES_ARMS` + the
+      between-species CI in `build_ood_benchmark.py`. Invariants pinned by
+      `server/tests/test_notebook_holdout.py` — chiefly that holdout membership
+      survives corpus growth, which a ratio draw does not provide.
+      **⚠ One retreat, recorded.** (b) was meant to sort species automatically
+      by necrotic fraction. Implemented, the rule does not work: it scores
+      *healthy* `night_flowering_jasmine` at **0.74** and puts banana_bush
+      scorch (0.45) *above* hibiscus (0.28) — the reverse of the ordering the
+      arms exist to capture, because `V < 0.75` makes it closer to a darkness
+      detector on these photographs. **The earlier write-up's 0.036 / 0.238 /
+      0.177 figures did not reproduce and should not be relied on.** Arms are
+      therefore an explicit list; the column is kept as a diagnostic and the
+      tool warns on an unknown species instead of guessing. The arm split itself
+      still stands on model behaviour: across the 13 archived bundles scored
+      served, hibiscus recall ≥ banana_bush in **all** of them and strictly
+      greater in 11 (medians 0.806 vs 0.129).
+- [x] **Z1 — per-class decision bias. MECHANISM SHIPPED 2026-08-15; the VALUE is
+      deliberately still unset.** *Not* the refuted
       lever (that was a constant bias on **2.7.1** chasing 2.6.8's OOD recall at
       14× the false-fire). This is 2.6.8, small, measured on the never-trained
       585 only: `leaf_scorch` bias +1.0 → scorch 0.739 → **0.841**, healthy
@@ -632,8 +652,23 @@ It does **not** cover the 2.7.0 cliff (0 gained / 31 lost).
       0.821. On the benchmark the same bias holds hibiscus 31/31 and lifts
       banana_bush 3→9/31 at a cost of one healthy cluster. **Falsified if** the
       `val_realworld` sweep costs > 1 pp healthy recall or > 2 pp on any other
-      disease class. If it survives it is a `classes.json` field plus a
-      `pipeline.py` read — not a retrain.
+      disease class.
+      **⚠ Correction to how this ships.** The plan said "a `classes.json` field
+      plus a `pipeline.py` read". That is wrong and would have been a quiet bug:
+      temperature and the RAPS q-hat are fitted on the logits the model
+      produces, so shifting one *after* calibration moves every probability they
+      were fitted against — the sets would keep claiming their coverage
+      guarantee while no longer having it. It ships instead as
+      **`CLASS_LOGIT_BIAS` (§1), folded into the head's final bias vector before
+      the ONNX export** (adding a constant to a class logit *is* adding it to
+      that row of the last `Linear`'s bias), so §6 fits temperature, INT8 and
+      conformal on the biased logits and the server needs no change at all.
+      `classes.json → inference.class_logit_bias` records it for provenance and
+      is explicitly **not** an instruction to re-apply.
+      **Left unset on purpose.** §6 now prints the sweep on `val_realworld`, but
+      taking its argmax and quoting the same split is selection on the test set.
+      To use it: read the sweep, pick a value on `temperature_cal`, set
+      `CLASS_LOGIT_BIAS` in §1, re-run, and read the result on the holdout.
 - [ ] **R1 — the seed replicate. FIRST A100 run.** Re-run 2.7.1's exact config,
       new seed, everything else byte-frozen, `TRAIN_MODE='gamma'`. *Predicted:*
       `val_realworld` within ±0.02 of 0.870, benchmark scorch stays ~0/62.
@@ -665,6 +700,36 @@ selection against the benchmark, TTA, crop voting, `FOLD_WHOLE_FRAME_VOTE`, blur
 gate, `_MAX_RECLASSIFY`, the detector swap (held), and any new capacity (DINOv3,
 ViT-B). The features are not the bottleneck; adding capacity does not address a
 transfer failure.
+
+#### Runbook — everything below is now one knob per run
+
+The no-GPU work is finished; what is left is A100 time. Each run is: set
+`RUN_272` in §1, run the notebook top to bottom, read four numbers.
+
+| | §1 `RUN_272` | what moves | read first |
+|---|---|---|---|
+| 1st | `'R1'` | `SEED` 0 → 1 | benchmark scorch. **≥ 15/62 voids the archaeology.** |
+| 2nd | `'R2'` | `USE_LORA` → False | transfer AUROC. **≤ 0.78 closes the branch.** |
+| 3rd | `'R3'` | `LABEL_SMOOTHING` → 0.0 | transfer AUROC. **< 0.03 move closes it.** |
+
+Keep `TRAIN_MODE='gamma'` for all three — R2 and R3 are judged against R1's
+band and the band is measured on gamma. §4 raises if any other frozen constant
+drifted, so a run that would answer two questions at once stops instead.
+
+What each run prints that did not exist before: the **holdout** block (the
+improvement metric), the **four populations** with their floors, the
+**Stage-1 audit** (no-box rate on damaged vs healthy foliage — the defect that
+cost the deployed bundle 11 pp and had never been measured), and the **Z1 bias
+sweep**. After the run, score the bundle out-of-band:
+
+```
+python -m server.tools.paired_eval --bundle-a <2.6.8+veto> --bundle-b <new> \
+    --eval-dir oodbench --provenance '' --served --out preds.json --run-bootstrap
+python -m server.tools.build_ood_benchmark --report preds.json --manifest oodbench/manifest.csv
+```
+
+Baseline A is **2.6.8 plus the NAP head veto**, never bare 2.6.8 — the veto
+ships independently and 2.7.2 must not be credited with it.
 
 #### Run protocol
 
