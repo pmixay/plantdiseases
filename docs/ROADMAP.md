@@ -429,7 +429,8 @@ train**, so its official split is 100 % leaked. Its "1,400 scorch images" are 62
 distinct photographs with ~22 augmented copies each. It cannot be training data
 (it is our only eval set) and could not carry a class if it were.
 
-- [ ] **4. SHIPPABLE TODAY, no A100: swap Stage 1.** Every run re-trains and
+- [ ] **4. Swap Stage 1 — real, but LARGELY SUBSUMED by item 6. Do not ship it
+      on its own evidence; see the 2×2 at the end of this section.** Every run re-trains and
       re-exports its own `detector.onnx`, and **the ship gate has never scored
       Stage 1** — `model_card.json → metrics_by_split` records `eval_mode:
       classifier_only` for all three splits, and §6's detector-crop eval is a
@@ -509,6 +510,28 @@ distinct photographs with ~22 augmented copies each. It cannot be training data
       non-plant that the head misreads as a plant is exactly the case this set
       cannot speak to. Bundles can restore the historical gate with
       `ood.nap_head_mass_floor: null`.
+
+**The two no-training fixes are not additive — ship only the veto.** Items 4 and
+6 were found independently and turned out to be two ways of stopping the *same*
+failure (Stage 1 finds no box → synthetic `det_conf = 0` → NAP). Crossed on the
+same 890 images:
+
+| | benchmark scorch (62) | benchmark healthy (151) | real `not_a_plant` (377) | in-domain plants (300) |
+|---|---|---|---|---|
+| **det 2.6.8 + old gate (deployed)** | 0.371 | 0.954 | 0.9894 | 0.847 |
+| det 2.6.9 + old gate | 0.484 | 0.954 | 0.9920 | 0.840 |
+| **det 2.6.8 + veto** | **0.565** | 0.954 | 0.9894 | **0.853** |
+| det 2.6.9 + veto | 0.581 | 0.954 | 0.9920 | 0.847 |
+
+On top of the veto the detector swap buys **+1 scorch cluster and costs 2
+in-domain plants**; against the deployed bundle the pair together is 0.371 →
+0.581 (13–0, p=0.0002) but in-domain plants land back at 0.847 with **12 lost and
+12 gained** — churn, not improvement. The veto alone is the whole win, and it is
+a code change rather than a bundle change, so it needs no re-validation of
+weights. **Conclusion: ship item 6, hold item 4.** Item 5 (gating Stage 1 per
+run) survives either way — the detector really is an unmeasured lottery, and this
+2×2 only shows that a *better* detector is worth little once the gate stops
+punishing a missing box.
 
 Run-log checks, each proving one fix landed:
 
