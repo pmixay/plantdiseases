@@ -230,7 +230,9 @@ hibiscus clusters.
 **Refuted mechanisms** (each re-derived from the bundles, then refuted): the 787
 boundary hard-negatives; the `kaggle_ornamental` volume collapse (2,263 → 1,158)
 as *the* cause; the OOD gate rejecting ornamentals; embedding-bank domain
-coupling; `supplement_train_only` at 0.9.
+coupling; `supplement_train_only` at 0.9. **⚠ The `kaggle_ornamental` line is
+now half-retracted** — see 2.7.2 below. Volume was the wrong axis, but the
+source is the right one: what changed is its *class content*.
 
 **Surviving mechanism.** 2.7.0 reads ornamentals as out-of-distribution in a
 quantity involving no bank and no detector: AUROC of `plant_max_logit` separating
@@ -377,6 +379,98 @@ exactly the run that collapsed.
 2.7.0 is genuinely better in-domain and worse out-of-domain, and the out-of-domain
 evidence rests on 31 hibiscus clusters. Item 1 is what turns that from an opinion
 into a measurement.
+
+### 2.7.2 — the archaeology release
+
+A longitudinal sweep (2026-08-15) scored **every archived bundle** — 2.3.1
+through 2.7.1, 14 distinct models — on the same 213-cluster never-trained
+benchmark, argmax *and* served. Three of the findings below are reproduced
+independently from the raw per-image predictions; the fourth is read straight
+off the shipped `classes.json` / `model_card.json`.
+
+**1. The collapse is a single cliff, not a drift.** Stage-2 argmax scorch recall
+(n=62) across the series: 2.3.1 0.000–0.129 → **2.4.0 0.516–0.758** → 2.5.0
+0.677 → 2.6.0 0.565–0.581 → 2.6.5 0.581 → 2.6.7 0.694 → 2.6.8 0.548 → **2.6.9
+0.565** → **2.7.0 0.065** → 2.7.1 0.081. Adjacent-version McNemar: 2.6.8→2.6.9
+gained 1 / lost 0 (p=1.0); **2.6.9→2.7.0 gained 0 / lost 31 (p=9.3e-10)**. No
+other transition loses more than 15 clusters, and healthy recall is flat across
+the same cliff (0.974 → 0.967). **2.6.9 is not "collapsed" — on this axis it is
+marginally the best model on record.** Any hypothesis has to explain a step
+change inside the 2026-07-03 → 2026-08-08 gap.
+
+**2. ⚠ Correction to the 2026-08-12 refutation: `kaggle_ornamental` is the
+mechanism, on content, not volume.** The source *enters* the corpus at
+2.3.1→2.4.0 (0 → 1,233 images) and that is the single largest **gain** in the
+series: **+39 / −0, p=3.6e-12**, scorch 0.129 → 0.758. It is *replaced* between
+2.6.9 and 2.7.0 (pappu54 deleted upstream → `itselif/ornamental-plant-diseases`
++ `warcoder/rose-leaves-disease-detection`) and that is the single largest
+**loss**. Nine pappu54-era runs sit at 0.516–0.758; the two replacement-era runs
+at 0.065–0.081. The replacements supply healthy, `leaf_spot` and
+`powdery_mildew` and **zero `leaf_scorch`** — while `KAGGLE_ORN_KEYWORDS` *does*
+map scorch, so the mapper would have accepted it. `DATASET_LABELING_PLAN.md`
+records pappu54 supplying **+67 scorch**.
+
+This is a symmetric natural experiment, and it is consistent with every prior
+refutation rather than contradicting them: those tested **volume** and
+**weight**, never **content**. It also explains why the 2.7.1 ablation failed in
+exactly the way it did — down-weighting a source that (post-replacement)
+contains *zero* scorch cannot restore scorch, and can only remove the ornamental
+*healthy* signal it does supply, which is precisely the healthy regression that
+was measured. Confidence 0.72: the swap is confounded with four other corpus
+changes in the same commit.
+
+**3. The obvious fix — wire the benchmark's source in as training data — is
+unavailable, and the reason is itself the finding.** All 2,800 `scorch` files in
+`shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update` collapse to
+**62 pHash clusters** at Hamming ≤ 6; **61 of 61 test clusters also appear in
+train**, so its official split is 100 % leaked. Its "1,400 scorch images" are 62
+distinct photographs with ~22 augmented copies each. It cannot be training data
+(it is our only eval set) and could not carry a class if it were.
+
+- [ ] **4. SHIPPABLE TODAY, no A100: swap Stage 1.** Every run re-trains and
+      re-exports its own `detector.onnx`, and **the ship gate has never scored
+      Stage 1** — `model_card.json → metrics_by_split` records `eval_mode:
+      classifier_only` for all three splits, and §6's detector-crop eval is a
+      post-gate diagnostic that defaults **OFF** for `combined`, the mode that
+      ships. Detector quality is therefore an unmeasured per-run lottery, and the
+      deployed bundle drew badly. 2×2 crossover on the benchmark, served path:
+
+| served, n=62 scorch | clf 2.6.8 | clf 2.6.9 |
+|---|---|---|
+| **det 2.6.8** | 0.371 (deployed) | 0.355 |
+| **det 2.6.9** | **0.484** | 0.500 |
+
+      Detector effect **+0.113** and +0.145; classifier effect −0.016 / +0.016.
+      Paired bootstrap vs deployed: **+0.113, 95 % CI [+0.032, +0.210]**, McNemar
+      **8–1, p=0.039**. Healthy is untouched — recall 0.954 → 0.954, NAP
+      false-fire 0.046 → 0.046, no species loses more than 1 image. Falsifier
+      **run** on 377 supplement `eval_ok` not_a_plant + 300 `eval_ok` plants: NAP
+      recall 0.9894 → 0.9920 (0–1, p=1.0), plant accuracy 0.847 → 0.840 (13–11,
+      **p=0.84**), plant→NAP false rejection 0.020 → 0.020. The hybrid bundle
+      passes `check_bundle.py` clean.
+      **Mechanism, and it converges with the served-path defect above:** Stage 1
+      returns **zero regions on 14/62 (22.6 %) ornamental scorch vs 5/151 (3.3 %)
+      healthy** (Fisher p=3.2e-05), the no-detection path forces a synthetic
+      `det_conf = 0.0`, and 10 of those 14 are then routed to `not_a_plant`. All
+      13 of 2.6.8's served NAP losses have `det_conf < 0.40`. Across nine
+      versions, corr(zero-detection rate on scorch, served scorch recall) =
+      **−0.757, p=0.018**. A better detector helps by *staying off* that path:
+      NAP misses fall 13 → 7.
+      **Before shipping:** re-run the real ship gate on `val_realworld` in
+      **served** mode, and reproduce the gain on a second damaged-plant set — 62
+      clusters and one falsifier at n=677 are not `val_realworld`.
+- [ ] **5. Gate Stage 1 in the notebook (§6).** Measure leaf-detection recall
+      **separately on damaged vs healthy foliage** and fail loud on the ratio, so
+      the lottery is visible per run instead of after 15 versions. Report served
+      numbers next to `classifier_only` in `MODEL_CARD.md`. Longer term: stop
+      re-training Stage 1 every run, or checkpoint-select it against that gate.
+- [ ] **6. The NAP gate ignores the one head trained to answer its question.**
+      `_decide_nap_route` is two-of-two (detector unsure AND embedding k-NN says
+      OOD) and never consults the classifier's own `not_a_plant` probability. On
+      the benchmark that is not academic: on the 13 scorch clusters 2.6.8 routes
+      to NAP, the head had put **~99 % on `leaf_scorch` and ~0 % on
+      `not_a_plant`**, and was overruled. Fix under measurement: a third
+      condition requiring the head's own NAP mass to clear a floor.
 
 Run-log checks, each proving one fix landed:
 
