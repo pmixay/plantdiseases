@@ -303,25 +303,29 @@ constraints, then get out of the way).
 wrong in ways tests never catch. Review the `values-ru/strings.xml` diff on
 every merge.
 
-**CI** (`.github/workflows/ci.yml`) runs on pushes to `main`, `claude/**`,
-`work/**` and `codex/**`, **and** on `pull_request` against `main`, with a
-`paths-filter` running the **android** and **server** jobs only when their
-trees change. Android: `ktlintCheck` + `detekt` + `testDebugUnitTest` + R8
-`assembleRelease`. Server: `ruff` + `pytest`, on Python 3.11 and 3.14.
-Dependency updates are made by hand.
+**CI** (`.github/workflows/ci.yml`) is push-only, on `main`, `claude/**`,
+`work/**` and `codex/**`, with a `paths-filter` running the **android** and
+**server** jobs only when their trees change. Android: `ktlintCheck` +
+`detekt` + `testDebugUnitTest` + R8 `assembleRelease`. Server: `ruff` +
+`pytest`, on Python 3.11 and 3.14. Dependency updates are made by hand.
 
-The `pull_request` trigger replaced a deliberate "push-only, every branch that
-reaches a PR was pushed here first" stance. That premise held for
-human-authored branches and failed for automated ones: the dependency PRs
-#158-#167 came from branches matching none of the globs above, so each was
-merged with an *empty* status, and five mutually-incompatible bumps broke the
-Android build at Gradle configuration time on `main`. Duplicate runs on a
-`claude/**` branch that also has a PR open are the accepted cost of not gating
-correctness on a branch-name glob; `concurrency` is now keyed on the PR number
-when there is one, so successive pushes to a PR supersede each other.
+No `pull_request` trigger, deliberately: every branch that reaches a PR was
+pushed here first, so a PR trigger only duplicates runs (they land under a
+different `github.ref`, so `concurrency` does not cancel them).
 
 Two failure modes worth remembering, both of which produced a *green-looking*
-repo with nothing running: the glob gap above, and `paths-filter` being unable
-to `git fetch` its diff base under `persist-credentials: false` (fixed with
-`fetch-depth: 0` — the base commit is then already local). When the `changes`
-job dies, `needs:` silently skips android and server.
+repo with nothing actually running:
+
+1. **A branch that matches no glob gets no CI, and its PR shows an empty
+   status rather than a red one.** That is how #158-#167 merged unbuilt —
+   they came from automated branches — and five mutually-incompatible
+   dependency bumps broke the Android build at Gradle configuration time on
+   `main`. The push-only stance is safe *because* dependency updates are
+   manual now. Reintroducing any automation means adding its branch prefix
+   to the trigger list in the same commit.
+2. **`paths-filter` could not `git fetch` its diff base** under
+   `persist-credentials: false` with the default depth-1 clone, so the
+   `changes` job died on every push — and when `changes` dies, `needs:`
+   silently skips android and server. Fixed with `fetch-depth: 0`, which
+   makes the base commit already local so no fetch (and no credential) is
+   needed.

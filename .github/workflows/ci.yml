@@ -8,34 +8,29 @@ on:
   push:
     branches: [main, "claude/**", "work/**", "codex/**"]
 
-  # Branch-name allowlists keep having the same hole, and the last one was
-  # expensive: the automated dependency PRs #163-#167 came from branches that
-  # matched nothing above, so each one arrived with an EMPTY status and was
-  # merged unbuilt. Five of them were mutually incompatible and the Android
-  # build failed at Gradle configuration time on main — nobody found out from
-  # CI. Triggering on the pull_request event covers every branch that will
-  # ever be merged, whatever it is named, so a PR can no longer be green by
-  # virtue of never having run.
-  #
-  # A `claude/**` branch that also has a PR open now builds twice (once per
-  # event). That is the accepted cost of not gating correctness on a glob.
-  pull_request:
-    branches: [main]
+# Push-only, deliberately — there is no `pull_request` trigger. Every branch
+# that reaches a PR here is pushed to one of the globs above first, so a PR
+# trigger would only duplicate runs (a PR event lands under a different
+# `github.ref`, so `concurrency` does not cancel the push run).
+#
+# The failure mode to keep in mind is the one that hit #158-#167: those came
+# from automated branches that matched none of the globs, so each PR carried
+# an EMPTY status and merged unbuilt — five mutually-incompatible dependency
+# bumps that broke the Android build at Gradle configuration time on main.
+# That specific hole is closed by the bot being gone (dependency updates are
+# manual now), NOT by the trigger list. If any automation is reintroduced,
+# add its branch prefix here in the same commit, or its PRs will be green by
+# virtue of never having run.
 
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
 # contents, packages, issues and pull-requests — handed to every third-party
 # action and to the Gradle build. Nothing in this workflow writes to the repo.
-# `pull-requests: read` is the minimum paths-filter needs to list a PR's
-# changed files through the API on pull_request events.
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
-  # Keyed on the PR number when there is one, so successive pushes to a PR
-  # supersede each other instead of piling up runs of stale commits.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
