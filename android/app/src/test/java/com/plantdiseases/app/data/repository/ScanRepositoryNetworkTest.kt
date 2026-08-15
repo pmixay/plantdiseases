@@ -648,26 +648,6 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun getCommunityScanCounts_success_parsesCountMap() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
-        )
-        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
-        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
-        assertThat(counts["sc-1"]?.views).isEqualTo(7)
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/scan-counts")
-    }
-
-    @Test
-    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
-        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
-        assertThat(counts).isEmpty()
-        assertThat(server.requestCount).isEqualTo(0)
-    }
-
-    @Test
     fun recordCommunityView_firesPostWithBody() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
         runBlocking { repo.recordCommunityView("sc-5", "viewer-1") }

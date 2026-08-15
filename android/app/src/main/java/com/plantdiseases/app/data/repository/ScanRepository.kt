@@ -887,28 +887,6 @@ class ScanRepository(
             }
         }
 
-    /** Batched {opinions, views} per scan_id for the Gallery badges. Returns
-     *  an empty map on failure so the UI just shows no badges. */
-    suspend fun getCommunityScanCounts(
-        scanIds: List<String>,
-    ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
-        withContext(Dispatchers.IO) {
-            if (scanIds.isEmpty()) return@withContext emptyMap()
-            try {
-                val r = apiClient.httpClient.post("api/community/scan-counts") {
-                    contentType(ContentType.Application.Json)
-                    setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
-                }
-                if (r.status.value in 200..299) {
-                    r.body<com.plantdiseases.app.data.model.CommunityScanCountsResponse>().counts
-                } else {
-                    emptyMap()
-                }
-            } catch (e: Exception) {
-                emptyMap()
-            }
-        }
-
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
         scanDao.deleteById(id)
@@ -946,7 +924,6 @@ class ScanRepository(
         isHealthy = isHealthy,
         isNotAPlant = isNotAPlantScan(this),
         timestamp = timestamp,
-        clientScanId = clientScanId,
     )
 
     /** Persisted top-class key from `all_probs`; null when not stored. */

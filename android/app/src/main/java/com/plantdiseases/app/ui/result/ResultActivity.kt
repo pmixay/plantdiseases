@@ -737,6 +737,15 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Catches a request/reply state change made on MyScanRepliesActivity
+        // (e.g. Stop) — that screen is separate now, so this is how the
+        // second-opinion control finds out, same as every other on-resume
+        // refresh in this app (no Flow/LiveData plumbing over Room here).
+        community.onResume()
+    }
+
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
@@ -749,10 +758,5 @@ class ResultActivity : AppCompatActivity() {
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
         private const val DISEASE_APPEARANCE_TAG = "disease_appearance"
-
-        /** When true, auto-open the community opinions for this scan once it
-         *  loads — set from an opinion notification tap and from tapping a
-         *  Gallery row that has new opinions. */
-        const val EXTRA_OPEN_OPINIONS = "extra_open_opinions"
     }
 }

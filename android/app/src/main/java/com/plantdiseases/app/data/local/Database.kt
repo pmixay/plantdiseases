@@ -704,6 +704,53 @@ interface CareTaskDao {
     suspend fun deleteById(id: Long)
 }
 
+// ─── Notification centre ─────────────────────────────────────────────
+//
+// One row per notification the app has ever surfaced (community replies,
+// care reminders, garden alerts), regardless of whether the system
+// notification itself was allowed to post — see util/NotificationCenter.kt.
+// `deeplink` is a plain "prefix:id" string (e.g. "community:abc123"),
+// resolved by ui/notifications/NotificationRouter.kt; null means "just
+// open Home".
+
+@Entity(tableName = "notifications", indices = [Index(value = ["created_at"])])
+data class NotificationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "title") val title: String,
+    @ColumnInfo(name = "body") val body: String,
+    @ColumnInfo(name = "deeplink") val deeplink: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "read_at") val readAt: Long? = null,
+)
+
+@Dao
+interface NotificationDao {
+    @Query("SELECT * FROM notifications ORDER BY created_at DESC")
+    suspend fun getAll(): List<NotificationEntity>
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE read_at IS NULL")
+    suspend fun getUnreadCount(): Int
+
+    @Insert
+    suspend fun insert(entity: NotificationEntity): Long
+
+    @Query("UPDATE notifications SET read_at = :now WHERE id = :id AND read_at IS NULL")
+    suspend fun markRead(id: Long, now: Long)
+
+    @Query("UPDATE notifications SET read_at = :now WHERE read_at IS NULL")
+    suspend fun markAllRead(now: Long)
+
+    @Query("DELETE FROM notifications WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM notifications WHERE created_at < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long)
+
+    @Query("DELETE FROM notifications")
+    suspend fun clearAll()
+}
+
 @Database(
     entities = [
         ScanEntity::class,
@@ -717,12 +764,13 @@ interface CareTaskDao {
         TreatmentPlanEntity::class,
         TreatmentStepEntity::class,
         CareTaskEntity::class,
+        NotificationEntity::class,
     ],
     // The schema is treated as ephemeral while the app is in pre-release
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -737,6 +785,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun treatmentPlanDao(): TreatmentPlanDao
     abstract fun treatmentStepDao(): TreatmentStepDao
     abstract fun careTaskDao(): CareTaskDao
+    abstract fun notificationDao(): NotificationDao
 
     companion object {
         @Volatile
@@ -975,6 +1024,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds the notification centre. Entirely additive — one CREATE TABLE
+         *  IF NOT EXISTS + one index, no existing table touched, no row
+         *  copied. Matches NotificationEntity's schema exactly; if this ever
+         *  drifts from the entity, Room's fallbackToDestructiveMigration
+         *  below silently wipes the whole database instead of throwing —
+         *  see the builder comment. */
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `notifications` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `body` TEXT NOT NULL,
+                        `deeplink` TEXT,
+                        `created_at` INTEGER NOT NULL,
+                        `read_at` INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_notifications_created_at` " +
+                        "ON `notifications` (`created_at`)"
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase = databaseInstance ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
@@ -988,6 +1065,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
                 // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                 // true` preserves the previous behaviour (wipe everything

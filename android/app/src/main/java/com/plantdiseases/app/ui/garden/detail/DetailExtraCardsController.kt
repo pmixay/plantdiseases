@@ -882,7 +882,7 @@ class DetailExtraCardsController(
     /** Notify the user that the plant's severity series is worsening
      *  twice in a row. Reuses the existing plant-reminders
      *  notification channel + intent into the plant detail. */
-    private fun fireProgressionAlert(plantName: String) {
+    private suspend fun fireProgressionAlert(plantName: String) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
             androidx.core.content.ContextCompat.checkSelfPermission(
                 activity,
@@ -902,6 +902,13 @@ class DetailExtraCardsController(
         )
         val title = activity.getString(R.string.progression_alert_title, plantName)
         val body = activity.getString(R.string.progression_alert_body)
+        com.plantdiseases.app.util.NotificationCenter.record(
+            activity,
+            type = "garden",
+            title = title,
+            body = body,
+            deeplink = "plant:$plantId",
+        )
         val builder = androidx.core.app.NotificationCompat.Builder(
             activity,
             com.plantdiseases.app.PlantDiseasesApp.CHANNEL_PLANT_REMINDERS,

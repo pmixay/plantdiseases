@@ -16,6 +16,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
+import com.plantdiseases.app.util.NotificationCenter
 
 /**
  * Fires when a reminder's WorkManager interval elapses. Persists a
@@ -183,6 +184,14 @@ class PlantReminderWorker(
                 snoozePending,
             )
         }
+
+        NotificationCenter.record(
+            context,
+            type = "reminder",
+            title = title,
+            body = body,
+            deeplink = "plant:$plantId",
+        )
 
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.notify(notificationId, builder.build())

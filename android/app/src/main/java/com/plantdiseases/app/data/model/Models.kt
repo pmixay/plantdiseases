@@ -530,24 +530,6 @@ data class CommunityViewRequest(
     @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>? = null,
 )
 
-/** /api/community/scan-counts request + response: batched {opinions, views}
- *  per scan so the Gallery can badge the caller's own rows in one call. */
-@Serializable
-data class CommunityScanCountsRequest(
-    @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>,
-)
-
-@Serializable
-data class CommunityScanCount(
-    @SerializedName("opinions") @SerialName("opinions") val opinions: Int = 0,
-    @SerializedName("views") @SerialName("views") val views: Int = 0,
-)
-
-@Serializable
-data class CommunityScanCountsResponse(
-    @SerializedName("counts") @SerialName("counts") val counts: Map<String, CommunityScanCount> = emptyMap(),
-)
-
 /** Guide article about plant care */
 data class GuideItem(
     val id: String,
@@ -605,16 +587,6 @@ data class ScanHistoryItem(
      */
     val isNotAPlant: Boolean,
     val timestamp: Long,
-    /** Globally-unique community scan id (empty for legacy rows). Used to
-     *  fetch community activity counts for the Gallery badge. */
-    val clientScanId: String = "",
-    /** Community activity on this scan, filled in lazily by the Gallery after
-     *  a batched /community/scan-counts call (0 when none / not shared). */
-    val communityOpinions: Int = 0,
-    val communityViews: Int = 0,
-    /** Opinions on this scan the user hasn't viewed yet (current minus the
-     *  per-scan viewed baseline). Drives the red "+N" badge + row highlight. */
-    val newOpinions: Int = 0,
 )
 
 /**

@@ -13,6 +13,7 @@ enum class OnboardingChapter(
     GALLERY("gallery"),
     PROFILE("profile"),
     SPECIES_DETAILS("species_details"),
+    COMMUNITY("community"),
 }
 
 enum class OnboardingChapterStatus {
@@ -30,6 +31,7 @@ enum class OnboardingContext {
     RESULT,
     GARDEN_PLANT_DETAILS,
     SPECIES_DETAILS,
+    COMMUNITY,
 }
 
 /** Stable, persistence-safe identifiers. Never rename an existing value. */
@@ -60,6 +62,8 @@ enum class OnboardingStepId {
     SPECIES_CARE,
     SPECIES_FLOWERING,
     SPECIES_NATIVE_RANGE,
+    COMMUNITY_SCOPE,
+    COMMUNITY_FEED,
 }
 
 enum class OnboardingAnchorKey {
@@ -89,6 +93,8 @@ enum class OnboardingAnchorKey {
     SPECIES_CARE,
     SPECIES_FLOWERING,
     SPECIES_NATIVE_RANGE,
+    COMMUNITY_SCOPE,
+    COMMUNITY_FEED,
 }
 
 enum class OnboardingTargetAction {

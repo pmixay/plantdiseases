@@ -38,36 +38,6 @@
                 android:layout_height="4dp"
                 android:layout_gravity="bottom" />
 
-            <!-- Community activity badge (opinions · views) on shared scans;
-                 set + shown from GalleryAdapter, hidden when there's none. -->
-            <TextView
-                android:id="@+id/tv_community_badge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|end"
-                android:layout_margin="@dimen/space_xs"
-                android:background="@drawable/bg_glass_dark_pill"
-                android:paddingHorizontal="@dimen/space_sm"
-                android:paddingVertical="2dp"
-                android:textSize="@dimen/text_caption"
-                android:textColor="@android:color/white"
-                android:visibility="gone" />
-
-            <!-- Red "+N" badge for opinions the user hasn't viewed yet. -->
-            <TextView
-                android:id="@+id/tv_new_opinions"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_margin="@dimen/space_xs"
-                android:background="@drawable/bg_badge_new"
-                android:paddingHorizontal="@dimen/space_sm"
-                android:paddingVertical="2dp"
-                android:textSize="@dimen/text_caption"
-                android:textStyle="bold"
-                android:textColor="@android:color/white"
-                android:visibility="gone" />
-
         </FrameLayout>
 
         <LinearLayout

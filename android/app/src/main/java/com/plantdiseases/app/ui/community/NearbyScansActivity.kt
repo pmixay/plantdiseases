@@ -21,11 +21,15 @@ import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
 import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.TelemetryIds
@@ -58,6 +62,10 @@ class NearbyScansActivity : AppCompatActivity() {
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
     // Full feed as returned by the server; filtered + sorted client-side
@@ -111,6 +119,10 @@ class NearbyScansActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityNearbyScansBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
+        onboardingCoordinator.setContext(OnboardingContext.COMMUNITY)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.COMMUNITY_SCOPE, binding.cgScope)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.COMMUNITY_FEED, binding.rvNearby)
 
         val baseListPadding = resources.getDimensionPixelSize(R.dimen.space_2xl)
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->

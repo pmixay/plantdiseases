@@ -1,0 +1,200 @@
+package com.plantdiseases.app.ui.community
+
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
+import android.text.format.DateUtils
+import android.view.Gravity
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.core.content.ContextCompat
+import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.CommunityOpinion
+import com.plantdiseases.app.data.model.CommunityTopDisease
+import com.plantdiseases.app.util.Avatars
+
+/**
+ * The consensus vote bar and the forum-style comment row — shared between
+ * [com.plantdiseases.app.ui.result.CommunityOpinionSheet] (viewer sheet) and
+ * [MyScanRepliesActivity] (the owner's dedicated reply screen). Both render
+ * the exact same visual for the same data; only [labelFor] (a display-name
+ * lookup keyed to whichever screen's catalogue) differs per caller.
+ */
+object OpinionViews {
+
+    /** One horizontal percentage bar for the consensus graph. The leading
+     *  disease is tinted with the brand primary; the rest use a muted
+     *  primary so the winner reads at a glance. */
+    fun buildVoteBar(
+        ctx: Context,
+        entry: CommunityTopDisease,
+        total: Int,
+        leading: Boolean,
+        labelFor: (String) -> String,
+    ): View {
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val pct = Math.round(entry.count * 100f / total).coerceIn(0, 100)
+        val fillColor = ContextCompat.getColor(ctx, if (leading) R.color.primary else R.color.primary_light)
+        val trackColor = ContextCompat.getColor(ctx, R.color.surface_variant)
+
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+
+        val labelLine = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        labelLine.addView(
+            TextView(ctx).apply {
+                text = labelFor(entry.disease)
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        labelLine.addView(
+            TextView(ctx).apply {
+                text = ctx.getString(R.string.community_vote_percent, pct)
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+            },
+        )
+        row.addView(labelLine)
+
+        val radius = dp(4).toFloat()
+        val track = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(trackColor)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(8),
+            ).apply { topMargin = dp(4) }
+            weightSum = 100f
+        }
+        track.addView(
+            View(ctx).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(fillColor)
+                }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, pct.toFloat())
+            },
+        )
+        if (pct < 100) {
+            track.addView(
+                View(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        (100 - pct).toFloat(),
+                    )
+                },
+            )
+        }
+        row.addView(track)
+        return row
+    }
+
+    /** One forum-style comment row: monogram avatar, nickname + relative
+     *  time header, the suggested class (a comment is always at least a
+     *  vote), and the free-text note underneath when the author wrote one. */
+    fun buildOpinionRow(ctx: Context, op: CommunityOpinion, labelFor: (String) -> String): View {
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val nick = op.nickname?.takeIf { it.isNotBlank() }
+        val who = nick ?: ctx.getString(R.string.community_anonymous_author)
+
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+
+        row.addView(
+            TextView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(10) }
+                gravity = Gravity.CENTER
+                background = ContextCompat.getDrawable(ctx, R.drawable.bg_circle_surface_variant)
+                backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(who))
+                setTextColor(Color.WHITE)
+                textSize = 11f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                text = Avatars.monogramForNick(who)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+        )
+
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        head.addView(
+            TextView(ctx).apply {
+                text = who
+                textSize = 13f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        if (op.createdAt > 0L) {
+            head.addView(
+                TextView(ctx).apply {
+                    text = DateUtils.getRelativeTimeSpanString(
+                        op.createdAt * 1000L,
+                        System.currentTimeMillis(),
+                        DateUtils.MINUTE_IN_MILLIS,
+                        DateUtils.FORMAT_ABBREV_RELATIVE,
+                    )
+                    textSize = 12f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginStart = dp(8) }
+                },
+            )
+        }
+        col.addView(head)
+
+        col.addView(
+            TextView(ctx).apply {
+                text = labelFor(op.suggestedDisease)
+                textSize = 14f
+                setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(2) }
+            },
+        )
+
+        if (op.note.isNotBlank()) {
+            col.addView(
+                TextView(ctx).apply {
+                    text = op.note
+                    textSize = 14f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(2) }
+                },
+            )
+        }
+
+        row.addView(col)
+        return row
+    }
+}

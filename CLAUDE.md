@@ -132,8 +132,9 @@ validation, metrics — and wires everything together):
 **One species surface:** species information lives on `SpeciesDetailActivity`
 alone. Every other screen references a species through the reusable
 `ui/common/SpeciesInfoCardView` (Wikipedia photo + name + description + "more
-about this species"), which is embedded on the scan result, species identify
-and the community opinion sheet. Do not add species cards elsewhere.
+about this species"), which is embedded on the scan result and species
+identify. The community opinion sheet dropped it in Community v2 — the photo
+is the subject there, not the species. Do not add species cards elsewhere.
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`

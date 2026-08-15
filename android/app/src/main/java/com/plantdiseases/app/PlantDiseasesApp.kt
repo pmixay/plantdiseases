@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.ThemeHelper
@@ -29,6 +30,9 @@ class PlantDiseasesApp : Application() {
 
     @Inject
     lateinit var scanRepository: com.plantdiseases.app.data.repository.ScanRepository
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -155,6 +159,7 @@ class PlantDiseasesApp : Application() {
         com.plantdiseases.app.util.ResponseCache.init(this)
         setupTelemetry()
         purgeStaleRejectedScans()
+        pruneOldNotifications()
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -175,6 +180,19 @@ class PlantDiseasesApp : Application() {
     private fun purgeStaleRejectedScans() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
+        }
+    }
+
+    /** Sweep notification-centre rows older than 30 days on every launch.
+     *  ponytail: fixed window, no setting — add one if 30 days ever turns
+     *  out wrong for real usage. */
+    private fun pruneOldNotifications() {
+        appScope.launch {
+            runCatching {
+                notificationRepository.deleteOlderThan(
+                    System.currentTimeMillis() - NOTIFICATION_RETENTION_MS,
+                )
+            }
         }
     }
 
@@ -282,5 +300,7 @@ class PlantDiseasesApp : Application() {
         private const val KEY_CRASH_KIND = "crash_kind"
         private const val KEY_CRASH_MESSAGE = "crash_message"
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
+
+        private const val NOTIFICATION_RETENTION_MS = 30L * 24 * 3_600_000
     }
 }

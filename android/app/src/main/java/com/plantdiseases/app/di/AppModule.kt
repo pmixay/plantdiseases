@@ -5,6 +5,7 @@ import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -124,4 +125,9 @@ object AppModule {
         @ApplicationContext context: Context,
         scanRepository: ScanRepository,
     ): CommunityUploader = CommunityUploader(context, scanRepository)
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(database: AppDatabase): NotificationRepository =
+        NotificationRepository(database.notificationDao())
 }

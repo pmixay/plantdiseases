@@ -518,7 +518,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     val mine = scanRepository.localClientScanIds()
                     if (item.scanId in mine) {
-                        CommunityOpinionSheet.showForOwner(supportFragmentManager, item.scanId, label)
+                        startActivity(
+                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
+                                .intentFor(this@SpeciesDetailActivity, item.scanId),
+                        )
                     } else {
                         CommunityOpinionSheet.show(supportFragmentManager, item, label)
                     }

@@ -125,6 +125,7 @@
     <string name="guidance_title_gallery">Gallery</string>
     <string name="guidance_title_profile">Profile</string>
     <string name="guidance_title_species">Species details</string>
+    <string name="guidance_title_community">Community</string>
     <string name="guidance_home_actions">Scan checks a plant’s health; Identify names an unknown species.</string>
     <string name="guidance_home_tools">Measure light, calculate watering, check symptoms, or browse the plant guide.</string>
     <string name="guidance_home_scan_nav">Open Scan to check a plant’s health.</string>
@@ -152,6 +153,8 @@
     <string name="guidance_species_care">Expand Care Plan for watering, light, and other care advice.</string>
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
+    <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
+    <string name="guidance_community_feed">Tap a photo to see the diagnosis and leave a comment. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -252,6 +255,7 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
     <!-- Community second opinion -->
+    <string name="replies_title">Replies to your scan</string>
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
     <string name="community_opinion_diagnosis_label">Diagnosis</string>
@@ -268,8 +272,6 @@
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
     <string name="community_opinion_photo_desc">Shared plant scan</string>
-    <string name="gallery_community_badge">💬 %1$d</string>
-    <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
@@ -281,8 +283,6 @@
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
     <string name="second_opinion_stop">Stop request</string>
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
-    <string name="community_opinion_replies_title">Community second opinions</string>
-    <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_opinion_list_header">Replies (%1$d)</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
@@ -291,6 +291,13 @@
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Community scans</string>
     <string name="nearby_scans_cd">Community scans</string>
+    <string name="notifications_cd">Notifications</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
+    <string name="notifications_mark_all_read">Mark all read</string>
+    <string name="notifications_clear_all">Clear all</string>
+    <string name="notifications_clear_confirm_title">Clear all notifications?</string>
+    <string name="notifications_clear_confirm_body">This removes every notification from the list. It doesn\'t undo anything they were about.</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
     <!-- Community scope toggle -->

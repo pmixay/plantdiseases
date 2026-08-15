@@ -1,6 +1,5 @@
 package com.plantdiseases.app.ui.result
 
-import android.graphics.Rect
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -53,6 +52,18 @@ class CommunityController(
      */
     private var opinionRequestInFlight = false
 
+    // Remembered so onResume() can re-probe the request/reply state after
+    // the user comes back from MyScanRepliesActivity (e.g. having tapped
+    // Stop) — that screen is a separate Activity now, not a bottom sheet
+    // over this one, so there's no Fragment Result callback to catch.
+    private var lastScan: ScanEntity? = null
+    private var lastIsRu: Boolean = false
+
+    fun onResume() {
+        val scan = lastScan ?: return
+        refreshSecondOpinion(scan, lastIsRu)
+    }
+
     /**
      * The one writer of this button's enabled state.
      *
@@ -84,77 +95,42 @@ class CommunityController(
      * - **Ask**: no live request → "Get a second opinion" (community-gated).
      * - **Open request**: dynamic label with the reply count and the hours
      *   left until the 72 h auto-expiry, gently pulsing while it waits.
-     *   Tapping opens the owner replies sheet, which also carries the
-     *   "Stop request" action — reachable at ANY point of the request's
-     *   life, including after replies have arrived.
+     *   Tapping opens [com.plantdiseases.app.ui.community.MyScanRepliesActivity],
+     *   which carries the "Stop request" action — reachable at ANY point of
+     *   the request's life, including after replies have arrived.
      * - **Replies, request closed** (expired/stopped): "View second
      *   opinions (N)".
      *
-     * The sheet reports request-state changes (stop) back via the Fragment
-     * Result API so this control re-renders immediately.
+     * That screen is a separate Activity, not a bottom sheet over this one,
+     * so there's no result callback on return — [onResume] re-probes instead.
      */
     fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
+        lastScan = scan
+        lastIsRu = isRu
         // This control is not in the activity's enableWhileOnline set — it
         // needs the in-flight rule too, so it observes reachability itself.
         activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
-        activity.supportFragmentManager.setFragmentResultListener(
-            CommunityOpinionSheet.REQUEST_STATE_CHANGED,
-            activity,
-        ) { _, _ -> refreshSecondOpinion(scan, isRu) }
         showAsk(scan, isRu)
-        refreshSecondOpinion(scan, isRu, handleDeepLink = true)
+        refreshSecondOpinion(scan, isRu)
     }
 
-    private fun refreshSecondOpinion(
-        scan: ScanEntity,
-        isRu: Boolean,
-        handleDeepLink: Boolean = false,
-    ) {
+    private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.lifecycleScope.launch {
             repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
                 val n = resp.opinions.size
-                // Opening the scan's result counts as viewing its replies:
-                // advance the viewed baseline so the Gallery clears its
-                // "+N new opinions" badge for this scan.
-                OpinionPrefs.markViewedOpinions(activity, scan.clientScanId, n)
                 when {
                     resp.wantsOpinion ->
                         showOpenRequest(scan, isRu, n, resp.opinionRequestedAt)
                     n > 0 -> showViewReplies(scan, isRu, n)
                     else -> showAsk(scan, isRu)
                 }
-                // Arrived from a notification / a Gallery row with new
-                // opinions → jump straight to them.
-                if (handleDeepLink &&
-                    n > 0 &&
-                    activity.intent.getBooleanExtra(ResultActivity.EXTRA_OPEN_OPINIONS, false)
-                ) {
-                    activity.intent.removeExtra(ResultActivity.EXTRA_OPEN_OPINIONS)
-                    binding.scrollView.post {
-                        binding.btnSecondOpinion.requestRectangleOnScreen(
-                            Rect(
-                                0,
-                                0,
-                                binding.btnSecondOpinion.width,
-                                binding.btnSecondOpinion.height,
-                            ),
-                            false,
-                        )
-                        openReplies(scan, isRu)
-                    }
-                }
             }
         }
     }
 
-    private fun opinionButtonName(scan: ScanEntity, isRu: Boolean): String =
-        displayName(repository.verdictClassKey(scan) ?: "", isRu)
-
-    private fun openReplies(scan: ScanEntity, isRu: Boolean) {
-        CommunityOpinionSheet.showForOwner(
-            activity.supportFragmentManager,
-            scan.clientScanId,
-            opinionButtonName(scan, isRu),
+    private fun openReplies(scan: ScanEntity) {
+        activity.startActivity(
+            com.plantdiseases.app.ui.community.MyScanRepliesActivity.intentFor(activity, scan.clientScanId),
         )
     }
 
@@ -196,7 +172,7 @@ class CommunityController(
             repeatCount = android.view.animation.Animation.INFINITE
         }
         btn.startAnimation(pulse)
-        btn.setOnClickListener { openReplies(scan, isRu) }
+        btn.setOnClickListener { openReplies(scan) }
     }
 
     private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
@@ -204,7 +180,7 @@ class CommunityController(
         btn.clearAnimation()
         applySecondOpinionEnabled()
         btn.text = activity.getString(R.string.result_second_opinion_view, count)
-        btn.setOnClickListener { openReplies(scan, isRu) }
+        btn.setOnClickListener { openReplies(scan) }
     }
 
     private fun showAsk(scan: ScanEntity, isRu: Boolean) {
@@ -316,10 +292,9 @@ class CommunityController(
                 activity.lifecycleScope.launch {
                     val mine = repository.localClientScanIds()
                     if (item.scanId in mine) {
-                        CommunityOpinionSheet.showForOwner(
-                            activity.supportFragmentManager,
-                            item.scanId,
-                            displayName(item.disease, isRu),
+                        activity.startActivity(
+                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
+                                .intentFor(activity, item.scanId),
                         )
                     } else {
                         CommunityOpinionSheet.show(
