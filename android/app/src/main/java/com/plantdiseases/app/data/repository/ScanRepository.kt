@@ -26,6 +26,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -879,6 +880,40 @@ class ScanRepository(
                 when (response.status.value) {
                     in 200..299 -> Result.success(
                         response.body<com.plantdiseases.app.data.model.CommunityLikeResponse>(),
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Create-or-return this device's durable forum identity. [keyHash] is
+     *  [com.plantdiseases.app.util.CommunityIdentity.keyHash] — never the
+     *  raw secret — sent as a header, never in the body or a URL (see
+     *  CommunityIdentity's kdoc for why). Idempotent: safe to call on every
+     *  launch, fire-and-forget. Groundwork only for now — nothing else in
+     *  the app reads the response yet; F1 is what starts using it. */
+    suspend fun adoptCommunityAuthor(
+        keyHash: String,
+        seedDisplayName: String,
+        legacyPseudoId: String?,
+    ): Result<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.post("api/community/authors/adopt") {
+                    header("X-Community-Author-Key", keyHash)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityAuthorAdoptRequest(
+                            seedDisplayName = seedDisplayName,
+                            legacyPseudoId = legacyPseudoId,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse>(),
                     )
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }

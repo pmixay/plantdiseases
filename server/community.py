@@ -30,6 +30,7 @@ import contextlib
 import hashlib
 import logging
 import math
+import secrets
 import sqlite3
 import threading
 import time
@@ -133,6 +134,29 @@ CREATE TABLE IF NOT EXISTS community_likes (
 );
 CREATE INDEX IF NOT EXISTS ix_likes_scan ON community_likes(scan_id);
 CREATE INDEX IF NOT EXISTS ix_likes_ip   ON community_likes(client_ip_hash, created_at);
+
+-- Durable per-device forum identity (the forum groundwork — see
+-- docs/COMMUNITY_FORUM_PLAN.docx §3.1 / §4). ``key_hash`` is SHA-256 of a
+-- 32-byte secret the client generates once and never sends in raw form —
+-- the row is looked up by that hash, never by anything reversible.
+-- ``account_id`` stays NULL until a real account system exists and claims
+-- this row; every table this identity touches points at ``author_id``, not
+-- at ``account_id``, so nothing has to be re-keyed the day accounts ship.
+CREATE TABLE IF NOT EXISTS community_authors (
+    author_id        TEXT    PRIMARY KEY,
+    key_hash         TEXT    UNIQUE NOT NULL,
+    display_name     TEXT    NOT NULL,
+    -- The community_scans.user_pseudo_id / community_opinions.author_pseudo_id
+    -- this device used before it had a durable identity. Recorded once, on
+    -- first adopt only — this is what a later backfill joins old rows
+    -- against; it is not touched again after that first insert.
+    legacy_pseudo_id TEXT,
+    created_at       INTEGER NOT NULL,
+    last_seen_at     INTEGER NOT NULL,
+    account_id       TEXT,
+    status           TEXT    NOT NULL DEFAULT 'active'
+);
+CREATE INDEX IF NOT EXISTS ix_authors_legacy_pseudo ON community_authors(legacy_pseudo_id);
 """
 
 _write_lock = threading.RLock()
@@ -1504,6 +1528,80 @@ def _author_token(user_pseudo_id: str | None) -> str | None:
         return None
     seed = f"{user_pseudo_id}|{_identity_epoch()}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+
+
+# ── Durable forum identity (community_authors) ───────────────────────
+#
+# Deliberately separate from _author_token above: that one is the existing
+# feed's per-window anonymous avatar hash and stays exactly as it is. This
+# is the forum's durable identity — one author_id per device, permanent
+# until the row is explicitly blocked (moderation, later) or claimed by a
+# real account (account_id, later). See COMMUNITY_FORUM_PLAN.docx §3.1.
+
+_AUTHOR_ID_PREFIX = "au_"
+
+
+def _new_author_id() -> str:
+    return _AUTHOR_ID_PREFIX + secrets.token_hex(12)
+
+
+def _author_row(conn: sqlite3.Connection, author_id: str) -> dict:
+    row = conn.execute(
+        "SELECT author_id, display_name, created_at, last_seen_at, "
+        "account_id, status FROM community_authors WHERE author_id = ?",
+        (author_id,),
+    ).fetchone()
+    return {
+        "author_id": row[0],
+        "display_name": row[1],
+        "created_at": row[2],
+        "last_seen_at": row[3],
+        "account_id": row[4],
+        "status": row[5],
+    }
+
+
+def resolve_author(
+    key_hash: str,
+    seed_display_name: str,
+    legacy_pseudo_id: str | None = None,
+) -> dict:
+    """Create-or-return the durable author row for one device's key hash.
+
+    Idempotent by design: a second call with the same ``key_hash`` returns
+    the existing row untouched except for ``last_seen_at`` — it does NOT
+    overwrite ``display_name`` or ``legacy_pseudo_id`` on repeat calls (both
+    are seeded once, from whatever the device already had, on first adopt
+    only; profile editing, when it exists, is the only thing allowed to
+    change ``display_name`` after that).
+    """
+    kh = (key_hash or "").strip()
+    if not kh:
+        raise ValueError("key_hash is required")
+    name = (seed_display_name or "").strip()[:80] or "Plant grower"
+    legacy = (legacy_pseudo_id or "").strip() or None
+
+    init_db()
+    now = int(time.time())
+    with _connect() as conn:
+        existing = conn.execute(
+            "SELECT author_id FROM community_authors WHERE key_hash = ?", (kh,),
+        ).fetchone()
+        if existing:
+            author_id = str(existing[0])
+            conn.execute(
+                "UPDATE community_authors SET last_seen_at = ? WHERE author_id = ?",
+                (now, author_id),
+            )
+        else:
+            author_id = _new_author_id()
+            conn.execute(
+                "INSERT INTO community_authors "
+                "(author_id, key_hash, display_name, legacy_pseudo_id, "
+                " created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (author_id, kh, name, legacy, now, now),
+            )
+        return _author_row(conn, author_id)
 
 
 def _row_to_dict(row: tuple) -> dict:

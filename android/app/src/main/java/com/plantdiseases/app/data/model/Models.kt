@@ -510,6 +510,28 @@ data class CommunityLikeResponse(
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
+/** /api/community/authors/adopt request body. The device key itself travels
+ *  as the X-Community-Author-Key header, not in this body — see
+ *  ScanRepository.adoptCommunityAuthor. */
+@Serializable
+data class CommunityAuthorAdoptRequest(
+    @SerializedName("seed_display_name") @SerialName("seed_display_name") val seedDisplayName: String,
+    @SerializedName("legacy_pseudo_id") @SerialName("legacy_pseudo_id") val legacyPseudoId: String? = null,
+)
+
+/** /api/community/authors/adopt response — this device's durable forum
+ *  identity. `accountId` stays null until a real account claims this row. */
+@Serializable
+data class CommunityAuthorAdoptResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("author_id") @SerialName("author_id") val authorId: String = "",
+    @SerializedName("display_name") @SerialName("display_name") val displayName: String = "",
+    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
+    @SerializedName("last_seen_at") @SerialName("last_seen_at") val lastSeenAt: Long = 0L,
+    @SerializedName("account_id") @SerialName("account_id") val accountId: String? = null,
+    @SerializedName("status") @SerialName("status") val status: String = "active",
+)
+
 /** /api/push/register request body — registers this install's FCM token
  *  under its pseudo-id so the server can push opinion notifications. */
 @Serializable

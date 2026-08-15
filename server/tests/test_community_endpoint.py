@@ -1160,6 +1160,47 @@ def test_like_toggle_and_self_like_rejected(client, isolated_community):
     assert self_like.json() == {"ok": True, "liked": False, "count": 0}
 
 
+def test_author_adopt_creates_row_and_is_idempotent(client, isolated_community):
+    key = "e" * 64
+    first = client.post(
+        "/api/community/authors/adopt",
+        headers={"X-Community-Author-Key": key},
+        json={"seed_display_name": "Leafy Sage 7", "legacy_pseudo_id": "pseudo-adopt-1"},
+    )
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["ok"] is True
+    assert body["author_id"].startswith("au_")
+    assert body["display_name"] == "Leafy Sage 7"
+    assert body["account_id"] is None
+
+    second = client.post(
+        "/api/community/authors/adopt",
+        headers={"X-Community-Author-Key": key},
+        json={"seed_display_name": "Ignored On Repeat", "legacy_pseudo_id": "pseudo-adopt-2"},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["author_id"] == body["author_id"]
+    assert second.json()["display_name"] == "Leafy Sage 7"
+
+
+def test_author_adopt_rejects_malformed_key(client, isolated_community):
+    r = client.post(
+        "/api/community/authors/adopt",
+        headers={"X-Community-Author-Key": "not-a-sha256-hash"},
+        json={"seed_display_name": "Someone"},
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_author_adopt_requires_the_header(client, isolated_community):
+    r = client.post(
+        "/api/community/authors/adopt",
+        json={"seed_display_name": "Someone"},
+    )
+    assert r.status_code == 422, r.text
+
+
 def test_batch_impression_views_counted_once(client, isolated_community):
     for sid in ("viewbatch0001", "viewbatch0002"):
         client.post(

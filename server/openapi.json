@@ -544,6 +544,54 @@
         }
       }
     },
+    "/api/community/authors/adopt": {
+      "post": {
+        "summary": "Community Author Adopt",
+        "description": "Create-or-return this device's durable forum identity.\n\n``X-Community-Author-Key`` is SHA-256 of a 32-byte secret the client\ngenerates once and never sends in raw form (see\nutil/CommunityIdentity.kt) — the server only ever sees the hash, never\nthe secret itself. Fire-and-forget from the app on every launch;\nidempotent, so calling it repeatedly just refreshes ``last_seen_at``.\n\nGroundwork only (COMMUNITY_FORUM_PLAN.docx §4): nothing in the app yet\nreads or writes with this identity. F1 wires the forum's write\nendpoints to it and backfills old activity via ``legacy_pseudo_id``.",
+        "operationId": "community_author_adopt_api_community_authors_adopt_post",
+        "parameters": [
+          {
+            "name": "X-Community-Author-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Community-Author-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityAuthorAdoptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/request-opinion": {
       "post": {
         "summary": "Community Request Opinion",
@@ -2046,6 +2094,33 @@
           "message"
         ],
         "title": "ChatRequest"
+      },
+      "CommunityAuthorAdoptRequest": {
+        "properties": {
+          "seed_display_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Seed Display Name"
+          },
+          "legacy_pseudo_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Pseudo Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seed_display_name"
+        ],
+        "title": "CommunityAuthorAdoptRequest"
       },
       "CommunityLikeRequest": {
         "properties": {

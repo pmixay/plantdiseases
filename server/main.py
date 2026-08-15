@@ -43,6 +43,7 @@ from fastapi import (
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -136,6 +137,9 @@ try:
     )
     from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        resolve_author as community_resolve_author,
     )
     from .community import (
         resolve_scan_token as community_resolve_scan_token,
@@ -304,6 +308,9 @@ except ImportError:
     )
     from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        resolve_author as community_resolve_author,
     )
     from community import (
         resolve_scan_token as community_resolve_scan_token,
@@ -3440,6 +3447,54 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
     )
+
+
+class CommunityAuthorAdoptRequest(BaseModel):
+    # Seeded from the device's CURRENT display handle / pseudo id so the
+    # forum identity picks up right where the anonymous one left off —
+    # nobody's name changes and no history looks new on the day this
+    # ships. Neither is re-applied on a later adopt call; see
+    # community.resolve_author's docstring.
+    seed_display_name: str = Field(..., min_length=1, max_length=80)
+    legacy_pseudo_id: str | None = Field(None, max_length=128)
+
+
+@api_router.post("/community/authors/adopt")
+async def community_author_adopt(
+    payload: CommunityAuthorAdoptRequest,
+    x_community_author_key: str = Header(..., alias="X-Community-Author-Key"),
+):
+    """Create-or-return this device's durable forum identity.
+
+    ``X-Community-Author-Key`` is SHA-256 of a 32-byte secret the client
+    generates once and never sends in raw form (see
+    util/CommunityIdentity.kt) — the server only ever sees the hash, never
+    the secret itself. Fire-and-forget from the app on every launch;
+    idempotent, so calling it repeatedly just refreshes ``last_seen_at``.
+
+    Groundwork only (COMMUNITY_FORUM_PLAN.docx §4): nothing in the app yet
+    reads or writes with this identity. F1 wires the forum's write
+    endpoints to it and backfills old activity via ``legacy_pseudo_id``.
+    """
+    key_hash = x_community_author_key.strip()
+    if len(key_hash) != 64 or not all(c in "0123456789abcdef" for c in key_hash):
+        raise HTTPException(status_code=422, detail="Malformed author key")
+    loop = asyncio.get_running_loop()
+    try:
+        author = await loop.run_in_executor(
+            None,
+            lambda: community_resolve_author(
+                key_hash=key_hash,
+                seed_display_name=payload.seed_display_name.strip(),
+                legacy_pseudo_id=payload.legacy_pseudo_id,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community author adopt failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to adopt author") from exc
+    return JSONResponse(content={"ok": True, **author})
 
 
 class CommunityRequestOpinionRequest(BaseModel):

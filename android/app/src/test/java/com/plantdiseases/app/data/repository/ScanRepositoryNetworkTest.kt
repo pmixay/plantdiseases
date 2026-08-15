@@ -666,4 +666,29 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).isEqualTo("/api/push/register")
         assertThat(req.body.readUtf8()).contains("\"token\":\"fcm-token-xyz\"")
     }
+
+    @Test
+    fun adoptCommunityAuthor_sendsKeyAsHeaderNotInBody() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"ok":true,"author_id":"au_abc123","display_name":"Leafy Sage 7",
+                       "created_at":1,"last_seen_at":1,"account_id":null,"status":"active"}""",
+                ),
+        )
+        val result = runBlocking {
+            repo.adoptCommunityAuthor("f".repeat(64), "Leafy Sage 7", "pseudo-1")
+        }
+        assertThat(result.getOrNull()?.authorId).isEqualTo("au_abc123")
+
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/community/authors/adopt")
+        // The key travels as a header — never in the JSON body, never in the URL.
+        assertThat(req.getHeader("X-Community-Author-Key")).isEqualTo("f".repeat(64))
+        val body = req.body.readUtf8()
+        assertThat(body).doesNotContain("f".repeat(64))
+        assertThat(body).contains("\"seed_display_name\":\"Leafy Sage 7\"")
+    }
 }
