@@ -304,6 +304,10 @@ exactly the run that collapsed.
       abiotic-scorch imagery is genuinely scarce — the same shape as the
       `gray_mold` supply ceiling, and independent corroboration that **"re-source
       ornamental `leaf_scorch`" is a real collection problem, not an oversight**.
+      **⚠ Partly overturned 2026-08-15 — see "the scorch source that is the
+      benchmark" in 2.7.2.** One never-trained dataset *does* carry an explicit
+      Hibiscus scorch label; it turns out to be the benchmark's own imagery and
+      is unusable. Other genera in the same dataset are clean and are real supply.
       Until it is widened, this benchmark measures **two species well and the
       domain not at all**: read it per species, and treat "hibiscus scorch
       recovers" as the 2.7.1 success criterion rather than a domain-level claim.
@@ -682,6 +686,51 @@ transfer failure.
 - **One change per run.** 2.6.9 and 2.7.0 moved several things at once and are
   uninterpretable; 2.7.1 moved one thing and is the only failure that taught
   something.
+
+#### The scorch source that IS the benchmark
+
+An adversarial verifier refuted the "abiotic scorch supply is exhausted" entry
+above by finding `aditisalvi04/indoor-plant-disease-dataset` — never inventoried,
+never trained, carrying an explicit **`Hibiscus_Scorch` (1,200 files)** folder,
+missed because the inventory lister capped pagination and returned silently. The
+find is real. **Its usefulness is not — and the gate that killed it is the one
+the verifier itself specified.** Sampled 60 `Hibiscus_Scorch` files evenly and
+pHashed them against the benchmark:
+
+| folder | files | benchmark hits at Hamming ≤ 6 | distinct in sample |
+|---|---|---|---|
+| **`Hibiscus_Scorch`** | 1,200 | **60 / 60** (median Hamming **0**) | 24/60 |
+| **`Hibiscus_Healthy`** | 1,200 | **20 / 20** (median **0**) | 8/20 |
+| `Hibiscus_Necrosis` | 1,200 | 0 / 30 (min 12) | 19/30 |
+| `Aloe_Sunburn` | 3,343 | 0 / 30 (min 14) | **30/30** |
+| `Money_Plant_Healthy` | 2,760 | 0 / 20 (min 10) | 20/20 |
+| `Rose_Black_Spot` | 3,000 | 0 / 6 (min 12) | 6/6 |
+| `Turmeric_Blotch` | 1,904 | 0 / 15 (min 14) | 15/15 |
+
+**Its Hibiscus arms ARE the benchmark** — same photographs, not similar ones.
+Training on them destroys the only never-trained eval arm we have (and the only
+one 2.6.8 + veto scores 31/31 on). So `Hibiscus_Scorch` and `Hibiscus_Healthy`
+are permanently eval-poison: add them to an explicit deny-list, do not merely
+leave them un-wired.
+
+Everything else sampled is **clean of the benchmark and not
+augmentation-collapsed** (30/30 distinct for `Aloe_Sunburn` vs 24/60 for the
+contaminated scorch folder). That makes the dataset real supply on the *other*
+genera — most interestingly **`Aloe_Sunburn`, 3,343 files on a true houseplant
+genus**, which maps to the deferred `sunburn_or_scorch` feedback label the head
+does not yet predict. `Hibiscus_Necrosis` (1,200, clean) is the same genus as
+half the benchmark's scorch arm without being the same pictures.
+
+Two process lessons, both worth more than the dataset:
+
+- **The inventory lister lies by omission.** A full uncapped listing returns
+  **49,878 files across 20+ folders**; the original inventory saw 24,000 and the
+  verifier's "uncapped" re-run also stopped short. Every negative result in that
+  lane — 207 datasets' worth of "nothing here" — is untrustworthy until re-run
+  with a lister that *raises* when `nextPageToken` is still live at exit.
+- **pHash against the benchmark before anything else.** The find and the
+  refutation of the find were both correct at their own step; only the
+  contamination gate separated them. Any new source goes through it first.
 
 #### Making a domain-level claim
 

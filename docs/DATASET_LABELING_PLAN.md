@@ -181,6 +181,34 @@ deliberately left out: 1,400 unverified positives into the most precision-sensit
 boundary-sensitive class is the same bet that produced the 2.6.9 regression. **Judge a
 sample against the reference exemplars first**, then decide.
 
+**⚠ Now permanently eval-only, not "not yet decided" (2026-08-15).** This set became
+`server/tools/build_ood_benchmark.py`'s source — the only never-trained benchmark we
+have — so training on it is no longer a judgement call, it is contamination. Two facts
+seal it: its own official split is 100 % pHash-leaked (2,800 `scorch` files → **62
+distinct clusters**, 61/61 test clusters also in train), and a *different* Kaggle
+dataset re-uploads the same photographs.
+
+**Deny-list — never route these into training, at any weight:**
+
+| ref | folders | why |
+|---|---|---|
+| `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update` | all | is the OOD benchmark |
+| `aditisalvi04/indoor-plant-disease-dataset` | `Hibiscus_Scorch`, `Hibiscus_Healthy` | **60/60 and 20/20 sampled files match the benchmark at pHash Hamming 0** |
+
+The rest of `aditisalvi04/indoor-plant-disease-dataset` (49,878 files, 20+ folders —
+Aloe, Rose, Money Plant, Turmeric, `Hibiscus_Necrosis`) is **clean of the benchmark on
+a 0/101 sample and not augmentation-collapsed**, so it is genuine candidate supply.
+`Aloe_Sunburn` (3,343 files, a real houseplant genus) maps to the deferred
+`sunburn_or_scorch` label. Same rule as ever applies before wiring any of it: judge a
+sample against the reference exemplars, count **originals** rather than folder size,
+and re-run the pHash gate on the specific folders you intend to use.
+
+**Fix the lister before trusting any "nothing here".** The inventory tooling caps
+pagination and returns silently: a full listing of the dataset above is 49,878 files
+where the inventory recorded ~24,000 and a follow-up "uncapped" re-run still stopped
+short. A negative result from a capped lister is not evidence of absence — make it
+raise when `nextPageToken` is still live at exit, then re-run the band.
+
 ## 2.6.10 — the boundary fix on v7: recovered (07-20) — see the caveat above
 
 Re-ran v7 with the fix (`supplement_boundary` 0.9→0.35, §4) — boundary draw 5.8%→2.8%.
