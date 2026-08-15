@@ -135,6 +135,7 @@
     <string name="guidance_home_actions">«Сканировать» проверяет здоровье, «Определить» распознаёт вид.</string>
     <string name="guidance_home_tools">Измеряйте свет, рассчитывайте полив, проверяйте симптомы и открывайте справочник.</string>
     <string name="guidance_home_scan_nav">Откройте «Скан», чтобы проверить здоровье растения.</string>
+    <string name="guidance_home_notifications">Здесь собираются ответы, напоминания об уходе и подсказки по саду.</string>
     <string name="guidance_camera_permission">Разрешите камеру для фото листа или выберите фото в галерее.</string>
     <string name="guidance_camera_preview">Снимайте один лист при ровном свете на простом фоне.</string>
     <string name="guidance_camera_gallery">Выберите чёткое фото одного растения.</string>
@@ -159,8 +160,8 @@
     <string name="guidance_species_care">Разверните план ухода: полив, свет и другие рекомендации.</string>
     <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
     <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
-    <string name="guidance_community_scope">Переключайтесь между «Рядом», «Страна» и «Весь мир».</string>
-    <string name="guidance_community_feed">Нажмите на фото, чтобы увидеть диагноз и оставить комментарий. Сердечко — это лайк.</string>
+    <string name="guidance_community_scope">Показывать сканы рядом, по стране или со всего мира.</string>
+    <string name="guidance_community_feed">Откройте фото, чтобы увидеть диагноз и оставить комментарий. Сердечком ставится лайк.</string>
     <string name="guidance_previous">Предыдущий шаг</string>
     <string name="guidance_next">Следующий шаг</string>
     <string name="guidance_activate_target">Нажать выделенный элемент</string>
@@ -282,18 +283,18 @@
     <string name="second_opinion_stopped">Запрос отменён — уведомлений по этому скану больше не будет.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_opinion_list_header">Ответы (%1$d)</string>
-    <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
-    <string name="community_like_action">Нравится этот скан</string>
+    <string name="community_wants_opinion_badge">Ждёт мнения</string>
+    <string name="community_like_action">Нравится</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Сканы сообщества</string>
+    <string name="nearby_scans_title">Сообщество</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
     <string name="notifications_empty">Пока пусто — здесь появятся ответы, напоминания об уходе и подсказки по саду.</string>
-    <string name="notifications_mark_all_read">Отметить всё прочитанным</string>
+    <string name="notifications_mark_all_read">Отметить все прочитанными</string>
     <string name="notifications_clear_all">Очистить всё</string>
     <string name="notifications_clear_confirm_title">Очистить все уведомления?</string>
-    <string name="notifications_clear_confirm_body">Список уведомлений будет полностью очищен. Это не отменяет то, о чём они сообщали.</string>
+    <string name="notifications_clear_confirm_body">Список очистится полностью. Сами ответы, напоминания и подсказки никуда не денутся.</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
     <!-- Community scope toggle -->

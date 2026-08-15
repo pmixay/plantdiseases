@@ -64,6 +64,7 @@ enum class OnboardingStepId {
     SPECIES_NATIVE_RANGE,
     COMMUNITY_SCOPE,
     COMMUNITY_FEED,
+    HOME_NOTIFICATIONS,
 }
 
 enum class OnboardingAnchorKey {
@@ -95,6 +96,7 @@ enum class OnboardingAnchorKey {
     SPECIES_NATIVE_RANGE,
     COMMUNITY_SCOPE,
     COMMUNITY_FEED,
+    HOME_NOTIFICATIONS,
 }
 
 enum class OnboardingTargetAction {

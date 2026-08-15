@@ -187,6 +187,10 @@ class HomeFragment : Fragment() {
                 OnboardingAnchorKey.HOME_QUICK_TOOLS,
                 binding.homeQuickTools,
             )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.HOME_NOTIFICATIONS,
+                binding.btnNotifications,
+            )
         }
     }
 
@@ -262,6 +266,10 @@ class HomeFragment : Fragment() {
             unregisterOnboardingAnchor(
                 OnboardingAnchorKey.HOME_QUICK_TOOLS,
                 _binding?.homeQuickTools,
+            )
+            unregisterOnboardingAnchor(
+                OnboardingAnchorKey.HOME_NOTIFICATIONS,
+                _binding?.btnNotifications,
             )
         }
         super.onDestroyView()

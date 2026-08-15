@@ -18,6 +18,15 @@ object OnboardingCatalog {
             OnboardingAnchorKey.HOME_QUICK_TOOLS,
             R.string.guidance_home_tools,
         ),
+        // Sits before HOME_SCAN_NAV deliberately: that step navigates into
+        // the camera and never returns to Home within the chapter.
+        step(
+            OnboardingStepId.HOME_NOTIFICATIONS,
+            OnboardingChapter.HOME_SCAN,
+            OnboardingContext.HOME,
+            OnboardingAnchorKey.HOME_NOTIFICATIONS,
+            R.string.guidance_home_notifications,
+        ),
         step(
             OnboardingStepId.HOME_SCAN_NAV,
             OnboardingChapter.HOME_SCAN,

@@ -80,16 +80,25 @@
                 tools:text="≈ 3 km · 2 hr. ago" />
         </LinearLayout>
 
-        <!-- Scanner is waiting on the community for a second opinion. -->
+        <!-- Scanner is waiting on the community for a second opinion.
+             Sentence case, not the all-caps Caption style: at 0.08 letter
+             spacing the Russian label ran ~19 characters wide and starved
+             the nickname column next to it. maxLines + ellipsize cap it
+             for any future translation. -->
         <TextView
             android:id="@+id/tv_nearby_wants_opinion"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/space_xs"
+            android:maxWidth="128dp"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:drawablePadding="4dp"
             android:gravity="center_vertical"
             android:text="@string/community_wants_opinion_badge"
             android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textAllCaps="false"
+            android:letterSpacing="0"
             android:textColor="@color/warning_amber"
             android:fontFamily="sans-serif-medium"
             app:drawableStartCompat="@drawable/ic_community"

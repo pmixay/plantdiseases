@@ -129,6 +129,7 @@
     <string name="guidance_home_actions">Scan checks a plant’s health; Identify names an unknown species.</string>
     <string name="guidance_home_tools">Measure light, calculate watering, check symptoms, or browse the plant guide.</string>
     <string name="guidance_home_scan_nav">Open Scan to check a plant’s health.</string>
+    <string name="guidance_home_notifications">Replies, care reminders and garden alerts collect here.</string>
     <string name="guidance_camera_permission">Allow camera access to photograph a leaf, or choose a photo from Gallery.</string>
     <string name="guidance_camera_preview">Frame one leaf in even light against a plain background.</string>
     <string name="guidance_camera_gallery">Choose a clear photo of one plant.</string>
@@ -285,11 +286,11 @@
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_opinion_list_header">Replies (%1$d)</string>
-    <string name="community_wants_opinion_badge">Wants a second opinion</string>
-    <string name="community_like_action">Like this scan</string>
+    <string name="community_wants_opinion_badge">Needs an opinion</string>
+    <string name="community_like_action">Like</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Community scans</string>
+    <string name="nearby_scans_title">Community</string>
     <string name="nearby_scans_cd">Community scans</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
@@ -297,7 +298,7 @@
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>
     <string name="notifications_clear_confirm_title">Clear all notifications?</string>
-    <string name="notifications_clear_confirm_body">This removes every notification from the list. It doesn\'t undo anything they were about.</string>
+    <string name="notifications_clear_confirm_body">Clears the whole list. The replies, reminders and alerts themselves stay put.</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
     <!-- Community scope toggle -->

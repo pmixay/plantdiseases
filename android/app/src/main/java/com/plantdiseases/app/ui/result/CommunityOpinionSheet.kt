@@ -16,6 +16,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
@@ -162,7 +163,27 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         cancelBtn.setOnClickListener { dismiss() }
         sendBtn?.setOnClickListener { submitFromPicker() }
 
+        expandSheet(view)
         loadOpinions()
+    }
+
+    /**
+     * Open expanded, not collapsed. The scan photo sits at the top and is
+     * the tallest element here, so at the default collapsed peek height the
+     * Agree/Disagree row — and the picker + note + Send below it — landed
+     * off-screen: the sheet looked like a photo viewer with no way to
+     * comment. Same treatment DoctorChatSheet / ReminderScheduleSheet /
+     * GuideDetailSheet already use.
+     */
+    private fun expandSheet(view: View) {
+        val sheet = view.parent as? View ?: return
+        val behavior = BottomSheetBehavior.from(sheet)
+        val maxHeight = (resources.displayMetrics.heightPixels * 0.9f).toInt()
+        sheet.layoutParams = sheet.layoutParams.apply { height = maxHeight }
+        behavior.maxHeight = maxHeight
+        behavior.peekHeight = maxHeight
+        behavior.skipCollapsed = true
+        behavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     /** Model confidence line ("Confidence 87%"), hidden when unknown. */
