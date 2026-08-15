@@ -30,7 +30,7 @@ from pathlib import Path
 
 try:
     from .config import get_str
-except ImportError:  # flat layout (Docker / uvicorn from server/)
+except ImportError:  # flat layout (uvicorn run from server/)
     from config import get_str
 
 logger = logging.getLogger("plantdiseases.plant_photos")
@@ -41,6 +41,13 @@ _MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely
 # width-normalised renders (a few hundred KB) rather than multi-MB originals,
 # so the same disk budget holds far more species — raised to match.
 _CACHE_MAX_FILES = 1500
+# ...and a byte budget, because the file count alone is not a disk budget.
+# /api/plant-photo is public and takes the source URL as a parameter, so a
+# caller picks which Wikimedia files land here. At _MAX_BYTES each, 1500 files
+# is ~24 GB — the count cap permits a cache three orders of magnitude larger
+# than the one the normalised renders were sized for. Whichever limit binds
+# first wins.
+_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
 )
@@ -182,15 +189,24 @@ def media_type_for(path: Path) -> str:
 
 
 def _prune() -> None:
-    """Keep the cache under the file cap, dropping oldest by mtime. Cheap;
-    runs after a successful write."""
+    """Keep the cache under BOTH the file cap and the byte budget, dropping
+    oldest by mtime. Cheap; runs after a successful write."""
     try:
-        files = sorted(PHOTO_CACHE_DIR.glob("*.*"), key=lambda p: p.stat().st_mtime)
+        entries = sorted(
+            ((p, p.stat()) for p in PHOTO_CACHE_DIR.glob("*.*")),
+            key=lambda item: item[1].st_mtime,
+        )
     except OSError:
         return
-    if len(files) <= _CACHE_MAX_FILES:
-        return
-    for path in files[: len(files) - _CACHE_MAX_FILES]:
+
+    drop = max(len(entries) - _CACHE_MAX_FILES, 0)
+    total = sum(st.st_size for _p, st in entries[drop:])
+    # Keep evicting the oldest survivor until the rest fits the byte budget.
+    while total > _CACHE_MAX_BYTES and drop < len(entries):
+        total -= entries[drop][1].st_size
+        drop += 1
+
+    for path, _st in entries[:drop]:
         with contextlib.suppress(OSError):
             path.unlink()
 

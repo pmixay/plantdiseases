@@ -1,8 +1,15 @@
 package com.plantdiseases.app.data.remote
 
 import com.google.common.truth.Truth.assertThat
+import okhttp3.Authenticator
+import okhttp3.Cache
 import okhttp3.Call
+import okhttp3.CertificatePinner
 import okhttp3.Connection
+import okhttp3.ConnectionPool
+import okhttp3.CookieJar
+import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.Protocol
 import okhttp3.Request
@@ -12,7 +19,13 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.IOException
+import java.net.Proxy
+import java.net.ProxySelector
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.X509TrustManager
 
 /**
  * Pure-JVM tests for [RetryInterceptor] using a scripted fake
@@ -62,6 +75,50 @@ class RetryInterceptorTest {
         override fun withReadTimeout(timeout: Int, unit: TimeUnit): Interceptor.Chain = this
         override fun writeTimeoutMillis(): Int = 0
         override fun withWriteTimeout(timeout: Int, unit: TimeUnit): Interceptor.Chain = this
+
+        // ── Everything below exists only to satisfy the interface ──────────
+        // OkHttp 5 widened Interceptor.Chain to expose the whole effective
+        // client configuration, which is 30 new abstract members this fake has
+        // to declare even though RetryInterceptor touches exactly two things:
+        // request() and proceed(). (Ktor 3.5.2 depends on okhttp 5.3.2, so
+        // staying on OkHttp 4 to avoid this is not an option.)
+        //
+        // The `with*` builders return `this` — a fake that scripts responses
+        // has no configuration to rebuild. The properties throw instead of
+        // returning a plausible default: if the interceptor ever starts
+        // reading one, that should surface as a loud failure here rather than
+        // as a test passing against a value this fake invented.
+        override fun withDns(dns: Dns): Interceptor.Chain = this
+        override fun withSocketFactory(socketFactory: SocketFactory): Interceptor.Chain = this
+        override fun withRetryOnConnectionFailure(retryOnConnectionFailure: Boolean): Interceptor.Chain = this
+        override fun withAuthenticator(authenticator: Authenticator): Interceptor.Chain = this
+        override fun withCookieJar(cookieJar: CookieJar): Interceptor.Chain = this
+        override fun withCache(cache: Cache?): Interceptor.Chain = this
+        override fun withProxy(proxy: Proxy?): Interceptor.Chain = this
+        override fun withProxySelector(proxySelector: ProxySelector): Interceptor.Chain = this
+        override fun withProxyAuthenticator(proxyAuthenticator: Authenticator): Interceptor.Chain = this
+        override fun withSslSocketFactory(sslSocketFactory: SSLSocketFactory?, x509TrustManager: X509TrustManager?): Interceptor.Chain = this
+        override fun withHostnameVerifier(hostnameVerifier: HostnameVerifier): Interceptor.Chain = this
+        override fun withCertificatePinner(certificatePinner: CertificatePinner): Interceptor.Chain = this
+        override fun withConnectionPool(connectionPool: ConnectionPool): Interceptor.Chain = this
+
+        override val followSslRedirects: Boolean get() = throw UnsupportedOperationException()
+        override val followRedirects: Boolean get() = throw UnsupportedOperationException()
+        override val dns: Dns get() = throw UnsupportedOperationException()
+        override val socketFactory: SocketFactory get() = throw UnsupportedOperationException()
+        override val retryOnConnectionFailure: Boolean get() = throw UnsupportedOperationException()
+        override val authenticator: Authenticator get() = throw UnsupportedOperationException()
+        override val cookieJar: CookieJar get() = throw UnsupportedOperationException()
+        override val cache: Cache? get() = throw UnsupportedOperationException()
+        override val proxy: Proxy? get() = throw UnsupportedOperationException()
+        override val proxySelector: ProxySelector get() = throw UnsupportedOperationException()
+        override val proxyAuthenticator: Authenticator get() = throw UnsupportedOperationException()
+        override val sslSocketFactoryOrNull: SSLSocketFactory? get() = throw UnsupportedOperationException()
+        override val x509TrustManagerOrNull: X509TrustManager? get() = throw UnsupportedOperationException()
+        override val hostnameVerifier: HostnameVerifier get() = throw UnsupportedOperationException()
+        override val certificatePinner: CertificatePinner get() = throw UnsupportedOperationException()
+        override val connectionPool: ConnectionPool get() = throw UnsupportedOperationException()
+        override val eventListener: EventListener get() = throw UnsupportedOperationException()
     }
 
     private fun get() = Request.Builder().url("http://localhost/").get().build()
