@@ -15,6 +15,7 @@ import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ class FeedbackController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
+    private val reviewManager: InAppReviewManager,
 ) {
 
     /**
@@ -183,11 +185,16 @@ class FeedbackController(
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
                 Haptics.success(activity)
-                // On negative feedback the original image is high-value for
-                // retraining. Best-effort upload: failures are swallowed (the
-                // JSON feedback row has already landed). The server filename is
-                // the SHA-256 of the bytes, matching the image_hash in the JSON.
-                if (!correct) {
+                if (correct) {
+                    // Confirming the diagnosis was right is the single
+                    // strongest satisfaction signal on this screen — see
+                    // InAppReviewManager for the shared cooldown.
+                    reviewManager.maybeRequestReview()
+                } else {
+                    // On negative feedback the original image is high-value for
+                    // retraining. Best-effort upload: failures are swallowed (the
+                    // JSON feedback row has already landed). The server filename is
+                    // the SHA-256 of the bytes, matching the image_hash in the JSON.
                     val imageFile = java.io.File(scan.imagePath)
                     if (imageFile.exists()) {
                         runCatching { repository.uploadFeedbackImage(request.scanId, imageFile) }
