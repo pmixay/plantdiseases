@@ -245,11 +245,13 @@ exactly the run that collapsed.
 
 **Two defects found that are independent of 2.7.0:**
 
-- [ ] **The served path throws away ~19 pp of the DEPLOYED model's scorch
+- [x] **The served path throws away ~19 pp of the DEPLOYED model's scorch
       recall.** The NAP AND-gate plus crop voting destroys 19 of 2.6.8's 56
       argmax-correct scorch calls (p=3.8e-6). Its argmax 0.565 is **0.355
       served**. This is the "report the production-faithful number" bullet, and
-      it is worth more than the 2.7.1 work.
+      it is worth more than the 2.7.1 work. **Cause found and fixed in 2.7.2
+      item 6** — the gate never consulted the `not_a_plant` head. Served scorch
+      is back to 0.565, equal to argmax, with zero cost on 890 paired images.
 - [ ] **The OOD bank has no mass for damaged out-of-domain plants**, so its
       calibrated 5% plant-FPR is **75–88%** on a real out-of-domain plant and the
       AND-gate degrades to detector-only exactly where the model is weakest. A
@@ -464,13 +466,49 @@ distinct photographs with ~22 augmented copies each. It cannot be training data
       the lottery is visible per run instead of after 15 versions. Report served
       numbers next to `classifier_only` in `MODEL_CARD.md`. Longer term: stop
       re-training Stage 1 every run, or checkpoint-select it against that gate.
-- [ ] **6. The NAP gate ignores the one head trained to answer its question.**
-      `_decide_nap_route` is two-of-two (detector unsure AND embedding k-NN says
-      OOD) and never consults the classifier's own `not_a_plant` probability. On
-      the benchmark that is not academic: on the 13 scorch clusters 2.6.8 routes
-      to NAP, the head had put **~99 % on `leaf_scorch` and ~0 % on
-      `not_a_plant`**, and was overruled. Fix under measurement: a third
-      condition requiring the head's own NAP mass to clear a floor.
+- [x] **6. The NAP gate ignored the one head trained to answer its question —
+      FIXED AND MEASURED, and it closes the 19 pp served-path defect above.**
+      `_decide_nap_route` was two-of-two (detector unsure AND embedding k-NN says
+      OOD) and never consulted the classifier's own `not_a_plant` probability. On
+      the 13 benchmark scorch clusters 2.6.8 re-routes to NAP, the head had put
+      **~99 % on `leaf_scorch` and a median 0.0018 on `not_a_plant`** — overruled
+      by a k-NN distance that is mostly measuring *unfamiliar*. Instrumenting the
+      gate over 890 images shows `P(not_a_plant)` is by far the best separator in
+      the bundle, and the gate was the only signal not using it:
+
+| population | n | P(not_a_plant) |
+|---|---|---|
+| real `not_a_plant` (supplement `eval_ok`) | 373 | **p05 = 0.815**, p50 = 0.978 |
+| out-of-domain ornamentals (benchmark) | 213 | p50 = 0.0043, **p95 = 0.024** |
+| in-domain plants (supplement `eval_ok`) | 300 | p50 = 0.0048, **p95 = 0.040** |
+
+      So the gate now takes a third condition — a **veto** at
+      `NAP_HEAD_MASS_FLOOR = 0.05`: it refuses to fire when the classifier is
+      confident the frame *is* a plant. Re-scored end-to-end on the same 890
+      images, paired, deployed 2.6.8 bundle, **no retraining**:
+
+| paired, served | n | before | after | lost / gained |
+|---|---|---|---|---|
+| benchmark `leaf_scorch` | 62 | 0.371 | **0.565** | 0 / 12, **p=0.0005** |
+| benchmark healthy | 151 | 0.954 | 0.954 | 0 / 0 |
+| **real `not_a_plant`** | 377 | **0.9894** | **0.9894** | **0 / 0** |
+| in-domain plants | 300 | 0.847 | 0.853 | 0 / 2 |
+
+      **Zero regressions anywhere in 890 images.** Served scorch 0.565 now equals
+      2.6.8's *argmax* 0.565 — the veto recovers essentially the whole
+      served-vs-argmax gap that this roadmap has carried as an open defect since
+      2026-08-11. Plant→NAP false rejection falls 0.020 → 0.013 in-domain and
+      0.210 → 0.000 out-of-domain.
+      **Honest limit on the safety side.** The gate turns out to contribute
+      almost nothing to NAP recall to begin with: it fires on **1 of 373** real
+      `not_a_plant` images (the head alone already catches the other 372), and
+      that one had `P(nap)=0.233`, comfortably above the floor. But those 373 are
+      *in-corpus-style* non-plants. The veto is conservative by construction — it
+      can only remove gate firings, never add them, and it cannot touch the head's
+      own NAP verdicts, which are the primary mechanism — yet a genuinely novel
+      non-plant that the head misreads as a plant is exactly the case this set
+      cannot speak to. Bundles can restore the historical gate with
+      `ood.nap_head_mass_floor: null`.
 
 Run-log checks, each proving one fix landed:
 

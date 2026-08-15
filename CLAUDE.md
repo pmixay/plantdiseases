@@ -105,7 +105,9 @@ server/models/` validates a bundle against the fail-fast boot contract.
 Two safety gates wrap this (the reason for the architecture): a **blur gate**
 (variance-of-Laplacian) short-circuits unfocused shots to `not_a_plant`, and an
 **OOD AND-gate** fires `not_a_plant` only when detector confidence *and* a
-classifier-side OOD signal agree. The OOD signal is an embedding-space k-NN distance
+classifier-side OOD signal agree *and* the classifier's own `not_a_plant` head
+does not veto (`NAP_HEAD_MASS_FLOOR`, three-of-three since 2.7.2). The OOD signal
+is an embedding-space k-NN distance
 on the DINOv2 CLS vector (`ood.py`) with a MaxLogit-floor fallback. Calibration adds
 temperature scaling + RAPS conformal prediction sets (`conformal.py`) for honest
 "I'm not sure" output.

@@ -155,10 +155,26 @@ DISEASE_MIN_CONFIDENCE = 0.65
 # a clear in-distribution sample never crosses MSP=0.45. MaxLogit is
 # scale-free w.r.t. temperature and unaffected by label smoothing.
 #
-# A sample is treated as OOD when BOTH:
+# A sample is treated as OOD when ALL of:
 #   * the YOLO detector confidence is below ``NAP_DETECTOR_CONF_FLOOR``
 #   * the classifier MaxLogit is below ``NAP_MAX_LOGIT_FLOOR``
+#   * the classifier's OWN ``not_a_plant`` head is not vetoing (see below)
 # The MaxLogit floor is overridable via classes.json.
+#
+# ``NAP_HEAD_MASS_FLOOR`` — the head veto. The gate used to consult the
+# detector and an embedding-distance score and *never* the one head that is
+# trained to answer exactly this question. On the never-trained ornamental
+# benchmark that is not academic: of the 13 leaf_scorch clusters the deployed
+# 2.6.8 bundle re-routes to not_a_plant, every single one had the head putting
+# ~99 % on leaf_scorch and a median 0.0018 on not_a_plant — overruled by a k-NN
+# distance that mostly measures "unfamiliar plant". Measured on the same
+# bundle, ``P(not_a_plant)`` separates the two populations almost perfectly:
+#   real not_a_plant (n=373)  p05 = 0.815, p50 = 0.978
+#   plants (n=513, in- and out-of-domain)  p95 = 0.024-0.040
+# So we refuse to fire when the head is confident the frame IS a plant. At
+# 0.05 that keeps 372 of 373 real not_a_plant images gate-eligible while
+# suppressing the gate on 98 % of plants. It is a veto, not a replacement —
+# the detector and embedding conditions still both have to fire.
 #
 # ``ood.max_logit_scope`` selects WHICH max the floor is compared against:
 #   * ``"all_classes"`` (default, legacy bundles) — max over every logit.
@@ -169,6 +185,7 @@ DISEASE_MIN_CONFIDENCE = 0.65
 # v2.6.13 onward declare ``plant_only``, which separates by construction.
 NAP_DETECTOR_CONF_FLOOR = 0.40
 NAP_MAX_LOGIT_FLOOR_DEFAULT = 4.0
+NAP_HEAD_MASS_FLOOR_DEFAULT = 0.05
 MAX_LOGIT_SCOPE_DEFAULT = "all_classes"
 _MAX_LOGIT_SCOPES = ("all_classes", "plant_only")
 
@@ -294,6 +311,30 @@ def _resolve_max_logit_floor(meta: dict) -> float:
     return max(0.0, floor)
 
 
+def _resolve_head_mass_floor(meta: dict) -> float:
+    """Read the NAP head-veto floor from classes.json ``ood`` section.
+
+    Same contract as :func:`_resolve_max_logit_floor`, with one deliberate
+    difference: the default is **on**. Every bundle exported before this key
+    existed still benefits, which is the point — the measurement that motivates
+    it was taken on the deployed 2.6.8 bundle. Set
+    ``ood.nap_head_mass_floor: null`` to restore the historical two-of-two gate.
+    """
+    if not isinstance(meta, dict):
+        return NAP_HEAD_MASS_FLOOR_DEFAULT
+    ood = meta.get("ood")
+    if not isinstance(ood, dict) or "nap_head_mass_floor" not in ood:
+        return NAP_HEAD_MASS_FLOOR_DEFAULT
+    val = ood.get("nap_head_mass_floor")
+    if val is None:
+        return 0.0
+    try:
+        floor = float(val)
+    except (TypeError, ValueError):
+        return NAP_HEAD_MASS_FLOOR_DEFAULT
+    return min(max(0.0, floor), 1.0)
+
+
 def _resolve_max_logit_scope(meta: dict) -> str:
     """Read ``ood.max_logit_scope`` from classes.json.
 
@@ -413,6 +454,7 @@ class PlantDiseasePipeline:
         meta = getattr(self.classifier, "meta", None) or {}
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
         self.nap_max_logit_scope = _resolve_max_logit_scope(meta)
+        self.nap_head_mass_floor = _resolve_head_mass_floor(meta)
         # Which per-crop key carries the score this bundle's floor was fit on.
         self._max_logit_key = (
             "plant_max_logit"
@@ -444,11 +486,13 @@ class PlantDiseasePipeline:
             )
         logger.info(
             "Pipeline ready  classifier=%s backend  T=%.3f  "
-            "MaxLogit floor=%s (%s)  conformal=%s",
+            "MaxLogit floor=%s (%s)  NAP head veto=%s  conformal=%s",
             self.classifier.backend,
             self.temperature,
             "off" if self.nap_max_logit_floor <= 0 else f"{self.nap_max_logit_floor:.2f}",
             self.nap_max_logit_scope,
+            "off" if self.nap_head_mass_floor <= 0
+            else f"P(nap)<{self.nap_head_mass_floor:.2f}",
             "off" if self.conformal is None
             else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
         )
@@ -694,16 +738,25 @@ class PlantDiseasePipeline:
         *,
         require_classifier_signal: bool = False,
     ) -> bool:
-        """Two-of-two OOD gate. We re-route to ``not_a_plant`` when the
-        detector AND the classifier both signal "this is not a leaf":
+        """Three-of-three OOD gate. We re-route to ``not_a_plant`` when the
+        detector AND the classifier's OOD score both signal "this is not a
+        leaf" AND the trained ``not_a_plant`` head does not veto:
 
             det_conf < NAP_DETECTOR_CONF_FLOOR
-            AND
-            classifier-side OOD signal fires
+            AND classifier-side OOD signal fires
+            AND P(not_a_plant) >= NAP_HEAD_MASS_FLOOR
 
-        Both must independently fire. Either signal alone is too noisy: a
+        The first two must independently fire. Either alone is too noisy: a
         tight crop of an unfamiliar plant can look OOD to the classifier
         even when the detector is confident, and vice versa.
+
+        The third is a **veto**, added once it was measured that neither of
+        the first two consults the one head trained to answer this exact
+        question — and that the head is by far the better separator on the
+        populations we have (see ``NAP_HEAD_MASS_FLOOR``). A near-zero NAP
+        mass means the classifier is certain this is a plant; an
+        embedding-distance score that fires anyway is measuring
+        *unfamiliar*, which is not the same claim.
 
         The classifier-side signal is, in priority order:
           1. **Embedding k-NN distance** (``ood.py``) when the bundle ships
@@ -722,6 +775,7 @@ class PlantDiseasePipeline:
         ood_threshold = (
             self.embedding_ood.threshold if self.embedding_ood is not None else None
         )
+        probs = classification.get("all_probs") or {}
         triggered, desc = _decide_nap_route(
             class_name=classification["class_name"],
             class_names=self.classifier.CLASS_NAMES,
@@ -732,6 +786,8 @@ class PlantDiseasePipeline:
             max_logit=self._scoped_max_logit(classification),
             ml_scope=self.nap_max_logit_scope,
             require_classifier_signal=require_classifier_signal,
+            head_nap=probs.get("not_a_plant"),
+            head_mass_floor=self.nap_head_mass_floor,
         )
         if triggered:
             logger.info("OOD gate triggered (%s) → not_a_plant", desc)
@@ -1035,16 +1091,23 @@ def _decide_nap_route(
     max_logit: float,
     ml_scope: str = MAX_LOGIT_SCOPE_DEFAULT,
     require_classifier_signal: bool = False,
+    head_nap: float | None = None,
+    head_mass_floor: float = 0.0,
 ) -> tuple[bool, str]:
     """Pure NAP-gate decision (exposed for tests).
 
-    Returns ``(route_to_nap, reason)``. The gate is two-of-two: the
+    Returns ``(route_to_nap, reason)``. The gate is three-of-three: the
     detector must be unsure (``det_conf < NAP_DETECTOR_CONF_FLOOR``) AND
-    the classifier-side OOD signal must fire. The classifier signal is, in
+    the classifier-side OOD signal must fire AND the ``not_a_plant`` head must
+    not veto. The classifier signal is, in
     priority order: the embedding k-NN distance (``ood_score > ood_threshold``)
     when a bank is shipped and an embedding was produced, else the MaxLogit
     floor (``max_logit < ml_floor``) when that floor is positive, else no
     signal at all — in which case the gate degrades to detector-only.
+
+    The head veto applies only when ``head_mass_floor`` is positive and a
+    ``head_nap`` probability was supplied; a caller that has neither gets the
+    historical two-of-two behaviour unchanged.
 
     ``require_classifier_signal`` is set by the **no-detection** caller. There
     ``det_conf`` is a synthetic ``0.0`` (Stage 1 returned nothing), so
@@ -1057,6 +1120,13 @@ def _decide_nap_route(
     """
     if class_name in _NON_DISEASE or "not_a_plant" not in class_names:
         return False, "non-disease-or-no-nap-class"
+
+    # Head veto first — it is the cheapest and the most decisive of the three.
+    if head_mass_floor > 0 and head_nap is not None and head_nap < head_mass_floor:
+        return False, (
+            f"head P(not_a_plant)={head_nap:.4f}<{head_mass_floor:.2f} "
+            f"→ classifier is confident this IS a plant, veto"
+        )
 
     detector_low = det_conf < NAP_DETECTOR_CONF_FLOOR
 
