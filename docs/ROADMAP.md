@@ -533,6 +533,170 @@ run) survives either way — the detector really is an unmeasured lottery, and t
 2×2 only shows that a *better* detector is worth little once the gate stops
 punishing a missing box.
 
+### 2.7.2 — the training plan
+
+Designed 2026-08-15 by a 13-agent design/adversarial-verify pass over the
+archaeology. **All nine design proposals were refuted at the verify step** — the
+plan below is what survived that, plus what the refutations themselves taught.
+The load-bearing numbers are re-derived here independently.
+
+#### Verdict on "~10 % global improvement"
+
+Three axes, three different answers. Do not quote one number.
+
+| Axis | Instrument | 2.6.8 today | +10 % relative | Verdict |
+|---|---|---|---|---|
+| In-domain macro-F1 | `val_realworld` | 0.858 | 0.944 | **Dead.** The whole 2.6.8/2.6.9/2.7.0/2.7.1 spread is 0.834–0.870. |
+| Out-of-domain, served | 213-cluster benchmark | 0.784 → **0.840** | 0.862 | **~70 % already closed** — by the veto, a serving change. |
+| Never-trained in-domain | 585 post-2.6.8 supplement rows | 0.807 | 0.887 | **Open, and the only credible route.** |
+
+The third row is where the headroom actually is, and it is a *data* number.
+Scoring the deployed 2.6.8 over all 1,907 `eval_ok` supplement rows, split by
+provenance:
+
+| | n | accuracy |
+|---|---|---|
+| rows in 2.6.8's own corpus (`carried_from_v5`) | 1,322 | **0.964** |
+| rows it never saw (`v7`/`v8`/`v8b`/`new`) | 585 | **0.807** |
+
+A **15.8 pp generalisation gap** on real in-situ photography — not the
+benchmark's detached-leaf regime. The 113 errors are concentrated:
+
+| class, never-trained rows | n | recall | goes to |
+|---|---|---|---|
+| `leaf_spot` | 84 | **0.512** | pests 12, scorch 12, healthy 11 |
+| `leaf_scorch_underwatering` | 138 | **0.739** | **healthy 25**, not_a_plant 5 |
+| `powdery_mildew` | 180 | 0.889 | gray_mold 6, pests 5 |
+| `nutrient_deficiency` | 82 | 0.902 | healthy 6 |
+| `healthy` | 61 | 0.934 | pests 2 |
+
+`leaf_spot` splits **0.311 on houseplants (n=45) vs 0.744 on garden ornamentals
+(n=39)**, Fisher p=8.8e-5. Fixing `leaf_spot` to 0.85 and halving the
+scorch→healthy misses is +43 images = 0.807 → 0.880, **+9.1 % relative** — the
+only place in the record where "~10 % global" is arithmetically available. Sized
+honestly: ~300–400 judged in-situ houseplant `leaf_spot` positives and ~150–250
+*mild/early* scorch positives (marginal browning short of necrosis — the 25 that
+read as healthy), with depth on ≤8 named genera rather than another long tail.
+That is a collection round, not a training run.
+
+#### ⚠ The blocker nobody had priced: run-to-run variance
+
+Two archived pairs share a version **and a byte-identical `hyperparams` dict**
+(md5-matched). Scored served on the benchmark:
+
+| pair | corpus Δ | scorch | healthy |
+|---|---|---|---|
+| 2.6.0 `x5`→`x6` | **7 images** | 28/62 → 29/62 (3–4, p=1.0) | 149/151 → **141/151 (8–0, p=0.0078)** |
+| 2.4.0 `x8`→`x9` | 794 images | 25/62 → **38/62 (3–16, p=0.0044)** | 139/151 → 130/151 (9–0, p=0.0039) |
+
+**Two runs of 2.6.0 that differ by seven corpus images swing eight healthy
+clusters at p=0.0078** — a delta the ship gate would call significant. The
+2.4.0 pair's 13-cluster scorch swing is confounded by 794 images, so it is an
+*upper* bound on seed noise, not a clean estimate; no lower bound exists,
+because **no seed replicate has ever been run** — all 15 versions moved the
+corpus and the seed together. Practical consequence: every version-to-version
+delta smaller than ~8 healthy clusters is inside the band, which covers
+2.6.7→2.6.8 (−9 scorch), 2.6.8→2.6.9 (+1) and most of the 2.4.0–2.6.9 plateau.
+It does **not** cover the 2.7.0 cliff (0 gained / 31 lost).
+
+#### Order of work — nothing on the A100 until R0 and Z1 are done
+
+- [ ] **R0 — build the instruments (notebook, no GPU). Blocking.**
+      **(a)** A permanent never-trained in-domain **holdout**: a third
+      `split_hint` value or a stable `phash` bucket, ~500–600 rows stratified
+      over class × `subject_domain`, excluded from train / temperature_cal /
+      conformal_cal / every `val_*` from 2.7.2 forward and never re-admitted.
+      Why: on the 1,322 rows *both* eras trained, 2.6.8 vs 2.7.1 is 35–32,
+      **p=0.807** — dead flat; on the 585 only 2.7.x trained, 2.7.1 leads by
+      8–24 pp. As routed today the supplement is a training-set-membership
+      detector, not an accuracy instrument. (Control that it is not merely
+      insensitive: the same subset does catch 2.6.9's real regression, 31–67,
+      p=2e-4.)
+      **(b)** Split the benchmark's scorch arm **by taxonomy**. 2.6.8 + veto
+      scores hibiscus **31/31** and banana_bush **4/31**; a brown-pixel measure
+      puts banana_bush "scorch" at median 0.036 vs hibiscus 0.238 — the healthy
+      `dwarf_white_bauhinia` arm (0.177) is browner than banana_bush scorch. So
+      report hibiscus as the *necrosis regression* arm (saturated — it can only
+      measure loss now) and banana_bush separately as a turgor-loss / healthy-
+      precision probe. **(c)** Publish the replicate band above in §6 as the
+      noise floor any benchmark claim must clear.
+- [ ] **Z1 — per-class decision bias, cached logits, no GPU.** *Not* the refuted
+      lever (that was a constant bias on **2.7.1** chasing 2.6.8's OOD recall at
+      14× the false-fire). This is 2.6.8, small, measured on the never-trained
+      585 only: `leaf_scorch` bias +1.0 → scorch 0.739 → **0.841**, healthy
+      **unchanged at 0.934**, other diseases 0.810 → 0.795, overall 0.807 →
+      0.821. On the benchmark the same bias holds hibiscus 31/31 and lifts
+      banana_bush 3→9/31 at a cost of one healthy cluster. **Falsified if** the
+      `val_realworld` sweep costs > 1 pp healthy recall or > 2 pp on any other
+      disease class. If it survives it is a `classes.json` field plus a
+      `pipeline.py` read — not a retrain.
+- [ ] **R1 — the seed replicate. FIRST A100 run.** Re-run 2.7.1's exact config,
+      new seed, everything else byte-frozen, `TRAIN_MODE='gamma'`. *Predicted:*
+      `val_realworld` within ±0.02 of 0.870, benchmark scorch stays ~0/62.
+      **Falsified if** it lands at benchmark scorch ≥ 15/62 — in which case the
+      2.7.0 cliff is a run lottery, the corpus archaeology is void, and 2.7.2
+      becomes "run it three times, ship the best on the holdout". It is the only
+      run whose result cannot be wasted: every later A/B is uninterpretable until
+      the band is known.
+- [ ] **R2 — the LoRA control.** `USE_LORA = True → False` (§4). In 15 versions
+      no bundle has ever shipped without LoRA, so there is **no frozen-backbone
+      control anywhere in the record** — and LoRA is what gives corpus
+      composition write access to the embedding. Transfer AUROC (linear probe,
+      in-domain → benchmark) falls 2.6.8 **0.916** → 2.6.9 0.901 → 2.7.0 0.809 →
+      2.7.1 **0.747** while in-domain CV AUROC *rises* (0.982 → 0.990); rank
+      correlation between the two across nine bundles is **−0.65 (p=0.058, n=9)**
+      — underpowered, and pointing the wrong way for anything that optimises
+      in-domain. *Predicted (wide estimate):* in-domain −0.01 to −0.03, transfer
+      0.82–0.92. **Falsified if** transfer ≤ 0.78 — close the branch, do not
+      spend a follow-up on rank or block count.
+- [ ] **R3 — label smoothing off.** `LABEL_SMOOTHING = 0.05 → 0.0` (§4).
+      Corroborated only circumstantially (fitted temperature < 1 in all 12
+      archived bundles; 2.6.8 = 0.849). *Predicted:* transfer +0.00 to +0.04,
+      in-domain flat. **Falsified if** transfer moves < 0.03 with in-domain flat
+      — a coin-flip-sized lever, do not repeat it at another value.
+
+**Deliberately not proposed:** any sampler-weight or `kaggle_ornamental` change,
+head-objective/margin redesign, bank rebuild or threshold retune, checkpoint
+selection against the benchmark, TTA, crop voting, `FOLD_WHOLE_FRAME_VOTE`, blur
+gate, `_MAX_RECLASSIFY`, the detector swap (held), and any new capacity (DINOv3,
+ViT-B). The features are not the bottleneck; adding capacity does not address a
+transfer failure.
+
+#### Run protocol
+
+- **Baseline is 2.6.8 + the veto**, never bare 2.6.8 — the veto ships
+  independently and 2.7.2 must not be credited with it.
+- **Four populations, every run, reported together:** (1) `val_realworld`
+  macro-F1, `classifier_only` *and* served — publish both, every headline to date
+  is whole-image; (2) the R0 holdout, overall + per class + per `subject_domain`
+  — this is the improvement metric; (3) benchmark **hibiscus** arm served with
+  the veto on — a pure regression metric, floor 31/31; (4) benchmark healthy
+  (floor 0.954) + supplement `not_a_plant` (floor 0.9894).
+- **Statistics:** 20k paired bootstrap for the interval, exact McNemar for the
+  sign, on the same images — and a benchmark claim must additionally clear the
+  **replicate band** or be reported as "inside run noise".
+- **Power, so nobody over-reads:** benchmark scorch at n=62 has a 95 % CI
+  half-width of **±0.123**; resolving +5 pp needs ~352 clusters, +10 pp needs 86.
+  `val_realworld` per-class n is 87–104, i.e. ±0.08–0.09 on recall — a 10 %
+  relative move on those classes sits at the edge of what the split can see.
+- **One change per run.** 2.6.9 and 2.7.0 moved several things at once and are
+  uninterpretable; 2.7.1 moved one thing and is the only failure that taught
+  something.
+
+#### Making a domain-level claim
+
+The benchmark cannot support one. Its scorch arm is 62 clusters across **2
+species that disagree completely** (hibiscus 31/31, banana_bush 4/31);
+between-species SD 0.616 puts a domain-level estimate from k=2 at **±0.854** —
+the interval covers the unit range. Reaching ±0.15 needs k≈65 species at that
+SD, or k≈11 if the off-taxonomy banana_bush arm is dropped. The healthy arm is
+fine (k=6, SD 0.061, ±0.049). So: split the arm by taxonomy; build a **second
+never-trained arm from production scans** in the in-situ regime the product
+actually sees (benchmark subject fraction 0.085–0.31 = detached leaf on a sheet;
+supplement scorch 0.74–0.85 = frame-filling in situ) and hold it eval-only
+forever; target 8–12 scorch species × ≥15 clusters; **report per species, never
+pooled** — "0.371 → 0.565" was 11/12 one species.
+
 Run-log checks, each proving one fix landed:
 
 | Look for | Expect | Means |
