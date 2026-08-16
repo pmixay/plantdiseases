@@ -685,14 +685,18 @@ It does **not** cover the 2.7.0 cliff (0 gained / 31 lost).
       taking its argmax and quoting the same split is selection on the test set.
       To use it: read the sweep, pick a value on `temperature_cal`, set
       `CLASS_LOGIT_BIAS` in §1, re-run, and read the result on the holdout.
-- [ ] **R1 — the seed replicate. FIRST A100 run.** Re-run 2.7.1's exact config,
-      new seed, everything else byte-frozen, `TRAIN_MODE='gamma'`. *Predicted:*
-      `val_realworld` within ±0.02 of 0.870, benchmark scorch stays ~0/62.
-      **Falsified if** it lands at benchmark scorch ≥ 15/62 — in which case the
-      2.7.0 cliff is a run lottery, the corpus archaeology is void, and 2.7.2
-      becomes "run it three times, ship the best on the holdout". It is the only
-      run whose result cannot be wasted: every later A/B is uninterpretable until
-      the band is known.
+- [ ] **R1 — the seed replicate. ⚠ RESCOPED: it can no longer be run against
+      2.7.1.** The design was "re-run 2.7.1's exact config with a new seed,
+      everything else byte-frozen". The permanent holdout breaks that premise —
+      it removes ~535 rows from the splits, so a run today differs from 2.7.1 in
+      both the seed *and* the corpus, which is precisely the confound that makes
+      the two archived pairs an upper bound rather than a measurement.
+      So: **run 2.7.2 once as the new baseline, then replicate that** with only
+      `SEED` changed. That pair is the first clean band this project will have
+      had. *Predicted:* `val_realworld` within ±0.02 between the two; benchmark
+      scorch within the archived pairs' spread. **The band it measures is what
+      makes every later A/B interpretable** — until it exists, treat any
+      benchmark delta under ~8 healthy / ~13 scorch clusters as not measured.
 - [ ] **R2 — the LoRA control.** `USE_LORA = True → False` (§4). In 15 versions
       no bundle has ever shipped without LoRA, so there is **no frozen-backbone
       control anywhere in the record** — and LoRA is what gives corpus
@@ -717,26 +721,37 @@ gate, `_MAX_RECLASSIFY`, the detector swap (held), and any new capacity (DINOv3,
 ViT-B). The features are not the bottleneck; adding capacity does not address a
 transfer failure.
 
-#### Runbook — everything below is now one knob per run
+#### Runbook
 
-The no-GPU work is finished; what is left is A100 time. Each run is: set
-`RUN_272` in §1, run the notebook top to bottom, read four numbers.
+The no-GPU work is finished; what is left is A100 time. **The notebook is the
+2.7.2 recipe — there is no mode to select.** Run it top to bottom.
 
-| | §1 `RUN_272` | what moves | read first |
-|---|---|---|---|
-| 1st | `'R1'` | `SEED` 0 → 1 | benchmark scorch. **≥ 15/62 voids the archaeology.** |
-| 2nd | `'R2'` | `USE_LORA` → False | transfer AUROC. **≤ 0.78 closes the branch.** |
-| 3rd | `'R3'` | `LABEL_SMOOTHING` → 0.0 | transfer AUROC. **< 0.03 move closes it.** |
+What each run now prints that did not exist before: the **holdout** block (the
+improvement metric), the **four populations** with their floors, the **Stage-1
+audit** (no-box rate on damaged vs healthy foliage — the defect that cost the
+deployed bundle 11 pp and had never been measured in fifteen versions), and the
+**Z1 bias sweep**.
 
-Keep `TRAIN_MODE='gamma'` for all three — R2 and R3 are judged against R1's
-band and the band is measured on gamma. §4 raises if any other frozen constant
-drifted, so a run that would answer two questions at once stops instead.
+**⚠ The first 2.7.2 run is a new baseline, not R1.** R1 as specified needed the
+corpus byte-frozen, and the permanent holdout now removes ~535 rows from the
+splits — so the seed-replicate experiment cannot be run against 2.7.1's numbers
+any more. Run 2.7.2, then replicate *it*: that pair measures the band cleanly,
+which the archived pairs never did.
 
-What each run prints that did not exist before: the **holdout** block (the
-improvement metric), the **four populations** with their floors, the
-**Stage-1 audit** (no-box rate on damaged vs healthy foliage — the defect that
-cost the deployed bundle 11 pp and had never been measured), and the **Z1 bias
-sweep**. After the run, score the bundle out-of-band:
+The three experiments are one-line edits, one per run, each with a falsifier
+above:
+
+| edit | where | read first |
+|---|---|---|
+| `SEED` 0 → anything | §1 | benchmark scorch — a replicate of *this* run measures the band |
+| `USE_LORA` → `False` | §4 | transfer AUROC — **≤ 0.78 closes the branch** |
+| `LABEL_SMOOTHING` → `0.0` | §4 | transfer AUROC — **< 0.03 move closes it** |
+
+Use `TRAIN_MODE='gamma'` when comparing runs — the band is measured on gamma,
+and a `combined` run also skips the detector-crop eval. `model_card.json`
+records the seed and the full hyperparams, so a bundle can be read back later.
+
+After the run, score the bundle out-of-band:
 
 ```
 python -m server.tools.paired_eval --bundle-a <2.6.8+veto> --bundle-b <new> \

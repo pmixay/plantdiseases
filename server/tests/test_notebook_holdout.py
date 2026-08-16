@@ -143,6 +143,88 @@ def test_bucket_is_not_process_salted(tmp_path):
     assert 0 <= got < 1000
 
 
+def _cells() -> dict[int, str]:
+    if not NOTEBOOK.exists():
+        pytest.skip("train_notebook.ipynb not present")
+    nb = json.loads(NOTEBOOK.read_text())
+    return {i: "".join(c["source"]) for i, c in enumerate(nb["cells"])
+            if c["cell_type"] == "code"}
+
+
+def test_every_code_cell_parses():
+    """The cheapest possible guard against shipping a SyntaxError to an A100 run
+    that only reaches §6 after an hour of training."""
+    import ast
+    for i, src in _cells().items():
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"cell {i} does not parse: {e}")
+
+
+def test_holdout_is_drawn_before_the_ratio_splits():
+    """Order is the guarantee. A holdout populated after val_realworld /
+    val_indomain / the two calibration splits is a holdout of whatever they did
+    not want, and its rows would already have leaked into calibration."""
+    cells = _cells()
+    c6 = next(s for s in cells.values() if "def make_holdout(" in s)
+    assert c6.index("make_holdout()") < c6.index("make_val_realworld();")
+    c2 = next(s for s in cells.values() if "SPLIT_ROOTS = (" in s)
+    # In SPLIT_ROOTS so §3's dedup / exact-leak / pHash-leak guards cover it too.
+    roots = c2[c2.index("SPLIT_ROOTS = ("):c2.index("SPLIT_ROOTS = (") + 200]
+    assert "HOLDOUT" in roots
+
+
+def test_benchmark_contaminated_sources_are_denied():
+    """`aditisalvi04`'s Hibiscus folders re-publish the OOD benchmark's own
+    photographs (60/60 sampled at pHash Hamming <= 6). Training on them would
+    destroy the only never-trained eval set, and nothing downstream would notice
+    — the numbers would simply improve."""
+    c6 = next(s for s in _cells().values() if "KAGGLE_DENY_FOLDERS = {" in s)
+    start = c6.index("KAGGLE_DENY_FOLDERS = {")
+    block = c6[start:c6.index("    return True", start) + len("    return True")]
+    ns: dict = {}
+    exec(compile(block, "<deny-list>", "exec"), ns)
+    allowed = ns["_assert_source_allowed"]
+
+    assert allowed("itselif/ornamental-plant-diseases-master-dataset", "rose_healthy")
+    assert allowed("aditisalvi04/indoor-plant-disease-dataset", "aloe_sunburn")
+    for slug, folder in [
+        ("shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update", ""),
+        ("aditisalvi04/indoor-plant-disease-dataset", "hibiscus_scorch"),
+        ("aditisalvi04/indoor-plant-disease-dataset", "hibiscus_healthy"),
+    ]:
+        with pytest.raises(RuntimeError, match="BENCHMARK CONTAMINATION"):
+            allowed(slug, folder)
+    # And it must be wired into the fetch path, not merely defined.
+    assert "_assert_source_allowed(slug)" in c6
+    assert "_orn_map_folder(norm, slug)" in c6
+
+
+def test_class_logit_bias_folds_before_calibration():
+    """A bias applied after temperature/conformal are fitted leaves the
+    prediction sets claiming a coverage guarantee they no longer have. It must
+    land in the head's bias vector before the export, so everything downstream
+    is fitted on the biased logits."""
+    c14 = next(s for s in _cells().values() if "CLASS_LOGIT_BIAS_APPLIED" in s)
+    fold = c14.index("CLASS_LOGIT_BIAS_APPLIED = {}")
+    assert fold < c14.index("torch.onnx.export(")
+    assert fold < c14.index("eval_sess = ")          # temperature + conformal read this
+    assert c14.count("_final.bias[CLASS_NAMES.index(_cname)] +=") == 1
+    # classes.json must record it as provenance, never as an instruction to
+    # re-apply at serving time (that would double the shift).
+    assert "Recorded for traceability only" in c14
+
+
+def test_stage1_audit_runs_in_every_mode():
+    """The audit is the thing that would have caught the detector lottery. It
+    must not sit behind RUN_DETECTOR_CROP_EVAL, which is off for `combined` —
+    the mode that ships."""
+    c14 = next(s for s in _cells().values() if "_stage1_boxes = None" in s)
+    assert c14.index("_stage1_boxes = None") < c14.index("RUN_DETECTOR_CROP_EVAL =")
+    assert c14.count("_det.predict(") == 1, "the crop eval should reuse the audit's boxes"
+
+
 def test_whole_group_moves_together(tmp_path):
     """Group-awareness: one photo's crops can span classes, and splitting them
     across train/holdout is the leak every other split in §2 guards against."""
