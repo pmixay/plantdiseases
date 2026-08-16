@@ -26,14 +26,9 @@ ImageHash>=4.3.2
 # matches the training notebook, which already runs on numpy 2.x. Cap kept
 # at <3 for the next ABI break.
 #
-# The floor stays at 2.4.6 even though 2.5.x exists, and this is deliberate:
-# 2.4.x is the newest series that still ships cp311 wheels, and 3.11 is the
-# floor of the supported range (`start.sh` builds its venv from whatever
-# `python3` is on the box; CI runs the suite on 3.11 and 3.14). A floor of
-# >=2.5 declares Requires-Python >=3.12 and would make the 3.11 install
-# unresolvable rather than merely older. This is a floor, not a pin — pip
-# still takes the newest compatible numpy on every interpreter, so a 3.14
-# host resolves 2.5.x from this same line.
+# 2.4.6 is the newest series published as of this pin. This is a floor, not
+# a pin — pip takes the newest compatible numpy on every interpreter, so
+# this line resolves to whatever is newest once a later series ships.
 numpy>=2.4.6,<3.0
 onnxruntime>=1.28.0
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
