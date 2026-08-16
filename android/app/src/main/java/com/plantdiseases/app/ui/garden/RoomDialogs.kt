@@ -14,50 +14,30 @@ import com.plantdiseases.app.data.local.RoomEntity
 import com.plantdiseases.app.data.repository.RoomRepository
 import kotlinx.coroutines.launch
 
-/**
- * Create/rename/delete-room dialogs, shared between [GardenFragment]
- * ("+ Add room" and a room card's long-press menu) and [RoomDetailActivity]
- * (its toolbar overflow) — same sharing rationale as PlantDialogs.kt.
- */
-fun FragmentActivity.showCreateRoomDialog(roomRepository: RoomRepository, onCreated: () -> Unit) {
-    val root = this
-    val (layout, input) = roomNameField(root, null)
-    val container = LinearLayout(root).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(24.dp(root), 24.dp(root), 24.dp(root), 0)
-        addView(layout)
-    }
-    val dialog = MaterialAlertDialogBuilder(root)
-        .setTitle(R.string.room_add)
-        .setView(container)
-        .setNegativeButton(R.string.cancel, null)
-        .setPositiveButton(R.string.save, null)
-        .show()
-    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-        val name = input.text?.toString().orEmpty()
-        root.lifecycleScope.launch {
-            when (roomRepository.createRoom(name, icon = null)) {
-                is RoomRepository.CreateRoomResult.Success -> {
-                    dialog.dismiss()
-                    onCreated()
-                }
-                RoomRepository.CreateRoomResult.BlankName -> layout.error = getString(R.string.plant_name_required)
-                RoomRepository.CreateRoomResult.NameTaken -> layout.error = getString(R.string.room_name_taken)
-            }
-        }
-    }
-}
+// Create/rename/delete-room dialogs, shared between GardenFragment
+// ("+ Add room" and a room card's long-press menu) and RoomDetailActivity
+// (its toolbar overflow) — same sharing rationale as PlantDialogs.kt.
 
-fun FragmentActivity.showRenameRoomDialog(roomRepository: RoomRepository, room: RoomEntity, onRenamed: () -> Unit) {
+/**
+ * Add a room ([existing] `null`) or rename one — a single dialog, the way
+ * `showAddEditPlantDialog` already handles add and edit together; the two
+ * bodies differed only in the title, the seeded name and which repository
+ * call ran. [onDone] fires once the write lands.
+ */
+fun FragmentActivity.showRoomNameDialog(
+    roomRepository: RoomRepository,
+    existing: RoomEntity?,
+    onDone: () -> Unit,
+) {
     val root = this
-    val (layout, input) = roomNameField(root, room.name)
+    val (layout, input) = roomNameField(root, existing?.name)
     val container = LinearLayout(root).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(24.dp(root), 24.dp(root), 24.dp(root), 0)
         addView(layout)
     }
     val dialog = MaterialAlertDialogBuilder(root)
-        .setTitle(R.string.room_rename)
+        .setTitle(if (existing == null) R.string.room_add else R.string.room_rename)
         .setView(container)
         .setNegativeButton(R.string.cancel, null)
         .setPositiveButton(R.string.save, null)
@@ -65,13 +45,26 @@ fun FragmentActivity.showRenameRoomDialog(roomRepository: RoomRepository, room: 
     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
         val name = input.text?.toString().orEmpty()
         root.lifecycleScope.launch {
-            when (roomRepository.renameRoom(room.id, name)) {
-                RoomRepository.RenameRoomResult.Success -> {
+            val result = if (existing == null) {
+                roomRepository.createRoom(name, icon = null)
+            } else {
+                roomRepository.renameRoom(existing.id, name)
+            }
+            when (result) {
+                is RoomRepository.RoomNameResult.Success -> {
                     dialog.dismiss()
-                    onRenamed()
+                    onDone()
                 }
-                RoomRepository.RenameRoomResult.BlankName -> layout.error = getString(R.string.plant_name_required)
-                RoomRepository.RenameRoomResult.NameTaken -> layout.error = getString(R.string.room_name_taken)
+                RoomRepository.RoomNameResult.BlankName -> layout.error = getString(R.string.plant_name_required)
+                RoomRepository.RoomNameResult.NameTaken -> layout.error = getString(R.string.room_name_taken)
+                // The room was deleted from another screen while this dialog
+                // was open. There is nothing left to rename and no error worth
+                // showing on the field — close and let the caller's reload
+                // drop the room from the UI.
+                RoomRepository.RoomNameResult.NotFound -> {
+                    dialog.dismiss()
+                    onDone()
+                }
             }
         }
     }

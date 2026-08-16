@@ -380,6 +380,13 @@ interface ScanChatMessageDao {
 
 // ─── Original DAOs ───────────────────────────────────────────────────────────
 
+/** Projection for [ScanDao.latestImageByPlant] — a plant id and the photo of
+ *  its newest scan, without dragging the whole [ScanEntity] along. */
+data class PlantThumb(
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "image_path") val imagePath: String?,
+)
+
 @Dao
 interface ScanDao {
     @Query("SELECT * FROM scans ORDER BY timestamp DESC")
@@ -399,6 +406,21 @@ interface ScanDao {
 
     @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
+
+    /** Latest scan photo per plant, for the garden/care thumbnail strips.
+     *  The callers used to run [getScansForPlant] once per plant and keep
+     *  one `image_path` — reading all 28 columns, including the JSON blobs
+     *  (`regions`, `all_probs`, `prediction_set`), to reach a single string.
+     *  This is SQLite's documented bare-column-with-aggregate form: the row
+     *  chosen by `MAX(timestamp)` supplies `image_path`. Do not rewrite it
+     *  as `HAVING MAX(timestamp)`, which filters on truthiness rather than
+     *  selecting a row. */
+    @SuppressWarnings(RoomWarnings.QUERY_MISMATCH) // MAX(timestamp) selects the row; PlantThumb doesn't carry it.
+    @Query(
+        "SELECT plant_id, image_path, MAX(timestamp) FROM scans " +
+            "WHERE plant_id IN (:plantIds) GROUP BY plant_id",
+    )
+    suspend fun latestImageByPlant(plantIds: List<Long>): List<PlantThumb>
 
     @Insert
     suspend fun insert(scan: ScanEntity): Long
@@ -479,8 +501,10 @@ interface RoomDao {
     @Query("SELECT * FROM rooms WHERE id = :id")
     suspend fun getById(id: Long): RoomEntity?
 
-    @Query("SELECT * FROM rooms WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): RoomEntity?
+    // No findByName here on purpose: SQLite's COLLATE NOCASE folds ASCII
+    // A–Z only, so a SQL uniqueness check let "Кухня" and "кухня" both
+    // through the BINARY unique index. RoomRepository.findClash decides
+    // name collisions in Kotlin instead, where the comparison is Unicode-aware.
 
     @Insert
     suspend fun insert(room: RoomEntity): Long

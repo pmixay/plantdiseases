@@ -484,7 +484,7 @@ class GardenFragment : Fragment() {
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
-                        requireActivity().showRenameRoomDialog(roomRepository, room) { loadGarden(animate = false) }
+                        requireActivity().showRoomNameDialog(roomRepository, room) { loadGarden(animate = false) }
                         true
                     }
                     2 -> {
@@ -499,7 +499,7 @@ class GardenFragment : Fragment() {
     }
 
     private fun showCreateRoomDialog() {
-        requireActivity().showCreateRoomDialog(roomRepository) { loadGarden(animate = true) }
+        requireActivity().showRoomNameDialog(roomRepository, existing = null) { loadGarden(animate = true) }
     }
 
     // ─── Care-calendar pane ───────────────────────────────────────────────
