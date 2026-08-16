@@ -120,8 +120,8 @@ class CommunityController(
                 val n = resp.opinions.size
                 when {
                     resp.wantsOpinion ->
-                        showOpenRequest(scan, isRu, n, resp.opinionRequestedAt)
-                    n > 0 -> showViewReplies(scan, isRu, n)
+                        showOpenRequest(scan, n, resp.opinionRequestedAt)
+                    n > 0 -> showViewReplies(scan, n)
                     else -> showAsk(scan, isRu)
                 }
             }
@@ -149,7 +149,6 @@ class CommunityController(
      *  sheet (which carries the Stop action). */
     private fun showOpenRequest(
         scan: ScanEntity,
-        isRu: Boolean,
         replyCount: Int,
         requestedAtSec: Long?,
     ) {
@@ -175,7 +174,7 @@ class CommunityController(
         btn.setOnClickListener { openReplies(scan) }
     }
 
-    private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
+    private fun showViewReplies(scan: ScanEntity, count: Int) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
         applySecondOpinionEnabled()
