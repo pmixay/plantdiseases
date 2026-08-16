@@ -38,6 +38,9 @@ class FakeScanDao : ScanDao {
     override suspend fun getScansForPlant(plantId: Long): List<ScanEntity> =
         items.filter { it.plantId == plantId }.sortedByDescending { it.timestamp }
 
+    override suspend fun getAllAssignedScans(): List<ScanEntity> =
+        items.filter { it.plantId != null }.sortedByDescending { it.timestamp }
+
     /** Mirrors the real `GROUP BY plant_id` projection: one row per requested
      *  plant that actually has a scan, carrying its newest scan's image_path. */
     override suspend fun latestImageByPlant(plantIds: List<Long>): List<PlantThumb> =

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Task detail — serves all three CareQueue.CareTask kinds (recurring
-    occurrence, treatment step, one-off). Sections render only when they
+    Task detail — serves both CareQueue.CareTask kinds (recurring
+    occurrence, treatment step). Sections render only when they
     have content (see CareTaskActivity) — a watering task has no
     products/recommendations and must not show empty headers for them.
 -->

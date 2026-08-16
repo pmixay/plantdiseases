@@ -29,8 +29,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Task detail — serves all three [com.plantdiseases.app.util.CareQueue.CareTask]
- * kinds. Sections render only when they have content: a plain watering
+ * Task detail — serves both [com.plantdiseases.app.util.CareQueue.CareTask]
+ * kinds (recurring occurrence, treatment step). Sections render only when they have content: a plain watering
  * reminder has no products/recommendations/step-progress and must not
  * show empty headers for them (see docs/ROADMAP.md "Garden refactor").
  */

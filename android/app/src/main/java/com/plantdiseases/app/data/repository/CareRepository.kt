@@ -81,10 +81,16 @@ class CareRepository(
 
         val reminderInputs = mutableListOf<CareQueue.ReminderInput>()
         val doneEvents = mutableListOf<CareQueue.DoneEvent>()
+        // Table-wide, not per plant: this runs on every calendar month swipe and
+        // every day-view open. Both queries keep the ORDER BY of the per-plant
+        // ones they replace, and groupBy preserves encounter order, so the
+        // journal lookup below still finds the newest matching entry.
+        val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
+        val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         for (plant in plants) {
-            val reminders = reminderDao.getForPlant(plant.id).filter { it.enabled }
+            val reminders = remindersByPlant[plant.id].orEmpty().filter { it.enabled }
             if (reminders.isEmpty()) continue
-            val journal = journalDao.getEntriesForPlant(plant.id) // ORDER BY timestamp DESC
+            val journal = journalByPlant[plant.id].orEmpty() // timestamp DESC
             for (reminder in reminders) {
                 val journalType = plantRepository.reminderTypeToJournalType(reminder.type)
                 val anchor = journalType

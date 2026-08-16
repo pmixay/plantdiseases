@@ -432,6 +432,15 @@ interface ScanDao {
     @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
 
+    /** Every scan that belongs to a plant, newest first — for garden-wide reads
+     *  that would otherwise call [getScansForPlant] once per plant. Filtered on
+     *  `plant_id IS NOT NULL` on purpose: [getAllScans] would also drag in every
+     *  loose gallery scan (all 28 columns, JSON blobs included) only for the
+     *  caller to throw the null bucket away. Same ordering as the per-plant
+     *  query, so a caller grouping by plant_id sees identical buckets. */
+    @Query("SELECT * FROM scans WHERE plant_id IS NOT NULL ORDER BY timestamp DESC")
+    suspend fun getAllAssignedScans(): List<ScanEntity>
+
     /** Latest scan photo per plant, for the garden/care thumbnail strips.
      *  The callers used to run [getScansForPlant] once per plant and keep
      *  one `image_path` — reading all 28 columns, including the JSON blobs

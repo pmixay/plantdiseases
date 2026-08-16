@@ -46,9 +46,9 @@ class GardenAttachController(
 
     fun showAddToGardenDialog(scan: ScanEntity) {
         activity.lifecycleScope.launch {
-            // Name + photo picker — getPlants() would run the full garden
-            // summary (journal, reminders, plans, health verdict) per plant
-            // and throw all of it away.
+            // Name + photo picker — getPlants() would build the full garden
+            // summary (journal, reminders, plans, health verdict) and throw all
+            // of it away.
             val plants = plantRepository.getPlantsForPicker()
             if (plants.isEmpty()) {
                 showCreatePlantForScanDialog(scan)

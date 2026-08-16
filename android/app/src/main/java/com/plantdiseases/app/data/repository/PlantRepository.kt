@@ -34,7 +34,7 @@ class PlantRepository(
      *  This used to issue four queries **per plant** — scans, journal,
      *  reminders, active plan — on the app's hottest screen, plus a fifth
      *  inside [getPlantHealth]. It is now four table-wide reads grouped in
-     *  memory, so the cost is flat in garden size. `getAllScans`/`getAllEntries`
+     *  memory, so the cost is flat in garden size. The table-wide reads
      *  keep the `ORDER BY timestamp DESC` of the per-plant queries they
      *  replace, and `groupBy` preserves encounter order, so the
      *  `firstOrNull()`/`maxByOrNull()` below still see exactly what they did.
@@ -48,7 +48,7 @@ class PlantRepository(
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
         val roomNamesById = roomDao.getAll().associate { it.id to it.name }
         val nowMs = System.currentTimeMillis()
-        val scansByPlant = scanDao.getAllScans().groupBy { it.plantId }
+        val scansByPlant = scanDao.getAllAssignedScans().groupBy { it.plantId }
         val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
         val plantIdsUnderTreatment = treatmentPlanDao.getAllActive().mapTo(mutableSetOf()) { it.plantId }
@@ -69,10 +69,10 @@ class PlantRepository(
     }
 
     /** Name + thumbnail only, for the "add this scan to a plant" picker.
-     *  [getPlants] costs 4–5 DAO round trips per plant (scans, journal,
-     *  reminders, active plan, health/adherence) and a picker discards all
-     *  of it, so this stays at two queries flat regardless of garden size:
-     *  the plant rows plus one latest-photo projection over all of them. */
+     *  [getPlants] reads every scan, journal entry and reminder in the garden
+     *  and scores a health verdict per plant; a picker discards all of it. So
+     *  this stays at two queries flat regardless of garden size: the plant
+     *  rows plus one latest-photo projection over all of them. */
     suspend fun getPlantsForPicker(): List<PlantPickerItem> = withContext(Dispatchers.IO) {
         val plants = plantDao.getAllPlants()
         val latestImages = scanDao.latestImageByPlant(plants.map { it.id })
