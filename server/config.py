@@ -4,7 +4,7 @@ Server configuration loader.
 Replaces the previous ``os.getenv(...)`` scatter-shot with a single
 ``config.json`` file (located alongside this module) that the server
 parses at import time. Environment variables are still consulted as a
-fallback so existing Docker / CI deployments continue to work, but the
+fallback so existing CI / systemd deployments continue to work, but the
 primary, documented configuration channel is the file.
 
 The config file is JSON so we don't take a YAML dependency. A

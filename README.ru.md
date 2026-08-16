@@ -160,7 +160,7 @@ start.bat
 положите обученный набор (`detector.{pt,onnx}`, `classifier.onnx`,
 `classes.json`, JSON калибровки) в `server/models/`; без него сервер **падает
 сразу**, а `train_notebook.ipynb` §6b упакует их в архив. Продакшен-настройка
-(Docker, nginx/TLS, systemd, API-ключи, подпись Android/FCM) — в
+(systemd, nginx/TLS, API-ключи, подпись Android/FCM) — в
 [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ### Android-клиент
@@ -222,7 +222,7 @@ plantdiseases/
 
 ## Документация
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — продакшен-конфигурация, Docker
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — продакшен-конфигурация, systemd
   Compose, nginx + Let's Encrypt, systemd, мониторинг, чек-лист перед
   запуском, smoke-QA после деплоя.
 - [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) —

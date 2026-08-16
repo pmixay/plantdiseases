@@ -239,6 +239,98 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
     assert image_path == body["filename"]
 
 
+def test_feedback_image_rejects_non_image_bytes(
+    client, isolated_feedback_db, tmp_path, monkeypatch,
+):
+    """Anything that is not a JPEG/PNG/WebP/BMP is refused.
+
+    The extension used to come from the client's Content-Type with a `.bin`
+    fallback, and nothing decoded the upload — so a valid scan_id was enough
+    to write arbitrary bytes into the retraining corpus.
+    """
+    img_dir = tmp_path / "feedback_imgs_reject"
+    monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
+    import importlib
+
+    import feedback as fb
+    importlib.reload(fb)
+    import main as server_main
+    server_main.save_feedback_image = fb.save_feedback_image
+    server_main.feedback_attach_image_path = fb.attach_image_path
+
+    client.post(
+        "/api/feedback",
+        json={
+            "scan_id": "scan-notimage1",
+            "correct": False,
+            "corrected_class": "leaf_spot",
+        },
+    )
+    r = client.post(
+        "/api/feedback/image",
+        data={"scan_id": "scan-notimage1"},
+        # Content-Type says JPEG; the bytes are a zip. The bytes decide.
+        files={"image": ("payload.jpg", b"PK\x03\x04not-an-image", "image/jpeg")},
+    )
+    assert r.status_code == 400, r.text
+    assert not list(img_dir.glob("*")) if img_dir.exists() else True
+
+
+def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
+    client, isolated_feedback_db, tmp_path, monkeypatch,
+):
+    """A second, DIFFERENT image for the same scan_id is refused.
+
+    The per-IP daily quota counts feedback ROWS, which this endpoint never
+    creates — so without this bound one issued scan_id could store unlimited
+    distinct images. Re-uploading the SAME bytes must still succeed, because
+    clients retry after a timeout and the artefact is content-addressed.
+    """
+    img_dir = tmp_path / "feedback_imgs_once"
+    monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
+    import importlib
+
+    import feedback as fb
+    importlib.reload(fb)
+    import main as server_main
+    server_main.save_feedback_image = fb.save_feedback_image
+    server_main.feedback_attach_image_path = fb.attach_image_path
+
+    client.post(
+        "/api/feedback",
+        json={
+            "scan_id": "scan-imgonce1",
+            "correct": False,
+            "corrected_class": "leaf_spot",
+        },
+    )
+    first = b"\xff\xd8\xff\xe0first-image-bytes"
+    r1 = client.post(
+        "/api/feedback/image",
+        data={"scan_id": "scan-imgonce1"},
+        files={"image": ("a.jpg", first, "image/jpeg")},
+    )
+    assert r1.status_code == 200, r1.text
+
+    # Same bytes again — an idempotent retry, still fine.
+    r2 = client.post(
+        "/api/feedback/image",
+        data={"scan_id": "scan-imgonce1"},
+        files={"image": ("a.jpg", first, "image/jpeg")},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["filename"] == r1.json()["filename"]
+
+    # Different bytes — this is the disk-fill vector, and it is refused.
+    r3 = client.post(
+        "/api/feedback/image",
+        data={"scan_id": "scan-imgonce1"},
+        files={"image": ("b.jpg", b"\xff\xd8\xff\xe0second-image-bytes", "image/jpeg")},
+    )
+    assert r3.status_code == 409, r3.text
+    assert len(list(img_dir.glob("*"))) == 1
+
+
 def test_feedback_endpoint_persists_prediction_set(client, isolated_feedback_db):
     """The conformal set should land on the feedback row as compact
     JSON. Used by the offline retraining loop to answer

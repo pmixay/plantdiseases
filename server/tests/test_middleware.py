@@ -26,10 +26,12 @@ def test_health_capabilities_not_rate_limited(client):
             assert r.status_code == 200, f"{path} returned {r.status_code}"
 
 
-def test_metrics_endpoints_not_rate_limited(client):
-    for _ in range(5):
-        assert client.get("/api/metrics").status_code == 200
-        assert client.get("/api/metrics/prometheus").status_code == 200
+def test_metrics_endpoints_still_answer(client):
+    """Metrics are metered now (see test_metrics_endpoints_are_rate_limited),
+    but the default bucket is wide enough that ordinary scraping is
+    unaffected — `client` uses the default burst."""
+    assert client.get("/api/metrics").status_code == 200
+    assert client.get("/api/metrics/prometheus").status_code == 200
 
 
 def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, png_bytes):
@@ -80,19 +82,69 @@ def test_oversized_body_rejected_without_full_read(client):
     """`_read_upload` should fail at MAX_FILE_SIZE+1 bytes regardless
     of what the client claims via Content-Length. The total bytes
     actually consumed is bounded so a slowloris-style upload can't
-    exhaust RAM."""
+    exhaust RAM.
+
+    Sized to land BETWEEN the two caps — over MAX_FILE_SIZE (so the image
+    field is rejected) but under MAX_REQUEST_BYTES (so the request still
+    reaches the route). Above the outer cap it is the body-size middleware
+    that answers, with 413; that path is asserted separately below.
+    """
     import main as server_main
 
     cap = server_main.MAX_FILE_SIZE
-    # 2 MB over the cap (oversized but not absurd) — the helper should
-    # reject without parsing image bytes.
-    oversized = b"\xff\xd8\xff\xe0" + b"\x00" * (cap + 2 * 1024 * 1024)
+    oversized = b"\xff\xd8\xff\xe0" + b"\x00" * (cap + 512 * 1024)
+    assert len(oversized) < server_main.MAX_REQUEST_BYTES, (
+        "test body must stay under the global cap to exercise _read_upload"
+    )
     r = client.post(
         "/api/analyze",
         files={"image": ("huge.jpg", oversized, "image/jpeg")},
     )
     assert r.status_code == 400
     assert "too large" in r.json()["detail"].lower()
+
+
+def test_body_over_global_cap_gets_413_on_any_route(client):
+    """The global body cap applies to every route and content type, not just
+    multipart image uploads.
+
+    JSON endpoints buffer the whole body before Pydantic runs, so before this
+    middleware existed a field validator could not refuse an oversized one —
+    /api/chat and friends would read an arbitrarily large body into memory.
+    """
+    import main as server_main
+
+    payload = {"session_id": "s", "message": "x" * (server_main.MAX_REQUEST_BYTES + 1)}
+    r = client.post("/api/chat", json=payload)
+    assert r.status_code == 413, r.text
+    assert "too large" in r.json()["detail"].lower()
+
+
+def test_metrics_endpoints_are_rate_limited(rate_limited_client):
+    """/api/metrics* used to be exempt from the limiter while being the most
+    expensive unauthenticated request in the API (full-table SQLite
+    aggregates on the event loop). Exempting it made it a free amplifier."""
+    first = rate_limited_client.get("/api/metrics")
+    assert first.status_code == 200, first.text
+    # The `rate_limited_client` fixture runs a 1 req/s bucket.
+    statuses = [rate_limited_client.get("/api/metrics").status_code for _ in range(3)]
+    assert 429 in statuses, f"metrics never throttled: {statuses}"
+
+
+def test_client_supplied_trace_id_is_bounded_and_sanitised(client):
+    """The trace id is echoed in a response header and stamped on every log
+    line for the request, so an unbounded or arbitrary-alphabet value from
+    the client would land in both."""
+    good = client.get("/api/health", headers={"X-Trace-ID": "abc-123_XYZ.9"})
+    assert good.headers["X-Trace-ID"] == "abc-123_XYZ.9"
+
+    # Non-ASCII is omitted deliberately: the HTTP client refuses to encode it,
+    # so it never reaches the server. These are the values that do.
+    for hostile in ("x" * 500, "trace id with spaces", "a\tb", "id;drop=1"):
+        r = client.get("/api/health", headers={"X-Trace-ID": hostile})
+        echoed = r.headers["X-Trace-ID"]
+        assert echoed != hostile, f"echoed hostile trace id verbatim: {hostile!r}"
+        assert len(echoed) == 32 and echoed.isalnum(), echoed
 
 
 def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
