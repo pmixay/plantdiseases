@@ -157,7 +157,6 @@ class CareTaskActivity : AppCompatActivity() {
         if (lastDone != null) {
             binding.careTaskHistorySection.visibility = View.VISIBLE
             binding.careTaskLastDone.text = getString(R.string.task_last_done, relativeDate(lastDone))
-            binding.careTaskNextStep.visibility = View.GONE
         } else {
             binding.careTaskHistorySection.visibility = View.GONE
         }
@@ -180,6 +179,11 @@ class CareTaskActivity : AppCompatActivity() {
                 ),
             )
         }
+        // Recurring occurrences have no row of their own, so there is no
+        // status to read back here — the caller tells us whether this
+        // occurrence is already done (the other two branches read step /
+        // task status directly).
+        binding.careTaskDoneButton.isEnabled = !intent.getBooleanExtra(EXTRA_IS_DONE, false)
     }
 
     private suspend fun renderOneOff(taskId: Long) {
@@ -297,9 +301,13 @@ class CareTaskActivity : AppCompatActivity() {
             binding.careTaskTempRange.visibility = View.GONE
         }
 
-        if (obj.has("dry_hours")) {
+        // 0 is a real value in the curated protocols (nutrient_deficiency) and
+        // reads as a nonsensical "keep dry for 0 hours" — hide the row instead.
+        val dryHours = obj.optInt("dry_hours", 0)
+        if (dryHours > 0) {
             binding.careTaskDryHours.visibility = View.VISIBLE
-            binding.careTaskDryHours.text = getString(R.string.task_dry_hours, obj.optInt("dry_hours"))
+            binding.careTaskDryHours.text =
+                resources.getQuantityString(R.plurals.task_dry_hours, dryHours, dryHours)
         } else {
             binding.careTaskDryHours.visibility = View.GONE
         }
@@ -370,7 +378,6 @@ class CareTaskActivity : AppCompatActivity() {
         }
         binding.careTaskHistorySection.visibility = View.VISIBLE
         binding.careTaskLastDone.text = getString(R.string.task_last_done, relativeDate(step.doneAt))
-        binding.careTaskNextStep.visibility = View.GONE
     }
 
     private fun relativeDate(ms: Long): CharSequence =
@@ -400,5 +407,9 @@ class CareTaskActivity : AppCompatActivity() {
         const val EXTRA_REMINDER_ID = "extra_reminder_id"
         const val EXTRA_DUE_AT = "extra_due_at"
         const val EXTRA_ONEOFF_ID = "extra_oneoff_id"
+
+        /** Recurring occurrences carry their done-state in the queue, not in a
+         *  row this screen can re-read — the launcher passes it through. */
+        const val EXTRA_IS_DONE = "extra_is_done"
     }
 }

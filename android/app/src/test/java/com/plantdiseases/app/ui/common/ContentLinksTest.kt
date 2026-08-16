@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.text.Spannable
 import android.text.Spanned
 import android.text.style.ClickableSpan
 import android.widget.TextView
@@ -37,5 +38,25 @@ class ContentLinksTest {
         val tv = textView()
         ContentLinks.apply(tv, "No links here.")
         assertThat(tv.text.toString()).isEqualTo("No links here.")
+    }
+
+    /**
+     * Cross-package contract, pinned at the owning site: [ContentLinks.apply] must
+     * leave a *mutable* buffer behind. `TextView.setText` with the default
+     * BufferType.NORMAL stores a Spanned as an immutable SpannedString, and the
+     * guide renderer's hanging-indent pass then silently no-ops on its
+     * `tv.text as? Spannable` cast (see GuideContentRendererTest, which fails with
+     * this one). Both arms matter — the no-link path also hands `setText` a
+     * SpannableStringBuilder, so it degrades to SpannedString just the same.
+     */
+    @Test
+    fun leaves_a_mutable_spannable_buffer_for_later_span_passes() {
+        val plain = textView()
+        ContentLinks.apply(plain, "No links here.")
+        assertThat(plain.text).isInstanceOf(Spannable::class.java)
+
+        val linked = textView()
+        ContentLinks.apply(linked, "See [a](guide:x).")
+        assertThat(linked.text).isInstanceOf(Spannable::class.java)
     }
 }

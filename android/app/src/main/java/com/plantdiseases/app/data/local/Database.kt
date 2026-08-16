@@ -296,6 +296,26 @@ interface PlantReminderEventDao {
     )
     suspend fun recentForPlant(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity>
 
+    /** Every "done" disposition overlapping [fromMs, toMs) — the range-bounded
+     *  counterpart of [recentForPlant], which the care queue used to page
+     *  through instead. Its `LIMIT 50` window covers ~16 days of three daily
+     *  reminders, so browsing an older month read the same 50 newest rows and
+     *  rendered every past occurrence as pending/overdue.
+     *
+     *  Both timestamps are tested: `CareRepository.completeRecurring` stamps
+     *  `fired_at` with the occurrence's ORIGINAL due instant while `done_at`
+     *  records when the user actually ticked it, and a late completion needs
+     *  both days marked done. Covered by Index(["plant_id", "fired_at"]). */
+    @Query(
+        """
+        SELECT * FROM plant_reminder_events
+        WHERE plant_id = :plantId AND action = 'done'
+          AND ((fired_at >= :fromMs AND fired_at < :toMs)
+               OR (done_at >= :fromMs AND done_at < :toMs))
+    """
+    )
+    suspend fun doneBetween(plantId: Long, fromMs: Long, toMs: Long): List<PlantReminderEventEntity>
+
     @Query(
         """
         SELECT MAX(done_at) FROM plant_reminder_events
@@ -667,9 +687,22 @@ interface TreatmentStepDao {
     )
     suspend fun getAllInRangeWithPlantId(from: Long, to: Long): List<StepWithPlantId>
 
-    @Query("SELECT COUNT(*) FROM treatment_steps WHERE plan_id = :planId")
-    suspend fun countForPlan(planId: Long): Int
+    /** Step totals for a batch of plans ("Step 2 of 5"). One grouped read
+     *  instead of one COUNT per plan on every calendar month/day load. */
+    @Query(
+        """
+        SELECT `plan_id`, COUNT(*) AS `step_count` FROM treatment_steps
+        WHERE plan_id IN (:planIds)
+        GROUP BY plan_id
+        """
+    )
+    suspend fun countsForPlans(planIds: List<Long>): List<PlanStepCount>
 }
+
+data class PlanStepCount(
+    @ColumnInfo(name = "plan_id") val planId: Long,
+    @ColumnInfo(name = "step_count") val stepCount: Int,
+)
 
 data class StepWithPlantId(
     @Embedded val step: TreatmentStepEntity,
@@ -790,10 +823,12 @@ interface NotificationDao {
         CareTaskEntity::class,
         NotificationEntity::class,
     ],
-    // The schema is treated as ephemeral while the app is in pre-release
-    // testing: ``fallbackToDestructiveMigration`` is configured below
-    // and any schema change wipes local data on next launch. Real
-    // migrations come later, alongside cloud sync.
+    // Every version step from 1 has a hand-written migration registered
+    // below, so upgrades preserve the garden, scans, journal and reminders.
+    // ``fallbackToDestructiveMigration`` is still configured as the last
+    // resort for version pairs with NO registered path (a downgrade, or a
+    // developer build that skipped a step) — it does not rescue a migration
+    // that leaves the schema drifted from the entities; that throws.
     version = 8,
     exportSchema = false,
 )
@@ -912,8 +947,8 @@ abstract class AppDatabase : RoomDatabase() {
 
         /** Rooms become first-class rows, and treatment plans/steps + one-off
          *  tasks get storage. Entirely additive — three CREATE TABLEs and one
-         *  ADD COLUMN, then a backfill that turns each distinct trimmed
-         *  `plants.room` value into a `rooms` row and points `room_id` at it.
+         *  ADD COLUMN, then a backfill that turns each trimmed, case-insensitively
+         *  distinct `plants.room` value into a `rooms` row and points `room_id` at it.
          *  No table is rebuilt, so no existing garden, scan, journal or
          *  reminder is touched, and the legacy `room` column is left in
          *  place (unread) rather than dropped. */
@@ -1028,32 +1063,58 @@ abstract class AppDatabase : RoomDatabase() {
                 // becomes a row, then each matching plant points at it.
                 // TRIM collapses "Kitchen " and "Kitchen" into one room,
                 // which the old free-text grouping never did.
-                db.execSQL(
-                    """
-                    INSERT OR IGNORE INTO `rooms` (`name`, `created_at`, `sort_order`)
-                    SELECT DISTINCT TRIM(`room`), strftime('%s','now') * 1000, 0
-                    FROM `plants`
-                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    UPDATE `plants`
-                    SET `room_id` = (
-                        SELECT `r`.`id` FROM `rooms` `r` WHERE `r`.`name` = TRIM(`plants`.`room`)
+                //
+                // The grouping is done in Kotlin, not SQL: SQLite's DISTINCT
+                // is BINARY and COLLATE NOCASE folds ASCII A–Z only, so a
+                // pure-SQL backfill made "Office"/"office" — and, with no
+                // remedy at all, "Кухня"/"кухня" — two rooms on upgrade,
+                // recreating the exact fragmentation this table exists to
+                // prevent. `equals(ignoreCase = true)` in RoomRepository
+                // guards new names the same way.
+                val trimmedRoomNames = mutableListOf<String>()
+                db.query(
+                    "SELECT DISTINCT TRIM(`room`) FROM `plants` " +
+                        "WHERE `room` IS NOT NULL AND TRIM(`room`) != ''"
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        trimmedRoomNames += cursor.getString(0)
+                    }
+                }
+                val createdAt = System.currentTimeMillis()
+                trimmedRoomNames.groupBy { it.lowercase(java.util.Locale.ROOT) }.forEach { (_, variants) ->
+                    val canonical = variants.first()
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `rooms` (`name`, `created_at`, `sort_order`) VALUES (?, ?, 0)",
+                        arrayOf<Any>(canonical, createdAt),
                     )
-                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
-                    """.trimIndent()
-                )
+                    val roomId = db.query(
+                        "SELECT `id` FROM `rooms` WHERE `name` = ?",
+                        arrayOf<Any>(canonical),
+                    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+                        ?: return@forEach
+                    // One UPDATE per spelling: TRIM(room) = ? is a BINARY
+                    // compare, which is what we want now that the grouping
+                    // decision has already been made above.
+                    variants.forEach { variant ->
+                        db.execSQL(
+                            "UPDATE `plants` SET `room_id` = ? WHERE TRIM(`room`) = ?",
+                            arrayOf<Any>(roomId, variant),
+                        )
+                    }
+                }
             }
         }
 
         /** Adds the notification centre. Entirely additive — one CREATE TABLE
          *  IF NOT EXISTS + one index, no existing table touched, no row
-         *  copied. Matches NotificationEntity's schema exactly; if this ever
-         *  drifts from the entity, Room's fallbackToDestructiveMigration
-         *  below silently wipes the whole database instead of throwing —
-         *  see the builder comment. */
+         *  copied. Matches NotificationEntity's schema exactly, and it has
+         *  to: because this migration is registered, a 7→8 upgrade always
+         *  runs this SQL and Room then validates the result against the
+         *  entity — drift throws IllegalStateException at open time (a
+         *  launch crash). It is NOT rescued by fallbackToDestructiveMigration,
+         *  which only applies to version pairs with no registered migration.
+         *  Migration6To7Test walks a v6 file up through here via Room so the
+         *  validator actually runs. */
         val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(

@@ -49,6 +49,24 @@ class PlantRepository(
         }
     }
 
+    /** Name + thumbnail only, for the "add this scan to a plant" picker.
+     *  [getPlants] costs 4–5 DAO round trips per plant (scans, journal,
+     *  reminders, active plan, health/adherence) and a picker discards all
+     *  of it, so this stays at two queries flat regardless of garden size:
+     *  the plant rows plus one latest-photo projection over all of them. */
+    suspend fun getPlantsForPicker(): List<PlantPickerItem> = withContext(Dispatchers.IO) {
+        val plants = plantDao.getAllPlants()
+        val latestImages = scanDao.latestImageByPlant(plants.map { it.id })
+            .associate { it.plantId to it.imagePath }
+        plants.map { plant ->
+            PlantPickerItem(
+                id = plant.id,
+                name = plant.name,
+                thumbnailSource = plant.coverPhotoUri ?: latestImages[plant.id],
+            )
+        }
+    }
+
     /** Care adherence over the last [ADHERENCE_WINDOW_DAYS] days, from the
      *  already-logged reminder-firing history — cheaper than re-projecting
      *  CareQueue for every plant in the garden list, and only actually
@@ -426,6 +444,15 @@ class PlantRepository(
             series = emptyList(),
             scanCount = 0,
         ),
+    )
+
+    /** One row of [getPlantsForPicker]: everything a name + photo list needs
+     *  and nothing else. [thumbnailSource] is the user-picked cover photo,
+     *  else the newest scan's image, else null. */
+    data class PlantPickerItem(
+        val id: Long,
+        val name: String,
+        val thumbnailSource: String?,
     )
 
     /** Soonest "do something" hint for a plant, computed off the most

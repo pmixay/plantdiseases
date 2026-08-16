@@ -297,6 +297,12 @@ class CommunityController(
                                 .intentFor(activity, item.scanId),
                         )
                     } else {
+                        // localClientScanIds() suspends on Dispatchers.IO, so we
+                        // always resume a main-loop turn later. lifecycleScope
+                        // only cancels at DESTROYED, so a Home press mid-read
+                        // would land here after onSaveInstanceState and blow up
+                        // inside show()'s commit().
+                        if (activity.supportFragmentManager.isStateSaved) return@launch
                         CommunityOpinionSheet.show(
                             activity.supportFragmentManager,
                             item,

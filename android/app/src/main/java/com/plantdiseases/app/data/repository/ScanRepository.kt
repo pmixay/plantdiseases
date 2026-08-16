@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.repository
 
+import android.content.Context
 import com.google.gson.Gson
 import com.plantdiseases.app.data.local.ScanChatMessageDao
 import com.plantdiseases.app.data.local.ScanChatMessageEntity
@@ -22,6 +23,9 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
+import com.plantdiseases.app.util.CommunityIdentity
+import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.Nicknames
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
@@ -59,6 +63,15 @@ class ScanRepository(
     // (e.g. rapid config-change recreations each firing one) can't race the
     // shared temp/model file and corrupt it.
     private val aquaSyncMutex = Mutex()
+
+    // The key hash the server has already acknowledged, so the adopt POST
+    // rides along with the first community write of the process rather than
+    // every one of them. Keyed on the hash rather than a boolean because
+    // "Leave community" calls CommunityIdentity.clear(), which mints a fresh
+    // secret — a boolean would suppress the adopt for that new identity until
+    // the process restarted.
+    @Volatile
+    private var adoptedAuthorKeyHash: String? = null
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -888,16 +901,26 @@ class ScanRepository(
             }
         }
 
-    /** Create-or-return this device's durable forum identity. [keyHash] is
-     *  [com.plantdiseases.app.util.CommunityIdentity.keyHash] — never the
-     *  raw secret — sent as a header, never in the body or a URL (see
-     *  CommunityIdentity's kdoc for why). Idempotent: safe to call on every
-     *  launch, fire-and-forget. Groundwork only for now — nothing else in
-     *  the app reads the response yet; F1 is what starts using it. */
+    /**
+     * Create-or-return this device's durable forum identity. [keyHash] is
+     * [com.plantdiseases.app.util.CommunityIdentity.keyHash] — never the raw
+     * secret — sent as a header, never in the body or a URL (see
+     * CommunityIdentity's kdoc for why). Groundwork only for now — nothing
+     * else in the app reads the response yet.
+     *
+     * This is the raw transport. Production code goes through
+     * [ensureCommunityAuthorAdopted], which applies the community opt-in
+     * gate; calling this directly bypasses it.
+     *
+     * The request deliberately carries no `legacy_pseudo_id`. It used to send
+     * [com.plantdiseases.app.util.TelemetryIds.userPseudoId] — the same value
+     * stored on every feedback row — which joined this permanent identity to
+     * every training photo the device ever submitted, something privacy.html
+     * does not disclose. The server field stays optional for older installs.
+     */
     suspend fun adoptCommunityAuthor(
         keyHash: String,
         seedDisplayName: String,
-        legacyPseudoId: String?,
     ): Result<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -907,7 +930,6 @@ class ScanRepository(
                     setBody(
                         com.plantdiseases.app.data.model.CommunityAuthorAdoptRequest(
                             seedDisplayName = seedDisplayName,
-                            legacyPseudoId = legacyPseudoId,
                         ),
                     )
                 }
@@ -921,6 +943,38 @@ class ScanRepository(
                 Result.failure(e)
             }
         }
+
+    /**
+     * Lazily register this device's durable forum identity — the consent-gated
+     * entry point every community write should call.
+     *
+     * Adoption is not free: it mints [CommunityIdentity.keyHash], a permanent
+     * never-rotating per-device value, and creates a permanent server-side row
+     * whose `last_seen_at` is refreshed on every call. Doing that from
+     * `Application.onCreate()` would transmit a per-device launch log before
+     * the onboarding prominent-disclosure screen has even rendered, and for
+     * users who opted into nothing — so it happens here instead, behind
+     * [CommunityPrefs.uploadsEnabled] (default OFF, exactly the gate
+     * CommunityUploader already applies).
+     *
+     * [force] is for the second-opinion path, where the tap that shares one
+     * scan is itself the consent and deliberately bypasses the global toggle —
+     * exactly as `CommunityUploader.uploadFromEntity` does. It never bypasses
+     * anything else: this is still only reached from a real share.
+     *
+     * Best-effort and silent on failure; nothing in the app reads the response
+     * yet. Only the first success per process actually hits the network.
+     */
+    suspend fun ensureCommunityAuthorAdopted(context: Context, force: Boolean = false) {
+        if (!force && !CommunityPrefs.uploadsEnabled(context)) return
+        val keyHash = CommunityIdentity.keyHash(context)
+        if (keyHash == adoptedAuthorKeyHash) return
+        val adopted = adoptCommunityAuthor(
+            keyHash = keyHash,
+            seedDisplayName = Nicknames.nickname(context),
+        ).isSuccess
+        if (adopted) adoptedAuthorKeyHash = keyHash
+    }
 
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {

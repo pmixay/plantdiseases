@@ -285,17 +285,6 @@
                     android:textSize="@dimen/text_body_sm"
                     tools:text="Последний раз: 5 мая" />
 
-                <TextView
-                    android:id="@+id/care_task_next_step"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xxs"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:visibility="gone"
-                    tools:text="Следующий шаг: 16 мая"
-                    tools:visibility="visible" />
-
             </LinearLayout>
 
             <com.google.android.material.button.MaterialButton

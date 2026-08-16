@@ -147,7 +147,64 @@ class CareQueueTest {
             toMs = now + 400L * CareSchedule.DAY_MS,
         )
 
+        // isNotEmpty matters as much as the cap: the cap used to be counted
+        // from occurrence 0, so a long-lived reminder could exhaust it before
+        // the window even started and return nothing at all.
+        assertThat(tasks).isNotEmpty()
         assertThat(tasks.size).isAtMost(CareQueue.MAX_OCCURRENCES_PER_REMINDER)
+    }
+
+    @Test
+    fun project_dailyReminderAnchoredFiveHundredDaysBack_stillLandsInTodaysWindow() {
+        // Regression: the occurrence walk started at 0 and stopped after 400
+        // steps, so a plant created 500 days ago with a daily reminder
+        // disappeared from the day view and the calendar entirely — while
+        // WorkManager kept firing its notification.
+        val now = cal(2026, Calendar.AUGUST, 15, 12, 0).timeInMillis
+        val reminder = watering(anchorMs = now - 500L * CareSchedule.DAY_MS, intervalDays = 1, hour = 9)
+        val dayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(now))
+
+        val tasks = CareQueue.project(
+            listOf(reminder),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            fromMs = dayStart,
+            toMs = dayStart + CareSchedule.DAY_MS,
+        )
+
+        assertThat(tasks).hasSize(1)
+        assertThat(CareQueue.epochDayOf(tasks[0].dueAt)).isEqualTo(CareQueue.epochDayOf(now))
+    }
+
+    @Test
+    fun project_lateCompletionMarkedOnBothDays_rendersTheCompletionDayDone() {
+        // Due Aug 10, ticked Aug 15. Completing writes a journal entry, which
+        // re-anchors the reminder onto the completion — so occurrence 0 now
+        // lands on Aug 15. CareRepository therefore emits a DoneEvent for the
+        // occurrence's original due day AND for the day it was actually done;
+        // with only the former the just-completed task re-appeared as pending
+        // (and overdue-red), costing a second tap and a second journal entry.
+        val originalDue = cal(2026, Calendar.AUGUST, 10, 9, 0).timeInMillis
+        val completedAt = cal(2026, Calendar.AUGUST, 15, 18, 0).timeInMillis
+
+        val tasks = CareQueue.project(
+            reminders = listOf(watering(anchorMs = completedAt, hour = 9)),
+            steps = emptyList(),
+            oneOffs = emptyList(),
+            doneEvents = listOf(
+                CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(originalDue)),
+                CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(completedAt)),
+            ),
+            fromMs = originalDue - CareSchedule.DAY_MS,
+            toMs = completedAt + CareSchedule.DAY_MS,
+        )
+
+        val onCompletionDay = tasks.filter {
+            CareQueue.epochDayOf(it.dueAt) == CareQueue.epochDayOf(completedAt)
+        }
+        assertThat(onCompletionDay).isNotEmpty()
+        assertThat(onCompletionDay.map { it.status }).containsExactly(CareQueue.CareTask.Status.DONE)
     }
 
     @Test
@@ -216,6 +273,29 @@ class CareQueueTest {
             val localMidnightAug15 = cal(2026, Calendar.AUGUST, 15).timeInMillis
             val expected = LocalDate.of(2026, 8, 15).toEpochDay()
             assertThat(CareQueue.epochDayOf(localMidnightAug15)).isEqualTo(expected)
+        } finally {
+            TimeZone.setDefault(original)
+        }
+    }
+
+    @Test
+    fun dayStartMs_isTheExactInverseOfEpochDayOf_eastAndWestOfUtc() {
+        // The calendar tap handler used to invert epochDayOf with a plain
+        // `* DAY_MS`, which reconstructs UTC midnight — a different 24-hour
+        // window in every zone but UTC, so the day view opened the wrong day
+        // and its "is this today?" check silently failed.
+        val original = TimeZone.getDefault()
+        try {
+            for (zone in listOf("America/New_York", "Europe/Moscow")) {
+                TimeZone.setDefault(TimeZone.getTimeZone(zone))
+                val epochDay = LocalDate.of(2026, 8, 20).toEpochDay()
+                val start = CareQueue.dayStartMs(epochDay)
+
+                assertThat(CareQueue.epochDayOf(start)).isEqualTo(epochDay)
+                val cal = Calendar.getInstance().apply { timeInMillis = start }
+                assertThat(cal.get(Calendar.HOUR_OF_DAY)).isEqualTo(0)
+                assertThat(cal.get(Calendar.DAY_OF_MONTH)).isEqualTo(20)
+            }
         } finally {
             TimeZone.setDefault(original)
         }

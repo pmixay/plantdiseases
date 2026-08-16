@@ -109,7 +109,6 @@ object AppModule {
     ): CareRepository = CareRepository(
         plantDao = database.plantDao(),
         roomDao = database.roomDao(),
-        scanDao = database.scanDao(),
         reminderDao = database.plantReminderDao(),
         reminderEventDao = database.plantReminderEventDao(),
         journalDao = database.plantJournalDao(),

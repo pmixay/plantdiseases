@@ -168,34 +168,37 @@ class SpeciesSectionsLayoutTest {
         }
     }
 
-    /** Regression: factRow's value column used to be WRAP_CONTENT with no
-     *  weight, so in a horizontal LinearLayout it measured first against
-     *  the FULL row width (the weighted label contributes nothing at that
-     *  stage) — a long sentence value then claimed the whole row and the
-     *  weight-1 label was left with little or nothing.
+    /** Regression, twice over. The value column was once WRAP_CONTENT with no
+     *  weight, so in a horizontal LinearLayout it measured first against the
+     *  FULL row width (the weighted label contributes nothing at that stage)
+     *  and a long sentence value starved the weight-1 label. The fix then
+     *  over-corrected to 0dp on both children, which splits the row by weight
+     *  alone regardless of content — a fixed, narrow label column that breaks
+     *  long RU labels mid-word beside a short value in dead space.
+     *
+     *  The settled contract is WRAP_CONTENT + a weight on both: each column
+     *  asks for what its content needs, and the weights only divide the
+     *  surplus, so neither side is starved and neither is over-served.
      *
      *  This asserts the LayoutParams directly rather than a measured width:
      *  Robolectric's default (non-@GraphicsMode) text layout doesn't measure
      *  real glyph widths, so a measured-width assertion here would likely
-     *  pass on the old broken code too and prove nothing. The params are
-     *  what actually changed and what actually matters — both columns must
-     *  be 0dp + weighted so neither can starve the other regardless of how
-     *  Robolectric happens to measure text. */
+     *  pass on the broken code too and prove nothing. */
     @Test
-    fun factRowLabelAndValueAreBothWeightedSoNeitherCanStarveTheOther() {
+    fun factRowLabelAndValueAreBothWrapContentAndWeighted() {
         val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
         val row = activity.factRow(R.drawable.ic_garden, "Концентрация", "some value") as ViewGroup
 
         val label = row.getChildAt(1).layoutParams as LinearLayout.LayoutParams
         val value = row.getChildAt(2).layoutParams as LinearLayout.LayoutParams
 
-        assertWithMessage("label column should be 0dp + weighted")
-            .that(label.width).isEqualTo(0)
+        assertWithMessage("label column should be WRAP_CONTENT — a 0dp base ignores content width")
+            .that(label.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
         assertWithMessage("label column should carry a weight")
             .that(label.weight).isGreaterThan(0f)
-        assertWithMessage("value column should be 0dp + weighted — WRAP_CONTENT lets a long value starve the label")
-            .that(value.width).isEqualTo(0)
-        assertWithMessage("value column should carry a weight")
+        assertWithMessage("value column should be WRAP_CONTENT — a 0dp base ignores content width")
+            .that(value.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
+        assertWithMessage("value column should carry a weight — unweighted, it starves the label")
             .that(value.weight).isGreaterThan(0f)
     }
 }

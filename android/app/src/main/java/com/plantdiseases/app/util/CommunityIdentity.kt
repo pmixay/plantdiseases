@@ -46,4 +46,21 @@ object CommunityIdentity {
         MessageDigest.getInstance("SHA-256")
             .digest(secretHex(context).toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+
+    /**
+     * Forget this device's forum identity: the next [keyHash] call mints a
+     * brand-new secret, so the device presents a different author key from
+     * then on. Called when the user leaves the community — otherwise
+     * "leaving" would leave the durable handle sitting on disk, ready to be
+     * re-adopted verbatim by the next community write.
+     *
+     * This is local only. The author row already registered under the OLD
+     * hash is orphaned, not deleted — there is no self-service delete
+     * endpoint yet, and privacy.html says so.
+     */
+    fun clear(context: Context) {
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().remove(KEY_SECRET_HEX).apply()
+    }
 }

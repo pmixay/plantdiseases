@@ -27,7 +27,6 @@ import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
 
@@ -78,15 +77,9 @@ class CareDayActivity : AppCompatActivity() {
         loadDay()
     }
 
-    private fun todayStartMs(): Long {
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        return cal.timeInMillis
-    }
+    /** Local midnight of today, built through the same helper the calendar
+     *  tap handler uses so both agree on where a day starts. */
+    private fun todayStartMs(): Long = CareQueue.dayStartMs(CareQueue.epochDayOf(System.currentTimeMillis()))
 
     private var lastDoneCount = 0
 
@@ -216,6 +209,13 @@ class CareDayActivity : AppCompatActivity() {
 
     private fun openTaskDetail(view: CareRepository.CareTaskView) {
         val intent = Intent(this, CareTaskActivity::class.java)
+        // Rows in the "done" section open the detail screen too — tell it so,
+        // otherwise the recurring branch offers a second "Done" tap that
+        // writes a duplicate journal entry and reminder event.
+        intent.putExtra(
+            CareTaskActivity.EXTRA_IS_DONE,
+            view.task.status == CareQueue.CareTask.Status.DONE,
+        )
         when (val id = view.task.id) {
             is CareQueue.CareTask.TaskId.Step -> {
                 intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "step")

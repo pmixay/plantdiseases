@@ -133,7 +133,7 @@ try:
         record_scan as community_record_scan,
     )
     from .community import (
-        record_view as community_record_view,
+        record_views as community_record_views,
     )
     from .community import (
         region_summary as community_region_summary,
@@ -304,7 +304,7 @@ except ImportError:
         record_scan as community_record_scan,
     )
     from community import (
-        record_view as community_record_view,
+        record_views as community_record_views,
     )
     from community import (
         region_summary as community_region_summary,
@@ -3823,22 +3823,22 @@ async def community_record_scan_view(payload: CommunityViewRequest):
     else's shared scan — one id via ``scan_id``, or up to 50 via
     ``scan_ids`` for feed-scroll impressions. Deduped per viewer
     server-side; a scan owner viewing their own scan and views of an
-    unknown scan never count, so this is safe to fire liberally."""
+    unknown scan never count, so this is safe to fire liberally.
+
+    The whole batch is resolved and written in one pass (one connection,
+    one lock acquisition) — see ``community.record_views``."""
     loop = asyncio.get_running_loop()
     ids = [s.strip() for s in (payload.scan_ids or []) if s and s.strip()]
     if payload.scan_id and payload.scan_id.strip():
         ids.append(payload.scan_id.strip())
+    # The declared cap is per-field; ``scan_id`` + a full ``scan_ids`` can
+    # exceed it, and a client may repeat an id across the two.
+    ids = list(dict.fromkeys(ids))[:50]
     uid = payload.user_pseudo_id.strip()
 
-    def _record_all() -> int:
-        counted = 0
-        for raw_id in ids:
-            sid = community_resolve_scan_token(raw_id)
-            if community_record_view(sid, uid):
-                counted += 1
-        return counted
-
-    counted = await loop.run_in_executor(None, _record_all)
+    counted = await loop.run_in_executor(
+        None, lambda: community_record_views(ids, uid),
+    )
     return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
 
 
@@ -3920,8 +3920,16 @@ async def community_scan_nearby(
 
     ``before`` pages the feed: pass the previous page's ``next_before`` to
     fetch older rows. The response's ``next_before`` is null once a page
-    comes back short — that's the end of the scope.
+    comes back short — that's the end of the scope. It is single-pass only:
+    combining it with ``disease`` or ``species`` is rejected with 422,
+    because those widen the query into several concatenated passes whose
+    concatenation has no single global ``created_at`` order to page on.
     """
+    if before is not None and ((disease or "").strip() or (species or "").strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="before cannot be combined with disease or species.",
+        )
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()

@@ -46,7 +46,10 @@ class GardenAttachController(
 
     fun showAddToGardenDialog(scan: ScanEntity) {
         activity.lifecycleScope.launch {
-            val plants = plantRepository.getPlants()
+            // Name + photo picker — getPlants() would run the full garden
+            // summary (journal, reminders, plans, health verdict) per plant
+            // and throw all of it away.
+            val plants = plantRepository.getPlantsForPicker()
             if (plants.isEmpty()) {
                 showCreatePlantForScanDialog(scan)
                 return@launch
@@ -65,22 +68,22 @@ class GardenAttachController(
                     setPadding(0, 0, 0, activity.dpx(12))
                 },
             )
-            plants.forEach { summary ->
+            plants.forEach { item ->
                 // Only pass a thumb loader when there's a real photo — sectionRow
                 // skips its own icon padding/tint whenever thumb is non-null (a
                 // photo needs neither), so a plant with no photo must get
                 // thumb = null and fall through to sectionRow's own tinted
                 // fallback icon rather than an untinted ic_garden that renders
                 // as a near-invisible white outline on the pale icon-circle bg.
-                val thumbSource = summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
+                val thumbSource = item.thumbnailSource
                 column.addView(
                     activity.sectionRow(
-                        title = summary.plant.name,
+                        title = item.name,
                         subtitle = null,
                         iconRes = R.drawable.ic_garden,
                         thumb = thumbSource?.let { source -> { iv: ImageView -> bindPlantThumb(iv, source) } },
                         onClick = {
-                            attachScanToPlant(scan, summary.plant.id)
+                            attachScanToPlant(scan, item.id)
                             dialog.dismiss()
                         },
                     ),

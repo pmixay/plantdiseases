@@ -51,6 +51,18 @@ class PlantMessagingService : FirebaseMessagingService() {
         // notify is quick and well within FCM's processing window.
         runBlocking {
             OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease, note, nickname)
+            // Advance the poll baseline, exactly as OpinionCheckWorker does after
+            // it notifies. Without this the next poll still sees
+            // opinionCount > lastSeen and records a SECOND notification-centre row
+            // for the same opinion (NotificationRepository.record is a bare
+            // @Insert with no dedupe key). The push payload carries no count, so
+            // an increment is the only option — and it self-heals, because the
+            // next poll rewrites the baseline to the scan's true opinionCount.
+            OpinionPrefs.setSeen(
+                applicationContext,
+                scanId,
+                OpinionPrefs.lastSeen(applicationContext, scanId) + 1,
+            )
         }
     }
 }

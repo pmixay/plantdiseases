@@ -33,7 +33,6 @@ import com.plantdiseases.app.ui.garden.care.CareDayActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.CareQueue
-import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.RoomPresets
@@ -215,8 +214,13 @@ class GardenFragment : Fragment() {
         if (onLunar && allSummaries.isNotEmpty()) refreshLunarAggregate()
     }
 
-    private fun applyPaneVisibility() {
-        binding.gardenRoomsPane.visibility = if (selectedPane == PANE_ROOMS) View.VISIBLE else View.GONE
+    /** Emptiness is a first-class input here, not just `selectedPane`: the
+     *  rooms pane is VISIBLE by default in XML and nothing else ever hides
+     *  it, so deleting the last plant used to leave the previous render's
+     *  room cards (and "+ Add room") stacked on top of the empty state. */
+    private fun applyPaneVisibility(animate: Boolean = false) {
+        binding.gardenRoomsPane.visibility =
+            if (selectedPane == PANE_ROOMS && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
         binding.gardenCalendarPane.visibility = if (selectedPane == PANE_CALENDAR) View.VISIBLE else View.GONE
         // Searching a month grid means nothing — the toggle and box only
         // apply to the Rooms pane.
@@ -224,7 +228,7 @@ class GardenFragment : Fragment() {
         if (selectedPane == PANE_CALENDAR) {
             binding.gardenSearchLayout.visibility = View.GONE
         } else {
-            renderRoomsPane(animate = false)
+            renderRoomsPane(animate)
         }
     }
 
@@ -277,11 +281,19 @@ class GardenFragment : Fragment() {
             View.GONE
         }
 
-        if (hasAnyPlant && selectedPane == PANE_ROOMS) renderRoomsPane(animate)
+        // Re-evaluated on every load, not only on a tab change — the pane's
+        // own visibility depends on whether any plant is left.
+        applyPaneVisibility(animate)
         registerOnboardingAnchors(!hasAnyPlant)
     }
 
-    private fun currentQuery(): String = binding.gardenSearch.text?.toString()?.trim().orEmpty()
+    /** The filter is subordinate to the visible control. `searchVisible` is
+     *  not persisted, but `EditText.getFreezesText()` is unconditionally
+     *  true, so after a recreate (theme/language change, process death) the
+     *  restored query text would otherwise keep filtering the rooms pane
+     *  with no search box in sight. */
+    private fun currentQuery(): String =
+        if (searchVisible) binding.gardenSearch.text?.toString()?.trim().orEmpty() else ""
 
     private fun registerOnboardingAnchors(empty: Boolean) {
         val host = activity as? MainActivity ?: return
@@ -304,9 +316,12 @@ class GardenFragment : Fragment() {
     // ─── Rooms pane ─────────────────────────────────────────────────────
 
     private fun renderRoomsPane(animate: Boolean) {
-        if (allSummaries.isEmpty()) return
         val container = binding.gardenRoomsContainer
+        // Clear BEFORE the empty early-return: leaving the previous render's
+        // cards attached also leaves registerOnboardingAnchors anchoring
+        // GARDEN_PLANTS onto a stale card.
         container.removeAllViews()
+        if (allSummaries.isEmpty()) return
         val query = currentQuery()
 
         val plantsByRoom: Map<Long?, List<PlantRepository.PlantSummary>> =
@@ -509,8 +524,28 @@ class GardenFragment : Fragment() {
 
     private fun loadCalendarPane() {
         ensureCalendarViewAttached()
-        loadMonth(calendarMonthCursor)
-        loadTodayCard()
+        lifecycleScope.launch {
+            val monthStart = monthStartOf(calendarMonthCursor)
+            val monthStartMs = monthStart.timeInMillis
+            val monthEndMs = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis
+            val nowMs = System.currentTimeMillis()
+            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
+            // One projection feeds both the grid and the Today card whenever
+            // the cursor month contains today — which is every initial open
+            // and every onResume. A chevron tap can leave the two windows
+            // disjoint, and deriving the card from the month queue there
+            // would silently blank it, so that case keeps its own read.
+            val monthTasks = careRepository.queue(monthStartMs, monthEndMs).map { it.task }
+            val summary = CareQueue.monthSummary(monthTasks, monthStartMs, monthEndMs, nowMs)
+            val todayTasks = if (todayStart in monthStartMs until monthEndMs) {
+                CareQueue.forDay(monthTasks, todayStart)
+            } else {
+                careRepository.day(todayStart).map { it.task }
+            }
+            if (_binding == null) return@launch
+            calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
+            renderTodayCard(todayStart, todayTasks)
+        }
         // Also refreshes the Lunar sub-pane if it's the one currently
         // selected — allSummaries may have changed (a plant added/removed)
         // since the last time this pane was shown.
@@ -520,7 +555,7 @@ class GardenFragment : Fragment() {
     private fun ensureCalendarViewAttached() {
         if (calendarView != null) return
         val view = CareCalendarView(requireContext()).apply {
-            onDaySelected = { epochDay -> openDay(epochDay * CareSchedule.DAY_MS) }
+            onDaySelected = { epochDay -> openDay(CareQueue.dayStartMs(epochDay)) }
             onMonthChanged = { next ->
                 calendarMonthCursor = next
                 loadMonth(next)
@@ -599,15 +634,18 @@ class GardenFragment : Fragment() {
         }
     }
 
+    /** First day of [monthCursor]'s month at LOCAL midnight, taken through
+     *  [CareQueue.dayStartMs] so the query window and the epoch-day buckets
+     *  the grid keys on are built by the same code. */
+    private fun monthStartOf(monthCursor: Calendar): Calendar =
+        (monthCursor.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            timeInMillis = CareQueue.dayStartMs(CareQueue.epochDayOf(timeInMillis))
+        }
+
     private fun loadMonth(monthCursor: Calendar) {
         lifecycleScope.launch {
-            val monthStart = (monthCursor.clone() as Calendar).apply {
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
+            val monthStart = monthStartOf(monthCursor)
             val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
             val summary = careRepository.month(monthStart.timeInMillis, monthEnd.timeInMillis, System.currentTimeMillis())
             if (_binding != null) {
@@ -616,28 +654,18 @@ class GardenFragment : Fragment() {
         }
     }
 
-    private fun loadTodayCard() {
-        lifecycleScope.launch {
-            val todayStart = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            val tasks = careRepository.day(todayStart)
-            val pendingCount = tasks.count { it.task.status == CareQueue.CareTask.Status.PENDING }
-            if (_binding == null) return@launch
-            val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(Date(todayStart))
-            binding.gardenTodayTitle.text = getString(R.string.calendar_today_prefix, dateLabel)
-            binding.gardenTodaySubtitle.text = if (pendingCount == 0) {
-                getString(R.string.calendar_all_caught_up)
-            } else {
-                resources.getQuantityString(R.plurals.care_tasks_count, pendingCount, pendingCount)
-            }
-            binding.gardenTodayCard.setOnClickListener {
-                Haptics.tick(requireContext())
-                openDay(todayStart)
-            }
+    private fun renderTodayCard(todayStart: Long, tasks: List<CareQueue.CareTask>) {
+        val pendingCount = tasks.count { it.status == CareQueue.CareTask.Status.PENDING }
+        val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(Date(todayStart))
+        binding.gardenTodayTitle.text = getString(R.string.calendar_today_prefix, dateLabel)
+        binding.gardenTodaySubtitle.text = if (pendingCount == 0) {
+            getString(R.string.calendar_all_caught_up)
+        } else {
+            resources.getQuantityString(R.plurals.care_tasks_count, pendingCount, pendingCount)
+        }
+        binding.gardenTodayCard.setOnClickListener {
+            Haptics.tick(requireContext())
+            openDay(todayStart)
         }
     }
 

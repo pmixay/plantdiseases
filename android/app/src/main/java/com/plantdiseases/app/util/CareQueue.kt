@@ -141,8 +141,24 @@ object CareQueue {
             .mapTo(mutableSetOf()) { it.epochDay }
 
         val results = mutableListOf<CareTask>()
-        var occurrence = 0
-        while (occurrence < MAX_OCCURRENCES_PER_REMINDER) {
+        val stepMs = intervalDays.toLong() * CareSchedule.DAY_MS
+        val first = occurrenceDueAt(reminder, 0)
+        // Jump straight to the first occurrence that can land in the window;
+        // step back one so a DST-shifted occurrence can't be skipped, and
+        // clamp for windows starting before occurrence 0 (CareDayActivity
+        // queries dayStart - 30d).
+        val startIndex = if (fromMs <= first) {
+            0
+        } else {
+            (((fromMs - first) / stepMs) - 1).coerceAtLeast(0L).toInt()
+        }
+        // The cap is relative to the WINDOW, not to occurrence 0: an absolute
+        // cap silently drops long-lived reminders (a plant created 500 days
+        // ago with a daily reminder exhausts it before the window starts and
+        // vanishes from the calendar entirely).
+        val maxIndex = startIndex + ((toMs - fromMs) / stepMs).toInt() + 2
+        var occurrence = startIndex
+        while (occurrence <= maxIndex && occurrence - startIndex < MAX_OCCURRENCES_PER_REMINDER) {
             val dueAt = occurrenceDueAt(reminder, occurrence)
             if (dueAt >= toMs) break
             if (dueAt >= fromMs) {
@@ -186,7 +202,8 @@ object CareQueue {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = ms }
         // Days since epoch in LOCAL time — two timestamps on the same wall-clock
         // day (regardless of hour) must map to the same bucket, and this must
-        // stay in lock-step with dayStartMs()/monthSummary() below.
+        // stay in lock-step with [dayStartMs] (its inverse) and monthSummary()
+        // below.
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
         cal.set(java.util.Calendar.MINUTE, 0)
         cal.set(java.util.Calendar.SECOND, 0)
@@ -202,6 +219,17 @@ object CareQueue {
         val offsetMs = cal.get(java.util.Calendar.ZONE_OFFSET) + cal.get(java.util.Calendar.DST_OFFSET)
         return (cal.timeInMillis + offsetMs) / CareSchedule.DAY_MS
     }
+
+    /** Inverse of [epochDayOf]: LOCAL midnight of [epochDay] as an absolute
+     *  instant. Plain `epochDay * DAY_MS` reconstructs UTC midnight, which
+     *  is a different day-window in every zone but UTC — the calendar tap
+     *  handler and the day view must not disagree about which day they
+     *  opened. */
+    fun dayStartMs(epochDay: Long): Long =
+        java.time.LocalDate.ofEpochDay(epochDay)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
 
     /** Tasks due on the calendar day containing [dayStartMs], sorted by
      *  time of day then title. */

@@ -685,7 +685,7 @@ class ScanRepositoryNetworkTest {
                 ),
         )
         val result = runBlocking {
-            repo.adoptCommunityAuthor("f".repeat(64), "Leafy Sage 7", "pseudo-1")
+            repo.adoptCommunityAuthor("f".repeat(64), "Leafy Sage 7")
         }
         assertThat(result.getOrNull()?.authorId).isEqualTo("au_abc123")
 
