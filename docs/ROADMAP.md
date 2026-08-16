@@ -721,6 +721,59 @@ gate, `_MAX_RECLASSIFY`, the detector swap (held), and any new capacity (DINOv3,
 ViT-B). The features are not the bottleneck; adding capacity does not address a
 transfer failure.
 
+#### 2.7.2 — MEASURED 2026-08-16 (combined run). Gate passed; verdict pending the benchmark.
+
+The run reached the end of §6, **passed the ship gate**, and persisted the full
+bundle. It then OOMed the kernel inside the Stage-1 audit — see the regression
+note below; the artefacts were already on disk.
+
+| population | 2.7.2 | note |
+|---|---|---|
+| **holdout** (n=535) | acc **0.9196**, disease macro-F1 **0.852** over 6 supported classes | the improvement metric. **No baseline** — this run creates it. |
+| `val_realworld` (n=2074) | disease macro-F1 **0.846**, healthy recall 0.897 | 2.7.1 was 0.870, 2.6.8 0.858 — but the holdout carved ~16 % out of the weak classes, so this is **not** a like-for-like comparison. |
+| `val_indomain` (n=965) | 0.869 | |
+| `not_a_plant` (val_realworld) | 0.950 | COCO/OpenImages/iNat hard negatives — a different population from the 0.9894 on supplement `eval_ok`. |
+| aqua (TFLite, val_realworld) | 0.790 | teacher→student drift 0.056 realworld / 0.112 in-domain |
+
+Calibration is healthy: INT8 ships (0.8460 vs fp32 0.8375, paired CI [−0.0007,
++0.0186], not significant), fitted **T=0.797**, MaxLogit `plant_only`
+**sep=+3.852** (positive — the fallback is alive), embedding OOD threshold
+0.6258 at 5 % plant FPR with NAP recall 0.896.
+
+**Two weak-class precision warnings**, both non-blocking and both real:
+`leaf_scorch` precision **0.733** (n_pred 90) and `nutrient_deficiency` **0.576**
+(n_pred 99 vs 65 actual). Nutrient is over-triggering badly and is the clearest
+in-domain target for the next data round.
+
+- [x] **Z1 — FALSIFIED on `val_realworld`, by its own pre-registered criterion.**
+      The sweep reproduced the *shape* of the gain (scorch recall 0.733 → 0.811
+      at bias +1.0) but not the free lunch: healthy recall fell 0.897 → 0.887
+      (**−1.0 pp, exactly the stated kill line**) and disease macro-F1 went
+      **down** 0.846 → 0.842. `leaf_spot` likewise: +3.0 pp on the class,
+      −1.3 pp on macro-F1 at +1.0. The +1.0 gain measured on the 585
+      never-trained supplement rows did **not** transfer to the ship-gate split.
+      `CLASS_LOGIT_BIAS` stays `{}`. This is the falsifier working as designed —
+      the sweep was built to be read on a split it was not chosen on, and it
+      killed its own proposal.
+
+**⚠ Regression I introduced, now fixed.** Making the Stage-1 audit unconditional
+re-exposed the OOM that `RUN_DETECTOR_CROP_EVAL = (TRAIN_MODE != 'combined')`
+had been avoiding: on a `combined` run §5's TensorFlow graph and TFLite
+interpreter are still resident alongside torch, two ONNX sessions and the
+student, and handing YOLO the whole ~2 k-path list makes it hold a batch of
+decoded frames plus each `Results.orig_img`. An OOM kills the process, so the
+`try/except` around the block could not catch it. The audit now frees
+`interp` / `_p_sess` / `student` / `_z_logits` first (all provably dead by then,
+including in §7) and streams the detector in RAM-adaptive chunks. It stays
+unconditional — the defect it measures is worth more than the convenience of
+skipping it.
+
+**Next:** score the bundle served against **2.6.8 + the NAP head veto** on the
+213-cluster benchmark, per arm, with paired bootstrap + McNemar. `val_realworld`
+cannot settle 2.7.2 vs 2.6.8 because the split changed underneath it; the
+benchmark and the holdout are the honest instruments, and the holdout has no
+baseline until the next run.
+
 #### Runbook
 
 The no-GPU work is finished; what is left is A100 time. **The notebook is the
@@ -852,7 +905,7 @@ Run-log checks, each proving one fix landed:
 | `per-split subject_domain:` → `val_realworld` | a real `garden_ornamental` count | **The ship gate can finally see the broadened domain.** |
 | `source floors OK: …` | present | §2 gate ran. If it *raised*, a source is down — read it, don't bypass. |
 | `MaxLogit OOD floor calibrated [plant_only]` | `sep=` **positive** | Fallback alive for the first time since v2.3. Still negative ⇒ flag it. |
-| `conformal: selected alpha=… lambda_reg=…` | **not** the last grid value | Search converged inside the grid. |
+| `conformal: selected alpha=… lambda_reg=…` | judge `mean_set_size`, **not** where alpha landed | ⚠ This row used to say "not the last grid value". That contradicts the notebook's own analysis and is wrong: alpha is a redundant parameterisation of q_hat, and for a model this confident the search runs to whatever rail exists. The `_coverage_floor` margin (target + 2·SE) makes a boundary alpha harmless — nothing can be selected without clearing coverage with room to spare. 2.7.2: alpha=0.60 (the rail), coverage **0.964**, set size **1.52** vs the 2.87 baseline at 0.988. That is the search working. |
 | `head early stop @ epN (best ep=M)` | `M` well above 3 | Best-epoch 3 was the corpus-loss symptom. |
 | `[final val_indomain] disease_macro_f1` | toward **0.86** | Headline regression undone. |
 
