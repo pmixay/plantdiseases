@@ -204,13 +204,56 @@ def test_head_veto_blocks_gate_when_classifier_is_sure_it_is_a_plant():
     ) is True
 
 
-def test_head_veto_is_off_by_default_and_when_the_floor_is_zero():
-    # No head probability supplied → historical two-of-two behaviour.
+def test_head_veto_needs_both_a_probability_and_a_positive_floor():
+    # NB: the veto is ON by default for a bundle (see the resolver test below);
+    # what is optional is the *pure function's* arguments. Callers that pass
+    # neither get the historical two-of-two behaviour unchanged.
     assert _route(det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
                   head_mass_floor=0.05) is True
     # Floor explicitly disabled (bundle sets ood.nap_head_mass_floor: null).
     assert _route(det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
                   head_nap=0.0, head_mass_floor=0.0) is True
+
+
+def test_pipeline_passes_the_head_probability_into_the_gate():
+    """The plumbing, not the decision. Every other test here calls
+    ``_decide_nap_route`` directly, so dropping ``head_nap=`` from
+    ``_should_route_to_nap`` would leave the veto permanently inert and the
+    whole suite green — a silent revert of the one measured improvement."""
+    from unittest.mock import patch
+
+    import pipeline as P
+
+    # conftest swaps ``pipeline.PlantDiseasePipeline`` for FakePipeline before
+    # the FastAPI lifespan runs and stashes the real class here.
+    Real = P._RealPipelineForTests
+
+    class _Stub:
+        CLASS_NAMES = _CLASS_NAMES
+
+    pipe = Real.__new__(Real)
+    pipe.classifier = _Stub()
+    pipe.embedding_ood = None
+    pipe.nap_max_logit_floor = 4.0
+    pipe.nap_max_logit_scope = "plant_only"
+    pipe._max_logit_key = "plant_max_logit"
+    pipe.nap_head_mass_floor = 0.05
+
+    classification = {
+        "class_name": "leaf_scorch_underwatering",
+        "all_probs": {c: 0.0 for c in _CLASS_NAMES} | {
+            "leaf_scorch_underwatering": 0.988, "not_a_plant": 0.0018},
+        "max_logit": 1.0, "plant_max_logit": 1.0,
+    }
+    with patch.object(P, "_decide_nap_route", wraps=P._decide_nap_route) as spy:
+        fired = pipe._should_route_to_nap(classification, det_conf=0.0,
+                                          require_classifier_signal=True)
+    kwargs = spy.call_args.kwargs
+    assert kwargs["head_nap"] == 0.0018, "the head's own NAP mass never reached the gate"
+    assert kwargs["head_mass_floor"] == 0.05
+    # And end-to-end through the real decision: detector says 0, MaxLogit says
+    # OOD, but the head is 98.8% sure it is scorch — so the gate must not fire.
+    assert fired is False
 
 
 def test_head_veto_also_applies_on_the_no_detection_path():

@@ -116,6 +116,17 @@ SPECIES_ARMS = {
 }
 DEFAULT_ARM = "unassigned"
 
+# Two-sided 95% Student-t critical values by degrees of freedom, for the
+# between-species interval in ``report()``. Inlined rather than importing scipy:
+# this is a dev tool and the runtime image deliberately carries neither scipy
+# nor sklearn. Falls back to the normal 1.96 above df=30, where they agree to
+# within 2%.
+_T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365,
+        8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160,
+        14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093,
+        20: 2.086, 21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060,
+        26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042}
+
 
 def brown_fraction(path: Path) -> float | None:
     """Fraction of SUBJECT pixels reading brown/dark rather than green.
@@ -207,6 +218,12 @@ def build(src: Path, out: Path, per_class_cap: int) -> None:
             # hibiscus dominated the first benchmark's scorch arm.
             take = uniq[: max(1, per_class_cap // max(len(by_species), 1))]
             browns = []
+            # Where this species' rows START. `rows[-len(take):]` looks
+            # equivalent and is not: at len(take)==0 it is `rows[-0:]` == the
+            # WHOLE list, and the arm assignment below would then overwrite
+            # every previously-written row with this species' arm. Reachable
+            # whenever a mapped condition dir yields no usable images.
+            start = len(rows)
             for f in take:
                 dst = out / cls / f"{species}__{f.stem}{f.suffix.lower()}"
                 shutil.copy(f, dst)
@@ -221,7 +238,7 @@ def build(src: Path, out: Path, per_class_cap: int) -> None:
             # so it is meaningless on the healthy arm — a healthy hibiscus leaf
             # is not "necrosis". Left blank there rather than mislabelled.
             arm = SPECIES_ARMS.get(species, DEFAULT_ARM) if cls != "healthy" else ""
-            for r in rows[-len(take):]:
+            for r in rows[start:]:
                 r["arm"] = arm
             print(f"  {species:28s} {len(files):5d} files -> {len(uniq):4d} clusters -> "
                   f"{len(take):4d} kept   brown_median="
@@ -315,11 +332,17 @@ def report(preds_path: Path, manifest: Path) -> None:
         if k < 2:
             continue
         sd = float(np.std(per_sp, ddof=1))
-        half = 1.96 * sd / np.sqrt(k)
+        # Student's t, not 1.96. At k=2 the two differ by 6.5x, and a file whose
+        # whole argument is "your interval is wider than you think" cannot
+        # afford to understate its own by that much.
+        crit = _T95.get(k - 1, 1.96)
+        half = crit * sd / np.sqrt(k)
         verdict = "OK for a domain claim" if half <= 0.15 else "TOO FEW SPECIES for a domain claim"
         print(f"{cname:38s} k={k:2d} species, between-species SD={sd:.3f} "
-              f"-> 95% CI +-{half:.3f}  {verdict}")
+              f"-> 95% CI +-{half:.3f} (t_{k-1}={crit:.3f})  {verdict}")
         if half > 0.15 and sd > 0:
+            # Solved with z, since the k that satisfies this is large enough for
+            # t -> z; quoting a t-based k here would be spurious precision.
             need = int(np.ceil((1.96 * sd / 0.15) ** 2))
             print(f"{'':38s} reaching +-0.15 needs k~{need} species at this SD")
 

@@ -196,9 +196,22 @@ def test_benchmark_contaminated_sources_are_denied():
     ]:
         with pytest.raises(RuntimeError, match="BENCHMARK CONTAMINATION"):
             allowed(slug, folder)
-    # And it must be wired into the fetch path, not merely defined.
-    assert "_assert_source_allowed(slug)" in c6
-    assert "_orn_map_folder(norm, slug)" in c6
+    # And it must sit at the CHOKE POINT, not in one fetcher. There are six
+    # `_kaggle_download(slug)` call sites; checking inside that function is what
+    # makes a contaminated slug unusable rather than merely un-wired.
+    dl = c6.index("def _kaggle_download(slug):")
+    body = c6[dl:c6.index("\ndef ", dl + 1)]
+    assert "_assert_source_allowed(slug)" in body, (
+        "the slug deny-list is not inside _kaggle_download — a contaminated slug "
+        "added to any other fetcher would be pulled with no check")
+    # Folder-level hits must EXCLUDE the folder, not kill the dataset: the rest
+    # of aditisalvi04 is clean supply and the error message says so itself.
+    fn = c6.index("def _orn_map_folder(")
+    fn_body = c6[fn:c6.index("\ndef ", fn + 1)]
+    assert "return None" in fn_body and "except RuntimeError" in fn_body
+    # …and matched against the relative path, so `Hibiscus/Scorch/` (leaf name
+    # 'scorch') cannot slip past a deny entry written as 'hibiscus_scorch'.
+    assert "rel_norm" in fn_body
 
 
 def test_class_logit_bias_folds_before_calibration():
