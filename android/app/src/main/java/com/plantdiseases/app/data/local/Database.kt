@@ -196,6 +196,11 @@ abstract class PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId")
     abstract suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
 
+    /** Whole table — for garden-wide reads that would otherwise call
+     *  [getForPlant] once per plant. */
+    @Query("SELECT * FROM plant_reminders")
+    abstract suspend fun getAll(): List<PlantReminderEntity>
+
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
     abstract suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
 
@@ -478,6 +483,12 @@ interface PlantJournalDao {
     @Query("SELECT * FROM plant_journal WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getEntriesForPlant(plantId: Long): List<PlantJournalEntity>
 
+    /** Whole table, newest first — for garden-wide reads that would otherwise
+     *  call [getEntriesForPlant] once per plant. Same ordering, so a caller
+     *  grouping by plant_id sees exactly what the per-plant query returns. */
+    @Query("SELECT * FROM plant_journal ORDER BY timestamp DESC")
+    suspend fun getAllEntries(): List<PlantJournalEntity>
+
     @Query("SELECT * FROM plant_journal WHERE id = :id")
     suspend fun getById(id: Long): PlantJournalEntity?
 
@@ -709,58 +720,6 @@ data class StepWithPlantId(
     @ColumnInfo(name = "plant_id") val plantId: Long,
 )
 
-// ─── One-off Care Task Entity ──────────────────────────────────────────────
-//
-// User-typed one-off tasks only. Recurring care lives in `plant_reminders`
-// and is projected forward by util/CareQueue.kt — it is NOT materialised
-// here. This table exists solely for tasks with nowhere else to live.
-
-@Entity(
-    tableName = "care_tasks",
-    foreignKeys = [
-        ForeignKey(
-            entity = PlantEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["plant_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ],
-    indices = [Index(value = ["plant_id"]), Index(value = ["due_at"])],
-)
-data class CareTaskEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    @ColumnInfo(name = "plant_id") val plantId: Long,
-    /** ReminderPresets key: watering / fertilize / check / mist / … / custom. */
-    @ColumnInfo(name = "type") val type: String,
-    @ColumnInfo(name = "title") val title: String,
-    @ColumnInfo(name = "note") val note: String? = null,
-    @ColumnInfo(name = "due_at") val dueAt: Long,
-    @ColumnInfo(name = "status") val status: String = "pending",
-    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
-)
-
-@Dao
-interface CareTaskDao {
-    @Query("SELECT * FROM care_tasks WHERE plant_id = :plantId ORDER BY due_at ASC")
-    suspend fun getForPlant(plantId: Long): List<CareTaskEntity>
-
-    @Query("SELECT * FROM care_tasks WHERE id = :id")
-    suspend fun getById(id: Long): CareTaskEntity?
-
-    @Query("SELECT * FROM care_tasks WHERE due_at >= :from AND due_at < :to ORDER BY due_at ASC")
-    suspend fun inRange(from: Long, to: Long): List<CareTaskEntity>
-
-    @Insert
-    suspend fun insert(task: CareTaskEntity): Long
-
-    @Update
-    suspend fun update(task: CareTaskEntity)
-
-    @Query("DELETE FROM care_tasks WHERE id = :id")
-    suspend fun deleteById(id: Long)
-}
-
 // ─── Notification centre ─────────────────────────────────────────────
 //
 // One row per notification the app has ever surfaced (community replies,
@@ -820,7 +779,6 @@ interface NotificationDao {
         RoomEntity::class,
         TreatmentPlanEntity::class,
         TreatmentStepEntity::class,
-        CareTaskEntity::class,
         NotificationEntity::class,
     ],
     // Every version step from 1 has a hand-written migration registered
@@ -843,7 +801,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun roomDao(): RoomDao
     abstract fun treatmentPlanDao(): TreatmentPlanDao
     abstract fun treatmentStepDao(): TreatmentStepDao
-    abstract fun careTaskDao(): CareTaskDao
     abstract fun notificationDao(): NotificationDao
 
     companion object {
@@ -945,8 +902,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** Rooms become first-class rows, and treatment plans/steps + one-off
-         *  tasks get storage. Entirely additive — three CREATE TABLEs and one
+        /** Rooms become first-class rows and treatment plans/steps get
+         *  storage. Entirely additive — three CREATE TABLEs and one
          *  ADD COLUMN, then a backfill that turns each trimmed, case-insensitively
          *  distinct `plants.room` value into a `rooms` row and points `room_id` at it.
          *  No table is rebuilt, so no existing garden, scan, journal or
@@ -1030,30 +987,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS `index_treatment_steps_plan_id_step_index` " +
                         "ON `treatment_steps` (`plan_id`, `step_index`)"
-                )
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `care_tasks` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `plant_id` INTEGER NOT NULL,
-                        `type` TEXT NOT NULL,
-                        `title` TEXT NOT NULL,
-                        `note` TEXT,
-                        `due_at` INTEGER NOT NULL,
-                        `status` TEXT NOT NULL DEFAULT 'pending',
-                        `done_at` INTEGER,
-                        `created_at` INTEGER NOT NULL,
-                        FOREIGN KEY(`plant_id`) REFERENCES `plants`(`id`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_plant_id` ON `care_tasks` (`plant_id`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_due_at` ON `care_tasks` (`due_at`)"
                 )
 
                 db.execSQL("ALTER TABLE `plants` ADD COLUMN `room_id` INTEGER")

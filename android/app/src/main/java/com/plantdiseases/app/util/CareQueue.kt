@@ -1,8 +1,8 @@
 package com.plantdiseases.app.util
 
 /**
- * Aggregates recurring reminders, treatment-plan steps and one-off tasks
- * into one dated queue — the "Today" care hub ROADMAP §Garden refactor
+ * Aggregates recurring reminders and treatment-plan steps into one dated
+ * queue — the "Today" care hub ROADMAP §Garden refactor
  * describes. Pure Kotlin: no Room entities, no Android imports. The
  * repository layer (CareRepository) maps DAO rows into the *Input types
  * below and back out again; this object only does the projection math,
@@ -39,15 +39,6 @@ object CareQueue {
         val stepCount: Int,
     )
 
-    data class OneOffInput(
-        val taskId: Long,
-        val plantId: Long,
-        val type: String,
-        val title: String,
-        val dueAtMs: Long,
-        val status: String, // "pending" | "done"
-    )
-
     /** A completed occurrence of a recurring reminder, identified by the
      *  calendar day (in the device's default time zone) it was done on —
      *  recurring reminders have no row of their own, so "done" is recorded
@@ -69,7 +60,6 @@ object CareQueue {
         sealed interface TaskId {
             data class Recurring(val reminderId: Long, val epochDay: Long) : TaskId
             data class Step(val stepId: Long) : TaskId
-            data class OneOff(val taskId: Long) : TaskId
         }
     }
 
@@ -82,7 +72,6 @@ object CareQueue {
     fun project(
         reminders: List<ReminderInput>,
         steps: List<StepInput>,
-        oneOffs: List<OneOffInput>,
         doneEvents: List<DoneEvent>,
         fromMs: Long,
         toMs: Long,
@@ -105,18 +94,6 @@ object CareQueue {
                 status = statusOf(step.status),
                 stepIndex = step.stepIndex,
                 stepCount = step.stepCount,
-            )
-        }
-
-        for (oneOff in oneOffs) {
-            if (oneOff.dueAtMs < fromMs || oneOff.dueAtMs >= toMs) continue
-            tasks += CareTask(
-                id = CareTask.TaskId.OneOff(oneOff.taskId),
-                plantId = oneOff.plantId,
-                type = oneOff.type,
-                title = oneOff.title,
-                dueAt = oneOff.dueAtMs,
-                status = statusOf(oneOff.status),
             )
         }
 

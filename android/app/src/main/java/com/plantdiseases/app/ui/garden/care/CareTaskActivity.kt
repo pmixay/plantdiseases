@@ -76,7 +76,6 @@ class CareTaskActivity : AppCompatActivity() {
                     intent.getLongExtra(EXTRA_REMINDER_ID, -1L),
                     intent.getLongExtra(EXTRA_DUE_AT, System.currentTimeMillis()),
                 )
-                "oneoff" -> renderOneOff(intent.getLongExtra(EXTRA_ONEOFF_ID, -1L))
                 else -> finish()
             }
         }
@@ -184,46 +183,6 @@ class CareTaskActivity : AppCompatActivity() {
         // occurrence is already done (the other two branches read step /
         // task status directly).
         binding.careTaskDoneButton.isEnabled = !intent.getBooleanExtra(EXTRA_IS_DONE, false)
-    }
-
-    private suspend fun renderOneOff(taskId: Long) {
-        val task = careRepository.getOneOff(taskId) ?: run {
-            finish()
-            return
-        }
-        val plant = plantRepository.getPlant(task.plantId) ?: run {
-            finish()
-            return
-        }
-
-        binding.careTaskTypeLabel.text = task.title
-        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(task.dueAt)
-        bindPlantChip(plant.name, plant.coverPhotoUri)
-        binding.careTaskPlantStep.visibility = View.GONE
-        bindTextSection(binding.careTaskDescriptionSection, binding.careTaskDescription, task.note)
-        binding.careTaskBulletsSection.visibility = View.GONE
-        binding.careTaskRecommendationsSection.visibility = View.GONE
-        binding.careTaskProductsSection.visibility = View.GONE
-        binding.careTaskHistorySection.visibility = View.GONE
-        binding.careTaskDoneButton.isEnabled = task.status != "done"
-
-        pendingComplete = {
-            careRepository.complete(
-                view = CareRepository.CareTaskView(
-                    task = com.plantdiseases.app.util.CareQueue.CareTask(
-                        id = com.plantdiseases.app.util.CareQueue.CareTask.TaskId.OneOff(taskId),
-                        plantId = task.plantId,
-                        type = task.type,
-                        title = task.title,
-                        dueAt = task.dueAt,
-                        status = com.plantdiseases.app.util.CareQueue.CareTask.Status.PENDING,
-                    ),
-                    plantName = plant.name,
-                    roomName = null,
-                    thumbnailSource = plant.coverPhotoUri,
-                ),
-            )
-        }
     }
 
     private fun bindPlantChip(name: String, thumbnailSource: String?) {
@@ -406,7 +365,6 @@ class CareTaskActivity : AppCompatActivity() {
         const val EXTRA_STEP_ID = "extra_step_id"
         const val EXTRA_REMINDER_ID = "extra_reminder_id"
         const val EXTRA_DUE_AT = "extra_due_at"
-        const val EXTRA_ONEOFF_ID = "extra_oneoff_id"
 
         /** Recurring occurrences carry their done-state in the queue, not in a
          *  row this screen can re-read — the launcher passes it through. */

@@ -114,7 +114,6 @@ object AppModule {
         journalDao = database.plantJournalDao(),
         treatmentPlanDao = database.treatmentPlanDao(),
         treatmentStepDao = database.treatmentStepDao(),
-        careTaskDao = database.careTaskDao(),
         plantRepository = plantRepository,
     )
 

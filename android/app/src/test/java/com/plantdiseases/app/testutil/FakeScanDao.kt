@@ -1,5 +1,6 @@
 package com.plantdiseases.app.testutil
 
+import com.plantdiseases.app.data.local.PlantThumb
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 
@@ -36,6 +37,15 @@ class FakeScanDao : ScanDao {
 
     override suspend fun getScansForPlant(plantId: Long): List<ScanEntity> =
         items.filter { it.plantId == plantId }.sortedByDescending { it.timestamp }
+
+    /** Mirrors the real `GROUP BY plant_id` projection: one row per requested
+     *  plant that actually has a scan, carrying its newest scan's image_path. */
+    override suspend fun latestImageByPlant(plantIds: List<Long>): List<PlantThumb> =
+        items.filter { it.plantId in plantIds }
+            .groupBy { it.plantId }
+            .mapNotNull { (plantId, scans) ->
+                plantId?.let { PlantThumb(it, scans.maxByOrNull { s -> s.timestamp }?.imagePath) }
+            }
 
     override suspend fun insert(scan: ScanEntity): Long {
         val withId = scan.copy(id = nextId++)

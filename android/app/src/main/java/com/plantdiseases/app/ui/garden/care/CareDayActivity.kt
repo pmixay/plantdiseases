@@ -158,8 +158,8 @@ class CareDayActivity : AppCompatActivity() {
         // CareRepository folds a missing custom reminder label into the raw
         // type key (title == type) before this screen ever sees it — resolve
         // that specific case to a localized preset label. A real custom
-        // label, a one-off's typed title, or a treatment step's own text all
-        // differ from the bare type key, so they render as-is.
+        // label or a treatment step's own text differs from the bare type
+        // key, so those render as-is.
         row.careTaskTitle.text = when {
             view.task.type == "treatment" -> view.task.title
             view.task.title == view.task.type -> getString(ReminderPresets.fallbackLabelRes(view.task.type))
@@ -225,10 +225,6 @@ class CareDayActivity : AppCompatActivity() {
                 intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "recurring")
                 intent.putExtra(CareTaskActivity.EXTRA_REMINDER_ID, id.reminderId)
                 intent.putExtra(CareTaskActivity.EXTRA_DUE_AT, view.task.dueAt)
-            }
-            is CareQueue.CareTask.TaskId.OneOff -> {
-                intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "oneoff")
-                intent.putExtra(CareTaskActivity.EXTRA_ONEOFF_ID, id.taskId)
             }
         }
         startActivity(intent)

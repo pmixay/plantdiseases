@@ -29,14 +29,33 @@ class PlantRepository(
     private val roomDao: RoomDao,
     private val treatmentPlanDao: TreatmentPlanDao,
 ) {
+    /** Every plant with the garden list's decorations.
+     *
+     *  This used to issue four queries **per plant** — scans, journal,
+     *  reminders, active plan — on the app's hottest screen, plus a fifth
+     *  inside [getPlantHealth]. It is now four table-wide reads grouped in
+     *  memory, so the cost is flat in garden size. `getAllScans`/`getAllEntries`
+     *  keep the `ORDER BY timestamp DESC` of the per-plant queries they
+     *  replace, and `groupBy` preserves encounter order, so the
+     *  `firstOrNull()`/`maxByOrNull()` below still see exactly what they did.
+     *
+     *  The one query still made per plant is the adherence read inside
+     *  [getPlantHealth], and only for plants with an active treatment plan —
+     *  usually none. That one deliberately stays per-plant: it is
+     *  `recentForPlant(limit = 50)`, and a batched `IN (…)` would apply that
+     *  50-row cap across the whole garden rather than per plant, silently
+     *  truncating the window for every plant but the busiest. */
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
         val roomNamesById = roomDao.getAll().associate { it.id to it.name }
         val nowMs = System.currentTimeMillis()
+        val scansByPlant = scanDao.getAllScans().groupBy { it.plantId }
+        val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
+        val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
+        val plantIdsUnderTreatment = treatmentPlanDao.getAllActive().mapTo(mutableSetOf()) { it.plantId }
         plantDao.getAllPlants().map { plant ->
-            val scans = scanDao.getScansForPlant(plant.id)
-            val journal = journalDao.getEntriesForPlant(plant.id)
-            val reminders = reminderDao.getForPlant(plant.id)
-            val activePlan = treatmentPlanDao.getActiveForPlant(plant.id)
+            val scans = scansByPlant[plant.id].orEmpty()
+            val journal = journalByPlant[plant.id].orEmpty()
+            val reminders = remindersByPlant[plant.id].orEmpty()
             PlantSummary(
                 plant = plant,
                 scanCount = scans.size,
@@ -44,7 +63,7 @@ class PlantRepository(
                 lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                health = getPlantHealth(plant.id, scans, activePlan != null, nowMs),
+                health = getPlantHealth(plant.id, scans, plant.id in plantIdsUnderTreatment, nowMs),
             )
         }
     }

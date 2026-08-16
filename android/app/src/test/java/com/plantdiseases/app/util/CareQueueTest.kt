@@ -49,7 +49,6 @@ class CareQueueTest {
         val tasks = CareQueue.project(
             reminders = listOf(reminder),
             steps = emptyList(),
-            oneOffs = emptyList(),
             doneEvents = emptyList(),
             fromMs = now - 11L * CareSchedule.DAY_MS,
             toMs = now + 5L * CareSchedule.DAY_MS,
@@ -82,13 +81,11 @@ class CareQueueTest {
             listOf(watering(staleAnchor)),
             emptyList(),
             emptyList(),
-            emptyList(),
             window.first,
             window.second,
         )
         val after = CareQueue.project(
             listOf(watering(freshAnchor)),
-            emptyList(),
             emptyList(),
             emptyList(),
             window.first,
@@ -112,7 +109,6 @@ class CareQueueTest {
         val tasks = CareQueue.project(
             reminders = listOf(reminder),
             steps = emptyList(),
-            oneOffs = emptyList(),
             doneEvents = listOf(CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = todayEpochDay)),
             fromMs = now - 1L * CareSchedule.DAY_MS,
             toMs = now + 1L * CareSchedule.DAY_MS,
@@ -142,7 +138,6 @@ class CareQueueTest {
             listOf(reminder),
             emptyList(),
             emptyList(),
-            emptyList(),
             fromMs = now - 400L * CareSchedule.DAY_MS,
             toMs = now + 400L * CareSchedule.DAY_MS,
         )
@@ -168,7 +163,6 @@ class CareQueueTest {
             listOf(reminder),
             emptyList(),
             emptyList(),
-            emptyList(),
             fromMs = dayStart,
             toMs = dayStart + CareSchedule.DAY_MS,
         )
@@ -191,7 +185,6 @@ class CareQueueTest {
         val tasks = CareQueue.project(
             reminders = listOf(watering(anchorMs = completedAt, hour = 9)),
             steps = emptyList(),
-            oneOffs = emptyList(),
             doneEvents = listOf(
                 CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(originalDue)),
                 CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(completedAt)),
@@ -214,7 +207,6 @@ class CareQueueTest {
             emptyList(),
             emptyList(),
             emptyList(),
-            emptyList(),
             now,
             now + CareSchedule.DAY_MS,
         )
@@ -227,7 +219,6 @@ class CareQueueTest {
         val disabled = watering(anchorMs = now - 100L * CareSchedule.DAY_MS).copy(enabled = false)
         val tasks = CareQueue.project(
             listOf(disabled),
-            emptyList(),
             emptyList(),
             emptyList(),
             now - 30L * CareSchedule.DAY_MS,
@@ -243,7 +234,7 @@ class CareQueueTest {
         val lastDayLate = cal(2026, Calendar.AUGUST, 31, 23, 59).timeInMillis
 
         val task = CareQueue.CareTask(
-            id = CareQueue.CareTask.TaskId.OneOff(1),
+            id = CareQueue.CareTask.TaskId.Step(1),
             plantId = 1,
             type = "check",
             title = "Check",
@@ -305,7 +296,7 @@ class CareQueueTest {
     fun forDay_sortsByTimeOfDayThenTitle() {
         val dayStart = cal(2026, Calendar.AUGUST, 15, 0, 0).timeInMillis
         val late = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(1),
+            CareQueue.CareTask.TaskId.Step(1),
             1,
             "check",
             "Zed",
@@ -313,7 +304,7 @@ class CareQueueTest {
             CareQueue.CareTask.Status.PENDING,
         )
         val early = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(2),
+            CareQueue.CareTask.TaskId.Step(2),
             1,
             "watering",
             "Alpha",
@@ -321,7 +312,7 @@ class CareQueueTest {
             CareQueue.CareTask.Status.PENDING,
         )
         val outside = CareQueue.CareTask(
-            CareQueue.CareTask.TaskId.OneOff(3),
+            CareQueue.CareTask.TaskId.Step(3),
             1,
             "watering",
             "Tomorrow",

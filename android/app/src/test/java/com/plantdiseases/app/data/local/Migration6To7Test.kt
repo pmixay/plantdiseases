@@ -299,7 +299,6 @@ class Migration6To7Test {
             // Added by 6→7 / 7→8, and empty on an upgrade.
             assertThat(count(db, "treatment_plans")).isEqualTo(0)
             assertThat(count(db, "treatment_steps")).isEqualTo(0)
-            assertThat(count(db, "care_tasks")).isEqualTo(0)
             assertThat(count(db, "notifications")).isEqualTo(0)
         } finally {
             db.close()

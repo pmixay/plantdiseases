@@ -1,7 +1,5 @@
 package com.plantdiseases.app.data.repository
 
-import com.plantdiseases.app.data.local.CareTaskDao
-import com.plantdiseases.app.data.local.CareTaskEntity
 import com.plantdiseases.app.data.local.PlantDao
 import com.plantdiseases.app.data.local.PlantJournalDao
 import com.plantdiseases.app.data.local.PlantReminderDao
@@ -20,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Aggregation layer over [CareQueue]: loads reminders/steps/one-offs/journal
+ * Aggregation layer over [CareQueue]: loads reminders/treatment steps/journal
  * from Room, decorates the pure projection with what the UI needs (plant
  * name, room, thumbnail), and owns the write side (completing a task,
  * starting a treatment plan). PlantRepository stays the source of truth for
@@ -34,7 +32,6 @@ class CareRepository(
     private val journalDao: PlantJournalDao,
     private val treatmentPlanDao: TreatmentPlanDao,
     private val treatmentStepDao: TreatmentStepDao,
-    private val careTaskDao: CareTaskDao,
     private val plantRepository: PlantRepository,
 ) {
     data class CareTaskView(
@@ -59,7 +56,6 @@ class CareRepository(
     sealed interface CompletionRecord {
         data class RecurringDone(val eventId: Long, val journalEntryId: Long?) : CompletionRecord
         data class StepDone(val stepId: Long, val autoCompletedPlanId: Long?) : CompletionRecord
-        data class OneOffDone(val taskId: Long) : CompletionRecord
     }
 
     suspend fun queue(fromMs: Long, toMs: Long): List<CareTaskView> = withContext(Dispatchers.IO) {
@@ -146,18 +142,7 @@ class CareRepository(
             )
         }
 
-        val oneOffInputs = careTaskDao.inRange(fromMs, toMs).map { task ->
-            CareQueue.OneOffInput(
-                taskId = task.id,
-                plantId = task.plantId,
-                type = task.type,
-                title = task.title,
-                dueAtMs = task.dueAt,
-                status = task.status,
-            )
-        }
-
-        val tasks = CareQueue.project(reminderInputs, stepInputs, oneOffInputs, doneEvents, fromMs, toMs)
+        val tasks = CareQueue.project(reminderInputs, stepInputs, doneEvents, fromMs, toMs)
         return tasks.mapNotNull { task ->
             val plant = plantsById[task.plantId] ?: return@mapNotNull null
             CareTaskView(
@@ -175,7 +160,6 @@ class CareRepository(
         when (val id = view.task.id) {
             is CareQueue.CareTask.TaskId.Recurring -> completeRecurring(id, view.task)
             is CareQueue.CareTask.TaskId.Step -> completeStep(id)
-            is CareQueue.CareTask.TaskId.OneOff -> completeOneOff(id)
         }
     }
 
@@ -192,10 +176,6 @@ class CareRepository(
                     val plan = treatmentPlanDao.getById(planId) ?: return@let
                     treatmentPlanDao.update(plan.copy(status = "active", completedAt = null))
                 }
-            }
-            is CompletionRecord.OneOffDone -> {
-                val task = careTaskDao.getById(record.taskId) ?: return@withContext
-                careTaskDao.update(task.copy(status = "pending", doneAt = null))
             }
         }
     }
@@ -275,34 +255,6 @@ class CareRepository(
         return CompletionRecord.StepDone(step.id, autoCompletedPlanId)
     }
 
-    private suspend fun completeOneOff(id: CareQueue.CareTask.TaskId.OneOff): CompletionRecord.OneOffDone {
-        val task = careTaskDao.getById(id.taskId)
-        if (task != null) {
-            careTaskDao.update(task.copy(status = "done", doneAt = System.currentTimeMillis()))
-        }
-        return CompletionRecord.OneOffDone(id.taskId)
-    }
-
-    // ─── One-off tasks ───────────────────────────────────────────────────
-
-    suspend fun addOneOff(
-        plantId: Long,
-        type: String,
-        title: String,
-        note: String?,
-        dueAt: Long,
-    ): Long = withContext(Dispatchers.IO) {
-        careTaskDao.insert(
-            CareTaskEntity(
-                plantId = plantId,
-                type = type,
-                title = title.trim(),
-                note = note?.trim()?.takeIf { it.isNotEmpty() },
-                dueAt = dueAt,
-            )
-        )
-    }
-
     // ─── Treatment plans ─────────────────────────────────────────────────
 
     /** At most one active plan per plant — any existing active plan for
@@ -378,10 +330,6 @@ class CareRepository(
         val step = treatmentStepDao.getById(stepId) ?: return@withContext null
         val plan = treatmentPlanDao.getById(step.planId) ?: return@withContext null
         StepWithPlan(step, plan)
-    }
-
-    suspend fun getOneOff(taskId: Long): CareTaskEntity? = withContext(Dispatchers.IO) {
-        careTaskDao.getById(taskId)
     }
 
     suspend fun getReminder(reminderId: Long) = withContext(Dispatchers.IO) {
