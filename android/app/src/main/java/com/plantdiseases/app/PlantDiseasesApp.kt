@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -237,9 +236,12 @@ class PlantDiseasesApp : Application() {
      *  Without server push (FCM) this poll is the only way a reply reaches a
      *  closed app, so the interval is kept short with a flex window. UPDATE (not
      *  KEEP) so installs created under the old 6h schedule adopt the new one.
-     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
+     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker.
+     *  Scheduled regardless of the opinion-notifications preference: a user
+     *  who opted out of the popup still gets the reply recorded in the
+     *  notification centre, and this poll is the only way it's discovered on
+     *  a device without FCM configured. */
     fun scheduleOpinionChecks() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >(
@@ -287,9 +289,9 @@ class PlantDiseasesApp : Application() {
      *  the foreground (and right after the user asks for a second opinion) so a
      *  reply that landed while the app was closed surfaces promptly instead of
      *  waiting for the next periodic tick. Expedited, degrading to a normal job
-     *  if the expedited quota is spent. */
+     *  if the expedited quota is spent. Runs regardless of the
+     *  opinion-notifications preference — see scheduleOpinionChecks. */
     fun checkOpinionsNow() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >()

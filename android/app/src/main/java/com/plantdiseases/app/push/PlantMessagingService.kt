@@ -41,7 +41,9 @@ class PlantMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         if (data["type"] != "opinion") return
-        if (!OpinionPrefs.notificationsEnabled(applicationContext)) return
+        // No notifications-enabled gate here: OpinionNotifier records this to
+        // the notification centre regardless, and decides on its own whether
+        // to also interrupt the user with a system notification.
         val scanId = data["scan_id"].orEmpty()
         if (scanId.isBlank()) return
         val disease = data["disease"].orEmpty()

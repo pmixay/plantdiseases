@@ -557,6 +557,17 @@ interface TreatmentPlanDao {
     @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId AND status = 'active' LIMIT 1")
     suspend fun getActiveForPlant(plantId: Long): TreatmentPlanEntity?
 
+    /** Any plan for this scan+disease, active or not — the existence check
+     *  that guards against re-creating a plan the user already completed
+     *  or abandoned. [getActiveForPlant] can't answer this: once a plan
+     *  leaves "active" it stops matching, so a completed plan looked
+     *  indistinguishable from no plan at all. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM treatment_plans " +
+            "WHERE plant_id = :plantId AND scan_id = :scanId AND disease_key = :diseaseKey)"
+    )
+    suspend fun existsForScanAndDisease(plantId: Long, scanId: Long?, diseaseKey: String): Boolean
+
     @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId ORDER BY started_at DESC")
     suspend fun getAllForPlant(plantId: Long): List<TreatmentPlanEntity>
 
@@ -1026,10 +1037,12 @@ abstract class AppDatabase : RoomDatabase() {
 
         /** Adds the notification centre. Entirely additive — one CREATE TABLE
          *  IF NOT EXISTS + one index, no existing table touched, no row
-         *  copied. Matches NotificationEntity's schema exactly; if this ever
-         *  drifts from the entity, Room's fallbackToDestructiveMigration
-         *  below silently wipes the whole database instead of throwing —
-         *  see the builder comment. */
+         *  copied. Matches NotificationEntity's schema exactly (Migration7To8Test
+         *  pins this). If it ever drifts, fallbackToDestructiveMigration below
+         *  does NOT save you: that fallback only covers a MISSING migration
+         *  path, and this one is registered, so Room instead validates the
+         *  drifted schema after running it and throws IllegalStateException —
+         *  a hard crash on launch for every upgrading user, not a silent wipe. */
         val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(

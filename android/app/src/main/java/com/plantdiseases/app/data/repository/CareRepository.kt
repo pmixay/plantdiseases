@@ -304,6 +304,15 @@ class CareRepository(
         PlanWithSteps(plan, treatmentStepDao.getForPlan(plan.id))
     }
 
+    /** Has a plan already been started for this scan+disease, regardless of
+     *  whether it's still active? Guards DetailExtraCardsController against
+     *  re-creating a plan the user already finished or abandoned every time
+     *  the care-plan card reloads. */
+    suspend fun hasPlanForScan(plantId: Long, scanId: Long?, diseaseKey: String): Boolean =
+        withContext(Dispatchers.IO) {
+            treatmentPlanDao.existsForScanAndDisease(plantId, scanId, diseaseKey)
+        }
+
     // ─── Single-row lookups (CareTaskActivity resolving one task by id) ───
 
     data class StepWithPlan(val step: TreatmentStepEntity, val plan: TreatmentPlanEntity)

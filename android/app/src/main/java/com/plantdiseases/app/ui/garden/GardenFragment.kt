@@ -33,7 +33,6 @@ import com.plantdiseases.app.ui.garden.care.CareDayActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.CareQueue
-import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.RoomPresets
@@ -520,7 +519,7 @@ class GardenFragment : Fragment() {
     private fun ensureCalendarViewAttached() {
         if (calendarView != null) return
         val view = CareCalendarView(requireContext()).apply {
-            onDaySelected = { epochDay -> openDay(epochDay * CareSchedule.DAY_MS) }
+            onDaySelected = { epochDay -> openDay(CareQueue.dayStartMs(epochDay)) }
             onMonthChanged = { next ->
                 calendarMonthCursor = next
                 loadMonth(next)

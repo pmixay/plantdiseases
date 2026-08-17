@@ -222,6 +222,26 @@ class CareQueueTest {
     }
 
     @Test
+    fun dayStartMs_isTheExactInverseOfEpochDayOf() {
+        // Regression: GardenFragment used to reconstruct a tapped calendar
+        // cell's timestamp as `epochDay * DAY_MS`, which never removes the
+        // zone+DST offset epochDayOf() adds before dividing. In any zone
+        // ahead of UTC that opens the day view at the offset hour instead
+        // of local midnight (03:00 rather than 00:00 in Moscow, UTC+3),
+        // silently dropping tasks due before 3am and pulling in tomorrow's.
+        // dayStartMs() must be the exact inverse, not just "close".
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Europe/Moscow"))
+            val localMidnightAug15 = cal(2026, Calendar.AUGUST, 15).timeInMillis
+            val epochDay = CareQueue.epochDayOf(localMidnightAug15)
+            assertThat(CareQueue.dayStartMs(epochDay)).isEqualTo(localMidnightAug15)
+        } finally {
+            TimeZone.setDefault(original)
+        }
+    }
+
+    @Test
     fun forDay_sortsByTimeOfDayThenTitle() {
         val dayStart = cal(2026, Calendar.AUGUST, 15, 0, 0).timeInMillis
         val late = CareQueue.CareTask(

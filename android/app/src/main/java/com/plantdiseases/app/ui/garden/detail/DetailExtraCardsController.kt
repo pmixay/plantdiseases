@@ -156,10 +156,15 @@ class DetailExtraCardsController(
     /** Materialises a treatment plan from a disease-diagnosing scan, once
      *  the care plan it's built from has actually loaded (Garden refactor
      *  §Scan-driven care checklists). Guarded on [scan] being the plant's
-     *  newest AND on the disease key actually changing — this fires every
-     *  time the care-plan card loads, so without the diseaseKey check a
-     *  plant with an unchanged diagnosis would get its treatment progress
-     *  reset (plan abandoned + a fresh one started) on every screen visit. */
+     *  newest AND on a plan already existing for this exact scan+disease —
+     *  this fires every time the care-plan card loads, so the guard has to
+     *  survive the plan later being completed or abandoned. Checking only
+     *  the ACTIVE plan (as this used to) stops working the moment the user
+     *  finishes their treatment: the plan leaves "active", the check reads
+     *  as "no plan yet", and a fresh duplicate gets started on the very
+     *  next visit to the screen. Keying on scan id (not just disease key)
+     *  keeps a genuinely new scan of the same disease free to start its
+     *  own course of treatment. */
     private fun maybeStartTreatmentPlan(
         plant: PlantEntity,
         scan: ScanEntity,
@@ -174,8 +179,7 @@ class DetailExtraCardsController(
             val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
             if (newestScanId != scan.id) return@launch // a newer scan landed while this card was loading
 
-            val existing = careRepository.activePlan(plant.id)
-            if (existing?.plan?.diseaseKey == classKey) return@launch
+            if (careRepository.hasPlanForScan(plant.id, scan.id, classKey)) return@launch
 
             careRepository.startTreatmentPlan(
                 plantId = plant.id,

@@ -31,7 +31,10 @@ class OpinionCheckWorker(
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        if (!OpinionPrefs.notificationsEnabled(ctx)) return Result.success()
+        // Runs regardless of the opinion-notifications preference: it drives
+        // the notification centre, not just the popup. OpinionNotifier itself
+        // decides whether to interrupt the user; this poll is the only way a
+        // new opinion is even discovered on a device without FCM configured.
         val pseudoId = TelemetryIds.userPseudoId(ctx)
 
         val resp = scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {

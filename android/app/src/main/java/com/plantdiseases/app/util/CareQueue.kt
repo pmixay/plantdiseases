@@ -203,6 +203,20 @@ object CareQueue {
         return (cal.timeInMillis + offsetMs) / CareSchedule.DAY_MS
     }
 
+    /** Inverse of [epochDayOf]: the instant of LOCAL midnight for epoch-day
+     *  [day]. Every place that turns a day index back into a timestamp for
+     *  opening the day view must go through this rather than reconstructing
+     *  midnight independently — [epochDayOf] shifts by the zone+DST offset
+     *  before dividing, and a call site that multiplies straight back
+     *  (`day * DAY_MS`) never removes that shift, landing on the offset
+     *  hour instead of midnight (e.g. 03:00 rather than 00:00 at UTC+3). */
+    fun dayStartMs(day: Long): Long {
+        val utcMidnight = day * CareSchedule.DAY_MS
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = utcMidnight }
+        val offsetMs = cal.get(java.util.Calendar.ZONE_OFFSET) + cal.get(java.util.Calendar.DST_OFFSET)
+        return utcMidnight - offsetMs
+    }
+
     /** Tasks due on the calendar day containing [dayStartMs], sorted by
      *  time of day then title. */
     fun forDay(all: List<CareTask>, dayStartMs: Long): List<CareTask> {
