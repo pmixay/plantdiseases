@@ -402,7 +402,10 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             .forEachIndexed { index, entry ->
                 graph.addView(
                     com.plantdiseases.app.ui.community.OpinionViews.buildVoteBar(
-                        ctx, entry, total, leading = index == 0,
+                        ctx,
+                        entry,
+                        total,
+                        leading = index == 0,
                     ),
                 )
             }
@@ -456,6 +459,5 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 )
             }.show(fm, TAG)
         }
-
     }
 }
