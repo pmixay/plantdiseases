@@ -18,7 +18,7 @@ Two deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
-| `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
+| `server/` | Python 3.14, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 
 The bilingual privacy policy is bundled with the app at

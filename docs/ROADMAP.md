@@ -94,9 +94,8 @@ closed.
 - [ ] **Dependency constraints** — `starlette` unconstrained above 0.46.0
       (resolves clean today, range does not); `firebase-admin` pins
       `httpx==0.28.1`, colliding with `httpx>=0.28` once 0.29 ships; no lockfile.
-      Now that CI runs the suite on both ends of the supported Python range
-      (3.11 and 3.14), a resolution break shows up as a red matrix leg rather
-      than at deploy time — but a lockfile is still the actual fix.
+      CI still catches a resolution break as a red job rather than at deploy
+      time — but a lockfile is still the actual fix.
 - [ ] **Host named publicly** — host IP + SSH user `root` in git history
       (`cd4bda2`, removed with the admin panel in #149). **No credentials
       leaked** — no key or password was ever committed. Action is ordinary
@@ -307,7 +306,7 @@ every merge.
 `work/**` and `codex/**`, with a `paths-filter` running the **android** and
 **server** jobs only when their trees change. Android: `ktlintCheck` +
 `detekt` + `testDebugUnitTest` + R8 `assembleRelease`. Server: `ruff` +
-`pytest`, on Python 3.11 and 3.14. Dependency updates are made by hand.
+`pytest`, on Python 3.14. Dependency updates are made by hand.
 
 No `pull_request` trigger, deliberately: every branch that reaches a PR was
 pushed here first, so a PR trigger only duplicates runs (they land under a
