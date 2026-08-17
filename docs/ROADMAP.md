@@ -774,6 +774,77 @@ cannot settle 2.7.2 vs 2.6.8 because the split changed underneath it; the
 benchmark and the holdout are the honest instruments, and the holdout has no
 baseline until the next run.
 
+#### 2.7.2 run B — COMPLETE. Gate passed, and Stage 1 is the story.
+
+Full run, ship gate passed, bundle persisted, and the Stage-1 audit reached the
+end — the OOM fix held (`chunk=192, host RAM available 40.6 GB`). The Z1 logit
+reuse worked too (`reusing the val_realworld logits … no second forward pass`).
+
+**The Stage-1 audit, running for the first time in this project's history, found
+that Stage 1 never sees half of two classes.**
+
+| class | no-box rate | vs healthy |
+|---|---|---|
+| `pests` | **0.449** | 3.38× |
+| `gray_mold_botrytis` | **0.435** | 3.27× |
+| `leaf_scorch_underwatering` | 0.200 | 1.50× |
+| healthy | 0.133 | — |
+| `viral_disease` | 0.052 | 0.39× |
+| `nutrient_deficiency` | 0.046 | 0.35× |
+| `powdery_mildew` | 0.043 | 0.32× |
+| `leaf_spot` | 0.026 | 0.20× |
+| `not_a_plant` | 0.840 | (correct — there is no leaf) |
+
+**Nearly half of every `pests` and `gray_mold` image reaches Stage 2 with no box
+at all**, i.e. down `pipeline.py`'s synthetic `det_conf = 0` path — the same path
+that cost the deployed bundle 11.3 pp of served scorch before the head veto.
+
+The cause is structural and was predictable: **Stage 1 trains on PlantDoc *leaf*
+bounding boxes.** iNat botrytis is rotting flowers, fruit and dense clusters;
+iNat pests are macro close-ups of mealybugs and scale on stems. Neither is
+leaf-shaped, so a leaf detector does not box them. The four classes whose
+imagery *is* leaf-shaped sit at 0.026–0.052.
+
+**⚠ And my own gate missed it.** The pooled damaged/healthy ratio came out at
+**1.42**, under the 2.0 warn threshold — the four well-detected classes diluted
+the average until the two worst vanished inside it. Only the absolute per-class
+warn (`>15 % of their images`) fired. A pooled mean is the wrong summary for a
+per-class failure; the gate now leads on the **worst-class** ratio (which would
+have fired at 3.38×) and names the PlantDoc-leaf cause in the message.
+
+**The holdout comparison — the first clean one this project has had.** Same 535
+images, same config, two runs:
+
+| | run A | run B |
+|---|---|---|
+| holdout accuracy | 0.9196 | 0.9178 |
+| holdout disease macro-F1 (6 supported) | 0.852 | **0.8628** |
+| `val_indomain` | 0.884 | 0.864 |
+
+The two instruments **disagree in direction**: run B is 1.1 pp *better* on the
+holdout and 2.0 pp *worse* on `val_indomain`. That is the clearest possible
+demonstration of which one to trust — and the holdout's own spread across the
+pair (1.1 pp) is smaller than `val_indomain`'s (2.0 pp), exactly as a fixed
+instrument should be.
+
+**Z1 gave the opposite verdict to run A, on the same configuration.** Run A:
+falsified — at bias +1.0 healthy fell 1.0 pp and macro-F1 fell. Run B: bias
++0.25 gains +0.6 pp macro-F1 at zero healthy cost. Two runs, same config,
+opposite conclusions. **Z1 is noise at this sample size.** Leave
+`CLASS_LOGIT_BIAS` empty and stop sweeping it; the §6 print already says
+"selected ON this split", and this pair is why that warning exists.
+
+Other numbers: `val_realworld` 0.8413 (healthy recall 0.9285), `val_indomain`
+0.8701, NAP 0.9515, OOD bank 842 vectors. Weak-class precision still warns —
+`leaf_scorch` 0.703, `nutrient_deficiency` 0.621.
+
+**Next, in order.** (1) Score this bundle served against 2.6.8 + the veto on the
+213-cluster benchmark — that is the only remaining instrument with a baseline.
+(2) Stage 1 is now the highest-value target in the project: `pests` and
+`gray_mold` losing ~45 % of their inputs before classification dwarfs any
+classifier-side lever measured so far, and fixing it needs bounding boxes for
+non-leaf-shaped imagery, not another sampler weight.
+
 #### ⚠ The replicate band, measured by accident (2026-08-16, runs A and B)
 
 The 2.7.2 config was run twice on the same day, `SEED=0` both times, notebook
