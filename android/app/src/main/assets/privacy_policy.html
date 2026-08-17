@@ -5,25 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PlantDiseases · Политика конфиденциальности / Privacy Policy</title>
 <meta name="description" content="Политика конфиденциальности приложения PlantDiseases / PlantDiseases privacy policy.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2315924A'/%3E%3Cpath d='M32 52V26' stroke='%23fff' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M32 30c-7-3-7-12 0-17 7 5 7 14 0 17zM32 40c-7-3-7-12 0-17' fill='%23fff'/%3E%3C/svg%3E">
 <style>
   :root { --green: #15924A; --ink: #16241c; --muted: #5c6b62; --bg: #f7faf7; --line: #e2ebe4; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Manrope', system-ui, sans-serif; color: var(--ink); background: var(--bg); }
-  h1, h2, .brand { font-family: 'Onest', system-ui, sans-serif; }
+  body { margin: 0; font-family: system-ui, -apple-system, 'Roboto', sans-serif; color: var(--ink); background: var(--bg); }
+  h1, h2, .brand { font-family: system-ui, -apple-system, 'Roboto', sans-serif; }
   a { color: var(--green); }
   .nav { position: sticky; top: 0; z-index: 10; background: rgba(247,250,247,.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-  .nav-inner { max-width: 960px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .nav-inner { max-width: 960px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; justify-content: flex-end; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; color: var(--ink); text-decoration: none; }
   .tile { width: 32px; height: 32px; border-radius: 9px; background: var(--green); display: grid; place-items: center; }
   .tile svg { width: 20px; height: 20px; }
   .lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: #fff; }
   .lang-toggle button { border: 0; background: transparent; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer; color: var(--muted); }
   .lang-toggle button.active { background: var(--green); color: #fff; }
-  .legal { max-width: 860px; margin: 0 auto; padding: 60px 20px 80px; }
+  .legal { max-width: 860px; margin: 0 auto; padding: 24px 20px 48px; }
   .legal h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .4em; }
   .legal h2 { font-size: 1.25rem; margin: 1.8em 0 .5em; }
   .legal p, .legal li { line-height: 1.65; margin: .5em 0; }
@@ -35,14 +31,8 @@
 </head>
 <body>
 
-<nav class="nav" id="nav">
+<nav class="nav">
   <div class="nav-inner">
-    <span class="brand">
-      <span class="tile" aria-hidden="true">
-        <svg viewBox="0 0 64 64"><path d="M32 58V26" stroke="#fff" stroke-width="3.6" stroke-linecap="round" fill="none"/><path d="M32 30c-7-4-7-13 0-19 7 6 7 15 0 19zM32 42c-7-4-7-13 0-19" fill="#fff"/></svg>
-      </span>
-      PlantDiseases
-    </span>
     <div class="lang-toggle" role="group" aria-label="Language">
       <button data-lang="ru" class="active">RU</button>
       <button data-lang="en">EN</button>
@@ -107,11 +97,6 @@
      data-en="Data &amp; privacy questions: open an issue in the <a href='https://github.com/pmixay/plantdiseases' target='_blank' rel='noopener'>GitHub repository</a>.">Вопросы о данных и приватности: создайте issue в репозитории <a href="https://github.com/pmixay/plantdiseases" target="_blank" rel="noopener">GitHub</a>.</p>
 </main>
 
-<footer>
-  <div class="foot-bottom">
-    <span>© 2026 PlantDiseases · Samsung IT Campus</span>
-  </div>
-</footer>
 
 <script>
   (function () {
@@ -132,8 +117,11 @@
     buttons.forEach(function (b) {
       b.addEventListener('click', function () { applyLang(b.getAttribute('data-lang')); });
     });
-    var saved = 'ru';
-    try { saved = localStorage.getItem('pd-lang') || 'ru'; } catch (e) {}
+    // The activity appends ?lang=ru|en so the policy opens in the app's
+    // language. Fall back to the last manual choice, then Russian.
+    var m = /[?&]lang=(ru|en)/.exec(location.search);
+    var saved = m ? m[1] : 'ru';
+    if (!m) { try { saved = localStorage.getItem('pd-lang') || 'ru'; } catch (e) {} }
     if (saved === 'en') applyLang('en');
   })();
 </script>

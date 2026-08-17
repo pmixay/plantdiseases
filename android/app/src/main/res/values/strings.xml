@@ -116,7 +116,6 @@
     <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
-    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
     <!-- Interactive contextual guidance -->
     <string name="guidance_title_home_scan">Home &amp; Scan</string>
@@ -294,6 +293,7 @@
     <string name="nearby_scans_cd">Community scans</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
+    <string name="privacy_policy_title">Privacy Policy</string>
     <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>

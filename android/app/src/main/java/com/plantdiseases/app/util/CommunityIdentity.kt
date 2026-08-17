@@ -16,7 +16,7 @@ import java.security.SecureRandom
  *
  * The secret itself never leaves the device. [keyHash] — its SHA-256 —
  * is what actually travels, as the `X-Community-Author-Key` header on
- * every community/forum write. privacy.html promises exactly this: "не
+ * every community/forum write. The privacy policy promises exactly this: "не
  * покидает пределы приложения в открытом виде — сервер получает только
  * его отпечаток" / "it never leaves the app in readable form — the
  * server only ever receives a one-way hash of it".
@@ -56,7 +56,7 @@ object CommunityIdentity {
      *
      * This is local only. The author row already registered under the OLD
      * hash is orphaned, not deleted — there is no self-service delete
-     * endpoint yet, and privacy.html says so.
+     * endpoint yet, and the privacy policy says so.
      */
     fun clear(context: Context) {
         context.applicationContext

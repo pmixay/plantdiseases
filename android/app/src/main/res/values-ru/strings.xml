@@ -290,6 +290,7 @@
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
+    <string name="privacy_policy_title">Политика конфиденциальности</string>
     <string name="notifications_empty">Пока пусто — здесь появятся ответы, напоминания об уходе и подсказки по саду.</string>
     <string name="notifications_mark_all_read">Отметить все прочитанными</string>
     <string name="notifications_clear_all">Очистить всё</string>

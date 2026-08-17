@@ -17,6 +17,7 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
+import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
@@ -257,12 +258,7 @@ class MainActivity : AppCompatActivity() {
                     // the default neutral handler would dismiss it and let
                     // the user bypass Agree.
                     getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                        startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                android.net.Uri.parse(getString(R.string.consent_privacy_url)),
-                            ),
-                        )
+                        startActivity(PrivacyPolicyActivity.intent(this@MainActivity))
                     }
                 }
             }

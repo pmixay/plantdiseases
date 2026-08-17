@@ -915,7 +915,7 @@ class ScanRepository(
      * The request deliberately carries no `legacy_pseudo_id`. It used to send
      * [com.plantdiseases.app.util.TelemetryIds.userPseudoId] — the same value
      * stored on every feedback row — which joined this permanent identity to
-     * every training photo the device ever submitted, something privacy.html
+     * every training photo the device ever submitted, something the privacy policy
      * does not disclose. The server field stays optional for older installs.
      */
     suspend fun adoptCommunityAuthor(

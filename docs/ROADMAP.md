@@ -87,7 +87,7 @@ closed.
 - [ ] **EXIF GPS leaves the device** (`ScanRepository.kt:576,238`) — raw camera
       JPEG uploaded verbatim and forwarded to PlantNet, though
       `ImageUtils.prepareImageForUpload` exists and would strip it.
-      `privacy.html:87` says this may be published as an open dataset.
+      the bundled privacy policy says this may be published as an open dataset.
       *Smallest change, largest privacy return.*
 - [ ] **Pseudo-id in GET paths** (`ScanRepository.kt:775`) — a bearer capability
       landing in access logs.
@@ -233,7 +233,7 @@ Prep now, in parallel:
 
 None of it blocks a release.
 
-- [ ] **`privacy.html` — third-party processors undisclosed. Highest-priority
+- [ ] **Privacy policy — third-party processors undisclosed. Highest-priority
       doc item**, as the canonical disclosure surface. `/api/identify` sends
       photos to PlantNet; `/api/chat`, `/api/care-plan`, `/api/species-diseases`
       and `/api/species-profile` send text to OpenRouter. Neither is named. It
