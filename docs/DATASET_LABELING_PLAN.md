@@ -48,6 +48,66 @@ until verified production volume exists.
 - **Hard negatives role-tagged** (`role=hard_negative`, `hn_kind`) under `healthy/`
   or `not_a_plant/`; `hn_kind=boundary` is routed **train-only** by the notebook.
 
+## Corpus verification — the published v8, measured (2026-08-17)
+
+Until now these criteria were asserted at build time and never checked against the
+bytes that actually shipped. `tools/filter_supplement.py` checks them, on the corpus
+downloaded from Kaggle rather than on the local build directory. Re-listed uncapped
+against the live API, `maxayyt5/houseplant-disease-eval-supplement` holds 3,392 files
+= 3,389 images + `manifest.csv` + `README.md` + `build_info.json`, per-class counts
+matching disk exactly. **The published build is current and complete.**
+
+| class | rows | distinct | infl | short-side p05 | <384 px | dropped |
+|---|---|---|---|---|---|---|
+| healthy | 1126 | 1125 | 1.00 | 480 | 21 | 1 blurry |
+| leaf_scorch_underwatering | 663 | **662** | 1.00 | 422 | 9 | 1 blurry |
+| nutrient_deficiency | 513 | 512 | 1.00 | 413 | 1 | 1 blurry |
+| not_a_plant | 377 | 376 | 1.00 | 417 | 1 | 1 dup |
+| gray_mold_botrytis | 259 | 259 | 1.00 | 415 | 1 | — |
+| powdery_mildew | 217 | 217 | 1.00 | 426 | 7 | — |
+| leaf_spot | 184 | 183 | 1.01 | 355 | 10 | 1 blurry |
+| viral_disease | 29 | 29 | 1.00 | 652 | 0 | — |
+| pests | 21 | 21 | 1.00 | 320 | 4 | — |
+
+**Benchmark leakage: zero.** Every row pHashed against the 213-cluster OOD benchmark
+at Hamming ≤ 6. Nothing matches. The eval set is outside the training corpus, now
+measured rather than assumed — and the tool exits non-zero if that ever stops being
+true, because a leak does not merely inflate a metric, it removes our ability to
+notice the metric is inflated (see the `aditisalvi04` deny-list entry).
+
+**Duplication: zero. Label contradictions: zero.** Inflation is 1.00 in every class,
+so the v8 build's own pHash dedup held. This matters more than it looks:
+
+> **The 663 leaf_scorch rows are 662 distinct photographs.** The scorch arm still
+> scores 0.000 across three consecutive releases. So the collapse is not a volume
+> problem, not duplicate padding, and not eval contamination — the three
+> explanations that would have been cheap to fix. Whatever fails to transfer is a
+> **property of the photographs**, and re-sourcing on count alone will not fix it.
+
+**Collection floor: 98.4% compliant.** 54 of 3,384 rows fall below the declared
+384 px short side. Reported, not enforced — those rows are already published and
+already trained on, and dropping them retroactively would rewrite the corpus every
+shipped bundle was fitted to. Worth acting on in the *next* round: `pests` is 19%
+non-compliant (4 of 21, p05 = 320) and `leaf_spot` sits at p05 = 355, below the floor
+at its own 5th percentile. `pests` is also the class Stage 1 misses 44.9% of the time
+— it is the weakest class on every axis measured so far, not just on count.
+
+**Five rows fail.** Four blur-gate failures (variance-of-Laplacian 26.5 / 30.5 / 43.4
+/ 44.7 against the serving floor of 50) and one genuine near-duplicate pair in
+`not_a_plant`. The blur check imports `pipeline._variance_of_laplacian` rather than
+reimplementing it, so it cannot drift from what the server enforces at request time.
+Two of the four carry `split_hint=eval_ok`, i.e. they currently grade models on frames
+the server would short-circuit to `not_a_plant` before Stage 2 ever ran — a real
+eval/serving mismatch, two rows wide.
+
+**One caveat on the method.** The manifest-digest check first ran as exact equality
+and condemned 131 rows (3.9%) as "not the dataset the manifest describes". Measuring
+the distances: 128 at 2 bits, 3 at 4 bits, none worse — JPEG re-encoding during bundle
+assembly, not different photographs. Every other gate treats digests inside the dedup
+radius as the same image; that one demanded byte equality and so contradicted the
+tool's own definition. It now uses the radius. A gate that is stricter than its own
+semantics manufactures findings.
+
 ## Domain — houseplants → + garden ornamentals (v2.6.12) → + kitchen-garden edibles (2026-08)
 
 **The domain is still widening.** After ornamentals, the next step admits **domestic edible
