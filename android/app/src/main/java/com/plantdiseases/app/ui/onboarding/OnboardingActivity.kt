@@ -2,12 +2,11 @@ package com.plantdiseases.app.ui.onboarding
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
+import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
@@ -39,12 +38,7 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.consentPrivacyLink.setOnClickListener {
-            startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse(getString(R.string.consent_privacy_url)),
-                ),
-            )
+            startActivity(PrivacyPolicyActivity.intent(this))
         }
         binding.consentAgree.setOnClickListener { finishOnboarding() }
     }

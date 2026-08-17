@@ -798,7 +798,7 @@
     "/api/community/view": {
       "post": {
         "summary": "Community Record Scan View",
-        "description": "Record that the caller opened (or merely scrolled past) someone\nelse's shared scan — one id via ``scan_id``, or up to 50 via\n``scan_ids`` for feed-scroll impressions. Deduped per viewer\nserver-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire liberally.",
+        "description": "Record that the caller opened (or merely scrolled past) someone\nelse's shared scan — one id via ``scan_id``, or up to 50 via\n``scan_ids`` for feed-scroll impressions. Deduped per viewer\nserver-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire liberally.\n\nThe whole batch is resolved and written in one pass (one connection,\none lock acquisition) — see ``community.record_views``.",
         "operationId": "community_record_scan_view_api_community_view_post",
         "requestBody": {
           "content": {
@@ -909,7 +909,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``before`` pages the feed: pass the previous page's ``next_before`` to\nfetch older rows. The response's ``next_before`` is null once a page\ncomes back short — that's the end of the scope.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``before`` pages the feed: pass the previous page's ``next_before`` to\nfetch older rows. The response's ``next_before`` is null once a page\ncomes back short — that's the end of the scope. It is single-pass only:\ncombining it with ``disease`` or ``species`` is rejected with 422,\nbecause those widen the query into several concatenated passes whose\nconcatenation has no single global ``created_at`` order to page on.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {

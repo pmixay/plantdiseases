@@ -313,5 +313,5 @@ only linkage `scan_id`):
 
 - **Calibration drift** — re-fit every ship (§6), from judged production items only.
 - **Labels are a proxy** — agent-judged, not human ground-truth (by design).
-- **Consent/regulatory** — recording is consent-gated + anonymized; `privacy.html` +
+- **Consent/regulatory** — recording is consent-gated + anonymized; the bundled privacy policy +
   the in-app consent screen are the canonical disclosure.

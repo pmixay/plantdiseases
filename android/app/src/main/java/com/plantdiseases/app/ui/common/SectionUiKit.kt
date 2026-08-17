@@ -87,10 +87,16 @@ internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
         addView(
             TextView(this@factRow).apply {
                 text = label
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
                 setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface_secondary))
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body_sm))
             },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply {
                 marginStart = dpx(12)
                 marginEnd = dpx(12)
             },
@@ -103,16 +109,20 @@ internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
             },
-            // Weighted like the label (0dp + weight), not WRAP_CONTENT. An
-            // unweighted child in a horizontal LinearLayout measures first
-            // against the FULL row width, before the weighted label gets
-            // anything — a long value then claims nearly the whole row,
-            // leaving the label's weight-1 share at or near zero (a value
-            // with no visible label) and overflowing the row (a value
-            // clipped at the edge). Weighting both means neither can
-            // starve the other; 2f against the label's 1f gives the
-            // (usually longer) value the larger share.
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f),
+            // Weighted like the label, but WRAP_CONTENT-based rather than 0dp.
+            // Unweighted, this child would measure first against the FULL row
+            // width, before the weighted label gets anything — a long value
+            // would claim nearly the whole row and starve the label. But a 0dp
+            // base on both children splits the row purely by weight, ignoring
+            // content: the label column lands at a fixed fraction and long RU
+            // labels ("Ботаническое название") break mid-word next to a short
+            // value sitting in dead space. WRAP_CONTENT + equal weights asks
+            // for what each side needs first and only distributes the surplus.
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ),
         )
     }
 

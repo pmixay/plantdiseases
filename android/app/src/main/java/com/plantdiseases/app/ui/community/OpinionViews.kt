@@ -16,15 +16,25 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.util.Avatars
+import com.plantdiseases.app.util.DiseaseLabels
+import com.plantdiseases.app.util.LocaleHelper
 
 /**
  * The consensus vote bar and the forum-style comment row — shared between
  * [com.plantdiseases.app.ui.result.CommunityOpinionSheet] (viewer sheet) and
  * [MyScanRepliesActivity] (the owner's dedicated reply screen). Both render
- * the exact same visual for the same data; only [labelFor] (a display-name
- * lookup keyed to whichever screen's catalogue) differs per caller.
+ * the exact same visual for the same data, including the class labels:
+ * [labelFor] resolves them here, from [DiseaseLabels], so the same diagnosis
+ * can never read differently on the two screens.
  */
 object OpinionViews {
+
+    /** Display authority for a class key on both opinion surfaces. Deliberately
+     *  NOT a caller-supplied lambda: the sheet's chip catalogue covers only 8 of
+     *  the 15 keys the server accepts, so a `pests` opinion used to render as
+     *  raw snake_case there while the owner's screen said "Sap-sucking Pests". */
+    private fun labelFor(ctx: Context, key: String): String =
+        DiseaseLabels.displayName(key, LocaleHelper.isRussian(ctx)) ?: key
 
     /** One horizontal percentage bar for the consensus graph. The leading
      *  disease is tinted with the brand primary; the rest use a muted
@@ -34,7 +44,6 @@ object OpinionViews {
         entry: CommunityTopDisease,
         total: Int,
         leading: Boolean,
-        labelFor: (String) -> String,
     ): View {
         val density = ctx.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
@@ -50,7 +59,7 @@ object OpinionViews {
         val labelLine = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         labelLine.addView(
             TextView(ctx).apply {
-                text = labelFor(entry.disease)
+                text = labelFor(ctx, entry.disease)
                 textSize = 13f
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -105,7 +114,7 @@ object OpinionViews {
     /** One forum-style comment row: monogram avatar, nickname + relative
      *  time header, the suggested class (a comment is always at least a
      *  vote), and the free-text note underneath when the author wrote one. */
-    fun buildOpinionRow(ctx: Context, op: CommunityOpinion, labelFor: (String) -> String): View {
+    fun buildOpinionRow(ctx: Context, op: CommunityOpinion): View {
         val density = ctx.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val nick = op.nickname?.takeIf { it.isNotBlank() }
@@ -169,7 +178,7 @@ object OpinionViews {
 
         col.addView(
             TextView(ctx).apply {
-                text = labelFor(op.suggestedDisease)
+                text = labelFor(ctx, op.suggestedDisease)
                 textSize = 14f
                 setTextColor(ContextCompat.getColor(ctx, R.color.primary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)

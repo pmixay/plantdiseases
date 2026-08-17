@@ -73,6 +73,15 @@ class MyScanRepliesActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val scan = scanRepository.getScanByClientScanId(scanId)
             if (scan == null) {
+                // Reachable from a persisted notification-centre row up to 30
+                // days old, whose scan the user has since deleted (deleting a
+                // scan doesn't cascade to the notification table). Say so
+                // instead of flashing an empty toolbar and finishing silently.
+                Toast.makeText(
+                    this@MyScanRepliesActivity,
+                    R.string.scan_no_longer_available,
+                    Toast.LENGTH_SHORT,
+                ).show()
                 finish()
                 return@launch
             }
@@ -152,7 +161,7 @@ class MyScanRepliesActivity : AppCompatActivity() {
             binding.llRepliesGraph.removeAllViews()
             consensus.sortedByDescending { it.count }.forEachIndexed { index, entry ->
                 binding.llRepliesGraph.addView(
-                    OpinionViews.buildVoteBar(this, entry, total, leading = index == 0, labelFor = ::labelFor),
+                    OpinionViews.buildVoteBar(this, entry, total, leading = index == 0),
                 )
             }
         }
@@ -165,11 +174,9 @@ class MyScanRepliesActivity : AppCompatActivity() {
             binding.tvRepliesEmpty.visibility = View.GONE
             binding.tvRepliesListHeader.visibility = View.VISIBLE
             binding.tvRepliesListHeader.text = getString(R.string.community_opinion_list_header, opinions.size)
-            opinions.forEach { binding.llRepliesList.addView(OpinionViews.buildOpinionRow(this, it, ::labelFor)) }
+            opinions.forEach { binding.llRepliesList.addView(OpinionViews.buildOpinionRow(this, it)) }
         }
     }
-
-    private fun labelFor(key: String): String = DiseaseLabels.displayName(key, isRu) ?: key
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"

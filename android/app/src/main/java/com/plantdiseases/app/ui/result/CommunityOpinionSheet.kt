@@ -373,7 +373,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             listHeader?.text = getString(R.string.community_opinion_list_header, opinions.size)
             listHeader?.visibility = View.VISIBLE
             opinions.forEach {
-                list.addView(com.plantdiseases.app.ui.community.OpinionViews.buildOpinionRow(requireContext(), it, ::labelFor))
+                list.addView(
+                    com.plantdiseases.app.ui.community.OpinionViews.buildOpinionRow(requireContext(), it),
+                )
             }
         }
     }
@@ -400,15 +402,14 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             .forEachIndexed { index, entry ->
                 graph.addView(
                     com.plantdiseases.app.ui.community.OpinionViews.buildVoteBar(
-                        ctx, entry, total, leading = index == 0, labelFor = ::labelFor,
+                        ctx,
+                        entry,
+                        total,
+                        leading = index == 0,
                     ),
                 )
             }
     }
-
-    private fun labelFor(key: String): String =
-        CLASS_CATALOG.firstOrNull { it.first == key }?.second
-            ?.let { getString(it) } ?: key
 
     companion object {
         private const val TAG = "community-opinion-sheet"
@@ -418,12 +419,16 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_CONFIDENCE = "arg_confidence"
         private const val ARG_THUMB = "arg_thumb"
 
-        /** Diagnosable classes a responder can pick. Keys must be present in
-         *  the server's DISEASES_DATABASE or the POST is rejected (422).
-         *  ``not_a_plant`` is included so a responder can flag that the
-         *  shared photo isn't a plant at all — it's a valid class in both
-         *  the classifier head and the server database. Labels reuse the
-         *  feedback-correction strings. */
+        /** Diagnosable classes a responder can pick, as the chip picker's
+         *  key → string-resource list. NOT a display catalogue: rendering a
+         *  class key anywhere in the thread or the vote graph goes through
+         *  [com.plantdiseases.app.util.DiseaseLabels] (via OpinionViews), so
+         *  the sheet and MyScanRepliesActivity word every diagnosis the same.
+         *  Keys must be present in the server's DISEASES_DATABASE or the POST
+         *  is rejected (422). ``not_a_plant`` is included so a responder can
+         *  flag that the shared photo isn't a plant at all — it's a valid
+         *  class in both the classifier head and the server database. Labels
+         *  reuse the feedback-correction strings. */
         private val CLASS_CATALOG: List<Pair<String, Int>> = listOf(
             "healthy" to R.string.feedback_class_healthy,
             "leaf_spot" to R.string.feedback_class_leaf_spot,
@@ -454,6 +459,5 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 )
             }.show(fm, TAG)
         }
-
     }
 }

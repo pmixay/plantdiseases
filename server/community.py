@@ -129,6 +129,11 @@ CREATE TABLE IF NOT EXISTS community_likes (
     scan_id          TEXT    NOT NULL,
     user_pseudo_id   TEXT    NOT NULL,
     client_ip_hash   TEXT,
+    -- Unliking flips this to 0 rather than deleting the row: the daily
+    -- like quota counts rows in a 24h window, so a delete would hand the
+    -- quota back and a re-like would re-enter it with a fresh created_at.
+    -- Every "is it liked" read therefore filters on ``liked = 1``.
+    liked            INTEGER NOT NULL DEFAULT 1,
     created_at       INTEGER NOT NULL,
     PRIMARY KEY (scan_id, user_pseudo_id)
 );
@@ -359,6 +364,19 @@ def init_db() -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_community_public_id "
                 "ON community_scans(public_id)"
+            )
+            # Every scan_id lookup (token resolution, view/like writes,
+            # ownership, dedupe on upload) hit a full table scan without
+            # this. Deliberately NOT unique — legacy rows may repeat a
+            # scan_id (see ``record_scan``), so a UNIQUE index would fail
+            # to build on an existing deployment and take boot down with it.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_community_scan_id "
+                "ON community_scans(scan_id)"
+            )
+            # Likes are soft-deleted (see the ``community_likes`` schema).
+            _add_column_if_missing(
+                conn, "community_likes", "liked", "INTEGER NOT NULL DEFAULT 1",
             )
             _backfill_public_ids(conn)
             _canonicalize_countries(conn)
@@ -904,6 +922,43 @@ def record_view(scan_id: str, viewer_pseudo_id: str) -> bool:
         return int(cur.rowcount or 0) > 0
 
 
+def record_views(tokens: list[str], viewer_pseudo_id: str) -> int:
+    """Batch form of :func:`record_view` for feed-impression reporting.
+
+    Takes RAW client tokens — public tokens and real scan_ids mix freely in
+    one batch, exactly as :func:`resolve_scan_token` tolerates them — and
+    resolves, filters and inserts the whole batch under ONE connection and
+    ONE lock acquisition instead of one of each per id. Semantics per id are
+    identical to :func:`record_view`: unknown scans and the viewer's own
+    scans never count, and a repeat view is deduped by the primary key.
+    Returns the number of NEW view rows.
+    """
+    ids = list(dict.fromkeys((t or "").strip() for t in (tokens or []) if (t or "").strip()))
+    vid = (viewer_pseudo_id or "").strip()
+    if not ids or not vid:
+        return 0
+    init_db()
+    now = int(time.time())
+    placeholders = ",".join("?" * len(ids))
+    with _write_lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, user_pseudo_id FROM community_scans "
+            f"WHERE public_id IN ({placeholders}) OR scan_id IN ({placeholders})",
+            (*ids, *ids),
+        ).fetchall()
+        # Dedupe on the REAL scan_id: one batch can carry both forms of the
+        # same scan (and legacy rows may repeat a scan_id).
+        targets = {str(r[0]) for r in rows if str(r[1]) != vid}
+        if not targets:
+            return 0
+        cur = conn.executemany(
+            "INSERT OR IGNORE INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            [(sid, vid, now) for sid in sorted(targets)],
+        )
+        return int(cur.rowcount or 0)
+
+
 def view_counts(scan_ids: list[str]) -> dict[str, int]:
     """Map each scan_id to its number of distinct viewers (zeros omitted)."""
     ids = [s for s in scan_ids if s]
@@ -939,7 +994,12 @@ def set_like(scan_id: str, user_pseudo_id: str, liked: bool, client_ip: str | No
     Mirrors ``record_view``: a scan owner can't like their own scan, and the
     (scan_id, user_pseudo_id) primary key means a repeat like is a no-op, not
     a second row. Returns the resulting liked state (mainly useful when the
-    caller raced itself; the state, not a delta, is the source of truth)."""
+    caller raced itself; the state, not a delta, is the source of truth).
+
+    Unliking flips ``liked`` to 0 instead of deleting the row, and re-liking
+    keeps the ORIGINAL ``created_at``: the daily like quota counts rows in a
+    24h window, so deleting (or re-stamping) would let a toggle loop hand the
+    quota back to itself indefinitely."""
     sid = (scan_id or "").strip()
     uid = (user_pseudo_id or "").strip()
     if not sid or not uid:
@@ -954,21 +1014,26 @@ def set_like(scan_id: str, user_pseudo_id: str, liked: bool, client_ip: str | No
             return False
         if liked:
             conn.execute(
-                "INSERT OR IGNORE INTO community_likes "
-                "(scan_id, user_pseudo_id, client_ip_hash, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO community_likes "
+                "(scan_id, user_pseudo_id, client_ip_hash, liked, created_at) "
+                "VALUES (?, ?, ?, 1, ?) "
+                "ON CONFLICT(scan_id, user_pseudo_id) DO UPDATE SET liked = 1",
                 (sid, uid, hash_client_ip(client_ip), int(time.time())),
             )
         else:
+            # UPDATE, not INSERT: unliking something never liked stays a
+            # no-op, so the unmetered unlike direction can't mint rows.
             conn.execute(
-                "DELETE FROM community_likes WHERE scan_id = ? AND user_pseudo_id = ?",
+                "UPDATE community_likes SET liked = 0 "
+                "WHERE scan_id = ? AND user_pseudo_id = ?",
                 (sid, uid),
             )
         return bool(liked)
 
 
 def like_counts(scan_ids: list[str]) -> dict[str, int]:
-    """Map each scan_id to its like count (zeros omitted)."""
+    """Map each scan_id to its like count (zeros omitted). Withdrawn likes
+    stay in the table as ``liked = 0`` rows and never count here."""
     ids = [s for s in scan_ids if s]
     if not ids:
         return {}
@@ -977,7 +1042,7 @@ def like_counts(scan_ids: list[str]) -> dict[str, int]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT scan_id, COUNT(*) FROM community_likes "
-            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            f"WHERE scan_id IN ({placeholders}) AND liked = 1 GROUP BY scan_id",
             tuple(ids),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
@@ -994,7 +1059,7 @@ def liked_scan_ids(user_pseudo_id: str, scan_ids: list[str]) -> set[str]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT scan_id FROM community_likes "
-            f"WHERE user_pseudo_id = ? AND scan_id IN ({placeholders})",
+            f"WHERE user_pseudo_id = ? AND liked = 1 AND scan_id IN ({placeholders})",
             (uid, *ids),
         ).fetchall()
     return {str(r[0]) for r in rows}
@@ -1002,7 +1067,11 @@ def liked_scan_ids(user_pseudo_id: str, scan_ids: list[str]) -> set[str]:
 
 def daily_like_count_for_ip_hash(ip_hash: str | None) -> int:
     """Likes from this IP in the last 24h — bounds abuse across many scans,
-    the same shape as ``daily_opinion_count_for_ip_hash``."""
+    the same shape as ``daily_opinion_count_for_ip_hash``.
+
+    Counts withdrawn likes (``liked = 0``) too: the row is what costs
+    storage, and not counting them is exactly what would let an unlike hand
+    the quota slot back."""
     if not ip_hash:
         return 0
     init_db()
@@ -1096,6 +1165,14 @@ def nearby_scans(
     second, past which only OLDER rows are returned. Pass the previous page's
     last row's ``created_at`` to fetch the next page. ``None`` (default)
     fetches the newest page.
+
+    ``before`` is SINGLE-PASS ONLY — it must not be combined with ``disease``
+    or ``species``. Those widen the query into several independently ordered
+    passes concatenated together, so the last row of a page is not the page's
+    global minimum: paging it would repeat rows across pages and drop a later
+    pass's rows entirely. The caller (``/api/community/nearby``) rejects the
+    combination with a 422; a proper cursor for it would need one UNION ALL
+    with a single global ORDER BY, or a per-pass watermark token.
     """
     init_db()
     # Keep the feed's "wants opinion" badge honest: reap expired requests
@@ -1481,7 +1558,11 @@ def popular_snapshot(
 
 
 def prune_older_than(days: int) -> int:
-    """Delete rows + thumbnails older than ``days`` days."""
+    """Delete rows + thumbnails older than ``days`` days.
+
+    Covers every table in this store: the scans themselves, their orphaned
+    companion rows (opinions / views / opinion requests) and unreferenced
+    ``community_authors`` rows. Returns the number of scans deleted."""
     init_db()
     if days <= 0:
         return 0
@@ -1511,6 +1592,23 @@ def prune_older_than(days: int) -> int:
                 "(SELECT scan_id FROM community_scans)",
                 (cutoff,),
             )
+        # Durable author rows are on the same retention clock as everything
+        # else here. ``last_seen_at`` is refreshed on every adopt, and the app
+        # only adopts on a real community write, so a row past the cutoff means
+        # the device has shared nothing in the retention window — by which
+        # point its own community_scans are being deleted by the statements
+        # above. That, not the legacy clause, is what makes the row safe to
+        # drop. The legacy clause only protects rows written by OLDER clients,
+        # which still send legacy_pseudo_id, so a later backfill can join them;
+        # current clients send none, so those rows take the IS NULL arm and are
+        # governed purely by last_seen_at. Once F1 wires author_id into
+        # community writes, add an author_id exclusion here too.
+        conn.execute(
+            "DELETE FROM community_authors WHERE last_seen_at < ? "
+            "AND (legacy_pseudo_id IS NULL OR legacy_pseudo_id NOT IN "
+            "(SELECT user_pseudo_id FROM community_scans))",
+            (cutoff,),
+        )
     for row in rows:
         thumb = row[0]
         if not thumb:
@@ -1574,6 +1672,12 @@ def resolve_author(
     are seeded once, from whatever the device already had, on first adopt
     only; profile editing, when it exists, is the only thing allowed to
     change ``display_name`` after that).
+
+    Create-or-return is ONE upsert, not a SELECT then an INSERT: ``_connect``
+    is autocommit, so a check-then-insert raced two concurrent adopts of the
+    same key into "UNIQUE constraint failed: community_authors.key_hash" (a
+    500 on an endpoint documented as idempotent). ``_write_lock`` alone
+    wouldn't be enough the day a second uvicorn worker exists.
     """
     kh = (key_hash or "").strip()
     if not kh:
@@ -1583,24 +1687,19 @@ def resolve_author(
 
     init_db()
     now = int(time.time())
-    with _connect() as conn:
-        existing = conn.execute(
+    with _write_lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO community_authors "
+            "(author_id, key_hash, display_name, legacy_pseudo_id, "
+            " created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(key_hash) DO UPDATE SET last_seen_at = excluded.last_seen_at",
+            (_new_author_id(), kh, name, legacy, now, now),
+        )
+        # The generated id is discarded on the conflict path, so read the
+        # surviving row's id back rather than assuming we won the insert.
+        author_id = str(conn.execute(
             "SELECT author_id FROM community_authors WHERE key_hash = ?", (kh,),
-        ).fetchone()
-        if existing:
-            author_id = str(existing[0])
-            conn.execute(
-                "UPDATE community_authors SET last_seen_at = ? WHERE author_id = ?",
-                (now, author_id),
-            )
-        else:
-            author_id = _new_author_id()
-            conn.execute(
-                "INSERT INTO community_authors "
-                "(author_id, key_hash, display_name, legacy_pseudo_id, "
-                " created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (author_id, kh, name, legacy, now, now),
-            )
+        ).fetchone()[0])
         return _author_row(conn, author_id)
 
 
@@ -1696,6 +1795,7 @@ __all__ = [
     "record_opinion",
     "record_scan",
     "record_view",
+    "record_views",
     "region_summary",
     "resolve_scan_token",
     "scan_counts",

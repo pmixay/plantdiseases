@@ -1,14 +1,11 @@
 package com.plantdiseases.app.data.repository
 
-import com.plantdiseases.app.data.local.CareTaskDao
-import com.plantdiseases.app.data.local.CareTaskEntity
 import com.plantdiseases.app.data.local.PlantDao
 import com.plantdiseases.app.data.local.PlantJournalDao
 import com.plantdiseases.app.data.local.PlantReminderDao
 import com.plantdiseases.app.data.local.PlantReminderEventDao
 import com.plantdiseases.app.data.local.PlantReminderEventEntity
 import com.plantdiseases.app.data.local.RoomDao
-import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.TreatmentPlanDao
 import com.plantdiseases.app.data.local.TreatmentPlanEntity
 import com.plantdiseases.app.data.local.TreatmentStepDao
@@ -21,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Aggregation layer over [CareQueue]: loads reminders/steps/one-offs/journal
+ * Aggregation layer over [CareQueue]: loads reminders/treatment steps/journal
  * from Room, decorates the pure projection with what the UI needs (plant
  * name, room, thumbnail), and owns the write side (completing a task,
  * starting a treatment plan). PlantRepository stays the source of truth for
@@ -30,19 +27,22 @@ import kotlinx.coroutines.withContext
 class CareRepository(
     private val plantDao: PlantDao,
     private val roomDao: RoomDao,
-    private val scanDao: ScanDao,
     private val reminderDao: PlantReminderDao,
     private val reminderEventDao: PlantReminderEventDao,
     private val journalDao: PlantJournalDao,
     private val treatmentPlanDao: TreatmentPlanDao,
     private val treatmentStepDao: TreatmentStepDao,
-    private val careTaskDao: CareTaskDao,
     private val plantRepository: PlantRepository,
 ) {
     data class CareTaskView(
         val task: CareQueue.CareTask,
         val plantName: String,
         val roomName: String?,
+        /** The plant's cover photo, when it has one. Deliberately NOT a
+         *  latest-scan fallback: resolving one cost a full scan-history read
+         *  per plant on every calendar month swipe and day-view open, for a
+         *  value no care surface renders (CareTaskActivity loads the plant
+         *  itself and builds its own chip). */
         val thumbnailSource: String?,
     )
 
@@ -56,7 +56,6 @@ class CareRepository(
     sealed interface CompletionRecord {
         data class RecurringDone(val eventId: Long, val journalEntryId: Long?) : CompletionRecord
         data class StepDone(val stepId: Long, val autoCompletedPlanId: Long?) : CompletionRecord
-        data class OneOffDone(val taskId: Long) : CompletionRecord
     }
 
     suspend fun queue(fromMs: Long, toMs: Long): List<CareTaskView> = withContext(Dispatchers.IO) {
@@ -79,16 +78,19 @@ class CareRepository(
         val plants = plantDao.getAllPlants()
         val plantsById = plants.associateBy { it.id }
         val roomNamesById = roomDao.getAll().associate { it.id to it.name }
-        val thumbnailByPlantId = plants.associate { plant ->
-            plant.id to (plant.coverPhotoUri ?: scanDao.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.imagePath)
-        }
 
         val reminderInputs = mutableListOf<CareQueue.ReminderInput>()
         val doneEvents = mutableListOf<CareQueue.DoneEvent>()
+        // Table-wide, not per plant: this runs on every calendar month swipe and
+        // every day-view open. Both queries keep the ORDER BY of the per-plant
+        // ones they replace, and groupBy preserves encounter order, so the
+        // journal lookup below still finds the newest matching entry.
+        val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
+        val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         for (plant in plants) {
-            val reminders = reminderDao.getForPlant(plant.id).filter { it.enabled }
+            val reminders = remindersByPlant[plant.id].orEmpty().filter { it.enabled }
             if (reminders.isEmpty()) continue
-            val journal = journalDao.getEntriesForPlant(plant.id) // ORDER BY timestamp DESC
+            val journal = journalByPlant[plant.id].orEmpty() // timestamp DESC
             for (reminder in reminders) {
                 val journalType = plantRepository.reminderTypeToJournalType(reminder.type)
                 val anchor = journalType
@@ -106,21 +108,34 @@ class CareRepository(
                     anchorMs = anchor,
                 )
             }
-            reminderEventDao.recentForPlant(plant.id, limit = 50)
-                .filter { it.action == "done" }
-                .forEach { event ->
-                    doneEvents += CareQueue.DoneEvent(
-                        plantId = plant.id,
-                        type = event.type,
-                        epochDay = CareQueue.epochDayOf(event.firedAt),
-                    )
+            // completeRecurring stamps `fired_at` with the occurrence's
+            // ORIGINAL due instant while `done_at` is when the user actually
+            // ticked it. For a journal-mapped type the anchor above jumps to
+            // that journal entry, so occurrence 0 lands on the completion day
+            // and would show pending again on the very day it was completed —
+            // hence the second marker. For the types with no journal mapping
+            // the anchor is pinned to plant.createdAt and never moves, so the
+            // cadence is unchanged and a completion-day marker would falsely
+            // clear whatever genuine occurrence happens to fall there.
+            reminderEventDao.doneBetween(plant.id, fromMs, toMs).forEach { event ->
+                val firedDay = CareQueue.epochDayOf(event.firedAt)
+                doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, firedDay)
+                if (plantRepository.reminderTypeToJournalType(event.type) == null) return@forEach
+                val doneDay = event.doneAt?.let { CareQueue.epochDayOf(it) }
+                if (doneDay != null && doneDay != firedDay) {
+                    doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, doneDay)
                 }
+            }
         }
 
         val stepRows = treatmentStepDao.getAllInRangeWithPlantId(fromMs, toMs)
-        val stepCountByPlan = mutableMapOf<Long, Int>()
+        val planIds = stepRows.map { it.step.planId }.distinct()
+        val stepCountByPlan: Map<Long, Int> = if (planIds.isEmpty()) {
+            emptyMap()
+        } else {
+            treatmentStepDao.countsForPlans(planIds).associate { it.planId to it.stepCount }
+        }
         val stepInputs = stepRows.map { row ->
-            val count = stepCountByPlan.getOrPut(row.step.planId) { treatmentStepDao.countForPlan(row.step.planId) }
             CareQueue.StepInput(
                 stepId = row.step.id,
                 plantId = row.plantId,
@@ -129,29 +144,18 @@ class CareRepository(
                 dueAtMs = row.step.dueAt,
                 status = row.step.status,
                 stepIndex = row.step.stepIndex,
-                stepCount = count,
+                stepCount = stepCountByPlan[row.step.planId] ?: (row.step.stepIndex + 1),
             )
         }
 
-        val oneOffInputs = careTaskDao.inRange(fromMs, toMs).map { task ->
-            CareQueue.OneOffInput(
-                taskId = task.id,
-                plantId = task.plantId,
-                type = task.type,
-                title = task.title,
-                dueAtMs = task.dueAt,
-                status = task.status,
-            )
-        }
-
-        val tasks = CareQueue.project(reminderInputs, stepInputs, oneOffInputs, doneEvents, fromMs, toMs)
+        val tasks = CareQueue.project(reminderInputs, stepInputs, doneEvents, fromMs, toMs)
         return tasks.mapNotNull { task ->
             val plant = plantsById[task.plantId] ?: return@mapNotNull null
             CareTaskView(
                 task = task,
                 plantName = plant.name,
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                thumbnailSource = thumbnailByPlantId[plant.id],
+                thumbnailSource = plant.coverPhotoUri,
             )
         }
     }
@@ -162,7 +166,6 @@ class CareRepository(
         when (val id = view.task.id) {
             is CareQueue.CareTask.TaskId.Recurring -> completeRecurring(id, view.task)
             is CareQueue.CareTask.TaskId.Step -> completeStep(id)
-            is CareQueue.CareTask.TaskId.OneOff -> completeOneOff(id)
         }
     }
 
@@ -180,19 +183,43 @@ class CareRepository(
                     treatmentPlanDao.update(plan.copy(status = "active", completedAt = null))
                 }
             }
-            is CompletionRecord.OneOffDone -> {
-                val task = careTaskDao.getById(record.taskId) ?: return@withContext
-                careTaskDao.update(task.copy(status = "pending", doneAt = null))
-            }
         }
     }
 
+    /** A recurring occurrence has no row of its own, so "done" is recorded as
+     *  a `plant_reminder_events` row whose `fired_at` is the occurrence's
+     *  original due instant and whose `done_at` is now. Both timestamps
+     *  matter: buildQueue marks *both* days done, because completing late
+     *  re-anchors the reminder onto today and would otherwise re-spawn the
+     *  task as pending on the very day it was completed. */
     private suspend fun completeRecurring(
         id: CareQueue.CareTask.TaskId.Recurring,
         task: CareQueue.CareTask,
     ): CompletionRecord.RecurringDone {
-        val reminder = reminderDao.getById(id.reminderId)
         val now = System.currentTimeMillis()
+        // Idempotent: the day view's checkbox and the task-detail screen can
+        // both reach the same occurrence, and a second completion would write
+        // a duplicate journal entry (user-visible) plus a duplicate done
+        // event that inflates PlantHealth adherence.
+        val dayStart = CareQueue.dayStartMs(id.epochDay)
+        // Match on fired_at only. doneBetween's predicate is `fired_at in range
+        // OR done_at in range`, and a LATE completion stamps done_at = now — so
+        // a plain range hit would return yesterday's occurrence when asked about
+        // today's, and make today's uncompletable. An occurrence's identity is
+        // its reminder id plus its fired day — matching on type instead would
+        // collide across two same-type reminders on one plant, which the schema
+        // deliberately allows (see PlantReminderEntity's index comment).
+        val alreadyDone = reminderEventDao
+            .doneBetween(task.plantId, dayStart, dayStart + CareSchedule.DAY_MS)
+            .firstOrNull {
+                it.reminderId == id.reminderId && CareQueue.epochDayOf(it.firedAt) == id.epochDay
+            }
+        if (alreadyDone != null) {
+            // Undo still reverses this occurrence's marker; the earlier
+            // completion's journal entry is not this call's to delete.
+            return CompletionRecord.RecurringDone(alreadyDone.id, journalEntryId = null)
+        }
+        val reminder = reminderDao.getById(id.reminderId)
         val journalEntryId = reminder?.let {
             val journalType = plantRepository.reminderTypeToJournalType(it.type)
             journalType?.let { type -> logCareByType(task.plantId, type) }
@@ -238,34 +265,6 @@ class CareRepository(
         return CompletionRecord.StepDone(step.id, autoCompletedPlanId)
     }
 
-    private suspend fun completeOneOff(id: CareQueue.CareTask.TaskId.OneOff): CompletionRecord.OneOffDone {
-        val task = careTaskDao.getById(id.taskId)
-        if (task != null) {
-            careTaskDao.update(task.copy(status = "done", doneAt = System.currentTimeMillis()))
-        }
-        return CompletionRecord.OneOffDone(id.taskId)
-    }
-
-    // ─── One-off tasks ───────────────────────────────────────────────────
-
-    suspend fun addOneOff(
-        plantId: Long,
-        type: String,
-        title: String,
-        note: String?,
-        dueAt: Long,
-    ): Long = withContext(Dispatchers.IO) {
-        careTaskDao.insert(
-            CareTaskEntity(
-                plantId = plantId,
-                type = type,
-                title = title.trim(),
-                note = note?.trim()?.takeIf { it.isNotEmpty() },
-                dueAt = dueAt,
-            )
-        )
-    }
-
     // ─── Treatment plans ─────────────────────────────────────────────────
 
     /** At most one active plan per plant — any existing active plan for
@@ -304,6 +303,35 @@ class CareRepository(
         PlanWithSteps(plan, treatmentStepDao.getForPlan(plan.id))
     }
 
+    /** Any plan — active, completed or abandoned — already derived from this
+     *  scan. [activePlan] filters `status = 'active'` in SQL, so it goes blind
+     *  the moment the user ticks the last step; callers that decide whether to
+     *  materialise a plan need this second guard or they silently re-create a
+     *  finished plan with its progress reset. */
+    suspend fun hasPlanForScan(plantId: Long, scanId: Long): Boolean = withContext(Dispatchers.IO) {
+        treatmentPlanDao.getAllForPlant(plantId).any { it.scanId == scanId }
+    }
+
+    /** The active plan, or — when there is none — the most recently completed
+     *  one within [windowMs] (never an abandoned one), with its steps loaded.
+     *  The plant-detail card renders a "treatment finished" line off this, so
+     *  the card doesn't silently vanish the moment the last step is ticked. */
+    suspend fun activeOrRecentlyCompletedPlan(
+        plantId: Long,
+        windowMs: Long = 7 * CareSchedule.DAY_MS,
+    ): PlanWithSteps? = withContext(Dispatchers.IO) {
+        val active = treatmentPlanDao.getActiveForPlant(plantId)
+        if (active != null) {
+            return@withContext PlanWithSteps(active, treatmentStepDao.getForPlan(active.id))
+        }
+        val cutoff = System.currentTimeMillis() - windowMs
+        // getAllForPlant is ORDER BY started_at DESC and carries every status.
+        val recent = treatmentPlanDao.getAllForPlant(plantId)
+            .firstOrNull { it.status == "completed" && (it.completedAt ?: 0L) >= cutoff }
+            ?: return@withContext null
+        PlanWithSteps(recent, treatmentStepDao.getForPlan(recent.id))
+    }
+
     // ─── Single-row lookups (CareTaskActivity resolving one task by id) ───
 
     data class StepWithPlan(val step: TreatmentStepEntity, val plan: TreatmentPlanEntity)
@@ -312,10 +340,6 @@ class CareRepository(
         val step = treatmentStepDao.getById(stepId) ?: return@withContext null
         val plan = treatmentPlanDao.getById(step.planId) ?: return@withContext null
         StepWithPlan(step, plan)
-    }
-
-    suspend fun getOneOff(taskId: Long): CareTaskEntity? = withContext(Dispatchers.IO) {
-        careTaskDao.getById(taskId)
     }
 
     suspend fun getReminder(reminderId: Long) = withContext(Dispatchers.IO) {

@@ -73,9 +73,13 @@ object OpinionNotifier {
         }
         val cleanNote = note?.trim().orEmpty()
 
-        // Recorded regardless of the checks below — a user who turned off
-        // opinion pushes (or denied POST_NOTIFICATIONS) should still find
-        // this in the notification centre, not lose it entirely.
+        // Recorded before the guards below: whenever this function is reached
+        // the row is written, so a user who denied POST_NOTIFICATIONS still
+        // finds the opinion in the in-app notification centre instead of
+        // losing it entirely. The notificationsEnabled guard below is
+        // belt-and-braces — both callers already pre-gate on it (and
+        // OpinionCheckWorker gates its network fetch on it too), so a
+        // pref-off user does not reach this function at all.
         NotificationCenter.record(
             ctx,
             type = "community",

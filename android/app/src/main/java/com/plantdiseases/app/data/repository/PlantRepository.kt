@@ -29,14 +29,33 @@ class PlantRepository(
     private val roomDao: RoomDao,
     private val treatmentPlanDao: TreatmentPlanDao,
 ) {
+    /** Every plant with the garden list's decorations.
+     *
+     *  This used to issue four queries **per plant** — scans, journal,
+     *  reminders, active plan — on the app's hottest screen, plus a fifth
+     *  inside [getPlantHealth]. It is now four table-wide reads grouped in
+     *  memory, so the cost is flat in garden size. The table-wide reads
+     *  keep the `ORDER BY timestamp DESC` of the per-plant queries they
+     *  replace, and `groupBy` preserves encounter order, so the
+     *  `firstOrNull()`/`maxByOrNull()` below still see exactly what they did.
+     *
+     *  The one query still made per plant is the adherence read inside
+     *  [getPlantHealth], and only for plants with an active treatment plan —
+     *  usually none. That one deliberately stays per-plant: it is
+     *  `recentForPlant(limit = 50)`, and a batched `IN (…)` would apply that
+     *  50-row cap across the whole garden rather than per plant, silently
+     *  truncating the window for every plant but the busiest. */
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
         val roomNamesById = roomDao.getAll().associate { it.id to it.name }
         val nowMs = System.currentTimeMillis()
+        val scansByPlant = scanDao.getAllAssignedScans().groupBy { it.plantId }
+        val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
+        val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
+        val plantIdsUnderTreatment = treatmentPlanDao.getAllActive().mapTo(mutableSetOf()) { it.plantId }
         plantDao.getAllPlants().map { plant ->
-            val scans = scanDao.getScansForPlant(plant.id)
-            val journal = journalDao.getEntriesForPlant(plant.id)
-            val reminders = reminderDao.getForPlant(plant.id)
-            val activePlan = treatmentPlanDao.getActiveForPlant(plant.id)
+            val scans = scansByPlant[plant.id].orEmpty()
+            val journal = journalByPlant[plant.id].orEmpty()
+            val reminders = remindersByPlant[plant.id].orEmpty()
             PlantSummary(
                 plant = plant,
                 scanCount = scans.size,
@@ -44,7 +63,25 @@ class PlantRepository(
                 lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                health = getPlantHealth(plant.id, scans, activePlan != null, nowMs),
+                health = getPlantHealth(plant.id, scans, plant.id in plantIdsUnderTreatment, nowMs),
+            )
+        }
+    }
+
+    /** Name + thumbnail only, for the "add this scan to a plant" picker.
+     *  [getPlants] reads every scan, journal entry and reminder in the garden
+     *  and scores a health verdict per plant; a picker discards all of it. So
+     *  this stays at two queries flat regardless of garden size: the plant
+     *  rows plus one latest-photo projection over all of them. */
+    suspend fun getPlantsForPicker(): List<PlantPickerItem> = withContext(Dispatchers.IO) {
+        val plants = plantDao.getAllPlants()
+        val latestImages = scanDao.latestImageByPlant(plants.map { it.id })
+            .associate { it.plantId to it.imagePath }
+        plants.map { plant ->
+            PlantPickerItem(
+                id = plant.id,
+                name = plant.name,
+                thumbnailSource = plant.coverPhotoUri ?: latestImages[plant.id],
             )
         }
     }
@@ -426,6 +463,15 @@ class PlantRepository(
             series = emptyList(),
             scanCount = 0,
         ),
+    )
+
+    /** One row of [getPlantsForPicker]: everything a name + photo list needs
+     *  and nothing else. [thumbnailSource] is the user-picked cover photo,
+     *  else the newest scan's image, else null. */
+    data class PlantPickerItem(
+        val id: Long,
+        val name: String,
+        val thumbnailSource: String?,
     )
 
     /** Soonest "do something" hint for a plant, computed off the most

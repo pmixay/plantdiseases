@@ -25,6 +25,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.util.CommunityIdentity
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
@@ -87,6 +88,12 @@ class NearbyScansActivity : AppCompatActivity() {
     private var hasMorePages = true
     private var isLoadingPage = false
     private var currentRegion: ResolvedRegion? = null
+
+    // Bumped by every (re)load. A page fetch captures it and drops its result
+    // if it no longer matches — otherwise a loadMore() still in flight when the
+    // user pulls to refresh writes its cursor (and its rows) over the fresh
+    // feed, leaving nextBefore pointing past data the list no longer holds.
+    private var loadGeneration = 0
 
     // Feed-scroll impressions already reported this screen session, so a
     // post scrolled past twice doesn't get reported twice from the client
@@ -268,6 +275,12 @@ class NearbyScansActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
                 CommunityPrefs.setUploadsEnabled(this, false) // also stops opinions
+                // Drop the durable device handle too. Leaving the secret behind
+                // would leave the identity intact and re-adoptable the moment
+                // the user (or any code path) touches the community again —
+                // "you can stop contributing at any time" has to mean the
+                // identifier goes as well, not just the uploads flag.
+                CommunityIdentity.clear(this)
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check")
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check_now")
                 disableMenuItem?.isVisible = false
@@ -294,9 +307,13 @@ class NearbyScansActivity : AppCompatActivity() {
         }
         disableMenuItem?.isVisible = true
         if (!isRefresh) showLoading()
-        // Fresh (re)load starts the cursor over.
+        // Fresh (re)load starts the cursor over. A pull-to-refresh keeps the
+        // populated list on screen while the location fix resolves, so a
+        // loadMore() can still be in flight (or fire) meanwhile — the
+        // generation bump makes both of them no-ops against this load.
         nextBefore = null
         hasMorePages = true
+        val generation = ++loadGeneration
         lifecycleScope.launch {
             // Refresh location on every (re)load so "nearby" reflects where the
             // user actually is right now. Worldwide needs no anchor, so we skip
@@ -312,6 +329,9 @@ class NearbyScansActivity : AppCompatActivity() {
                 }.getOrNull()
             }
             val result = fetchPage(before = null)
+            // Guard first: a superseded load must not clear the spinner that
+            // belongs to the load which replaced it — that one clears its own.
+            if (generation != loadGeneration) return@launch
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
                 nextBefore = response.nextBefore
@@ -337,16 +357,24 @@ class NearbyScansActivity : AppCompatActivity() {
      *  the plan's "reuse the existing states" call; a failed page load just
      *  leaves the feed as it is and lets the next scroll retry. */
     private fun loadMore() {
+        // No cursor means "page 1" — either nothing has loaded yet or a
+        // (re)load just reset it and is still awaiting its location fix. Either
+        // way, re-requesting page 1 here would append the rows the list already
+        // shows (every post twice) and leave the cursor wherever the last
+        // responder wrote it. hasMorePages covers the exhausted case.
+        val before = nextBefore ?: return
         isLoadingPage = true
+        val generation = loadGeneration
         lifecycleScope.launch {
-            fetchPage(before = nextBefore)
-                .onSuccess { response ->
-                    nextBefore = response.nextBefore
-                    hasMorePages = response.nextBefore != null
-                    allItems = allItems + excludeOwnScans(response.items)
-                    applyFilterAndSort()
-                }
+            val result = fetchPage(before = before)
             isLoadingPage = false
+            if (generation != loadGeneration) return@launch
+            result.onSuccess { response ->
+                nextBefore = response.nextBefore
+                hasMorePages = response.nextBefore != null
+                allItems = allItems + excludeOwnScans(response.items)
+                applyFilterAndSort()
+            }
         }
     }
 

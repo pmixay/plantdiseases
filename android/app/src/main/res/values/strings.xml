@@ -116,7 +116,6 @@
     <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
-    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
     <!-- Interactive contextual guidance -->
     <string name="guidance_title_home_scan">Home &amp; Scan</string>
@@ -294,6 +293,7 @@
     <string name="nearby_scans_cd">Community scans</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
+    <string name="privacy_policy_title">Privacy Policy</string>
     <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>
@@ -402,7 +402,7 @@
     <string name="garden_calendar_tab_lunar">Lunar</string>
     <string name="garden_lunar_empty_title">No plants yet</string>
     <string name="garden_lunar_empty_body">Add a plant to see how the moon phases line up with its care.</string>
-    <string name="garden_subtitle_combined">%1$s · %2$s under watch</string>
+    <string name="garden_subtitle_combined">%1$s · %2$s</string>
     <string name="room_add">Add room</string>
     <string name="room_name_hint">Room name</string>
     <string name="room_name_taken">A room with this name already exists</string>
@@ -426,7 +426,6 @@
     <string name="plant_status_watch">Watch</string>
     <string name="plant_status_recovering">Recovering</string>
     <string name="plant_status_no_scans">No scans yet</string>
-    <string name="plant_status_line">%1$d%% · %2$s</string>
 
     <!-- Garden refactor — plant profile: Overview / Care / History / Gallery -->
     <string name="plant_tab_overview">Overview</string>
@@ -445,18 +444,15 @@
     <string name="add_observation">Add observation</string>
 
     <!-- Garden refactor — calendar, day view, task detail -->
-    <string name="calendar_title">Care calendar</string>
     <string name="calendar_legend_pending">Has tasks</string>
     <string name="calendar_legend_overdue">Overdue</string>
     <string name="calendar_legend_done">Done</string>
     <string name="calendar_today_prefix">Today, %1$s</string>
     <string name="calendar_all_caught_up">All caught up 🌿</string>
-    <string name="calendar_empty_month">Nothing scheduled yet · turn on a reminder for a plant to see it here</string>
     <string name="calendar_empty_day">Nothing scheduled for this day</string>
     <string name="calendar_show_done">Show completed (%1$d)</string>
     <string name="calendar_hide_done">Hide completed</string>
     <string name="calendar_overdue_header">Overdue</string>
-    <string name="task_add">Add task</string>
     <string name="task_description">Description</string>
     <string name="task_what_to_do">What to do</string>
     <string name="task_recommendations">Recommendations</string>
@@ -464,15 +460,14 @@
     <string name="task_products_disclaimer">Follow the manufacturer\'s instructions and local regulations. This is guidance, not a prescription.</string>
     <string name="task_history">Completion history</string>
     <string name="task_last_done">Last time: %1$s</string>
-    <string name="task_next_step">Next step: %1$s</string>
     <string name="task_mark_done">Done</string>
     <string name="task_undo">Undo</string>
     <string name="task_temp_range">Air temperature: %1$d–%2$d °C</string>
-    <string name="task_dry_hours">Avoid rain for the next %1$d hours</string>
-    <string name="task_type_watering">Watering</string>
-    <string name="task_type_fertilize">Feeding</string>
+    <plurals name="task_dry_hours">
+        <item quantity="one">Avoid rain for the next %1$d hour</item>
+        <item quantity="other">Avoid rain for the next %1$d hours</item>
+    </plurals>
     <string name="task_type_treatment">Treatment</string>
-    <string name="task_type_check">Check</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>
@@ -481,8 +476,10 @@
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
     <string name="empty_garden_cta_add">Add your first plant</string>
     <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
-    <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
+    <!-- Destination screens reached from a stale notification-centre row -->
+    <string name="scan_no_longer_available">This scan is no longer on this device.</string>
+    <string name="plant_no_longer_available">This plant is no longer in your garden.</string>
     <string name="scans">Scans</string>
     <string name="journal">Journal</string>
     <string name="waterings">Waterings</string>
@@ -494,16 +491,9 @@
     <string name="log_repotting">Repot</string>
     <string name="log_pruning">Prune</string>
     <string name="log_misting">Mist</string>
-    <!-- Garden card status row -->
-    <string name="garden_card_health_healthy">Healthy %1$d%%</string>
-    <string name="garden_card_health_disease">%1$s</string>
-    <string name="garden_card_action_overdue">%1$s overdue</string>
-    <string name="garden_card_action_tomorrow">%1$s tomorrow</string>
-    <string name="garden_card_action_in_days">%1$s in %2$d days</string>
-    <!-- Garden search + attention section -->
+    <!-- Garden search -->
     <string name="garden_search_hint">Search plants…</string>
     <string name="garden_search_empty">No plants match “%1$s”</string>
-    <string name="garden_section_attention">Needs attention</string>
     <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
     <plurals name="care_reminder_rescheduled">
         <item quantity="one">Logged — next reminder in %1$d day</item>
