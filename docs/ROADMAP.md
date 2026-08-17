@@ -774,6 +774,50 @@ cannot settle 2.7.2 vs 2.6.8 because the split changed underneath it; the
 benchmark and the holdout are the honest instruments, and the holdout has no
 baseline until the next run.
 
+#### ⚠ The replicate band, measured by accident (2026-08-16, runs A and B)
+
+The 2.7.2 config was run twice on the same day, `SEED=0` both times, notebook
+identical apart from §3/§6 changes that do not touch training. The corpora
+differ only by iNat drift (±1–4 images on 2 k-image fetches) and where the split
+RNG landed. **They disagree by 2.0 pp on `val_indomain` disease macro-F1.**
+
+| run | val_indomain F1 | best epoch | n |
+|---|---|---|---|
+| 2.7.0 (08-08) | 0.887 | 9 | 1047 |
+| 2.7.1 (08-14) | 0.879 | 8 | 1032 |
+| **2.7.2 run A** | **0.884** | 16 | 965 |
+| **2.7.2 run B** | **0.864** | 19 | 1025 |
+
+This is R1 arrived at sideways, and it is decisive about how the last three
+releases have been read:
+
+- **2.6.8 → 2.7.1 on `val_realworld` was +1.2 pp.** Inside this band.
+- **2.7.2 run A vs 2.6.8 was −1.2 pp.** Inside this band.
+
+Both numbers have been treated as signal. Neither survives a same-config re-run.
+It is not a *pure* seed replicate — the corpus moved too — but that is the
+relevant quantity for comparing releases, because a release always moves the
+corpus as well. Taken with the archived 2.6.0 pair (7-image corpus delta, 8
+benchmark healthy clusters apart, p=0.0078), the picture is consistent: **this
+pipeline's in-domain metrics carry a ~2 pp run-to-run band, and no A/B under
+that is measurable on them.**
+
+Consequences, effective immediately:
+1. **`val_indomain` and `val_realworld` cannot settle a release** unless the
+   delta clears ~2 pp. Quote them as regression floors, never as evidence of
+   improvement.
+2. **The holdout and the OOD benchmark are the instruments.** The holdout is
+   fixed by construction (verified: identical 535 rows across both runs while
+   every ratio split moved), and the benchmark is never-trained.
+3. **A single run cannot ship a release.** Run the config twice and read the
+   pair, or accept that a sub-2 pp claim is unfalsifiable.
+4. R1 as a dedicated experiment is now lower value — the band is measured. Spend
+   the A100 on R2 (the LoRA control) instead, which is the one lever predicted to
+   move transfer AUROC by more than the band.
+
+Do **not** read run B's 0.864 as a regression. It is the same configuration as
+run A; the difference is the measurement, not the model.
+
 #### Runbook
 
 The no-GPU work is finished; what is left is A100 time. **The notebook is the
