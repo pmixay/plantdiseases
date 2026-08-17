@@ -1274,3 +1274,200 @@ def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkey
     assert rows[0]["thumb_path"] == f"{token}_abc.jpg"
     assert (tmp_path / "thumbs" / f"{token}_abc.jpg").exists()
     assert not (tmp_path / "thumbs" / "legacyscan01_abc.jpg").exists()
+
+
+def test_nearby_before_rejected_with_disease_or_species(client, isolated_community):
+    """``before`` is a single-pass cursor. A disease/species-scoped call is
+    several concatenated passes with no global created_at order, so the
+    combination is refused rather than paged wrongly (duplicated rows on the
+    next page, and a whole pass silently dropped)."""
+    base = {
+        "country": "FR", "scope": "country", "limit": 2,
+        "user_pseudo_id": "x", "before": 1_700_000_000,
+    }
+    for extra in ({"disease": "leaf_spot"}, {"species": "Ficus elastica"}):
+        r = client.get("/api/community/nearby", params={**base, **extra})
+        assert r.status_code == 422, r.text
+
+    # The filters are still fine on their own — only the cursor is refused.
+    r = client.get(
+        "/api/community/nearby",
+        params={
+            "country": "FR", "scope": "country", "limit": 2,
+            "user_pseudo_id": "x", "disease": "leaf_spot",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_scan_id_index_exists_and_is_not_unique(isolated_community):
+    """``community_scans.scan_id`` is the hot lookup key (token resolution,
+    views, likes, ownership) and must be indexed — but NOT uniquely: legacy
+    rows may repeat a scan_id, and a UNIQUE index would fail to build and
+    take boot down with it."""
+    db_path, _ = isolated_community
+    import community as comm
+    comm.init_db()
+    with sqlite3.connect(str(db_path)) as conn:
+        idx = {
+            row[1]: bool(row[2])
+            for row in conn.execute("PRAGMA index_list(community_scans)").fetchall()
+        }
+    assert "ix_community_scan_id" in idx
+    assert idx["ix_community_scan_id"] is False
+
+
+def test_batch_view_mixes_token_forms_and_drops_self_views(client, isolated_community):
+    """One batch can carry public tokens and real scan_ids for the same rows;
+    both resolve to one view each, unknown ids are ignored, and the owner's
+    own impressions never count."""
+    import community as comm
+
+    for sid in ("viewmix000001", "viewmix000002"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-owner-m",
+                region="Turin", country="IT", disease="leaf_spot",
+            ),
+        )
+    token = comm.public_scan_token("viewmix000001")
+    r = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": [token, "viewmix000001", "viewmix000002", "neverssharedx"],
+            "user_pseudo_id": "pseudo-scroller-m",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["counted_n"] == 2
+
+    own = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewmix000001", "viewmix000002"],
+            "user_pseudo_id": "pseudo-owner-m",
+        },
+    )
+    assert own.json()["counted_n"] == 0
+
+
+def test_unlike_soft_deletes_so_the_daily_like_quota_holds(client, isolated_community):
+    """Unliking must not hand the daily quota slot back: the row survives as
+    ``liked = 0``, and re-liking keeps its ORIGINAL ``created_at`` instead of
+    sliding out of the 24h window."""
+    db_path, _ = isolated_community
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="likesoft00001", user_pseudo_id="pseudo-owner-s",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    body = {
+        "scan_id": "likesoft00001",
+        "user_pseudo_id": "pseudo-liker-s",
+        "liked": True,
+    }
+    assert client.post("/api/community/like", json=body).json()["count"] == 1
+    with sqlite3.connect(str(db_path)) as conn:
+        (created_at,) = conn.execute(
+            "SELECT created_at FROM community_likes",
+        ).fetchone()
+
+    unliked = client.post("/api/community/like", json={**body, "liked": False})
+    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT liked, created_at FROM community_likes",
+        ).fetchall()
+    assert rows == [(0, created_at)]
+
+    assert client.post("/api/community/like", json=body).json()["count"] == 1
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT liked, created_at FROM community_likes",
+        ).fetchall()
+    assert rows == [(1, created_at)]
+
+
+def test_prune_reaps_stale_authors_but_keeps_linked_ones(client, isolated_community):
+    """``community_authors`` is on the same 90-day clock as everything else
+    here — except a row whose legacy pseudo-id still has live community
+    activity, which a later backfill needs."""
+    import time as _time
+
+    import community as comm
+
+    db_path, _ = isolated_community
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="authorlive001", user_pseudo_id="pseudo-live-1",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    keys = {"a" * 64: "pseudo-dead-1", "b" * 64: "pseudo-live-1", "c" * 64: None}
+    for key, legacy in keys.items():
+        r = client.post(
+            "/api/community/authors/adopt",
+            headers={"X-Community-Author-Key": key},
+            json={"seed_display_name": "Someone", "legacy_pseudo_id": legacy},
+        )
+        assert r.status_code == 200, r.text
+
+    stale = int(_time.time()) - 200 * 86_400
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("UPDATE community_authors SET last_seen_at = ?", (stale,))
+
+    comm.prune_older_than(90)
+    with sqlite3.connect(str(db_path)) as conn:
+        survivors = {
+            str(r[0]) for r in conn.execute("SELECT key_hash FROM community_authors")
+        }
+    # The linked one survives; the unlinked one and the legacy-less one go.
+    assert survivors == {"b" * 64}
+
+
+def test_author_adopt_is_atomic_under_concurrency(isolated_community, monkeypatch):
+    """Simultaneous adopts of the SAME key must all return the one row — a
+    check-then-insert raced into "UNIQUE constraint failed", i.e. a 500 on an
+    endpoint documented as idempotent.
+
+    The write lock is disabled for the duration so this pins the SQL itself
+    rather than the lock: a second uvicorn worker is a second process, and no
+    in-process lock spans it. Eight barrier-synchronised keys at 16 threads
+    each — the pre-fix code loses this race on roughly 40% of keys, so the
+    run as a whole fails it essentially always."""
+    import contextlib
+    import threading
+
+    import community as comm
+
+    comm.init_db()
+    monkeypatch.setattr(comm, "_write_lock", contextlib.nullcontext())
+    threads_per_key = 16
+
+    for n in range(8):
+        key = f"{n:02x}" * 32
+        barrier = threading.Barrier(threads_per_key)
+        ids: list[str] = []
+        errors: list[Exception] = []
+
+        def _adopt(key: str = key, barrier: threading.Barrier = barrier,
+                   ids: list = ids, errors: list = errors) -> None:
+            barrier.wait()
+            try:
+                ids.append(comm.resolve_author(key, "Racer", "pseudo-race")["author_id"])
+            except Exception as exc:  # noqa: BLE001 — the assertion is "none of these"
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_adopt) for _ in range(threads_per_key)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert not errors, errors
+        assert len(ids) == threads_per_key
+        assert len(set(ids)) == 1

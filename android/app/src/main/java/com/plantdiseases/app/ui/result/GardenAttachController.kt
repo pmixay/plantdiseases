@@ -20,6 +20,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.dpx
 import com.plantdiseases.app.ui.common.sectionRow
+import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 
@@ -33,6 +34,7 @@ class GardenAttachController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val plantRepository: PlantRepository,
+    private val reviewManager: InAppReviewManager,
 ) {
 
     fun registerCreatePlantListener() {
@@ -44,7 +46,10 @@ class GardenAttachController(
 
     fun showAddToGardenDialog(scan: ScanEntity) {
         activity.lifecycleScope.launch {
-            val plants = plantRepository.getPlants()
+            // Name + photo picker — getPlants() would build the full garden
+            // summary (journal, reminders, plans, health verdict) and throw all
+            // of it away.
+            val plants = plantRepository.getPlantsForPicker()
             if (plants.isEmpty()) {
                 showCreatePlantForScanDialog(scan)
                 return@launch
@@ -63,22 +68,22 @@ class GardenAttachController(
                     setPadding(0, 0, 0, activity.dpx(12))
                 },
             )
-            plants.forEach { summary ->
+            plants.forEach { item ->
                 // Only pass a thumb loader when there's a real photo — sectionRow
                 // skips its own icon padding/tint whenever thumb is non-null (a
                 // photo needs neither), so a plant with no photo must get
                 // thumb = null and fall through to sectionRow's own tinted
                 // fallback icon rather than an untinted ic_garden that renders
                 // as a near-invisible white outline on the pale icon-circle bg.
-                val thumbSource = summary.plant.coverPhotoUri ?: summary.latestScan?.imagePath
+                val thumbSource = item.thumbnailSource
                 column.addView(
                     activity.sectionRow(
-                        title = summary.plant.name,
+                        title = item.name,
                         subtitle = null,
                         iconRes = R.drawable.ic_garden,
                         thumb = thumbSource?.let { source -> { iv: ImageView -> bindPlantThumb(iv, source) } },
                         onClick = {
-                            attachScanToPlant(scan, summary.plant.id)
+                            attachScanToPlant(scan, item.id)
                             dialog.dismiss()
                         },
                     ),
@@ -109,12 +114,7 @@ class GardenAttachController(
     private fun attachScanToPlant(scan: ScanEntity, plantId: Long) {
         activity.lifecycleScope.launch {
             plantRepository.assignScanToPlant(scan.id, plantId)
-            binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
-            Toast.makeText(
-                activity,
-                activity.getString(R.string.scan_added_to_garden),
-                Toast.LENGTH_SHORT,
-            ).show()
+            onAddedToGarden()
         }
     }
 
@@ -143,12 +143,20 @@ class GardenAttachController(
                 roomId = roomId,
             )
             plantRepository.assignScanToPlant(scanId, plantId)
-            binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
-            Toast.makeText(
-                activity,
-                activity.getString(R.string.scan_added_to_garden),
-                Toast.LENGTH_SHORT,
-            ).show()
+            onAddedToGarden()
         }
+    }
+
+    /** Common tail of both attach paths (pick-existing and create-new): the
+     *  confirmation UI, and — since organizing a scan into a garden plant is a
+     *  genuine engaged-user moment — a chance at RuStore's review prompt. */
+    private fun onAddedToGarden() {
+        binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
+        Toast.makeText(
+            activity,
+            activity.getString(R.string.scan_added_to_garden),
+            Toast.LENGTH_SHORT,
+        ).show()
+        reviewManager.maybeRequestReview()
     }
 }

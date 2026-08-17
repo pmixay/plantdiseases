@@ -196,6 +196,11 @@ abstract class PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId")
     abstract suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
 
+    /** Whole table — for garden-wide reads that would otherwise call
+     *  [getForPlant] once per plant. */
+    @Query("SELECT * FROM plant_reminders")
+    abstract suspend fun getAll(): List<PlantReminderEntity>
+
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
     abstract suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
 
@@ -276,10 +281,18 @@ interface PlantReminderEventDao {
     suspend fun update(event: PlantReminderEventEntity)
 
     /** Undo path for CareRepository.complete(): a day-view "Done" tap on a
-     *  recurring occurrence has no prior notification-fired row to revert to
-     *  pending (unlike the notification action receivers, which always
-     *  resolve an existing row) — it inserts a fresh done event, so undoing
-     *  it means deleting exactly that row. */
+     *  recurring occurrence usually has no prior notification-fired row to
+     *  revert to pending (unlike the notification action receivers, which
+     *  always resolve an existing row), so it inserts a fresh done event and
+     *  undoing it deletes that row.
+     *
+     *  One case does NOT delete a row this app-side tap created: when the
+     *  occurrence was already marked done — by a notification action, or by
+     *  the other UI path — completeRecurring is idempotent and hands back the
+     *  EXISTING event's id, so undo deletes that instead. That is still the
+     *  right outcome (the occurrence really does become un-done), but it means
+     *  this DELETE can remove a notification-fired row, and the journal entry
+     *  written by the earlier completion is not reverted with it. */
     @Query("DELETE FROM plant_reminder_events WHERE id = :id")
     suspend fun deleteById(id: Long)
 
@@ -295,6 +308,26 @@ interface PlantReminderEventDao {
     """
     )
     suspend fun recentForPlant(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity>
+
+    /** Every "done" disposition overlapping [fromMs, toMs) — the range-bounded
+     *  counterpart of [recentForPlant], which the care queue used to page
+     *  through instead. Its `LIMIT 50` window covers ~16 days of three daily
+     *  reminders, so browsing an older month read the same 50 newest rows and
+     *  rendered every past occurrence as pending/overdue.
+     *
+     *  Both timestamps are tested: `CareRepository.completeRecurring` stamps
+     *  `fired_at` with the occurrence's ORIGINAL due instant while `done_at`
+     *  records when the user actually ticked it, and a late completion needs
+     *  both days marked done. Covered by Index(["plant_id", "fired_at"]). */
+    @Query(
+        """
+        SELECT * FROM plant_reminder_events
+        WHERE plant_id = :plantId AND action = 'done'
+          AND ((fired_at >= :fromMs AND fired_at < :toMs)
+               OR (done_at >= :fromMs AND done_at < :toMs))
+    """
+    )
+    suspend fun doneBetween(plantId: Long, fromMs: Long, toMs: Long): List<PlantReminderEventEntity>
 
     @Query(
         """
@@ -380,6 +413,13 @@ interface ScanChatMessageDao {
 
 // ─── Original DAOs ───────────────────────────────────────────────────────────
 
+/** Projection for [ScanDao.latestImageByPlant] — a plant id and the photo of
+ *  its newest scan, without dragging the whole [ScanEntity] along. */
+data class PlantThumb(
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "image_path") val imagePath: String?,
+)
+
 @Dao
 interface ScanDao {
     @Query("SELECT * FROM scans ORDER BY timestamp DESC")
@@ -399,6 +439,30 @@ interface ScanDao {
 
     @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
+
+    /** Every scan that belongs to a plant, newest first — for garden-wide reads
+     *  that would otherwise call [getScansForPlant] once per plant. Filtered on
+     *  `plant_id IS NOT NULL` on purpose: [getAllScans] would also drag in every
+     *  loose gallery scan (all 28 columns, JSON blobs included) only for the
+     *  caller to throw the null bucket away. Same ordering as the per-plant
+     *  query, so a caller grouping by plant_id sees identical buckets. */
+    @Query("SELECT * FROM scans WHERE plant_id IS NOT NULL ORDER BY timestamp DESC")
+    suspend fun getAllAssignedScans(): List<ScanEntity>
+
+    /** Latest scan photo per plant, for the garden/care thumbnail strips.
+     *  The callers used to run [getScansForPlant] once per plant and keep
+     *  one `image_path` — reading all 28 columns, including the JSON blobs
+     *  (`regions`, `all_probs`, `prediction_set`), to reach a single string.
+     *  This is SQLite's documented bare-column-with-aggregate form: the row
+     *  chosen by `MAX(timestamp)` supplies `image_path`. Do not rewrite it
+     *  as `HAVING MAX(timestamp)`, which filters on truthiness rather than
+     *  selecting a row. */
+    @SuppressWarnings(RoomWarnings.QUERY_MISMATCH) // MAX(timestamp) selects the row; PlantThumb doesn't carry it.
+    @Query(
+        "SELECT plant_id, image_path, MAX(timestamp) FROM scans " +
+            "WHERE plant_id IN (:plantIds) GROUP BY plant_id",
+    )
+    suspend fun latestImageByPlant(plantIds: List<Long>): List<PlantThumb>
 
     @Insert
     suspend fun insert(scan: ScanEntity): Long
@@ -435,6 +499,12 @@ interface PlantDao {
 interface PlantJournalDao {
     @Query("SELECT * FROM plant_journal WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getEntriesForPlant(plantId: Long): List<PlantJournalEntity>
+
+    /** Whole table, newest first — for garden-wide reads that would otherwise
+     *  call [getEntriesForPlant] once per plant. Same ordering, so a caller
+     *  grouping by plant_id sees exactly what the per-plant query returns. */
+    @Query("SELECT * FROM plant_journal ORDER BY timestamp DESC")
+    suspend fun getAllEntries(): List<PlantJournalEntity>
 
     @Query("SELECT * FROM plant_journal WHERE id = :id")
     suspend fun getById(id: Long): PlantJournalEntity?
@@ -479,8 +549,10 @@ interface RoomDao {
     @Query("SELECT * FROM rooms WHERE id = :id")
     suspend fun getById(id: Long): RoomEntity?
 
-    @Query("SELECT * FROM rooms WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): RoomEntity?
+    // No findByName here on purpose: SQLite's COLLATE NOCASE folds ASCII
+    // A–Z only, so a SQL uniqueness check let "Кухня" and "кухня" both
+    // through the BINARY unique index. RoomRepository.findClash decides
+    // name collisions in Kotlin instead, where the comparison is Unicode-aware.
 
     @Insert
     suspend fun insert(room: RoomEntity): Long
@@ -556,17 +628,6 @@ data class TreatmentPlanEntity(
 interface TreatmentPlanDao {
     @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId AND status = 'active' LIMIT 1")
     suspend fun getActiveForPlant(plantId: Long): TreatmentPlanEntity?
-
-    /** Any plan for this scan+disease, active or not — the existence check
-     *  that guards against re-creating a plan the user already completed
-     *  or abandoned. [getActiveForPlant] can't answer this: once a plan
-     *  leaves "active" it stops matching, so a completed plan looked
-     *  indistinguishable from no plan at all. */
-    @Query(
-        "SELECT EXISTS(SELECT 1 FROM treatment_plans " +
-            "WHERE plant_id = :plantId AND scan_id = :scanId AND disease_key = :diseaseKey)"
-    )
-    suspend fun existsForScanAndDisease(plantId: Long, scanId: Long?, diseaseKey: String): Boolean
 
     @Query("SELECT * FROM treatment_plans WHERE plant_id = :plantId ORDER BY started_at DESC")
     suspend fun getAllForPlant(plantId: Long): List<TreatmentPlanEntity>
@@ -654,66 +715,27 @@ interface TreatmentStepDao {
     )
     suspend fun getAllInRangeWithPlantId(from: Long, to: Long): List<StepWithPlantId>
 
-    @Query("SELECT COUNT(*) FROM treatment_steps WHERE plan_id = :planId")
-    suspend fun countForPlan(planId: Long): Int
+    /** Step totals for a batch of plans ("Step 2 of 5"). One grouped read
+     *  instead of one COUNT per plan on every calendar month/day load. */
+    @Query(
+        """
+        SELECT `plan_id`, COUNT(*) AS `step_count` FROM treatment_steps
+        WHERE plan_id IN (:planIds)
+        GROUP BY plan_id
+        """
+    )
+    suspend fun countsForPlans(planIds: List<Long>): List<PlanStepCount>
 }
+
+data class PlanStepCount(
+    @ColumnInfo(name = "plan_id") val planId: Long,
+    @ColumnInfo(name = "step_count") val stepCount: Int,
+)
 
 data class StepWithPlantId(
     @Embedded val step: TreatmentStepEntity,
     @ColumnInfo(name = "plant_id") val plantId: Long,
 )
-
-// ─── One-off Care Task Entity ──────────────────────────────────────────────
-//
-// User-typed one-off tasks only. Recurring care lives in `plant_reminders`
-// and is projected forward by util/CareQueue.kt — it is NOT materialised
-// here. This table exists solely for tasks with nowhere else to live.
-
-@Entity(
-    tableName = "care_tasks",
-    foreignKeys = [
-        ForeignKey(
-            entity = PlantEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["plant_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ],
-    indices = [Index(value = ["plant_id"]), Index(value = ["due_at"])],
-)
-data class CareTaskEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    @ColumnInfo(name = "plant_id") val plantId: Long,
-    /** ReminderPresets key: watering / fertilize / check / mist / … / custom. */
-    @ColumnInfo(name = "type") val type: String,
-    @ColumnInfo(name = "title") val title: String,
-    @ColumnInfo(name = "note") val note: String? = null,
-    @ColumnInfo(name = "due_at") val dueAt: Long,
-    @ColumnInfo(name = "status") val status: String = "pending",
-    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
-)
-
-@Dao
-interface CareTaskDao {
-    @Query("SELECT * FROM care_tasks WHERE plant_id = :plantId ORDER BY due_at ASC")
-    suspend fun getForPlant(plantId: Long): List<CareTaskEntity>
-
-    @Query("SELECT * FROM care_tasks WHERE id = :id")
-    suspend fun getById(id: Long): CareTaskEntity?
-
-    @Query("SELECT * FROM care_tasks WHERE due_at >= :from AND due_at < :to ORDER BY due_at ASC")
-    suspend fun inRange(from: Long, to: Long): List<CareTaskEntity>
-
-    @Insert
-    suspend fun insert(task: CareTaskEntity): Long
-
-    @Update
-    suspend fun update(task: CareTaskEntity)
-
-    @Query("DELETE FROM care_tasks WHERE id = :id")
-    suspend fun deleteById(id: Long)
-}
 
 // ─── Notification centre ─────────────────────────────────────────────
 //
@@ -774,13 +796,14 @@ interface NotificationDao {
         RoomEntity::class,
         TreatmentPlanEntity::class,
         TreatmentStepEntity::class,
-        CareTaskEntity::class,
         NotificationEntity::class,
     ],
-    // The schema is treated as ephemeral while the app is in pre-release
-    // testing: ``fallbackToDestructiveMigration`` is configured below
-    // and any schema change wipes local data on next launch. Real
-    // migrations come later, alongside cloud sync.
+    // Every version step from 1 has a hand-written migration registered
+    // below, so upgrades preserve the garden, scans, journal and reminders.
+    // ``fallbackToDestructiveMigration`` is still configured as the last
+    // resort for version pairs with NO registered path (a downgrade, or a
+    // developer build that skipped a step) — it does not rescue a migration
+    // that leaves the schema drifted from the entities; that throws.
     version = 8,
     exportSchema = false,
 )
@@ -795,7 +818,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun roomDao(): RoomDao
     abstract fun treatmentPlanDao(): TreatmentPlanDao
     abstract fun treatmentStepDao(): TreatmentStepDao
-    abstract fun careTaskDao(): CareTaskDao
     abstract fun notificationDao(): NotificationDao
 
     companion object {
@@ -897,10 +919,10 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** Rooms become first-class rows, and treatment plans/steps + one-off
-         *  tasks get storage. Entirely additive — three CREATE TABLEs and one
-         *  ADD COLUMN, then a backfill that turns each distinct trimmed
-         *  `plants.room` value into a `rooms` row and points `room_id` at it.
+        /** Rooms become first-class rows and treatment plans/steps get
+         *  storage. Entirely additive — three CREATE TABLEs and one
+         *  ADD COLUMN, then a backfill that turns each trimmed, case-insensitively
+         *  distinct `plants.room` value into a `rooms` row and points `room_id` at it.
          *  No table is rebuilt, so no existing garden, scan, journal or
          *  reminder is touched, and the legacy `room` column is left in
          *  place (unread) rather than dropped. */
@@ -984,30 +1006,6 @@ abstract class AppDatabase : RoomDatabase() {
                         "ON `treatment_steps` (`plan_id`, `step_index`)"
                 )
 
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `care_tasks` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `plant_id` INTEGER NOT NULL,
-                        `type` TEXT NOT NULL,
-                        `title` TEXT NOT NULL,
-                        `note` TEXT,
-                        `due_at` INTEGER NOT NULL,
-                        `status` TEXT NOT NULL DEFAULT 'pending',
-                        `done_at` INTEGER,
-                        `created_at` INTEGER NOT NULL,
-                        FOREIGN KEY(`plant_id`) REFERENCES `plants`(`id`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_plant_id` ON `care_tasks` (`plant_id`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_care_tasks_due_at` ON `care_tasks` (`due_at`)"
-                )
-
                 db.execSQL("ALTER TABLE `plants` ADD COLUMN `room_id` INTEGER")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_plants_room_id` ON `plants` (`room_id`)")
 
@@ -1015,34 +1013,58 @@ abstract class AppDatabase : RoomDatabase() {
                 // becomes a row, then each matching plant points at it.
                 // TRIM collapses "Kitchen " and "Kitchen" into one room,
                 // which the old free-text grouping never did.
-                db.execSQL(
-                    """
-                    INSERT OR IGNORE INTO `rooms` (`name`, `created_at`, `sort_order`)
-                    SELECT DISTINCT TRIM(`room`), strftime('%s','now') * 1000, 0
-                    FROM `plants`
-                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    UPDATE `plants`
-                    SET `room_id` = (
-                        SELECT `r`.`id` FROM `rooms` `r` WHERE `r`.`name` = TRIM(`plants`.`room`)
+                //
+                // The grouping is done in Kotlin, not SQL: SQLite's DISTINCT
+                // is BINARY and COLLATE NOCASE folds ASCII A–Z only, so a
+                // pure-SQL backfill made "Office"/"office" — and, with no
+                // remedy at all, "Кухня"/"кухня" — two rooms on upgrade,
+                // recreating the exact fragmentation this table exists to
+                // prevent. `equals(ignoreCase = true)` in RoomRepository
+                // guards new names the same way.
+                val trimmedRoomNames = mutableListOf<String>()
+                db.query(
+                    "SELECT DISTINCT TRIM(`room`) FROM `plants` " +
+                        "WHERE `room` IS NOT NULL AND TRIM(`room`) != ''"
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        trimmedRoomNames += cursor.getString(0)
+                    }
+                }
+                val createdAt = System.currentTimeMillis()
+                trimmedRoomNames.groupBy { it.lowercase(java.util.Locale.ROOT) }.forEach { (_, variants) ->
+                    val canonical = variants.first()
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `rooms` (`name`, `created_at`, `sort_order`) VALUES (?, ?, 0)",
+                        arrayOf<Any>(canonical, createdAt),
                     )
-                    WHERE `room` IS NOT NULL AND TRIM(`room`) != ''
-                    """.trimIndent()
-                )
+                    val roomId = db.query(
+                        "SELECT `id` FROM `rooms` WHERE `name` = ?",
+                        arrayOf<Any>(canonical),
+                    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+                        ?: return@forEach
+                    // One UPDATE per spelling: TRIM(room) = ? is a BINARY
+                    // compare, which is what we want now that the grouping
+                    // decision has already been made above.
+                    variants.forEach { variant ->
+                        db.execSQL(
+                            "UPDATE `plants` SET `room_id` = ? WHERE TRIM(`room`) = ?",
+                            arrayOf<Any>(roomId, variant),
+                        )
+                    }
+                }
             }
         }
 
         /** Adds the notification centre. Entirely additive — one CREATE TABLE
          *  IF NOT EXISTS + one index, no existing table touched, no row
-         *  copied. Matches NotificationEntity's schema exactly (Migration7To8Test
-         *  pins this). If it ever drifts, fallbackToDestructiveMigration below
-         *  does NOT save you: that fallback only covers a MISSING migration
-         *  path, and this one is registered, so Room instead validates the
-         *  drifted schema after running it and throws IllegalStateException —
-         *  a hard crash on launch for every upgrading user, not a silent wipe. */
+         *  copied. Matches NotificationEntity's schema exactly, and it has
+         *  to: because this migration is registered, a 7→8 upgrade always
+         *  runs this SQL and Room then validates the result against the
+         *  entity — drift throws IllegalStateException at open time (a
+         *  launch crash). It is NOT rescued by fallbackToDestructiveMigration,
+         *  which only applies to version pairs with no registered migration.
+         *  Migration6To7Test walks a v6 file up through here via Room so the
+         *  validator actually runs. */
         val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(

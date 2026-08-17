@@ -18,12 +18,15 @@ Two deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
-| `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
+| `server/` | Python 3.14, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 
-The bilingual privacy policy is a single standalone page, `privacy.html` (repo
-root) — the canonical data-disclosure surface referenced by the app's consent
-screen.
+The bilingual privacy policy is bundled with the app at
+`android/app/src/main/assets/privacy_policy.html` and shown by
+`ui/legal/PrivacyPolicyActivity` (a WebView over that one local asset). It is
+the canonical data-disclosure surface, linked from the onboarding consent
+screen and the in-app consent dialog — so it must work offline and must
+describe the build the reader is actually running.
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next

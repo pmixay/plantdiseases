@@ -259,37 +259,30 @@ jobs:
           compression-level: 3
 
   server:
-    name: Server tests & lint (py${{ matrix.python-version }})
+    name: Server tests & lint (py3.14)
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: server
-    strategy:
-      fail-fast: false
-      matrix:
-        # Both ends of the supported range. The server is deployed straight
-        # onto a host (`start.sh` → uvicorn), so the interpreter is whatever
-        # that box has rather than something a base image pins — which makes
-        # testing a single version the wrong shape:
-        #  - 3.11 is the floor, and what the requirement floors
-        #    (numpy>=2.4.6, onnxruntime>=1.28) are still resolvable against.
-        #  - 3.14 is the current release, and what a freshly-provisioned host
-        #    gets. CI used to test 3.11 only, so a newer host ran code no
-        #    test had ever executed on it.
-        # Every dependency in requirements.txt publishes cp311 AND cp314
-        # linux wheels, so neither leg compiles from source.
-        python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
+      # The server is deployed straight onto a host (`start.sh` → uvicorn),
+      # so the interpreter is whatever `python3` resolves to there rather
+      # than something a base image pins. We stand at the single current
+      # release (3.14) instead of testing a floor+latest range — this
+      # assumes deploy hosts track the latest interpreter rather than
+      # staying pinned to an older one. If that assumption stops holding,
+      # reintroduce a floor leg here (and in requirements.txt's numpy floor
+      # / pyproject.toml's ruff target-version, which moved in lockstep).
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             server/requirements.txt

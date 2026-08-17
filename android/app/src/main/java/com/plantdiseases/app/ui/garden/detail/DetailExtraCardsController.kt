@@ -155,16 +155,14 @@ class DetailExtraCardsController(
 
     /** Materialises a treatment plan from a disease-diagnosing scan, once
      *  the care plan it's built from has actually loaded (Garden refactor
-     *  §Scan-driven care checklists). Guarded on [scan] being the plant's
-     *  newest AND on a plan already existing for this exact scan+disease —
-     *  this fires every time the care-plan card loads, so the guard has to
-     *  survive the plan later being completed or abandoned. Checking only
-     *  the ACTIVE plan (as this used to) stops working the moment the user
-     *  finishes their treatment: the plan leaves "active", the check reads
-     *  as "no plan yet", and a fresh duplicate gets started on the very
-     *  next visit to the screen. Keying on scan id (not just disease key)
-     *  keeps a genuinely new scan of the same disease free to start its
-     *  own course of treatment. */
+     *  §Scan-driven care checklists). This fires on every render — including
+     *  onRestart, off a cached care plan — so it needs three guards: [scan]
+     *  must be the plant's newest, the active plan's disease key must differ
+     *  (protects an in-progress plan against a newer same-disease scan), and
+     *  no plan of ANY status may already exist for this scan. The last one
+     *  matters because the active-plan lookup filters `status = 'active'` and
+     *  therefore goes blind once the user ticks the final step; without it,
+     *  the next visit re-creates the finished plan with progress reset. */
     private fun maybeStartTreatmentPlan(
         plant: PlantEntity,
         scan: ScanEntity,
@@ -179,7 +177,9 @@ class DetailExtraCardsController(
             val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
             if (newestScanId != scan.id) return@launch // a newer scan landed while this card was loading
 
-            if (careRepository.hasPlanForScan(plant.id, scan.id, classKey)) return@launch
+            val existing = careRepository.activePlan(plant.id)
+            if (existing?.plan?.diseaseKey == classKey) return@launch
+            if (careRepository.hasPlanForScan(plant.id, scan.id)) return@launch
 
             careRepository.startTreatmentPlan(
                 plantId = plant.id,
@@ -885,16 +885,13 @@ class DetailExtraCardsController(
 
     /** Notify the user that the plant's severity series is worsening
      *  twice in a row. Reuses the existing plant-reminders
-     *  notification channel + intent into the plant detail. */
+     *  notification channel + intent into the plant detail.
+     *
+     *  The POST_NOTIFICATIONS check gates only `notify()`, never
+     *  [NotificationCenter.record][com.plantdiseases.app.util.NotificationCenter.record]:
+     *  a user who denied the permission is exactly the user the in-app
+     *  notification centre exists for. */
     private suspend fun fireProgressionAlert(plantName: String) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                activity,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
         val notificationId = (plantId * 10 + 9).toInt()
         val contentIntent = android.app.PendingIntent.getActivity(
             activity,
@@ -923,6 +920,14 @@ class DetailExtraCardsController(
             .setContentIntent(contentIntent)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                activity,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         try {
             (activity.getSystemService(android.app.NotificationManager::class.java))
                 ?.notify(notificationId, builder.build())
@@ -1058,18 +1063,21 @@ class DetailExtraCardsController(
 
     // ─── Treatment plan card (Garden refactor Overview tab) ─────────────
 
-    /** Null (renders nothing) when the plant has no active treatment
-     *  plan — never an empty card. Steps render done / current / later /
+    /** Null (renders nothing) when the plant has no treatment plan worth
+     *  showing — never an empty card. Steps render done / current / later /
      *  overdue; the last step completing flips this to the "finished"
-     *  single-line state, not a silent disappearance.
+     *  single-line state, not a silent disappearance — which is why the
+     *  lookup is [CareRepository.activeOrRecentlyCompletedPlan] and not
+     *  `activePlan`, whose `status = 'active'` filter made the finished
+     *  state unreachable.
      *
      *  Suspend, unlike this controller's other `build*` methods: the
-     *  card's very existence depends on a DB read (is there an active
-     *  plan at all), so the caller awaits this before deciding whether
+     *  card's very existence depends on a DB read (is there a plan at
+     *  all), so the caller awaits this before deciding whether
      *  to add anything to the tab, rather than adding a shell and
      *  filling it in asynchronously the way buildHealthCard does. */
     suspend fun buildTreatmentPlanCard(plant: PlantEntity): View? {
-        val planWithSteps = careRepository.activePlan(plant.id) ?: return null
+        val planWithSteps = careRepository.activeOrRecentlyCompletedPlan(plant.id) ?: return null
         val plan = planWithSteps.plan
         val steps = planWithSteps.steps.sortedBy { it.stepIndex }
         val isRu = LocaleHelper.isRussian(activity)
@@ -1093,7 +1101,8 @@ class DetailExtraCardsController(
         card.addView(body)
 
         if (plan.status != "active") {
-            // Just-completed this session — the finished state, not silence.
+            // Completed recently (see activeOrRecentlyCompletedPlan's window)
+            // — the finished state, not silence.
             body.addView(
                 TextView(activity).apply {
                     text = activity.getString(

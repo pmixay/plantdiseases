@@ -159,7 +159,13 @@ class PlantDiseasesApp : Application() {
         setupTelemetry()
         purgeStaleRejectedScans()
         pruneOldNotifications()
-        adoptCommunityAuthor()
+        // NB: the community author row is deliberately NOT adopted here.
+        // Adoption mints a permanent per-device key and creates a permanent
+        // server-side row, so it must not run before the onboarding
+        // prominent-disclosure screen or for a user who never opted into the
+        // community. It happens lazily, from the first actual community write
+        // — see ScanRepository.ensureCommunityAuthorAdopted.
+        //
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -191,23 +197,6 @@ class PlantDiseasesApp : Application() {
             runCatching {
                 notificationRepository.deleteOlderThan(
                     System.currentTimeMillis() - NOTIFICATION_RETENTION_MS,
-                )
-            }
-        }
-    }
-
-    /** Groundwork for the forum (COMMUNITY_FORUM_PLAN.docx §4): ensure this
-     *  device's durable author row exists on the server, seeded from
-     *  whatever handle/pseudo-id it already has, and refresh its
-     *  last-seen timestamp. Fire-and-forget, idempotent, silent on
-     *  failure — nothing in the app reads the result yet. */
-    private fun adoptCommunityAuthor() {
-        appScope.launch {
-            runCatching {
-                scanRepository.adoptCommunityAuthor(
-                    keyHash = com.plantdiseases.app.util.CommunityIdentity.keyHash(this@PlantDiseasesApp),
-                    seedDisplayName = com.plantdiseases.app.util.Nicknames.nickname(this@PlantDiseasesApp),
-                    legacyPseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@PlantDiseasesApp),
                 )
             }
         }

@@ -1,8 +1,8 @@
 package com.plantdiseases.app.util
 
 /**
- * Aggregates recurring reminders, treatment-plan steps and one-off tasks
- * into one dated queue — the "Today" care hub ROADMAP §Garden refactor
+ * Aggregates recurring reminders and treatment-plan steps into one dated
+ * queue — the "Today" care hub ROADMAP §Garden refactor
  * describes. Pure Kotlin: no Room entities, no Android imports. The
  * repository layer (CareRepository) maps DAO rows into the *Input types
  * below and back out again; this object only does the projection math,
@@ -39,20 +39,18 @@ object CareQueue {
         val stepCount: Int,
     )
 
-    data class OneOffInput(
-        val taskId: Long,
-        val plantId: Long,
-        val type: String,
-        val title: String,
-        val dueAtMs: Long,
-        val status: String, // "pending" | "done"
-    )
-
     /** A completed occurrence of a recurring reminder, identified by the
-     *  calendar day (in the device's default time zone) it was done on —
-     *  recurring reminders have no row of their own, so "done" is recorded
-     *  per-day rather than per-occurrence-id. */
-    data class DoneEvent(val plantId: Long, val type: String, val epochDay: Long)
+     *  reminder it belongs to plus the calendar day (in the device's default
+     *  time zone) it was done on. Both halves are load-bearing: a plant may
+     *  hold several reminders of the same type — MIGRATION_3_4 dropped the
+     *  (plant_id, type) unique index precisely so it can — so keying on type
+     *  alone would let ticking one of them mark all the others done. */
+    data class DoneEvent(
+        val plantId: Long,
+        val reminderId: Long,
+        val type: String,
+        val epochDay: Long,
+    )
 
     data class CareTask(
         val id: TaskId,
@@ -69,7 +67,6 @@ object CareQueue {
         sealed interface TaskId {
             data class Recurring(val reminderId: Long, val epochDay: Long) : TaskId
             data class Step(val stepId: Long) : TaskId
-            data class OneOff(val taskId: Long) : TaskId
         }
     }
 
@@ -82,7 +79,6 @@ object CareQueue {
     fun project(
         reminders: List<ReminderInput>,
         steps: List<StepInput>,
-        oneOffs: List<OneOffInput>,
         doneEvents: List<DoneEvent>,
         fromMs: Long,
         toMs: Long,
@@ -108,18 +104,6 @@ object CareQueue {
             )
         }
 
-        for (oneOff in oneOffs) {
-            if (oneOff.dueAtMs < fromMs || oneOff.dueAtMs >= toMs) continue
-            tasks += CareTask(
-                id = CareTask.TaskId.OneOff(oneOff.taskId),
-                plantId = oneOff.plantId,
-                type = oneOff.type,
-                title = oneOff.title,
-                dueAt = oneOff.dueAtMs,
-                status = statusOf(oneOff.status),
-            )
-        }
-
         return tasks
     }
 
@@ -137,12 +121,28 @@ object CareQueue {
     ): List<CareTask> {
         val intervalDays = reminder.intervalDays.coerceAtLeast(1)
         val doneDays = doneEvents
-            .filter { it.plantId == reminder.plantId && it.type == reminder.type }
+            .filter { it.plantId == reminder.plantId && it.reminderId == reminder.reminderId }
             .mapTo(mutableSetOf()) { it.epochDay }
 
         val results = mutableListOf<CareTask>()
-        var occurrence = 0
-        while (occurrence < MAX_OCCURRENCES_PER_REMINDER) {
+        val stepMs = intervalDays.toLong() * CareSchedule.DAY_MS
+        val first = occurrenceDueAt(reminder, 0)
+        // Jump straight to the first occurrence that can land in the window;
+        // step back one so a DST-shifted occurrence can't be skipped, and
+        // clamp for windows starting before occurrence 0 (CareDayActivity
+        // queries dayStart - 30d).
+        val startIndex = if (fromMs <= first) {
+            0
+        } else {
+            (((fromMs - first) / stepMs) - 1).coerceAtLeast(0L).toInt()
+        }
+        // The cap is relative to the WINDOW, not to occurrence 0: an absolute
+        // cap silently drops long-lived reminders (a plant created 500 days
+        // ago with a daily reminder exhausts it before the window starts and
+        // vanishes from the calendar entirely).
+        val maxIndex = startIndex + ((toMs - fromMs) / stepMs).toInt() + 2
+        var occurrence = startIndex
+        while (occurrence <= maxIndex && occurrence - startIndex < MAX_OCCURRENCES_PER_REMINDER) {
             val dueAt = occurrenceDueAt(reminder, occurrence)
             if (dueAt >= toMs) break
             if (dueAt >= fromMs) {
@@ -186,7 +186,8 @@ object CareQueue {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = ms }
         // Days since epoch in LOCAL time — two timestamps on the same wall-clock
         // day (regardless of hour) must map to the same bucket, and this must
-        // stay in lock-step with dayStartMs()/monthSummary() below.
+        // stay in lock-step with [dayStartMs] (its inverse) and monthSummary()
+        // below.
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
         cal.set(java.util.Calendar.MINUTE, 0)
         cal.set(java.util.Calendar.SECOND, 0)
@@ -203,19 +204,19 @@ object CareQueue {
         return (cal.timeInMillis + offsetMs) / CareSchedule.DAY_MS
     }
 
-    /** Inverse of [epochDayOf]: the instant of LOCAL midnight for epoch-day
-     *  [day]. Every place that turns a day index back into a timestamp for
-     *  opening the day view must go through this rather than reconstructing
-     *  midnight independently — [epochDayOf] shifts by the zone+DST offset
-     *  before dividing, and a call site that multiplies straight back
-     *  (`day * DAY_MS`) never removes that shift, landing on the offset
-     *  hour instead of midnight (e.g. 03:00 rather than 00:00 at UTC+3). */
-    fun dayStartMs(day: Long): Long {
-        val utcMidnight = day * CareSchedule.DAY_MS
-        val cal = java.util.Calendar.getInstance().apply { timeInMillis = utcMidnight }
-        val offsetMs = cal.get(java.util.Calendar.ZONE_OFFSET) + cal.get(java.util.Calendar.DST_OFFSET)
-        return utcMidnight - offsetMs
-    }
+    /** Inverse of [epochDayOf]: LOCAL midnight of [epochDay] as an absolute
+     *  instant. Plain `epochDay * DAY_MS` reconstructs UTC midnight, which
+     *  is a different day-window in every zone but UTC — the calendar tap
+     *  handler and the day view must not disagree about which day they
+     *  opened. atStartOfDay is what makes this correct across a DST
+     *  transition: on a day whose local midnight does not exist it returns
+     *  the first instant that does, where subtracting a zone offset read at
+     *  some other instant would land on the wrong side of the switch. */
+    fun dayStartMs(epochDay: Long): Long =
+        java.time.LocalDate.ofEpochDay(epochDay)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
 
     /** Tasks due on the calendar day containing [dayStartMs], sorted by
      *  time of day then title. */

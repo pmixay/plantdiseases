@@ -29,8 +29,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Task detail — serves all three [com.plantdiseases.app.util.CareQueue.CareTask]
- * kinds. Sections render only when they have content: a plain watering
+ * Task detail — serves both [com.plantdiseases.app.util.CareQueue.CareTask]
+ * kinds (recurring occurrence, treatment step). Sections render only when they have content: a plain watering
  * reminder has no products/recommendations/step-progress and must not
  * show empty headers for them (see docs/ROADMAP.md "Garden refactor").
  */
@@ -76,7 +76,6 @@ class CareTaskActivity : AppCompatActivity() {
                     intent.getLongExtra(EXTRA_REMINDER_ID, -1L),
                     intent.getLongExtra(EXTRA_DUE_AT, System.currentTimeMillis()),
                 )
-                "oneoff" -> renderOneOff(intent.getLongExtra(EXTRA_ONEOFF_ID, -1L))
                 else -> finish()
             }
         }
@@ -157,7 +156,6 @@ class CareTaskActivity : AppCompatActivity() {
         if (lastDone != null) {
             binding.careTaskHistorySection.visibility = View.VISIBLE
             binding.careTaskLastDone.text = getString(R.string.task_last_done, relativeDate(lastDone))
-            binding.careTaskNextStep.visibility = View.GONE
         } else {
             binding.careTaskHistorySection.visibility = View.GONE
         }
@@ -180,46 +178,11 @@ class CareTaskActivity : AppCompatActivity() {
                 ),
             )
         }
-    }
-
-    private suspend fun renderOneOff(taskId: Long) {
-        val task = careRepository.getOneOff(taskId) ?: run {
-            finish()
-            return
-        }
-        val plant = plantRepository.getPlant(task.plantId) ?: run {
-            finish()
-            return
-        }
-
-        binding.careTaskTypeLabel.text = task.title
-        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(task.dueAt)
-        bindPlantChip(plant.name, plant.coverPhotoUri)
-        binding.careTaskPlantStep.visibility = View.GONE
-        bindTextSection(binding.careTaskDescriptionSection, binding.careTaskDescription, task.note)
-        binding.careTaskBulletsSection.visibility = View.GONE
-        binding.careTaskRecommendationsSection.visibility = View.GONE
-        binding.careTaskProductsSection.visibility = View.GONE
-        binding.careTaskHistorySection.visibility = View.GONE
-        binding.careTaskDoneButton.isEnabled = task.status != "done"
-
-        pendingComplete = {
-            careRepository.complete(
-                view = CareRepository.CareTaskView(
-                    task = com.plantdiseases.app.util.CareQueue.CareTask(
-                        id = com.plantdiseases.app.util.CareQueue.CareTask.TaskId.OneOff(taskId),
-                        plantId = task.plantId,
-                        type = task.type,
-                        title = task.title,
-                        dueAt = task.dueAt,
-                        status = com.plantdiseases.app.util.CareQueue.CareTask.Status.PENDING,
-                    ),
-                    plantName = plant.name,
-                    roomName = null,
-                    thumbnailSource = plant.coverPhotoUri,
-                ),
-            )
-        }
+        // Recurring occurrences have no row of their own, so there is no
+        // status to read back here — the caller tells us whether this
+        // occurrence is already done (the other two branches read step /
+        // task status directly).
+        binding.careTaskDoneButton.isEnabled = !intent.getBooleanExtra(EXTRA_IS_DONE, false)
     }
 
     private fun bindPlantChip(name: String, thumbnailSource: String?) {
@@ -297,9 +260,13 @@ class CareTaskActivity : AppCompatActivity() {
             binding.careTaskTempRange.visibility = View.GONE
         }
 
-        if (obj.has("dry_hours")) {
+        // 0 is a real value in the curated protocols (nutrient_deficiency) and
+        // reads as a nonsensical "keep dry for 0 hours" — hide the row instead.
+        val dryHours = obj.optInt("dry_hours", 0)
+        if (dryHours > 0) {
             binding.careTaskDryHours.visibility = View.VISIBLE
-            binding.careTaskDryHours.text = getString(R.string.task_dry_hours, obj.optInt("dry_hours"))
+            binding.careTaskDryHours.text =
+                resources.getQuantityString(R.plurals.task_dry_hours, dryHours, dryHours)
         } else {
             binding.careTaskDryHours.visibility = View.GONE
         }
@@ -370,7 +337,6 @@ class CareTaskActivity : AppCompatActivity() {
         }
         binding.careTaskHistorySection.visibility = View.VISIBLE
         binding.careTaskLastDone.text = getString(R.string.task_last_done, relativeDate(step.doneAt))
-        binding.careTaskNextStep.visibility = View.GONE
     }
 
     private fun relativeDate(ms: Long): CharSequence =
@@ -399,6 +365,9 @@ class CareTaskActivity : AppCompatActivity() {
         const val EXTRA_STEP_ID = "extra_step_id"
         const val EXTRA_REMINDER_ID = "extra_reminder_id"
         const val EXTRA_DUE_AT = "extra_due_at"
-        const val EXTRA_ONEOFF_ID = "extra_oneoff_id"
+
+        /** Recurring occurrences carry their done-state in the queue, not in a
+         *  row this screen can re-read — the launcher passes it through. */
+        const val EXTRA_IS_DONE = "extra_is_done"
     }
 }

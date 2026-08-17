@@ -27,7 +27,6 @@ import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
 
@@ -78,15 +77,9 @@ class CareDayActivity : AppCompatActivity() {
         loadDay()
     }
 
-    private fun todayStartMs(): Long {
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        return cal.timeInMillis
-    }
+    /** Local midnight of today, built through the same helper the calendar
+     *  tap handler uses so both agree on where a day starts. */
+    private fun todayStartMs(): Long = CareQueue.dayStartMs(CareQueue.epochDayOf(System.currentTimeMillis()))
 
     private var lastDoneCount = 0
 
@@ -165,8 +158,8 @@ class CareDayActivity : AppCompatActivity() {
         // CareRepository folds a missing custom reminder label into the raw
         // type key (title == type) before this screen ever sees it — resolve
         // that specific case to a localized preset label. A real custom
-        // label, a one-off's typed title, or a treatment step's own text all
-        // differ from the bare type key, so they render as-is.
+        // label or a treatment step's own text differs from the bare type
+        // key, so those render as-is.
         row.careTaskTitle.text = when {
             view.task.type == "treatment" -> view.task.title
             view.task.title == view.task.type -> getString(ReminderPresets.fallbackLabelRes(view.task.type))
@@ -216,6 +209,13 @@ class CareDayActivity : AppCompatActivity() {
 
     private fun openTaskDetail(view: CareRepository.CareTaskView) {
         val intent = Intent(this, CareTaskActivity::class.java)
+        // Rows in the "done" section open the detail screen too — tell it so,
+        // otherwise the recurring branch offers a second "Done" tap that
+        // writes a duplicate journal entry and reminder event.
+        intent.putExtra(
+            CareTaskActivity.EXTRA_IS_DONE,
+            view.task.status == CareQueue.CareTask.Status.DONE,
+        )
         when (val id = view.task.id) {
             is CareQueue.CareTask.TaskId.Step -> {
                 intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "step")
@@ -225,10 +225,6 @@ class CareDayActivity : AppCompatActivity() {
                 intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "recurring")
                 intent.putExtra(CareTaskActivity.EXTRA_REMINDER_ID, id.reminderId)
                 intent.putExtra(CareTaskActivity.EXTRA_DUE_AT, view.task.dueAt)
-            }
-            is CareQueue.CareTask.TaskId.OneOff -> {
-                intent.putExtra(CareTaskActivity.EXTRA_TASK_KIND, "oneoff")
-                intent.putExtra(CareTaskActivity.EXTRA_ONEOFF_ID, id.taskId)
             }
         }
         startActivity(intent)

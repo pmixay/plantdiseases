@@ -236,10 +236,10 @@ plus `requirements.txt`, and starts uvicorn on `:8000`. That is fine for a
 first run; for anything long-lived use the systemd unit in §4, which wraps the
 same command with restart, logging and sandboxing.
 
-Supported Python is **3.11 – 3.14**; CI runs the suite on both ends of that
-range. Configuration comes from `server/config.json` (copy
-`config.example.json`), with environment variables as the fallback — so the
-same settings can be exported before starting:
+Supported Python is **3.14**; CI runs the suite against it. Configuration
+comes from `server/config.json` (copy `config.example.json`), with
+environment variables as the fallback — so the same settings can be
+exported before starting:
 
 ```bash
 cd server
@@ -456,7 +456,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
-sudo -u plantd python3 -m venv /opt/plantdiseases/.venv   # 3.11-3.14
+sudo -u plantd python3 -m venv /opt/plantdiseases/.venv   # 3.14
 sudo -u plantd /opt/plantdiseases/.venv/bin/pip install -r /opt/plantdiseases/server/requirements.txt
 sudo systemctl daemon-reload
 sudo systemctl enable --now plantdiseases

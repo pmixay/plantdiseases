@@ -311,6 +311,14 @@ dependencies {
     // the app carries on — the usual optional-integration degradation.
     implementation("ru.rustore.sdk:appupdate:10.5.0")
 
+    // RuStore in-app reviews — on a few genuine engaged-user moments on the
+    // Result screen (confirmed-correct diagnosis, scan attached to a garden
+    // plant, care plan turned into reminders), offers RuStore's native
+    // rate/review dialog (util/InAppReviewManager). Same artifactory as
+    // appupdate above; RuStore caps this at one launch a day
+    // (RuStoreRequestLimitReached) and we throttle further locally.
+    implementation("ru.rustore.sdk:review:10.0.0")
+
     // Gson
     implementation("com.google.code.gson:gson:2.14.0")
 

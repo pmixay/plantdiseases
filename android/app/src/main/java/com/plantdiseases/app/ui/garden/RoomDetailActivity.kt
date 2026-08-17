@@ -80,11 +80,12 @@ class RoomDetailActivity : AppCompatActivity() {
         }
     }
 
-    override fun onRestart() {
-        super.onRestart()
-        loadRoom()
-    }
-
+    /** Load here, not in onCreate — onResume is this screen's only initial-load
+     *  path, and it also picks up edits made in PlantDetailActivity. There is
+     *  deliberately no onRestart() override: onRestart is always followed by
+     *  onResume, so having both ran the whole load twice in two concurrent
+     *  coroutines on every return, re-inflating every row and restarting every
+     *  Glide request (visible thumbnail flicker). */
     override fun onResume() {
         super.onResume()
         loadRoom()
@@ -96,7 +97,7 @@ class RoomDetailActivity : AppCompatActivity() {
             true
         }
         R.id.action_rename_room -> {
-            currentRoom?.let { showRenameRoomDialog(roomRepository, it) { loadRoom() } }
+            currentRoom?.let { showRoomNameDialog(roomRepository, it) { loadRoom() } }
             true
         }
         R.id.action_delete_room -> {
@@ -112,7 +113,7 @@ class RoomDetailActivity : AppCompatActivity() {
 
     private fun openAddPlantDialog() {
         lifecycleScope.launch {
-            val rooms = roomRepository.getRooms()
+            val rooms = roomRepository.getRoomsForPicker()
             showAddEditPlantDialog(
                 plantRepository,
                 rooms,
@@ -240,7 +241,7 @@ class RoomDetailActivity : AppCompatActivity() {
                 when (item.itemId) {
                     1 -> {
                         lifecycleScope.launch {
-                            val rooms = roomRepository.getRooms()
+                            val rooms = roomRepository.getRoomsForPicker()
                             showAddEditPlantDialog(plantRepository, rooms, plant) { loadRoom() }
                         }
                         true

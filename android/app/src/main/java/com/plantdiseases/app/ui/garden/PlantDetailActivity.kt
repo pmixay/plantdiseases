@@ -428,6 +428,14 @@ class PlantDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val plant = plantRepository.getPlant(plantId)
             if (plant == null) {
+                // Reachable from a notification-centre row up to 30 days after
+                // the plant was deleted — a bare finish() just flashes an empty
+                // toolbar, so say what happened.
+                Toast.makeText(
+                    this@PlantDetailActivity,
+                    R.string.plant_no_longer_available,
+                    Toast.LENGTH_SHORT,
+                ).show()
                 finish()
                 return@launch
             }

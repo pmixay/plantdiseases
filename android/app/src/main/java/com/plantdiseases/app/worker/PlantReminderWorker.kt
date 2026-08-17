@@ -16,6 +16,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.NotificationCenter
 
 /**
@@ -42,7 +43,7 @@ class PlantReminderWorker(
 
     private val plantRepository = appEntryPoint(context).plantRepository()
 
-    @SuppressLint("MissingPermission") // permission checked at line below before notify()
+    @SuppressLint("MissingPermission") // permission checked immediately before notify() below
     override suspend fun doWork(): Result {
         val reminderId = inputData.getLong(KEY_REMINDER_ID, -1L)
         val plantId = inputData.getLong(KEY_PLANT_ID, -1L)
@@ -50,23 +51,20 @@ class PlantReminderWorker(
         val plantName = inputData.getString(KEY_PLANT_NAME) ?: return Result.failure()
 
         if (plantId == -1L) return Result.failure()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            // Reminder fired but POST_NOTIFICATIONS was revoked / never
-            // granted. Return success so WorkManager doesn't keep
-            // retrying, but log loudly so "reminders silently dropped"
-            // shows up in adb logcat instead of looking like a missing
-            // alarm.
-            android.util.Log.w(
-                "PlantReminderWorker",
-                "POST_NOTIFICATIONS missing — silently skipping reminder " +
-                    "for plant_id=$plantId type=$reminderType. Ask the user " +
-                    "to re-grant the notification permission in Settings.",
-            )
-            return Result.success()
-        }
+
+        // Deliberately NOT gated on POST_NOTIFICATIONS up here: the firing must
+        // still be journalled and recorded in the in-app notification centre for
+        // a user who denied the permission — that is exactly the case the centre
+        // exists for (see NotificationCenter's kdoc). The permission is checked
+        // immediately before notify(), at the bottom of this method.
+
+        // Strings are resolved through a locale-wrapped context: `context` here
+        // is the Worker's application context, which — unlike an Activity's — is
+        // never wrapped by LocaleHelper (applyLocale's result is only ever
+        // attached via Activity.attachBaseContext), so getString() would fall
+        // back to the SYSTEM locale and disagree with a Russian-in-app /
+        // English-system user. Same workaround OpinionNotifier documents.
+        val localizedCtx = LocaleHelper.setLocale(context, LocaleHelper.getSavedLanguage(context))
 
         // Stable per-(plant, legacy-type) ids keep the historical dedupe
         // behaviour; generic reminders dedupe on their row id instead
@@ -101,17 +99,17 @@ class PlantReminderWorker(
         val customLabel = reminder?.label?.trim()?.takeIf { it.isNotEmpty() }
         val title = when {
             customLabel != null ->
-                context.getString(R.string.reminder_notif_generic, customLabel, plantName)
+                localizedCtx.getString(R.string.reminder_notif_generic, customLabel, plantName)
             reminderType == TYPE_WATERING ->
-                context.getString(R.string.reminder_notif_watering, plantName)
+                localizedCtx.getString(R.string.reminder_notif_watering, plantName)
             reminderType == TYPE_CHECK ->
-                context.getString(R.string.reminder_notif_check, plantName)
+                localizedCtx.getString(R.string.reminder_notif_check, plantName)
             reminderType == TYPE_FERTILIZE ->
-                context.getString(R.string.reminder_notif_fertilize, plantName)
-            else -> context.getString(
+                localizedCtx.getString(R.string.reminder_notif_fertilize, plantName)
+            else -> localizedCtx.getString(
                 R.string.reminder_notif_generic,
                 com.plantdiseases.app.util.ReminderPresets.displayLabel(null, reminderType) {
-                    context.getString(it)
+                    localizedCtx.getString(it)
                 },
                 plantName,
             )
@@ -120,7 +118,7 @@ class PlantReminderWorker(
             ?: com.plantdiseases.app.util.ReminderPresets.displayLabel(
                 customLabel,
                 reminderType,
-            ) { context.getString(it) }
+            ) { localizedCtx.getString(it) }
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -131,7 +129,7 @@ class PlantReminderWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val builder = NotificationCompat.Builder(context, PlantDiseasesApp.CHANNEL_PLANT_REMINDERS)
+        val builder = NotificationCompat.Builder(localizedCtx, PlantDiseasesApp.CHANNEL_PLANT_REMINDERS)
             .setSmallIcon(R.drawable.ic_care)
             .setContentTitle(title)
             .setContentText(body)
@@ -175,12 +173,12 @@ class PlantReminderWorker(
             )
             builder.addAction(
                 R.drawable.ic_care,
-                context.getString(R.string.reminder_action_done),
+                localizedCtx.getString(R.string.reminder_action_done),
                 donePending,
             )
             builder.addAction(
                 R.drawable.ic_clock,
-                context.getString(R.string.reminder_action_snooze),
+                localizedCtx.getString(R.string.reminder_action_snooze),
                 snoozePending,
             )
         }
@@ -192,6 +190,26 @@ class PlantReminderWorker(
             body = body,
             deeplink = "plant:$plantId",
         )
+
+        // On Android 13+ notify() silently no-ops without POST_NOTIFICATIONS.
+        // Everything above (the pending event + the notification-centre row) has
+        // already run on purpose, so a user who denied the permission still sees
+        // the firing in-app. Return success so WorkManager doesn't keep retrying,
+        // but log loudly so "reminders silently dropped" shows up in adb logcat
+        // instead of looking like a missing alarm.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            android.util.Log.w(
+                "PlantReminderWorker",
+                "POST_NOTIFICATIONS missing — recorded the reminder in the " +
+                    "notification centre but skipped the system notification " +
+                    "for plant_id=$plantId type=$reminderType. Ask the user " +
+                    "to re-grant the notification permission in Settings.",
+            )
+            return Result.success()
+        }
 
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.notify(notificationId, builder.build())

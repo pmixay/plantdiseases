@@ -13,12 +13,17 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Pins the fix for the treatment-plan duplication bug: a completed plan
- * must still count as "already exists" for its scan+disease, or
- * DetailExtraCardsController.maybeStartTreatmentPlan spins up a duplicate
- * every time the plant screen reloads. [TreatmentPlanDao.getActiveForPlant]
- * alone can't answer this — it stops matching the moment status leaves
- * "active" — which is exactly the bug this pins.
+ * Pins the query invariant the treatment-plan duplication fix rests on.
+ *
+ * CareRepository.hasPlanForScan answers "was a plan ever derived from this
+ * scan" by scanning [TreatmentPlanDao.getAllForPlant], so that query MUST keep
+ * returning plans of every status. [TreatmentPlanDao.getActiveForPlant] cannot
+ * answer it: `status = 'active'` stops matching the moment the user ticks the
+ * final step, which is exactly when DetailExtraCardsController would otherwise
+ * re-create the finished plan with its progress reset on the next visit.
+ *
+ * Narrowing getAllForPlant to active rows would silently reintroduce that bug
+ * with no other test failing, which is why it is pinned here.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -39,7 +44,7 @@ class TreatmentPlanDaoTest {
         db.close()
     }
 
-    private fun minimalScan(plantId: Long? = null): ScanEntity = ScanEntity(
+    private fun minimalScan(plantId: Long): ScanEntity = ScanEntity(
         imagePath = "file://scan.jpg",
         diseaseName = "Botrytis",
         diseaseNameRu = "Ботритис",
@@ -54,53 +59,53 @@ class TreatmentPlanDaoTest {
         plantId = plantId,
     )
 
+    private fun plan(plantId: Long, scanId: Long, status: String) = TreatmentPlanEntity(
+        plantId = plantId,
+        scanId = scanId,
+        diseaseKey = "botrytis",
+        diseaseLabelEn = "Botrytis",
+        diseaseLabelRu = "Ботритис",
+        status = status,
+        completedAt = if (status == "active") null else System.currentTimeMillis(),
+    )
+
     @Test
-    fun existsForScanAndDisease_survivesCompletion() = runBlocking {
+    fun getAllForPlant_stillReturnsThePlanAfterItIsCompleted() = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val scanId = db.scanDao().insert(minimalScan(plantId))
-        val planId = db.treatmentPlanDao().insert(
-            TreatmentPlanEntity(
-                plantId = plantId,
-                scanId = scanId,
-                diseaseKey = "botrytis",
-                diseaseLabelEn = "Botrytis",
-                diseaseLabelRu = "Ботритис",
-                status = "active",
-            ),
+        val planId = db.treatmentPlanDao().insert(plan(plantId, scanId, "active"))
+
+        val active = db.treatmentPlanDao().getById(planId)!!
+        db.treatmentPlanDao().update(
+            active.copy(status = "completed", completedAt = System.currentTimeMillis()),
         )
 
-        assertThat(db.treatmentPlanDao().existsForScanAndDisease(plantId, scanId, "botrytis")).isTrue()
-
-        // The user finishes their treatment — this is the exact moment the
-        // old activePlan()-based guard started reading as "no plan yet".
-        val active = db.treatmentPlanDao().getById(planId)!!
-        db.treatmentPlanDao().update(active.copy(status = "completed", completedAt = System.currentTimeMillis()))
-
+        // The active-only lookup goes blind here. The all-status one must not:
+        // it is what stops a finished plan being re-created from the same scan.
         assertThat(db.treatmentPlanDao().getActiveForPlant(plantId)).isNull()
-        assertThat(db.treatmentPlanDao().existsForScanAndDisease(plantId, scanId, "botrytis")).isTrue()
+        assertThat(db.treatmentPlanDao().getAllForPlant(plantId).map { it.scanId })
+            .containsExactly(scanId)
     }
 
     @Test
-    fun existsForScanAndDisease_falseForADifferentScan() = runBlocking {
+    fun getAllForPlant_returnsAbandonedPlansToo() = runBlocking {
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        val scanId = db.scanDao().insert(minimalScan(plantId))
+        db.treatmentPlanDao().insert(plan(plantId, scanId, "abandoned"))
+
+        assertThat(db.treatmentPlanDao().getAllForPlant(plantId)).hasSize(1)
+    }
+
+    @Test
+    fun getAllForPlant_doesNotLeakAcrossScans() = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val firstScanId = db.scanDao().insert(minimalScan(plantId))
-        db.treatmentPlanDao().insert(
-            TreatmentPlanEntity(
-                plantId = plantId,
-                scanId = firstScanId,
-                diseaseKey = "botrytis",
-                diseaseLabelEn = "Botrytis",
-                diseaseLabelRu = "Ботритис",
-                status = "completed",
-                completedAt = System.currentTimeMillis(),
-            ),
-        )
+        db.treatmentPlanDao().insert(plan(plantId, firstScanId, "completed"))
         val secondScanId = db.scanDao().insert(minimalScan(plantId))
 
-        // A genuinely new scan of the same disease must still be free to
-        // start its own course of treatment.
-        assertThat(
-            db.treatmentPlanDao().existsForScanAndDisease(plantId, secondScanId, "botrytis"),
-        ).isFalse()
+        // A genuinely new scan must still be free to start its own treatment,
+        // so no plan may report as belonging to it.
+        assertThat(db.treatmentPlanDao().getAllForPlant(plantId).none { it.scanId == secondScanId })
+            .isTrue()
     }
 }
