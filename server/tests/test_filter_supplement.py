@@ -145,6 +145,51 @@ def test_blur_gate_is_asymmetric_for_not_a_plant(bundle):
     assert got["not_a_plant/smooth.jpg"] == "keep"
 
 
+def _flip_bits(digest: str, n: int) -> str:
+    """Perturb a 64-bit hex pHash by exactly ``n`` bits."""
+    return f"{int(digest, 16) ^ ((1 << n) - 1):016x}"
+
+
+def test_reencode_drift_is_not_a_mismatch(tmp_path):
+    """A digest a few bits off is JPEG re-encoding, not a different photo.
+
+    Exact equality condemned 131 of the v8 supplement's 3,389 rows; every one
+    of them was 2 or 4 bits from its manifest digest, i.e. the same image.
+    """
+    root = tmp_path / "supp"
+    _noise(root / "healthy/near.jpg", seed=7)
+    _noise(root / "healthy/far.jpg", seed=8)
+    near = _phash_of(root / "healthy/near.jpg")
+
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "split_hint", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/near.jpg", "class": "healthy",
+                    "split_hint": "eval_ok", "phash": _flip_bits(near, 4)})
+        w.writerow({"filename": "healthy/far.jpg", "class": "healthy",
+                    "split_hint": "eval_ok",
+                    "phash": _flip_bits(_phash_of(root / "healthy/far.jpg"), 20)})
+
+    got = _verdicts(fs.filter_bundle(root, None, workers=2)[0])
+    assert got["healthy/near.jpg"] == "keep", "4 bits of re-encode drift is the same image"
+    assert got["healthy/far.jpg"] == "phash_mismatch", "20 bits is a different image"
+
+
+def test_unreadable_digest_is_a_manifest_defect_not_a_row_defect(tmp_path):
+    """A junk digest impugns the manifest, so it is counted, not condemned."""
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h.jpg", seed=9)
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "split_hint", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
+                    "split_hint": "eval_ok", "phash": "zzz"})
+
+    rows, report = fs.filter_bundle(root, None, workers=2)
+    assert _verdicts(rows) == {"healthy/h.jpg": "keep"}
+    assert report["totals"]["unreadable_manifest_digests"] == 1
+
+
 def test_blur_threshold_is_the_serving_one():
     """If the pipeline moves its floor, this tool moves with it — no copy."""
     assert fs.BLUR_FLOOR == fs._pipe.BLUR_LAPLACIAN_FLOOR

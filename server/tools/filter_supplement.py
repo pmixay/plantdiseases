@@ -39,8 +39,10 @@ The gates, and why each one is a gate
 
 ``tiny`` / ``corrupt`` / ``missing`` / ``phash_mismatch``
     The image would be rejected at upload (``MIN_IMAGE_DIMENSION``), cannot be
-    decoded, is absent from disk, or no longer hashes to what the manifest
-    recorded — i.e. the download is not the dataset the manifest describes.
+    decoded, is absent from disk, or no longer hashes to within the dedup
+    radius of what the manifest recorded — i.e. the download is not the
+    dataset the manifest describes. Note *radius*, not equality: see
+    ``_digest_drift``.
 
 Everything is reported as **distinct pHash clusters per class**, never as file
 counts. Folder sizes have been misleading this project for three releases: the
@@ -124,6 +126,30 @@ def _hamming(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return np.zeros((a.shape[0], b.shape[0]), dtype=np.int16)
     xor = np.bitwise_xor(a[:, None, :], b[None, :, :])
     return _POPCOUNT[xor].sum(axis=2).astype(np.int16)
+
+
+def _digest_drift(recorded: str, recomputed: str) -> int | None:
+    """Hamming between a manifest digest and the recomputed one, or None.
+
+    Compared with a tolerance rather than for equality, and this is not a
+    nicety: 131 of the v8 supplement's 3,389 rows fail exact equality and every
+    single one of them differs by 2 or 4 bits — JPEG re-encoding during bundle
+    assembly, not a different photograph. Exact equality would have condemned
+    3.9% of a clean corpus. Two digests describe the same image exactly when
+    they are inside the radius the rest of this tool calls "the same image".
+
+    Returns None when the recorded digest is absent or not a 64-bit hex value,
+    which is a manifest defect rather than an image defect and is counted
+    separately instead of condemning the row.
+    """
+    recorded = (recorded or "").strip().lower()
+    if len(recorded) != 16:
+        return None
+    try:
+        int(recorded, 16)
+    except ValueError:
+        return None
+    return int(_hamming(_to_bits([recorded]), _to_bits([recomputed]))[0, 0])
 
 
 def _probe(path: Path) -> dict:
@@ -214,6 +240,7 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
     # expensive gates and never pollutes the cluster graph.
     verdict: list[str] = []
     hashes: list[str] = []
+    unreadable_digests = 0
     for r in rows:
         p = probes.get(r["filename"])
         if p is None:
@@ -225,9 +252,12 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             hashes.append("")
             continue
         hashes.append(p["phash"])
+        drift = _digest_drift(r.get("phash", ""), p["phash"])
+        if drift is None:
+            unreadable_digests += 1
         if min(p["w"], p["h"]) < MIN_SIDE:
             verdict.append("tiny")
-        elif r.get("phash") and r["phash"] != p["phash"]:
+        elif drift is not None and drift > PHASH_MAX_HAMMING:
             verdict.append("phash_mismatch")
         elif p["blur"] < BLUR_FLOOR and r["class"] not in BLUR_EXEMPT:
             verdict.append("blurry")
@@ -305,6 +335,7 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             "kept": len(kept),
             "dropped": len(rows) - len(kept),
             "benchmark_leaks": leaks,
+            "unreadable_manifest_digests": unreadable_digests,
         },
         "verdicts": dict(Counter(verdict)),
         "per_class": per_class,
