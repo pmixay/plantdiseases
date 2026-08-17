@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 fun FragmentActivity.showRoomNameDialog(
     roomRepository: RoomRepository,
     existing: RoomEntity?,
-    onDone: () -> Unit,
+    onDone: (Long) -> Unit,
 ) {
     val root = this
     val (layout, input) = roomNameField(root, existing?.name)
@@ -53,17 +53,21 @@ fun FragmentActivity.showRoomNameDialog(
             when (result) {
                 is RoomRepository.RoomNameResult.Success -> {
                     dialog.dismiss()
-                    onDone()
+                    onDone(result.roomId)
                 }
                 RoomRepository.RoomNameResult.BlankName -> layout.error = getString(R.string.plant_name_required)
                 RoomRepository.RoomNameResult.NameTaken -> layout.error = getString(R.string.room_name_taken)
                 // The room was deleted from another screen while this dialog
                 // was open. There is nothing left to rename and no error worth
                 // showing on the field — close and let the caller's reload
-                // drop the room from the UI.
+                // drop the room from the UI. existing is non-null on every
+                // path that can reach NotFound (only renameRoom returns it,
+                // and only when existing != null), so the fallback below is
+                // unreachable in practice — it exists only to satisfy the
+                // type, not as a real sentinel a caller should branch on.
                 RoomRepository.RoomNameResult.NotFound -> {
                     dialog.dismiss()
-                    onDone()
+                    onDone(existing?.id ?: -1L)
                 }
             }
         }

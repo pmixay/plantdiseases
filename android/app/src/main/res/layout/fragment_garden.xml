@@ -188,16 +188,42 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Care / Lunar inner toggle — same TabLayout styling as
-                     garden_segment above, so it reads as part of the same
-                     design language, not a new control. -->
-                <com.google.android.material.tabs.TabLayout
+                <!-- Care / Lunar inner toggle. Deliberately NOT another
+                     full-width TabLayout: two identical tab bars stacked
+                     directly on top of each other (garden_segment above
+                     switches Rooms/Calendars; this used to be a second one
+                     for Care/Lunar) gave the eye no way to tell which one
+                     was the parent, so the screen read as four peer
+                     destinations instead of two containing two. A segmented
+                     button group is the M3 control for "switch the view
+                     within a destination" and is visually lighter than a
+                     tab bar, which is the whole point. -->
+                <com.google.android.material.button.MaterialButtonToggleGroup
                     android:id="@+id/garden_calendar_segment"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="@dimen/space_md"
-                    app:tabMode="fixed"
-                    app:tabGravity="fill" />
+                    app:singleSelection="true"
+                    app:selectionRequired="true"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Button">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/garden_calendar_toggle_care"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/garden_calendar_tab_care" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/garden_calendar_toggle_lunar"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/garden_calendar_tab_lunar" />
+
+                </com.google.android.material.button.MaterialButtonToggleGroup>
 
                 <LinearLayout
                     android:id="@+id/garden_care_subpane"
@@ -386,6 +412,21 @@
                     android:textColor="@color/on_surface_secondary"
                     android:textSize="@dimen/text_body_sm"
                     android:gravity="center" />
+
+                <!-- The Rooms pane (and its own "+ Add room" button) is
+                     hidden entirely while the garden has no plants, which
+                     left room creation with no reachable entry point at all
+                     on a fresh install. Same string/icon/action as that
+                     button, just reachable from here too. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_empty_add_room"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:text="@string/room_add"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart" />
 
             </LinearLayout>
 

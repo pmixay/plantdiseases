@@ -106,6 +106,10 @@ class GardenFragment : Fragment() {
             Haptics.medium(requireContext())
             showCreateRoomDialog()
         }
+        binding.gardenEmptyAddRoom.setOnClickListener {
+            Haptics.medium(requireContext())
+            showCreateRoomDialog()
+        }
         binding.gardenSearchToggle.setOnClickListener {
             searchVisible = !searchVisible
             if (!searchVisible) binding.gardenSearch.text = null
@@ -186,24 +190,22 @@ class GardenFragment : Fragment() {
         })
     }
 
-    /** Care/Lunar inner toggle inside the Calendars pane — same TabLayout
-     *  widget/styling as [setupSegmentedControl]'s outer control. */
+    /** Care/Lunar inner toggle inside the Calendars pane — a segmented
+     *  button group, deliberately lighter than [setupSegmentedControl]'s
+     *  outer TabLayout so the two don't read as peer-level navigation. */
     private fun setupCalendarSegmentedControl() {
-        val tabs = binding.gardenCalendarSegment
-        tabs.removeAllTabs()
-        tabs.addTab(tabs.newTab().setText(R.string.garden_calendar_tab_care))
-        tabs.addTab(tabs.newTab().setText(R.string.garden_calendar_tab_lunar))
-        tabs.getTabAt(selectedCalendarSubPane)?.select()
+        val group = binding.gardenCalendarSegment
+        val idForSubpane = mapOf(
+            SUBPANE_CARE to binding.gardenCalendarToggleCare.id,
+            SUBPANE_LUNAR to binding.gardenCalendarToggleLunar.id,
+        )
+        group.check(idForSubpane.getValue(selectedCalendarSubPane))
         applyCalendarSubPaneVisibility()
-        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) {
-                selectedCalendarSubPane = tab.position
-                applyCalendarSubPaneVisibility()
-            }
-
-            override fun onTabUnselected(tab: TabLayout.Tab) {}
-            override fun onTabReselected(tab: TabLayout.Tab) {}
-        })
+        group.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            selectedCalendarSubPane = idForSubpane.entries.first { it.value == checkedId }.key
+            applyCalendarSubPaneVisibility()
+        }
     }
 
     private fun applyCalendarSubPaneVisibility() {
@@ -230,6 +232,18 @@ class GardenFragment : Fragment() {
         } else {
             renderRoomsPane(animate)
         }
+        updateFabVisibility()
+    }
+
+    /** The FAB only makes sense on the Rooms pane. The Calendars pane is a
+     *  grid of tappable day cells, and a floating button over them covers
+     *  one — it used to stay visible (and extended) across the pane switch
+     *  because only [renderGarden]'s "does the garden have any plants" check
+     *  drove it, with no awareness of which pane was actually showing. */
+    private fun updateFabVisibility() {
+        val show = allSummaries.isNotEmpty() && selectedPane == PANE_ROOMS
+        binding.gardenAddFab.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) binding.gardenAddFab.extend()
     }
 
     private fun loadGarden(animate: Boolean = true) {
@@ -252,12 +266,7 @@ class GardenFragment : Fragment() {
         val hasAnyPlant = allSummaries.isNotEmpty()
         binding.gardenEmptyState.visibility = if (hasAnyPlant) View.GONE else View.VISIBLE
         binding.gardenSegment.visibility = if (hasAnyPlant) View.VISIBLE else View.GONE
-        if (!hasAnyPlant) {
-            binding.gardenAddFab.visibility = View.GONE
-        } else {
-            binding.gardenAddFab.visibility = View.VISIBLE
-            binding.gardenAddFab.extend()
-        }
+        updateFabVisibility()
 
         val scanTotal = allSummaries.sumOf { it.scanCount }
         binding.gardenSummaryBody.text = if (hasAnyPlant) {
@@ -679,7 +688,7 @@ class GardenFragment : Fragment() {
     // ─── Add plant (FAB / empty-state CTA) ───────────────────────────────
 
     private fun openAddPlantDialog() {
-        requireActivity().showAddEditPlantDialog(plantRepository, allRooms, existing = null) {
+        requireActivity().showAddEditPlantDialog(plantRepository, roomRepository, allRooms, existing = null) {
             if (_binding != null) {
                 loadGarden(animate = true)
                 stabilizeFloatingAddButton()

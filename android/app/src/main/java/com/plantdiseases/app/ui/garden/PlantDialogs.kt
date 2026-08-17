@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
  */
 fun FragmentActivity.showAddEditPlantDialog(
     plantRepository: PlantRepository,
+    roomRepository: RoomRepository,
     rooms: List<RoomRepository.RoomSummary>,
     existing: PlantEntity?,
     /** Room the dialog opens pre-selected to, for the "+" on a room's own
@@ -107,7 +108,9 @@ fun FragmentActivity.showAddEditPlantDialog(
     fields.addView(name.first)
     fields.addView(species.first)
     var selectedRoomId = existing?.roomId ?: preselectedRoomId
-    fields.addView(buildRoomPickerRow(root, rooms, selectedRoomId) { picked -> selectedRoomId = picked })
+    fields.addView(
+        buildRoomPickerRow(root, roomRepository, rooms, selectedRoomId) { picked -> selectedRoomId = picked },
+    )
     container.addView(header)
     container.addView(fields)
 
@@ -159,18 +162,27 @@ fun FragmentActivity.confirmDeletePlantDialog(
         .show()
 }
 
+/** Sentinel row in the picker's choice list — never a real room id (Room's
+ *  autoincrement PKs start at 1) and distinct from `null` (Unassigned). */
+private const val CREATE_ROOM_SENTINEL = -1L
+
 /** Tap-to-pick room row: current selection + a chevron; tapping opens a
- *  single-choice list of every room + "Unassigned". No new dropdown widget
- *  needed — reuses the same MaterialAlertDialogBuilder every other dialog
- *  on this screen already depends on. Internal (not private) so
+ *  single-choice list of every room + "Unassigned" + "Add room" (creating
+ *  one re-fetches the list and selects it, so a fresh install isn't stuck
+ *  choosing between Unassigned and nothing). No new dropdown widget needed
+ *  — reuses the same MaterialAlertDialogBuilder every other dialog on this
+ *  screen already depends on. Internal (not private) so
  *  [com.plantdiseases.app.ui.result.CreatePlantSheet] can reuse it instead
  *  of building a second room picker. */
 internal fun buildRoomPickerRow(
-    ctx: Context,
-    rooms: List<RoomRepository.RoomSummary>,
+    activity: FragmentActivity,
+    roomRepository: RoomRepository,
+    initialRooms: List<RoomRepository.RoomSummary>,
     initialRoomId: Long?,
     onPicked: (Long?) -> Unit,
 ): View {
+    val ctx = activity
+    var rooms = initialRooms
     val label = TextView(ctx).apply {
         textSize = 13f
         setTextColor(ctx.getColor(R.color.on_surface_secondary))
@@ -224,22 +236,41 @@ internal fun buildRoomPickerRow(
         )
     }
 
-    row.setOnClickListener {
-        val names = (listOf(ctx.getString(R.string.plant_room_unassigned)) + rooms.map { it.room.name })
-            .toTypedArray()
-        val ids = listOf<Long?>(null) + rooms.map { it.room.id }
+    // A picker with no way to create a room dead-ends the moment a fresh
+    // install has zero of them: Unassigned plus nothing else to pick.
+    fun showPicker() {
+        val names = (
+            listOf(ctx.getString(R.string.plant_room_unassigned)) +
+                rooms.map { it.room.name } +
+                ctx.getString(R.string.room_add)
+            ).toTypedArray()
+        val ids = listOf<Long?>(null) + rooms.map { it.room.id } + CREATE_ROOM_SENTINEL
         val checkedIndex = ids.indexOf(currentRoomId).coerceAtLeast(0)
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.plant_room)
             .setSingleChoiceItems(names, checkedIndex) { dialog, which ->
-                currentRoomId = ids[which]
-                applyLabel()
-                onPicked(currentRoomId)
-                dialog.dismiss()
+                val picked = ids[which]
+                if (picked == CREATE_ROOM_SENTINEL) {
+                    dialog.dismiss()
+                    activity.showRoomNameDialog(roomRepository, existing = null) { newRoomId ->
+                        activity.lifecycleScope.launch {
+                            rooms = roomRepository.getRoomsForPicker()
+                            currentRoomId = newRoomId
+                            applyLabel()
+                            onPicked(currentRoomId)
+                        }
+                    }
+                } else {
+                    currentRoomId = picked
+                    applyLabel()
+                    onPicked(currentRoomId)
+                    dialog.dismiss()
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
+    row.setOnClickListener { showPicker() }
     return row
 }
 

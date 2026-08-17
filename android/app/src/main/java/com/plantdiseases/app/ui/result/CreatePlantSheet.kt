@@ -167,7 +167,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         lifecycleScope.launch {
             val rooms = roomRepository.getRoomsForPicker()
             roomPickerContainer.addView(
-                buildRoomPickerRow(requireContext(), rooms, selectedRoomId) { picked -> selectedRoomId = picked },
+                buildRoomPickerRow(requireActivity(), roomRepository, rooms, selectedRoomId) { picked -> selectedRoomId = picked },
             )
         }
 

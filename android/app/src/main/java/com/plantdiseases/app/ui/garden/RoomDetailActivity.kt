@@ -116,6 +116,7 @@ class RoomDetailActivity : AppCompatActivity() {
             val rooms = roomRepository.getRoomsForPicker()
             showAddEditPlantDialog(
                 plantRepository,
+                roomRepository,
                 rooms,
                 existing = null,
                 preselectedRoomId = if (roomId == UNASSIGNED_ID) null else roomId,
@@ -242,7 +243,7 @@ class RoomDetailActivity : AppCompatActivity() {
                     1 -> {
                         lifecycleScope.launch {
                             val rooms = roomRepository.getRoomsForPicker()
-                            showAddEditPlantDialog(plantRepository, rooms, plant) { loadRoom() }
+                            showAddEditPlantDialog(plantRepository, roomRepository, rooms, plant) { loadRoom() }
                         }
                         true
                     }
