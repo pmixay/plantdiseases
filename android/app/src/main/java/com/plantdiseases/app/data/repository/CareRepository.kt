@@ -119,11 +119,11 @@ class CareRepository(
             // clear whatever genuine occurrence happens to fall there.
             reminderEventDao.doneBetween(plant.id, fromMs, toMs).forEach { event ->
                 val firedDay = CareQueue.epochDayOf(event.firedAt)
-                doneEvents += CareQueue.DoneEvent(plant.id, event.type, firedDay)
+                doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, firedDay)
                 if (plantRepository.reminderTypeToJournalType(event.type) == null) return@forEach
                 val doneDay = event.doneAt?.let { CareQueue.epochDayOf(it) }
                 if (doneDay != null && doneDay != firedDay) {
-                    doneEvents += CareQueue.DoneEvent(plant.id, event.type, doneDay)
+                    doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, doneDay)
                 }
             }
         }
@@ -206,10 +206,14 @@ class CareRepository(
         // OR done_at in range`, and a LATE completion stamps done_at = now — so
         // a plain range hit would return yesterday's occurrence when asked about
         // today's, and make today's uncompletable. An occurrence's identity is
-        // its fired day.
+        // its reminder id plus its fired day — matching on type instead would
+        // collide across two same-type reminders on one plant, which the schema
+        // deliberately allows (see PlantReminderEntity's index comment).
         val alreadyDone = reminderEventDao
             .doneBetween(task.plantId, dayStart, dayStart + CareSchedule.DAY_MS)
-            .firstOrNull { it.type == task.type && CareQueue.epochDayOf(it.firedAt) == id.epochDay }
+            .firstOrNull {
+                it.reminderId == id.reminderId && CareQueue.epochDayOf(it.firedAt) == id.epochDay
+            }
         if (alreadyDone != null) {
             // Undo still reverses this occurrence's marker; the earlier
             // completion's journal entry is not this call's to delete.

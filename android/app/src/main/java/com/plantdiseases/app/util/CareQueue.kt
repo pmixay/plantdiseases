@@ -40,10 +40,17 @@ object CareQueue {
     )
 
     /** A completed occurrence of a recurring reminder, identified by the
-     *  calendar day (in the device's default time zone) it was done on —
-     *  recurring reminders have no row of their own, so "done" is recorded
-     *  per-day rather than per-occurrence-id. */
-    data class DoneEvent(val plantId: Long, val type: String, val epochDay: Long)
+     *  reminder it belongs to plus the calendar day (in the device's default
+     *  time zone) it was done on. Both halves are load-bearing: a plant may
+     *  hold several reminders of the same type — MIGRATION_3_4 dropped the
+     *  (plant_id, type) unique index precisely so it can — so keying on type
+     *  alone would let ticking one of them mark all the others done. */
+    data class DoneEvent(
+        val plantId: Long,
+        val reminderId: Long,
+        val type: String,
+        val epochDay: Long,
+    )
 
     data class CareTask(
         val id: TaskId,
@@ -114,7 +121,7 @@ object CareQueue {
     ): List<CareTask> {
         val intervalDays = reminder.intervalDays.coerceAtLeast(1)
         val doneDays = doneEvents
-            .filter { it.plantId == reminder.plantId && it.type == reminder.type }
+            .filter { it.plantId == reminder.plantId && it.reminderId == reminder.reminderId }
             .mapTo(mutableSetOf()) { it.epochDay }
 
         val results = mutableListOf<CareTask>()

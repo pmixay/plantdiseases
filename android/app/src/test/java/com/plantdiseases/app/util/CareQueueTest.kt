@@ -109,7 +109,7 @@ class CareQueueTest {
         val tasks = CareQueue.project(
             reminders = listOf(reminder),
             steps = emptyList(),
-            doneEvents = listOf(CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = todayEpochDay)),
+            doneEvents = listOf(CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = todayEpochDay)),
             fromMs = now - 1L * CareSchedule.DAY_MS,
             toMs = now + 1L * CareSchedule.DAY_MS,
         )
@@ -186,8 +186,8 @@ class CareQueueTest {
             reminders = listOf(watering(anchorMs = completedAt, hour = 9)),
             steps = emptyList(),
             doneEvents = listOf(
-                CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(originalDue)),
-                CareQueue.DoneEvent(plantId = 1, type = "watering", epochDay = CareQueue.epochDayOf(completedAt)),
+                CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = CareQueue.epochDayOf(originalDue)),
+                CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = CareQueue.epochDayOf(completedAt)),
             ),
             fromMs = originalDue - CareSchedule.DAY_MS,
             toMs = completedAt + CareSchedule.DAY_MS,
@@ -323,5 +323,38 @@ class CareQueueTest {
         val result = CareQueue.forDay(listOf(late, early, outside), dayStart)
 
         assertThat(result).containsExactly(early, late).inOrder()
+    }
+
+    @Test
+    fun project_twoSameTypeRemindersOnOnePlant_completingOneLeavesTheOtherPending() {
+        // Regression: DoneEvent used to be keyed on (plantId, type, day), but a
+        // plant may hold several reminders of the SAME type — MIGRATION_3_4
+        // dropped the (plant_id, type) unique index precisely so it can. Ticking
+        // one of them therefore marked every same-type reminder done that day.
+        val now = cal(2026, Calendar.AUGUST, 15, 12, 0).timeInMillis
+        val anchor = now - 7L * CareSchedule.DAY_MS // occurrence 1 due today for both
+        val first = watering(anchor, hour = 9, reminderId = 1)
+        val second = watering(anchor, hour = 9, reminderId = 2)
+        val todayEpochDay = CareQueue.epochDayOf(cal(2026, Calendar.AUGUST, 15).timeInMillis)
+
+        val tasks = CareQueue.project(
+            reminders = listOf(first, second),
+            steps = emptyList(),
+            // Only reminder 1 was ticked.
+            doneEvents = listOf(
+                CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = todayEpochDay),
+            ),
+            fromMs = now - 1L * CareSchedule.DAY_MS,
+            toMs = now + 1L * CareSchedule.DAY_MS,
+        )
+
+        val byReminder = tasks
+            .mapNotNull { it.id as? CareQueue.CareTask.TaskId.Recurring }
+            .associateWith { id -> tasks.first { it.id == id } }
+        val done = byReminder.entries.first { it.key.reminderId == 1L }.value
+        val untouched = byReminder.entries.first { it.key.reminderId == 2L }.value
+
+        assertThat(done.status).isEqualTo(CareQueue.CareTask.Status.DONE)
+        assertThat(untouched.status).isEqualTo(CareQueue.CareTask.Status.PENDING)
     }
 }

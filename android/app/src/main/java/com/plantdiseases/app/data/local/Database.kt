@@ -281,10 +281,18 @@ interface PlantReminderEventDao {
     suspend fun update(event: PlantReminderEventEntity)
 
     /** Undo path for CareRepository.complete(): a day-view "Done" tap on a
-     *  recurring occurrence has no prior notification-fired row to revert to
-     *  pending (unlike the notification action receivers, which always
-     *  resolve an existing row) — it inserts a fresh done event, so undoing
-     *  it means deleting exactly that row. */
+     *  recurring occurrence usually has no prior notification-fired row to
+     *  revert to pending (unlike the notification action receivers, which
+     *  always resolve an existing row), so it inserts a fresh done event and
+     *  undoing it deletes that row.
+     *
+     *  One case does NOT delete a row this app-side tap created: when the
+     *  occurrence was already marked done — by a notification action, or by
+     *  the other UI path — completeRecurring is idempotent and hands back the
+     *  EXISTING event's id, so undo deletes that instead. That is still the
+     *  right outcome (the occurrence really does become un-done), but it means
+     *  this DELETE can remove a notification-fired row, and the journal entry
+     *  written by the earlier completion is not reverted with it. */
     @Query("DELETE FROM plant_reminder_events WHERE id = :id")
     suspend fun deleteById(id: Long)
 
