@@ -103,6 +103,7 @@ PHASH_MAX_HAMMING = 6      # docs/DATASET_LABELING_PLAN.md, "Image gates"
 BLUR_EXEMPT = {"not_a_plant"}
 BLUR_FLOOR = _pipe.BLUR_LAPLACIAN_FLOOR
 MIN_SIDE = 48                                          # main.MIN_IMAGE_DIMENSION default
+COLLECTION_MIN_SIDE = 384                              # DATASET_LABELING_PLAN.md "Image gates"
 
 
 # ── hashing ──────────────────────────────────────────────────────────
@@ -217,6 +218,30 @@ def _cluster(bits: np.ndarray, block: int = 512) -> list[int]:
     return [roots.setdefault(find(i), len(roots)) for i in range(n)]
 
 
+# ── reporting ────────────────────────────────────────────────────────
+
+
+def _resolution_stats(sides: list[int]) -> dict:
+    """Short-side percentiles and compliance with the *collection* floor.
+
+    Reported, never enforced. The collection floor (docs/DATASET_LABELING_PLAN.md,
+    "Image gates": short side >= 384 px) governs what a *new* round should
+    accept; rows already published and already trained on are a different
+    question, and silently dropping them here would rewrite the corpus that
+    every shipped bundle was fitted to. The number belongs in a report so a
+    collection round can act on it deliberately.
+    """
+    if not sides:
+        return {"short_side_p05": None, "short_side_median": None,
+                "below_collection_floor": 0}
+    arr = np.array(sides)
+    return {
+        "short_side_p05": int(np.percentile(arr, 5)),
+        "short_side_median": int(np.median(arr)),
+        "below_collection_floor": int((arr < COLLECTION_MIN_SIDE).sum()),
+    }
+
+
 # ── main ─────────────────────────────────────────────────────────────
 
 
@@ -240,18 +265,22 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
     # expensive gates and never pollutes the cluster graph.
     verdict: list[str] = []
     hashes: list[str] = []
+    sides: list[int] = []
     unreadable_digests = 0
     for r in rows:
         p = probes.get(r["filename"])
         if p is None:
             verdict.append("missing")
             hashes.append("")
+            sides.append(0)
             continue
         if not p["ok"]:
             verdict.append("corrupt")
             hashes.append("")
+            sides.append(0)
             continue
         hashes.append(p["phash"])
+        sides.append(min(p["w"], p["h"]))
         drift = _digest_drift(r.get("phash", ""), p["phash"])
         if drift is None:
             unreadable_digests += 1
@@ -317,6 +346,7 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             "inflation": round(len(idxs) / max(len(k), 1), 2),
             "reasons": dict(Counter(verdict[i] for i in idxs if verdict[i] != "keep")),
             "eval_ok_kept": sum(1 for i in k if rows[i].get("split_hint") == "eval_ok"),
+            **_resolution_stats([sides[i] for i in k]),
         }
 
     report = {
@@ -326,6 +356,7 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             "phash_max_hamming": PHASH_MAX_HAMMING,
             "blur_laplacian_floor": BLUR_FLOOR,
             "min_side_px": MIN_SIDE,
+            "collection_min_side_px": COLLECTION_MIN_SIDE,
             "blur_exempt_classes": sorted(BLUR_EXEMPT),
         },
         "totals": {
@@ -336,6 +367,8 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             "dropped": len(rows) - len(kept),
             "benchmark_leaks": leaks,
             "unreadable_manifest_digests": unreadable_digests,
+            "below_collection_floor": sum(
+                v["below_collection_floor"] for v in per_class.values()),
         },
         "verdicts": dict(Counter(verdict)),
         "per_class": per_class,
@@ -366,11 +399,13 @@ def main() -> None:
         w.writerows(rows)
 
     t = report["totals"]
-    print(f"\n{'class':28s} {'rows':>6s} {'distinct':>9s} {'infl':>6s}  dropped for")
+    print(f"\n{'class':28s} {'rows':>6s} {'distinct':>9s} {'infl':>6s} "
+          f"{'shortp05':>9s} {'<384':>6s}  dropped for")
     for cls, s in report["per_class"].items():
         why = ", ".join(f"{k}={v}" for k, v in sorted(s["reasons"].items())) or "-"
         print(f"{cls:28s} {s['manifest_rows']:6d} {s['distinct_clusters']:9d} "
-              f"{s['inflation']:6.2f}  {why}")
+              f"{s['inflation']:6.2f} {str(s['short_side_p05']):>9s} "
+              f"{s['below_collection_floor']:6d}  {why}")
     print(f"\nkept {t['kept']}/{t['manifest_rows']} rows "
           f"({t['dropped']} dropped), {t['orphan_files']} orphan files on disk")
     print(f"wrote {args.out.with_suffix('.json')} and {args.out.with_suffix('.csv')}")
