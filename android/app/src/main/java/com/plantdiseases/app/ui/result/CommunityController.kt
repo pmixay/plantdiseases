@@ -237,7 +237,6 @@ class CommunityController(
                     // Fresh request: 0 replies, full 72 h window.
                     showOpenRequest(
                         scan,
-                        isRu,
                         replyCount = 0,
                         requestedAtSec = System.currentTimeMillis() / 1000L,
                     )
