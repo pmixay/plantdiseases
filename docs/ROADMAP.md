@@ -774,6 +774,59 @@ cannot settle 2.7.2 vs 2.6.8 because the split changed underneath it; the
 benchmark and the holdout are the honest instruments, and the holdout has no
 baseline until the next run.
 
+#### ⛔ VERDICT: DO NOT SHIP 2.7.2. Keep 2.6.8 + the head veto.
+
+Scored served on the 213-cluster never-trained benchmark against **2.6.8 + the
+NAP head veto** (the correct baseline), 2026-08-17. The bundle passes
+`check_bundle.py` clean (0 fail, 0 warn) and the ship gate passed in-notebook.
+It still must not ship.
+
+| population | 2.6.8+veto | 2.7.2 | delta | McNemar | 95 % CI |
+|---|---|---|---|---|---|
+| **`leaf_scorch`** (62) | 0.565 | **0.000** | **−0.565** | **35–0, p=5.8e-11** | [−0.677, −0.435] |
+| └ **necrosis / hibiscus** (31) | **1.000** | **0.000** | −1.000 | release-blocking arm | |
+| └ turgor / banana_bush (31) | 0.129 | 0.000 | −0.129 | | |
+| healthy (151) | 0.954 | 0.921 | −0.033 | 9–4, p=0.27 | [−0.079, +0.013] |
+| **overall served accuracy** | **0.840** | **0.653** | −0.188 | | |
+
+**Zero of 62.** The healthy delta is not significant; the scorch collapse is
+total. Where the 62 clusters go under 2.7.2: `leaf_spot` 24, `healthy` 22,
+`viral_disease` 6, `gray_mold` 4, `not_a_plant` 4. **Only 4 are gate
+rejections** — 58 of 62 are Stage-2 misclassifications, so the NAP gate and the
+detector are *not* implicated. This is the classifier, and `leaf_spot`
+absorbing scorch is the single largest destination.
+
+**This is the third consecutive release with the identical failure**, and it
+settles the A1 archaeology beyond reasonable doubt. Nine `kaggle_ornamental`
+(pappu54)-era bundles score 0.516–0.758. Every replacement-era bundle —
+2.7.0, 2.7.1 and now 2.7.2 — scores **0.000 served**. The replacement sources
+(`itselif/ornamental-plant-diseases`, `warcoder/rose-leaves-disease-detection`)
+supply healthy, `leaf_spot` and `powdery_mildew` and **zero `leaf_scorch`**.
+Three independent runs, one corpus fact, one outcome. The mechanism is data
+content. It is not the objective, not the sampler weights, not LoRA, and not the
+gates.
+
+**And the ship gate passed on all three.** `val_realworld` 0.841, `val_indomain`
+0.870, holdout 0.863 — every in-domain instrument said "fine" while the model
+lost an entire class out of domain. That is the fourth time, and it is the whole
+argument for keeping a never-trained benchmark outside the notebook.
+
+**What this closes:**
+- **R2 (LoRA off) and R3 (label smoothing off) are now near-worthless.** Neither
+  can supply a class the corpus does not contain. Do not spend A100 time on them.
+- **Roadmap item 5 is no longer "2.8-era".** Re-sourcing ornamental
+  `leaf_scorch` is the only lever with evidence behind it, and it is now the
+  critical path.
+- The one dataset that carries an explicit `Hibiscus_Scorch` label is
+  benchmark-contaminated (60/60 at pHash Hamming 0) and permanently deny-listed.
+  So this needs *collection*, not another Kaggle search.
+
+**What still ships from this cycle:** the NAP head veto (already in
+`pipeline.py`, +19.4 pp served scorch on the deployed model, zero regressions),
+the permanent holdout, the Stage-1 audit — which found `pests` and `gray_mold`
+losing ~45 % of their inputs — and the recall-aware detector selection. The
+2.7.2 *weights* are the only thing being discarded.
+
 #### 2.7.2 run B — COMPLETE. Gate passed, and Stage 1 is the story.
 
 Full run, ship gate passed, bundle persisted, and the Stage-1 audit reached the
