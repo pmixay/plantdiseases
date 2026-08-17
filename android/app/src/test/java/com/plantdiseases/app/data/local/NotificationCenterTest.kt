@@ -66,7 +66,7 @@ class NotificationCenterTest {
     }
 
     @Test
-    fun delete_removesOnlyThatRow() = runBlocking {
+    fun delete_removesOnlyThatRow(): Unit = runBlocking {
         repo.record("community", "keep", "b", null)
         repo.record("garden", "drop", "b", null)
         val drop = repo.getAll().first { it.title == "drop" }
@@ -75,7 +75,7 @@ class NotificationCenterTest {
     }
 
     @Test
-    fun deleteOlderThan_sweepsOnlyStaleRows() = runBlocking {
+    fun deleteOlderThan_sweepsOnlyStaleRows(): Unit = runBlocking {
         repo.record("community", "fresh", "b", null)
         // Backdate one row past the retention window the app sweeps on launch.
         db.notificationDao().insert(
