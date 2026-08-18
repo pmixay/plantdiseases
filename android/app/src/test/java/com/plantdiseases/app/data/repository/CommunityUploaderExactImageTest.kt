@@ -88,6 +88,14 @@ class CommunityUploaderExactImageTest {
         val rowId = runBlocking { repository.saveScan(source.absolutePath, analysis) }
         val scan = runBlocking { repository.getScanById(rowId) }!!
 
+        // uploadIfEnabled lazily registers the durable forum identity before
+        // the actual upload (ScanRepository.ensureCommunityAuthorAdopted), so
+        // that POST needs its own queued response ahead of the upload's.
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"author_id":"au_abc123"}"""),
+        )
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -100,6 +108,8 @@ class CommunityUploaderExactImageTest {
             SanitizerCall(source, maxDimension = 1_024, quality = 85),
         )
         val analyzeBody = analyzeRequest.body.readUtf8()
+        val adoptRequest = server.takeRequest()
+        assertThat(adoptRequest.path).isEqualTo("/api/community/authors/adopt")
         val communityBody = server.takeRequest().body.readUtf8()
         assertThat(analyzeBody).contains(EXACT_ANALYSIS_BYTES.decodeToString())
         assertThat(communityBody).contains(EXACT_ANALYSIS_BYTES.decodeToString())
