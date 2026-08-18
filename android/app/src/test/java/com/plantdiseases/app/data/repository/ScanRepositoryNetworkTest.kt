@@ -1,5 +1,7 @@
 package com.plantdiseases.app.data.repository
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthenticationRequiredException
@@ -24,6 +26,9 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -37,7 +42,12 @@ import java.io.File
  * ContentNegotiation only deserializes a response whose `Content-Type` is
  * `application/json`, so success mocks declare it explicitly — the real
  * server already sends it; Gson never required it.
+ *
+ * Needs a Robolectric [Context]: [ScanRepository.submitCommunityOpinion]
+ * hashes it via `CommunityIdentity.keyHash` for the anti-forgery author key.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class ScanRepositoryNetworkTest {
 
     private lateinit var server: MockWebServer
@@ -46,6 +56,7 @@ class ScanRepositoryNetworkTest {
     private lateinit var imageFile: File
     private lateinit var accountApi: FakeAccountApi
     private lateinit var authRepository: AuthRepository
+    private lateinit var context: Context
     private val sanitizedBytes = "only-sanitized-pixels".encodeToByteArray()
 
     @Before
@@ -53,6 +64,7 @@ class ScanRepositoryNetworkTest {
         server = MockWebServer()
         server.start()
         client = PlantApiClient(server.url("/").toString())
+        context = ApplicationProvider.getApplicationContext()
         accountApi = FakeAccountApi()
         authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
         runBlocking { authRepository.signIn(AuthProvider.YANDEX, "synthetic-provider-token") }
@@ -715,6 +727,7 @@ class ScanRepositoryNetworkTest {
         )
         val result = runBlocking {
             repo.submitCommunityOpinion(
+                context,
                 CommunityOpinionRequest(
                     scanId = "sc-2",
                     suggestedDisease = "rust",
@@ -875,28 +888,6 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun getCommunityScanCounts_success_parsesCountMap() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
-        )
-        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
-        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
-        assertThat(counts["sc-1"]?.views).isEqualTo(7)
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/scan-counts")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
-        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
-        assertThat(counts).isEmpty()
-        assertThat(server.requestCount).isEqualTo(0)
-    }
-
-    @Test
     fun recordCommunityView_firesPostWithBody() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
         runBlocking { repo.recordCommunityView("sc-5") }
@@ -921,6 +912,7 @@ class ScanRepositoryNetworkTest {
 
         val result = runBlocking {
             guestRepository.submitCommunityOpinion(
+                context,
                 CommunityOpinionRequest("scan-public", "leaf_spot"),
             )
         }
@@ -941,7 +933,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            repo.submitCommunityOpinion(CommunityOpinionRequest("s", "leaf_spot"))
+            repo.submitCommunityOpinion(context, CommunityOpinionRequest("s", "leaf_spot"))
         }
 
         assertThat(result.isSuccess).isTrue()

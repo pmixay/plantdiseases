@@ -82,9 +82,9 @@ class TreatmentPlanDaoTest {
 
         // The active-only lookup goes blind here. The all-status one must not:
         // it is what stops a finished plan being re-created from the same scan.
-        assertThat(db.treatmentPlanDao().getActiveForPlant(plantId)).isNull()
         assertThat(db.treatmentPlanDao().getAllForPlant(plantId).map { it.scanId })
             .containsExactly(scanId)
+        assertThat(db.treatmentPlanDao().getActiveForPlant(plantId)).isNull()
     }
 
     @Test
