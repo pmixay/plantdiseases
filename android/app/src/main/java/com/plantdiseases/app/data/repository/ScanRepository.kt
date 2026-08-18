@@ -466,17 +466,13 @@ class ScanRepository(
             }
         }
 
-    /** List community "second opinions" + consensus for a shared scan.
-     *  [userPseudoId] is optional — pass the caller's own id to get an
-     *  accurate `likedByMe` in the response. [context] is optional too and
-     *  drives `myOpinion` the same way — omit it (e.g. a background poll
-     *  with no UI context handy) and it just reads as "no opinion yet"
-     *  instead of failing; see opinions_for's docstring server-side for why
-     *  `myOpinion` keys on the device identity rather than userPseudoId. */
+    /** List community "second opinions" + consensus for a shared scan. Reads
+     *  are public; an authenticated caller's account bearer token (attached
+     *  by [optionalAccountGet]) lets the server resolve viewer-scoped fields
+     *  such as `likedByMe` against the signed-in account instead of a
+     *  client-supplied identity. */
     suspend fun getCommunityOpinions(
         scanId: String,
-        userPseudoId: String? = null,
-        context: Context? = null,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             optionalAccountGet { token ->

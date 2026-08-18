@@ -126,7 +126,7 @@ class CommunityController(
 
     private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(scan.clientScanId, context = activity).onSuccess { resp ->
+            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
                 val n = resp.opinions.size
                 when {
                     resp.wantsOpinion ->
