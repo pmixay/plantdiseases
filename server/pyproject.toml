@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py314"
 extend-exclude = [
     "train_notebook.ipynb",
     ".venv",

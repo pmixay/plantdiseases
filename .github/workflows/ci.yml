@@ -10,6 +10,20 @@ on:
   pull_request:
     branches: [main, account-beta-test]
 
+# Push-only, deliberately — there is no `pull_request` trigger. Every branch
+# that reaches a PR here is pushed to one of the globs above first, so a PR
+# trigger would only duplicate runs (a PR event lands under a different
+# `github.ref`, so `concurrency` does not cancel the push run).
+#
+# The failure mode to keep in mind is the one that hit #158-#167: those came
+# from automated branches that matched none of the globs, so each PR carried
+# an EMPTY status and merged unbuilt — five mutually-incompatible dependency
+# bumps that broke the Android build at Gradle configuration time on main.
+# That specific hole is closed by the bot being gone (dependency updates are
+# manual now), NOT by the trigger list. If any automation is reintroduced,
+# add its branch prefix here in the same commit, or its PRs will be green by
+# virtue of never having run.
+
 # Least privilege for GITHUB_TOKEN. Without this the token inherits the
 # repository/organization default, which on many repos is still read-write on
 # contents, packages, issues and pull-requests — handed to every third-party
@@ -32,9 +46,26 @@ jobs:
       account: ${{ steps.filter.outputs.account }}
       server: ${{ steps.filter.outputs.server }}
     steps:
+      # fetch-depth: 0 is load-bearing, not a nicety. On a `push` event
+      # paths-filter diffs against `github.event.before`, and with the default
+      # depth-1 checkout that commit is not in the clone — so paths-filter
+      # shells out to `git fetch` to get it. That fetch has no credentials
+      # (persist-credentials: false, correctly, keeps the token out of
+      # .git/config) and dies with:
+      #   fatal: could not read Username for 'https://github.com'
+      # which failed the `changes` job and, through `needs:`, SKIPPED the
+      # android and server jobs entirely. Every push to main since #158 was
+      # "green" only because nothing ever ran.
+      #
+      # Fetching the full history makes the base commit already present, so
+      # paths-filter never fetches and never needs a credential. The
+      # alternative — re-enabling persist-credentials here — would put the
+      # token back in .git/config to work around a missing object; this keeps
+      # the hardening and fixes the actual cause.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
@@ -46,7 +77,6 @@ jobs:
               - 'account-server/app/api/**'
               - 'account-server/app/security/tokens.py'
               - '.github/workflows/**'
-              - '.github/dependabot.yml'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
               - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
@@ -56,7 +86,6 @@ jobs:
               - 'deploy/account-beta-test/**'
               - 'server/**'
               - '.github/workflows/**'
-              - '.github/dependabot.yml'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
               - 'docs/ACCOUNT_BETA_*.md'
@@ -65,7 +94,6 @@ jobs:
               - 'server/**'
               - 'account-server/**'
               - '.github/workflows/**'
-              - '.github/dependabot.yml'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
               - 'docs/ACCOUNT_BETA_*.md'
@@ -189,7 +217,7 @@ jobs:
           retention-days: 7
 
   server:
-    name: Server tests & lint
+    name: Server tests & lint (py3.14)
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
@@ -201,10 +229,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # The server is deployed straight onto a host (`start.sh` → uvicorn),
+      # so the interpreter is whatever `python3` resolves to there rather
+      # than something a base image pins. We stand at the single current
+      # release (3.14) instead of testing a floor+latest range — this
+      # assumes deploy hosts track the latest interpreter rather than
+      # staying pinned to an older one. If that assumption stops holding,
+      # reintroduce a floor leg here (and in requirements.txt's numpy floor
+      # / pyproject.toml's ruff target-version, which moved in lockstep).
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.11"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             server/requirements.txt

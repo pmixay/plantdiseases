@@ -9,6 +9,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 
@@ -22,6 +23,7 @@ class GardenAttachController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val plantRepository: PlantRepository,
+    private val reviewManager: InAppReviewManager,
 ) {
 
     fun registerCreatePlantListener() {
@@ -45,12 +47,7 @@ class GardenAttachController(
                 .setItems(labels) { _, which ->
                     activity.lifecycleScope.launch {
                         plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
-                        binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.scan_added_to_garden),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        onAddedToGarden()
                     }
                 }
                 .setPositiveButton(R.string.create_new_plant) { _, _ ->
@@ -83,12 +80,20 @@ class GardenAttachController(
                 commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
             )
             plantRepository.assignScanToPlant(scanId, plantId)
-            binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
-            Toast.makeText(
-                activity,
-                activity.getString(R.string.scan_added_to_garden),
-                Toast.LENGTH_SHORT,
-            ).show()
+            onAddedToGarden()
         }
+    }
+
+    /** Common tail of both attach paths (pick-existing and create-new): the
+     *  confirmation UI, and — since organizing a scan into a garden plant is a
+     *  genuine engaged-user moment — a chance at RuStore's review prompt. */
+    private fun onAddedToGarden() {
+        binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
+        Toast.makeText(
+            activity,
+            activity.getString(R.string.scan_added_to_garden),
+            Toast.LENGTH_SHORT,
+        ).show()
+        reviewManager.maybeRequestReview()
     }
 }

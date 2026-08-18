@@ -28,7 +28,6 @@ PRIVACY = REPOSITORY_ROOT / "privacy.html"
 RELEASE_POLICY_GATES = DEPLOY / "release-policy-gates.json"
 ANDROID_RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "android-release.yml"
 CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
-DEPENDABOT = REPOSITORY_ROOT / ".github" / "dependabot.yml"
 ANDROID_BUILD_GRADLE = REPOSITORY_ROOT / "android" / "app" / "build.gradle.kts"
 GERMAN_ROLE_INIT = DEPLOY / "postgres-init" / "10-account-roles.sh"
 RU_ROLE_INIT = HANDOFF / "postgres-init" / "10-account-roles.sh"
@@ -102,32 +101,6 @@ def _run_release_policy_validator(tmp_path: Path, gates: dict, policy: str):
 
 def _mount_source(mount: str) -> str:
     return mount.split(":", maxsplit=1)[0]
-
-
-def test_dependabot_covers_account_and_compose_dependencies():
-    updates = _yaml(DEPENDABOT)["updates"]
-    configured = {
-        (entry["package-ecosystem"], entry["directory"])
-        for entry in updates
-    }
-    assert {
-        ("pip", "/account-server"),
-        ("docker", "/account-server"),
-        ("docker-compose", "/server"),
-        ("docker-compose", "/deploy/account-beta-test"),
-        ("docker-compose", "/deploy/account-beta-test/handoff"),
-    } <= configured
-    assert ("docker", "/deploy/account-beta-test") not in configured
-    assert ("docker", "/deploy/account-beta-test/handoff") not in configured
-
-    # Dependabot's Compose fetcher accepts a single dotted qualifier after
-    # "compose". Keep the handoff templates in that supported filename shape.
-    assert RU_COMPOSE.name == "compose.russia-template.yml"
-    assert DE_COMPOSE.name == "compose.germany-worker-template.yml"
-    assert RU_COMPOSE.is_file()
-    assert DE_COMPOSE.is_file()
-    assert not (HANDOFF / "compose.russia.template.yml").exists()
-    assert not (HANDOFF / "compose.germany-worker.template.yml").exists()
 
 
 def test_german_staging_uses_real_providers_and_model_with_isolated_state():

@@ -12,6 +12,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import kotlinx.coroutines.launch
@@ -27,6 +28,7 @@ class FeedbackController(
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
     private val privacyConsentPrefs: PrivacyConsentPrefs,
+    private val reviewManager: InAppReviewManager,
 ) {
 
     /**
@@ -174,7 +176,7 @@ class FeedbackController(
             val submission: Result<Unit> = if (!correct && imageFile.exists()) {
                 repository.uploadFeedbackImage(request, imageFile)
             } else {
-                repository.submitFeedback(request).map { Unit }
+                repository.submitFeedback(request).map { }
             }
             submission.onSuccess {
                 repository.consumeFeedbackReceipt(scan)
@@ -183,6 +185,12 @@ class FeedbackController(
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
                 Haptics.success(activity)
+                if (correct) {
+                    // Confirming the diagnosis was right is the single
+                    // strongest satisfaction signal on this screen — see
+                    // InAppReviewManager for the shared cooldown.
+                    reviewManager.maybeRequestReview()
+                }
             }.onFailure { error ->
                 if (error is ScanRepository.FeedbackReceiptException) {
                     repository.consumeFeedbackReceipt(scan)

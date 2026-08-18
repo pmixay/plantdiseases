@@ -181,6 +181,37 @@ def test_feedback_image_rejects_full_frame_without_safe_crop(
     assert list(isolated_training_store.TRAINING_IMAGE_DIR.iterdir()) == []
 
 
+def test_feedback_image_rejects_non_image_bytes_before_consuming_receipt(
+    client, isolated_training_store
+):
+    receipt = isolated_training_store.issue_feedback_receipt(capture_pending=False)
+    response = client.post(
+        "/api/feedback/image",
+        data={
+            "feedback_receipt": receipt,
+            "correct": "false",
+            "corrected_class": "leaf_spot",
+            "reason": "wrong_class",
+        },
+        files={
+            "image": (
+                "payload.jpg",
+                b"PK\x03\x04not-an-image",
+                "image/jpeg",
+            )
+        },
+    )
+    assert response.status_code == 400
+    assert isolated_training_store.training_counts()["total"] == 0
+
+    # Validation fails before the one-use receipt reaches the training store.
+    retry = client.post(
+        "/api/feedback",
+        json={"feedback_receipt": receipt, "correct": True},
+    )
+    assert retry.status_code == 200
+
+
 def test_feedback_image_stores_only_sanitized_detector_crop(
     client, isolated_training_store, png_bytes, monkeypatch
 ):

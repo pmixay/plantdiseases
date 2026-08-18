@@ -39,6 +39,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
@@ -96,12 +97,25 @@ class ResultActivity : AppCompatActivity() {
 
     private var pendingScanForToolbar: ScanEntity? = null
 
+    // RuStore in-app review prompt, shared by every "the user just had a good
+    // moment" controller below — one cooldown across all of them (see
+    // InAppReviewManager), not one per call site.
+    private val reviewManager by lazy { InAppReviewManager(this) }
+
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
-    private val carePlan by lazy { CarePlanController(this, binding, scanRepository, plantRepository) }
-    private val feedback by lazy {
-        FeedbackController(this, binding, scanRepository, privacyConsentPrefs)
+    private val carePlan by lazy {
+        CarePlanController(this, binding, scanRepository, plantRepository, reviewManager)
     }
-    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository) }
+    private val feedback by lazy {
+        FeedbackController(
+            this,
+            binding,
+            scanRepository,
+            privacyConsentPrefs,
+            reviewManager,
+        )
+    }
+    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository, reviewManager) }
     private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
         CommunityController(

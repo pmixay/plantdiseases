@@ -1,14 +1,14 @@
 # Developer-only dependencies (extends requirements.txt).
 # Used for linting and running the test suite in CI.
 -r requirements.txt
-pytest>=9.1
+pytest>=9.1.1
 # Runtime integrations (firebase-admin) still depend on legacy httpx. Keep it
 # available for those consumers, but do not let Starlette's compatibility
 # fallback drive TestClient: Starlette 1.2+ builds TestClient on maintained
 # httpx2 and treats the legacy fallback as deprecated.
-httpx>=0.28
+httpx>=0.28.1
 httpx2>=2.7,<3
-ruff>=0.16
+ruff>=0.16.3
 bandit==1.9.4
 pip-audit==2.10.1
 # Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for

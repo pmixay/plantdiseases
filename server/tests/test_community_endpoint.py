@@ -840,7 +840,7 @@ def test_community_nearby_lists_recent_rows(client, isolated_community):
     assert body["summary"]["last_7d"] == 4
 
 
-def test_community_nearby_is_identity_independent_public_read(
+def test_community_nearby_excludes_signed_viewers_own_scan(
     client, isolated_community,
 ):
     client.post(
@@ -870,7 +870,6 @@ def test_community_nearby_is_identity_independent_public_read(
     # publication capability returned by analysis.
     import community as comm
     assert {item["scan_id"] for item in body["items"]} == {
-        comm.public_scan_token("scanselfid01"),
         comm.public_scan_token("scanotherid1"),
     }
     # The summary block must apply the same exclusion. Otherwise the
@@ -878,10 +877,10 @@ def test_community_nearby_is_identity_independent_public_read(
     # scan they just uploaded — alongside the carousel that already
     # filters them out, which was confusing in practice.
     summary = body["summary"]
-    assert summary["total"] == 2
-    assert summary["last_7d"] == 2
+    assert summary["total"] == 1
+    assert summary["last_7d"] == 1
     assert [d["disease"] for d in summary["top_diseases"]] == ["healthy"]
-    assert summary["top_diseases"][0]["count"] == 2
+    assert summary["top_diseases"][0]["count"] == 1
 
 
 def test_community_nearby_hides_not_a_plant(client, isolated_community):

@@ -567,10 +567,10 @@ class ScanRepositoryNetworkTest {
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/feedback/image")
         val body = req.body.readUtf8()
-        assertThat(body).contains("name=feedback_receipt")
+        assertThat(body).contains("""name="feedback_receipt"""")
         assertThat(body).contains("r".repeat(43))
-        assertThat(body).doesNotContain("scan_id")
-        assertThat(body).contains("name=image")
+        assertThat(body).doesNotContain("""name="scan_id"""")
+        assertThat(body).contains("""name="image"""")
         assertThat(body).contains("filename=\"scan.jpg\"")
         assertThat(body).contains("only-sanitized-pixels")
         assertThat(body).doesNotContain("PRIVATE-original-name")
@@ -603,17 +603,19 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).isEqualTo("/api/community/scan")
         assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
         val body = req.body.readUtf8()
-        assertThat(body).contains("name=scan_id")
+        // Ktor 3 quotes Content-Disposition parameter values. Keep every
+        // privacy omission assertion quoted too, or it could pass vacuously.
+        assertThat(body).contains("""name="scan_id"""")
         assertThat(body).doesNotContain("user_pseudo_id")
         assertThat(body).doesNotContain("nickname")
-        assertThat(body).doesNotContain("name=country")
-        assertThat(body).contains("name=confidence")
+        assertThat(body).doesNotContain("""name="country"""")
+        assertThat(body).contains("""name="confidence"""")
         assertThat(body).contains("filename=\"scan.jpg\"")
         assertThat(body).contains("only-sanitized-pixels")
         assertThat(body).doesNotContain("PRIVATE-original-name")
         // blank region / null species must NOT be sent.
-        assertThat(body).doesNotContain("name=region")
-        assertThat(body).doesNotContain("name=species")
+        assertThat(body).doesNotContain("""name="region"""")
+        assertThat(body).doesNotContain("""name="species"""")
     }
 
     // --- Community read GETs (Ktor) ---

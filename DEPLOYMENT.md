@@ -7,7 +7,7 @@ through **Profile → Server URL**.
 Configuration keys below match `server/main.py`, `server/ai_services.py`
 and `server/config.example.json`. The server reads `server/config.json`
 first; environment variables are still honoured as a fallback so existing
-Docker / CI deployments keep working.
+existing CI / systemd deployments keep working.
 
 ---
 
@@ -27,7 +27,7 @@ key maps to the same name as the legacy environment variable.
 | Key | Default | Purpose |
 |---|---|---|
 | `cors_origins` | `["http://localhost:3000","http://127.0.0.1:3000"]` | Allowed CORS origins. **Do not set to `["*"]` in production.** |
-| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / Cloudflare; otherwise `X-Forwarded-For` is ignored entirely. **Must list every hop between the client and the app** — see §3.1, which also covers why `127.0.0.1` is usually the *wrong* value under Docker. |
+| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / Cloudflare; otherwise `X-Forwarded-For` is ignored entirely. **Must list every hop between the client and the app** — see §3.1, which also covers how to verify the value you chose is actually being honoured. |
 | `feedback_ip_pepper` (env `FEEDBACK_IP_PEPPER`) | *(empty → generated)* | Secret peppering the SHA-256 of a client IP before it is stored (`client_ip_hash` in the feedback / community / telemetry stores). IPv4 is only 32 bits, so a hash with a weak or known pepper enumerates back to the raw IP in seconds. Leave blank and the server generates a random one on first use and persists it as `.ip_hash_pepper` beside the feedback DB; **set it explicitly** to control rotation, to share one pepper across replicas, or if your state dir is read-only (see §4). Changing it resets the 24 h per-IP write quotas once. |
 | `forwarded_allow_ips` | `127.0.0.1` | Passed to uvicorn `--forwarded-allow-ips`; controls which peers can update `Host` / scheme via forwarded headers. |
 | `rate_limit_rps` | `1.0` | Per-IP request rate limit. Rate-limited responses return `429` with a `Retry-After` header. |
@@ -39,7 +39,7 @@ key maps to the same name as the legacy environment variable.
 | `onnx_intra_op_threads` | `0` | Intra-op threads per ONNX session. `0` lets ONNX Runtime use all physical cores — the biggest CPU-latency lever for the DINOv2 ViT classifier. Pin lower on a shared host. |
 | `frontier_enabled` | `false` | Enable server inference for the high-capacity **frontier** family (ViT-B/14, ~86M param). Off by default because it expects a GPU host. When off (or the bundle fails to load), `/api/analyze?family=frontier` returns a graceful `available:false` payload and `/api/capabilities` reports it unavailable so the app greys it out. A broken frontier bundle never blocks gamma boot. |
 | `frontier_models_dir` | `models/frontier` | Where the frontier bundle (`classifier.onnx`, `classes.json`, `temperature.json`, `conformal.json`) lives when `frontier_enabled=true`. The YOLOv8n detector is shared with gamma. |
-| `guide_static_dir` | `<server>/static/guide` | Directory of disease/pest example photos served by `GET /api/guide/photo/<key>`. Moved out of the Android APK to shrink the app; committed to the repo and copied into the Docker image. The client disk-caches them for offline use. |
+| `guide_static_dir` | `<server>/static/guide` | Directory of disease/pest example photos served by `GET /api/guide/photo/<key>`. Moved out of the Android APK to shrink the app; committed to the repo and served straight off disk. The client disk-caches them for offline use. |
 | `aqua_static_dir` | `<server>/static/aqua` | Directory hosting the on-device **Aqua** TFLite model (`aqua_classifier.tflite` + `classes.json`), served by `GET /api/aqua/model` (+ `GET /api/aqua/manifest`). Provisioned out of band (not committed, like the weights); when absent the manifest reports `available:false` and the app uses the server model. The app downloads + caches it and re-downloads only when the sha changes. |
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
@@ -228,50 +228,57 @@ the canonical numbers and the LLM summary is being silently thrown away.
 
 ---
 
-## 2. Docker Compose (recommended)
+## 2. Running the server
 
-The repo ships a production-oriented compose file: non-root user,
-read-only models volume, health check, restart policy.
+The server is a plain Python process — `uvicorn` over a virtualenv, with
+nothing containerised. `server/start.sh` creates the venv, installs CPU torch
+plus `requirements.txt`, and starts uvicorn on `:8000`. That is fine for a
+first run; for anything long-lived use the systemd unit in §4, which wraps the
+same command with restart, logging and sandboxing.
+
+Supported Python is **3.14**; CI runs the suite against it. Configuration
+comes from `server/config.json` (copy `config.example.json`), with
+environment variables as the fallback — so the same settings can be
+exported before starting:
 
 ```bash
 cd server
 export CORS_ORIGINS="https://plantdiseases.example.com"
 export TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8"
 export RATE_LIMIT_RPS=2.0
-docker compose up -d --build
+./start.sh
 ```
 
-**The published port is bound to loopback**
-(`"${PORT_BIND:-127.0.0.1}:8000:8000"`), because the API speaks plain HTTP and
-TLS terminates in nginx (§3). Publishing on `0.0.0.0` would also bypass a host
-firewall — Docker's DNAT rules sit in the `DOCKER` chain, traversed *before*
-`INPUT`, so a `ufw deny 8000` does not apply.
-
-That is correct for the topology in §3 (nginx on this host, `proxy_pass
-http://127.0.0.1:8000`) and for nginx running as another container on the same
-compose network (it reaches the service by name, and published ports are
-irrelevant to it). **It breaks anything that targets `<hostIP>:8000` from off
-the host** — a cloud load balancer, a separate proxy host, or a remote Docker
-daemon. For those, set an override before starting:
+**Bind to loopback.** The API speaks plain HTTP and TLS terminates in nginx
+(§3), so uvicorn must not be reachable from off the host. The production
+invocation — what the systemd unit in §4 runs — is:
 
 ```bash
-echo 'PORT_BIND=0.0.0.0' >> server/.env   # compose interpolates it
+uvicorn main:app --host 127.0.0.1 --port 8000 \
+  --forwarded-allow-ips 127.0.0.1 --proxy-headers \
+  --limit-concurrency 64 --timeout-keep-alive 5
 ```
 
-Two more compose knobs, both with defaults that suit a gamma-only CPU host:
+`--limit-concurrency 64` caps simultaneously-accepted connections: past that
+uvicorn answers 503 rather than queueing unboundedly, so a slowloris-style
+flood cannot exhaust the event loop. With `infer_workers=1` a scan's heavy
+work is serialised through a single executor slot anyway.
 
-| Env | Default | Raise it when |
-|---|---|---|
-| `PORT_BIND` | `127.0.0.1` | the TLS terminator is not on this host (above) |
-| `MEM_LIMIT` | `4g` | `frontier_enabled=true` (ViT-B/14 is ~350 MB of weights plus its own arena) or `infer_workers > 1`. The cap **is** enforced by Compose V2, and with `restart: unless-stopped` an OOM-kill becomes a restart loop paying the ~18 s cold model load each cycle. |
+Binding `0.0.0.0` is only correct when the TLS terminator is **not** on this
+host — a cloud load balancer or a separate proxy machine. In that topology the
+host firewall is what protects the port, so verify it actually does.
 
-Model weights + calibration artefacts are **not auto-downloaded**.
-Populate the host `./models` dir (mounted at `/app/models`) with the
-trained artefacts before starting — `detector.{pt,onnx}`,
-`classifier.onnx` (+ optional `classifier_int8.onnx`), `classes.json`,
-and the calibration files. The server is fail-fast — if it can't find
-`detector.{pt,onnx}` and `classifier.onnx` it refuses to start and the
-container exits.
+Memory is bounded by the systemd unit (`MemoryMax=`, §4), which matters when
+`frontier_enabled=true` (ViT-B/14 is ~350 MB of weights plus its own arena) or
+`infer_workers > 1`. Note that a `MemoryMax` kill plus `Restart=always` becomes
+a restart loop paying the ~18 s cold model load each cycle — size it with
+headroom rather than tightly.
+
+Model weights + calibration artefacts are **not auto-downloaded**. Populate
+`server/models/` with the trained artefacts before starting —
+`detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`),
+`classes.json`, and the calibration files. The server is fail-fast: if it
+can't find `detector.{pt,onnx}` and `classifier.onnx` it refuses to boot.
 
 Smoke test:
 
@@ -281,7 +288,7 @@ curl -F "image=@sample.jpg" http://127.0.0.1:8000/api/analyze | jq
 ```
 
 Note this passes whether or not the port is reachable from off the host, so it
-cannot tell you the `PORT_BIND` choice was right. Verify the way real traffic
+cannot tell you the bind address was right. Verify the way real traffic
 arrives — through nginx, from another machine:
 
 ```bash
@@ -289,6 +296,7 @@ curl -s https://plantdiseases.example.com/api/health | jq
 ```
 
 ---
+
 
 ## 3. Reverse proxy (nginx + Let's Encrypt)
 
@@ -366,16 +374,17 @@ client is what gets appended:
 Adding CF's ranges to `TRUSTED_PROXIES` also works, but it is more brittle —
 that list changes.
 
-**Docker.** For a loopback-published container the peer uvicorn sees is the
-docker bridge gateway (`172.x.0.1`), *not* `127.0.0.1`, so a literal
-`TRUSTED_PROXIES=127.0.0.1` never matches and the header is ignored — again
-collapsing everyone into one bucket. Use the bridge subnet (e.g.
-`TRUSTED_PROXIES=172.16.0.0/12`) for the compose deployment.
+**The peer address is what must match, not the address you expect.** With
+nginx on the same host proxying to `127.0.0.1:8000`, the peer uvicorn sees is
+`127.0.0.1` and that is what `trusted_proxies` must contain. Put any other
+network hop in front — a proxy on a second machine, a NAT, anything that
+rewrites the source address — and a literal `127.0.0.1` never matches, the
+header is ignored, and every client collapses into one rate-limit bucket.
 
 **Verify rather than assume** — every request logs the resolved address:
 
 ```bash
-docker compose logs | grep -o 'IP=[^ ]*' | sort | uniq -c | sort -rn | head
+journalctl -u plantdiseases | grep -o 'IP=[^ ]*' | sort | uniq -c | sort -rn | head
 ```
 
 A healthy spread of client addresses is right. One address repeated for every
@@ -383,10 +392,10 @@ request means the header is not being honoured and all clients share a bucket.
 
 ---
 
-## 4. systemd unit (alternative to Docker)
+## 4. systemd unit
 
-Use this when Docker is not an option — a single Python venv plus a
-user-scoped service.
+How the server should actually run in production — a single Python venv plus
+a user-scoped service.
 
 ```ini
 # /etc/systemd/system/plantdiseases.service
@@ -423,7 +432,8 @@ Environment=PUSH_DB_PATH=/var/lib/plantdiseases/push.db
 Environment=PLANT_PHOTO_CACHE_DIR=/var/lib/plantdiseases/plant_photo_cache
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
-          --forwarded-allow-ips 127.0.0.1 --proxy-headers
+          --forwarded-allow-ips 127.0.0.1 --proxy-headers \
+          --limit-concurrency 64 --timeout-keep-alive 5
 Restart=on-failure
 RestartSec=3
 # Hardening
@@ -433,6 +443,12 @@ ProtectSystem=strict
 ProtectHome=yes
 StateDirectory=plantdiseases
 ReadWritePaths=/opt/plantdiseases/server/logs
+# Bounds the blast radius of a decompression-bomb or oversized-image request
+# to this service instead of letting the host OOM-killer pick a victim. Raise
+# it for frontier_enabled=true (ViT-B/14 weights + its own arena) or
+# infer_workers > 1. Do not size it tight: a kill plus Restart=on-failure is a
+# restart loop paying the ~18 s cold model load every cycle.
+MemoryMax=4G
 
 [Install]
 WantedBy=multi-user.target
@@ -440,7 +456,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
-sudo -u plantd python3.11 -m venv /opt/plantdiseases/.venv
+sudo -u plantd python3 -m venv /opt/plantdiseases/.venv   # 3.14
 sudo -u plantd /opt/plantdiseases/.venv/bin/pip install -r /opt/plantdiseases/server/requirements.txt
 sudo systemctl daemon-reload
 sudo systemctl enable --now plantdiseases
@@ -501,8 +517,8 @@ Before opening the service to the public:
 - [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.
 - [ ] Prometheus/Grafana (or equivalent) is scraping `/api/metrics/prometheus`.
 - [ ] Backup strategy for `server/logs/` and `server/models/` in place.
-- [ ] Container runs as a non-root user (`Dockerfile` already does this).
-- [ ] Docker image built from a tagged commit, not `latest`.
+- [ ] Service runs as a non-root user (the systemd unit in §4 sets `User=plantd`).
+- [ ] Deployed from a tagged commit, not a moving branch.
 - [ ] Android app `network_security_config.xml` points at the production HTTPS host (HTTP cleartext is only allowed for `10.0.2.2` / `localhost`).
 - [ ] Smoke test: `curl -F "image=@leaf.jpg" https://.../api/analyze` returns a bilingual diagnosis (HTTP 200).
 

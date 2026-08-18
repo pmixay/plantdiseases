@@ -4,10 +4,10 @@
 # travel to the runtime image. Saves ~700 MB and trims the runtime
 # attack surface (no compiler, no apt-get, no pip cache).
 # Pinned to an exact patch AND its digest: the tag alone is mutable, and
-# 3.11.9 sat here six CPython patch releases (and their bundled OpenSSL /
-# Debian security fixes) out of date. Dependabot's docker ecosystem keeps
-# both the tag and the digest current — see .github/dependabot.yml.
-FROM python:3.11.15-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51c34de3f08cbb7 AS builder
+# This compatibility image exists only for the isolated account rollout;
+# ordinary server deployment follows DEPLOYMENT.md. Keep the reviewed tag and
+# digest aligned manually with the Python 3.14-only server CI contract.
+FROM python:3.14.0-slim@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -26,7 +26,7 @@ COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
 # ── Runtime stage ────────────────────────────────────────────────────
-FROM python:3.11.15-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51c34de3f08cbb7 AS runtime
+FROM python:3.14.0-slim@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

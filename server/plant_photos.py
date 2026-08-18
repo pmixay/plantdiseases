@@ -30,7 +30,7 @@ from pathlib import Path
 
 try:
     from .config import get_str
-except ImportError:  # flat layout (Docker / uvicorn from server/)
+except ImportError:  # flat layout (uvicorn run from server/)
     from config import get_str
 
 logger = logging.getLogger("plantdiseases.plant_photos")
@@ -41,6 +41,8 @@ _MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely
 # width-normalised renders (a few hundred KB) rather than multi-MB originals,
 # so the same disk budget holds far more species — raised to match.
 _CACHE_MAX_FILES = 1500
+# The public proxy lets callers choose which allowlisted assets enter the
+# cache, so count and source+variant bytes are independently bounded.
 _CACHE_MAX_BYTES = 512 * 1024 * 1024
 _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"

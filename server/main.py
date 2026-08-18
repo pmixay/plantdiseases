@@ -59,8 +59,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
 # Imports work two ways:
-#   1) Inside Docker (`uvicorn main:app` from /app, flat copy) — `from
-#      ai_services import …` resolves directly.
+#   1) Flat, from `server/` (`uvicorn main:app`, which is what `start.sh`
+#      runs) — `from ai_services import …` resolves directly.
 #   2) From the repo root (`python -m server.main` or `uvicorn
 #      server.main:app`) — same names live under the `server.` package.
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
@@ -157,9 +157,6 @@ try:
         record_opinion_with_status as community_record_opinion,
     )
     from .community import (
-        record_scan as community_record_scan,
-    )
-    from .community import (
         record_view as community_record_view,
     )
     from .community import (
@@ -190,10 +187,10 @@ try:
         thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from .community import (
-        update_actor_nickname as community_update_actor_nickname,
+        unblock_actor as community_unblock_actor,
     )
     from .community import (
-        unblock_actor as community_unblock_actor,
+        update_actor_nickname as community_update_actor_nickname,
     )
     from .community import (
         view_counts as community_view_counts,
@@ -349,9 +346,6 @@ except ImportError:
         record_opinion_with_status as community_record_opinion,
     )
     from community import (
-        record_scan as community_record_scan,
-    )
-    from community import (
         record_view as community_record_view,
     )
     from community import (
@@ -382,10 +376,10 @@ except ImportError:
         thumbnail_is_visible as community_thumbnail_is_visible,
     )
     from community import (
-        update_actor_nickname as community_update_actor_nickname,
+        unblock_actor as community_unblock_actor,
     )
     from community import (
-        unblock_actor as community_unblock_actor,
+        update_actor_nickname as community_update_actor_nickname,
     )
     from community import (
         view_counts as community_view_counts,
@@ -459,7 +453,7 @@ def _resolve_app_version() -> str:
     This is decoupled from the MODEL version (``models/classes.json ->
     model_version``, e.g. 2.6.8), which is surfaced separately by
     ``/api/capabilities``. Prefer the package ``__version__``; when the server runs
-    as a flat module (``main:app`` in the Docker image) that import fails, so
+    as a flat module (``uvicorn main:app`` from ``server/``) that import fails, so
     fall back to the same hardcoded server version (kept in sync with
     ``__init__.py``) — never the model version, which would make the server
     string track the model.
@@ -636,6 +630,18 @@ AQUA_STATIC_DIR = Path(get_str(
 # MODELS_DIR before starting the server. Boot is fail-fast — the pipeline
 # refuses to start if a required artefact is missing.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
+# Ceiling on the WHOLE request body, for every route and content type.
+# MAX_FILE_SIZE above only ever bound the image field of a multipart upload,
+# which left every JSON endpoint (/api/chat, /api/care-plan, /api/community/*,
+# /api/telemetry/errors, ...) reading an unbounded body into memory: Starlette
+# buffers the body before Pydantic ever sees it, so no field validator can
+# refuse it. With --limit-concurrency 64 that is 64 simultaneous bodies of
+# whatever size a client feels like sending.
+#
+# Sized off MAX_FILE_SIZE plus 2 MB of slack, because the largest legitimate
+# request IS a multipart image upload: the parts, boundaries and headers
+# around the image must fit under this too.
+MAX_REQUEST_BYTES = get_int("MAX_REQUEST_BYTES", MAX_FILE_SIZE + 2 * 1024 * 1024)
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
 PLANTNET_IMAGE_MAX_DIMENSION = get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
@@ -1237,14 +1243,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             del self._buckets[ip]
 
     async def dispatch(self, request: Request, call_next):
-        # Health, metadata and metrics endpoints are always free
+        # Health and metadata are free: both are O(1) reads of in-memory
+        # state, and a client that cannot poll /api/health cannot tell "server
+        # down" from "you are throttled".
+        #
+        # /api/metrics* is NOT on this list any more. Those two handlers run
+        # full-table SQLite aggregates (feedback_counts, community_stats) on
+        # the event loop, so an exemption made the single most expensive
+        # unauthenticated request in the API also the only unmetered one — a
+        # free amplifier, one cheap GET to many table scans. They are ordinary
+        # rate-limited endpoints now; at the default 2 req/s a Prometheus
+        # scrape every 15 s is nowhere near the bucket.
         path = request.url.path
-        if path in (
-            "/api/health",
-            "/api/capabilities",
-            "/api/metrics",
-            "/api/metrics/prometheus",
-        ):
+        if path in ("/api/health", "/api/capabilities"):
             return await call_next(request)
         # Static image assets + the tiny aqua manifest are also free.
         # Opening the guide (or a thumbnail-heavy community strip) fans
@@ -1407,6 +1418,93 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+
+class BodySizeLimitMiddleware:
+    """Refuse request bodies over ``max_bytes`` with 413.
+
+    Deliberately a raw ASGI middleware rather than a ``BaseHTTPMiddleware``:
+    the cap has to act on the byte stream itself, and ``BaseHTTPMiddleware``
+    only hands over a request whose body downstream code will buffer anyway.
+
+    Two layers, because either one alone is bypassable:
+
+    1. A declared ``Content-Length`` over the cap is refused before a single
+       body byte is read. This is the path every ordinary client takes.
+    2. Otherwise the stream is metered as it is consumed, which is what
+       catches ``Transfer-Encoding: chunked`` — where the sender simply never
+       declares a length. Passing the cap ends the stream and the 413 is
+       written instead of the application's response.
+
+    Sitting outside the rate limiter is intentional: an oversized body should
+    cost as little as possible to reject, and should not spend the client's
+    token bucket on a request that never reached a route.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    @staticmethod
+    async def _send_413(send) -> None:
+        body = json.dumps({"detail": "Request body too large"}).encode()
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        for key, value in scope.get("headers", ()):
+            if key == b"content-length":
+                try:
+                    declared = int(value)
+                except ValueError:
+                    break  # malformed — fall through to stream metering
+                if declared > self.max_bytes:
+                    await self._send_413(send)
+                    return
+                break
+
+        state = {"received": 0, "over": False, "started": False}
+
+        async def metered_receive():
+            message = await receive()
+            if message["type"] == "http.request":
+                state["received"] += len(message.get("body", b""))
+                if state["received"] > self.max_bytes:
+                    state["over"] = True
+                    # Ending the stream is what unblocks the route; it then
+                    # sees a disconnected client instead of hanging.
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def guarded_send(message):
+            # Suppress the application's own response only while we can still
+            # replace it. Once the first byte is out the die is cast.
+            if state["over"] and not state["started"]:
+                return
+            if message["type"] == "http.response.start":
+                state["started"] = True
+            await send(message)
+
+        try:
+            await self.app(scope, metered_receive, guarded_send)
+        except Exception:
+            # A route that raises because we cut its body short must not
+            # surface as a 500 — the client's oversized body is the error.
+            if not (state["over"] and not state["started"]):
+                raise
+        if state["over"] and not state["started"]:
+            await self._send_413(send)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -1606,6 +1704,10 @@ app.add_middleware(
 # Halving that on the wire matters more for slow mobile uplinks than
 # the ~10 µs CPU cost on the server side.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+# Outside the rate limiter, inside CORS: an oversized body is rejected before
+# it can be buffered, but the 413 still carries Access-Control-* headers so a
+# browser client reads the status instead of an opaque CORS failure.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BYTES)
 # CORS is added LAST so it is the outermost layer: preflight (OPTIONS)
 # requests are answered before they reach the rate limiter, and the
 # Access-Control-* headers are attached even to error responses produced
@@ -3153,6 +3255,9 @@ async def feedback_image_upload(
             detail="Daily feedback quota reached. Try again tomorrow.",
         )
     image_bytes = await _read_upload(image)
+    # Apply the same byte-signature allowlist as the analysis endpoint before
+    # decoding or invoking the privacy screen. Content-Type is attacker-owned.
+    _validate_image_bytes(image_bytes)
     img = _open_image(image_bytes)
     if pipeline is None or not getattr(pipeline, "detector", None):
         raise HTTPException(status_code=503, detail="privacy_screen_unavailable")

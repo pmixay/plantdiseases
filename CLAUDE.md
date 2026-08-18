@@ -18,7 +18,7 @@ Two deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
-| `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
+| `server/` | Python 3.14, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 
 The bilingual privacy policy is a single standalone page, `privacy.html` (repo
@@ -36,9 +36,9 @@ steps), `docs/DATASET_LABELING_PLAN.md` (data loop),
 > **Don't build/compile/train locally — lean on CI and Colab.**
 > - **Builds & checks run in CI** (`.github/workflows/ci.yml` on every push to
 >   `claude/**`): server `ruff` + `pytest`, Android `ktlintCheck` + `detekt` + `testDebugUnitTest`
->   + R8 `assembleRelease`. Don't kick off full local Gradle/Docker builds to "verify" —
+>   + R8 `assembleRelease`. Don't kick off full local Gradle builds to "verify" —
 >   push and let CI do it. Reading code, editing, and (cheap) targeted `pytest`/single
->   unit tests are fine; a full `assembleRelease` or `docker compose build` is not.
+>   unit tests are fine; a full `assembleRelease` is not.
 > - **Never train models locally.** Training/eval/export happens on the user's
 >   **Colab (A100, 40 GB VRAM, 80 GB RAM, 100 GB disk)** via
 >   `server/train_notebook.ipynb`. For ML work, edit the notebook / pipeline code and
@@ -59,7 +59,7 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   and redirects the labeling DB to a tmp dir. When adding pipeline behaviour,
   keep `FakePipeline`'s response shape in sync or patch `main.pipeline` in the test.
 - Run server modules as a flat package from `server/` (`uvicorn main:app`) — imports
-  resolve both flat (Docker) and as `server.*` (repo root) via a try/except in `main.py`.
+  resolve both flat (`server/`) and as `server.*` (repo root) via a try/except in `main.py`.
 
 ### Android (`cd android`)
 ```bash

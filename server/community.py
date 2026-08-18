@@ -1331,18 +1331,27 @@ def record_opinion_with_status(
         conn.execute("BEGIN IMMEDIATE")
         try:
             cutoff = now - _IDENTITY_ROTATION_S
-            target_exists = conn.execute(
-                "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? "
+            target = conn.execute(
+                "SELECT account_actor_id FROM community_scans "
+                "WHERE scan_id = ? AND created_at >= ? "
                 "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
                 "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
                 (scan_id, cutoff),
             ).fetchone()
-            if target_exists is None:
+            if target is None:
                 raise OpinionTargetUnavailableError(
                     "opinion target is absent, deleted, or stale"
                 )
             if _actor_is_deleted(conn, actor_id):
                 raise ValueError("deleted account actor")
+            owner_actor = str(target[0]) if target[0] else None
+            if (
+                actor_id is not None
+                and owner_actor is not None
+                and owner_actor != actor_id
+                and _actors_blocked(conn, actor_id, owner_actor)
+            ):
+                raise ValueError("blocked_interaction")
             # One opinion per author per scan. If this install already weighed in,
             # keep the original (the client locks its input too) and return that
             # row's id rather than appending a duplicate.
