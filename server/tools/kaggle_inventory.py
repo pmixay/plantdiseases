@@ -115,30 +115,58 @@ def _phash(path: Path):
         return None
 
 
+def _fetch(ref: str, names: list[str], workdir: Path) -> list[Path]:
+    got = []
+    for n in names:
+        dst = workdir / n.replace("/", "__")
+        if dst.exists() or download_file(ref, n, dst):
+            got.append(dst)
+        time.sleep(0.4)                             # Kaggle rate-limits hard
+    return got
+
+
+def _distinct(hashes: list) -> int:
+    """Single-linkage count at PHASH_MAX_HAMMING — how many photographs, not files."""
+    kept: list = []
+    for h in hashes:
+        if not any((h - k) <= PHASH_MAX_HAMMING for k in kept):
+            kept.append(h)
+    return len(kept)
+
+
 def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict:
     """Sample a folder and pHash it against the benchmark. The verdict that
-    decides whether a source is supply or poison."""
+    decides whether a source is supply or poison.
+
+    Two samples, because the two questions need opposite sampling. **Contamination**
+    wants coverage, so it strides evenly across the folder. **Augmentation collapse**
+    wants neighbours, so it takes one contiguous run — augmented copies of a
+    photograph sort adjacently, and an evenly-strided sample steps straight over
+    them. Reporting collapse from the strided sample is how ``Hibiscus_Necrosis``
+    was recorded as ~500 distinct images when the folder holds 37: at stride 20 the
+    sample was 30 files from 30 different originals, ratio 1.0, and the number read
+    as "no augmentation" when the truth was 37x.
+    """
     names = [n for n in listing(ref) if folder.lower() in n.lower()
              and Path(n).suffix.lower() in IMG_EXTS]
     if not names:
         return {"ref": ref, "folder": folder, "verdict": "EMPTY", "files": 0}
     names.sort()
     step = max(1, len(names) // sample)
-    sel = names[::step][:sample]
-
-    got = []
-    for n in sel:
-        dst = workdir / n.replace("/", "__")
-        if dst.exists() or download_file(ref, n, dst):
-            got.append(dst)
-        time.sleep(0.4)                             # Kaggle rate-limits hard
+    spread = names[::step][:sample]
+    # A contiguous window, taken from the middle so it is not the folder's
+    # (often unrepresentative) first or last block.
+    blk = min(sample, len(names))
+    start = max(0, (len(names) - blk) // 2)
+    block = [n for n in names[start:start + blk] if n not in set(spread)]
 
     bench_hashes = [h for h in
                     (_phash(p) for p in sorted(Path(bench).rglob("*"))
                      if p.suffix.lower() in IMG_EXTS)
                     if h is not None]
-    hits, dists, kept = 0, [], []
-    for p in got:
+
+    hits, dists, clean = 0, [], []
+    for p in _fetch(ref, spread, workdir):
         h = _phash(p)
         if h is None:
             continue
@@ -146,8 +174,12 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
         dists.append(d)
         if d <= PHASH_MAX_HAMMING:
             hits += 1
-        elif not any((h - k) <= PHASH_MAX_HAMMING for k in kept):
-            kept.append(h)                          # distinct within the sample
+        else:
+            clean.append(h)
+
+    block_hashes = [h for h in (_phash(p) for p in _fetch(ref, block, workdir))
+                    if h is not None]
+    block_distinct = _distinct(block_hashes)
 
     n = len(dists)
     verdict = ("CONTAMINATED — IS the benchmark, deny-list it" if n and hits / n > 0.5
@@ -157,8 +189,13 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
             "benchmark_hits_at_hamming6": hits,
             "min_distance": min(dists) if dists else None,
             "median_distance": sorted(dists)[n // 2] if n else None,
-            "distinct_in_sample": len(kept),
-            "augmentation_ratio": round(n / max(len(kept), 1), 2),
+            "distinct_in_spread_sample": _distinct(clean),
+            "block_sampled": len(block_hashes),
+            "block_distinct": block_distinct,
+            "augmentation_ratio": (round(len(block_hashes) / block_distinct, 2)
+                                   if block_distinct else None),
+            "est_distinct_in_folder": (round(len(names) * block_distinct
+                                             / len(block_hashes)) if block_hashes else None),
             "verdict": verdict}
 
 
