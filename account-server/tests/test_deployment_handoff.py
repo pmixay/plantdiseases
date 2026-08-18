@@ -203,6 +203,7 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
         "/run/internal-token/internal.token"
     )
     assert services["beta-app-api"]["group_add"] == ["10002"]
+    assert services["beta-app-api"]["cpus"] == 1.0
     app_mounts = services["beta-app-api"]["volumes"]
     assert "beta_internal_token:/run/internal-token:ro" in app_mounts
     assert all(not str(mount).startswith("beta_account_keys:") for mount in app_mounts)
@@ -649,6 +650,12 @@ def test_database_role_provisioning_is_idempotent_and_url_safe():
             assert f"('{table}')" in text
         sql_body = text.split("<<'SQL'\n", maxsplit=1)[1].split("\nSQL", maxsplit=1)[0]
         assert not any(line.lstrip().startswith("#") for line in sql_body.splitlines())
+
+    german_text = GERMAN_ROLE_INIT.read_text(encoding="utf-8")
+    assert "ALTER TABLE %I.%I OWNER TO beta_account_migrator" in german_text
+    assert "ALTER SEQUENCE %I.%I OWNER TO beta_account_migrator" in german_text
+    assert "ALTER DATABASE %I OWNER TO beta_account_migrator" in german_text
+    assert "rolname = 'beta_account') <> 10" in german_text
 
 
 def test_post_migration_grant_convergence_is_owner_scoped_and_fail_closed():

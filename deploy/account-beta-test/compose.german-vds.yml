@@ -317,7 +317,7 @@ services:
       - /tmp:size=32m,mode=1777
     restart: unless-stopped
     mem_limit: 4g
-    cpus: 2.0
+    cpus: 1.0
     pids_limit: 256
     security_opt:
       - no-new-privileges:true

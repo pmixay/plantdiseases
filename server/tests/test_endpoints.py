@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 import io
+import sqlite3
 
 from PIL import Image
 

@@ -86,6 +86,38 @@ def test_single_linear_migration_head():
     assert scripts.get_heads() == ["0006_signup_completion_idempotency"]
 
 
+def test_long_signup_revision_widens_alembic_version_and_freezes_check_name():
+    migration = _load_signup_completion_migration()
+
+    class RecordingOperations:
+        def __init__(self):
+            self.calls: list[tuple[str, tuple, dict]] = []
+            self.frozen_names: list[str] = []
+
+        def f(self, name: str) -> str:
+            self.frozen_names.append(name)
+            return name
+
+        def __getattr__(self, name: str):
+            def record(*args, **kwargs):
+                self.calls.append((name, args, kwargs))
+
+            return record
+
+    operations = RecordingOperations()
+    migration.op = operations
+    migration.upgrade()
+
+    assert len(migration.revision) > 32
+    name, args, kwargs = operations.calls[0]
+    assert name == "alter_column"
+    assert args == ("alembic_version", "version_num")
+    assert kwargs["existing_type"].length == 32
+    assert kwargs["type_"].length == 64
+    assert kwargs["existing_nullable"] is False
+    assert operations.frozen_names.count("ck_accounts_state_allowed") == 2
+
+
 def test_migration_upgrade_matches_model_columns_and_downgrades_cleanly():
     migration = _load_migration()
     engine = create_engine("sqlite+pysqlite:///:memory:")

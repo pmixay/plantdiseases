@@ -17,6 +17,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Alembic creates version_num as VARCHAR(32), but this revision identifier
+    # is 34 characters. Widen it before Alembic records the new revision after
+    # this function returns. Keep the wider column on downgrade so the current
+    # v6 value remains representable until Alembic writes the v5 identifier.
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=64),
+        existing_nullable=False,
+    )
+
     # Existing ten-minute pending rows cannot be bound retroactively to a
     # trustworthy installation. They remain nullable and expire normally.
     op.add_column(
@@ -24,9 +36,9 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.Uuid(), nullable=True),
     )
 
-    op.drop_constraint("ck_accounts_state_allowed", "accounts", type_="check")
+    op.drop_constraint(op.f("ck_accounts_state_allowed"), "accounts", type_="check")
     op.create_check_constraint(
-        "ck_accounts_state_allowed",
+        op.f("ck_accounts_state_allowed"),
         "accounts",
         "state IN ('signup_pending', 'active', 'deletion_pending')",
     )
@@ -121,9 +133,9 @@ def downgrade() -> None:
     # Confirmed active accounts are kept.
     op.execute(sa.text("DELETE FROM accounts WHERE state = 'signup_pending'"))
 
-    op.drop_constraint("ck_accounts_state_allowed", "accounts", type_="check")
+    op.drop_constraint(op.f("ck_accounts_state_allowed"), "accounts", type_="check")
     op.create_check_constraint(
-        "ck_accounts_state_allowed",
+        op.f("ck_accounts_state_allowed"),
         "accounts",
         "state IN ('active', 'deletion_pending')",
     )

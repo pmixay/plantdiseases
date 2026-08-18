@@ -61,7 +61,31 @@ REVOKE ALL ON DATABASE plantdisease_beta
     FROM beta_account_migrator, beta_account_runtime, beta_account_backup;
 GRANT CONNECT, TEMPORARY ON DATABASE plantdisease_beta TO beta_account_migrator;
 GRANT CONNECT ON DATABASE plantdisease_beta TO beta_account_runtime, beta_account_backup;
-REASSIGN OWNED BY beta_account TO beta_account_migrator;
+
+-- The official image creates POSTGRES_USER as PostgreSQL's bootstrap role
+-- (OID 10). That role is pinned, so REASSIGN OWNED rejects it even when the
+-- only owned objects belong to this dedicated database. Transfer the concrete
+-- database objects first; indexes and table row/array types follow their
+-- parent table automatically. Keep REASSIGN OWNED for non-bootstrap upgrades.
+SELECT format('ALTER TABLE %I.%I OWNER TO beta_account_migrator',
+              schemaname, tablename)
+FROM pg_tables
+WHERE schemaname = 'public' AND tableowner = 'beta_account'
+ORDER BY tablename
+\gexec
+SELECT format('ALTER SEQUENCE %I.%I OWNER TO beta_account_migrator',
+              schemaname, sequencename)
+FROM pg_sequences
+WHERE schemaname = 'public' AND sequenceowner = 'beta_account'
+ORDER BY sequencename
+\gexec
+SELECT format('ALTER DATABASE %I OWNER TO beta_account_migrator', current_database())
+WHERE (SELECT datdba FROM pg_database WHERE datname = current_database()) =
+      (SELECT oid FROM pg_roles WHERE rolname = 'beta_account')
+\gexec
+SELECT 'REASSIGN OWNED BY beta_account TO beta_account_migrator'
+WHERE (SELECT oid FROM pg_roles WHERE rolname = 'beta_account') <> 10
+\gexec
 ALTER SCHEMA public OWNER TO beta_account_migrator;
 REVOKE ALL ON SCHEMA public
     FROM beta_account_runtime, beta_account_backup;
