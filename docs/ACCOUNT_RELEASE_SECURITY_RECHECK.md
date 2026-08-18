@@ -20,6 +20,7 @@ create another package or version.
 | Synthetic authentication | disabled | Yes |
 | Yandex LoginSDK | `com.yandex.android:authsdk:3.2.1` | Yes |
 | Yandex provider | enabled independently | Yes |
+| Yandex portrait permission | `login:avatar` | Provider-dashboard proof required |
 | VK provider | disabled independently; visible as coming soon | Yes |
 
 The Yandex native Client ID is public/extractable Android configuration and is
@@ -45,8 +46,10 @@ Yandex dashboard before release even though PlantDiseases does not use it.
   tokens are stored as hashes; push tokens are encrypted.
 - Yandex token verification checks that the provider response's `client_id`
   equals the configured application ID and uses the app-specific `psuid` as
-  the subject. Sign-in needs no optional email, phone, birth-date, gender,
-  name, or avatar scope; the standard login is the private display fallback.
+  the subject. The private provider-photo feature uses the disclosed
+  `login:avatar` permission; sign-in requests no optional email, phone,
+  birth-date, gender, or name data, and the standard login remains the private
+  display fallback.
 - Account signup, reauthentication, provider linking, deletion, session
   revocation, authorization-version checks, bounded provider responses,
   rate-limiting, generic error responses, and durable cross-service deletion

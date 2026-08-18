@@ -22,29 +22,90 @@
         <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:scrollbars="none">
 
             <LinearLayout
                 android:id="@+id/content"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/content_gutter">
+                android:paddingHorizontal="@dimen/content_gutter"
+                android:paddingTop="@dimen/space_md"
+                android:paddingBottom="@dimen/space_3xl">
 
-                <TextView
-                    android:id="@+id/tv_state"
+                <LinearLayout
+                    android:id="@+id/account_hero"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.App.Headline"
-                    android:accessibilityHeading="true" />
+                    android:background="@drawable/bg_hero_card"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="@dimen/space_xl"
+                    android:paddingVertical="@dimen/space_2xl">
+
+                    <FrameLayout
+                        android:id="@+id/avatar_picker"
+                        android:layout_width="144dp"
+                        android:layout_height="144dp"
+                        android:clickable="true"
+                        android:contentDescription="@string/account_change_avatar"
+                        android:enabled="false"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                        <com.google.android.material.imageview.ShapeableImageView
+                            android:id="@+id/iv_avatar"
+                            android:layout_width="144dp"
+                            android:layout_height="144dp"
+                            android:layout_gravity="center"
+                            android:background="@color/hero_stat_bg"
+                            android:contentDescription="@null"
+                            android:padding="36dp"
+                            android:scaleType="centerCrop"
+                            android:src="@drawable/ic_profile"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
+                            app:strokeColor="@color/hero_stat_stroke"
+                            app:strokeWidth="1dp"
+                            app:tint="@color/on_hero" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/tv_state"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:accessibilityHeading="true"
+                        android:fontFamily="sans-serif-black"
+                        android:gravity="center"
+                        android:letterSpacing="-0.02"
+                        android:textColor="@color/on_hero"
+                        android:textSize="28sp"
+                        tools:text="likikikpa" />
+
+                    <TextView
+                        android:id="@+id/tv_provider_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center"
+                        android:textColor="@color/on_hero_secondary"
+                        android:textSize="@dimen/text_body"
+                        android:visibility="gone"
+                        tools:text="Yandex ID · gardener" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tv_synthetic_notice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:gravity="center"
                     android:text="@string/account_synthetic_notice"
                     android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm"
                     android:visibility="gone" />
 
                 <com.google.android.material.button.MaterialButton
@@ -53,184 +114,262 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
+                    android:minHeight="52dp"
                     android:text="@string/account_retry"
                     android:visibility="gone" />
 
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
                     android:id="@+id/guest_group"
+                    style="@style/App.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:orientation="vertical">
+                    android:layout_marginTop="@dimen/space_lg">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/account_guest_body"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_yandex"
-                        style="@style/App.Button.Yandex"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_lg"
-                        android:text="@string/account_continue_yandex"
-                        app:icon="@drawable/ic_yandex_id" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_vk"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:enabled="false"
-                        android:text="@string/account_vk_coming_soon" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/nickname_group"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/account_finish_profile_body"
-                        android:textColor="@color/on_surface_secondary" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/signup_nickname_layout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:hint="@string/account_nickname">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_signup_nickname"
+                        <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="textPersonName"
-                            android:maxLength="24" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:text="@string/account_join_title"
+                            android:textAppearance="@style/TextAppearance.App.Title" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_complete_nickname"
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:text="@string/account_guest_body"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_yandex"
+                            style="@style/App.Button.Yandex"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_lg"
+                            android:text="@string/account_continue_yandex"
+                            app:icon="@drawable/ic_yandex_id" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_vk"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="56dp"
+                            android:layout_marginTop="@dimen/space_sm"
+                            android:enabled="false"
+                            android:text="@string/account_vk_coming_soon"
+                            app:cornerRadius="28dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_later"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:text="@string/account_later"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/nickname_group"
+                    style="@style/App.GlassCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:visibility="gone">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:minHeight="56dp"
-                        android:text="@string/account_create" />
+                        android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_cancel_nickname"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/account_cancel_signup" />
-                </LinearLayout>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/account_finish_profile"
+                            android:textAppearance="@style/TextAppearance.App.Title" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:text="@string/account_finish_profile_body"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/signup_nickname_layout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:hint="@string/account_nickname">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_signup_nickname"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textPersonName"
+                                android:maxLength="24" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_complete_nickname"
+                            style="@style/App.Button.Filled"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md"
+                            android:minHeight="56dp"
+                            android:text="@string/account_create" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_cancel_nickname"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:text="@string/account_cancel_signup" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <LinearLayout
                     android:id="@+id/account_group"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
                     android:orientation="vertical"
                     android:visibility="gone">
 
-                    <ImageView
-                        android:id="@+id/iv_avatar"
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
-                        android:contentDescription="@string/account_provider_avatar"
-                        android:src="@drawable/ic_profile" />
-
-                    <TextView
-                        android:id="@+id/tv_provider_name"
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/App.GlassCard"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:layout_marginTop="@dimen/space_lg">
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_lg"
-                        android:hint="@string/account_nickname">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_nickname"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="textPersonName"
-                            android:maxLength="24" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_save_nickname"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/account_save_nickname" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/account_profile_section"
+                                android:textAppearance="@style/TextAppearance.App.Title" />
 
-                    <TextView
+                            <com.google.android.material.textfield.TextInputLayout
+                                android:id="@+id/nickname_layout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_md"
+                                android:hint="@string/account_nickname">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/et_nickname"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="textPersonName"
+                                    android:maxLength="24" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_save_nickname"
+                                style="@style/App.Button.Filled"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_md"
+                                android:text="@string/account_save_nickname"
+                                app:icon="@drawable/ic_note_pencil" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/App.GlassCard"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xl"
-                        android:text="@string/account_linked_accounts"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
+                        android:layout_marginTop="@dimen/space_lg">
 
-                    <TextView
-                        android:id="@+id/tv_linked_providers"
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/account_linked_accounts"
+                                android:textAppearance="@style/TextAppearance.App.Title" />
+
+                            <TextView
+                                android:id="@+id/tv_linked_providers"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:textColor="@color/on_surface_secondary"
+                                tools:text="Yandex ID" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_link_yandex"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_md"
+                                android:text="@string/account_link_yandex" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_link_vk"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:text="@string/account_link_vk" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/App.GlassCard"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
-                        tools:text="Yandex ID, VK ID" />
+                        android:layout_marginTop="@dimen/space_lg">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_link_yandex"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/account_link_yandex" />
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_link_vk"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/account_link_vk" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/account_devices"
+                                android:textAppearance="@style/TextAppearance.App.Title" />
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xl"
-                        android:text="@string/account_sessions"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
-
-                    <LinearLayout
-                        android:id="@+id/sessions_container"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical" />
+                            <LinearLayout
+                                android:id="@+id/sessions_container"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:orientation="vertical" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_logout"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/App.Button.DangerOutlined"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xl"
-                        android:text="@string/account_logout" />
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:text="@string/account_logout"
+                        app:icon="@drawable/ic_logout" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_delete_account"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/App.Button.DangerFilled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/account_delete" />
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:text="@string/account_delete"
+                        app:icon="@drawable/ic_delete" />
                 </LinearLayout>
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>

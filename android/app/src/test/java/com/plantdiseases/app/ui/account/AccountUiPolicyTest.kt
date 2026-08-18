@@ -44,6 +44,27 @@ class AccountUiPolicyTest {
     }
 
     @Test
+    fun nicknameRemainsLockedUntilThirtyFullDaysHaveElapsed() {
+        val changedAt = Instant.parse("2026-08-01T10:00:00Z")
+        val profile = accountProfile(changedAt.toString())
+
+        assertThat(nicknameChangeAvailableAt(profile))
+            .isEqualTo(Instant.parse("2026-08-31T10:00:00Z"))
+        assertThat(
+            nicknameCanChange(profile, Instant.parse("2026-08-31T09:59:59Z")),
+        ).isFalse()
+        assertThat(
+            nicknameCanChange(profile, Instant.parse("2026-08-31T10:00:00Z")),
+        ).isTrue()
+    }
+
+    @Test
+    fun legacyProfileWithoutNicknameTimestampRemainsEditable() {
+        assertThat(nicknameCanChange(accountProfile(null), Instant.parse("2026-08-01T10:00:00Z")))
+            .isTrue()
+    }
+
+    @Test
     fun repeatedAmbiguousFailureCannotReenableFrozenSignupNickname() {
         val frozen = AuthState.ProfileRequired(
             provider = AuthProvider.YANDEX,
@@ -59,4 +80,15 @@ class AccountUiPolicyTest {
         assertThat(signupNicknameIsEditable(rejectedBeforeCommit, loading = true)).isFalse()
         assertThat(signupNicknameIsEditable(rejectedBeforeCommit, loading = false)).isTrue()
     }
+
+    private fun accountProfile(nicknameChangedAt: String?): AccountProfile = AccountProfile(
+        nickname = "Gardener",
+        communityActorId = "actor-id",
+        primaryProvider = ProviderProfile("yandex", "Yandex user"),
+        linkedProviders = listOf(LinkedProvider("yandex", "2026-01-01T00:00:00Z")),
+        nicknameChangedAt = nicknameChangedAt,
+        createdAt = "2026-01-01T00:00:00Z",
+        updatedAt = "2026-01-03T00:00:00Z",
+        state = "active",
+    )
 }

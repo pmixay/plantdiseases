@@ -123,13 +123,20 @@ In [Yandex OAuth](https://oauth.yandex.com/):
 5. This release is for RuStore only. Do not create a Google Play listing or
    register another Android application; if Yandex shows the optional Android
    Google Play URL field, leave it unset.
-6. Do not add optional email, phone, birth-date, name/gender, or avatar
-   permissions. PlantDiseases uses only Yandex's standard `login`, `client_id`
-   and app-specific `psuid` response. If a display name or avatar is already
-   granted, it may be shown privately, but neither is required for sign-in.
+6. Enable **User's profile picture** (`login:avatar`). Yandex returns
+   `default_avatar_id` only when the token grants that permission; the account
+   service turns that identifier into Yandex's documented HTTPS avatar URL.
+   Do not add optional email, phone, birth-date, or name/gender permissions.
+   The picture is used only on the private Account/Profile surfaces and is not
+   exposed in community responses. Sign-in itself still works when the user
+   has no Yandex picture; the app shows its local placeholder instead.
 7. Confirm the resulting **Client ID** matches the public ID pinned in
    `android/app/build.gradle.kts`. The Android build embeds that ID directly;
    it never needs or accepts the Yandex client secret.
+
+After adding `login:avatar` to an existing Yandex application, log out and sign
+in again during the release smoke test so Yandex can issue a new token with the
+new permission and the account service can refresh the stored provider photo.
 
 If Yandex test and production projects are separated, both Android entries
 still use the same real package and permanent signing fingerprint. The

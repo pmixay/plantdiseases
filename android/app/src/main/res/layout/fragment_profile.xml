@@ -2,9 +2,9 @@
 <!--
     Profile screen — minimal, sharing the Garden tab's visual language.
 
-      • Header is the same leaf-green gradient hero as the Garden tab
-        (bg_garden_hero + bg_circle_semi icon chip + on_hero type),
-        so the two tabs read as one production design.
+      • Header is the same leaf-green gradient hero as the Garden tab, with a
+        circular provider avatar (or a local profile placeholder) and on_hero
+        type, so the two tabs read as one production design.
       • Every section is the same App.GlassCard so radii, padding and
         translucency are uniform; sections are separated only by the
         @dimen/space_* grid (no 4/6/10/14dp magic numbers).
@@ -28,7 +28,7 @@
         android:paddingVertical="@dimen/space_lg">
 
         <!-- Hero card: rounded leaf-green gradient panel, mirroring the Garden
-             tab (same bg_circle_semi chip, type ramp and on_hero palette). The
+             tab (same type ramp and on_hero palette). The
              toolbar is hidden on this tab (see MainActivity), so ProfileFragment
              pads the scroll view by the status-bar inset to drop the card below
              the system clock; the parent's space_lg padding gives the side
@@ -37,44 +37,58 @@
             android:id="@+id/profile_hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
             android:background="@drawable/bg_hero_card"
+            android:orientation="vertical"
             android:paddingHorizontal="@dimen/space_xl"
             android:paddingTop="@dimen/space_2xl"
             android:paddingBottom="@dimen/space_xl">
 
             <FrameLayout
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_circle_semi">
+                android:id="@+id/profile_avatar_picker"
+                android:layout_width="144dp"
+                android:layout_height="144dp"
+                android:clickable="true"
+                android:contentDescription="@string/account_change_avatar"
+                android:enabled="false"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
-                <ImageView
-                    android:layout_width="26dp"
-                    android:layout_height="26dp"
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/iv_profile_avatar"
+                    android:layout_width="144dp"
+                    android:layout_height="144dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_profile"
+                    android:background="@color/hero_stat_bg"
                     android:contentDescription="@null"
+                    android:padding="36dp"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_profile"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
+                    app:strokeColor="@color/hero_stat_stroke"
+                    app:strokeWidth="1dp"
                     app:tint="@color/on_hero" />
             </FrameLayout>
 
             <TextView
+                android:id="@+id/tv_profile_hero_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
                 android:text="@string/tab_profile"
                 android:textColor="@color/on_hero"
-                android:textSize="28sp"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02" />
+                android:textSize="28sp" />
 
             <TextView
+                android:id="@+id/tv_profile_hero_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
+                android:lineSpacingExtra="3dp"
                 android:text="@string/profile_subtitle"
                 android:textColor="@color/on_hero_secondary"
-                android:textSize="@dimen/text_body"
-                android:lineSpacingExtra="3dp" />
+                android:textSize="@dimen/text_body" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
@@ -100,17 +114,21 @@
                     android:id="@+id/account_status"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:fontFamily="sans-serif-medium"
                     android:text="@string/account_guest"
-                    android:textColor="@color/on_surface_secondary" />
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_manage_account"
+                    style="@style/App.Button.Filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
                     android:minHeight="56dp"
-                    android:text="@string/account_create" />
+                    android:text="@string/account_sign_in_or_create"
+                    app:icon="@drawable/ic_profile" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

@@ -5,9 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
+import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.PrivacyConsentPrefs
@@ -63,7 +65,12 @@ class OnboardingActivity : AppCompatActivity() {
         // This explicit call is what distinguishes a genuinely new install
         // from an upgrade whose versioned guidance store does not exist yet.
         onboardingState.startForNewInstall()
-        startActivity(Intent(this, MainActivity::class.java))
+        val next = if (BuildConfig.ACCOUNT_UI_ENABLED) {
+            AccountActivity.onboardingIntent(this)
+        } else {
+            Intent(this, MainActivity::class.java)
+        }
+        startActivity(next)
         finish()
     }
 

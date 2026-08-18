@@ -91,6 +91,8 @@
     <color name="healthy_green_bg">#DCFCE7</color>
     <color name="disease_red">#DC2626</color>
     <color name="disease_red_bg">#FEE2E2</color>
+    <color name="danger_button">#B91C1C</color>
+    <color name="on_danger_button">#FFFFFF</color>
     <color name="warning_amber">#D97706</color>
     <color name="warning_amber_bg">#FEF3C7</color>
     <!-- Middle stop for the uncertain-diagnosis red → orange → yellow card. -->

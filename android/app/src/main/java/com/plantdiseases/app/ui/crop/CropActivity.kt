@@ -58,6 +58,10 @@ class CropActivity : AppCompatActivity() {
             return
         }
         outputUri = output
+        val cropMode = intent.getStringExtra(EXTRA_MODE)
+            ?.let { stored -> CropContract.Mode.entries.firstOrNull { it.name == stored } }
+            ?: CropContract.Mode.FREEFORM
+        binding.cropView.setCircularCrop(cropMode == CropContract.Mode.AVATAR)
 
         // Edge-to-edge, with the background band showing behind the (transparent)
         // system bars so the top area is seamless with the crop canvas. Bar icons
@@ -130,7 +134,7 @@ class CropActivity : AppCompatActivity() {
                 }
             }
             if (ok) {
-                setResult(RESULT_OK)
+                setResult(RESULT_OK, Intent().putExtra(EXTRA_OUTPUT, outputUri))
                 finish()
             } else {
                 onSaveFailed()
@@ -171,6 +175,7 @@ class CropActivity : AppCompatActivity() {
         const val EXTRA_SOURCE = "crop_source"
         const val EXTRA_OUTPUT = "crop_output"
         const val EXTRA_ERROR = "crop_error"
+        const val EXTRA_MODE = "crop_mode"
         private const val STATE_ROTATION = "state_rotation"
         private const val STATE_CROP = "state_crop"
     }

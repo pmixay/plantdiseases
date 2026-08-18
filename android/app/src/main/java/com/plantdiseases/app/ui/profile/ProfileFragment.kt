@@ -1,6 +1,8 @@
 package com.plantdiseases.app.ui.profile
 
+import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -8,27 +10,39 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
+import com.plantdiseases.app.util.ProfileAvatarStore
 import com.plantdiseases.app.util.ThemeHelper
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Calendar
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -40,14 +54,43 @@ class ProfileFragment : Fragment() {
     @Inject
     lateinit var privacyConsentPrefs: PrivacyConsentPrefs
 
+    @Inject
+    lateinit var profileAvatarStore: ProfileAvatarStore
+
+    @Inject
+    lateinit var authRepository: AuthRepository
+
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
     private var isFirstLoad = true
+    private var loadedAvatarSessionId: String? = null
+    private var activeAvatarAccountId: String? = null
+    private var providerAvatarUrl: String? = null
+    private var pendingAvatarAccountId: String? = null
+    private var pendingAvatarSourceFile: File? = null
+    private var pendingAvatarOutputFile: File? = null
+
+    private val avatarPicker = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) openAvatarEditor(uri)
+    }
+
+    private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
+        completeAvatarEdit(result)
+    }
 
     // Count-up animators, cancelled in onDestroyView so they don't keep
     // ticking against a detached TextView (transient view retention + wasted
     // frames after the view is gone).
     private val countAnimators = mutableListOf<android.animation.ValueAnimator>()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        pendingAvatarAccountId = savedInstanceState?.getString(STATE_AVATAR_ACCOUNT_ID)
+        pendingAvatarSourceFile = savedInstanceState?.getString(STATE_AVATAR_SOURCE)?.let(::File)
+        pendingAvatarOutputFile = savedInstanceState?.getString(STATE_AVATAR_OUTPUT)?.let(::File)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -68,34 +111,16 @@ class ProfileFragment : Fragment() {
             binding.btnManageAccount.setOnClickListener {
                 startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(requireContext()))
             }
+            binding.profileAvatarPicker.setOnClickListener {
+                if (activeAvatarAccountId != null) {
+                    avatarPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                }
+            }
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                    val auth = com.plantdiseases.app.di.appEntryPoint(requireContext()).authRepository()
-                    auth.state.collect { state ->
-                        binding.accountStatus.text = when (state) {
-                            com.plantdiseases.app.auth.AuthState.Restoring ->
-                                getString(R.string.account_restoring)
-                            com.plantdiseases.app.auth.AuthState.Guest -> getString(R.string.account_guest)
-                            is com.plantdiseases.app.auth.AuthState.Unavailable ->
-                                getString(R.string.account_temporarily_unavailable)
-                            is com.plantdiseases.app.auth.AuthState.ProfileRequired ->
-                                getString(R.string.account_finish_profile)
-                            is com.plantdiseases.app.auth.AuthState.Authenticated -> state.profile.nickname
-                        }
-                        binding.btnManageAccount.setText(
-                            when (state) {
-                                com.plantdiseases.app.auth.AuthState.Restoring ->
-                                    R.string.account_manage
-                                com.plantdiseases.app.auth.AuthState.Guest -> R.string.account_create
-                                is com.plantdiseases.app.auth.AuthState.Unavailable ->
-                                    R.string.account_manage
-                                is com.plantdiseases.app.auth.AuthState.ProfileRequired ->
-                                    R.string.account_finish_creation
-                                is com.plantdiseases.app.auth.AuthState.Authenticated ->
-                                    R.string.account_manage
-                            },
-                        )
-                    }
+                    authRepository.state.collect { state -> renderAccountState(authRepository, state) }
                 }
             }
         }
@@ -132,6 +157,200 @@ class ProfileFragment : Fragment() {
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue
         // a duplicate getStats() DB read on every fragment creation.
+    }
+
+    private fun renderAccountState(auth: AuthRepository, state: AuthState) {
+        val authenticated = when (state) {
+            is AuthState.Authenticated -> state
+            is AuthState.Unavailable -> state.lastAuthenticated
+            else -> null
+        }
+        binding.accountStatus.text = when {
+            authenticated != null -> authenticated.profile.nickname
+            state is AuthState.Restoring -> getString(R.string.account_restoring)
+            state is AuthState.Guest -> getString(R.string.account_guest)
+            state is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
+            state is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
+            else -> getString(R.string.account_guest)
+        }
+        val buttonText = when {
+            authenticated != null -> R.string.account_edit_profile
+            state is AuthState.ProfileRequired -> R.string.account_finish_creation
+            state is AuthState.Guest -> R.string.account_sign_in_or_create
+            else -> R.string.account_manage
+        }
+        binding.btnManageAccount.setText(buttonText)
+        binding.btnManageAccount.setIconResource(
+            if (authenticated != null) R.drawable.ic_note_pencil else R.drawable.ic_profile,
+        )
+        binding.tvProfileHeroTitle.text = authenticated?.profile?.nickname
+            ?: getString(R.string.tab_profile)
+
+        val accountId = authenticated?.profile?.communityActorId
+        if (activeAvatarAccountId != accountId) {
+            activeAvatarAccountId = accountId
+            providerAvatarUrl = null
+            loadedAvatarSessionId = null
+        }
+        binding.profileAvatarPicker.isEnabled = accountId != null
+        if (accountId != null) {
+            showProfileAvatar(accountId, providerAvatarUrl)
+        } else {
+            showProfileAvatar(null, null)
+        }
+
+        if (state is AuthState.Authenticated) {
+            if (loadedAvatarSessionId != state.session.sessionId) {
+                loadedAvatarSessionId = state.session.sessionId
+                loadProfileAvatar(auth, state.session.sessionId)
+            }
+        }
+    }
+
+    private fun loadProfileAvatar(auth: AuthRepository, expectedSessionId: String) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            auth.me().onSuccess { profile ->
+                val current = auth.state.value as? AuthState.Authenticated
+                if (current?.session?.sessionId == expectedSessionId && _binding != null) {
+                    providerAvatarUrl = profile.primaryProvider.avatarUrl
+                    showProfileAvatar(profile.communityActorId, providerAvatarUrl)
+                }
+            }
+        }
+    }
+
+    private fun showProfileAvatar(accountId: String?, avatarUrl: String?) {
+        val avatar = _binding?.ivProfileAvatar ?: return
+        Glide.with(this).clear(avatar)
+        val source: Any? = accountId?.let(profileAvatarStore::current)
+            ?: avatarUrl?.takeIf { it.startsWith("https://") }
+        if (source == null) {
+            val padding = 36.dp()
+            avatar.setPadding(padding, padding, padding, padding)
+            avatar.imageTintList = ColorStateList.valueOf(color(R.color.on_hero))
+            avatar.setImageResource(R.drawable.ic_profile)
+            return
+        }
+        avatar.setPadding(0, 0, 0, 0)
+        avatar.imageTintList = null
+        Glide.with(this)
+            .load(source)
+            .diskCacheStrategy(DiskCacheStrategy.NONE)
+            .skipMemoryCache(true)
+            .circleCrop()
+            .error(R.drawable.ic_profile)
+            .into(avatar)
+    }
+
+    private fun openAvatarEditor(uri: Uri) {
+        val accountId = currentAvatarAccountId() ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            _binding?.profileAvatarPicker?.isEnabled = false
+            var stagedSource: File? = null
+            var editorOutput: File? = null
+            try {
+                val safeSource = profileAvatarStore.stageForEditing(uri).getOrElse {
+                    showAvatarError()
+                    return@launch
+                }
+                stagedSource = safeSource
+                if (currentAvatarAccountId() != accountId) return@launch
+                val context = requireContext()
+                val cropOutput = File.createTempFile(
+                    "profile_avatar_crop_",
+                    ".jpg",
+                    context.cacheDir,
+                )
+                editorOutput = cropOutput
+                val sourceUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    safeSource,
+                )
+                val outputUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    cropOutput,
+                )
+                pendingAvatarAccountId = accountId
+                pendingAvatarSourceFile = safeSource
+                pendingAvatarOutputFile = cropOutput
+                avatarCropLauncher.launch(
+                    CropContract.Input(
+                        source = sourceUri,
+                        output = outputUri,
+                        mode = CropContract.Mode.AVATAR,
+                    ),
+                )
+                stagedSource = null
+                editorOutput = null
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                pendingAvatarAccountId = null
+                pendingAvatarSourceFile = null
+                pendingAvatarOutputFile = null
+                showAvatarError()
+            } finally {
+                stagedSource?.delete()
+                editorOutput?.delete()
+                _binding?.profileAvatarPicker?.isEnabled = activeAvatarAccountId != null
+            }
+        }
+    }
+
+    private fun completeAvatarEdit(result: CropContract.Result) {
+        val accountId = pendingAvatarAccountId
+        val sourceFile = pendingAvatarSourceFile
+        val outputFile = pendingAvatarOutputFile
+        pendingAvatarAccountId = null
+        pendingAvatarSourceFile = null
+        pendingAvatarOutputFile = null
+        sourceFile?.delete()
+
+        val editedUri = result.output ?: outputFile
+            ?.takeIf { it.isFile && it.length() > 0L }
+            ?.let(Uri::fromFile)
+        if (!result.isSuccessful || accountId == null || editedUri == null) {
+            deleteAvatarEditorOutput(outputFile, result.output)
+            return
+        }
+        if (currentAvatarAccountId() != accountId) {
+            deleteAvatarEditorOutput(outputFile, editedUri)
+            return
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            _binding?.profileAvatarPicker?.isEnabled = false
+            try {
+                profileAvatarStore.replace(accountId, editedUri)
+                    .onSuccess {
+                        if (currentAvatarAccountId() == accountId) {
+                            showProfileAvatar(accountId, providerAvatarUrl)
+                        }
+                    }
+                    .onFailure { showAvatarError() }
+            } finally {
+                deleteAvatarEditorOutput(outputFile, editedUri)
+                _binding?.profileAvatarPicker?.isEnabled = activeAvatarAccountId != null
+            }
+        }
+    }
+
+    private fun currentAvatarAccountId(): String? = when (val state = authRepository.state.value) {
+        is AuthState.Authenticated -> state.profile.communityActorId
+        is AuthState.Unavailable -> state.lastAuthenticated?.profile?.communityActorId
+        else -> null
+    }
+
+    private fun deleteAvatarEditorOutput(file: File?, uri: Uri?) {
+        if (file?.delete() != true && uri != null) {
+            context?.let { context -> runCatching { context.contentResolver.delete(uri, null, null) } }
+        }
+    }
+
+    private fun showAvatarError() {
+        context?.let { Toast.makeText(it, R.string.account_avatar_update_failed, Toast.LENGTH_LONG).show() }
     }
 
     private fun color(res: Int): Int = ContextCompat.getColor(requireContext(), res)
@@ -417,15 +636,32 @@ class ProfileFragment : Fragment() {
         loadStats()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingAvatarAccountId?.let { outState.putString(STATE_AVATAR_ACCOUNT_ID, it) }
+        pendingAvatarSourceFile?.let { outState.putString(STATE_AVATAR_SOURCE, it.absolutePath) }
+        pendingAvatarOutputFile?.let { outState.putString(STATE_AVATAR_OUTPUT, it.absolutePath) }
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroyView() {
         (activity as? MainActivity)?.apply {
             unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_SETTINGS)
             unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_STATISTICS)
             unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_REPLAY)
         }
+        Glide.with(this).clear(binding.ivProfileAvatar)
+        loadedAvatarSessionId = null
+        activeAvatarAccountId = null
+        providerAvatarUrl = null
         super.onDestroyView()
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()
         _binding = null
+    }
+
+    companion object {
+        private const val STATE_AVATAR_ACCOUNT_ID = "profile.avatar.account_id"
+        private const val STATE_AVATAR_SOURCE = "profile.avatar.source"
+        private const val STATE_AVATAR_OUTPUT = "profile.avatar.output"
     }
 }
