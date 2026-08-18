@@ -10,6 +10,8 @@ from collections.abc import Callable
 
 from app.config import Settings
 
+_MAX_RESPONSE_BYTES = 4096
+
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
@@ -36,8 +38,8 @@ def _post_internal_json(url: str, document: dict[str, str], service_token: str) 
     )
     try:
         with _open_no_redirect(request, timeout=2.0) as response:
-            response.read(4097)
-            return response.status == 202
+            body = response.read(_MAX_RESPONSE_BYTES + 1)
+            return response.status == 202 and len(body) <= _MAX_RESPONSE_BYTES
     except (OSError, urllib.error.URLError):
         return False
 

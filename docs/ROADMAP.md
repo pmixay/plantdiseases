@@ -73,11 +73,11 @@ caller is throttled only by a 2 req/s bucket, and staying under it is free.
       `session_id` resets turns and tokens.
 - [ ] **Forgeable second opinions** (`community.py:636`) — client-supplied
       `author_pseudo_id`, so dedup does not bind.
-- [ ] **EXIF GPS leaves the device** (`ScanRepository.kt:576,238`) — raw camera
-      JPEG uploaded verbatim and forwarded to PlantNet, though
-      `ImageUtils.prepareImageForUpload` exists and would strip it.
-      `privacy.html:87` says this may be published as an open dataset.
-      *Smallest change, largest privacy return.*
+- [x] **EXIF/GPS stripping at every trust boundary** — Android now routes all
+      upload paths through `UploadImageSanitizer`; the server independently
+      decodes, orients, bounds, and re-encodes a fresh RGB JPEG before PlantNet,
+      community storage, or consented training storage. Direct API clients can
+      no longer bypass the mobile sanitizer. Regression tests cover camera EXIF.
 - [ ] **Pseudo-id in GET paths** (`ScanRepository.kt:775`) — a bearer capability
       landing in access logs.
 - [ ] **Dependency constraints** — `starlette` unconstrained above 0.46.0

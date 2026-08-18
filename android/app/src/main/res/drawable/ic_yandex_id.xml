@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Official Yandex ID mark used by the OAuth button constructor. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="26dp"
+    android:viewportWidth="44"
+    android:viewportHeight="44">
+    <path
+        android:fillColor="#FC3F1D"
+        android:pathData="M22,0A22,22 0,1 1,22 44A22,22 0,1 1,22 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24.7407,33.9778H29.0889V9.04443H22.7592C16.3929,9.04443 13.0538,12.303 13.0538,17.1176C13.0538,21.2731 15.2187,23.6163 19.0532,26.1069L21.3832,27.6987L18.3927,25.1907L12.4667,33.9778H17.1818L23.5115,24.5317L21.3098,23.0671C18.6496,21.2731 17.3469,19.8818 17.3469,16.8613C17.3469,14.2068 19.2183,12.4128 22.7776,12.4128H24.7223V33.9778H24.7407Z" />
+</vector>

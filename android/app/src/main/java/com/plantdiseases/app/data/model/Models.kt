@@ -467,6 +467,46 @@ data class CommunityOpinion(
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    // Opaque public token for reporting/blocking this reply. It cannot be used
+    // to recover the database row id or account actor id.
+    @SerializedName("content_id") @SerialName("content_id") val contentId: String? = null,
+    // Viewer-relative server flag; lets the UI avoid offering safety actions
+    // against the caller's own reply without exposing any account identifier.
+    @SerializedName("is_mine") @SerialName("is_mine") val isMine: Boolean = false,
+)
+
+@Serializable
+data class CommunityReportRequest(
+    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
+    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
+    @SerializedName("reason") @SerialName("reason") val reason: String,
+)
+
+@Serializable
+data class CommunityBlockRequest(
+    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
+    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
+)
+
+@Serializable
+data class CommunitySafetyMutationResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("created") @SerialName("created") val created: Boolean = false,
+    @SerializedName("block_id") @SerialName("block_id") val blockId: String? = null,
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
+)
+
+@Serializable
+data class CommunityBlockItem(
+    @SerializedName("block_id") @SerialName("block_id") val blockId: String = "",
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
+)
+
+@Serializable
+data class CommunityBlocksResponse(
+    @SerializedName("items") @SerialName("items") val items: List<CommunityBlockItem> = emptyList(),
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the

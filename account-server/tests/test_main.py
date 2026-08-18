@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.providers.registry import build_provider_registry
 
 
 class _FakeDatabase:
@@ -72,13 +73,21 @@ def test_every_response_gets_fresh_server_owned_request_id_and_safety_headers():
     assert first.headers["Referrer-Policy"] == "no-referrer"
 
 
-def test_both_provider_adapters_are_required():
+def test_at_least_one_provider_adapter_is_required():
     try:
         create_app(_settings(), providers={}, database=_FakeDatabase())
     except ValueError as exc:
-        assert str(exc) == "Both yandex and vk provider adapters are required"
+        assert str(exc) == "At least one supported provider adapter is required"
     else:
-        raise AssertionError("create_app accepted an incomplete provider registry")
+        raise AssertionError("create_app accepted an empty provider registry")
+
+
+def test_one_provider_adapter_is_a_ready_service():
+    yandex = build_provider_registry(_settings())["yandex"]
+    with TestClient(
+        create_app(_settings(), providers={"yandex": yandex}, database=_FakeDatabase())
+    ) as client:
+        assert client.get("/ready").json()["providers"] == ["yandex"]
 
 
 def test_cors_allows_only_the_explicit_origin():

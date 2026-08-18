@@ -1,4 +1,4 @@
-"""Select the complete provider registry from validated settings."""
+"""Select independently configured provider adapters from validated settings."""
 
 from __future__ import annotations
 
@@ -16,15 +16,17 @@ def build_provider_registry(settings: Settings) -> dict[ProviderName, ProviderAd
         }
     if settings.auth_provider_mode != "remote":
         raise SettingsError("Unsupported provider mode")
-    if settings.yandex_client_id is None or settings.vk_client_id is None:
-        raise SettingsError("Remote provider application IDs are required")
-    return {
-        "yandex": YandexProviderAdapter(
+    registry: dict[ProviderName, ProviderAdapter] = {}
+    if settings.yandex_client_id is not None:
+        registry["yandex"] = YandexProviderAdapter(
             client_id=settings.yandex_client_id,
             timeout_seconds=settings.provider_http_timeout_seconds,
-        ),
-        "vk": VkProviderAdapter(
+        )
+    if settings.vk_client_id is not None:
+        registry["vk"] = VkProviderAdapter(
             client_id=settings.vk_client_id,
             timeout_seconds=settings.provider_http_timeout_seconds,
-        ),
-    }
+        )
+    if not registry:
+        raise SettingsError("At least one remote provider application ID is required")
+    return registry

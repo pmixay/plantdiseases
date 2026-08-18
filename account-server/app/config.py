@@ -173,11 +173,11 @@ class Settings:
         if self.auth_provider_mode not in _PROVIDER_MODES:
             raise SettingsError(f"Unsupported AUTH_PROVIDER_MODE: {self.auth_provider_mode}")
         if self.auth_provider_mode == "remote":
-            if not self.yandex_client_id:
-                raise SettingsError("Remote provider mode requires YANDEX_CLIENT_ID")
-            if not self.vk_client_id:
-                raise SettingsError("Remote provider mode requires VKID_CLIENT_ID")
-            if not self.vk_client_id.isdecimal():
+            if not self.yandex_client_id and not self.vk_client_id:
+                raise SettingsError(
+                    "Remote provider mode requires YANDEX_CLIENT_ID or VKID_CLIENT_ID"
+                )
+            if self.vk_client_id is not None and not self.vk_client_id.isdecimal():
                 raise SettingsError("VKID_CLIENT_ID must be a decimal application ID")
 
         issuer = urlparse(self.issuer)

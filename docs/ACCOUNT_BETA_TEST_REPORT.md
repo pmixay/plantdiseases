@@ -2,6 +2,11 @@
 
 Report date: 2026-08-07 UTC
 
+> Historical staging snapshot. For the current Yandex-only RuStore release,
+> VK is independently disabled, branch CI has no signing secrets or staging
+> artifact, and [ACCOUNT_RELEASE_SECURITY_RECHECK.md](ACCOUNT_RELEASE_SECURITY_RECHECK.md)
+> is authoritative.
+
 Runtime checkpoint: `ea5cf0d` (`feat(beta): run real SDK staging beside main`)
 
 Android identity correction: as of 2026-08-08, the APK described by this

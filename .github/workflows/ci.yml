@@ -121,15 +121,11 @@ jobs:
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
-      # Compile and execute the staging identity test once with inert
-      # client values. This proves the official SDK mode and its BuildConfig
-      # branch stay buildable without putting real provider values in CI.
-      - name: Verify real OAuth staging build mode
+      # Compile and execute the staging identity test with only the pinned
+      # Yandex client. This prevents Yandex and VK from becoming coupled.
+      - name: Verify Yandex-only real OAuth staging build mode
         env:
           ACCOUNT_REAL_OAUTH: "true"
-          YANDEX_CLIENT_ID: ci-yandex-placeholder
-          VKID_CLIENT_ID: "12345"
-          VKID_CLIENT_SECRET: ci-vk-mobile-placeholder
           APP_API_BASE_URL: https://app-api.invalid/
           ACCOUNT_API_BASE_URL: https://account-api.invalid/
         run: >-
@@ -146,7 +142,7 @@ jobs:
         # configuration phase when nothing structural changed.
         run: >-
           ./gradlew ktlintCheck detekt testDebugUnitTest
-          testStagingUnitTest testRecoveryProductionUnitTest
+          testStagingUnitTest testReleaseUnitTest testRecoveryProductionUnitTest
           testRecoveryStagingUnitTest assembleRelease assembleStaging
           assembleRecoveryProduction assembleRecoveryStaging
           --build-cache --configuration-cache --stacktrace
@@ -170,10 +166,12 @@ jobs:
           path: |
             android/app/build/reports/tests/testDebugUnitTest/**
             android/app/build/reports/tests/testStagingUnitTest/**
+            android/app/build/reports/tests/testReleaseUnitTest/**
             android/app/build/reports/tests/testRecoveryProductionUnitTest/**
             android/app/build/reports/tests/testRecoveryStagingUnitTest/**
             android/app/build/test-results/testDebugUnitTest/**
             android/app/build/test-results/testStagingUnitTest/**
+            android/app/build/test-results/testReleaseUnitTest/**
             android/app/build/test-results/testRecoveryProductionUnitTest/**
             android/app/build/test-results/testRecoveryStagingUnitTest/**
           if-no-files-found: ignore

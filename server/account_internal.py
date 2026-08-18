@@ -23,6 +23,7 @@ _ENVIRONMENTS = frozenset({"test", "development", "staging", "production"})
 _INTERNAL_SERVICE_HOST = re.compile(
     r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
 )
+_MAX_RESPONSE_BYTES = 4096
 
 
 def _load_internal_token(token_path: str) -> str | None:
@@ -156,8 +157,8 @@ class AccountInternalClient:
         )
         try:
             with _open_no_redirect(request, timeout=self.timeout) as response:
-                response.read(4097)
-                return response.status == 202
+                body = response.read(_MAX_RESPONSE_BYTES + 1)
+                return response.status == 202 and len(body) <= _MAX_RESPONSE_BYTES
         except (OSError, urllib.error.URLError):
             return False
 

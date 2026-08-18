@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import io
+
+from PIL import Image
 
 
 def test_health_contract(client):
@@ -193,12 +196,15 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
     # Replace identify_species with a deterministic offline fake so we
     # don't hit the network from CI. The fake mirrors the no_api_key
     # branch of the real function.
-    monkeypatch.setattr(
-        server_main, "identify_species",
-        lambda *_args, **_kw: {
+    captured: dict[str, bytes] = {}
+
+    def fake_identify(image_bytes, **_kw):
+        captured["image"] = image_bytes
+        return {
             "available": False, "results": [], "source": "no_api_key",
-        },
-    )
+        }
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
     r = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},
@@ -210,6 +216,11 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
     assert species["available"] is False
     assert species["source"] == "no_api_key"
     assert species["best"] is None
+    assert captured["image"] != png_bytes
+    with Image.open(io.BytesIO(captured["image"])) as forwarded:
+        assert forwarded.format == "JPEG"
+        assert max(forwarded.size) <= 1024
+        assert not forwarded.getexif()
 
 
 def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatch):
@@ -337,7 +348,7 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         captured["organ"] = organ
         captured["lang"] = lang
-        captured["bytes_len"] = len(image_bytes)
+        captured["image"] = image_bytes
         return {"available": False, "results": [], "source": "no_api_key"}
 
     monkeypatch.setattr(server_main, "identify_species", fake_identify)
@@ -349,8 +360,48 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     assert r.status_code == 200, r.text
     assert captured["organ"] == "flower"
     assert captured["lang"] == "ru"
-    assert captured["bytes_len"] == len(png_bytes)
+    forwarded = captured["image"]
+    assert isinstance(forwarded, bytes)
+    assert forwarded != png_bytes
+    with Image.open(io.BytesIO(forwarded)) as image:
+        assert image.format == "JPEG"
+        assert max(image.size) <= 1024
+        assert not image.getexif()
     assert r.json()["organ"] == "flower"
+
+
+def test_identify_strips_exif_before_plantnet(client, monkeypatch):
+    """Direct API clients cannot bypass Android's upload sanitizer."""
+    import main as server_main
+
+    sentinel = "SENTINEL-CAMERA-WITH-GPS"
+    exif = Image.Exif()
+    exif[271] = sentinel
+    exif[272] = f"{sentinel}-MODEL"
+    raw = io.BytesIO()
+    Image.new("RGB", (96, 64), "green").save(raw, format="JPEG", exif=exif)
+    original = raw.getvalue()
+    captured: dict[str, bytes] = {}
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        captured["image"] = image_bytes
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    response = client.post(
+        "/api/identify",
+        files={"image": ("camera.jpg", original, "image/jpeg")},
+    )
+
+    assert response.status_code == 200, response.text
+    forwarded = captured["image"]
+    assert forwarded != original
+    assert sentinel.encode() not in forwarded
+    with Image.open(io.BytesIO(forwarded)) as image:
+        assert image.format == "JPEG"
+        assert image.mode == "RGB"
+        assert not image.getexif()
+        assert {"exif", "icc_profile", "xmp", "iptc"}.isdisjoint(image.info)
 
 
 def test_analyze_response_issues_separate_community_and_feedback_tokens(

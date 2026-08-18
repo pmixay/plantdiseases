@@ -1,10 +1,13 @@
 package com.plantdiseases.app.ui.community
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -16,6 +19,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
@@ -50,6 +55,9 @@ class NearbyScansActivity : AppCompatActivity() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var authRepository: AuthRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -103,6 +111,10 @@ class NearbyScansActivity : AppCompatActivity() {
         enableWhileOnline(connectivity.isOnline, binding.btnEnableCommunity)
         onReconnected(connectivity.isOnline) { load(isRefresh = false) }
         setupFilterMenu()
+        supportFragmentManager.setFragmentResultListener(
+            CommunityOpinionSheet.CONTENT_BLOCKED,
+            this,
+        ) { _, _ -> load(isRefresh = false) }
 
         // Nearby (~30 km) / Country / Worldwide scope — reload on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
@@ -165,6 +177,10 @@ class NearbyScansActivity : AppCompatActivity() {
                     showFilterSheet()
                     true
                 }
+                R.id.action_community_safety -> {
+                    showCommunitySafety()
+                    true
+                }
                 R.id.action_disable_community -> {
                     confirmLeaveCommunity()
                     true
@@ -172,6 +188,95 @@ class NearbyScansActivity : AppCompatActivity() {
                 else -> false
             }
         }
+    }
+
+    private fun showCommunitySafety() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.community_rules_title)
+            .setMessage(R.string.community_rules_body)
+            .setNegativeButton(R.string.close, null)
+            .setNeutralButton(R.string.community_manage_blocks) { _, _ ->
+                showBlockedAuthors()
+            }
+            .setPositiveButton(R.string.community_contact_moderation) { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(getString(R.string.community_moderation_url)),
+                        ),
+                    )
+                }.onFailure {
+                    Toast.makeText(this, R.string.community_safety_error, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    private fun showBlockedAuthors() {
+        if (authRepository.state.value !is AuthState.Authenticated) {
+            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+            startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(this))
+            return
+        }
+        lifecycleScope.launch {
+            scanRepository.communityBlocks()
+                .onSuccess { blocks ->
+                    if (blocks.isEmpty()) {
+                        Toast.makeText(
+                            this@NearbyScansActivity,
+                            R.string.community_blocks_empty,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        return@onSuccess
+                    }
+                    val labels = blocks.map {
+                        it.nickname?.takeIf(String::isNotBlank)
+                            ?: getString(R.string.community_unknown_author)
+                    }.toTypedArray()
+                    MaterialAlertDialogBuilder(this@NearbyScansActivity)
+                        .setTitle(R.string.community_manage_blocks)
+                        .setItems(labels) { _, index ->
+                            confirmUnblock(blocks[index].blockId, labels[index])
+                        }
+                        .setNegativeButton(R.string.close, null)
+                        .show()
+                }
+                .onFailure {
+                    Toast.makeText(
+                        this@NearbyScansActivity,
+                        R.string.community_safety_error,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+        }
+    }
+
+    private fun confirmUnblock(blockId: String, label: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.community_unblock_title, label))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_unblock_confirm) { _, _ ->
+                lifecycleScope.launch {
+                    scanRepository.unblockCommunityAuthor(blockId)
+                        .onSuccess {
+                            Toast.makeText(
+                                this@NearbyScansActivity,
+                                R.string.community_author_unblocked,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            load(isRefresh = false)
+                        }
+                        .onFailure {
+                            Toast.makeText(
+                                this@NearbyScansActivity,
+                                R.string.community_safety_error,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
+            }
+            .show()
     }
 
     /** Turn community off from inside the community screen (the on/off control

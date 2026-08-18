@@ -322,21 +322,22 @@ jobs:
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
-      - name: Validate public staging provider configuration
+      - name: Validate optional staging VK configuration
         if: inputs.channel == 'staging'
         env:
-          YANDEX_CLIENT_ID: ${{ vars.STAGING_YANDEX_CLIENT_ID }}
           VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
         shell: bash
         run: |
           set -eu
-          for name in YANDEX_CLIENT_ID VKID_CLIENT_ID VKID_CLIENT_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::$name staging repository variable is required"
-              exit 1
-            fi
-          done
+          if { [ -n "$VKID_CLIENT_ID" ] && [ -z "$VKID_CLIENT_SECRET" ]; } || \
+             { [ -z "$VKID_CLIENT_ID" ] && [ -n "$VKID_CLIENT_SECRET" ]; }; then
+            echo "::error::Staging VK ID and mobile value must be set together"
+            exit 1
+          fi
+          case "$VKID_CLIENT_ID" in
+            ''|*[!0-9]*) [ -z "$VKID_CLIENT_ID" ] || { echo "::error::Staging VK ID must be decimal"; exit 1; } ;;
+          esac
 
       - name: Validate reviewed German staging endpoint configuration
         if: inputs.channel == 'staging' || inputs.channel == 'recovery-staging'
@@ -361,10 +362,8 @@ jobs:
       - name: Validate public production provider and endpoint configuration
         if: inputs.channel == 'production'
         env:
-          YANDEX_CLIENT_ID: ${{ vars.PRODUCTION_YANDEX_CLIENT_ID }}
           VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
-          STAGING_YANDEX_CLIENT_ID: ${{ vars.STAGING_YANDEX_CLIENT_ID }}
           STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
           APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
@@ -372,25 +371,33 @@ jobs:
         shell: bash
         run: |
           set -eu
-          for name in YANDEX_CLIENT_ID VKID_CLIENT_ID VKID_CLIENT_SECRET \
-            STAGING_YANDEX_CLIENT_ID STAGING_VKID_CLIENT_ID \
-            STAGING_VKID_CLIENT_SECRET APP_API_BASE_URL ACCOUNT_API_BASE_URL; do
+          for name in APP_API_BASE_URL ACCOUNT_API_BASE_URL; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::$name repository variable is required; environment separation cannot be verified"
+              echo "::error::$name production repository variable is required"
               exit 1
             fi
           done
-          if [ "$YANDEX_CLIENT_ID" = "$STAGING_YANDEX_CLIENT_ID" ]; then
-            echo "::error::Production and staging Yandex client IDs must be different"
-            exit 1
-          fi
-          if [ "$VKID_CLIENT_ID" = "$STAGING_VKID_CLIENT_ID" ]; then
-            echo "::error::Production and staging VK application IDs must be different"
-            exit 1
-          fi
-          if [ "$VKID_CLIENT_SECRET" = "$STAGING_VKID_CLIENT_SECRET" ]; then
-            echo "::error::Production and staging VK mobile values must be different"
-            exit 1
+          validate_vk_pair() {
+            label=$1
+            client_id=$2
+            client_value=$3
+            if { [ -n "$client_id" ] && [ -z "$client_value" ]; } || \
+               { [ -z "$client_id" ] && [ -n "$client_value" ]; }; then
+              echo "::error::$label VK ID and mobile value must be set together"
+              exit 1
+            fi
+            case "$client_id" in
+              ''|*[!0-9]*) [ -z "$client_id" ] || { echo "::error::$label VK ID must be decimal"; exit 1; } ;;
+            esac
+          }
+          validate_vk_pair production "$VKID_CLIENT_ID" "$VKID_CLIENT_SECRET"
+          validate_vk_pair staging "$STAGING_VKID_CLIENT_ID" "$STAGING_VKID_CLIENT_SECRET"
+          if [ -n "$VKID_CLIENT_ID" ] && [ -n "$STAGING_VKID_CLIENT_ID" ]; then
+            if [ "$VKID_CLIENT_ID" = "$STAGING_VKID_CLIENT_ID" ] || \
+               [ "$VKID_CLIENT_SECRET" = "$STAGING_VKID_CLIENT_SECRET" ]; then
+              echo "::error::Configured production and staging VK applications must be distinct"
+              exit 1
+            fi
           fi
           validate_reviewed_production_pair() {
             reviewed_app=$1
@@ -545,7 +552,6 @@ jobs:
           ANDROID_UNSIGNED_DISTRIBUTION: "true"
           ANDROID_DISTRIBUTION_CHANNEL: staging
           ACCOUNT_REAL_OAUTH: "true"
-          YANDEX_CLIENT_ID: ${{ vars.STAGING_YANDEX_CLIENT_ID }}
           VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
           STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
@@ -565,7 +571,6 @@ jobs:
           ANDROID_UNSIGNED_DISTRIBUTION: "true"
           ANDROID_DISTRIBUTION_CHANNEL: production
           ACCOUNT_REAL_OAUTH: "true"
-          YANDEX_CLIENT_ID: ${{ vars.PRODUCTION_YANDEX_CLIENT_ID }}
           VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
           APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
@@ -587,7 +592,6 @@ jobs:
           ACCOUNT_REAL_OAUTH: "false"
           PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
           PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
-          YANDEX_CLIENT_ID: ""
           VKID_CLIENT_ID: ""
           VKID_CLIENT_SECRET: ""
           FCM_APP_ID: ""
@@ -607,7 +611,6 @@ jobs:
           ACCOUNT_REAL_OAUTH: "false"
           STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
           STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
-          YANDEX_CLIENT_ID: ""
           VKID_CLIENT_ID: ""
           VKID_CLIENT_SECRET: ""
           FCM_APP_ID: ""
@@ -622,10 +625,8 @@ jobs:
       - name: Prove unsigned package identity, provider mode, and endpoints
         id: inspect_unsigned
         env:
-          STAGING_YANDEX_CLIENT_ID: ${{ vars.STAGING_YANDEX_CLIENT_ID }}
           STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
-          PRODUCTION_YANDEX_CLIENT_ID: ${{ vars.PRODUCTION_YANDEX_CLIENT_ID }}
           PRODUCTION_VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           PRODUCTION_VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
           STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
@@ -666,15 +667,13 @@ jobs:
           grep -q 'SYNTHETIC_AUTH_ENABLED = false' "$build_config"
           grep -q 'FCM_API_KEY = ""' "$build_config"
 
-          expected_yandex_client_id=
+          expected_yandex_client_id=cfefdff8ae4d4dd8a7426308751ef95a
           expected_vkid_client_id=
           expected_vkid_client_secret=
           if [ "${{ inputs.channel }}" = staging ]; then
-            expected_yandex_client_id=$STAGING_YANDEX_CLIENT_ID
             expected_vkid_client_id=$STAGING_VKID_CLIENT_ID
             expected_vkid_client_secret=$STAGING_VKID_CLIENT_SECRET
           elif [ "${{ inputs.channel }}" = production ]; then
-            expected_yandex_client_id=$PRODUCTION_YANDEX_CLIENT_ID
             expected_vkid_client_id=$PRODUCTION_VKID_CLIENT_ID
             expected_vkid_client_secret=$PRODUCTION_VKID_CLIENT_SECRET
           fi
@@ -690,12 +689,6 @@ jobs:
           echo "yandex_client_id_sha256=$yandex_client_id_sha" >> "$GITHUB_OUTPUT"
           echo "vkid_client_id_sha256=$vkid_client_id_sha" >> "$GITHUB_OUTPUT"
           echo "vkid_client_secret_sha256=$vkid_client_secret_sha" >> "$GITHUB_OUTPUT"
-          unset expected_yandex_client_id expected_vkid_client_id \
-            expected_vkid_client_secret STAGING_YANDEX_CLIENT_ID \
-            STAGING_VKID_CLIENT_ID STAGING_VKID_CLIENT_SECRET \
-            PRODUCTION_YANDEX_CLIENT_ID PRODUCTION_VKID_CLIENT_ID \
-            PRODUCTION_VKID_CLIENT_SECRET
-
           expected_version_code=19
           expected_version_name=1.9
           expected_app=$STAGING_APP_API_BASE_URL
@@ -729,7 +722,11 @@ jobs:
             grep -q 'VERSION_NAME = "1.9"' "$build_config"
             grep -q 'ACCOUNT_UI_ENABLED = true' "$build_config"
             grep -q 'YANDEX_OAUTH_CONFIGURED = true' "$build_config"
-            grep -q 'VK_OAUTH_CONFIGURED = true' "$build_config"
+            if [ -n "$expected_vkid_client_id" ]; then
+              grep -q 'VK_OAUTH_CONFIGURED = true' "$build_config"
+            else
+              grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+            fi
             if [ "$variant" = release ]; then
               expected_app=$PRODUCTION_APP_API_BASE_URL
               expected_account=$PRODUCTION_ACCOUNT_API_BASE_URL

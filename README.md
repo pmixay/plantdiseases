@@ -214,11 +214,15 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
 | `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
 | `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
+| `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
+| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).
+Content criteria and the private operator workflow are documented in
+[`docs/COMMUNITY_RULES_AND_MODERATION.md`](docs/COMMUNITY_RULES_AND_MODERATION.md).
 
 ---
 

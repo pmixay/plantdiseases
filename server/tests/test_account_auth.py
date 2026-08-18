@@ -14,6 +14,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+import account_auth
 from account_auth import (
     AccountAuthenticationError,
     AccountAuthenticationUnavailable,
@@ -27,6 +28,11 @@ from account_internal import AccountInternalClient
 
 ISSUER = "https://accounts.synthetic.invalid"
 AUDIENCE = "plantdiseases-app"
+
+
+def test_account_http_delivery_refuses_redirects():
+    handler = account_auth._NoRedirectHandler()
+    assert handler.redirect_request(None, None, 302, "moved", {}, "https://evil.invalid") is None
 
 
 def _b64url(value: bytes) -> str:

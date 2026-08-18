@@ -193,13 +193,18 @@ def test_malformed_boolean_and_rate_limit_are_rejected():
         Settings.from_env(_base_env() | {"PROVIDER_HTTP_TIMEOUT_SECONDS": "30"})
 
 
-def test_remote_provider_mode_requires_both_public_application_ids():
+def test_remote_provider_mode_accepts_each_public_application_id_independently():
     remote = _base_env() | {"AUTH_PROVIDER_MODE": "remote"}
-    with pytest.raises(SettingsError, match="YANDEX_CLIENT_ID"):
+    with pytest.raises(SettingsError, match="YANDEX_CLIENT_ID or VKID_CLIENT_ID"):
         Settings.from_env(remote)
+
     remote["YANDEX_CLIENT_ID"] = "yandex-public-client"
-    with pytest.raises(SettingsError, match="VKID_CLIENT_ID"):
-        Settings.from_env(remote)
+    assert Settings.from_env(remote).yandex_client_id == "yandex-public-client"
+
+    remote.pop("YANDEX_CLIENT_ID")
+    remote["VKID_CLIENT_ID"] = "12345"
+    assert Settings.from_env(remote).vk_client_id == "12345"
+
     remote["VKID_CLIENT_ID"] = "not-numeric"
     with pytest.raises(SettingsError, match="decimal application ID"):
         Settings.from_env(remote)

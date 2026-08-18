@@ -62,6 +62,38 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The SDK dependencies remain compile-time available, but every
+             provider component is disabled unless that provider's own mobile
+             configuration is complete. This keeps Yandex and VK independent
+             and closes unused exported redirect handlers. -->
+        <activity
+            android:name="com.yandex.authsdk.internal.AuthSdkActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.ChromeTabLoginActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.WebViewLoginActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.ChromeTabDataActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity-alias
+            android:name="com.yandex.authsdk.YandexOauthClientIdActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}"
+            android:targetActivity="com.yandex.authsdk.internal.ChromeTabDataActivity"
+            tools:replace="android:enabled" />
+
+        <activity
+            android:name="com.vk.id.internal.auth.AuthActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.vk.id.internal.auth.RedirectUriReceiverActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.vk.id.captcha.web.VKCaptchaWebViewActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+
         <activity
             android:name=".ui.analysis.AnalysisActivity"
             android:exported="false"

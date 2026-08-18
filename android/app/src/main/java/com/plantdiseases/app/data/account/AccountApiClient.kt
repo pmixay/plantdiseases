@@ -49,9 +49,9 @@ class AccountApiClient(
         // transport failure after the server commits is ambiguous, so OkHttp
         // must not replay them on a replacement connection by itself.
         .retryOnConnectionFailure(false)
-        // Every request can carry a provider, refresh, reauth, or access
-        // credential. Never let an ingress redirect replay it to another
-        // origin (or silently change the reviewed account-service path).
+        // Every account request can carry a bearer, provider, refresh, or
+        // one-use reauthentication credential. Never replay any of them to a
+        // redirect target; the release account origin is fixed at build time.
         .followRedirects(false)
         .followSslRedirects(false)
         .addInterceptor { chain ->
@@ -65,6 +65,10 @@ class AccountApiClient(
 
     private val client = HttpClient(OkHttp) {
         engine { preconfigured = okHttp }
+        // Ktor can process redirects after the engine returns them. Keep this
+        // disabled here as well as in OkHttp so account credentials never
+        // leave the fixed release origin through a Location response.
+        followRedirects = false
         expectSuccess = false
         // OkHttp redirect handling is disabled above, but Ktor also has a
         // client-level redirect plugin which can replay a completed engine

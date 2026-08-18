@@ -1,13 +1,16 @@
 # Account System Staging Implementation and Test Guide
 
-Status: implementation guide for the `account-beta-test` branch. It explains
-what is implemented and how to validate it. The German environment is a restricted
-real-provider test deployment, not public production traffic or a merge to
-`main`.
+Status: internal staging guide for the `account-beta-test` branch. It explains
+what is implemented and how to validate it without producing a publishable
+artifact. The current RuStore procedure is
+[ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
+The German environment is a restricted test deployment, not public production
+traffic or a merge to `main`.
 
-The installed Android artifact is not named Account Beta and is not a second
-package. It is PlantDiseases 1.9 (`com.plantdiseases.app`) signed with the
-permanent PlantDiseases certificate. Read
+The staging Android artifact is not named Account Beta and is not a second
+package or version. It remains PlantDiseases 1.9 (`com.plantdiseases.app`), but
+branch CI no longer receives the permanent keystore or publishes a signed
+staging artifact. Read
 [ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md)
 before creating or registering any key.
 
@@ -26,17 +29,15 @@ The infrastructure transfer and day-two operations procedure is in
   existing permanent certificate it updates 1.8 rather than coexisting.
 - Synthetic authentication remains the default for local hermetic testing.
   `ACCOUNT_REAL_OAUTH=true` selects the real SDK callbacks for German staging
-  only when both provider configurations and explicit HTTPS API URLs are
-  present.
+  when at least one provider and both explicit HTTPS API URLs are present.
+  Yandex is pinned for 1.9; VK remains independently disabled until configured.
 - AndroidX Lifecycle is pinned to `2.10.0`. Its AAR requires compile SDK 35 and
   AGP 8.6, which is compatible with this project's compile SDK 36 and AGP
   8.13.2. Lifecycle 2.11 must not be restored until the project performs a
   reviewed API 37/AGP 9 migration.
-- CI always compiles the real-OAuth BuildConfig path with inert values. When
-  the three provider build values are configured as repository Actions
-  variables and the permanent signing key/fingerprint are configured in the
-  protected `android-signing` environment, the manual workflow publishes a
-  signed staging artifact pointed at the parallel German endpoints.
+- CI always compiles the Yandex-only real-OAuth BuildConfig path. Ordinary CI
+  receives no signing key and publishes no distributable artifact; permanent
+  signing is isolated in the protected, manually dispatched Android workflow.
 
 Implementation entry points:
 
@@ -125,39 +126,38 @@ buttons create deterministic test identities, and production remains
 unmodified. Stop the test stack with ordinary `docker compose ... down`; do
 not add `--volumes` unless disposable data deletion was separately approved.
 
-## 3. Prepare real Yandex/VK testing
+## 3. Prepare real Yandex testing
 
 Real login requires all of the following before building the APK:
 
 1. The isolated German beta is reachable at
    `https://pdis.arbuz.lol/plantdisease-test/`; local Compose remains mock-only.
 2. Account-api runs with `AUTH_PROVIDER_MODE=remote`, the matching
-   `YANDEX_CLIENT_ID` and `VKID_CLIENT_ID`, PostgreSQL readiness, persistent
-   signing/encryption keys, and the private app-service credential.
-3. Yandex and VK applications are registered for Android package
+   `YANDEX_CLIENT_ID`, PostgreSQL readiness, persistent signing/encryption
+   keys, and the private app-service credential. VK remains unconfigured for
+   this release.
+3. The Yandex application is registered for Android package
    `com.plantdiseases.app` and the one permanent app-signing certificate. There
    is no `.accountbeta` provider registration.
 4. The APK is signed by the certificate registered with each provider. Use
    `./gradlew :app:signingReport` to obtain the fingerprint; a CI-generated
    disposable debug key is not a stable provider registration.
-5. The Android client IDs and VK mobile client value are available to the
-   build. They are extractable from an APK but still must not be committed or
-   printed in logs.
+5. The public Yandex Android client ID pinned in `app/build.gradle.kts`
+   matches the provider registration. A Yandex client secret is neither
+   required nor accepted by the build.
 
 Put build values in the developer's private
 `~/.gradle/gradle.properties`, not in this repository:
 
 ```properties
 ACCOUNT_REAL_OAUTH=true
-YANDEX_CLIENT_ID=replace-with-yandex-client-id
-VKID_CLIENT_ID=12345
-VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
 APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
 ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
 
-The server receives the two client IDs but never uses the Android
-`VKID_CLIENT_SECRET` as server authentication.
+The server receives the public Yandex client ID through its protected host
+environment. If VK is added later, its mobile client value is used only by the
+Android SDK and never as server authentication.
 
 ## 4. Prove the real server is ready
 
@@ -172,8 +172,8 @@ curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/capabilities
 ```
 
 Account health must report `provider_mode` as `remote`. Readiness must report
-both `yandex` and `vk` plus a working database. This is only a readiness check;
-the first real-token smoke test is still required.
+`yandex`, must not report `vk`, and must show a working database. This is only
+a readiness check; the first real-token smoke test is still required.
 
 Render the German branch deployment before any start or update:
 
@@ -189,7 +189,8 @@ media remain isolated; only the model directory is shared read-only.
 
 ## 5. Build and run the real PlantDiseases 1.9 APK
 
-Dispatch the protected Android signing workflow with channel `staging`. Review
+Dispatch the protected Android signing workflow with channel `production` for
+the RuStore candidate (`staging` remains limited to named pre-release testers). Review
 the exact unsigned artifact/provenance before approving the checkout-free
 signing job. Install its accepted APK using Android Studio or `adb install -r`.
 Confirm the installed application ID is `com.plantdiseases.app`, the installed
@@ -206,7 +207,7 @@ Use a dedicated test account and execute this minimum matrix:
 | Drop the first completion response, then retry | Exact inputs recover the same provisional account/session; a different completion UUID, installation, or nickname fails closed |
 | Cancel after provisional completion | Provisional account/session are removed and the app returns to Guest |
 | Logout, then Yandex login again | Existing account opens without nickname creation |
-| Link VK after Yandex reauthentication | Both providers appear; no account merge |
+| Inspect VK option | Disabled and visibly says “coming soon” |
 | Restart app | Refresh-backed session restores without provider-token storage |
 | Change nickname | New nickname and refreshed authorization take effect |
 | Community read/write | Guest reads work; mutations require the account |

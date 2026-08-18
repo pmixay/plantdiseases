@@ -100,6 +100,12 @@ try:
         account_owner_of as community_account_owner_of,
     )
     from .community import (
+        actor_blocks as community_actor_blocks,
+    )
+    from .community import (
+        block_content_author as community_block_content_author,
+    )
+    from .community import (
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from .community import (
@@ -145,7 +151,13 @@ try:
         record_analysis_token as community_record_analysis_token,
     )
     from .community import (
+        record_content_report as community_record_content_report,
+    )
+    from .community import (
         record_opinion_with_status as community_record_opinion,
+    )
+    from .community import (
+        record_scan as community_record_scan,
     )
     from .community import (
         record_view as community_record_view,
@@ -179,6 +191,9 @@ try:
     )
     from .community import (
         update_actor_nickname as community_update_actor_nickname,
+    )
+    from .community import (
+        unblock_actor as community_unblock_actor,
     )
     from .community import (
         view_counts as community_view_counts,
@@ -277,6 +292,12 @@ except ImportError:
         account_owner_of as community_account_owner_of,
     )
     from community import (
+        actor_blocks as community_actor_blocks,
+    )
+    from community import (
+        block_content_author as community_block_content_author,
+    )
+    from community import (
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from community import (
@@ -322,7 +343,13 @@ except ImportError:
         record_analysis_token as community_record_analysis_token,
     )
     from community import (
+        record_content_report as community_record_content_report,
+    )
+    from community import (
         record_opinion_with_status as community_record_opinion,
+    )
+    from community import (
+        record_scan as community_record_scan,
     )
     from community import (
         record_view as community_record_view,
@@ -356,6 +383,9 @@ except ImportError:
     )
     from community import (
         update_actor_nickname as community_update_actor_nickname,
+    )
+    from community import (
+        unblock_actor as community_unblock_actor,
     )
     from community import (
         view_counts as community_view_counts,
@@ -607,6 +637,7 @@ AQUA_STATIC_DIR = Path(get_str(
 # refuses to start if a required artefact is missing.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
+PLANTNET_IMAGE_MAX_DIMENSION = get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
 # diagnostic signal but the blur gate passes it (upscaled noise has
 # high Laplacian variance) and the detector/classifier then emit a
@@ -831,6 +862,12 @@ async def _require_account(request: Request) -> AccountPrincipal:
         ) from None
     except AccountAuthenticationUnavailable:
         raise HTTPException(status_code=503, detail="account_auth_unavailable") from None
+
+
+async def _optional_account(request: Request) -> AccountPrincipal | None:
+    if _bearer_token(request) is None:
+        return None
+    return await _require_account(request)
 
 
 # Daily write quotas use the live connection address only in process memory.
@@ -1664,6 +1701,32 @@ def _open_image(contents: bytes) -> Image.Image:
         raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
 
+def _metadata_free_external_jpeg(image: Image.Image) -> bytes:
+    """Return bounded RGB pixels with no source metadata for third parties.
+
+    PlantNet only needs the visible plant pixels.  Rebuilding a fresh image
+    before encoding prevents EXIF/GPS, ICC, XMP, IPTC, thumbnails, comments,
+    and source filenames from crossing the service boundary even when a
+    non-Android client calls the public API directly.
+    """
+    bounded_side = max(64, min(PLANTNET_IMAGE_MAX_DIMENSION, MAX_IMAGE_DIMENSION))
+    resized = image.convert("RGB").copy()
+    if max(resized.size) > bounded_side:
+        resized.thumbnail((bounded_side, bounded_side), Image.Resampling.LANCZOS)
+    clean = Image.new("RGB", resized.size)
+    clean.paste(resized)
+    encoded = io.BytesIO()
+    clean.save(
+        encoded,
+        format="JPEG",
+        quality=88,
+        optimize=True,
+        progressive=False,
+        subsampling=2,
+    )
+    return encoded.getvalue()
+
+
 def _sha256_hex(data: bytes) -> str:
     """SHA-256 hex digest. Pulled out so the analyze handler can run it in
     a thread — hashing up to MAX_UPLOAD_BYTES on the event loop would stall
@@ -1976,7 +2039,7 @@ async def metrics_prometheus():
 
 
 async def _species_identify_best_effort(
-    image_bytes: bytes, *, timeout: float, lang: str = "en",
+    image: Image.Image, *, timeout: float, lang: str = "en",
 ) -> dict | None:
     """Run PlantNet identify on the default thread pool with a tight
     timeout (NOT the single-worker inference executor — there it would
@@ -2001,7 +2064,9 @@ async def _species_identify_best_effort(
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
                 # raises TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="auto", lang=lang),
+                lambda: identify_species(
+                    _metadata_free_external_jpeg(image), organ="auto", lang=lang,
+                ),
             ),
             timeout=timeout,
         )
@@ -2243,7 +2308,7 @@ async def analyze_image(
     # hostage; the earlier 6s cap cut off attempts the upstream would
     # have completed. ``plantnet_lang`` was resolved above for the cache key.
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=10.0, lang=plantnet_lang)
+        _species_identify_best_effort(img.copy(), timeout=10.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
@@ -2876,10 +2941,18 @@ async def identify_endpoint(
         organ = "auto"
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        _get_net_executor(),
-        lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
-    )
+    try:
+        result = await loop.run_in_executor(
+            _get_net_executor(),
+            lambda: identify_species(
+                _metadata_free_external_jpeg(_open_image(contents)),
+                organ=organ,
+                lang=plantnet_lang,
+            ),
+        )
+    except HTTPException:
+        _record_error()
+        raise
     # Deep-copy result before merging so a cache-hit return from
     # ``identify_species`` (which now also deep-copies, but defence in
     # depth is cheap) doesn't share its nested ``results`` /
@@ -3461,6 +3534,134 @@ class CommunityOpinionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class CommunityReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=1, max_length=32)
+
+
+class CommunityBlockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+
+
+def _raise_community_safety_error(error: ValueError) -> None:
+    code = str(error)
+    if code == "report_limit":
+        raise HTTPException(status_code=429, detail=code) from None
+    if code in {"self_target", "target_not_blockable", "block_limit"}:
+        raise HTTPException(status_code=409, detail=code) from None
+    if code == "deleted account actor":
+        raise HTTPException(status_code=403, detail="account_deleted") from None
+    if code in {
+        "invalid_actor",
+        "invalid_reason",
+        "target_not_found",
+    }:
+        raise HTTPException(status_code=422, detail=code) from None
+    raise HTTPException(status_code=500, detail="community_safety_failed") from None
+
+
+@api_router.post(
+    "/community/safety/report", dependencies=[Depends(community_bearer)]
+)
+async def community_report_content(
+    payload: CommunityReportRequest, request: Request,
+):
+    """Queue a report bound to the signed actor and stored content author.
+
+    The request contains only an opaque public content token plus a fixed
+    reason.  It never accepts an actor id or free-form moderation text.
+    """
+    principal = await _require_account(request)
+    kind = payload.target_type.strip().lower()
+    if kind not in {"scan", "opinion"}:
+        raise HTTPException(status_code=422, detail="invalid_target_type")
+    try:
+        created = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: community_record_content_report(
+                reporter_actor_id=principal.actor_id,
+                target_type=kind,
+                target_id=payload.target_id.strip(),
+                reason=payload.reason,
+            ),
+        )
+    except ValueError as exc:
+        _raise_community_safety_error(exc)
+        raise AssertionError("unreachable") from exc
+    return JSONResponse(
+        content={"ok": True, "created": bool(created)},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.post(
+    "/community/safety/block", dependencies=[Depends(community_bearer)]
+)
+async def community_block_author(
+    payload: CommunityBlockRequest, request: Request,
+):
+    """Block the verified author resolved from an opaque content token."""
+    principal = await _require_account(request)
+    kind = payload.target_type.strip().lower()
+    if kind not in {"scan", "opinion"}:
+        raise HTTPException(status_code=422, detail="invalid_target_type")
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: community_block_content_author(
+                blocker_actor_id=principal.actor_id,
+                target_type=kind,
+                target_id=payload.target_id.strip(),
+            ),
+        )
+    except ValueError as exc:
+        _raise_community_safety_error(exc)
+        raise AssertionError("unreachable") from exc
+    return JSONResponse(
+        content={"ok": True, **result},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.get(
+    "/community/safety/blocks", dependencies=[Depends(community_bearer)]
+)
+async def community_list_blocks(request: Request):
+    """List only the caller's blocks using unlinkable opaque block ids."""
+    principal = await _require_account(request)
+    items = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_actor_blocks(principal.actor_id)
+    )
+    return JSONResponse(
+        content={"items": items}, headers={"Cache-Control": "no-store"}
+    )
+
+
+@api_router.delete(
+    "/community/safety/blocks/{block_id}",
+    dependencies=[Depends(community_bearer)],
+)
+async def community_remove_block(block_id: str, request: Request):
+    """Delete only a block owned by the signed caller."""
+    principal = await _require_account(request)
+    if len(block_id) != 32 or not block_id.startswith("cb"):
+        raise HTTPException(status_code=422, detail="invalid_block_id")
+    removed = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_unblock_actor(principal.actor_id, block_id)
+    )
+    if not removed:
+        raise HTTPException(status_code=404, detail="block_not_found")
+    return JSONResponse(
+        content={"ok": True}, headers={"Cache-Control": "no-store"}
+    )
+
+
 @api_router.post("/community/opinion", dependencies=[Depends(community_bearer)])
 async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
     """Record one community 'second opinion' on a shared scan.
@@ -3516,6 +3717,11 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
             status_code=410,
             detail="Scan no longer accepts opinions",
         ) from exc
+    except ValueError as exc:
+        if str(exc) == "blocked_interaction":
+            raise HTTPException(status_code=409, detail="blocked_interaction") from None
+        logger.error("Community opinion write failed")
+        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
     except Exception as exc:  # noqa: BLE001
         logger.error("Community opinion write failed")
         raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
@@ -3547,7 +3753,10 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     await loop.run_in_executor(_get_net_executor(), _push_owner)
 
     result = await loop.run_in_executor(
-        None, lambda: community_opinions_for(sid),
+        None,
+        lambda: community_opinions_for(
+            sid, viewer_account_actor_id=principal.actor_id
+        ),
     )
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
@@ -3637,7 +3846,7 @@ async def community_request_opinion_cancel(
 
 
 @api_router.get("/community/opinions/{scan_id}")
-async def community_opinions_list(scan_id: str):
+async def community_opinions_list(scan_id: str, request: Request):
     """List community opinions + a consensus tally for one shared scan.
 
     Accepts the real scan_id (owner's own app) or the feed's public
@@ -3647,11 +3856,16 @@ async def community_opinions_list(scan_id: str):
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
     loop = asyncio.get_running_loop()
+    principal = await _optional_account(request)
     resolved = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(sid),
     )
     result = await loop.run_in_executor(
-        None, lambda: community_opinions_for(resolved),
+        None,
+        lambda: community_opinions_for(
+            resolved,
+            viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
@@ -3720,6 +3934,7 @@ async def community_scan_counts_endpoint(
 
 @api_router.get("/community/nearby")
 async def community_scan_nearby(
+    request: Request,
     country: str | None = None,
     region: str | None = None,
     lat: float | None = None,
@@ -3739,6 +3954,7 @@ async def community_scan_nearby(
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
     """
+    principal = await _optional_account(request)
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -3763,7 +3979,8 @@ async def community_scan_nearby(
         disease=(disease or None),
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
-        exclude_account_actor_id=None,
+        exclude_account_actor_id=principal.actor_id if principal else None,
+        viewer_account_actor_id=principal.actor_id if principal else None,
         scope=scope_norm,
     )
     # Country-level overview for the chip row (the coords feed itself is
@@ -3773,14 +3990,18 @@ async def community_scan_nearby(
     summary = community_region_summary(
         country_norm or "",
         None,
-        exclude_account_actor_id=None,
+        exclude_account_actor_id=principal.actor_id if principal else None,
+        viewer_account_actor_id=principal.actor_id if principal else None,
     )
     # Annotate each cell with how many second opinions it has so the carousel
     # can show a badge, then swap the publication capability for its stable,
     # per-scan public token. The author pseudonym rotates independently;
     # feedback uses a separate receipt.
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = community_opinion_counts(scan_ids)
+    counts = community_opinion_counts(
+        scan_ids,
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     views = community_view_counts(scan_ids)
     for r in rows:
         sid = str(r.get("scan_id"))
@@ -3830,6 +4051,7 @@ def _valid_bbox(
 
 @api_router.get("/community/map")
 async def community_map(
+    request: Request,
     min_lat: float, min_lon: float, max_lat: float, max_lon: float,
     disease: str | None = None,
     days: int = 30,
@@ -3841,6 +4063,7 @@ async def community_map(
     real scan_id), so the app can pin a marker and open the existing opinion
     sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
     signals an over-full bbox."""
+    principal = await _optional_account(request)
     box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
@@ -3852,13 +4075,17 @@ async def community_map(
             disease=(disease or None),
             days=days,
             limit=max(1, min(int(limit), 500)),
-            exclude_account_actor_id=None,
+            exclude_account_actor_id=principal.actor_id if principal else None,
+            viewer_account_actor_id=principal.actor_id if principal else None,
         ),
     )
     rows = data["items"]
     # Same opinion-count annotation + public-token swap + country localization as
     # the nearby feed; here we KEEP lat/lon for the markers.
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    counts = community_opinion_counts(
+        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
@@ -3893,11 +4120,13 @@ async def community_heatmap(
 
 @api_router.get("/community/by-species")
 async def community_by_species(
+    request: Request,
     species: str | None = None,
     limit: int = 12,
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
+    principal = await _optional_account(request)
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
@@ -3906,10 +4135,14 @@ async def community_by_species(
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
-            exclude_account_actor_id=None,
+            exclude_account_actor_id=principal.actor_id if principal else None,
+            viewer_account_actor_id=principal.actor_id if principal else None,
         ),
     )
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    counts = community_opinion_counts(
+        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         # Public token only — never the community publication capability.
@@ -4623,7 +4856,9 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         app,
-        host=get_str("HOST", "0.0.0.0"),
+        # The API is intentionally reachable on the container network; the
+        # reviewed ingress/firewall owns public exposure and TLS termination.
+        host=get_str("HOST", "0.0.0.0"),  # nosec B104
         port=get_int("PORT", 8000),
         forwarded_allow_ips=get_str("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         proxy_headers=True,

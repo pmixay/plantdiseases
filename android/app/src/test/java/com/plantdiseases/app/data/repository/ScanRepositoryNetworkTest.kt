@@ -643,7 +643,7 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).startsWith("/api/community/nearby")
         assertThat(req.path).doesNotContain("country=")
         assertThat(req.path).doesNotContain("user_pseudo_id")
-        assertThat(req.getHeader("Authorization")).isNull()
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
         assertThat(req.path).contains("limit=12")
         assertThat(req.path).doesNotContain("region=")
         assertThat(req.path).doesNotContain("disease=")
@@ -661,7 +661,7 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).startsWith("/api/community/by-species")
         assertThat(req.path).contains("species=Ficus")
         assertThat(req.path).doesNotContain("user_pseudo_id")
-        assertThat(req.getHeader("Authorization")).isNull()
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
@@ -678,7 +678,9 @@ class ScanRepositoryNetworkTest {
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.views).isEqualTo(4)
         assertThat(result.getOrNull()?.opinions?.get(0)?.suggestedDisease).isEqualTo("rust")
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/opinions/sc-9")
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/opinions/sc-9")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
@@ -728,6 +730,131 @@ class ScanRepositoryNetworkTest {
         assertThat(body).doesNotContain("user_pseudo_id")
         assertThat(body).doesNotContain("nickname")
         assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
+    }
+
+    @Test
+    fun communitySafety_reportAndBlockNeverSendActorIds() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"created":true}"""),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"ok":true,"created":true,"block_id":"cb123456789012345678901234567890"}""",
+                ),
+        )
+
+        val reported = runBlocking {
+            repo.reportCommunityContent("opinion", "co-public", "hate_or_harassment")
+        }
+        val blocked = runBlocking { repo.blockCommunityAuthor("scan", "cs-public") }
+
+        assertThat(reported.getOrNull()).isTrue()
+        assertThat(blocked.getOrNull()?.blockId).startsWith("cb")
+        val reportRequest = server.takeRequest()
+        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
+        assertThat(reportRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val reportBody = reportRequest.body.readUtf8()
+        assertThat(reportBody).contains("\"target_type\":\"opinion\"")
+        assertThat(reportBody).contains("\"target_id\":\"co-public\"")
+        assertThat(reportBody).contains("\"reason\":\"hate_or_harassment\"")
+        assertThat(reportBody).doesNotContain("actor_id")
+
+        val blockRequest = server.takeRequest()
+        assertThat(blockRequest.path).isEqualTo("/api/community/safety/block")
+        assertThat(blockRequest.body.readUtf8()).doesNotContain("actor_id")
+    }
+
+    @Test
+    fun communitySafety_listsAndRemovesOnlyOpaqueBlockId() {
+        val blockId = "cb123456789012345678901234567890"
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"items":[{"block_id":"$blockId","nickname":"Fern","created_at":9}]}""",
+                ),
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val listed = runBlocking { repo.communityBlocks() }
+        val removed = runBlocking { repo.unblockCommunityAuthor(blockId) }
+
+        assertThat(listed.getOrNull()?.single()?.nickname).isEqualTo("Fern")
+        assertThat(removed.isSuccess).isTrue()
+        val listRequest = server.takeRequest()
+        assertThat(listRequest.path).isEqualTo("/api/community/safety/blocks")
+        assertThat(listRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val deleteRequest = server.takeRequest()
+        assertThat(deleteRequest.method).isEqualTo("DELETE")
+        assertThat(deleteRequest.path).isEqualTo("/api/community/safety/blocks/$blockId")
+        assertThat(deleteRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+    }
+
+    @Test
+    fun guestCommunityReadStaysPublicWithoutBearer() {
+        val guestRepository = ScanRepository(
+            FakeScanDao(),
+            client,
+            authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[]}"""),
+        )
+
+        assertThat(
+            runBlocking { guestRepository.communityNearby(disease = null) }.isSuccess,
+        ).isTrue()
+        assertThat(server.takeRequest().getHeader("Authorization")).isNull()
+    }
+
+    @Test
+    fun signedCommunityReadRefreshesAndRetriesBearer() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[]}"""),
+        )
+
+        val result = runBlocking { repo.communityNearby(disease = null) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-2")
+    }
+
+    @Test
+    fun signedCommunityReadIsNeverFollowedToRedirectTarget() {
+        val redirectTarget = MockWebServer()
+        redirectTarget.start()
+        try {
+            redirectTarget.enqueue(
+                MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"items":[]}"""),
+            )
+            server.enqueue(
+                MockResponse().setResponseCode(302)
+                    .setHeader("Location", redirectTarget.url("/capture")),
+            )
+
+            val result = runBlocking { repo.communityNearby(disease = null) }
+
+            assertThat(result.isFailure).isTrue()
+            assertThat(server.takeRequest().getHeader("Authorization"))
+                .isEqualTo("Bearer access-1")
+            assertThat(redirectTarget.requestCount).isEqualTo(0)
+        } finally {
+            redirectTarget.shutdown()
+        }
     }
 
     @Test

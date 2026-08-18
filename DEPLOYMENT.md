@@ -453,6 +453,30 @@ journalctl -u plantdiseases -f
 
 - JSON counters: `GET /api/metrics`
 - Prometheus exposition: `GET /api/metrics/prometheus`
+
+### 5.1 Community moderation
+
+Community reports are intentionally not exposed through an HTTP admin route.
+Review the local queue as the service user, with the same state path as the
+running API:
+
+```bash
+sudo -u plantd env COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db \
+  COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs \
+  /opt/plantdiseases/.venv/bin/python \
+  /opt/plantdiseases/server/tools/community_moderation.py list --limit 100
+
+sudo -u plantd env COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db \
+  COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs \
+  /opt/plantdiseases/.venv/bin/python \
+  /opt/plantdiseases/server/tools/community_moderation.py \
+  resolve REPORT_ID --action remove_content --confirm-remove
+```
+
+Use `--action dismiss` when the content does not violate the published rules.
+The public criteria, response targets, retention, and Russian operator summary
+are in
+[docs/COMMUNITY_RULES_AND_MODERATION.md](docs/COMMUNITY_RULES_AND_MODERATION.md).
   (`Content-Type: text/plain; version=0.0.4`)
 - Liveness probe: `GET /api/health` — also used by the container `HEALTHCHECK`.
 
@@ -538,6 +562,9 @@ every channel therefore dispatches only from protected `main`, and the reviewer
 must inspect that exact SHA. `app/build.gradle.kts` reads environment values
 before local Gradle-property fallbacks so a committed property cannot shadow a
 reviewed distribution input.
+The public Yandex native client ID is pinned in `app/build.gradle.kts`; no
+Yandex client secret is used. VK stays independently disabled unless both of
+its extractable mobile configuration values are supplied.
 
 ### 8.1 Release signing
 
@@ -564,10 +591,12 @@ required reviewers, prevent self-review, and restrict deployment branches to
 certificate differs from the pinned fingerprint. Never commit the keystore or
 its base64 encoding.
 
-Create the following public/extractable **repository Actions variables**, not
-environment secrets: `STAGING_YANDEX_CLIENT_ID`, `STAGING_VKID_CLIENT_ID`,
-`STAGING_VKID_CLIENT_SECRET`, the equivalent three `PRODUCTION_*` provider
-variables, the exact reviewed `STAGING_APP_API_BASE_URL` /
+The Yandex native client ID is pinned in the Android source and needs no
+Actions variable. Optionally create the public/extractable
+`STAGING_VKID_CLIENT_ID` / `STAGING_VKID_CLIENT_SECRET` and equivalent
+`PRODUCTION_*` VK variables only after VK registration; each pair must be
+complete, and leaving both pairs absent keeps VK disabled. Also create the
+exact reviewed `STAGING_APP_API_BASE_URL` /
 `STAGING_ACCOUNT_API_BASE_URL` German pair, and the reviewed
 `PRODUCTION_APP_API_BASE_URL` / `PRODUCTION_ACCOUNT_API_BASE_URL`. Both the
 normal staging APK and `recovery-staging` consume the same explicit staging
@@ -597,9 +626,9 @@ When that work is accepted, two distinct credential sets will be required:
 - **Android client config** — `FCM_APP_ID`, `FCM_API_KEY`, `FCM_PROJECT_ID`,
   `FCM_SENDER_ID` (from `google-services.json`: `mobilesdk_app_id`,
   `api_key[0].current_key`, `project_id`, `project_number`). These are **public** —
-  shipped inside every APK — so per Google they are *not* secrets. Inject them as
-  Gradle props / GitHub secrets only to keep them out of the source tree, and harden
-  by **restricting the Android API key** in Google Cloud Console (Application
+  shipped inside every APK — so per Google they are *not* secrets. A future
+  reviewed workflow may inject them as public build variables, and must harden
+  them by **restricting the Android API key** in Google Cloud Console (Application
   restrictions: Android apps + your package/SHA-1; API restrictions: Firebase/FCM).
   Unset → the app builds fine and push stays dormant (`PushManager.isConfigured()` is
   false; the client falls back to its WorkManager poll).
@@ -614,7 +643,7 @@ Ordinary `android` CI runs this credential-free evidence command:
 
 ```bash
 ./gradlew ktlintCheck detekt testDebugUnitTest testStagingUnitTest \
-  testRecoveryProductionUnitTest testRecoveryStagingUnitTest \
+  testReleaseUnitTest testRecoveryProductionUnitTest testRecoveryStagingUnitTest \
   assembleRelease assembleStaging assembleRecoveryProduction \
   assembleRecoveryStaging \
   --build-cache --configuration-cache --stacktrace

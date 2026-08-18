@@ -6,8 +6,9 @@ name: ${RU_COMPOSE_PROJECT_NAME:?Set a dedicated Russian project name}
 x-account-environment: &account-environment
   ENVIRONMENT: production
   AUTH_PROVIDER_MODE: remote
-  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:?Set the Russian Yandex application ID}
-  VKID_CLIENT_ID: ${VKID_CLIENT_ID:?Set the Russian VK ID application ID}
+  # Providers are independent; the account service requires at least one.
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:-}
   PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
   ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
   ACCOUNT_AUDIENCE: plantdiseases-app

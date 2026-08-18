@@ -1253,7 +1253,9 @@ class AuthRepositoryTest {
     @Test
     fun productionRestoreRevokesDurableVaultForAlreadyConfirmedStagingSignup() = runTest {
         val stagingApi = FakeAccountApi().apply {
-            completeResult = authenticated(refreshToken = "recovered-staging-refresh")
+            completeResult = FakeAccountApi.authenticated(
+                refreshToken = "recovered-staging-refresh",
+            )
             onCancel = { throw AccountApiException(409, "signup_already_confirmed") }
         }
         val stagingStore = FakeSignupStore(pendingSignupOperation("Durable Fern"))
@@ -1624,10 +1626,9 @@ class AuthRepositoryTest {
         assertThat(repository.retryPendingLogoutRevocationsFromWorker()).isTrue()
 
         assertThat(api.completeCalls).isEqualTo(0)
-        assertThat(api.logoutRefreshTokens).containsExactly(
-            "durable-confirmed-refresh",
-            "durable-confirmed-refresh",
-        ).inOrder()
+        // The durable remoteTerminationConfirmed marker prevents a second
+        // network revocation after only local vault erasure failed.
+        assertThat(api.logoutRefreshTokens).containsExactly("durable-confirmed-refresh")
         assertThat(signupStore.value).isNull()
         assertThat(vault.value).isNull()
         assertThat(installation.rotations).isEqualTo(2)
@@ -1695,7 +1696,7 @@ class AuthRepositoryTest {
     @Test
     fun accountDisabledModeRevokesDurableVaultForAlreadyConfirmedPrimarySignup() = runTest {
         val api = FakeAccountApi().apply {
-            completeResult = authenticated(refreshToken = "confirmed-refresh")
+            completeResult = FakeAccountApi.authenticated(refreshToken = "confirmed-refresh")
             onCancel = { throw AccountApiException(409, "signup_already_confirmed") }
         }
         val signupStore = FakeSignupStore(pendingSignupOperation("Confirmed Fern"))

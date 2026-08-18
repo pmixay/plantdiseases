@@ -29,9 +29,14 @@ fun sha256(value: String): String =
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-val yandexClientId = configuredValue("YANDEX_CLIENT_ID")
+// Yandex LoginSDK uses a public native client ID. Pin the registered
+// com.plantdiseases.app value so every PlantDiseases 1.9 RuStore release has
+// Yandex enabled without accepting or embedding the Yandex client secret.
+val yandexClientId = "cfefdff8ae4d4dd8a7426308751ef95a"
 val vkClientId = configuredValue("VKID_CLIENT_ID")
 val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
+val yandexOAuthConfigured = yandexClientId.isNotBlank()
+val vkOAuthConfigured = vkClientId.isNotBlank() && vkClientSecret.isNotBlank()
 val appApiBaseUrl = configuredValue("APP_API_BASE_URL")
 val accountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
 val stagingAppApiBaseUrl = configuredValue("STAGING_APP_API_BASE_URL")
@@ -138,39 +143,54 @@ if (distributionChannel == "staging" || distributionChannel == "recovery-staging
 }
 
 if (realOAuthEnabled) {
-    val oauthAppApiBaseUrl =
-        if (distributionChannel == "staging") stagingAppApiBaseUrl else appApiBaseUrl
-    val oauthAccountApiBaseUrl =
-        if (distributionChannel == "staging") stagingAccountApiBaseUrl else accountApiBaseUrl
-    val missing = buildList {
-        if (yandexClientId.isBlank()) add("YANDEX_CLIENT_ID")
-        if (vkClientId.isBlank()) add("VKID_CLIENT_ID")
-        if (vkClientSecret.isBlank()) add("VKID_CLIENT_SECRET")
-        if (oauthAppApiBaseUrl.isBlank()) add("APP_API_BASE_URL")
-        if (oauthAccountApiBaseUrl.isBlank()) add("ACCOUNT_API_BASE_URL")
-    }
-    if (missing.isNotEmpty()) {
+    if (vkClientId.isBlank() != vkClientSecret.isBlank()) {
         throw GradleException(
-            "Real OAuth requires: ${missing.joinToString()}",
+            "VK ID requires both VKID_CLIENT_ID and VKID_CLIENT_SECRET when enabled",
         )
     }
-    if (!vkClientId.all { it.isDigit() }) {
+    if (!yandexOAuthConfigured && !vkOAuthConfigured) {
+        throw GradleException(
+            "Real OAuth requires a bundled Yandex client ID, or both " +
+                "VKID_CLIENT_ID and VKID_CLIENT_SECRET",
+        )
+    }
+    if (vkOAuthConfigured && !vkClientId.all { it.isDigit() }) {
         throw GradleException("VKID_CLIENT_ID must be a decimal application ID")
     }
+    val oauthAppApiBaseUrl = when (distributionChannel) {
+        "staging", "recovery-staging" -> stagingAppApiBaseUrl
+        "recovery-production" -> productionAppApiBaseUrl
+        else -> appApiBaseUrl
+    }
+    val oauthAccountApiBaseUrl = when (distributionChannel) {
+        "staging", "recovery-staging" -> stagingAccountApiBaseUrl
+        "recovery-production" -> productionAccountApiBaseUrl
+        else -> accountApiBaseUrl
+    }
+    val oauthAppApiName = when (distributionChannel) {
+        "staging", "recovery-staging" -> "STAGING_APP_API_BASE_URL"
+        "recovery-production" -> "PRODUCTION_APP_API_BASE_URL"
+        else -> "APP_API_BASE_URL"
+    }
+    val oauthAccountApiName = when (distributionChannel) {
+        "staging", "recovery-staging" -> "STAGING_ACCOUNT_API_BASE_URL"
+        "recovery-production" -> "PRODUCTION_ACCOUNT_API_BASE_URL"
+        else -> "ACCOUNT_API_BASE_URL"
+    }
+    val missingEndpoints = buildList {
+        if (oauthAppApiBaseUrl.isBlank()) add(oauthAppApiName)
+        if (oauthAccountApiBaseUrl.isBlank()) add(oauthAccountApiName)
+    }
+    if (missingEndpoints.isNotEmpty()) {
+        throw GradleException(
+            "Real OAuth requires: ${missingEndpoints.joinToString()}",
+        )
+    }
     listOf(
-        "APP_API_BASE_URL" to oauthAppApiBaseUrl,
-        "ACCOUNT_API_BASE_URL" to oauthAccountApiBaseUrl,
+        oauthAppApiName to oauthAppApiBaseUrl,
+        oauthAccountApiName to oauthAccountApiBaseUrl,
     ).forEach { (name, raw) ->
-        val uri = runCatching { URI(raw) }.getOrNull()
-        val valid = uri != null &&
-            uri.scheme == "https" &&
-            !uri.host.isNullOrBlank() &&
-            uri.userInfo == null &&
-            uri.query == null &&
-            uri.fragment == null
-        if (!valid) {
-            throw GradleException("$name must be an absolute credential-free HTTPS URL")
-        }
+        validateHttpsEndpoint(name, raw)
     }
 }
 
@@ -217,25 +237,26 @@ android {
         buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
 
         // OAuth mobile application values are public/extractable client
-        // configuration, but no real values are committed. Without explicit
-        // Gradle properties/environment values the provider buttons fail closed
-        // and no SDK flow is started. Package/signature registration remains an
-        // operator step.
-        buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexClientId.isNotBlank().toString())
+        // configuration. Yandex is pinned for the 1.9 RuStore release; VK still
+        // fails closed unless its own complete configuration is supplied.
+        // Package/signature registration remains an operator step.
+        buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexOAuthConfigured.toString())
         buildConfigField("String", "YANDEX_CLIENT_ID_SHA256", "\"${sha256(yandexClientId)}\"")
         buildConfigField(
             "boolean",
             "VK_OAUTH_CONFIGURED",
-            (vkClientId.isNotBlank() && vkClientSecret.isNotBlank()).toString(),
+            vkOAuthConfigured.toString(),
         )
         buildConfigField("String", "VKID_CLIENT_ID_SHA256", "\"${sha256(vkClientId)}\"")
         buildConfigField("String", "VKID_CLIENT_SECRET_SHA256", "\"${sha256(vkClientSecret)}\"")
         manifestPlaceholders += mapOf(
             "YANDEX_CLIENT_ID" to yandexClientId.ifBlank { "0" },
+            "YANDEX_OAUTH_ENABLED" to yandexOAuthConfigured.toString(),
             "VKIDClientID" to vkClientId.ifBlank { "0" },
             "VKIDClientSecret" to vkClientSecret.ifBlank { "unconfigured" },
             "VKIDRedirectHost" to "vk.ru",
             "VKIDRedirectScheme" to "vk${vkClientId.ifBlank { "0" }}",
+            "VKID_OAUTH_ENABLED" to vkOAuthConfigured.toString(),
         )
 
         // Firebase Cloud Messaging client config. These four values are the
@@ -346,8 +367,8 @@ android {
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
             // Synthetic auth remains available only for local mock-stack
             // development. ACCOUNT_REAL_OAUTH=true selects the integrated
-            // official Yandex/VK SDK flows after validating both provider
-            // applications and explicit HTTPS endpoints above.
+            // official provider SDK flows after validating every configured
+            // provider independently and the explicit HTTPS endpoints above.
             buildConfigField(
                 "boolean",
                 "SYNTHETIC_AUTH_ENABLED",
@@ -376,6 +397,10 @@ android {
             )
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
             buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
             buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
         }
 
@@ -392,6 +417,10 @@ android {
             buildConfigField("boolean", "RECOVERY_ENDPOINTS_CONFIGURED", "true")
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
             buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
             buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
         }
     }
@@ -578,10 +607,9 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-messaging")
 
-    // Official mobile OAuth SDKs. Both are inert until build-time client
-    // configuration is supplied; automated tests never contact either
-    // provider, while the distributable 1.9 staging artifact requires
-    // registered real client values.
+    // Official mobile OAuth SDKs. Each remains inert until its own build-time
+    // client configuration is supplied; Yandex-only, VK-only, and combined
+    // builds are all supported.
     implementation("com.yandex.android:authsdk:3.2.1")
     implementation("com.vk.id:vkid:2.7.2")
 

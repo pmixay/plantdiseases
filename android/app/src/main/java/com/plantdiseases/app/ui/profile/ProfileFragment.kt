@@ -13,8 +13,8 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.BuildConfig
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -82,6 +82,19 @@ class ProfileFragment : Fragment() {
                                 getString(R.string.account_finish_profile)
                             is com.plantdiseases.app.auth.AuthState.Authenticated -> state.profile.nickname
                         }
+                        binding.btnManageAccount.setText(
+                            when (state) {
+                                com.plantdiseases.app.auth.AuthState.Restoring ->
+                                    R.string.account_manage
+                                com.plantdiseases.app.auth.AuthState.Guest -> R.string.account_create
+                                is com.plantdiseases.app.auth.AuthState.Unavailable ->
+                                    R.string.account_manage
+                                is com.plantdiseases.app.auth.AuthState.ProfileRequired ->
+                                    R.string.account_finish_creation
+                                is com.plantdiseases.app.auth.AuthState.Authenticated ->
+                                    R.string.account_manage
+                            },
+                        )
                     }
                 }
             }

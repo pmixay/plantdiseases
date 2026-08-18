@@ -241,8 +241,12 @@ class YandexProviderAdapter(ProviderAdapter):
             raise ProviderVerificationError(ProviderErrorCode.APPLICATION_MISMATCH)
 
         subject = _required_subject(response.payload.get("psuid"))
+        # Yandex returns `login` in the standard response without optional
+        # personal-data scopes. Prefer a granted display name, but do not
+        # force the app to request extra profile access solely for this
+        # private account label.
         display_name = _required_text(
-            response.payload.get("display_name"),
+            response.payload.get("display_name") or response.payload.get("login"),
             maximum=_MAX_DISPLAY_NAME_LENGTH,
         )
         avatar_url = None

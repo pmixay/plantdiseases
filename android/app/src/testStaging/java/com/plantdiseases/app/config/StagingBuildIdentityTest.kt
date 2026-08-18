@@ -6,7 +6,10 @@ import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class StagingBuildIdentityTest {
     @Test
     fun stagingIsPlantDiseases19WithAccountSystem() {
@@ -22,8 +25,9 @@ class StagingBuildIdentityTest {
             assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
                 .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
         } else {
-            assertThat(BuildConfig.YANDEX_OAUTH_CONFIGURED).isTrue()
-            assertThat(BuildConfig.VK_OAUTH_CONFIGURED).isTrue()
+            assertThat(
+                BuildConfig.YANDEX_OAUTH_CONFIGURED || BuildConfig.VK_OAUTH_CONFIGURED,
+            ).isTrue()
             assertThat(BuildConfig.APP_API_BASE_URL).startsWith("https://")
             assertThat(BuildConfig.ACCOUNT_API_BASE_URL).startsWith("https://")
         }

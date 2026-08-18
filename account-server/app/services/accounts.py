@@ -1648,8 +1648,11 @@ class AccountService:
     async def _verify_provider(
         self, provider: ProviderName, access_token: str
     ) -> VerifiedProviderIdentity:
+        adapter = self.providers.get(provider)
+        if adapter is None:
+            raise AccountAPIError("provider_unavailable", status_code=503)
         try:
-            identity = await self.providers[provider].verify(access_token)
+            identity = await adapter.verify(access_token)
         except ProviderVerificationError as exc:
             status_code = 503 if exc.code.value == "provider_unavailable" else 401
             raise AccountAPIError(exc.code.value, status_code=status_code) from None

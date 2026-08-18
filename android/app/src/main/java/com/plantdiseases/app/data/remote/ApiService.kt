@@ -124,6 +124,11 @@ class PlantApiClient(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            // Signed community calls share this client with public app calls.
+            // Never replay an application bearer—or any request body—to a
+            // redirect target; every release endpoint is fixed at build time.
+            .followRedirects(false)
+            .followSslRedirects(false)
             // Tell the reporter whether the server answered, for every call
             // the app makes anyway — which is what lets ConnectivityObserver
             // stop polling a health endpoint on a timer. Installed BEFORE the
@@ -200,6 +205,10 @@ class PlantApiClient(
     val httpClient: HttpClient by lazy {
         HttpClient(OkHttp) {
             engine { preconfigured = client }
+            // Ktor's redirect plugin is independent of OkHttp's redirect
+            // setting. Disable both layers so signed community requests can
+            // never replay an application bearer to a Location target.
+            followRedirects = false
             expectSuccess = false
             install(ContentNegotiation) {
                 json(

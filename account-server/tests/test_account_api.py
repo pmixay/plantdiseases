@@ -318,6 +318,18 @@ def test_provider_failures_are_stable_and_never_reflect_tokens(
     assert token not in response.text
 
 
+def test_disabled_provider_fails_closed(api: ApiHarness):
+    vk_adapter = api.service.providers.pop("vk")
+    try:
+        response = _exchange(api, provider="vk", provider_token="not-reflected")
+    finally:
+        api.service.providers["vk"] = vk_adapter
+
+    assert response.status_code == 503
+    assert _error(response) == "provider_unavailable"
+    assert "not-reflected" not in response.text
+
+
 def test_presented_secrets_are_not_logged(api: ApiHarness, caplog: pytest.LogCaptureFixture):
     provider_sentinel = "mock-yandex-not-a-secret-log-sentinel"
     refresh_sentinel = "refresh-not-a-secret-log-sentinel"

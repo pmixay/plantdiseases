@@ -10,6 +10,10 @@
     <color name="primary_light">#14532D</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#052E16</color>
+    <!-- Official Yandex ID main-button palette for a dark surface. -->
+    <color name="yandex_button_background">#FFFFFF</color>
+    <color name="yandex_button_on_background">#000000</color>
+    <color name="yandex_button_ripple">#E5E7EB</color>
     <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
          colorSecondary / colorOnSecondary attributes. -->
     <color name="primary_dark">#16A34A</color>

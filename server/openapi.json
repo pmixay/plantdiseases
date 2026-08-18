@@ -539,6 +539,155 @@
         }
       }
     },
+    "/api/community/safety/report": {
+      "post": {
+        "summary": "Community Report Content",
+        "description": "Queue a report bound to the signed actor and stored content author.\n\nThe request contains only an opaque public content token plus a fixed\nreason.  It never accepts an actor id or free-form moderation text.",
+        "operationId": "community_report_content_api_community_safety_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/block": {
+      "post": {
+        "summary": "Community Block Author",
+        "description": "Block the verified author resolved from an opaque content token.",
+        "operationId": "community_block_author_api_community_safety_block_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/blocks": {
+      "get": {
+        "summary": "Community List Blocks",
+        "description": "List only the caller's blocks using unlinkable opaque block ids.",
+        "operationId": "community_list_blocks_api_community_safety_blocks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/blocks/{block_id}": {
+      "delete": {
+        "summary": "Community Remove Block",
+        "description": "Delete only a block owned by the signed caller.",
+        "operationId": "community_remove_block_api_community_safety_blocks__block_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "block_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Block Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/opinion": {
       "post": {
         "summary": "Community Opinion Submit",
@@ -1945,6 +2094,29 @@
         ],
         "title": "ChatRequest"
       },
+      "CommunityBlockRequest": {
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "maxLength": 7,
+            "minLength": 4,
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "CommunityBlockRequest"
+      },
       "CommunityOpinionRequest": {
         "properties": {
           "scan_id": {
@@ -1978,6 +2150,36 @@
           "suggested_disease"
         ],
         "title": "CommunityOpinionRequest"
+      },
+      "CommunityReportRequest": {
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "maxLength": 7,
+            "minLength": 4,
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id",
+          "reason"
+        ],
+        "title": "CommunityReportRequest"
       },
       "CommunityRequestOpinionRequest": {
         "properties": {

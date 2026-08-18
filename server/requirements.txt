@@ -40,4 +40,4 @@ firebase-admin>=7.5.0
 # Account-bound community writes verify Ed25519 JWTs locally before the
 # account service confirms the live session/authorization version.
 PyJWT[crypto]==2.13.0
-cryptography==49.0.0
+cryptography==50.0.0

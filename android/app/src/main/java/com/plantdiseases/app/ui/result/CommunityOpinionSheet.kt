@@ -20,6 +20,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
@@ -117,6 +118,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             ?: run { currentCard.visibility = View.GONE }
         renderMeta()
         renderPhoto(view)
+
+        val isOwner = arguments?.getBoolean(ARG_OWNER, false) ?: false
+        val safetyRow = view.findViewById<View>(R.id.ll_community_scan_safety)
+        if (isOwner) {
+            safetyRow.visibility = View.GONE
+        } else {
+            view.findViewById<MaterialButton>(R.id.btn_community_report_scan)
+                .setOnClickListener { showReportDialog(TARGET_SCAN, scanId) }
+            view.findViewById<MaterialButton>(R.id.btn_community_block_scan_author)
+                .setOnClickListener { confirmBlock(TARGET_SCAN, scanId) }
+        }
 
         val ctx = requireContext()
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
@@ -353,6 +365,80 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         Toast.makeText(ctx, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
         startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(ctx))
         return false
+    }
+
+    private fun showReportDialog(targetType: String, targetId: String) {
+        if (!requireAuthenticatedAction()) return
+        val labels = resources.getStringArray(R.array.community_report_reasons)
+        var selected = -1
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.community_report_title)
+            .setMessage(R.string.community_report_prompt)
+            .setSingleChoiceItems(labels, -1) { _, which -> selected = which }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_report_content, null)
+            .create()
+        dialog.setOnShowListener {
+            val submit = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+            submit.isEnabled = false
+            dialog.listView.setOnItemClickListener { _, _, position, _ ->
+                selected = position
+                submit.isEnabled = position in REPORT_REASON_KEYS.indices
+            }
+            submit.setOnClickListener {
+                val reason = REPORT_REASON_KEYS.getOrNull(selected) ?: return@setOnClickListener
+                dialog.dismiss()
+                submitReport(targetType, targetId, reason)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun submitReport(targetType: String, targetId: String, reason: String) {
+        val ctx = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
+            scanRepository.reportCommunityContent(targetType, targetId, reason)
+                .onSuccess {
+                    Toast.makeText(ctx, R.string.community_report_sent, Toast.LENGTH_SHORT).show()
+                }
+                .onFailure {
+                    Toast.makeText(ctx, R.string.community_safety_error, Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+
+    private fun confirmBlock(targetType: String, targetId: String) {
+        if (!requireAuthenticatedAction()) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.community_block_title)
+            .setMessage(R.string.community_block_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_block_confirm) { _, _ ->
+                blockAuthor(targetType, targetId)
+            }
+            .show()
+    }
+
+    private fun blockAuthor(targetType: String, targetId: String) {
+        val ctx = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
+            scanRepository.blockCommunityAuthor(targetType, targetId)
+                .onSuccess {
+                    Toast.makeText(ctx, R.string.community_author_blocked, Toast.LENGTH_SHORT).show()
+                    parentFragmentManager.setFragmentResult(
+                        CONTENT_BLOCKED,
+                        bundleOf("target_type" to targetType, "target_id" to targetId),
+                    )
+                    if (targetType == TARGET_SCAN) {
+                        dismissAllowingStateLoss()
+                    } else {
+                        loadOpinions()
+                    }
+                }
+                .onFailure {
+                    Toast.makeText(ctx, R.string.community_safety_error, Toast.LENGTH_SHORT).show()
+                }
+        }
     }
 
     /** Hide the picker / note / send and show the "already opined" note —
@@ -594,6 +680,39 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             )
         }
 
+        op.contentId?.takeIf { it.isNotBlank() && !op.isMine }?.let { contentId ->
+            val actions = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(2) }
+            }
+            actions.addView(
+                MaterialButton(ctx).apply {
+                    minWidth = 0
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+                    text = getString(R.string.community_report_content)
+                    isAllCaps = false
+                    setOnClickListener { showReportDialog(TARGET_OPINION, contentId) }
+                },
+            )
+            actions.addView(
+                MaterialButton(ctx).apply {
+                    minWidth = 0
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+                    text = getString(R.string.community_block_author)
+                    isAllCaps = false
+                    setTextColor(ContextCompat.getColor(ctx, R.color.disease_red))
+                    setOnClickListener { confirmBlock(TARGET_OPINION, contentId) }
+                },
+            )
+            col.addView(actions)
+        }
+
         row.addView(col)
         return row
     }
@@ -611,6 +730,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_SPECIES = "arg_species"
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
+        private const val TARGET_SCAN = "scan"
+        private const val TARGET_OPINION = "opinion"
 
         // True ONLY for the scan owner's view (showForOwner) — gates the
         // request-status row + "Stop request" action. Distinct from
@@ -622,6 +743,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
          *  state from inside the sheet (stop) — the result screen listens
          *  and re-renders its second-opinion control. */
         const val REQUEST_STATE_CHANGED = "second_opinion_state_changed"
+        const val CONTENT_BLOCKED = "community_content_blocked"
+
+        private val REPORT_REASON_KEYS = listOf(
+            "sexual_content",
+            "violence_or_threats",
+            "hate_or_harassment",
+            "illegal_or_dangerous",
+            "spam_or_misleading",
+            "privacy_or_impersonation",
+            "other_rules_violation",
+        )
 
         /** Diagnosable classes a responder can pick. Keys must be present in
          *  the server's DISEASES_DATABASE or the POST is rejected (422).

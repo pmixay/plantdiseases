@@ -71,10 +71,12 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_yandex"
+                        style="@style/App.Button.Yandex"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_lg"
-                        android:text="@string/account_continue_yandex" />
+                        android:text="@string/account_continue_yandex"
+                        app:icon="@drawable/ic_yandex_id" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_vk"
@@ -82,7 +84,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
-                        android:text="@string/account_continue_vk" />
+                        android:enabled="false"
+                        android:text="@string/account_vk_coming_soon" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -119,6 +122,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
+                        android:minHeight="56dp"
                         android:text="@string/account_create" />
 
                     <com.google.android.material.button.MaterialButton

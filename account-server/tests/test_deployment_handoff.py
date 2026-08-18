@@ -200,8 +200,8 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     app = services["beta-app-api"]["environment"]
     assert account["ENVIRONMENT"] == "staging"
     assert account["AUTH_PROVIDER_MODE"] == "remote"
-    assert account["YANDEX_CLIENT_ID"].startswith("${YANDEX_CLIENT_ID:?")
-    assert account["VKID_CLIENT_ID"].startswith("${VKID_CLIENT_ID:?")
+    assert account["YANDEX_CLIENT_ID"] == "${YANDEX_CLIENT_ID:-}"
+    assert account["VKID_CLIENT_ID"] == "${VKID_CLIENT_ID:-}"
     assert account["ACCOUNT_ROOT_PATH"] == "/plantdisease-test/id"
     assert account["ACCOUNT_ISSUER"] == (
         "https://pdis.arbuz.lol/plantdisease-test/id"
@@ -299,8 +299,8 @@ def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():
     assert environment["BETA_TRUSTED_PROXIES"] != "*"
     assert environment["BETA_FORWARDED_ALLOW_IPS"] == environment["BETA_EDGE_GATEWAY"]
     assert environment["BETA_TRUSTED_PROXIES"] == environment["BETA_EDGE_GATEWAY"]
-    assert environment["YANDEX_CLIENT_ID"].startswith("replace-with-")
-    assert environment["VKID_CLIENT_ID"].isdecimal()
+    assert environment["YANDEX_CLIENT_ID"] == "cfefdff8ae4d4dd8a7426308751ef95a"
+    assert environment["VKID_CLIENT_ID"] == ""
     assert environment["BETA_MODELS_DIR"].startswith("/absolute/")
     for name in (
         "BETA_POSTGRES_ADMIN_PASSWORD",
@@ -474,11 +474,13 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "Require successful CI for this exact commit" in workflow
     assert "APPLICATION_ID = \"com.plantdiseases.app\"" in workflow
     assert "versionCode='$expected_version_code'" in workflow
-    assert "STAGING_YANDEX_CLIENT_ID: ${{ vars.STAGING_YANDEX_CLIENT_ID }}" in workflow
+    assert "expected_yandex_client_id=cfefdff8ae4d4dd8a7426308751ef95a" in workflow
+    assert "STAGING_YANDEX_CLIENT_ID" not in workflow
+    assert "PRODUCTION_YANDEX_CLIENT_ID" not in workflow
+    assert "YANDEX_CLIENT_SECRET" not in workflow
     assert "STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}" in workflow
-    assert "Production and staging Yandex client IDs must be different" in workflow
-    assert "Production and staging VK application IDs must be different" in workflow
-    assert "Production and staging VK mobile values must be different" in workflow
+    assert "Configured production and staging VK applications must be distinct" in workflow
+    assert "VK ID and mobile value must be set together" in workflow
     assert "APPROVED_PRODUCTION_APP_API_BASE_URL" in workflow
     assert "APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL" in workflow
     assert "Unsigned artifact endpoints differ from the protected approved" in workflow

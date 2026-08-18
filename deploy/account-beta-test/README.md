@@ -91,18 +91,17 @@ variant; arbitrary LAN cleartext is not enabled. Without URL properties the
 build points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
 `id/` account route, never to the production API root.
 
-### Build with the real Yandex and VK ID SDKs
+### Build with one or both real provider SDKs
 
 Real-provider testing is opt-in at build time. Register Android application ID
 `com.plantdiseases.app` and the permanent PlantDiseases signing-certificate
-fingerprint with both providers first. Put the mobile client values in the user's private
-`~/.gradle/gradle.properties` (never in this repository):
+fingerprint with each provider you enable. The public Yandex client ID is
+pinned in the Android release configuration. Put any future VK mobile values
+in the user's private `~/.gradle/gradle.properties` (never in this repository).
+The current Yandex-only configuration is:
 
 ```properties
 ACCOUNT_REAL_OAUTH=true
-YANDEX_CLIENT_ID=replace-with-yandex-client-id
-VKID_CLIENT_ID=12345
-VKID_CLIENT_SECRET=replace-with-vk-mobile-client-value
 APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
 ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
@@ -113,17 +112,19 @@ Then build from `android/`:
 ./gradlew :app:testStagingUnitTest :app:assembleStaging
 ```
 
-The real mode fails configuration if either provider value or either explicit
-API URL is absent; both URLs must be credential-free HTTPS origins. The
+The real mode requires at least one provider. Yandex is already enabled; VK
+independently needs both `VKID_CLIENT_ID` and `VKID_CLIENT_SECRET`. Both
+explicit API URLs are always required and must be
+credential-free HTTPS origins. The
 official SDK callbacks pass the short-lived provider access token directly to
 account-api; the app does not persist it. The configured account-api must use
-`AUTH_PROVIDER_MODE=remote` with the same Yandex/VK application IDs. A real
+`AUTH_PROVIDER_MODE=remote` with the same ID for every enabled provider. A real
 distributable build must use the permanent certificate; a debug-signed local
 APK is not an acceptable substitute.
 
 The local stack remains mock-only. The German `/plantdisease-test/id/` stack is
-the dedicated real-provider staging target and must use the same Yandex/VK client
-IDs as the APK. Keep it limited to named testers and dedicated test accounts;
+the dedicated real-provider staging target and must use the same enabled-provider
+client IDs as the APK. Keep it limited to named testers and dedicated test accounts;
 it is not a public or production account service.
 
 ## Build and run the parallel German real-provider beta
@@ -132,8 +133,9 @@ it is not a public or production account service.
 `compose.german-vds.build.yml` builds its application images from the checked
 out `account-beta-test` branch. Copy `env.german.example` to a host-only
 mode-0600 file, use git-SHA-qualified local image tags, generate the three
-URL-facing PostgreSQL role passwords with `openssl rand -hex 32`, set both
-provider application IDs and the absolute
+URL-facing PostgreSQL role passwords with `openssl rand -hex 32`, set the
+registered Yandex application ID, leave VK unset until it is independently
+enabled, and set the absolute
 PlantVision model directory, and verify the exact Docker proxy peer addresses.
 Wildcard trusted-proxy values are forbidden.
 

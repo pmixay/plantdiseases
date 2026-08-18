@@ -1,5 +1,10 @@
 # Account Beta Implementation Progress
 
+> Historical checkpoint log. It does not describe the current release gate.
+> Use [ACCOUNT_RELEASE_SECURITY_RECHECK.md](ACCOUNT_RELEASE_SECURITY_RECHECK.md):
+> the RuStore candidate is Yandex-only, VK is coming soon, and permanent
+> signing is isolated to the protected main release job.
+
 This log tracks implementation on `account-beta-test`. It is updated at each
 verified checkpoint. Checkpoints 0–10 used only mock/synthetic data and local
 resources; checkpoint 11 records the explicitly authorized German VDS beta.

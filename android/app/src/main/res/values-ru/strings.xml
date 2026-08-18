@@ -7,20 +7,22 @@
     <string name="account_restoring">Восстанавливаем аккаунт…</string>
     <string name="account_temporarily_unavailable">Аккаунт временно недоступен. Проверьте подключение и повторите попытку позже.</string>
     <string name="account_retry">Повторить подключение аккаунта</string>
-    <string name="account_guest_body">Войдите, чтобы публиковать материалы сообщества, получать уведомления аккаунта и управлять сессиями. Сканирования и ваш сад останутся на устройстве.</string>
+    <string name="account_guest_body">Создайте аккаунт или войдите, чтобы публиковать материалы сообщества, получать уведомления аккаунта и управлять сессиями. Сканирования и ваш сад останутся на устройстве.</string>
     <string name="account_disclosure_title">Перед входом</string>
     <string name="account_disclosure_body">При входе PlantDiseases получает идентификатор, отображаемое имя и аватар вашей учётной записи у провайдера. Приложение и сервис аккаунтов используют постоянный идентификатор установки и идентификаторы сессий для защиты и управления аккаунтом. Публикации сообщества, связанные провайдеры, push-уведомления аккаунта и удаление связаны с вашим аккаунтом. Локальные сканирования и записи сада остаются на устройстве.</string>
     <string name="account_disclosure_acknowledge">Понятно, продолжить</string>
     <string name="account_disclosure_privacy">Политика конфиденциальности</string>
     <string name="account_disclosure_save_failed">Не удалось сохранить подтверждение. Вход не начат.</string>
     <string name="account_privacy_open_failed">Не удалось открыть политику конфиденциальности.</string>
-    <string name="account_continue_yandex">Продолжить с Яндекс ID</string>
+    <string name="account_continue_yandex">Войти с Яндекс ID</string>
     <string name="account_continue_vk">Продолжить с VK ID</string>
+    <string name="account_vk_coming_soon">VK ID — скоро</string>
     <string name="account_finish_profile">Выберите псевдоним</string>
     <string name="account_finish_profile_body">Публичный псевдоним нужен до создания аккаунта. Можно отменить и остаться гостем.</string>
     <string name="account_nickname">Псевдоним</string>
     <string name="account_nickname_required">Введите псевдоним</string>
     <string name="account_create">Создать аккаунт</string>
+    <string name="account_finish_creation">Завершить создание аккаунта</string>
     <string name="account_cancel_signup">Отменить и остаться гостем</string>
     <string name="account_provider_avatar">Приватный аватар провайдера</string>
     <string name="account_provider_name">%1$s · %2$s</string>
@@ -308,6 +310,35 @@
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
     <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
+    <string name="community_report_content">Пожаловаться</string>
+    <string name="community_block_author">Заблокировать автора</string>
+    <string name="community_report_title">Жалоба на материал сообщества</string>
+    <string name="community_report_prompt">Почему этот материал нарушает Правила сообщества?</string>
+    <string-array name="community_report_reasons">
+        <item>Материалы сексуального характера</item>
+        <item>Насилие или угрозы</item>
+        <item>Ненависть или травля</item>
+        <item>Незаконный или опасный материал</item>
+        <item>Спам или вводящий в заблуждение материал</item>
+        <item>Нарушение приватности или выдача себя за другого</item>
+        <item>Другое нарушение правил</item>
+    </string-array>
+    <string name="community_report_sent">Жалоба отправлена модерации.</string>
+    <string name="community_block_title">Заблокировать этого автора?</string>
+    <string name="community_block_body">При использовании сообщества с выполненным входом его сканы и ответы будут скрыты от вас, ваши — от него, а учётные записи не смогут взаимодействовать. Настройка действует на всех устройствах с вашей учётной записью.</string>
+    <string name="community_block_confirm">Заблокировать</string>
+    <string name="community_author_blocked">Автор заблокирован.</string>
+    <string name="community_safety_error">Не удалось изменить настройки безопасности сообщества. Повторите.</string>
+    <string name="community_rules_action">Правила и безопасность</string>
+    <string name="community_rules_title">Правила и безопасность сообщества</string>
+    <string name="community_rules_body">Публикуйте только сканы растений и полезные вторые мнения. Запрещены изображения людей, личные и контактные данные, материалы сексуального характера, насилие, ненависть, травля, угрозы, незаконные или опасные инструкции, выдача себя за другого, спам и вводящие в заблуждение материалы.\n\nИспользуйте «Пожаловаться» на скане или ответе для обращения к модерации. «Заблокировать автора» немедленно разъединяет пользователей. По жалобе материал или учётная запись могут быть удалены.</string>
+    <string name="community_contact_moderation">Связаться с модерацией</string>
+    <string name="community_manage_blocks">Заблокированные авторы</string>
+    <string name="community_blocks_empty">Вы не блокировали авторов.</string>
+    <string name="community_unblock_title">Разблокировать %1$s?</string>
+    <string name="community_unblock_confirm">Разблокировать</string>
+    <string name="community_author_unblocked">Автор разблокирован.</string>
+    <string name="community_unknown_author">Неизвестный автор</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
@@ -315,7 +346,7 @@
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
     <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
     <string name="second_opinion_needs_community_title">Включить сообщество?</string>
-    <string name="second_opinion_needs_community_body">Второе мнение дают участники сообщества. Включение анонимно поделится этим сканом, использует примерное местоположение и позволит другим высказаться. Покинуть сообщество можно в любой момент.</string>
+    <string name="second_opinion_needs_community_body">Второе мнение дают участники сообщества. Включение анонимно поделится этим сканом, использует примерное местоположение и позволит другим высказаться. Включая функцию, вы принимаете Правила сообщества; жалобы, блокировка и связь с модерацией доступны на экране сообщества. Покинуть сообщество можно в любой момент.</string>
     <string name="second_opinion_waiting_hours">Ждём мнения · осталось %1$d ч</string>
     <string name="second_opinion_open_replies">Мнения: %1$d · осталось %2$d ч</string>
     <string name="second_opinion_sheet_status">Запрос активен · осталось %1$d ч. О новых ответах придёт уведомление.</string>

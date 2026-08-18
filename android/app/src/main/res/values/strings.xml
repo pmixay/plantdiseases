@@ -7,20 +7,22 @@
     <string name="account_restoring">Restoring account…</string>
     <string name="account_temporarily_unavailable">Account temporarily unavailable. Check your connection and try again later.</string>
     <string name="account_retry">Retry account connection</string>
-    <string name="account_guest_body">Sign in to publish community contributions, receive account push notifications, and manage sessions. Scans and your garden stay on this device.</string>
+    <string name="account_guest_body">Create an account or sign in to publish community contributions, receive account push notifications, and manage sessions. Scans and your garden stay on this device.</string>
     <string name="account_disclosure_title">Before you sign in</string>
     <string name="account_disclosure_body">Signing in shares your provider identity, display name, and avatar with PlantDiseases. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked providers, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
     <string name="account_disclosure_acknowledge">Acknowledge and continue</string>
     <string name="account_disclosure_privacy">Privacy policy</string>
     <string name="account_disclosure_save_failed">The acknowledgement could not be saved. Sign-in was not started.</string>
     <string name="account_privacy_open_failed">The privacy policy could not be opened.</string>
-    <string name="account_continue_yandex">Continue with Yandex ID</string>
+    <string name="account_continue_yandex">Sign in with Yandex ID</string>
     <string name="account_continue_vk">Continue with VK ID</string>
+    <string name="account_vk_coming_soon">VK ID — coming soon</string>
     <string name="account_finish_profile">Choose a nickname</string>
     <string name="account_finish_profile_body">A public nickname is required before the account is created. You can cancel and return to Guest.</string>
     <string name="account_nickname">Nickname</string>
     <string name="account_nickname_required">Enter a nickname</string>
     <string name="account_create">Create account</string>
+    <string name="account_finish_creation">Finish creating account</string>
     <string name="account_cancel_signup">Cancel and stay Guest</string>
     <string name="account_provider_avatar">Private provider avatar</string>
     <string name="account_provider_name">%1$s · %2$s</string>
@@ -317,6 +319,36 @@
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
     <string name="community_opinion_photo_desc">Shared plant scan</string>
+    <string name="community_report_content">Report</string>
+    <string name="community_block_author">Block author</string>
+    <string name="community_report_title">Report community content</string>
+    <string name="community_report_prompt">Why does this break the Community Rules?</string>
+    <string-array name="community_report_reasons">
+        <item>Sexual content</item>
+        <item>Violence or threats</item>
+        <item>Hate or harassment</item>
+        <item>Illegal or dangerous content</item>
+        <item>Spam or misleading content</item>
+        <item>Privacy violation or impersonation</item>
+        <item>Another rules violation</item>
+    </string-array>
+    <string name="community_report_sent">Report sent to moderation.</string>
+    <string name="community_block_title">Block this author?</string>
+    <string name="community_block_body">While using the community signed in, their scans and replies will be hidden from you, yours will be hidden from them, and the two accounts cannot interact. This applies on every device signed into your account.</string>
+    <string name="community_block_confirm">Block</string>
+    <string name="community_author_blocked">Author blocked.</string>
+    <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
+    <string name="community_rules_action">Community Rules &amp; safety</string>
+    <string name="community_rules_title">Community Rules &amp; safety</string>
+    <string name="community_rules_body">Share only plant-related scans and helpful second opinions. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
+    <string name="community_contact_moderation">Contact moderation</string>
+    <string name="community_manage_blocks">Blocked authors</string>
+    <string name="community_blocks_empty">You haven\'t blocked any authors.</string>
+    <string name="community_unblock_title">Unblock %1$s?</string>
+    <string name="community_unblock_confirm">Unblock</string>
+    <string name="community_author_unblocked">Author unblocked.</string>
+    <string name="community_unknown_author">Unknown author</string>
+    <string name="community_moderation_url" translatable="false">https://github.com/pmixay/plantdiseases/issues</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
@@ -324,7 +356,7 @@
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
     <string name="second_opinion_needs_community_title">Enable community?</string>
-    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. You can leave the community anytime.</string>
+    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. By enabling, you agree to the Community Rules; reporting, blocking, and moderation contact are available in the community screen. You can leave anytime.</string>
     <string name="second_opinion_waiting_hours">Waiting for opinions · %1$d h left</string>
     <string name="second_opinion_open_replies">Opinions (%1$d) · %2$d h left</string>
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>

@@ -9,8 +9,9 @@ x-beta-logging: &beta-logging
 x-account-environment: &account-environment
   ENVIRONMENT: staging
   AUTH_PROVIDER_MODE: remote
-  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:?Set the beta Yandex application client ID}
-  VKID_CLIENT_ID: ${VKID_CLIENT_ID:?Set the numeric beta VK ID application ID}
+  # Providers are independent; the account service requires at least one.
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:-}
   PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
   ACCOUNT_ROOT_PATH: /plantdisease-test/id
   ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id

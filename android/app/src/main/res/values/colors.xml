@@ -12,6 +12,10 @@
     <color name="primary_light">#DCFCE7</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#FFFFFF</color>
+    <!-- Official Yandex ID main-button palette for a light surface. -->
+    <color name="yandex_button_background">#000000</color>
+    <color name="yandex_button_on_background">#FFFFFF</color>
+    <color name="yandex_button_ripple">#2E2F33</color>
     <!-- ``primary_dark`` / ``secondary`` / ``on_secondary`` are
          consumed by ``values/themes.xml`` (Material 3 colorPrimaryDark
          / colorSecondary / colorOnSecondary attributes); they have no

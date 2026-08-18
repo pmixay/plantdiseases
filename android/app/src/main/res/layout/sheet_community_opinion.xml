@@ -150,6 +150,36 @@
             android:layout_marginTop="@dimen/space_md"
             android:visibility="gone" />
 
+        <!-- Safety actions are always discoverable on another user's scan.
+             The server resolves the author from this scan's opaque token; the
+             client never receives or submits an account id. -->
+        <LinearLayout
+            android:id="@+id/ll_community_scan_safety"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_community_report_scan"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_report_content"
+                android:textAllCaps="false" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_community_block_scan_author"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_block_author"
+                android:textAllCaps="false"
+                android:textColor="@color/disease_red" />
+
+        </LinearLayout>
+
         <!-- Owner-only request status: how long the ask stays visible and a
              "Stop request" action — reachable at any point, including after
              replies arrived (stopping ends further notifications). -->

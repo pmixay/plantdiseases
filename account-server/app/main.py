@@ -44,8 +44,8 @@ def create_app(
     config = settings or Settings.from_env()
     internal_service_token = load_internal_service_token(config)
     provider_registry = dict(providers) if providers is not None else build_provider_registry(config)
-    if set(provider_registry) != {"yandex", "vk"}:
-        raise ValueError("Both yandex and vk provider adapters are required")
+    if not provider_registry or not set(provider_registry).issubset({"yandex", "vk"}):
+        raise ValueError("At least one supported provider adapter is required")
     database_handle = database or Database(config.database_url)
     domain_service = account_service
     if domain_service is None and hasattr(database_handle, "session_factory"):

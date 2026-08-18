@@ -6,21 +6,23 @@ services receive only signed `community_actor_id` and nickname claims; the
 internal account UUID and provider subject never appear in HTTP responses or
 JWTs.
 
-Local automated tests use deterministic mock providers. The isolated German
-account beta uses the remote Yandex/VK adapters with dedicated provider
-applications; no real application ID or provider token is committed or used by
-the automated suite. German testing is restricted to dedicated tester accounts
-and keeps FCM disabled.
+Local automated tests use deterministic mock providers. A deployed environment
+may enable Yandex, VK, or both remote adapters independently; no real
+application ID or provider token is committed or used by the automated suite.
+German testing is restricted to dedicated tester accounts and keeps FCM
+disabled.
 
-In `AUTH_PROVIDER_MODE=remote`, startup requires the public
-`YANDEX_CLIENT_ID` and numeric `VKID_CLIENT_ID`. Yandex tokens are sent only in
+In `AUTH_PROVIDER_MODE=remote`, startup requires at least one of the public
+`YANDEX_CLIENT_ID` or numeric `VKID_CLIENT_ID` values. Yandex tokens are sent only in
 the `Authorization: OAuth` header to its fixed HTTPS user-information endpoint;
 the returned `client_id` must match and the app-specific `psuid` is retained as
 subject. VK tokens are sent only in an HTTPS form body to VK ID's
 client-bound `oauth2/user_info` endpoint. Both adapters discard email, phone,
 birthday, gender, and every unrecognized response field. Network, timeout,
 oversize, redirect, malformed-response, wrong-application, invalid-token, and
-incomplete-profile paths fail closed with the stable provider errors.
+incomplete-profile paths fail closed with the stable provider errors. An API
+request for a provider not enabled on that deployment returns
+`provider_unavailable`.
 
 Provider contracts: [Yandex ID user information](https://yandex.com/dev/id/doc/en/user-information)
 and [VK ID's official SDK user-info request](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).

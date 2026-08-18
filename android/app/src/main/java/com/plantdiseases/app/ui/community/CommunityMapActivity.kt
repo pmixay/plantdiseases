@@ -105,6 +105,10 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
+        supportFragmentManager.setFragmentResultListener(
+            CommunityOpinionSheet.CONTENT_BLOCKED,
+            this,
+        ) { _, _ -> reload() }
         // Pick the markers back up as soon as the server is reachable — the
         // pans made while offline deliberately fetched nothing.
         onReconnected(connectivity.isOnline) { reload() }

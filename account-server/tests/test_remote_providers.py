@@ -79,6 +79,35 @@ def test_remote_registry_requires_no_request_at_startup():
     assert isinstance(registry["vk"], VkProviderAdapter)
 
 
+@pytest.mark.parametrize(
+    ("provider_environment", "expected_provider", "expected_type"),
+    [
+        ({"YANDEX_CLIENT_ID": "yandex-public-client"}, "yandex", YandexProviderAdapter),
+        ({"VKID_CLIENT_ID": "12345"}, "vk", VkProviderAdapter),
+    ],
+)
+def test_remote_registry_supports_one_provider_at_a_time(
+    provider_environment, expected_provider, expected_type
+):
+    settings = Settings.from_env(
+        {
+            "ENVIRONMENT": "test",
+            "AUTH_PROVIDER_MODE": "remote",
+            "ACCOUNT_ISSUER": "https://id.example.invalid",
+            "ACCOUNT_AUDIENCE": "plantdiseases-app",
+            "ACCOUNT_DATABASE_URL": (
+                "postgresql+psycopg://account:secret@localhost/accounts"
+            ),
+        }
+        | provider_environment
+    )
+
+    registry = build_provider_registry(settings)
+
+    assert set(registry) == {expected_provider}
+    assert isinstance(registry[expected_provider], expected_type)
+
+
 def test_remote_registry_rejects_unvalidated_direct_settings():
     settings = Settings(
         environment="test",
@@ -87,7 +116,7 @@ def test_remote_registry_rejects_unvalidated_direct_settings():
         audience="plantdiseases-app",
         database_url="postgresql+psycopg://account:secret@localhost/accounts",
     )
-    with pytest.raises(SettingsError, match="application IDs"):
+    with pytest.raises(SettingsError, match="At least one"):
         build_provider_registry(settings)
 
 
@@ -202,6 +231,29 @@ def test_yandex_verifies_application_and_keeps_only_allowlisted_profile():
     assert call["form"] is None
     assert call["timeout_seconds"] == 4
     assert "opaque-yandex-token" not in call["url"]
+
+
+def test_yandex_standard_profile_needs_no_optional_personal_data_scope():
+    adapter = YandexProviderAdapter(
+        client_id="yandex-public-client",
+        timeout_seconds=4,
+        transport=FakeTransport(
+            response=ProviderHttpResponse(
+                200,
+                {
+                    "login": "minimal-yandex-login",
+                    "id": "global-id-is-not-retained",
+                    "psuid": "app-specific-subject",
+                    "client_id": "yandex-public-client",
+                },
+            )
+        ),
+    )
+
+    identity = asyncio.run(adapter.verify("opaque-yandex-token"))
+
+    assert identity.display_name == "minimal-yandex-login"
+    assert identity.avatar_url is None
 
 
 def test_yandex_rejects_token_issued_to_another_application():

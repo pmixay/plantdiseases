@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS community_opinions (
     scan_id           TEXT    NOT NULL,
     author_pseudo_id  TEXT,
     account_actor_id  TEXT,
+    public_id          TEXT,
     suggested_disease TEXT    NOT NULL,
     note              TEXT,
     nickname          TEXT,
@@ -132,6 +133,43 @@ CREATE TABLE IF NOT EXISTS community_scan_views (
     created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_views_scan ON community_scan_views(scan_id);
+
+-- Account-bound safety controls.  Clients submit only public content tokens;
+-- the HTTP layer resolves the target author server-side, so an attacker cannot
+-- spoof another account id into a report or block.  Reports intentionally keep
+-- no free-form reporter text or content snapshot.
+CREATE TABLE IF NOT EXISTS community_content_reports (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_actor_id TEXT    NOT NULL,
+    target_type       TEXT    NOT NULL CHECK(target_type IN ('scan', 'opinion')),
+    target_scan_id    TEXT    NOT NULL,
+    target_opinion_id INTEGER NOT NULL DEFAULT 0,
+    target_actor_id   TEXT,
+    reason            TEXT    NOT NULL,
+    state             TEXT    NOT NULL DEFAULT 'pending'
+                              CHECK(state IN ('pending', 'dismissed', 'removed')),
+    created_at        INTEGER NOT NULL,
+    resolved_at       INTEGER,
+    UNIQUE(reporter_actor_id, target_type, target_scan_id, target_opinion_id)
+);
+CREATE INDEX IF NOT EXISTS ix_community_reports_queue
+    ON community_content_reports(state, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_reports_reporter
+    ON community_content_reports(reporter_actor_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_reports_target_actor
+    ON community_content_reports(target_actor_id);
+
+CREATE TABLE IF NOT EXISTS community_actor_blocks (
+    public_id         TEXT    NOT NULL UNIQUE,
+    blocker_actor_id  TEXT    NOT NULL,
+    blocked_actor_id  TEXT    NOT NULL,
+    blocked_nickname  TEXT,
+    created_at        INTEGER NOT NULL,
+    PRIMARY KEY(blocker_actor_id, blocked_actor_id),
+    CHECK(blocker_actor_id != blocked_actor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_community_blocks_blocked
+    ON community_actor_blocks(blocked_actor_id);
 
 CREATE TABLE IF NOT EXISTS community_deleted_actors (
     actor_id       TEXT PRIMARY KEY,
@@ -170,6 +208,9 @@ CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_expiry
 _IDENTITY_INDEXES = """
 CREATE INDEX IF NOT EXISTS ix_community_actor ON community_scans(account_actor_id);
 CREATE INDEX IF NOT EXISTS ix_opinions_actor ON community_opinions(account_actor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_opinions_public_id
+    ON community_opinions(public_id)
+    WHERE public_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_opinion_requests_actor ON community_opinion_requests(account_actor_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_views_legacy_identity
     ON community_scan_views(scan_id, viewer_pseudo_id)
@@ -206,14 +247,32 @@ class OpinionTargetUnavailableError(ValueError):
 # The stored ``scan_id`` is a server-issued community publication capability,
 # never a feedback receipt. Viewer-facing feed rows carry a stable per-scan,
 # deterministic one-way PUBLIC token so the publication capability itself is
-# never exposed. It does not link different scans by the same actor; the
-# separate author pseudonym below rotates. Opinion/view endpoints accept either
-# form and resolve the token back to the real id server-side, preserving links.
+# never exposed. It does not link different scans by the same actor. The token
+# stays stable for the row's lifetime while age checks make old scans read-only.
+# Opinion/view endpoints accept either form for installed-client compatibility,
+# while safety mutations below deliberately require the opaque public form.
 _PUBLIC_TOKEN_PREFIX = "cs"
+_PUBLIC_OPINION_TOKEN_PREFIX = "co"
+_PUBLIC_BLOCK_TOKEN_PREFIX = "cb"
 
-# Anonymous author identifiers rotate every 30 days. Independently, a scan
-# older than this stops accepting new opinions while its public read link stays
-# stable for the scan's retention lifetime.
+# Fixed report taxonomy: no free-form reporter text is retained, which keeps
+# the moderation store bounded and avoids turning it into a new PII channel.
+COMMUNITY_REPORT_REASONS = frozenset({
+    "sexual_content",
+    "violence_or_threats",
+    "hate_or_harassment",
+    "illegal_or_dangerous",
+    "spam_or_misleading",
+    "privacy_or_impersonation",
+    "other_rules_violation",
+})
+COMMUNITY_REPORT_DAILY_LIMIT = 20
+COMMUNITY_BLOCK_LIMIT = 500
+COMMUNITY_REPORT_RETENTION_DAYS = 180
+
+# Anonymous display identifiers rotate every 30 days so activity cannot be
+# linked across windows. Independently, an older scan stops accepting new
+# opinions while its public read link remains stable for the retention window.
 IDENTITY_ROTATION_DAYS = 30
 _IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
 
@@ -238,6 +297,14 @@ def public_scan_token(scan_id: str) -> str:
     """Deterministic, non-reversible public token for one scan_id."""
     digest = hashlib.sha256(f"community-public-v1|{scan_id}".encode()).hexdigest()
     return _PUBLIC_TOKEN_PREFIX + digest[:30]
+
+
+def public_opinion_token(scan_id: str, opinion_id: int) -> str:
+    """Non-reversible viewer token for one opinion row."""
+    digest = hashlib.sha256(
+        f"community-opinion-public-v1|{scan_id}|{int(opinion_id)}".encode()
+    ).hexdigest()
+    return _PUBLIC_OPINION_TOKEN_PREFIX + digest[:30]
 
 
 def resolve_scan_token(token: str | None) -> str:
@@ -414,12 +481,56 @@ def _hidden_clause(table_alias: str = "") -> str:
     Returns a string starting with " AND " so callers can append
     directly to existing WHERE conditions.
     """
+    if table_alias not in {"", "s"}:
+        raise ValueError("invalid SQL table alias")
     prefix = f"{table_alias}." if table_alias else ""
     placeholders = ", ".join(["?"] * len(_HIDDEN_COMMUNITY_DISEASES))
+    # SQL identifiers are allowlisted above; only the number of bound
+    # placeholders is generated dynamically.
     return (
-        f" AND {prefix}disease NOT IN ({placeholders})"
+        f" AND {prefix}disease NOT IN ({placeholders})"  # nosec B608
         f" AND ({prefix}account_actor_id IS NULL OR {prefix}account_actor_id "
         "NOT IN (SELECT actor_id FROM community_deleted_actors))"
+    )
+
+
+def _normalise_actor_id(value: str | None) -> str | None:
+    try:
+        return str(uuid.UUID((value or "").strip()))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _blocked_actor_clause(
+    viewer_account_actor_id: str | None,
+    *,
+    actor_column: str = "account_actor_id",
+) -> tuple[str, tuple[str, str]]:
+    """SQL predicate hiding either side of a block relationship.
+
+    Blocking is deliberately mutual for visibility and interaction: the
+    blocker no longer sees the blocked actor, and the blocked actor cannot use
+    public feeds to follow or interact with the blocker.
+    """
+    allowed_columns = {
+        "account_actor_id",
+        "v.account_actor_id",
+        "o.account_actor_id",
+        "o2.account_actor_id",
+    }
+    if actor_column not in allowed_columns:
+        raise ValueError("invalid SQL actor column")
+    viewer = _normalise_actor_id(viewer_account_actor_id)
+    if viewer is None:
+        return "", ()
+    # The only interpolated identifier is selected from allowed_columns.
+    return (
+        " AND (" + actor_column + " IS NULL OR NOT EXISTS ("  # nosec B608
+        "SELECT 1 FROM community_actor_blocks b WHERE "
+        "(b.blocker_actor_id = ? AND b.blocked_actor_id = " + actor_column + ") OR "
+        "(b.blocker_actor_id = " + actor_column + " AND b.blocked_actor_id = ?)"
+        "))",
+        (viewer, viewer),
     )
 
 
@@ -514,6 +625,7 @@ _IDENTITY_TABLE_DEFINITIONS = {
             scan_id TEXT NOT NULL,
             author_pseudo_id TEXT,
             account_actor_id TEXT,
+            public_id TEXT,
             suggested_disease TEXT NOT NULL,
             note TEXT,
             nickname TEXT,
@@ -574,8 +686,9 @@ def _migrate_legacy_identity_columns(conn: sqlite3.Connection) -> None:
             }
             copied = [column for column in target_columns if column in new_columns]
             names = ", ".join(copied)
+            # Every identifier comes from the fixed migration definitions.
             conn.execute(
-                f"INSERT INTO {table} ({names}) SELECT {names} FROM {old_table}"
+                f"INSERT INTO {table} ({names}) SELECT {names} FROM {old_table}"  # nosec B608
             )
             conn.execute(f"DROP TABLE {old_table}")
             conn.execute("COMMIT")
@@ -608,6 +721,7 @@ def init_db() -> None:
             # Author's generated plant-vibe handle (community display name).
             _add_column_if_missing(conn, "community_scans", "nickname", "TEXT")
             _add_column_if_missing(conn, "community_opinions", "nickname", "TEXT")
+            _add_column_if_missing(conn, "community_opinions", "public_id", "TEXT")
             _add_column_if_missing(conn, "community_scans", "account_actor_id", "TEXT")
             _add_column_if_missing(conn, "community_opinions", "account_actor_id", "TEXT")
             _add_column_if_missing(
@@ -644,6 +758,7 @@ def init_db() -> None:
                 "ON community_scans(public_id)"
             )
             _backfill_public_ids(conn)
+            _backfill_opinion_public_ids(conn)
             _canonicalize_countries(conn)
         _initialised = True
         logger.info("Community DB ready")
@@ -702,6 +817,22 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
         )
     if rows:
         logger.info("Community: backfilled public ids for %d legacy rows", len(rows))
+
+
+def _backfill_opinion_public_ids(conn: sqlite3.Connection) -> None:
+    """Give pre-safety-release opinions opaque viewer-facing identifiers."""
+    rows = conn.execute(
+        "SELECT id, scan_id FROM community_opinions WHERE public_id IS NULL"
+    ).fetchall()
+    for opinion_id, scan_id in rows:
+        conn.execute(
+            "UPDATE community_opinions SET public_id = ? WHERE id = ?",
+            (public_opinion_token(str(scan_id), int(opinion_id)), int(opinion_id)),
+        )
+    if rows:
+        logger.info(
+            "Community: backfilled public ids for %d legacy opinions", len(rows)
+        )
 
 
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
@@ -829,8 +960,9 @@ def record_scan(
         identity_sql, identity_params = _identity_predicate(
             "user_pseudo_id", "account_actor_id", legacy_id, actor_id
         )
+        # identity_sql is generated exclusively from fixed identity columns.
         pending = conn.execute(
-            "SELECT 1 FROM community_opinion_requests "
+            "SELECT 1 FROM community_opinion_requests "  # nosec B608
             f"WHERE scan_id = ? AND {identity_sql} AND created_at >= ? LIMIT 1",
             (scan_id, *identity_params, now - _OPINION_REQUEST_TTL_S),
         ).fetchone()
@@ -919,6 +1051,24 @@ def record_analysis_scan(
             conn.execute("BEGIN IMMEDIATE")
             if _actor_is_deleted(conn, actor_id):
                 raise ValueError("deleted account actor")
+            if actor_id is not None:
+                owner_row = conn.execute(
+                    "SELECT account_actor_id FROM community_scans "
+                    "WHERE scan_id = ? LIMIT 1",
+                    (scan_id,),
+                ).fetchone()
+                owner_actor = (
+                    str(owner_row[0]) if owner_row and owner_row[0] else None
+                )
+                if owner_actor and owner_actor != actor_id:
+                    blocked = conn.execute(
+                        "SELECT 1 FROM community_actor_blocks WHERE "
+                        "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+                        "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+                        (actor_id, owner_actor, owner_actor, actor_id),
+                    ).fetchone()
+                    if blocked is not None:
+                        raise ValueError("blocked_interaction")
             claim = conn.execute(
                 "SELECT expires_at, disease, confidence, species, species_score, image_binding, "
                 "claimed_actor_id FROM community_analysis_tokens WHERE token = ?",
@@ -1073,7 +1223,7 @@ def set_wants_opinion(
         )
         # Materialise onto the scan row if the upload has already landed.
         conn.execute(
-            "UPDATE community_scans SET wants_opinion = 1 "
+            "UPDATE community_scans SET wants_opinion = 1 "  # nosec B608
             f"WHERE scan_id = ? AND {owner_sql}",
             (scan_id, *owner_params),
         )
@@ -1107,13 +1257,14 @@ def clear_wants_opinion(
         "user_pseudo_id", "account_actor_id", legacy_id, actor_id
     )
     with _write_lock, _connect() as conn:
+        # owner_sql uses fixed identity columns and all values remain bound.
         cleared = conn.execute(
-            "DELETE FROM community_opinion_requests "
+            "DELETE FROM community_opinion_requests "  # nosec B608
             f"WHERE scan_id = ? AND {owner_sql}",
             (sid, *owner_params),
         ).rowcount
         conn.execute(
-            "UPDATE community_scans SET wants_opinion = 0 "
+            "UPDATE community_scans SET wants_opinion = 0 "  # nosec B608
             f"WHERE scan_id = ? AND {owner_sql}",
             (sid, *owner_params),
         )
@@ -1214,8 +1365,13 @@ def record_opinion_with_status(
                 (scan_id, legacy_id, actor_id, suggested_disease, note_clean,
                  nick_clean, ip_hash, now),
             )
+            opinion_id = int(cur.lastrowid or 0)
+            conn.execute(
+                "UPDATE community_opinions SET public_id = ? WHERE id = ?",
+                (public_opinion_token(scan_id, opinion_id), opinion_id),
+            )
             conn.execute("COMMIT")
-            return int(cur.lastrowid or 0), True
+            return opinion_id, True
         except Exception:
             conn.execute("ROLLBACK")
             raise
@@ -1244,7 +1400,12 @@ def record_opinion(
     return row_id
 
 
-def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
+def opinions_for(
+    scan_id: str,
+    *,
+    limit: int = 50,
+    viewer_account_actor_id: str | None = None,
+) -> dict:
     """Opinions for one scan plus a per-disease consensus tally.
 
     Shape::
@@ -1277,21 +1438,43 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
                 "wants_opinion": False,
                 "opinion_requested_at": None,
             }
+        viewer = _normalise_actor_id(viewer_account_actor_id)
+        if (
+            viewer is not None
+            and scan_owner is not None
+            and scan_owner[0] is not None
+            and str(scan_owner[0]) != viewer
+            and _actors_blocked(conn, viewer, str(scan_owner[0]))
+        ):
+            return {
+                "opinions": [],
+                "consensus": [],
+                "views": 0,
+                "wants_opinion": False,
+                "opinion_requested_at": None,
+            }
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        # blocked_clause contains only allowlisted columns and bound actor IDs.
         rows = conn.execute(
-            "SELECT suggested_disease, note, created_at, nickname "
+            "SELECT suggested_disease, note, created_at, nickname, public_id, "  # nosec B608
+            "account_actor_id "
             "FROM community_opinions WHERE scan_id = ? "
             "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
             "(SELECT actor_id FROM community_deleted_actors)) "
-            "ORDER BY created_at DESC LIMIT ?",
-            (scan_id, limit),
+            + blocked_clause
+            + " ORDER BY created_at DESC LIMIT ?",
+            (scan_id, *blocked_params, limit),
         ).fetchall()
         tally = conn.execute(
-            "SELECT suggested_disease, COUNT(*) AS n "
+            "SELECT suggested_disease, COUNT(*) AS n "  # nosec B608
             "FROM community_opinions WHERE scan_id = ? "
             "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
             "(SELECT actor_id FROM community_deleted_actors)) "
-            "GROUP BY suggested_disease ORDER BY n DESC",
-            (scan_id,),
+            + blocked_clause
+            + " GROUP BY suggested_disease ORDER BY n DESC",
+            (scan_id, *blocked_params),
         ).fetchall()
         request_row = conn.execute(
             "SELECT created_at FROM community_opinion_requests "
@@ -1299,8 +1482,17 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             (scan_id, request_cutoff),
         ).fetchone()
     opinions = [
-        {"suggested_disease": str(r[0]), "note": r[1] or "",
-         "created_at": int(r[2]), "nickname": (r[3] if len(r) > 3 else None) or None}
+        {
+            "suggested_disease": str(r[0]),
+            "note": r[1] or "",
+            "created_at": int(r[2]),
+            "nickname": r[3] or None,
+            "content_id": r[4] or None,
+            "is_mine": bool(
+                viewer_account_actor_id
+                and r[5] == _normalise_actor_id(viewer_account_actor_id)
+            ),
+        }
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
@@ -1384,30 +1576,55 @@ def opinion_counts_for_actor(account_actor_id: str, *, limit: int = 200) -> dict
     with _connect() as conn:
         if _actor_is_deleted(conn, actor):
             return {"scans": [], "total_opinions": 0, "total_views": 0}
+        view_block_clause, view_block_params = _blocked_actor_clause(
+            actor, actor_column="v.account_actor_id"
+        )
+        latest_block_clause, latest_block_params = _blocked_actor_clause(
+            actor, actor_column="o2.account_actor_id"
+        )
+        opinion_block_clause, opinion_block_params = _blocked_actor_clause(
+            actor, actor_column="o.account_actor_id"
+        )
+        # Each appended block predicate uses an allowlisted actor column and
+        # bound actor IDs; the rest of this query is fixed server SQL.
         rows = conn.execute(
-            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
+            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "  # nosec B608
             "  (SELECT COUNT(*) FROM community_scan_views v "
             "     WHERE v.scan_id = s.scan_id "
             "       AND (v.account_actor_id IS NULL OR v.account_actor_id NOT IN "
-            "            (SELECT actor_id FROM community_deleted_actors))) AS views, "
+            "            (SELECT actor_id FROM community_deleted_actors))"
+            + view_block_clause
+            + ") AS views, "  # nosec B608
             "  (SELECT o2.nickname FROM community_opinions o2 "
             "     WHERE o2.scan_id = s.scan_id "
             "       AND (o2.account_actor_id IS NULL OR o2.account_actor_id != s.account_actor_id) "
             "       AND (o2.account_actor_id IS NULL OR o2.account_actor_id NOT IN "
-            "            (SELECT actor_id FROM community_deleted_actors)) "
+            "            (SELECT actor_id FROM community_deleted_actors))"
+            + latest_block_clause
+            + " "  # nosec B608
             "     ORDER BY o2.created_at DESC LIMIT 1) AS latest_nick "
             "FROM community_scans s "
             "JOIN community_opinions o ON o.scan_id = s.scan_id "
             "  AND (o.account_actor_id IS NULL OR o.account_actor_id != s.account_actor_id) "
             "  AND (o.account_actor_id IS NULL OR o.account_actor_id NOT IN "
-            "       (SELECT actor_id FROM community_deleted_actors)) "
+            "       (SELECT actor_id FROM community_deleted_actors))"
+            + opinion_block_clause
+            + " "  # nosec B608
             "WHERE s.account_actor_id = ? "
             "  AND EXISTS (SELECT 1 FROM community_opinion_requests r "
             "              WHERE r.scan_id = s.scan_id AND r.account_actor_id = ? "
             "                AND r.created_at >= ?) "
             "GROUP BY s.scan_id, s.disease "
             "ORDER BY latest DESC LIMIT ?",
-            (actor, actor, request_cutoff, limit),
+            (
+                *view_block_params,
+                *latest_block_params,
+                *opinion_block_params,
+                actor,
+                actor,
+                request_cutoff,
+                limit,
+            ),
         ).fetchall()
     scans = [
         {
@@ -1441,7 +1658,9 @@ def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
         ).fetchone()[0])
 
 
-def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
+def opinion_counts(
+    scan_ids: list[str], *, viewer_account_actor_id: str | None = None
+) -> dict[str, int]:
     """Map each scan_id to its number of community opinions (zeros omitted)."""
     ids = [s for s in scan_ids if s]
     if not ids:
@@ -1449,12 +1668,18 @@ def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
     init_db()
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        # Only the count-derived placeholder list is dynamic; values are bound.
         rows = conn.execute(
-            "SELECT scan_id, COUNT(*) FROM community_opinions "
+            "SELECT scan_id, COUNT(*) FROM community_opinions "  # nosec B608
             f"WHERE scan_id IN ({placeholders}) "
             "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
-            "(SELECT actor_id FROM community_deleted_actors)) GROUP BY scan_id",
-            tuple(ids),
+            "(SELECT actor_id FROM community_deleted_actors))"
+            + blocked_clause
+            + " GROUP BY scan_id",
+            (*ids, *blocked_params),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
 
@@ -1487,6 +1712,365 @@ def account_owner_of(scan_id: str) -> str | None:
             (sid,),
         ).fetchone()
     return str(row[0]) if row else None
+
+
+def _actors_blocked(
+    conn: sqlite3.Connection, first_actor_id: str, second_actor_id: str
+) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM community_actor_blocks WHERE "
+        "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+        "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+        (first_actor_id, second_actor_id, second_actor_id, first_actor_id),
+    ).fetchone() is not None
+
+
+def _safety_target(
+    conn: sqlite3.Connection, target_type: str, target_id: str
+) -> tuple[str, int, str | None, str | None] | None:
+    """Resolve a public content token to internal ownership.
+
+    Returns ``(scan_id, opinion_id_or_zero, actor_id, nickname)``.  Actor ids
+    never cross the HTTP boundary; callers use them only to bind the safety
+    mutation to the actual stored author.
+    """
+    kind = (target_type or "").strip().lower()
+    token = (target_id or "").strip()
+    if not token or len(token) > 128:
+        return None
+    if kind == "scan":
+        if len(token) != 32 or not token.startswith(_PUBLIC_TOKEN_PREFIX):
+            return None
+        row = conn.execute(
+            "SELECT scan_id, account_actor_id, nickname FROM community_scans "
+            "WHERE public_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (token,),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row[0]), 0, (str(row[1]) if row[1] else None), row[2] or None
+    if kind == "opinion":
+        if len(token) != 32 or not token.startswith(_PUBLIC_OPINION_TOKEN_PREFIX):
+            return None
+        row = conn.execute(
+            "SELECT o.scan_id, o.id, o.account_actor_id, o.nickname "
+            "FROM community_opinions o "
+            "JOIN community_scans s ON s.scan_id = o.scan_id "
+            "WHERE o.public_id = ? "
+            "AND (o.account_actor_id IS NULL OR o.account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) "
+            "AND (s.account_actor_id IS NULL OR s.account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (token,),
+        ).fetchone()
+        if row is None:
+            return None
+        return (
+            str(row[0]),
+            int(row[1]),
+            (str(row[2]) if row[2] else None),
+            row[3] or None,
+        )
+    return None
+
+
+def record_content_report(
+    *,
+    reporter_actor_id: str,
+    target_type: str,
+    target_id: str,
+    reason: str,
+    now: int | None = None,
+) -> bool:
+    """Queue an idempotent, account-bound report.
+
+    Returns ``True`` for a newly queued report and ``False`` when this account
+    already reported the same target.  The client cannot select the target
+    actor, and no free-form text is accepted or stored.
+    """
+    init_db()
+    reporter = _normalise_actor_id(reporter_actor_id)
+    reason_clean = (reason or "").strip().lower()
+    kind = (target_type or "").strip().lower()
+    if reporter is None:
+        raise ValueError("invalid_actor")
+    if reason_clean not in COMMUNITY_REPORT_REASONS:
+        raise ValueError("invalid_reason")
+    timestamp = int(time.time() if now is None else now)
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _actor_is_deleted(conn, reporter):
+                raise ValueError("deleted account actor")
+            target = _safety_target(conn, kind, target_id)
+            if target is None:
+                raise ValueError("target_not_found")
+            scan_id, opinion_id, target_actor, _nickname = target
+            if target_actor == reporter:
+                raise ValueError("self_target")
+            existing = conn.execute(
+                "SELECT 1 FROM community_content_reports "
+                "WHERE reporter_actor_id = ? AND target_type = ? "
+                "AND target_scan_id = ? AND target_opinion_id = ? LIMIT 1",
+                (reporter, kind, scan_id, opinion_id),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("COMMIT")
+                return False
+            recent = int(conn.execute(
+                "SELECT COUNT(*) FROM community_content_reports "
+                "WHERE reporter_actor_id = ? AND created_at >= ?",
+                (reporter, timestamp - 86_400),
+            ).fetchone()[0])
+            if recent >= COMMUNITY_REPORT_DAILY_LIMIT:
+                raise ValueError("report_limit")
+            conn.execute(
+                "INSERT INTO community_content_reports ("
+                "reporter_actor_id, target_type, target_scan_id, "
+                "target_opinion_id, target_actor_id, reason, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    reporter,
+                    kind,
+                    scan_id,
+                    opinion_id,
+                    target_actor,
+                    reason_clean,
+                    timestamp,
+                ),
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+
+
+def block_content_author(
+    *,
+    blocker_actor_id: str,
+    target_type: str,
+    target_id: str,
+    now: int | None = None,
+) -> dict:
+    """Block the verified author of a public content token."""
+    init_db()
+    blocker = _normalise_actor_id(blocker_actor_id)
+    if blocker is None:
+        raise ValueError("invalid_actor")
+    timestamp = int(time.time() if now is None else now)
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _actor_is_deleted(conn, blocker):
+                raise ValueError("deleted account actor")
+            target = _safety_target(conn, target_type, target_id)
+            if target is None:
+                raise ValueError("target_not_found")
+            _scan_id, _opinion_id, target_actor, nickname = target
+            if target_actor is None:
+                raise ValueError("target_not_blockable")
+            if target_actor == blocker:
+                raise ValueError("self_target")
+            existing = conn.execute(
+                "SELECT public_id, blocked_nickname, created_at "
+                "FROM community_actor_blocks WHERE blocker_actor_id = ? "
+                "AND blocked_actor_id = ? LIMIT 1",
+                (blocker, target_actor),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("COMMIT")
+                return {
+                    "created": False,
+                    "block_id": str(existing[0]),
+                    "nickname": existing[1] or nickname,
+                    "created_at": int(existing[2]),
+                }
+            count = int(conn.execute(
+                "SELECT COUNT(*) FROM community_actor_blocks "
+                "WHERE blocker_actor_id = ?",
+                (blocker,),
+            ).fetchone()[0])
+            if count >= COMMUNITY_BLOCK_LIMIT:
+                raise ValueError("block_limit")
+            public_id = _PUBLIC_BLOCK_TOKEN_PREFIX + uuid.uuid4().hex[:30]
+            conn.execute(
+                "INSERT INTO community_actor_blocks ("
+                "public_id, blocker_actor_id, blocked_actor_id, "
+                "blocked_nickname, created_at) VALUES (?, ?, ?, ?, ?)",
+                (public_id, blocker, target_actor, nickname, timestamp),
+            )
+            conn.execute("COMMIT")
+            return {
+                "created": True,
+                "block_id": public_id,
+                "nickname": nickname,
+                "created_at": timestamp,
+            }
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+
+
+def actor_blocks(account_actor_id: str, *, limit: int = COMMUNITY_BLOCK_LIMIT) -> list[dict]:
+    """Opaque block-management list for one signed actor."""
+    init_db()
+    actor = _normalise_actor_id(account_actor_id)
+    if actor is None:
+        return []
+    bounded_limit = max(1, min(int(limit), COMMUNITY_BLOCK_LIMIT))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT public_id, blocked_nickname, created_at "
+            "FROM community_actor_blocks WHERE blocker_actor_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (actor, bounded_limit),
+        ).fetchall()
+    return [
+        {
+            "block_id": str(row[0]),
+            "nickname": row[1] or None,
+            "created_at": int(row[2]),
+        }
+        for row in rows
+    ]
+
+
+def unblock_actor(account_actor_id: str, block_id: str) -> bool:
+    """Remove only the caller-owned block selected by its opaque id."""
+    init_db()
+    actor = _normalise_actor_id(account_actor_id)
+    public_id = (block_id or "").strip()
+    if (
+        actor is None
+        or not public_id.startswith(_PUBLIC_BLOCK_TOKEN_PREFIX)
+        or len(public_id) != 32
+    ):
+        return False
+    with _write_lock, _connect() as conn:
+        deleted = conn.execute(
+            "DELETE FROM community_actor_blocks "
+            "WHERE blocker_actor_id = ? AND public_id = ?",
+            (actor, public_id),
+        ).rowcount
+    return int(deleted or 0) > 0
+
+
+def pending_content_reports(*, limit: int = 100) -> list[dict]:
+    """Local-operator moderation queue; never wired to a public route."""
+    init_db()
+    bounded_limit = max(1, min(int(limit), 500))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT r.id, r.target_type, r.reason, r.created_at, "
+            "r.target_scan_id, r.target_opinion_id, "
+            "COALESCE(o.nickname, s.nickname), s.disease, o.note "
+            "FROM community_content_reports r "
+            "LEFT JOIN community_scans s ON s.scan_id = r.target_scan_id "
+            "LEFT JOIN community_opinions o ON o.id = r.target_opinion_id "
+            "WHERE r.state = 'pending' ORDER BY r.created_at LIMIT ?",
+            (bounded_limit,),
+        ).fetchall()
+    return [
+        {
+            "report_id": int(row[0]),
+            "target_type": str(row[1]),
+            "reason": str(row[2]),
+            "created_at": int(row[3]),
+            "scan_id": str(row[4]),
+            "opinion_id": int(row[5]),
+            "nickname": row[6] or None,
+            "disease": row[7] or None,
+            "note": row[8] or None,
+        }
+        for row in rows
+    ]
+
+
+def moderate_content_report(
+    report_id: int, action: str, *, now: int | None = None
+) -> bool:
+    """Resolve a queued report from the local operator tool.
+
+    Supported actions are ``dismiss`` and ``remove_content``.  Removing a scan
+    also removes its thumbnail, replies, requests, and views transactionally;
+    other reports for the same removed content are resolved at the same time.
+    """
+    init_db()
+    resolution = (action or "").strip().lower()
+    if resolution not in {"dismiss", "remove_content"}:
+        raise ValueError("invalid_action")
+    timestamp = int(time.time() if now is None else now)
+    thumb_path: str | None = None
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT target_type, target_scan_id, target_opinion_id "
+                "FROM community_content_reports WHERE id = ? "
+                "AND state = 'pending' LIMIT 1",
+                (int(report_id),),
+            ).fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return False
+            target_type, scan_id, opinion_id = str(row[0]), str(row[1]), int(row[2])
+            next_state = "dismissed"
+            if resolution == "remove_content":
+                next_state = "removed"
+                if target_type == "scan":
+                    thumb = conn.execute(
+                        "SELECT thumb_path FROM community_scans "
+                        "WHERE scan_id = ? LIMIT 1",
+                        (scan_id,),
+                    ).fetchone()
+                    thumb_path = str(thumb[0]) if thumb and thumb[0] else None
+                    for table in (
+                        "community_opinions",
+                        "community_opinion_requests",
+                        "community_scan_views",
+                    ):
+                        # table comes from the fixed tuple immediately above.
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id = ?",  # nosec B608
+                            (scan_id,),
+                        )
+                    conn.execute(
+                        "DELETE FROM community_scans WHERE scan_id = ?", (scan_id,)
+                    )
+                    conn.execute(
+                        "UPDATE community_content_reports SET state = 'removed', "
+                        "resolved_at = ? WHERE target_scan_id = ? AND state = 'pending'",
+                        (timestamp, scan_id),
+                    )
+                else:
+                    conn.execute(
+                        "DELETE FROM community_opinions WHERE id = ?", (opinion_id,)
+                    )
+                    conn.execute(
+                        "UPDATE community_content_reports SET state = 'removed', "
+                        "resolved_at = ? WHERE target_type = 'opinion' "
+                        "AND target_opinion_id = ? AND state = 'pending'",
+                        (timestamp, opinion_id),
+                    )
+            conn.execute(
+                "UPDATE community_content_reports SET state = ?, resolved_at = ? "
+                "WHERE id = ?",
+                (next_state, timestamp, int(report_id)),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+    if thumb_path:
+        with contextlib.suppress(OSError):
+            (COMMUNITY_THUMB_DIR / thumb_path).unlink(missing_ok=True)
+    return True
 
 
 def wants_opinion(scan_id: str) -> bool:
@@ -1547,6 +2131,15 @@ def record_view(
         # Only count views on a scan that exists and isn't the viewer's own.
         if owner is None or (owner[0] == legacy_id and owner[1] == actor_id):
             return False
+        if actor_id is not None and owner[1] is not None:
+            blocked = conn.execute(
+                "SELECT 1 FROM community_actor_blocks WHERE "
+                "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+                "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+                (actor_id, owner[1], owner[1], actor_id),
+            ).fetchone()
+            if blocked is not None:
+                return False
         cur = conn.execute(
             "INSERT OR IGNORE INTO community_scan_views "
             "(scan_id, viewer_pseudo_id, account_actor_id, created_at) VALUES (?, ?, ?, ?)",
@@ -1563,8 +2156,9 @@ def view_counts(scan_ids: list[str]) -> dict[str, int]:
     init_db()
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
+        # Only the count-derived placeholder list is dynamic; values are bound.
         rows = conn.execute(
-            "SELECT scan_id, COUNT(*) FROM community_scan_views "
+            "SELECT scan_id, COUNT(*) FROM community_scan_views "  # nosec B608
             f"WHERE scan_id IN ({placeholders}) "
             "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
             "(SELECT actor_id FROM community_deleted_actors)) GROUP BY scan_id",
@@ -1622,8 +2216,9 @@ def scan_counts_for_actor(account_actor_id: str, scan_ids: list[str]) -> dict[st
     with _connect() as conn:
         owned = [
             str(row[0])
+            # Only the count-derived placeholder list is dynamic; values are bound.
             for row in conn.execute(
-                "SELECT scan_id FROM community_scans WHERE account_actor_id = ? "
+                "SELECT scan_id FROM community_scans WHERE account_actor_id = ? "  # nosec B608
                 f"AND scan_id IN ({placeholders}) AND account_actor_id NOT IN "
                 "(SELECT actor_id FROM community_deleted_actors)",
                 (actor, *ids),
@@ -1638,6 +2233,7 @@ def scans_by_species(
     limit: int = 12,
     exclude_user_pseudo_id: str | None = None,
     exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> list[dict]:
     """Community scans of one species (by scientific name), newest first,
     across all regions — for the result screen's 'other <species> in the
@@ -1655,12 +2251,18 @@ def scans_by_species(
     if exclude_account_actor_id:
         extra += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
         params.append(exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    extra += blocked_clause
+    params.extend(blocked_params)
     if _HIDDEN_COMMUNITY_DISEASES:
         extra += _hidden_clause()
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
+        # _FEED_COLUMNS and all clauses are fixed server-owned SQL.
         rows = conn.execute(
-            f"SELECT {_FEED_COLUMNS} "
+            f"SELECT {_FEED_COLUMNS} "  # nosec B608
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
@@ -1686,6 +2288,7 @@ def nearby_scans(
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
     exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
     scope: str = "nearby",
 ) -> list[dict]:
     """Most recent shared scans for one scope.
@@ -1722,6 +2325,11 @@ def nearby_scans(
         if exclude_account_actor_id:
             common += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
             cparams.append(exclude_account_actor_id)
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        common += blocked_clause
+        cparams.extend(blocked_params)
         if _HIDDEN_COMMUNITY_DISEASES:
             common += _hidden_clause()
             cparams.extend(_HIDDEN_COMMUNITY_DISEASES)
@@ -1753,8 +2361,9 @@ def nearby_scans(
             # Over-fetch when we'll refine the box to a true circle so the
             # post-filter still has ~limit rows to offer.
             take = limit * 3 if refine else limit
+            # The column list and clauses are fixed; all request values are bound.
             sql = (
-                f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+                f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"  # nosec B608
                 + geo_clause + common + dz_clause
                 + " ORDER BY created_at DESC LIMIT ?"
             )
@@ -1813,6 +2422,7 @@ def map_scans(
     limit: int = 300,
     exclude_user_pseudo_id: str | None = None,
     exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> dict:
     """Individual shared scans inside a bbox — the zoomed-in map markers.
 
@@ -1837,14 +2447,20 @@ def map_scans(
     if exclude_account_actor_id:
         clause += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
         params.append(exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    clause += blocked_clause
+    params.extend(blocked_params)
     if disease:
         clause += " AND disease = ?"
         params.append(disease)
     clause += _hidden_clause()
     params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
+        # The column list and clauses are fixed or allowlisted; values are bound.
         rows = conn.execute(
-            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"  # nosec B608
             + clause
             + " ORDER BY created_at DESC LIMIT ?",
             (*params, limit + 1),
@@ -1902,8 +2518,9 @@ def density_grid(
     # SQLite CAST(.. AS INTEGER) truncates toward zero — wrong floor for negative
     # (W/S) coords — so floor with ROUND(z/cell - 0.5) to bucket on a stable grid.
     with _connect() as conn:
+        # The optional disease clause is fixed and all request values are bound.
         rows = conn.execute(
-            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"
+            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"  # nosec B608
             "       CAST(ROUND(lon/? - 0.5) AS INTEGER) AS ilon, COUNT(*) AS n "
             "FROM community_scans "
             "WHERE lat IS NOT NULL AND lon IS NOT NULL "
@@ -1933,6 +2550,7 @@ def region_summary(
     *,
     exclude_user_pseudo_id: str | None = None,
     exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> dict:
     """Aggregate the corpus for one country (or country+region)."""
     init_db()
@@ -1948,24 +2566,30 @@ def region_summary(
     if exclude_account_actor_id:
         exclude_clause += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
         exclude_params = (*exclude_params, exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    exclude_clause += blocked_clause
+    exclude_params = (*exclude_params, *blocked_params)
     if _HIDDEN_COMMUNITY_DISEASES:
         exclude_clause += _hidden_clause()
         exclude_params = (*exclude_params, *_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         if region_clean:
+            # exclude_clause is assembled from fixed predicates; values are bound.
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ?" + exclude_clause,
                 (country, region_clean, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ? AND created_at >= ?"
                 + exclude_clause,
                 (country, region_clean, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ? AND created_at >= ?"
                 + exclude_clause
                 + " GROUP BY disease ORDER BY n DESC LIMIT 3",
@@ -1974,23 +2598,23 @@ def region_summary(
             top_region_rows: list[tuple] = []
         else:
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans WHERE country = ?"
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?"  # nosec B608
                 + exclude_clause,
                 (country, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND created_at >= ?" + exclude_clause,
                 (country, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND created_at >= ?" + exclude_clause
                 + " GROUP BY disease ORDER BY n DESC LIMIT 3",
                 (country, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows = conn.execute(
-                "SELECT region, COUNT(*) AS n FROM community_scans "
+                "SELECT region, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region != '' AND created_at >= ?"
                 + exclude_clause
                 + " GROUP BY region ORDER BY n DESC LIMIT 3",
@@ -2044,20 +2668,21 @@ def popular_snapshot(
         params = (country_clean,)
     hidden_clause = _hidden_clause()
     with _connect() as conn:
+        # where/hidden_clause use fixed predicates and allowlisted identifiers.
         total = int(conn.execute(
-            "SELECT COUNT(*) FROM community_scans WHERE 1=1"
+            "SELECT COUNT(*) FROM community_scans WHERE 1=1"  # nosec B608
             + where + hidden_clause,
             (*params, *_HIDDEN_COMMUNITY_DISEASES),
         ).fetchone()[0])
         species_rows = conn.execute(
-            "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
+            "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE species_lower IS NOT NULL AND species_lower != ''"
             + where + hidden_clause
             + " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
             (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
         ).fetchall()
         disease_rows = conn.execute(
-            "SELECT disease, COUNT(*) AS n FROM community_scans "
+            "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE 1=1" + where + hidden_clause
             + " GROUP BY disease ORDER BY n DESC LIMIT ?",
             (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
@@ -2161,6 +2786,13 @@ def prune_older_than(days: int) -> int:
                     "(SELECT scan_id FROM community_scans)",
                     (cutoff,),
                 )
+            report_cutoff = (
+                int(time.time()) - COMMUNITY_REPORT_RETENTION_DAYS * 86_400
+            )
+            conn.execute(
+                "DELETE FROM community_content_reports WHERE created_at < ?",
+                (report_cutoff,),
+            )
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -2308,10 +2940,26 @@ def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str
                         "community_opinion_requests",
                         "community_scan_views",
                     ):
+                        # table is fixed and placeholders are count-derived.
                         conn.execute(
-                            f"DELETE FROM {table} WHERE scan_id IN ({placeholders})",
+                            f"DELETE FROM {table} WHERE scan_id IN ({placeholders})",  # nosec B608
                             tuple(scan_ids),
                         )
+                    conn.execute(
+                        "DELETE FROM community_content_reports "  # nosec B608
+                        f"WHERE target_scan_id IN ({placeholders})",
+                        tuple(scan_ids),
+                    )
+                conn.execute(
+                    "DELETE FROM community_content_reports "
+                    "WHERE reporter_actor_id = ? OR target_actor_id = ?",
+                    (actor, actor),
+                )
+                conn.execute(
+                    "DELETE FROM community_actor_blocks "
+                    "WHERE blocker_actor_id = ? OR blocked_actor_id = ?",
+                    (actor, actor),
+                )
                 conn.execute(
                     "DELETE FROM community_opinions WHERE account_actor_id = ?", (actor,)
                 )

@@ -123,6 +123,9 @@ class AccountActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.account_link_restart_required, Toast.LENGTH_LONG).show()
         }
         binding.tvSyntheticNotice.isVisible = BuildConfig.SYNTHETIC_AUTH_ENABLED
+        configureSignInProviders()
+        binding.btnLinkYandex.isVisible = isProviderAvailable(AuthProvider.YANDEX)
+        binding.btnLinkVk.isVisible = isProviderAvailable(AuthProvider.VK)
         binding.toolbar.setNavigationOnClickListener { handleBack() }
         onBackPressedDispatcher.addCallback(
             this,
@@ -262,10 +265,14 @@ class AccountActivity : AppCompatActivity() {
                         else -> provider
                     }
                 }
-            binding.btnLinkYandex.isVisible = "yandex" !in linked
-            binding.btnLinkVk.isVisible = "vk" !in linked
-            binding.btnLinkYandex.isEnabled = true
-            binding.btnLinkVk.isEnabled = true
+            binding.btnLinkYandex.isVisible =
+                isProviderAvailable(AuthProvider.YANDEX) &&
+                "yandex" !in linked
+            binding.btnLinkVk.isVisible =
+                isProviderAvailable(AuthProvider.VK) &&
+                "vk" !in linked
+            binding.btnLinkYandex.isEnabled = binding.btnLinkYandex.isVisible
+            binding.btnLinkVk.isEnabled = binding.btnLinkVk.isVisible
             binding.btnSaveNickname.isEnabled = true
             binding.btnDeleteAccount.isEnabled = true
             Glide.with(this@AccountActivity).clear(binding.ivAvatar)
@@ -471,6 +478,13 @@ class AccountActivity : AppCompatActivity() {
         }
     }
 
+    private fun isProviderAvailable(provider: AuthProvider): Boolean =
+        BuildConfig.SYNTHETIC_AUTH_ENABLED ||
+            when (provider) {
+                AuthProvider.YANDEX -> BuildConfig.YANDEX_OAUTH_CONFIGURED
+                AuthProvider.VK -> BuildConfig.VK_OAUTH_CONFIGURED
+            }
+
     private fun acceptProviderToken(provider: AuthProvider, token: String) {
         lifecycleScope.launch {
             setLoading(true)
@@ -624,11 +638,17 @@ class AccountActivity : AppCompatActivity() {
         val active = loadingOperations > 0
         binding.progress.isVisible = active
         setEnabledRecursively(binding.content, !active)
-        if (!active && privateProfile == null) {
-            binding.btnLinkYandex.isEnabled = false
-            binding.btnLinkVk.isEnabled = false
-            binding.btnSaveNickname.isEnabled = false
-            binding.btnDeleteAccount.isEnabled = false
+        if (!active) {
+            // Recursive re-enabling must never turn an unavailable provider
+            // into a clickable control. VK remains a visible, disabled roadmap
+            // item in the Yandex-only 1.9 release.
+            configureSignInProviders()
+            if (privateProfile == null) {
+                binding.btnLinkYandex.isEnabled = false
+                binding.btnLinkVk.isEnabled = false
+                binding.btnSaveNickname.isEnabled = false
+                binding.btnDeleteAccount.isEnabled = false
+            }
         }
         applySignupNicknameEditingPolicy(authRepository.state.value)
     }
@@ -637,6 +657,18 @@ class AccountActivity : AppCompatActivity() {
         binding.etSignupNickname.isEnabled = signupNicknameIsEditable(
             state = state,
             loading = loadingOperations > 0,
+        )
+    }
+
+    private fun configureSignInProviders() {
+        val yandexAvailable = isProviderAvailable(AuthProvider.YANDEX)
+        val vkAvailable = isProviderAvailable(AuthProvider.VK)
+        binding.btnYandex.isVisible = yandexAvailable
+        binding.btnYandex.isEnabled = yandexAvailable
+        binding.btnVk.isVisible = true
+        binding.btnVk.isEnabled = vkAvailable
+        binding.btnVk.setText(
+            if (vkAvailable) R.string.account_continue_vk else R.string.account_vk_coming_soon,
         )
     }
 

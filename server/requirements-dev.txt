@@ -9,6 +9,8 @@ pytest>=9.1
 httpx>=0.28
 httpx2>=2.7,<3
 ruff>=0.16
+bandit==1.9.4
+pip-audit==2.10.1
 # Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for
 # macro-F1; an eval/report-only dependency, deliberately kept out of the
 # runtime requirements.txt so it never lands in the production image.

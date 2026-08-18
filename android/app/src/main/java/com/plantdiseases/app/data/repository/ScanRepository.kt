@@ -3,6 +3,7 @@ package com.plantdiseases.app.data.repository
 import android.util.AtomicFile
 import com.google.gson.Gson
 import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.auth.AuthenticationRequiredException
 import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.local.ScanChatMessageDao
@@ -34,6 +35,7 @@ import com.plantdiseases.app.util.UploadImageSanitizer
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -116,6 +118,33 @@ class ScanRepository(
     private suspend fun HttpResponse.requireProtectedSuccess() {
         if (status.value == 401) throw AccountApiException(401, "auth_required")
         if (!status.isSuccess()) throw CommunityRequestException(status.value)
+    }
+
+    /** Public community reads carry an account token when one is available so
+     * server-side block filtering follows the user across devices. Guests keep
+     * the same public read path. A signed-in 401 gets the standard one-time
+     * refresh/retry semantics through [authenticatedAppCall]. */
+    private suspend inline fun <reified T> optionalAccountGet(
+        crossinline request: suspend (accessToken: String?) -> HttpResponse,
+    ): Result<T> {
+        if (authRepository?.state?.value is AuthState.Authenticated) {
+            return authenticatedAppCall { token ->
+                request(token).protectedBody<T>()
+            }
+        }
+        return try {
+            val response = request(null)
+            if (!response.status.isSuccess()) {
+                throw CommunityRequestException(response.status.value)
+            }
+            Result.success(response.body<T>())
+        } catch (_: SocketTimeoutException) {
+            Result.failure(ServerTimeoutException())
+        } catch (_: UnknownHostException) {
+            Result.failure(NoNetworkException())
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        }
     }
 
     /**
@@ -432,18 +461,10 @@ class ScanRepository(
     /** List community "second opinions" + consensus for a shared scan. */
     suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/opinions/$scanId")
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/opinions/$scanId") {
+                    token?.let { bearer(it) }
                 }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
@@ -459,6 +480,76 @@ class ScanRepository(
                     setBody(request)
                 }
                 response.protectedBody<CommunityOpinionsResponse>()
+            }
+        }
+
+    /** Report a shared scan or one reply using only its opaque public token. */
+    suspend fun reportCommunityContent(
+        targetType: String,
+        targetId: String,
+        reason: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/safety/report") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityReportRequest(
+                            targetType = targetType,
+                            targetId = targetId,
+                            reason = reason,
+                        ),
+                    )
+                }
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse>()
+                    .ok
+            }
+        }
+
+    /** Block the server-resolved author of a scan or reply. */
+    suspend fun blockCommunityAuthor(
+        targetType: String,
+        targetId: String,
+    ): Result<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/safety/block") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityBlockRequest(
+                            targetType = targetType,
+                            targetId = targetId,
+                        ),
+                    )
+                }
+                response.protectedBody()
+            }
+        }
+
+    suspend fun communityBlocks(): Result<List<com.plantdiseases.app.data.model.CommunityBlockItem>> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.get("api/community/safety/blocks") {
+                    bearer(token)
+                }
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunityBlocksResponse>()
+                    .items
+            }
+        }
+
+    suspend fun unblockCommunityAuthor(blockId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.delete(
+                    "api/community/safety/blocks/$blockId",
+                ) {
+                    bearer(token)
+                }
+                response.requireProtectedSuccess()
             }
         }
 
@@ -1297,8 +1388,9 @@ class ScanRepository(
         scope: String? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/nearby") {
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/nearby") {
+                    token?.let { bearer(it) }
                     country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
                     lat?.let { parameter("lat", it) }
@@ -1308,16 +1400,6 @@ class ScanRepository(
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     parameter("limit", limit)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(
-                        Exception("Community nearby failed: ${response.status.value}"),
-                    )
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
@@ -1332,8 +1414,9 @@ class ScanRepository(
         limit: Int = 300,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/map") {
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/map") {
+                    token?.let { bearer(it) }
                     parameter("min_lat", minLat)
                     parameter("min_lon", minLon)
                     parameter("max_lat", maxLat)
@@ -1342,14 +1425,6 @@ class ScanRepository(
                     parameter("days", days)
                     parameter("limit", limit)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(Exception("Community map failed: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
@@ -1532,19 +1607,12 @@ class ScanRepository(
         limit: Int = 12,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/by-species") {
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/by-species") {
+                    token?.let { bearer(it) }
                     parameter("species", species)
                     parameter("limit", limit)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(Exception("by-species failed: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 }

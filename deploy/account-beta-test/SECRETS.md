@@ -1,9 +1,11 @@
 # Account System Staging Environment and Secret Inventory
 
-No secret value belongs in Git, an image layer, an APK, a command line, a log,
-or this document. Android OAuth application identifiers—and the VK mobile
-client value commonly named a client secret—are extractable public client
-configuration and are never accepted as proof of identity.
+No confidential secret belongs in Git, an image layer, an APK, a command line,
+a log, or this document. Android OAuth application identifiers—and the VK
+mobile value commonly named a client secret—are extractable public client
+configuration and are never accepted as proof of identity. The registered
+Yandex Android client ID is intentionally pinned in source so release builds
+cannot silently omit LoginSDK; the Yandex client secret is never used.
 
 ## Local and German account-system staging
 
@@ -14,7 +16,7 @@ configuration and are never accepted as proof of identity.
 | `BETA_POSTGRES_MIGRATOR_PASSWORD` | Staging DDL/ownership secret | Mode-0600 operator env file | One-shot Alembic migration and post-migration grant convergence | Recreate with disposable stack |
 | `BETA_POSTGRES_RUNTIME_PASSWORD` | Staging application-DML secret | Mode-0600 operator env file | Account API; SELECT-only on `alembic_version`, no sequence access | Recreate with disposable stack |
 | `BETA_POSTGRES_BACKUP_PASSWORD` | Staging read-only secret | Mode-0600 operator env file | Encrypted backup check | Recreate with disposable stack |
-| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Mode-0600 operator env plus protected Android build config | Account API/Android | Change only with provider registration |
+| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Yandex: tracked Android release config plus mode-0600 server env; VK: protected build config plus server env | Account API/Android | Change only with provider registration |
 | Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Protected Android/CI build config, never server env | VK ID SDK | Change only with provider registration |
 | `BETA_MODELS_DIR` | Non-secret absolute model path | Host-only operator env | App API read-only mount | Verify at each model release |
 | `signing.json` | Beta Ed25519 private key ring | Dedicated `*_account_keys` volume, mode 0600 | Account API | Exercise before handoff; never promote |
@@ -29,8 +31,9 @@ existing German beta volume, keep the original `beta_account` password as
 `BETA_POSTGRES_ADMIN_PASSWORD`; it is used only by the idempotent role-upgrade
 job and never by an API.
 
-The German environment has dedicated Yandex/VK application values. Provider
-tokens pass once through memory for verification and are never persisted or
+The German environment has dedicated values for each enabled provider; Yandex
+and VK do not depend on one another. Provider tokens pass once through memory
+for verification and are never persisted or
 logged. It has no FCM credentials, PlantNet/OpenRouter keys, production account
 keys, or production backup credential. Key generation has no network and
 refuses to overwrite an existing key file.
@@ -45,8 +48,8 @@ forces an unsigned output, verifies it, and uploads the exact APK plus
 provenance. The required-reviewer `android-signing` job downloads that artifact
 by ID and signs it without checkout, Gradle, or repository file execution.
 Repository administrators must configure that environment with required
-reviewers, prevent self-review, and restrict deployment branches to `main` and
-`account-beta-test`. A private repository is not a substitute for this
+reviewers, prevent self-review, and restrict deployment branches to `main`
+only. A private repository is not a substitute for this
 boundary: repository-controlled Gradle code can read every secret deliberately
 supplied to its build step.
 
@@ -57,26 +60,20 @@ secrets. Store the public `RELEASE_CERT_SHA256`, the cutover gate
 `APPROVED_PRODUCTION_APP_API_BASE_URL` /
 `APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` as variables in that environment.
 
-Store separate `STAGING_{YANDEX_CLIENT_ID,VKID_CLIENT_ID,VKID_CLIENT_SECRET}`
-and `PRODUCTION_{YANDEX_CLIENT_ID,VKID_CLIENT_ID,VKID_CLIENT_SECRET}` values as
-repository Actions variables. These mobile values are extractable from an APK;
-keeping them outside the protected environment lets the credential-free build
-finish before a reviewer grants key access. Staging and production provider
-projects must still be different even though both register the mandatory same
-package/certificate. The protected production workflow requires all three
-staging values to be present and refuses equal staging/production Yandex client
-IDs, VK application IDs, or VK mobile values. Define `PRODUCTION_APP_API_BASE_URL`
-and `PRODUCTION_ACCOUNT_API_BASE_URL` as repository variables used by the
-credential-free build. Put the exact independently reviewed copies under the
-`APPROVED_PRODUCTION_*` names in the protected environment. The checkout-free
-signing job refuses a mismatch, the German staging prefix, `.invalid` or
-localhost names, IP literals, non-443 ports, and non-root application paths.
-Keep the cutover gate false until both URLs terminate at the reviewed Russian ingress.
-The workflow never falls back from missing production provider values to
-staging values, requires successful CI for the exact commit, pins each
-third-party action, records GitHub's artifact digest, and independently verifies
-the build-job-anchored APK digest, provenance, certificate, package/version,
-endpoints, and provider mode.
+The Yandex native client ID is pinned in source. VK is optional: leave all
+`STAGING_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` and
+`PRODUCTION_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` repository variables absent
+for the current Yandex-only release. If VK is enabled later, each environment's
+pair must be complete and the staging and production pairs must be distinct.
+Define `PRODUCTION_APP_API_BASE_URL` and `PRODUCTION_ACCOUNT_API_BASE_URL` as
+repository variables used by the credential-free build. Put independently
+reviewed copies under the `APPROVED_PRODUCTION_*` names in the protected
+environment. The checkout-free signing job refuses a mismatch, the German
+staging prefix, `.invalid` or localhost names, IP literals, non-443 ports, and
+non-root application paths. Keep the cutover gate false until both URLs
+terminate at the reviewed Russian ingress. The workflow pins each third-party
+action and independently verifies artifact digests, provenance, certificate,
+package/version, endpoints, and the Yandex/VK provider mode.
 
 Also define `STAGING_APP_API_BASE_URL` and `STAGING_ACCOUNT_API_BASE_URL` as
 repository variables containing the exact reviewed German staging pair. Both
@@ -92,9 +89,9 @@ push worker is implemented and reviewed.
 
 | Value/file | Classification | Required owner/location | Consumer | Rotation/recovery rule |
 |---|---|---|---|---|
-| `YANDEX_CLIENT_ID` | Public application ID | Protected host configuration | Account API and Android build | Change only with provider registration |
-| `VKID_CLIENT_ID` | Public application ID | Protected host configuration | Account API and Android build | Change only with provider registration |
-| Android `VKID_CLIENT_SECRET` | Extractable public mobile config | CI/build configuration | Android VK ID SDK | Never use as server authentication |
+| `YANDEX_CLIENT_ID` | Public application ID | Tracked Android release config plus protected host configuration | Account API and Android build | Change only with provider registration |
+| `VKID_CLIENT_ID` | Optional public application ID | Protected host configuration; absent for the current release | Account API and Android build | Change only with provider registration |
+| Android `VKID_CLIENT_SECRET` | Optional extractable public mobile config | CI/build configuration; absent for the current release | Android VK ID SDK | Never use as server authentication |
 | `signing.json` | Critical private Ed25519 key ring | Russia, account UID-readable mode 0400 | Account API | Keep active plus reviewed retired public keys; perform overlap exercise |
 | `encryption.key` | Critical AES-256 account encryption/derivation key | Russia, account-owned mode 0400 | Account API refresh rotation; future push-token protection remains disabled | Do not replace in place; use a reviewed overlap migration or planned session revocation and reauthentication |
 | `internal.token` | Critical service credential | Separate account/app-owned mode-0400 copies in Russia | Private account/app calls | Rotate atomically across both services |

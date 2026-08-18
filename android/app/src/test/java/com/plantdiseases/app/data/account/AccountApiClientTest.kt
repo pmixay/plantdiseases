@@ -266,6 +266,37 @@ class AccountApiClientTest {
     }
 
     @Test
+    fun credentialRequestIsNeverFollowedToRedirectTarget() = runBlocking {
+        val redirectTarget = MockWebServer()
+        redirectTarget.start()
+        try {
+            redirectTarget.enqueue(
+                jsonResponse(
+                    """{"status":"authenticated","access_token":"escaped","refresh_token":"escaped"}""",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setResponseCode(307)
+                    .setHeader("Location", redirectTarget.url("/capture")),
+            )
+
+            val failure = runCatching {
+                api.refresh(
+                    "private-refresh-token",
+                    "00000000-0000-4000-8000-000000000012",
+                )
+            }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(AccountApiException::class.java)
+            assertThat((failure as AccountApiException).statusCode).isEqualTo(307)
+            assertThat(server.requestCount).isEqualTo(1)
+            assertThat(redirectTarget.requestCount).isEqualTo(0)
+        } finally {
+            redirectTarget.shutdown()
+        }
+    }
+
+    @Test
     fun pushRegistrationIsPrivateAndContainsNoHardwareFields() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(204))
 
