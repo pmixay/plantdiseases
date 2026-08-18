@@ -86,6 +86,20 @@ class NearbyScansActivity : AppCompatActivity() {
     // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
 
+    // Cursor-paging state. nextBefore/hasMorePages come from the server's
+    // response; loadGeneration invalidates any loadMore() still in flight
+    // once a fresh load() starts over; isLoadingPage guards against a
+    // double-fire from a fast scroll while a page is already in transit.
+    private var nextBefore: Long? = null
+    private var hasMorePages = true
+    private var loadGeneration = 0
+    private var isLoadingPage = false
+
+    // Resolved once per load() and reused by loadMore() so every page of one
+    // scroll session shares the same geo anchor instead of drifting as the
+    // device moves mid-scroll.
+    private var currentRegion: com.plantdiseases.app.util.ResolvedRegion? = null
+
     // Public browsing may request coarse location for the Nearby scope. This
     // does not enable publication or notifications.
     private val communityPermissionLauncher = registerForActivityResult(
@@ -146,7 +160,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.setOnClickListener { requestCommunityLocation() }
 
         adapter = NearbyScansAdapter(
-            onSecondOpinion = { item ->
+            onOpen = { item ->
                 lifecycleScope.launch {
                     // Guests browse without creating a view row; the repository
                     // sends this only when an account access token is available.
@@ -373,17 +387,20 @@ class NearbyScansActivity : AppCompatActivity() {
                 }.getOrNull()
             }
             val result = scanRepository.communityNearby(
-                country = region?.country,
-                region = region?.locality,
-                lat = region?.lat,
-                lon = region?.lon,
+                country = currentRegion?.country,
+                region = currentRegion?.locality,
+                lat = currentRegion?.lat,
+                lon = currentRegion?.lon,
                 // No disease filter — the feed surfaces the whole scope.
                 disease = null,
-                limit = 100,
+                limit = FEED_PAGE_SIZE,
                 scope = scope,
             )
+            if (generation != loadGeneration) return@launch
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
+                nextBefore = response.nextBefore
+                hasMorePages = response.nextBefore != null
                 when {
                     response.items.isNotEmpty() -> showFeed(response.items)
                     // The server couldn't geo-scope the feed (no coords + no
@@ -395,6 +412,33 @@ class NearbyScansActivity : AppCompatActivity() {
                 }
             }.onFailure {
                 showState(getString(R.string.community_opinion_error))
+            }
+        }
+    }
+
+    /** Cursor-page the next (older) batch onto the bottom of the feed. */
+    private fun loadMore() {
+        if (isLoadingPage || !hasMorePages) return
+        isLoadingPage = true
+        val generation = loadGeneration
+        lifecycleScope.launch {
+            val result = scanRepository.communityNearby(
+                country = currentRegion?.country,
+                region = currentRegion?.locality,
+                lat = currentRegion?.lat,
+                lon = currentRegion?.lon,
+                disease = null,
+                limit = FEED_PAGE_SIZE,
+                scope = scope,
+                before = nextBefore,
+            )
+            isLoadingPage = false
+            if (generation != loadGeneration) return@launch
+            result.onSuccess { response ->
+                nextBefore = response.nextBefore
+                hasMorePages = response.nextBefore != null
+                allItems = allItems + response.items
+                applyFilterAndSort()
             }
         }
     }

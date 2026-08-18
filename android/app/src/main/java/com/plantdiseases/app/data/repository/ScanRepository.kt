@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.repository
 
+import android.content.Context
 import android.util.AtomicFile
 import com.google.gson.Gson
 import com.plantdiseases.app.auth.AuthRepository
@@ -27,6 +28,8 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
+import com.plantdiseases.app.util.CommunityIdentity
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.FeedbackReceiptStore
 import com.plantdiseases.app.util.NoOpFeedbackReceiptStore
@@ -79,6 +82,11 @@ class ScanRepository(
     private val retainedAnalysisImageLock = Any()
     private val pendingAnalysisImages = LinkedHashMap<PendingAnalysisImageKey, SanitizedImage>()
     private val scanArtifactMutex = Mutex()
+
+    // Last author key successfully adopted this process, so a repeated
+    // ensureCommunityAuthorAdopted() call (every share/opinion) is a no-op
+    // once the identity is already registered server-side.
+    private var adoptedAuthorKeyHash: String? = null
 
     // Serialises Aqua model installs so two concurrent syncAquaModel calls
     // (e.g. rapid config-change recreations each firing one) can't race the

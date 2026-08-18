@@ -381,6 +381,8 @@
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
     <string name="second_opinion_stop">Stop request</string>
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
+    <string name="community_opinion_replies_title">Second opinions</string>
+    <string name="community_opinion_replies_subtitle">See what the community thinks of this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_opinion_list_header">Replies (%1$d)</string>
     <string name="community_wants_opinion_badge">Needs an opinion</string>

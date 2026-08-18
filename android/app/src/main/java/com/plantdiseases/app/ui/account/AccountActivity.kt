@@ -3,7 +3,6 @@ package com.plantdiseases.app.ui.account
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
@@ -396,11 +395,7 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun openPrivacyPolicy() {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.consent_privacy_url))))
-        }.onFailure {
-            Toast.makeText(this, R.string.account_privacy_open_failed, Toast.LENGTH_LONG).show()
-        }
+        startActivity(com.plantdiseases.app.ui.legal.PrivacyPolicyActivity.intent(this))
     }
 
     private fun confirmDeletion() {

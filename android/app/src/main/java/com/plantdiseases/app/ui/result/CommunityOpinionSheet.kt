@@ -33,7 +33,9 @@ import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.common.SpeciesInfoCardView
 import com.plantdiseases.app.util.Avatars
+import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -94,6 +96,14 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     // it) — null means "haven't voted", in which case the sheet still shows
     // Agree/Disagree instead of Change opinion.
     private var myOpinion: String? = null
+
+    // The disease key just submitted through the picker, so lockInputControls()
+    // can render "Your opinion: X" immediately without waiting on a reload.
+    private var justSubmittedKey: String? = null
+
+    // Read-only viewers of someone ELSE's scan (opened via showReadOnly) get
+    // the consensus + thread but none of the mutation controls.
+    private val viewOnly: Boolean by lazy { arguments?.getBoolean(ARG_VIEW_ONLY, false) ?: false }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -317,55 +327,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
     }
 
-    /**
-     * Owner-only request controls: "Request open · N h left" + Stop. The
-     * stop action is reachable at any point of the request's life —
-     * including after replies arrived — and ends further notifications
-     * (the collected replies stay visible). Changes are reported back to
-     * the result screen via the Fragment Result API.
-     */
-    private fun renderOwnerStatus(wantsOpinion: Boolean, requestedAtSec: Long?) {
-        val row = ownerStatusRow ?: return
-        val isOwner = arguments?.getBoolean(ARG_OWNER, false) ?: false
-        if (!isOwner || !wantsOpinion) {
-            row.visibility = View.GONE
-            return
-        }
-        row.visibility = View.VISIBLE
-        val hours = requestedAtSec
-            ?.let { (it + 72L * 3600L) * 1000L - System.currentTimeMillis() }
-            ?.takeIf { it > 0L }
-            ?.let { ((it + 3_599_999L) / 3_600_000L).toInt().coerceIn(1, 72) }
-        ownerStatusText?.text = if (hours != null) {
-            getString(R.string.second_opinion_sheet_status, hours)
-        } else {
-            getString(R.string.result_second_opinion_waiting)
-        }
-        stopRequestBtn?.setOnClickListener {
-            if (!requireAuthenticatedAction()) return@setOnClickListener
-            stopRequestBtn?.isEnabled = false
-            val ctx = requireContext()
-            viewLifecycleOwner.lifecycleScope.launch {
-                scanRepository
-                    .cancelSecondOpinion(scanId)
-                    .onSuccess {
-                        Toast.makeText(ctx, R.string.second_opinion_stopped, Toast.LENGTH_SHORT)
-                            .show()
-                        ownerStatusRow?.visibility = View.GONE
-                        parentFragmentManager.setFragmentResult(
-                            REQUEST_STATE_CHANGED,
-                            Bundle.EMPTY,
-                        )
-                    }
-                    .onFailure {
-                        stopRequestBtn?.isEnabled = true
-                        Toast.makeText(ctx, R.string.community_opinion_error, Toast.LENGTH_SHORT)
-                            .show()
-                    }
-            }
-        }
-    }
-
     private fun renderLike(count: Int, likedByMe: Boolean) {
         liked = likedByMe
         // Text stays set even at zero (the optimistic-update read-back in
@@ -429,6 +390,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
                     // One opinion per signed actor is enforced server-side.
+                    justSubmittedKey = key
                     lockInputControls()
                     render(resp.consensus, resp.opinions)
                 }
@@ -825,16 +787,11 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val TARGET_SCAN = "scan"
         private const val TARGET_OPINION = "opinion"
 
-        // True ONLY for the scan owner's view (showForOwner) — gates the
-        // request-status row + "Stop request" action. Distinct from
-        // ARG_VIEW_ONLY, which read-only viewers of OTHER people's scans
-        // also set.
+        // Gates the safety row (report/block) — hidden on the caller's own
+        // scan. Distinct from ARG_VIEW_ONLY, which read-only viewers of
+        // OTHER people's scans also set.
         private const val ARG_OWNER = "arg_owner"
 
-        /** Fragment-result key fired when the owner changes the request's
-         *  state from inside the sheet (stop) — the result screen listens
-         *  and re-renders its second-opinion control. */
-        const val REQUEST_STATE_CHANGED = "second_opinion_state_changed"
         const val CONTENT_BLOCKED = "community_content_blocked"
 
         private val REPORT_REASON_KEYS = listOf(
@@ -880,6 +837,26 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_DISEASE_KEY to item.disease,
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_THUMB to item.thumbPath,
+                )
+            }.show(fm, TAG)
+        }
+
+        /** Read-only variant for browsing someone ELSE's scan (the result
+         *  screen's similar-scans strip): consensus + thread, no mutation
+         *  controls — see [viewOnly]. */
+        fun showReadOnly(
+            fm: FragmentManager,
+            item: com.plantdiseases.app.data.model.CommunityScanItem,
+            currentDisplayName: String?,
+        ) {
+            CommunityOpinionSheet().apply {
+                arguments = bundleOf(
+                    ARG_SCAN_ID to item.scanId,
+                    ARG_CURRENT_NAME to currentDisplayName,
+                    ARG_DISEASE_KEY to item.disease,
+                    ARG_CONFIDENCE to (item.confidence ?: -1f),
+                    ARG_THUMB to item.thumbPath,
+                    ARG_VIEW_ONLY to true,
                 )
             }.show(fm, TAG)
         }

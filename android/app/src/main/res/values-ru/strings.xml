@@ -378,6 +378,8 @@
     <string name="second_opinion_sheet_status">Запрос активен · осталось %1$d ч. О новых ответах придёт уведомление.</string>
     <string name="second_opinion_stop">Отменить запрос</string>
     <string name="second_opinion_stopped">Запрос отменён — уведомлений по этому скану больше не будет.</string>
+    <string name="community_opinion_replies_title">Второе мнение</string>
+    <string name="community_opinion_replies_subtitle">Посмотрите, что думает сообщество об этом скане.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_opinion_list_header">Ответы (%1$d)</string>
     <string name="community_wants_opinion_badge">Ждёт мнения</string>
