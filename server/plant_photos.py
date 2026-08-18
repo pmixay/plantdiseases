@@ -41,20 +41,23 @@ _MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely
 # width-normalised renders (a few hundred KB) rather than multi-MB originals,
 # so the same disk budget holds far more species — raised to match.
 _CACHE_MAX_FILES = 1500
-# ...and a byte budget, because the file count alone is not a disk budget.
-# /api/plant-photo is public and takes the source URL as a parameter, so a
-# caller picks which Wikimedia files land here. At _MAX_BYTES each, 1500 files
-# is ~24 GB — the count cap permits a cache three orders of magnitude larger
-# than the one the normalised renders were sized for. Whichever limit binds
-# first wins.
-_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+# The public proxy lets callers choose which allowlisted assets enter the
+# cache, so count and source+variant bytes are independently bounded.
+_CACHE_MAX_BYTES = 512 * 1024 * 1024
 _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
 )
 
-# Only these hosts are fetched. The endpoint is public, so without this an
-# attacker could turn it into a generic request proxy (SSRF).
-_ALLOWED_HOST_SUFFIXES = (".wikimedia.org", ".wikipedia.org")
+# Only these exact hosts are fetched. The endpoint is public, so a suffix-wide
+# allowlist would unnecessarily trust every present and future Wikimedia
+# subdomain. These are the only hosts emitted by species_info's en/ru lookups.
+_ALLOWED_HOSTS = frozenset({
+    "upload.wikimedia.org",
+    "en.wikipedia.org",
+    "ru.wikipedia.org",
+})
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_REDIRECTS = 5
 
 _DEFAULT_DIR = Path(__file__).resolve().parent / "plant_photo_cache"
 PHOTO_CACHE_DIR = Path(get_str("PLANT_PHOTO_CACHE_DIR", str(_DEFAULT_DIR)))
@@ -68,15 +71,24 @@ _EXT_MEDIA = {
 
 
 def is_allowed_url(url: str) -> bool:
-    """True for an http(s) URL on a Wikimedia/Wikipedia host."""
+    """True for an HTTPS URL on an exact, expected Wikimedia host."""
     try:
         parsed = urllib.parse.urlparse(url)
-    except ValueError:
+        port = parsed.port
+    except (TypeError, ValueError):
         return False
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    if parsed.scheme != "https" or not parsed.hostname:
         return False
     host = parsed.hostname.lower()
-    return any(host == suffix[1:] or host.endswith(suffix) for suffix in _ALLOWED_HOST_SUFFIXES)
+    return (
+        host in _ALLOWED_HOSTS
+        and port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+        # Fragments are never sent to the origin. Accepting them would let one
+        # source fan out into unlimited cache keys and repeated downloads.
+        and not parsed.fragment
+    )
 
 
 def proxy_path(url: str | None) -> str | None:
@@ -189,26 +201,60 @@ def media_type_for(path: Path) -> str:
 
 
 def _prune() -> None:
-    """Keep the cache under BOTH the file cap and the byte budget, dropping
-    oldest by mtime. Cheap; runs after a successful write."""
-    try:
-        entries = sorted(
-            ((p, p.stat()) for p in PHOTO_CACHE_DIR.glob("*.*")),
-            key=lambda item: item[1].st_mtime,
-        )
-    except OSError:
-        return
+    """Keep source and derived caches bounded, dropping oldest sources first."""
+    sources: list[tuple[Path, float, int]] = []
+    for path in PHOTO_CACHE_DIR.glob("*.*"):
+        try:
+            if path.is_file():
+                info = path.stat()
+                sources.append((path, info.st_mtime, info.st_size))
+        except OSError:
+            continue
+    sources.sort(key=lambda item: item[1])
 
-    drop = max(len(entries) - _CACHE_MAX_FILES, 0)
-    total = sum(st.st_size for _p, st in entries[drop:])
-    # Keep evicting the oldest survivor until the rest fits the byte budget.
-    while total > _CACHE_MAX_BYTES and drop < len(entries):
-        total -= entries[drop][1].st_size
-        drop += 1
+    variant_dir = PHOTO_CACHE_DIR / ".webp"
+    variants: dict[str, list[tuple[Path, int]]] = {}
+    source_stems = {path.stem for path, _mtime, _size in sources}
+    for path in variant_dir.glob("*.webp"):
+        try:
+            if not path.is_file():
+                continue
+            size = path.stat().st_size
+        except OSError:
+            continue
+        source_stem = path.name.split(".", 1)[0]
+        if source_stem not in source_stems:
+            # Derived files have no value once their source was evicted. This
+            # also cleans variants orphaned by older count-only deployments.
+            with contextlib.suppress(OSError):
+                path.unlink()
+            continue
+        variants.setdefault(source_stem, []).append((path, size))
 
-    for path, _st in entries[:drop]:
-        with contextlib.suppress(OSError):
+    total_bytes = sum(size for _path, _mtime, size in sources) + sum(
+        size for entries in variants.values() for _path, size in entries
+    )
+    while sources and (
+        len(sources) > _CACHE_MAX_FILES or total_bytes > _CACHE_MAX_BYTES
+    ):
+        path, _mtime, size = sources.pop(0)
+        try:
             path.unlink()
+            total_bytes -= size
+        except OSError:
+            continue
+        for variant, variant_size in variants.pop(path.stem, []):
+            try:
+                variant.unlink()
+                total_bytes -= variant_size
+            except OSError:
+                continue
+
+
+def prune_cache() -> None:
+    """Serialize a full source+variant budget pass with cache writers."""
+    with _write_lock:
+        _prune()
 
 
 def get_or_fetch(url: str) -> Path | None:
@@ -245,8 +291,8 @@ def get_or_fetch(url: str) -> Path | None:
             tmp.write_bytes(data)
             tmp.replace(out)
             _prune()
-    except OSError as exc:
-        logger.info("Plant photo cache write failed (%s)", exc)
+    except OSError:
+        logger.info("Plant photo cache write failed")
         return None
     return out
 
@@ -257,28 +303,45 @@ def _download(url: str) -> bytes | None:
     except Exception:  # pragma: no cover
         return None
     try:
-        with requests.get(
-            url,
-            headers={"User-Agent": _USER_AGENT},
-            timeout=_TIMEOUT_S,
-            stream=True,
-        ) as resp:
-            resp.raise_for_status()
-            # requests follows redirects, so the allowlist check on the input
-            # URL alone doesn't bind where the bytes actually came from.
-            # Wikimedia's own thumb/FilePath redirects stay inside the
-            # allowlist; anything that leaves it is not something this proxy
-            # should be fetching on a public endpoint's behalf.
-            if not is_allowed_url(resp.url):
-                logger.info("Plant photo redirected off-allowlist (%s); skipping", resp.url)
+        current_url = url
+        # Follow redirects ourselves. requests' default auto-follow would issue
+        # the next request before we could validate its destination, allowing a
+        # public Wikimedia URL to bounce this proxy into an internal service.
+        for redirect_count in range(_MAX_REDIRECTS + 1):
+            if not is_allowed_url(current_url):
+                logger.info("Plant photo URL is outside the fetch allowlist")
                 return None
-            buf = bytearray()
-            for chunk in resp.iter_content(64 * 1024):
-                buf.extend(chunk)
-                if len(buf) > _MAX_BYTES:
-                    logger.info("Plant photo over %d B; not caching %s", _MAX_BYTES, url)
-                    return None
-            return bytes(buf)
-    except Exception as exc:  # network blip / timeout / HTTP error — all non-fatal
-        logger.info("Plant photo fetch failed (%s); card falls back to placeholder", exc)
+            with requests.get(
+                current_url,
+                headers={"User-Agent": _USER_AGENT},
+                timeout=_TIMEOUT_S,
+                stream=True,
+                allow_redirects=False,
+            ) as resp:
+                if resp.status_code in _REDIRECT_STATUSES:
+                    location = resp.headers.get("Location")
+                    if not isinstance(location, str) or not location.strip():
+                        logger.info("Plant photo redirect had no destination")
+                        return None
+                    destination = urllib.parse.urljoin(current_url, location.strip())
+                    # Validate before the next requests.get call, not after it.
+                    if not is_allowed_url(destination):
+                        logger.info("Plant photo redirected off allowlist; skipping")
+                        return None
+                    if redirect_count >= _MAX_REDIRECTS:
+                        logger.info("Plant photo exceeded redirect limit")
+                        return None
+                    current_url = destination
+                    continue
+
+                resp.raise_for_status()
+                buf = bytearray()
+                for chunk in resp.iter_content(64 * 1024):
+                    buf.extend(chunk)
+                    if len(buf) > _MAX_BYTES:
+                        logger.info("Plant photo exceeded cache size limit")
+                        return None
+                return bytes(buf)
+    except Exception:  # network blip / timeout / HTTP error — all non-fatal
+        logger.info("Plant photo fetch failed; card falls back to placeholder")
         return None

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import sqlite3
+
+from PIL import Image
+
 
 def test_health_contract(client):
     from classifier import DEFAULT_CLASS_NAMES
@@ -130,11 +136,9 @@ def test_analyze_response_contract(client, png_bytes):
     body = r.json()
 
     required = {
-        # ``class_name`` is the canonical post-reroute key — clients
-        # echo it back on /api/feedback as ``predicted_class`` so
-        # per-class accuracy metrics see the same verdict the user
-        # saw rather than argmax(all_probs) (which can disagree
-        # after a weak-healthy reroute).
+        # ``class_name`` is the canonical post-reroute key. The server records
+        # it internally as the weak training prior when consent is present;
+        # clients do not echo it through the feedback receipt API.
         "class_name",
         "disease_name",
         "disease_name_ru",
@@ -192,12 +196,15 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
     # Replace identify_species with a deterministic offline fake so we
     # don't hit the network from CI. The fake mirrors the no_api_key
     # branch of the real function.
-    monkeypatch.setattr(
-        server_main, "identify_species",
-        lambda *_args, **_kw: {
+    captured: dict[str, bytes] = {}
+
+    def fake_identify(image_bytes, **_kw):
+        captured["image"] = image_bytes
+        return {
             "available": False, "results": [], "source": "no_api_key",
-        },
-    )
+        }
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
     r = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},
@@ -209,6 +216,11 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
     assert species["available"] is False
     assert species["source"] == "no_api_key"
     assert species["best"] is None
+    assert captured["image"] != png_bytes
+    with Image.open(io.BytesIO(captured["image"])) as forwarded:
+        assert forwarded.format == "JPEG"
+        assert max(forwarded.size) <= 1024
+        assert not forwarded.getexif()
 
 
 def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatch):
@@ -336,7 +348,7 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         captured["organ"] = organ
         captured["lang"] = lang
-        captured["bytes_len"] = len(image_bytes)
+        captured["image"] = image_bytes
         return {"available": False, "results": [], "source": "no_api_key"}
 
     monkeypatch.setattr(server_main, "identify_species", fake_identify)
@@ -348,15 +360,56 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     assert r.status_code == 200, r.text
     assert captured["organ"] == "flower"
     assert captured["lang"] == "ru"
-    assert captured["bytes_len"] == len(png_bytes)
+    forwarded = captured["image"]
+    assert isinstance(forwarded, bytes)
+    assert forwarded != png_bytes
+    with Image.open(io.BytesIO(forwarded)) as image:
+        assert image.format == "JPEG"
+        assert max(image.size) <= 1024
+        assert not image.getexif()
     assert r.json()["organ"] == "flower"
 
 
-def test_analyze_response_carries_issued_scan_id(client, png_bytes):
-    """/api/analyze must mint a scan_id, persist it in the issued
-    log, and surface it in the response. The feedback gate later
-    consults that table to bind feedback rows to real scans."""
-    import feedback as fb
+def test_identify_strips_exif_before_plantnet(client, monkeypatch):
+    """Direct API clients cannot bypass Android's upload sanitizer."""
+    import main as server_main
+
+    sentinel = "SENTINEL-CAMERA-WITH-GPS"
+    exif = Image.Exif()
+    exif[271] = sentinel
+    exif[272] = f"{sentinel}-MODEL"
+    raw = io.BytesIO()
+    Image.new("RGB", (96, 64), "green").save(raw, format="JPEG", exif=exif)
+    original = raw.getvalue()
+    captured: dict[str, bytes] = {}
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        captured["image"] = image_bytes
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    response = client.post(
+        "/api/identify",
+        files={"image": ("camera.jpg", original, "image/jpeg")},
+    )
+
+    assert response.status_code == 200, response.text
+    forwarded = captured["image"]
+    assert forwarded != original
+    assert sentinel.encode() not in forwarded
+    with Image.open(io.BytesIO(forwarded)) as image:
+        assert image.format == "JPEG"
+        assert image.mode == "RGB"
+        assert not image.getexif()
+        assert {"exif", "icc_profile", "xmp", "iptc"}.isdisjoint(image.info)
+
+
+def test_analyze_response_issues_separate_community_and_feedback_tokens(
+    client, png_bytes
+):
+    """Publication capabilities must never double as feedback receipts."""
+    import community
+    import training_store
 
     r = client.post(
         "/api/analyze",
@@ -364,17 +417,80 @@ def test_analyze_response_carries_issued_scan_id(client, png_bytes):
     )
     assert r.status_code == 200, r.text
     scan_id = r.json().get("scan_id")
+    feedback_receipt = r.json().get("feedback_receipt")
     assert isinstance(scan_id, str) and len(scan_id) >= 16
-    assert fb.is_scan_id_issued(scan_id)
+    assert isinstance(feedback_receipt, str) and len(feedback_receipt) == 43
+    assert scan_id != feedback_receipt
+    assert community.is_analysis_token_issued(scan_id)
+    assert not community.is_analysis_token_issued(feedback_receipt)
+    assert training_store.sample_by_receipt(feedback_receipt) is None
 
 
-def test_feedback_rejects_unissued_scan_id(client, png_bytes):
-    """A feedback POST whose scan_id wasn't seen on /api/analyze must
-    422 instead of being quietly persisted — that's the gate that
-    keeps test/poison rows out of the retraining corpus."""
+def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
+    client, png_bytes
+):
+    import community
+
+    first = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    second = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert first.status_code == second.status_code == 200
+    assert second.json()["is_repeat"] is True
+    tokens = [first.json()["scan_id"], second.json()["scan_id"]]
+    assert all(isinstance(token, str) for token in tokens)
+
+    raw_digest = hashlib.sha256(png_bytes).digest()
+    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+        rows = connection.execute(
+            "SELECT token, image_binding FROM community_analysis_tokens "
+            "WHERE token IN (?, ?)",
+            tokens,
+        ).fetchall()
+    bindings = {str(token): str(binding) for token, binding in rows}
+    assert set(bindings) == set(tokens)
+    for token in tokens:
+        expected = hashlib.sha256(token.encode("utf-8") + b"\0" + raw_digest).hexdigest()
+        assert bindings[token] == expected
+        assert bindings[token] != raw_digest.hex()
+    assert bindings[tokens[0]] != bindings[tokens[1]]
+
+
+def test_analyze_omits_unpersisted_publication_capability_on_cache_miss_and_hit(
+    client, png_bytes, monkeypatch,
+):
+    import main as server_main
+
+    def fail_persistence(*_args, **_kwargs):
+        raise sqlite3.OperationalError("synthetic persistence failure")
+
+    monkeypatch.setattr(server_main, "community_record_analysis_token", fail_persistence)
+    first = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    second = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert first.status_code == second.status_code == 200
+    assert first.json()["scan_id"] is None
+    assert second.json()["scan_id"] is None
+    assert second.json()["is_repeat"] is True
+    assert isinstance(first.json()["feedback_receipt"], str)
+    assert isinstance(second.json()["feedback_receipt"], str)
+
+
+def test_feedback_rejects_legacy_scan_id_payload(client, png_bytes):
+    """Identifier-rich legacy payloads are rejected, not silently ignored."""
     r = client.post(
         "/api/feedback",
         json={"scan_id": "neverissuedXYZ", "correct": True},
     )
     assert r.status_code == 422, r.text
-    assert "scan_id" in r.json()["detail"].lower()
+    errors = r.json()["detail"]
+    assert any(error["loc"][-1] == "scan_id" for error in errors)

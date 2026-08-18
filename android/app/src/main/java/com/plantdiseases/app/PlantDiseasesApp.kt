@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OpinionPrefs
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +34,12 @@ class PlantDiseasesApp : Application() {
 
     @Inject
     lateinit var notificationRepository: NotificationRepository
+
+    @Inject
+    lateinit var authRepository: com.plantdiseases.app.auth.AuthRepository
+
+    @Inject
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -61,36 +69,35 @@ class PlantDiseasesApp : Application() {
      * Wire up error/problem telemetry: register the (consent-gated, best-effort)
      * sender, flush any crash persisted from a previous run, then install the
      * uncaught-exception handler. Errors-only — nothing is sent on the happy
-     * path. Reuses the same data consent as the rest of model improvement.
+     * path. Telemetry has its own versioned opt-in, independent of model
+     * improvement.
      */
     private fun setupTelemetry() {
         com.plantdiseases.app.util.TelemetryReporter.init(
             sender = { report ->
                 appScope.launch { runCatching { scanRepository.reportError(report) } }
             },
-            consent = {
-                com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)
-            },
+            consent = { privacyConsentPrefs.telemetryEnabled },
         )
         flushPendingCrash()
         installCrashHandler()
     }
 
-    /** Persist a fatal crash (with its breadcrumb trail) so the NEXT launch can
-     *  report it — the process is dying, so a network call here is unreliable. */
+    /** Persist only an enum flag and allowlisted breadcrumbs for next launch. */
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching {
-                getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE).edit()
-                    .putString(KEY_CRASH_KIND, error.javaClass.simpleName)
-                    .putString(KEY_CRASH_MESSAGE, error.stackTraceToString().take(2000))
-                    .putString(
-                        KEY_CRASH_CRUMBS,
-                        com.plantdiseases.app.util.TelemetryReporter.breadcrumbs()
-                            .joinToString("\n"),
-                    )
-                    .commit() // sync — the process is about to exit
+            if (privacyConsentPrefs.telemetryEnabled) {
+                runCatching {
+                    getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE).edit()
+                        .putBoolean(KEY_CRASH_PENDING, true)
+                        .putString(
+                            KEY_CRASH_CRUMBS,
+                            com.plantdiseases.app.util.TelemetryReporter.breadcrumbs()
+                                .joinToString(","),
+                        )
+                        .commit() // sync — the process is about to exit
+                }
             }
             previous?.uncaughtException(thread, error)
         }
@@ -98,26 +105,28 @@ class PlantDiseasesApp : Application() {
 
     private fun flushPendingCrash() {
         val prefs = getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE)
-        val kind = prefs.getString(KEY_CRASH_KIND, null) ?: return
-        val message = prefs.getString(KEY_CRASH_MESSAGE, null)
+        val pending = prefs.getBoolean(KEY_CRASH_PENDING, false)
         val crumbs = prefs.getString(KEY_CRASH_CRUMBS, null)
-            ?.split('\n')?.filter { it.isNotBlank() }
+            ?.split(',')?.filter { it.isNotBlank() }
         prefs.edit()
-            .remove(KEY_CRASH_KIND).remove(KEY_CRASH_MESSAGE).remove(KEY_CRASH_CRUMBS)
+            .remove(KEY_CRASH_PENDING)
+            .remove(KEY_CRASH_CRUMBS)
+            // Purge legacy crash text without transmitting it.
+            .remove(LEGACY_KEY_CRASH_KIND)
+            .remove(LEGACY_KEY_CRASH_MESSAGE)
             .apply()
-        if (!com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)) {
-            return
-        }
+        if (!pending || !privacyConsentPrefs.telemetryEnabled) return
         appScope.launch {
             runCatching {
                 scanRepository.reportError(
                     com.plantdiseases.app.data.model.ErrorReport(
+                        telemetryConsent = true,
+                        telemetryConsentVersion = PrivacyConsentPrefs.TELEMETRY_CONSENT_VERSION,
                         stage = "crash",
-                        kind = kind,
+                        kind = "uncaught_exception",
                         fatal = true,
                         appVersion = com.plantdiseases.app.BuildConfig.VERSION_NAME,
                         androidApi = android.os.Build.VERSION.SDK_INT,
-                        message = message,
                         breadcrumbs = crumbs,
                     ),
                 )
@@ -131,9 +140,12 @@ class PlantDiseasesApp : Application() {
         // returning here — unlike a process-wide service-locator container,
         // each Application instance gets its own freshly-built Dagger
         // component, so Robolectric reinstantiating this Application across
-        // test classes in one JVM is naturally safe: there is no shared
-        // global container to double-initialise.
+        // test classes in one JVM is naturally safe. The process-global VK ID
+        // SDK is guarded separately below.
         super.onCreate()
+        if (BuildConfig.VK_OAUTH_CONFIGURED && !BuildConfig.SYNTHETIC_AUTH_ENABLED) {
+            initializeVkId()
+        }
         // NB: do NOT wire a HiltWorkerFactory / Configuration.Provider here.
         // It would call WorkManager.initialize(), but the default
         // androidx.startup WorkManagerInitializer (still enabled — the
@@ -156,7 +168,21 @@ class PlantDiseasesApp : Application() {
         // Persistent disk cache for repeatable server responses (care plans,
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
+        purgeLegacyCommunityIdentity()
         setupTelemetry()
+        if (BuildConfig.ACCOUNT_UI_ENABLED) {
+            appScope.launch {
+                authRepository.restore()
+                if (authRepository.state.value is com.plantdiseases.app.auth.AuthState.Authenticated) {
+                    com.plantdiseases.app.push.PushManager.registerIfEnabled(this@PlantDiseasesApp)
+                }
+            }
+        } else {
+            // Recovery builds actively destroy/queue the current credential,
+            // revoke it remotely when reachable, drain every approved issuer
+            // queue, and expose Guest semantics to public/community flows.
+            appScope.launch { runCatching { authRepository.enterAccountDisabledMode() } }
+        }
         purgeStaleRejectedScans()
         pruneOldNotifications()
         // NB: the community author row is deliberately NOT adopted here.
@@ -175,6 +201,21 @@ class PlantDiseasesApp : Application() {
         // uses.
     }
 
+    private fun initializeVkId() {
+        synchronized(vkIdInitLock) {
+            com.vk.id.VKID.logsEnabled = false
+            val alreadyInitialized = try {
+                com.vk.id.VKID.instance
+                true
+            } catch (_: IllegalStateException) {
+                false
+            }
+            if (!alreadyInitialized) {
+                com.vk.id.VKID.init(this)
+            }
+        }
+    }
+
     /**
      * Sweep stale `not_a_plant` / blur-reject rows on every launch. NAP
      * verdicts DO get a full result screen (so the user can flag "this is
@@ -186,6 +227,7 @@ class PlantDiseasesApp : Application() {
     private fun purgeStaleRejectedScans() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
+            runCatching { scanRepository.purgeExpiredRetainedAnalysisImages() }
         }
     }
 
@@ -200,6 +242,14 @@ class PlantDiseasesApp : Application() {
                 )
             }
         }
+    }
+
+    /** Remove the pre-account stable install alias and generated nickname. */
+    private fun purgeLegacyCommunityIdentity() {
+        getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE)
+            .edit().remove("user_pseudo_id").apply()
+        getSharedPreferences("plantdiseases_nickname", MODE_PRIVATE)
+            .edit().clear().apply()
     }
 
     private fun createNotificationChannels() {
@@ -226,11 +276,14 @@ class PlantDiseasesApp : Application() {
      *  closed app, so the interval is kept short with a flex window. UPDATE (not
      *  KEEP) so installs created under the old 6h schedule adopt the new one.
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker.
-     *  Scheduled regardless of the opinion-notifications preference: a user
-     *  who opted out of the popup still gets the reply recorded in the
-     *  notification centre, and this poll is the only way it's discovered on
-     *  a device without FCM configured. */
+     *  Gated on the account build flag AND the opinion-notifications
+     *  preference: opting out stops the poll entirely, so on a device without
+     *  FCM an opted-out user gets no reply recorded in the notification centre
+     *  either. (Pre-merge this ran unconditionally to feed the centre; the
+     *  account beta made it opt-in because the poll now hits private account
+     *  endpoints.) */
     fun scheduleOpinionChecks() {
+        if (!BuildConfig.ACCOUNT_UI_ENABLED || !OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >(
@@ -278,9 +331,10 @@ class PlantDiseasesApp : Application() {
      *  the foreground (and right after the user asks for a second opinion) so a
      *  reply that landed while the app was closed surfaces promptly instead of
      *  waiting for the next periodic tick. Expedited, degrading to a normal job
-     *  if the expedited quota is spent. Runs regardless of the
-     *  opinion-notifications preference — see scheduleOpinionChecks. */
+     *  if the expedited quota is spent. Gated on the same account flag and
+     *  opinion-notifications preference as scheduleOpinionChecks. */
     fun checkOpinionsNow() {
+        if (!BuildConfig.ACCOUNT_UI_ENABLED || !OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >()
@@ -300,15 +354,22 @@ class PlantDiseasesApp : Application() {
         )
     }
 
+    /** Retry encrypted remote-logout proofs whenever the app returns to use. */
+    fun retryPendingAccountLogouts() {
+        appScope.launch { authRepository.retryPendingLogoutRevocations() }
+    }
+
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
         const val CHANNEL_COMMUNITY = "community"
 
-        // Where a fatal crash is stashed for reporting on the next launch.
+        // Only minimized crash state is stashed for reporting on next launch.
         private const val TELEMETRY_PREFS = "plantdiseases_telemetry"
-        private const val KEY_CRASH_KIND = "crash_kind"
-        private const val KEY_CRASH_MESSAGE = "crash_message"
+        private const val KEY_CRASH_PENDING = "crash_pending_v2"
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
+        private const val LEGACY_KEY_CRASH_KIND = "crash_kind"
+        private const val LEGACY_KEY_CRASH_MESSAGE = "crash_message"
+        private val vkIdInitLock = Any()
 
         private const val NOTIFICATION_RETENTION_MS = 30L * 24 * 3_600_000
     }

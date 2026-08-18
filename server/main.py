@@ -40,10 +40,10 @@ from pathlib import Path
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Depends,
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -52,8 +52,9 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPBearer
 from PIL import Image, ImageOps, UnidentifiedImageError
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -64,7 +65,19 @@ from starlette.responses import Response as StarletteResponse
 #      server.main:app`) — same names live under the `server.` package.
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
-    from . import labeling
+    from . import training_store
+    from .account_auth import (
+        AccountAuthenticationError,
+        AccountAuthenticationUnavailable,
+        AccountPrincipal,
+        build_account_authenticator,
+    )
+    from .account_internal import (
+        internal_service_authorized,
+    )
+    from .account_internal import (
+        send_account_opinion_notification as _send_account_opinion_notification,
+    )
     from .ai_services import (  # type: ignore[import-not-found]
         care_plan_metrics_snapshot,
         chat_metrics_snapshot,
@@ -75,20 +88,25 @@ try:
         species_common_diseases,
         species_profile,
     )
+    from .beta_runtime import allow_synthetic_pipeline
     from .community import (
         COMMUNITY_THUMB_DIR,
+        AnalysisImageMismatchError,
+        AnalysisTokenConflictError,
+        AnalysisTokenUnknownError,
+        OpinionTargetUnavailableError,
+    )
+    from .community import (
+        account_owner_of as community_account_owner_of,
+    )
+    from .community import (
+        actor_blocks as community_actor_blocks,
+    )
+    from .community import (
+        block_content_author as community_block_content_author,
     )
     from .community import (
         clear_wants_opinion as community_clear_wants_opinion,
-    )
-    from .community import (
-        daily_like_count_for_ip_hash as community_daily_like_writes,
-    )
-    from .community import (
-        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
-    )
-    from .community import (
-        daily_write_count_for_ip_hash as community_daily_writes,
     )
     from .community import (
         density_grid as community_density_grid,
@@ -97,7 +115,7 @@ try:
         init_db as init_community_db,
     )
     from .community import (
-        like_counts as community_like_counts,
+        is_analysis_token_issued as community_analysis_token_issued,
     )
     from .community import (
         map_scans as community_map_scans,
@@ -109,7 +127,7 @@ try:
         opinion_counts as community_opinion_counts,
     )
     from .community import (
-        opinion_counts_for_user as community_opinion_counts_for_user,
+        opinion_counts_for_actor as community_opinion_counts_for_actor,
     )
     from .community import (
         opinion_open as community_opinion_open,
@@ -118,34 +136,40 @@ try:
         opinions_for as community_opinions_for,
     )
     from .community import (
-        owner_of as community_owner_of,
+        popular_snapshot as community_popular_snapshot,
     )
     from .community import (
-        popular_snapshot as community_popular_snapshot,
+        process_cleanup_jobs as community_process_cleanup_jobs,
     )
     from .community import (
         prune_older_than as community_prune_older_than,
     )
     from .community import (
-        record_opinion as community_record_opinion,
+        record_analysis_scan as community_record_analysis_scan,
     )
     from .community import (
-        record_scan as community_record_scan,
+        record_analysis_token as community_record_analysis_token,
     )
     from .community import (
-        record_views as community_record_views,
+        record_content_report as community_record_content_report,
+    )
+    from .community import (
+        record_opinion_with_status as community_record_opinion,
+    )
+    from .community import (
+        record_view as community_record_view,
     )
     from .community import (
         region_summary as community_region_summary,
     )
     from .community import (
-        resolve_author as community_resolve_author,
+        request_actor_deletion as community_request_actor_deletion,
     )
     from .community import (
         resolve_scan_token as community_resolve_scan_token,
     )
     from .community import (
-        scan_counts as community_scan_counts,
+        scan_counts_for_actor as community_scan_counts_for_actor,
     )
     from .community import (
         scan_exists as community_scan_exists,
@@ -154,13 +178,19 @@ try:
         scans_by_species as community_scans_by_species,
     )
     from .community import (
-        set_like as community_set_like,
-    )
-    from .community import (
         set_wants_opinion as community_set_wants_opinion,
     )
     from .community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from .community import (
+        thumbnail_is_visible as community_thumbnail_is_visible,
+    )
+    from .community import (
+        unblock_actor as community_unblock_actor,
+    )
+    from .community import (
+        update_actor_nickname as community_update_actor_nickname,
     )
     from .community import (
         view_counts as community_view_counts,
@@ -173,29 +203,6 @@ try:
     from .diseases_data import (
         DISEASES_DATABASE,
         lookup_pet_toxicity,
-    )
-    from .feedback import (
-        attach_image_path as feedback_attach_image_path,
-    )
-    from .feedback import (
-        daily_write_count_for_ip_hash as feedback_daily_writes,
-    )
-    from .feedback import (
-        feedback_counts,
-        hash_client_ip,
-        is_scan_id_issued,
-        record_feedback,
-        record_issued_scan_id,
-        save_feedback_image,
-    )
-    from .feedback import (
-        init_db as init_feedback_db,
-    )
-    from .feedback import (
-        latest_for_scan as feedback_latest_for_scan,
-    )
-    from .feedback import (
-        prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
     from .plant_photos import (
@@ -213,17 +220,29 @@ try:
     from .plant_photos import (
         proxy_path as plant_photo_proxy,
     )
+    from .plant_photos import prune_cache as plant_photo_prune_cache
     from .popular_plants import popular_for
-    from .push import (
-        register as push_register,
-    )
-    from .push import (
-        send_opinion_push as push_send_opinion,
-    )
+    from .runtime_paths import normalize_root_path
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
+    from .synthetic_pipeline import SyntheticPipeline
     from .telemetry import (
-        daily_writes as telemetry_daily_writes,
+        ALLOWED_BREADCRUMBS as TELEMETRY_ALLOWED_BREADCRUMBS,
+    )
+    from .telemetry import (
+        ALLOWED_FAMILIES as TELEMETRY_ALLOWED_FAMILIES,
+    )
+    from .telemetry import (
+        ALLOWED_KINDS as TELEMETRY_ALLOWED_KINDS,
+    )
+    from .telemetry import (
+        ALLOWED_STAGES as TELEMETRY_ALLOWED_STAGES,
+    )
+    from .telemetry import (
+        android_api_bucket as telemetry_android_api_bucket,
+    )
+    from .telemetry import (
+        http_status_bucket as telemetry_http_status_bucket,
     )
     from .telemetry import (
         init_db as init_telemetry_db,
@@ -235,7 +254,19 @@ try:
         record_error as telemetry_record_error,
     )
 except ImportError:
-    import labeling
+    import training_store
+    from account_auth import (
+        AccountAuthenticationError,
+        AccountAuthenticationUnavailable,
+        AccountPrincipal,
+        build_account_authenticator,
+    )
+    from account_internal import (
+        internal_service_authorized,
+    )
+    from account_internal import (
+        send_account_opinion_notification as _send_account_opinion_notification,
+    )
     from ai_services import (
         care_plan_metrics_snapshot,
         chat_metrics_snapshot,
@@ -246,20 +277,25 @@ except ImportError:
         species_common_diseases,
         species_profile,
     )
+    from beta_runtime import allow_synthetic_pipeline
     from community import (
         COMMUNITY_THUMB_DIR,
+        AnalysisImageMismatchError,
+        AnalysisTokenConflictError,
+        AnalysisTokenUnknownError,
+        OpinionTargetUnavailableError,
+    )
+    from community import (
+        account_owner_of as community_account_owner_of,
+    )
+    from community import (
+        actor_blocks as community_actor_blocks,
+    )
+    from community import (
+        block_content_author as community_block_content_author,
     )
     from community import (
         clear_wants_opinion as community_clear_wants_opinion,
-    )
-    from community import (
-        daily_like_count_for_ip_hash as community_daily_like_writes,
-    )
-    from community import (
-        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
-    )
-    from community import (
-        daily_write_count_for_ip_hash as community_daily_writes,
     )
     from community import (
         density_grid as community_density_grid,
@@ -268,7 +304,7 @@ except ImportError:
         init_db as init_community_db,
     )
     from community import (
-        like_counts as community_like_counts,
+        is_analysis_token_issued as community_analysis_token_issued,
     )
     from community import (
         map_scans as community_map_scans,
@@ -280,7 +316,7 @@ except ImportError:
         opinion_counts as community_opinion_counts,
     )
     from community import (
-        opinion_counts_for_user as community_opinion_counts_for_user,
+        opinion_counts_for_actor as community_opinion_counts_for_actor,
     )
     from community import (
         opinion_open as community_opinion_open,
@@ -289,34 +325,40 @@ except ImportError:
         opinions_for as community_opinions_for,
     )
     from community import (
-        owner_of as community_owner_of,
+        popular_snapshot as community_popular_snapshot,
     )
     from community import (
-        popular_snapshot as community_popular_snapshot,
+        process_cleanup_jobs as community_process_cleanup_jobs,
     )
     from community import (
         prune_older_than as community_prune_older_than,
     )
     from community import (
-        record_opinion as community_record_opinion,
+        record_analysis_scan as community_record_analysis_scan,
     )
     from community import (
-        record_scan as community_record_scan,
+        record_analysis_token as community_record_analysis_token,
     )
     from community import (
-        record_views as community_record_views,
+        record_content_report as community_record_content_report,
+    )
+    from community import (
+        record_opinion_with_status as community_record_opinion,
+    )
+    from community import (
+        record_view as community_record_view,
     )
     from community import (
         region_summary as community_region_summary,
     )
     from community import (
-        resolve_author as community_resolve_author,
+        request_actor_deletion as community_request_actor_deletion,
     )
     from community import (
         resolve_scan_token as community_resolve_scan_token,
     )
     from community import (
-        scan_counts as community_scan_counts,
+        scan_counts_for_actor as community_scan_counts_for_actor,
     )
     from community import (
         scan_exists as community_scan_exists,
@@ -325,13 +367,19 @@ except ImportError:
         scans_by_species as community_scans_by_species,
     )
     from community import (
-        set_like as community_set_like,
-    )
-    from community import (
         set_wants_opinion as community_set_wants_opinion,
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
+        thumbnail_is_visible as community_thumbnail_is_visible,
+    )
+    from community import (
+        unblock_actor as community_unblock_actor,
+    )
+    from community import (
+        update_actor_nickname as community_update_actor_nickname,
     )
     from community import (
         view_counts as community_view_counts,
@@ -344,29 +392,6 @@ except ImportError:
     from diseases_data import (
         DISEASES_DATABASE,
         lookup_pet_toxicity,
-    )
-    from feedback import (
-        attach_image_path as feedback_attach_image_path,
-    )
-    from feedback import (
-        daily_write_count_for_ip_hash as feedback_daily_writes,
-    )
-    from feedback import (
-        feedback_counts,
-        hash_client_ip,
-        is_scan_id_issued,
-        record_feedback,
-        record_issued_scan_id,
-        save_feedback_image,
-    )
-    from feedback import (
-        init_db as init_feedback_db,
-    )
-    from feedback import (
-        latest_for_scan as feedback_latest_for_scan,
-    )
-    from feedback import (
-        prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
     from plant_photos import (
@@ -384,17 +409,29 @@ except ImportError:
     from plant_photos import (
         proxy_path as plant_photo_proxy,
     )
+    from plant_photos import prune_cache as plant_photo_prune_cache
     from popular_plants import popular_for
-    from push import (
-        register as push_register,
-    )
-    from push import (
-        send_opinion_push as push_send_opinion,
-    )
+    from runtime_paths import normalize_root_path
     from species_info import fetch_species_info
     from symptoms import diagnose as symptom_diagnose
+    from synthetic_pipeline import SyntheticPipeline
     from telemetry import (
-        daily_writes as telemetry_daily_writes,
+        ALLOWED_BREADCRUMBS as TELEMETRY_ALLOWED_BREADCRUMBS,
+    )
+    from telemetry import (
+        ALLOWED_FAMILIES as TELEMETRY_ALLOWED_FAMILIES,
+    )
+    from telemetry import (
+        ALLOWED_KINDS as TELEMETRY_ALLOWED_KINDS,
+    )
+    from telemetry import (
+        ALLOWED_STAGES as TELEMETRY_ALLOWED_STAGES,
+    )
+    from telemetry import (
+        android_api_bucket as telemetry_android_api_bucket,
+    )
+    from telemetry import (
+        http_status_bucket as telemetry_http_status_bucket,
     )
     from telemetry import (
         init_db as init_telemetry_db,
@@ -448,7 +485,9 @@ class JSONFormatter(logging.Formatter):
         if trace_id:
             log_entry["trace_id"] = trace_id
         if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
+            # Exception strings can embed request URLs, file paths, tokens, or
+            # provider response bodies. Keep only the fact that one existed.
+            log_entry["exception"] = "redacted"
         return json.dumps(log_entry, ensure_ascii=False)
 
 # ── Logging ──────────────────────────────────────────────────────────
@@ -481,6 +520,27 @@ logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler]
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
+ENVIRONMENT = get_str("ENVIRONMENT", "").strip().lower()
+ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
+    environment=ENVIRONMENT,
+    requested=get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
+    synthetic_staging_acknowledged=get_bool(
+        "ACCOUNT_BETA_SYNTHETIC_DATA_ONLY",
+        False,
+    ),
+)
+APP_ROOT_PATH = normalize_root_path(get_str("APP_ROOT_PATH", ""))
+POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
+ACCOUNT_FEATURE_EXPECTED = get_bool(
+    "ACCOUNT_FEATURE_EXPECTED",
+    bool(
+        get_str("ACCOUNT_API_BASE_URL", "").strip()
+        or get_str("ACCOUNT_ISSUER", "").strip()
+    ),
+)
+account_authenticator = build_account_authenticator(expected=ACCOUNT_FEATURE_EXPECTED)
+community_bearer = HTTPBearer(auto_error=False)
+
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
 # PlantVision classifier. ONNX-only and architecture-neutral — it serves
@@ -515,40 +575,35 @@ FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
 FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
-# ── Scan-collection trust knobs ──────────────────────────────────────
-# route_scan auto-accepts confident scans (singleton conformal set, or high
-# calibrated confidence when conformal is off) as ``auto_yes``; the uncertain
-# tail is tagged ``pending`` (model on the edge — high training value, always
-# kept). There is no human review queue: the store is exported and judged
-# offline (docs/DATASET_LABELING_PLAN.md, tools/export_data.py).
-LABELING_TRUST_CONFORMAL = get_bool("LABELING_TRUST_CONFORMAL", True)
-LABELING_CONF_HIGH = get_float("LABELING_CONF_HIGH", 0.85)
+# ── De-identified training-capture trust knobs ───────────────────────
+# Confident weak labels become ``auto_yes``; uncertainty remains ``pending``
+# for offline-only review. No serving-side human/admin queue exists.
+TRAINING_TRUST_CONFORMAL = get_bool("TRAINING_TRUST_CONFORMAL", True)
+TRAINING_CONF_HIGH = get_float("TRAINING_CONF_HIGH", 0.85)
 # Value-driven scan retention: every disease class is high training signal and
 # is always kept; the abundant easy class (healthy; not_a_plant is dropped
-# upstream) is sampled at SCAN_COMMON_KEEP_RATE so confident-healthy photos
+# upstream) is sampled at TRAINING_HEALTHY_KEEP_RATE so confident-healthy photos
 # can't drown the disease corpus.
 DISEASE_CLASSES = {
     "gray_mold_botrytis", "leaf_spot", "leaf_scorch_underwatering",
     "nutrient_deficiency", "pests", "powdery_mildew", "viral_disease",
 }
 
-# ── Production scan recording ────────────────────────────────────────
-# Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
-# analyze result is recorded ANONYMIZED for model improvement: re-encoded
-# (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
-# the response scan_id, and the user↔scan_id join lives solely in feedback.db.
-# Routed by route_scan(): confident → auto_yes, suspicious → pending (kept for
-# offline review). Disclosed via the blocking first-launch consent screen
-# (Android) + the bundled privacy policy (assets/privacy_policy.html).
-SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
-SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
-SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
+# ── Consent-gated training capture ───────────────────────────────────
+# The operator switch is necessary but never sufficient: each analyze request
+# must separately present the current disclosure version. Automatic capture
+# stores only a detector-backed leaf crop, never a full room/background frame.
+TRAINING_CAPTURE_ENABLED = get_bool("TRAINING_CAPTURE_ENABLED", False)
+TRAINING_CONSENT_VERSION = get_str(
+    "TRAINING_CONSENT_VERSION", "model-improvement-v1"
+).strip()
+TRAINING_RETENTION_DAYS = get_int("TRAINING_RETENTION_DAYS", 90)
+TRAINING_MAX_IMAGES = get_int("TRAINING_MAX_IMAGES", 20000)
 # Value caps: confident scans of the abundant easy class (healthy) are sampled
 # at this rate so a flood of confident-healthy photos can't drown the disease
 # corpus; per-class daily cap bounds disk regardless of class.
-SCAN_COMMON_KEEP_RATE = get_float("SCAN_COMMON_KEEP_RATE", 0.1)
-SCAN_DAILY_CAP_PER_CLASS = get_int("SCAN_DAILY_CAP_PER_CLASS", 50)
-SCAN_IMG_MAX_SIDE = 1024  # anonymization downscale bound (not configurable)
+TRAINING_HEALTHY_KEEP_RATE = get_float("TRAINING_HEALTHY_KEEP_RATE", 0.1)
+TRAINING_DAILY_CAP_PER_CLASS = get_int("TRAINING_DAILY_CAP_PER_CLASS", 50)
 
 # ── Guide example photos ─────────────────────────────────────────────
 # Disease/pest example photos used by the app's guide + after-scan strip.
@@ -588,6 +643,7 @@ MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 # around the image must fit under this too.
 MAX_REQUEST_BYTES = get_int("MAX_REQUEST_BYTES", MAX_FILE_SIZE + 2 * 1024 * 1024)
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
+PLANTNET_IMAGE_MAX_DIMENSION = get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
 # diagnostic signal but the blur gate passes it (upscaled noise has
 # high Laplacian variance) and the detector/classifier then emit a
@@ -660,19 +716,6 @@ def _is_webp(head: bytes, contents: bytes) -> bool:
         and len(contents) >= 12
         and contents[8:12] == b"WEBP"
     )
-
-
-_FILENAME_LOG_SAFE = str.maketrans({c: " " for c in "\r\n\t\v\f\x00"})
-
-
-def _safe_filename(name: str | None, *, max_len: int = 80) -> str:
-    """Strip control chars + truncate user-controlled filenames before
-    logging — defends against log injection ("upload\\nFAKE LOG LINE").
-    """
-    if not name:
-        return "<no-filename>"
-    cleaned = str(name).translate(_FILENAME_LOG_SAFE)[:max_len]
-    return cleaned or "<empty-filename>"
 
 
 RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 2.0)
@@ -766,43 +809,116 @@ def _record_violation(identifier: str) -> None:
         _in_memory_violations[identifier] = (reset_time, count)
         if count >= VIOLATION_THRESHOLD:
             _in_memory_bans[identifier] = now + BAN_DURATION
-            logger.warning("Temporary ban applied to identifier=%s until %s", identifier, now + BAN_DURATION)
+            logger.warning("Temporary in-memory abuse ban applied")
 
-def _extract_api_key(request: Request) -> str | None:
+_PUBLIC_COMMUNITY_READ_PATHS = frozenset(
+    {
+        "/api/community/nearby",
+        "/api/community/map",
+        "/api/community/heatmap",
+        "/api/community/by-species",
+    }
+)
+
+
+def _is_public_community_read(method: str, path: str) -> bool:
+    return method in {"GET", "HEAD"} and (
+        path in _PUBLIC_COMMUNITY_READ_PATHS
+        or path.startswith("/api/community/opinions/")
+        or path.startswith("/api/community/thumb/")
+    )
+
+
+def _extract_api_key(request: Request, *, allow_bearer: bool = True) -> str | None:
     key = request.headers.get("x-api-key")
     if key:
         return key.strip()
     auth = request.headers.get("authorization")
-    if auth and auth.lower().startswith("bearer "):
+    if allow_bearer and auth and auth.lower().startswith("bearer "):
         return auth[7:].strip()
     return None
 
-# Daily per-IP write quotas. Stops one bad actor from filling the
-# feedback / community SQLite files with spam (which would also
-# poison the metrics surface). Reads from the same hashed-IP column
-# the rate-limit middleware can't see, so it survives across server
-# restarts unlike the in-memory rate bucket.
+
+def _bearer_token(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "bearer":
+        return None
+    token = token.strip()
+    return token or None
+
+
+async def _require_account(request: Request) -> AccountPrincipal:
+    token = _bearer_token(request)
+    if token is None:
+        raise HTTPException(
+            status_code=401,
+            detail="auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        return await asyncio.get_running_loop().run_in_executor(
+            _get_net_executor(), account_authenticator.authenticate, token,
+        )
+    except AccountAuthenticationError:
+        raise HTTPException(
+            status_code=401,
+            detail="auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except AccountAuthenticationUnavailable:
+        raise HTTPException(status_code=503, detail="account_auth_unavailable") from None
+
+
+async def _optional_account(request: Request) -> AccountPrincipal | None:
+    if _bearer_token(request) is None:
+        return None
+    return await _require_account(request)
+
+
+# Daily write quotas use the live connection address only in process memory.
+# Addresses and hashes never enter feedback, training, or account-era
+# community rows.
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
 COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
-# Likes are cheap and low-stakes compared to an opinion, so they get their
-# own (looser) daily cap rather than sharing the opinion quota.
-COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+_daily_write_lock = threading.Lock()
+_daily_write_counts: dict[tuple[int, str, str], int] = {}
+
+
+def _consume_daily_write(operation: str, address: str, limit: int) -> bool:
+    if limit <= 0:
+        return False
+    day = int(time.time()) // 86_400
+    key = (day, operation, address)
+    with _daily_write_lock:
+        if len(_daily_write_counts) > 10_000:
+            stale = [entry for entry in _daily_write_counts if entry[0] != day]
+            for entry in stale:
+                _daily_write_counts.pop(entry, None)
+        count = _daily_write_counts.get(key, 0)
+        if count >= limit:
+            return False
+        _daily_write_counts[key] = count + 1
+        return True
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
+TELEMETRY_CONSENT_VERSION = get_str(
+    "TELEMETRY_CONSENT_VERSION", "telemetry-errors-v1"
+).strip()
 TELEMETRY_DAILY_CAP_PER_IP = get_int("TELEMETRY_DAILY_CAP_PER_IP", 200)
 TELEMETRY_RETENTION_DAYS = get_int("TELEMETRY_RETENTION_DAYS", 30)
 # Retention windows (days). Daily background task in the FastAPI
 # lifespan drops rows past this age.
-FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
 COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
 PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
 
-# Server-issued scan_ids stay valid for this long. Long enough that
-# a user can scan today and leave feedback in a week; short enough
-# that a leaked id can't be reused indefinitely.
-ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
+# Server-issued community publication tokens are separate from feedback
+# receipts and expire independently.
+COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = get_int(
+    "COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS", 30
+)
 
 # One inference at a time by default. Each ONNX session now uses all
 # physical cores (ONNX_INTRA_OP_THREADS=0, see classifier.py/detector.py),
@@ -908,7 +1024,7 @@ def _snapshot_metrics() -> dict:
         }
 
 
-pipeline: PlantDiseasePipeline | None = None
+pipeline: PlantDiseasePipeline | SyntheticPipeline | None = None
 # Optional second pipeline for the frontier family. Stays ``None`` unless
 # FRONTIER_ENABLED is set AND the frontier artefacts load cleanly at boot.
 pipeline_frontier: PlantDiseasePipeline | None = None
@@ -937,7 +1053,7 @@ def _family_available(family: str) -> bool:
     return pipeline is not None
 
 
-def _pipeline_for_family(family: str) -> PlantDiseasePipeline | None:
+def _pipeline_for_family(family: str) -> PlantDiseasePipeline | SyntheticPipeline | None:
     """Resolve the pipeline instance that should serve this family."""
     if family == "frontier":
         return pipeline_frontier
@@ -949,15 +1065,66 @@ def _pipeline_for_family(family: str) -> PlantDiseasePipeline | None:
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
-def _persist_issued_scan_id(scan_id: str) -> None:
-    """Persist an issued scan_id in the issued log. Best-effort: a failed
-    write must never break analyse — and, since this runs fire-and-forget on
-    the executor, swallowing here also avoids an unretrieved-future warning.
-    """
+def _persist_community_analysis_token(
+    token: str,
+    *,
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+) -> bool:
+    """Persist a publication proof; report failure without leaking a phantom token."""
     try:
-        record_issued_scan_id(scan_id)
-    except Exception as exc:  # noqa: BLE001 — never fail analyse on the log write
-        logger.warning("Failed to persist issued scan_id: %s", exc)
+        community_record_analysis_token(
+            token,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            image_sha256=image_sha256,
+            ttl_days=COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS,
+        )
+    except Exception:  # noqa: BLE001 - fixed message; never log the token
+        logger.warning("Failed to persist community analysis token")
+        return False
+    return True
+
+
+async def _issue_interaction_tokens(
+    *,
+    capture_pending: bool,
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+) -> tuple[str | None, str | None]:
+    """Mint unrelated community and feedback capabilities for one response."""
+    loop = asyncio.get_running_loop()
+    community_token = uuid.uuid4().hex
+    community_token_persisted = await loop.run_in_executor(
+        None,
+        lambda: _persist_community_analysis_token(
+            community_token,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            image_sha256=image_sha256,
+        ),
+    )
+    try:
+        feedback_receipt = await loop.run_in_executor(
+            None,
+            lambda: training_store.issue_feedback_receipt(
+                capture_pending=capture_pending
+            ),
+        )
+    except Exception:  # noqa: BLE001 - inference remains available, fixed log
+        logger.warning("Feedback receipt issuance failed")
+        feedback_receipt = None
+    return community_token if community_token_persisted else None, feedback_receipt
 
 
 def _is_trusted_proxy(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -976,9 +1143,8 @@ def _is_trusted_proxy(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
 def _client_ip(request: Request) -> str:
     """Return the real client IP, honouring X-Forwarded-For only for trusted proxies.
 
-    This value is the identity every abuse control keys on — the rate-limiter
-    bucket, the request log, and the hashed ``client_ip`` stored with feedback,
-    community opinions and telemetry — so it must not be client-choosable.
+    This value is used only by in-process abuse controls. It and its hash are
+    not written to feedback, account-era community rows, or telemetry.
 
     The header is walked RIGHT-to-LEFT. The reverse proxy documented in
     DEPLOYMENT.md forwards ``$proxy_add_x_forwarded_for``, which *appends* the
@@ -1120,21 +1286,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         client_ip = _client_ip(request)
-        api_key = _extract_api_key(request)
+        bearer = _bearer_token(request)
+        public_community_read = _is_public_community_read(request.method, path)
+        internal_service_path = path in {
+            "/api/internal/account-deletions",
+            "/api/internal/account-nicknames",
+        }
+        protected_account_path = bool(
+            path.startswith("/api/community/") and not public_community_read
+        )
+        # Public reads intentionally ignore both account credentials and API
+        # keys. Protected account routes reserve Authorization for the JWT;
+        # legacy bearer API keys remain accepted everywhere else.
+        api_key = (
+            None
+            if public_community_read or protected_account_path or internal_service_path
+            else _extract_api_key(request, allow_bearer=not protected_account_path)
+        )
+        account_token_allowed = bool(
+            bearer
+            and protected_account_path
+        )
 
         # 1. API Key validation and requirement check
-        if REQUIRE_API_KEY:
-            if not api_key:
+        if REQUIRE_API_KEY and not public_community_read:
+            if not api_key and not account_token_allowed and not internal_service_path:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "API key required. Provide via X-API-Key or Authorization header."},
                 )
-            if api_key not in API_KEYS:
+            if api_key and api_key not in API_KEYS:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid API key."},
                 )
-        elif api_key and api_key not in API_KEYS:
+        elif not public_community_read and api_key and api_key not in API_KEYS:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid API key."},
@@ -1173,7 +1359,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if rate == float("inf") or rate <= 0:
             # 4. Daily quota still applies to unthrottled keys.
             if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
-                logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
+                logger.warning("API-key daily quota reached")
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
@@ -1193,7 +1379,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             elapsed = max(0.0, now - last)
             tokens = min(capacity, tokens + elapsed * rate)
             if tokens < 1.0:
-                logger.warning("Rate limited identifier=%s tokens=%.2f", identifier[:24], tokens)
+                logger.warning("Request rate limit reached")
                 deficit = 1.0 - tokens
                 retry_after = max(1, int(math.ceil(deficit / rate))) if rate > 0 else 60
                 self._buckets[identifier] = (tokens, now)
@@ -1212,7 +1398,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # 6. Daily quota — only requests that passed the rate limiter
         # count against the key's daily budget.
         if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
-            logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
+            logger.warning("API-key daily quota reached")
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
@@ -1321,41 +1507,13 @@ class BodySizeLimitMiddleware:
             await self._send_413(send)
 
 
-_TRACE_ID_MAX_LEN = 64
-_TRACE_ID_ALLOWED = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.",
-)
-
-
-def _clean_trace_id(raw: str | None) -> str:
-    """A client-supplied trace id, or a fresh one when it isn't usable.
-
-    The header is echoed back in ``X-Trace-ID`` and stamped on every log line
-    for the request, so it is attacker-controlled text landing in two places
-    that get read later. Bound the length and the alphabet: an unbounded value
-    is a cheap way to bloat both the response and the log file, and keeping
-    the alphabet to id-shaped characters means nothing that reaches a log
-    parser can be mistaken for structure.
-    """
-    if not raw:
-        return uuid.uuid4().hex
-    candidate = raw.strip()
-    if (
-        not candidate
-        or len(candidate) > _TRACE_ID_MAX_LEN
-        or any(ch not in _TRACE_ID_ALLOWED for ch in candidate)
-    ):
-        return uuid.uuid4().hex
-    return candidate
-
-
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Logs every request with method, path, status, and duration."""
+    """Log only a route template and coarse request outcome."""
 
     async def dispatch(self, request: Request, call_next):
-        trace_id = _clean_trace_id(
-            request.headers.get("x-trace-id") or request.headers.get("x-request-id"),
-        )
+        # Never accept a client trace identifier: it can be stable across
+        # requests and become an undeclared installation/account correlate.
+        trace_id = uuid.uuid4().hex
         token = request_id_var.set(trace_id)
         
         _record_request()
@@ -1364,13 +1522,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response: StarletteResponse = await call_next(request)
             response.headers["X-Trace-ID"] = trace_id
             elapsed = time.time() - start
+            route = request.scope.get("route")
+            route_template = getattr(route, "path", "unmatched")
             logger.info(
-                "REQUEST %s %s -> %d (%.3fs) IP=%s",
+                "REQUEST %s %s -> %d (%.3fs)",
                 request.method,
-                request.url.path,
+                route_template,
                 response.status_code,
                 elapsed,
-                _client_ip(request),
             )
             return response
         finally:
@@ -1391,17 +1550,20 @@ async def lifespan(app: FastAPI):
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
     _net_executor = _get_net_executor()
-    init_feedback_db()
+    training_store.init_db()
     init_community_db()
     init_telemetry_db()
-    labeling.init_labeling_db()
     # Model artefacts must already be present under MODELS_DIR (provisioned
     # out of band). The pipeline constructor is fail-fast and aborts boot
     # if a required weight / classes.json is missing.
-    pipeline = PlantDiseasePipeline(
-        detector_path=DETECTOR_PATH,
-        classifier_path=CLASSIFIER_PATH,
-    )
+    if ACCOUNT_BETA_SYNTHETIC_PIPELINE:
+        pipeline = SyntheticPipeline()
+        logger.warning("Synthetic test-only inference pipeline enabled")
+    else:
+        pipeline = PlantDiseasePipeline(
+            detector_path=DETECTOR_PATH,
+            classifier_path=CLASSIFIER_PATH,
+        )
     logger.info(
         "Pipeline initialised (classifier=%s, %d classes, family=%s)",
         pipeline.classifier.backend,
@@ -1413,7 +1575,7 @@ async def lifespan(app: FastAPI):
     # always-on gamma path still serves. The picker / analyze gate then
     # report frontier unavailable. This keeps "enabled in config but
     # artefacts not provisioned yet" from taking the whole server down.
-    if FRONTIER_ENABLED:
+    if FRONTIER_ENABLED and not ACCOUNT_BETA_SYNTHETIC_PIPELINE:
         try:
             pipeline_frontier = PlantDiseasePipeline(
                 detector_path=DETECTOR_PATH,
@@ -1425,12 +1587,10 @@ async def lifespan(app: FastAPI):
                 pipeline_frontier.classifier.NUM_CLASSES,
                 pipeline_frontier.classifier.model_family,
             )
-        except Exception as exc:  # noqa: BLE001 — frontier must degrade, not abort boot
+        except Exception:  # noqa: BLE001 — frontier must degrade, not abort boot
             pipeline_frontier = None
             logger.error(
-                "FRONTIER_ENABLED but frontier pipeline failed to load from %s: %s "
-                "— frontier will report unavailable.",
-                FRONTIER_CLASSIFIER_PATH, exc,
+                "Enabled frontier pipeline failed to load; frontier is unavailable"
             )
     else:
         logger.info("Frontier family disabled (FRONTIER_ENABLED=false)")
@@ -1441,17 +1601,19 @@ async def lifespan(app: FastAPI):
     prune_task = asyncio.create_task(_prune_loop())
     # Warm the curated placeholder plants' lead images so a fresh country
     # (no community scans yet) paints its popular carousel without a wait.
-    warm_task = asyncio.create_task(_warm_placeholder_images())
+    warm_task = asyncio.create_task(_warm_placeholder_images()) if POPULAR_WARM_ENABLED else None
     try:
         yield
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
-        warm_task.cancel()
+        if warm_task is not None:
+            warm_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await warm_task
+        if warm_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await warm_task
         with _executor_lock:
             if _inference_executor is not None:
                 # `wait=True` lets in-flight inferences drain. The bound is
@@ -1468,43 +1630,45 @@ async def lifespan(app: FastAPI):
 
 
 async def _prune_loop() -> None:
-    """Background scheduler: prune feedback + community rows past
+    """Background scheduler: prune training + community rows past
     retention every ``PRUNE_INTERVAL_SECONDS``. First pass runs
     immediately so a restart catches up on stale rows.
     """
     while True:
         try:
-            removed_fb = await asyncio.get_running_loop().run_in_executor(
-                None, feedback_prune_older_than, FEEDBACK_RETENTION_DAYS,
+            training_pruned = await asyncio.get_running_loop().run_in_executor(
+                None,
+                training_store.prune_training_data,
+                TRAINING_RETENTION_DAYS,
+                TRAINING_MAX_IMAGES,
             )
             removed_cm = await asyncio.get_running_loop().run_in_executor(
                 None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
             )
+            cleanup = await asyncio.get_running_loop().run_in_executor(
+                None, community_process_cleanup_jobs,
+            )
             removed_tm = await asyncio.get_running_loop().run_in_executor(
                 None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,
             )
-            if removed_fb or removed_cm or removed_tm:
+            if (
+                training_pruned["samples"]
+                or training_pruned["receipts"]
+                or removed_cm
+                or removed_tm
+                or cleanup["completed"]
+                or cleanup["retried"]
+            ):
                 logger.info(
-                    "Prune pass: feedback=%d community=%d telemetry=%d",
-                    removed_fb, removed_cm, removed_tm,
+                    "Prune pass: training=%d/%d community=%d telemetry=%d cleanup=%d/%d",
+                    training_pruned["samples"], training_pruned["receipts"],
+                    removed_cm, removed_tm,
+                    cleanup["completed"], cleanup["retried"],
                 )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Prune pass failed (will retry tomorrow): %s", exc)
-        # Bound the recorded-scan footprint (retention + class-balanced cap).
-        if SCAN_RECORDING_ENABLED:
-            try:
-                pruned = await asyncio.get_running_loop().run_in_executor(
-                    None, labeling.prune_user_scans,
-                    SCAN_RETENTION_DAYS, SCAN_MAX_IMAGES, DISEASE_CLASSES,
-                )
-                if pruned:
-                    logger.info("Pruned %d recorded user scans", pruned)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("User-scan prune failed: %s", exc)
+        except Exception:  # noqa: BLE001
+            logger.warning("Prune pass failed; it will retry")
         try:
             await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
         except asyncio.CancelledError:
@@ -1515,6 +1679,7 @@ app = FastAPI(
     title="PlantDiseases API",
     description="AI-powered plant disease detection — two-stage pipeline",
     version=APP_VERSION,
+    root_path=APP_ROOT_PATH,
     lifespan=lifespan,
 )
 
@@ -1638,6 +1803,32 @@ def _open_image(contents: bytes) -> Image.Image:
         raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
 
+def _metadata_free_external_jpeg(image: Image.Image) -> bytes:
+    """Return bounded RGB pixels with no source metadata for third parties.
+
+    PlantNet only needs the visible plant pixels.  Rebuilding a fresh image
+    before encoding prevents EXIF/GPS, ICC, XMP, IPTC, thumbnails, comments,
+    and source filenames from crossing the service boundary even when a
+    non-Android client calls the public API directly.
+    """
+    bounded_side = max(64, min(PLANTNET_IMAGE_MAX_DIMENSION, MAX_IMAGE_DIMENSION))
+    resized = image.convert("RGB").copy()
+    if max(resized.size) > bounded_side:
+        resized.thumbnail((bounded_side, bounded_side), Image.Resampling.LANCZOS)
+    clean = Image.new("RGB", resized.size)
+    clean.paste(resized)
+    encoded = io.BytesIO()
+    clean.save(
+        encoded,
+        format="JPEG",
+        quality=88,
+        optimize=True,
+        progressive=False,
+        subsampling=2,
+    )
+    return encoded.getvalue()
+
+
 def _sha256_hex(data: bytes) -> str:
     """SHA-256 hex digest. Pulled out so the analyze handler can run it in
     a thread — hashing up to MAX_UPLOAD_BYTES on the event loop would stall
@@ -1645,77 +1836,81 @@ def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-# ── Scan recording (anonymized model-improvement loop) ──────────────
+# ── Consent-gated, de-identified model-improvement capture ───────────
 
 
-def _anonymise_scan_image(img: Image.Image) -> tuple[bytes, str, str | None]:
-    """Re-encode a decoded PIL image for labeling storage: downscale to
-    ``SCAN_IMG_MAX_SIDE``, JPEG q88 WITHOUT exif — all EXIF/GPS metadata is
-    dropped by construction. Returns ``(jpeg_bytes, sha256, phash)``."""
-    img = img.convert("RGB")
-    if max(img.size) > SCAN_IMG_MAX_SIDE:
-        img.thumbnail((SCAN_IMG_MAX_SIDE, SCAN_IMG_MAX_SIDE), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=88)  # no exif= ⇒ metadata stripped
-    body = buf.getvalue()
-    return body, _sha256_hex(body), labeling.phash_bytes(body)
-
-
-def _scan_keep_sampled(sha: str, rate: float) -> bool:
-    """Deterministic (by sha) keep decision for confident common-class scans."""
-    if rate >= 1.0:
-        return True
-    if rate <= 0.0:
-        return False
-    return int(sha[:8], 16) % 10_000 < int(rate * 10_000)
-
-
-def _record_scan_candidate(
-    img: Image.Image, scan_id: str, class_name: str,
-    confidence: float, pset_classes: list[str] | None,
+def _record_training_candidate(
+    image: Image.Image,
+    feedback_receipt: str,
+    *,
+    family: str,
+    model_version: str,
+    result: dict,
+    consent_version: str,
 ) -> None:
-    """Record one anonymized production scan into the labeling store
-    (post-response via BackgroundTasks — zero hot-path latency). Sync and
-    fail-soft: recording must never break or slow an analyze response.
-
-    Class-balanced caps keep the corpus useful: suspicious (``pending``)
-    scans and weak-class (target>0) scans are always kept; confident scans of
-    common classes are sampled at ``SCAN_COMMON_KEEP_RATE``; a per-class
-    daily cap bounds disk regardless."""
+    """Store one detector-backed leaf crop after the response, fail-soft."""
+    stored = False
     try:
-        if not SCAN_RECORDING_ENABLED or class_name == "not_a_plant":
-            # The blur gate emits a synthetic not_a_plant (blurry_image
-            # warning), so this single check excludes NAP + blur-gated scans.
+        class_name = str(result.get("class_name") or "")
+        if not TRAINING_CAPTURE_ENABLED or class_name == "not_a_plant":
             return
-        try:
-            from .labeling_auto import route_scan
-        except ImportError:  # pragma: no cover - script mode
-            from labeling_auto import route_scan
-        status = route_scan(
-            class_name, confidence, pset_classes,
-            trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
+        detection = result.get("detection") or {}
+        safe_crop = training_store.extract_safe_leaf_crop(image, detection)
+        if safe_crop is None:
+            return
+        crop, area_buckets = safe_crop
+        sanitized = training_store.sanitize_training_image(crop)
+        prediction_set = list(
+            (result.get("prediction_set") or {}).get("classes") or []
         )
-        body, sha, ph = _anonymise_scan_image(img)
-        # Always keep model-uncertain scans (pending) and every disease class;
-        # only the abundant easy class (healthy) is sampled down.
+        confidence = float(result.get("confidence") or 0.0)
+        review_status = training_store.route_model_review(
+            class_name,
+            confidence,
+            prediction_set,
+            trust_conformal=TRAINING_TRUST_CONFORMAL,
+            confidence_threshold=TRAINING_CONF_HIGH,
+        )
         if (
-            status == "auto_yes" and class_name not in DISEASE_CLASSES
-            and not _scan_keep_sampled(sha, SCAN_COMMON_KEEP_RATE)
+            review_status == "auto_yes"
+            and class_name not in DISEASE_CLASSES
+            and not training_store.deterministically_sample(
+                sanitized.sha256, TRAINING_HEALTHY_KEEP_RATE
+            )
         ):
             return
-        if labeling.count_user_scans_today(class_name) >= SCAN_DAILY_CAP_PER_CLASS:
+        if (
+            training_store.count_samples_for_day(class_name)
+            >= TRAINING_DAILY_CAP_PER_CLASS
+        ):
             return
-        fn = f"{sha}.jpg"
-        labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
-        (labeling.LABELING_IMG_DIR / fn).write_bytes(body)
-        labeling.insert_candidate(
-            cls=class_name, image_path=fn, source="user_scan", source_url=None,
-            subject_plant=None, sha=sha, phash=ph, status=status,
-            model_pred=class_name, model_conf=float(confidence or 0.0),
-            model_set=list(pset_classes or []), scan_id=scan_id,
+        training_store.store_sample(
+            sanitized,
+            source="consented_scan",
+            model_family=family,
+            model_version=model_version,
+            predicted_class=class_name,
+            predicted_confidence=confidence,
+            top_k=list(result.get("top_k") or []),
+            conformal_set=prediction_set,
+            warnings=list(result.get("warnings") or []),
+            blur_bucket=training_store.blur_score_bucket(image),
+            detector_region_count=len(detection.get("regions") or []),
+            bbox_area_buckets=area_buckets,
+            severity=str(result.get("severity") or "unknown"),
+            review_status=review_status,
+            consent_version=consent_version,
+            receipt=feedback_receipt,
         )
-    except Exception as exc:  # noqa: BLE001 - never raise from a background task
-        logger.warning("Scan recording failed for %s: %s", scan_id[:16], exc)
+        stored = True
+    except Exception:  # noqa: BLE001 - background capture never affects inference
+        logger.warning("Training capture failed")
+    finally:
+        if not stored:
+            try:
+                training_store.complete_receipt_without_sample(feedback_receipt)
+            except Exception:  # noqa: BLE001 - fixed message, no receipt logging
+                logger.warning("Training receipt finalization failed")
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -1734,6 +1929,10 @@ async def health_check():
         "num_classes": len(pipeline.classifier.CLASS_NAMES),
         "uptime_seconds": round(uptime, 1),
         "total_requests": _snapshot_metrics()["total_requests"],
+        "account_feature_expected": ACCOUNT_FEATURE_EXPECTED,
+        "account_auth_configured": bool(
+            getattr(account_authenticator, "configured", False)
+        ),
     }
 
 
@@ -1866,6 +2065,10 @@ async def capabilities():
     return {
         "default": DEFAULT_FAMILY,
         "families": families,
+        "account": {
+            "expected": ACCOUNT_FEATURE_EXPECTED,
+            "available": bool(getattr(account_authenticator, "configured", False)),
+        },
         "version": APP_VERSION,
         "server_version": APP_VERSION,
         "model_version": model_version,
@@ -1884,7 +2087,7 @@ async def metrics():
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
-        "feedback": feedback_counts(),
+        "training": training_store.training_counts(),
         "community": community_stats_snapshot(),
     }
 
@@ -1938,7 +2141,7 @@ async def metrics_prometheus():
 
 
 async def _species_identify_best_effort(
-    image_bytes: bytes, *, timeout: float, lang: str = "en",
+    image: Image.Image, *, timeout: float, lang: str = "en",
 ) -> dict | None:
     """Run PlantNet identify on the default thread pool with a tight
     timeout (NOT the single-worker inference executor — there it would
@@ -1963,15 +2166,17 @@ async def _species_identify_best_effort(
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
                 # raises TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="auto", lang=lang),
+                lambda: identify_species(
+                    _metadata_free_external_jpeg(image), organ="auto", lang=lang,
+                ),
             ),
             timeout=timeout,
         )
     except (TimeoutError, asyncio.CancelledError):
         logger.info("Species identify skipped (timeout / cancelled)")
         return None
-    except Exception as exc:  # noqa: BLE001
-        logger.info("Species identify failed: %s", exc)
+    except Exception:  # noqa: BLE001
+        logger.info("Species identify failed")
         return None
     if not raw or not raw.get("available"):
         return {
@@ -2013,6 +2218,8 @@ async def analyze_image(
     species: str | None = Query(default=None, max_length=128),
     locale: str = Query(default="en", max_length=16),
     family: str = Query(default=DEFAULT_FAMILY, max_length=16),
+    training_consent: bool = Query(default=False),
+    training_consent_version: str | None = Query(default=None, max_length=32),
 ):
     """Analyse a plant image for diseases (two-stage pipeline).
 
@@ -2032,6 +2239,11 @@ async def analyze_image(
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
 
+    consent_version = (training_consent_version or "").strip().lower()
+    expected_consent_version = TRAINING_CONSENT_VERSION.lower()
+    if training_consent and consent_version != expected_consent_version:
+        raise HTTPException(status_code=422, detail="training_consent_version_invalid")
+
     family = _normalise_family(family)
     # Frontier gate: short-circuit BEFORE doing any decode/inference work
     # when the family isn't available on this server. Mirrors the optional-
@@ -2050,18 +2262,22 @@ async def analyze_image(
             ),
         })
     serving_pipeline = _pipeline_for_family(family) or pipeline
+    classifier_meta = getattr(serving_pipeline.classifier, "meta", {})
+    model_version = str(
+        (classifier_meta or {}).get("model_version")
+        or ("synthetic-test" if ACCOUNT_BETA_SYNTHETIC_PIPELINE else "unknown")
+    )
 
     start_time = time.time()
 
     if not image.content_type or image.content_type not in ALLOWED_CONTENT_TYPES:
         _record_error()
-        logger.warning("Rejected file with content_type=%s", image.content_type)
+        logger.warning("Analyze upload type rejected")
         raise HTTPException(
             status_code=400,
             detail="Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
         )
 
-    fname = _safe_filename(image.filename)
     try:
         contents = await _read_upload(image)
     except HTTPException:
@@ -2069,7 +2285,7 @@ async def analyze_image(
         raise
     except Exception as exc:
         _record_error()
-        logger.warning("Failed to read upload stream from %s: %s", fname, exc)
+        logger.warning("Analyze upload read failed")
         raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
 
     loop = asyncio.get_running_loop()
@@ -2087,13 +2303,13 @@ async def analyze_image(
         # Guard against any non-HTTPException leaking from PIL — return a
         # consistent 400 instead of letting the request crash with 500.
         _record_error()
-        logger.exception("Unexpected error while validating image %s: %s", fname, exc)
+        logger.warning("Analyze image validation failed")
         raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
     img_w, img_h = img.size
     if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
         _record_error()
-        logger.warning("Rejected oversized image: %dx%d from %s", img_w, img_h, fname)
+        logger.warning("Analyze image dimensions rejected")
         raise HTTPException(
             status_code=400,
             detail=f"Image resolution too large ({img_w}x{img_h}). "
@@ -2101,7 +2317,7 @@ async def analyze_image(
         )
     if min(img_w, img_h) < MIN_IMAGE_DIMENSION:
         _record_error()
-        logger.warning("Rejected undersized image: %dx%d from %s", img_w, img_h, fname)
+        logger.warning("Analyze image dimensions rejected")
         raise HTTPException(
             status_code=400,
             detail=f"Image resolution too small ({img_w}x{img_h}). "
@@ -2143,6 +2359,10 @@ async def analyze_image(
         # only copies the top level — nested ``species.candidates`` /
         # ``top_k`` / ``detection.regions`` would still be aliased.
         cached_payload = copy.deepcopy(cache_hit["payload"])
+        # Capabilities are fresh per response and must never be shared through
+        # the diagnosis cache, even when two callers upload identical bytes.
+        cached_payload.pop("scan_id", None)
+        cached_payload.pop("feedback_receipt", None)
         cached_payload["is_repeat"] = True
         cached_payload["cached_at"] = cache_hit["cached_at"]
         cached_payload["elapsed_ms"] = 0
@@ -2152,6 +2372,32 @@ async def analyze_image(
             cached_payload["toxic_to_pets"] = overridden["toxic_to_pets"]
             cached_payload["toxic_species_list"] = overridden["species_list"]
             cached_payload["toxicity_source"] = overridden["source"]
+        capture_pending = bool(
+            TRAINING_CAPTURE_ENABLED
+            and training_consent
+            and cached_payload.get("class_name") != "not_a_plant"
+        )
+        cached_species = (cached_payload.get("species") or {}).get("best") or {}
+        community_token, feedback_receipt = await _issue_interaction_tokens(
+            capture_pending=capture_pending,
+            disease=str(cached_payload.get("class_name") or ""),
+            confidence=cached_payload.get("confidence"),
+            species=cached_species.get("scientific_name"),
+            species_score=cached_species.get("score"),
+            image_sha256=image_sha,
+        )
+        cached_payload["scan_id"] = community_token
+        cached_payload["feedback_receipt"] = feedback_receipt
+        if capture_pending and feedback_receipt is not None:
+            background_tasks.add_task(
+                _record_training_candidate,
+                img.copy(),
+                feedback_receipt,
+                family=family,
+                model_version=model_version,
+                result=copy.deepcopy(cached_payload),
+                consent_version=consent_version,
+            )
         return JSONResponse(content=cached_payload)
 
     # Fire the PlantNet species identify in parallel with the disease
@@ -2164,7 +2410,7 @@ async def analyze_image(
     # hostage; the earlier 6s cap cut off attempts the upstream would
     # have completed. ``plantnet_lang`` was resolved above for the cache key.
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=10.0, lang=plantnet_lang)
+        _species_identify_best_effort(img.copy(), timeout=10.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
@@ -2174,7 +2420,7 @@ async def analyze_image(
     except TimeoutError as exc:
         species_task.cancel()
         _record_error()
-        logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
+        logger.error("Inference timed out")
         raise HTTPException(
             status_code=504,
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
@@ -2182,7 +2428,7 @@ async def analyze_image(
     except Exception as exc:
         species_task.cancel()
         _record_error()
-        logger.exception("Inference crashed: %s", exc)
+        logger.error("Inference failed")
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
 
     class_name = result["class_name"]
@@ -2195,10 +2441,7 @@ async def analyze_image(
     elapsed = time.time() - start_time
     _record_analysis(class_name, elapsed * 1000)
 
-    logger.info(
-        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s warnings=%s",
-        class_name, confidence, elapsed, fname, warnings,
-    )
+    logger.info("Analysis completed")
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
@@ -2311,25 +2554,27 @@ async def analyze_image(
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
-    # Mint the scan_id (it must ride in the response) and persist it to the
-    # issued-ids log BEFORE returning. This previously ran fire-and-forget on
-    # the executor to shave a SQLite round-trip off the response path, but
-    # that raced the feedback gate: a client that POSTs feedback right after
-    # the result lands could reach /api/feedback before the row was written,
-    # and the gate would reject a legitimate scan_id. The write is a single
-    # indexed INSERT executed off the event loop, so awaiting it costs ~ms
-    # while removing the race entirely.
-    scan_id = uuid.uuid4().hex
-    await loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
+    capture_pending = bool(
+        TRAINING_CAPTURE_ENABLED
+        and training_consent
+        and class_name != "not_a_plant"
+    )
+    community_token, feedback_receipt = await _issue_interaction_tokens(
+        capture_pending=capture_pending,
+        disease=class_name,
+        confidence=round(confidence, 3),
+        species=auto_best.get("scientific_name"),
+        species_score=auto_best.get("score"),
+        image_sha256=image_sha,
+    )
 
-    response_payload = {
+    cached_response_payload = {
         # Canonical class key the pipeline landed on AFTER all
         # post-processing (weak-healthy reroute, OOD gate, etc.).
         # ``disease_name`` / ``disease_name_ru`` are the localised
-        # display strings derived from this key. Clients should echo
-        # ``class_name`` back as ``predicted_class`` on /api/feedback
-        # — argmax(all_probs) is the PRE-reroute class and would
-        # poison per-class accuracy metrics if used instead.
+        # display strings derived from this key. Training capture records it
+        # internally as a weak prior; feedback clients send only the unrelated
+        # receipt plus structured correctness/correction fields.
         "class_name": class_name,
         # Which model tier actually produced this verdict. Lets the client
         # confirm it got the family it asked for (and fall back gracefully if
@@ -2361,26 +2606,27 @@ async def analyze_image(
         # Set to true only when the response is replayed from the
         # SHA-256 cache above; first-time scans get false here.
         "is_repeat": False,
-        # Server-minted scan_id for this response. Clients should
-        # send this same string back on /api/feedback so the gate
-        # in main.py can confirm the feedback ties to a real scan
-        # we ran. Stored in the issued_scan_ids table; expires after
-        # ISSUED_SCAN_ID_TTL_DAYS.
-        "scan_id": scan_id,
     }
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.
-    _analyze_cache_put(cache_key, response_payload)
-    # Record the scan (anonymized) for the model-improvement loop. Runs
-    # AFTER the response is sent (BackgroundTasks) so it costs the user
-    # nothing; cache hits return earlier and are never double-recorded.
-    # ``img.copy()`` is defensive — the task must never share pixels with
-    # anything the handler might still touch.
-    if SCAN_RECORDING_ENABLED and class_name != "not_a_plant":
+    _analyze_cache_put(cache_key, cached_response_payload)
+    response_payload = {
+        **cached_response_payload,
+        # This server-minted token is accepted only by community publication.
+        "scan_id": community_token,
+        # This unrelated 256-bit capability is accepted only by feedback.
+        "feedback_receipt": feedback_receipt,
+    }
+    if capture_pending and feedback_receipt is not None:
         background_tasks.add_task(
-            _record_scan_candidate, img.copy(), scan_id, class_name,
-            confidence, list((result.get("prediction_set") or {}).get("classes") or []),
+            _record_training_candidate,
+            img.copy(),
+            feedback_receipt,
+            family=family,
+            model_version=model_version,
+            result=copy.deepcopy(result),
+            consent_version=consent_version,
         )
     return JSONResponse(content=response_payload)
 
@@ -2585,7 +2831,6 @@ class CommunityScanRequest(BaseModel):
     """
 
     scan_id: str = Field(..., min_length=8, max_length=64)
-    user_pseudo_id: str = Field(..., min_length=8, max_length=64)
     country: str | None = Field(default=None, min_length=2, max_length=80)
     region: str = Field(default="", max_length=80)
     disease: str = Field(..., min_length=1, max_length=64)
@@ -2593,14 +2838,7 @@ class CommunityScanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     species_score: float | None = Field(default=None, ge=0.0, le=1.0)
     locale: str | None = Field(default=None, max_length=8)
-    nickname: str | None = Field(default=None, max_length=64)
-
-    @field_validator("nickname")
-    @classmethod
-    def _clean_nickname(cls, v: str | None) -> str | None:
-        return _normalise_nickname(v)
-
-    @field_validator("scan_id", "user_pseudo_id")
+    @field_validator("scan_id")
     @classmethod
     def _safe_token(cls, v: str) -> str:
         if any(ch not in _SCAN_ID_ALLOWED for ch in v):
@@ -2670,7 +2908,7 @@ except ImportError:
 _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
 # Out-of-head corrections — physiological classes the
-# v2.2 head doesn't carry yet, plus a free-form catch-all. We accept
+# v2.2 head doesn't carry yet, plus a structured catch-all key. We accept
 # them on /api/feedback (otherwise the user has no way to tell us
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.
@@ -2701,88 +2939,30 @@ _FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
     "other",
 })
 
-_FEEDBACK_ALLOWED_PLATFORMS: frozenset[str] = frozenset({
-    "android",
-    "ios",
-    "web",
-    "test",
-    "unknown",
-})
-
-# scan_id is a client-generated opaque token. Constrain it to a
-# URL-safe alphabet of reasonable length so a runaway client can't
-# stuff control bytes or megabyte blobs through the column. We don't
-# enforce a strict UUID shape because legacy clients still mint
-# numeric ids and we want them to keep working through the
-# transition window.
+# Opaque server capabilities use a URL-safe alphabet. Community still names
+# its publication capability ``scan_id`` for API compatibility; feedback uses
+# a separate receipt that is never accepted by community endpoints.
 _SCAN_ID_ALLOWED = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
 
 
 class FeedbackRequest(BaseModel):
-    """Single user-feedback signal on a scan.
+    """One structured correction authorized by an unlinkable receipt."""
 
-    The classifier is stateless, so the *scan* lives only on the
-    client. ``scan_id`` is therefore client-generated and just has to
-    be stable across the lifetime of one scan: we de-dupe by
-    (user_pseudo_id, scan_id) downstream.
+    model_config = ConfigDict(extra="forbid")
 
-    Required: ``scan_id``, ``correct``.
-    Optional: every other field — kept nullable so clients can roll
-    out the richer payload progressively. Length bounds protect the
-    append-only SQLite file from runaway clients.
-    """
-
-    scan_id: str = Field(..., min_length=8, max_length=64)
+    feedback_receipt: str = Field(..., min_length=43, max_length=43)
     correct: bool
     corrected_class: str | None = Field(default=None, max_length=64)
-    note: str | None = Field(default=None, max_length=2000)
     reason: str | None = Field(default=None, max_length=32)
-    # Diagnosis context — what the model said when the user gave
-    # feedback. Used to compute per-class accuracy without joining
-    # against scan history (we don't have that history server-side).
-    predicted_class: str | None = Field(default=None, max_length=64)
-    predicted_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    top3: list[dict] | None = Field(default=None, max_length=3)
-    # Client context — used for cohort analysis and abuse detection.
-    model_version: str | None = Field(default=None, max_length=32)
-    app_version: str | None = Field(default=None, max_length=32)
-    locale: str | None = Field(default=None, max_length=8)
-    platform: str | None = Field(default=None, max_length=16)
-    # Opaque per-install id (UUIDv4 from the client). Lets us correlate
-    # multiple feedback signals from one user *without* knowing who
-    # they are.
-    user_pseudo_id: str | None = Field(default=None, min_length=8, max_length=64)
-    # Detector context — useful for separating crop-quality issues
-    # from genuine classifier errors.
-    region_count: int | None = Field(default=None, ge=0, le=64)
-    primary_region_index: int | None = Field(default=None, ge=-1, le=63)
-    # Wall-clock milliseconds between original scan and this feedback
-    # tap. Capped at 30 days so a malicious client can't pretend the
-    # signal is from the distant future / past.
-    feedback_latency_ms: int | None = Field(default=None, ge=0, le=30 * 24 * 3600 * 1000)
-    # Optional SHA-256 of the original image (hex) — lets us join
-    # against any future image-side analytics without the image bytes
-    # leaving the device.
-    image_hash: str | None = Field(default=None, min_length=32, max_length=128)
-    # Conformal prediction set the server returned with the original
-    # /api/analyse response (the classes the model couldn't rule out
-    # at the configured coverage). Persisting it on the feedback row
-    # lets us answer "was the correct answer in the 90 % set?" — a
-    # cleaner diagnostic than top1-only accuracy because it
-    # separates calibration failures from point-estimate failures.
-    # Capped at 16 keys / 64 chars each as a sanity guard.
-    prediction_set: list[str] | None = Field(default=None, max_length=16)
 
-    @field_validator("scan_id", "user_pseudo_id")
+    @field_validator("feedback_receipt")
     @classmethod
-    def _safe_token(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
-            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
-        return v
+    def _safe_receipt(cls, value: str) -> str:
+        if any(ch not in _SCAN_ID_ALLOWED for ch in value):
+            raise ValueError("invalid feedback receipt")
+        return value
 
     @field_validator("corrected_class")
     @classmethod
@@ -2799,14 +2979,6 @@ class FeedbackRequest(BaseModel):
             )
         return cleaned
 
-    @field_validator("predicted_class")
-    @classmethod
-    def _normalise_predicted(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = v.strip().lower()
-        return cleaned or None
-
     @field_validator("reason")
     @classmethod
     def _known_reason(cls, v: str | None) -> str | None:
@@ -2821,59 +2993,11 @@ class FeedbackRequest(BaseModel):
             )
         return cleaned
 
-    @field_validator("platform")
-    @classmethod
-    def _known_platform(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = v.strip().lower()
-        if not cleaned:
-            return None
-        if cleaned not in _FEEDBACK_ALLOWED_PLATFORMS:
-            # Unknown platform tags get folded to "unknown" rather
-            # than rejected — we'd rather collect the signal than
-            # bounce a client with a typo in BuildConfig.
-            return "unknown"
-        return cleaned
-
-    @field_validator("locale")
-    @classmethod
-    def _normalise_locale(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = v.strip().lower()[:8]
-        return cleaned or None
-
-    @field_validator("image_hash")
-    @classmethod
-    def _hex_only(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = v.strip().lower()
-        if not cleaned:
-            return None
-        if any(ch not in "0123456789abcdef" for ch in cleaned):
-            raise ValueError("image_hash must be lowercase hex")
-        return cleaned
-
-    @field_validator("top3")
-    @classmethod
-    def _shape_top3(cls, v: list[dict] | None) -> list[dict] | None:
-        if not v:
-            return None
-        cleaned: list[dict] = []
-        for entry in v[:3]:
-            if not isinstance(entry, dict):
-                continue
-            cls_key = str(entry.get("class", "")).strip().lower()[:64]
-            try:
-                prob = float(entry.get("prob", 0.0))
-            except (TypeError, ValueError):
-                continue
-            if not cls_key:
-                continue
-            cleaned.append({"class": cls_key, "prob": max(0.0, min(1.0, prob))})
-        return cleaned or None
+    @model_validator(mode="after")
+    def _consistent_correction(self) -> "FeedbackRequest":
+        if self.correct and self.corrected_class is not None:
+            raise ValueError("corrected_class is only valid for negative feedback")
+        return self
 
 
 @api_router.post("/identify")
@@ -2907,7 +3031,7 @@ async def identify_endpoint(
         raise
     except Exception as exc:
         _record_error()
-        logger.warning("Failed to read upload stream for /api/identify: %s", exc)
+        logger.warning("Identify upload read failed")
         raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
     try:
         _validate_image_bytes(contents)
@@ -2919,10 +3043,18 @@ async def identify_endpoint(
         organ = "auto"
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        _get_net_executor(),
-        lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
-    )
+    try:
+        result = await loop.run_in_executor(
+            _get_net_executor(),
+            lambda: identify_species(
+                _metadata_free_external_jpeg(_open_image(contents)),
+                organ=organ,
+                lang=plantnet_lang,
+            ),
+        )
+    except HTTPException:
+        _record_error()
+        raise
     # Deep-copy result before merging so a cache-hit return from
     # ``identify_species`` (which now also deep-copies, but defence in
     # depth is cheap) doesn't share its nested ``results`` /
@@ -2932,14 +3064,13 @@ async def identify_endpoint(
 
 
 @api_router.post("/chat")
-async def chat_endpoint(payload: ChatRequest, request: Request):
+async def chat_endpoint(payload: ChatRequest):
     """AI Plant Doctor — OpenRouter chat completion (default model
     ``openai/gpt-oss-120b``).
 
     Per-session turn + token caps prevent budget overrun. Per-IP rate
     limiting from the global middleware still applies.
     """
-    client_ip = _client_ip(request)
     # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
     # before they hit chat_reply so a malicious client can't push a
     # 10 MB nested dict through the LLM context window.
@@ -2955,17 +3086,11 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
             diagnosis_context=diagnosis,
         ),
     )
-    # Abuse logging: cap-rejection from a specific IP is the
-    # signature pattern for a runaway client. Log at WARNING so
-    # ops dashboards can alert on it.
     if (
         not result.get("available")
         and result.get("reason") in ("session_turn_cap", "session_token_cap")
     ):
-        logger.warning(
-            "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
-            client_ip, payload.session_id, result["reason"],
-        )
+        logger.warning("AI Doctor budget cap reached")
     return JSONResponse(content=result)
 
 
@@ -3057,287 +3182,223 @@ async def progression_endpoint(payload: ProgressionRequest):
 
 @api_router.post("/feedback")
 async def feedback_endpoint(payload: FeedbackRequest, request: Request):
-    """Capture a thumbs-up / thumbs-down on a diagnosis, with full
-    diagnostic + client context.
+    """Apply one structured correction through a short-lived receipt.
 
-    Append-only — there is no update / delete path. The 1 req/s per-IP
-    rate limit from the global middleware applies; the endpoint
-    additionally caps ``note`` length via the pydantic model so a
-    malicious client can't bloat the SQLite file with megabytes of
-    text.
-
-    The raw client IP is hashed (peppered SHA-256) before persistence
-    so we never store PII at rest. The hash is stable across a single
-    deployment, which is enough for abuse-rate detection.
+    The receipt is independent from accounts, community publication tokens,
+    and client scan identifiers. Only its digest exists at rest. The live
+    connection address is used for an in-process quota and is never written.
     """
     client_ip = _client_ip(request)
-    # Per-IP daily write quota. The rate limiter is in-memory and
-    # resets on restart; this gate reads the same peppered IP-hash
-    # column we persist on each row, so it survives across deploys.
-    ip_hash = hash_client_ip(client_ip)
-    today_writes = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_daily_writes(ip_hash),
-    )
-    if today_writes >= FEEDBACK_DAILY_QUOTA:
-        logger.warning(
-            "Feedback daily quota hit ip_hash=%s writes=%d cap=%d",
-            ip_hash, today_writes, FEEDBACK_DAILY_QUOTA,
-        )
+    if not _consume_daily_write("feedback", client_ip, FEEDBACK_DAILY_QUOTA):
+        logger.warning("Feedback daily quota reached")
         raise HTTPException(
             status_code=429,
             detail="Daily feedback quota reached. Try again tomorrow.",
         )
-
-    # Bind the feedback to a scan_id we actually issued. Unknown
-    # scan_ids are rejected — that's how we keep arbitrary clients
-    # from poisoning the corrections corpus the retraining loop
-    # consumes.
-    scan_id_clean = payload.scan_id.strip()
-    issued = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
-    )
-    if not issued:
-        logger.warning(
-            "Rejected feedback on unissued scan_id=%s ip_hash=%s",
-            scan_id_clean[:16], ip_hash,
-        )
-        raise HTTPException(
-            status_code=422,
-            detail="Unknown scan_id — please re-scan before sending feedback.",
-        )
-
-    # Pydantic v2 has already normalised these — corrected_class is
-    # constrained to the known class set, reason to the known reason
-    # set, scan_id / user_pseudo_id to the URL-safe alphabet, etc.
-    note = (payload.note or "").strip() or None
-    top3_pairs = (
-        [(entry["class"], entry["prob"]) for entry in payload.top3]
-        if payload.top3 else None
-    )
-
-    # ``out_of_head`` only carries signal when the user supplied a
-    # correction. For correct=1 rows or rows without a correction we
-    # leave it NULL so retraining filters on ``IS 1`` rather than
-    # treating absence as a no.
     out_of_head: bool | None = None
     if payload.corrected_class:
         out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
     try:
-        row_id = await asyncio.get_running_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: record_feedback(
-                scan_id=payload.scan_id.strip(),
+            lambda: training_store.apply_feedback(
+                payload.feedback_receipt,
                 correct=payload.correct,
                 corrected_class=payload.corrected_class,
-                note=note,
-                client_ip=client_ip,
-                predicted_class=payload.predicted_class,
-                predicted_confidence=payload.predicted_confidence,
-                top3=top3_pairs,
-                model_version=payload.model_version,
-                app_version=payload.app_version,
-                locale=payload.locale,
-                platform=payload.platform,
-                user_pseudo_id=payload.user_pseudo_id,
-                region_count=payload.region_count,
-                primary_region_index=payload.primary_region_index,
-                feedback_latency_ms=payload.feedback_latency_ms,
-                reason=payload.reason,
-                image_hash=payload.image_hash,
+                correction_reason=payload.reason,
                 out_of_head=out_of_head,
-                prediction_set=payload.prediction_set,
             ),
         )
+    except training_store.TrainingStoreError as exc:
+        if exc.code == "feedback_not_ready":
+            raise HTTPException(status_code=409, detail="feedback_not_ready") from None
+        if exc.code == "feedback_receipt_used":
+            raise HTTPException(status_code=409, detail="feedback_receipt_used") from None
+        raise HTTPException(status_code=422, detail="feedback_receipt_invalid") from None
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to record feedback: %s", exc)
+        logger.error("Failed to record structured feedback")
         raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
-
-    # Fold the feedback into the collection store (fail-soft, off the event
-    # loop): negative feedback re-opens the recorded scan candidate as a
-    # top-priority pending card; positive feedback stamps user_correct and
-    # can promote a pending card to auto_yes (model+user agreement).
-    def _mark_labeling_feedback() -> None:
-        try:
-            labeling.mark_feedback(
-                scan_id_clean, payload.correct, payload.corrected_class, note,
-            )
-        except Exception as exc:  # noqa: BLE001 - feedback must still succeed
-            logger.warning("labeling.mark_feedback failed: %s", exc)
-
-    asyncio.get_running_loop().run_in_executor(None, _mark_labeling_feedback)
-
-    # Truncate scan_id in the access log so attacker-supplied bytes
-    # can't blow up log lines, even though the pydantic validator
-    # already capped it at 64 chars.
-    logger.info(
-        "Feedback recorded id=%d scan=%s correct=%s predicted=%s corrected=%s reason=%s",
-        row_id,
-        payload.scan_id[:16],
-        payload.correct,
-        payload.predicted_class,
-        payload.corrected_class,
-        payload.reason,
-    )
-    return JSONResponse(content={"ok": True, "id": row_id})
+    logger.info("Structured feedback recorded")
+    return JSONResponse(content={"ok": True, "updated": result.updated})
 
 
 @api_router.post("/feedback/image")
 async def feedback_image_upload(
     request: Request,
-    scan_id: str = Form(...),
+    feedback_receipt: str = Form(...),
+    correct: bool = Form(...),
+    corrected_class: str | None = Form(None),
+    reason: str | None = Form(None),
     image: UploadFile = File(...),
 ):
-    """Persist the original image bytes for a negative-feedback row.
+    """Apply feedback and optionally retain a detector-backed leaf crop.
 
-    Called by the Android client immediately after a successful
-    ``correct=false`` ``/api/feedback`` submission. The image is
-    written to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,
-    and the most recent feedback row for ``scan_id`` is updated
-    in-place with ``image_path``. Same per-IP rate limit and
-    scan-id-was-issued gate as ``/api/feedback`` so a hostile
-    client can't spray arbitrary bytes at the corpus.
-
-    Privacy note: photo storage for model improvement is disclosed in
-    the first-launch consent screen (and the feedback sheet copy); the
-    image is also anonymized (EXIF-stripped, downscaled) before it
-    reaches the collection store.
+    Full frames are never stored by this endpoint. If the detector cannot
+    provide a bounded leaf crop, the upload is rejected without retaining
+    pixels. Re-encoding strips metadata before hashes are calculated.
     """
+    try:
+        payload = FeedbackRequest(
+            feedback_receipt=feedback_receipt,
+            correct=correct,
+            corrected_class=corrected_class,
+            reason=reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid_feedback") from exc
+
     client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
-    today_writes = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_daily_writes(ip_hash),
-    )
-    if today_writes >= FEEDBACK_DAILY_QUOTA:
+    if not _consume_daily_write("feedback_image", client_ip, FEEDBACK_DAILY_QUOTA):
+        logger.warning("Feedback image daily quota reached")
         raise HTTPException(
             status_code=429,
             detail="Daily feedback quota reached. Try again tomorrow.",
         )
-
-    scan_id_clean = scan_id.strip()
-    if not scan_id_clean or any(ch not in _SCAN_ID_ALLOWED for ch in scan_id_clean):
-        raise HTTPException(status_code=422, detail="Invalid scan_id")
-    issued = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
-    )
-    if not issued:
-        raise HTTPException(
-            status_code=422,
-            detail="Unknown scan_id — please re-scan before sending feedback.",
-        )
-
-    # Hard size cap (same as /api/analyze) — the bare ``image.read()``
-    # used here previously pulled the whole body into RAM with no ceiling.
     image_bytes = await _read_upload(image)
-    # Magic-byte gate, same allowlist as /api/analyze. Without it this
-    # endpoint accepted any bytes at all: nothing downstream decoded the
-    # upload before storing it, so the retraining corpus was writable with
-    # arbitrary content by anyone holding one issued scan_id.
+    # Apply the same byte-signature allowlist as the analysis endpoint before
+    # decoding or invoking the privacy screen. Content-Type is attacker-owned.
     _validate_image_bytes(image_bytes)
-
-    # One image per feedback row, and the reason is the quota above.
-    # ``feedback_daily_writes`` counts rows in the feedback TABLE — rows that
-    # /api/feedback creates and this endpoint never does. So the guard at the
-    # top of this function reads a counter its own traffic cannot advance:
-    # one legitimate correction (count 1, quota 200) was enough to then POST
-    # unlimited DISTINCT images here, each up to MAX_FILE_SIZE, held back only
-    # by the 2 req/s bucket. That is ~8 MB/s of attacker-chosen disk, forever.
-    #
-    # Binding each feedback row to a single image closes it: the number of
-    # stored images can no longer exceed the number of feedback rows, which
-    # IS quota-limited. A retry of the same bytes is still allowed through —
-    # filenames are ``<sha256>.<ext>``, so an identical re-upload is the same
-    # artefact and must stay idempotent for clients retrying after a timeout.
-    existing_row = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_latest_for_scan(scan_id_clean),
-    )
-    existing_image = (existing_row or {}).get("image_path") or ""
-    digest = hashlib.sha256(image_bytes).hexdigest()
-    if existing_image and not existing_image.startswith(digest):
-        raise HTTPException(
-            status_code=409,
-            detail="This scan already has a feedback image.",
+    img = _open_image(image_bytes)
+    if pipeline is None or not getattr(pipeline, "detector", None):
+        raise HTTPException(status_code=503, detail="privacy_screen_unavailable")
+    loop = asyncio.get_running_loop()
+    try:
+        detector_result = await asyncio.wait_for(
+            loop.run_in_executor(_get_inference_executor(), pipeline.detector.detect, img),
+            timeout=INFERENCE_TIMEOUT,
         )
+    except (AttributeError, asyncio.TimeoutError):
+        raise HTTPException(status_code=503, detail="privacy_screen_unavailable") from None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Feedback image privacy screen failed")
+        raise HTTPException(status_code=422, detail="unsafe_training_image") from exc
 
-    saved = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: save_feedback_image(
-            image_bytes,
-            content_type=image.content_type,
-        ),
+    safe_crop = training_store.extract_safe_leaf_crop(
+        img, {"regions": list((detector_result or {}).get("detections") or [])}
     )
-    if saved is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Image rejected (empty / oversized / write failed)",
+    if safe_crop is None:
+        raise HTTPException(status_code=422, detail="unsafe_training_image")
+    crop, _area_buckets = safe_crop
+    try:
+        sanitized = await loop.run_in_executor(
+            None, training_store.sanitize_training_image, crop
         )
-    filename, digest = saved
+        out_of_head = (
+            payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
+            if payload.corrected_class
+            else None
+        )
+        result = await loop.run_in_executor(
+            None,
+            lambda: training_store.store_feedback_upload(
+                payload.feedback_receipt,
+                sanitized,
+                correct=payload.correct,
+                corrected_class=payload.corrected_class,
+                correction_reason=payload.reason,
+                out_of_head=out_of_head,
+                consent_version=TRAINING_CONSENT_VERSION,
+            ),
+        )
+    except training_store.TrainingStoreError as exc:
+        if exc.code == "feedback_not_ready":
+            raise HTTPException(status_code=409, detail="feedback_not_ready") from None
+        if exc.code == "feedback_receipt_used":
+            raise HTTPException(status_code=409, detail="feedback_receipt_used") from None
+        raise HTTPException(status_code=422, detail="feedback_receipt_invalid") from None
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to store privacy-screened feedback image")
+        raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
 
-    updated = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_attach_image_path(scan_id_clean, filename),
+    logger.info("Privacy-screened feedback image processed")
+    return JSONResponse(
+        content={
+            "ok": True,
+            "updated": result.updated,
+            "stored_image": result.stored_image,
+        }
     )
-
-    # If the scan was never recorded (pre-recording install, recording
-    # disabled, or a disputed not_a_plant the recorder skipped), build the
-    # labeling candidate from the uploaded bytes via the SAME anonymize
-    # helper — negative feedback must always reach the admin queue when we
-    # have pixels for it. Fail-soft: the feedback upload already succeeded.
-    def _enqueue_feedback_candidate() -> None:
-        try:
-            if labeling.candidate_for_scan(scan_id_clean) is not None:
-                return  # mark_feedback already re-routed the recorded scan
-            fb_row = feedback_latest_for_scan(scan_id_clean)
-            cls = (
-                (fb_row or {}).get("corrected_class")
-                or (fb_row or {}).get("predicted_class")
-            )
-            if not cls or cls not in DISEASES_DATABASE:
-                return  # nothing actionable to propose
-            img = _open_image(image_bytes)
-            body, sha, ph = _anonymise_scan_image(img)
-            fn = f"{sha}.jpg"
-            labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
-            (labeling.LABELING_IMG_DIR / fn).write_bytes(body)
-            labeling.insert_candidate(
-                cls=cls, image_path=fn, source="user_feedback", source_url=None,
-                subject_plant=None, sha=sha, phash=ph, status="pending",
-                model_pred=(fb_row or {}).get("predicted_class"),
-                model_conf=(fb_row or {}).get("predicted_confidence"),
-                scan_id=scan_id_clean,
-                feedback_note=(fb_row or {}).get("note"),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("feedback→labeling enqueue failed: %s", exc)
-
-    asyncio.get_running_loop().run_in_executor(None, _enqueue_feedback_candidate)
-
-    logger.info(
-        "Feedback image stored scan=%s file=%s linked=%s",
-        scan_id_clean[:16], filename, updated,
-    )
-    return JSONResponse(content={"ok": True, "filename": filename, "hash": digest})
 
 
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-# Same magic-byte set the analyze endpoint accepts. We rely on
+# Same content-type and magic-byte set the analyze endpoint accepts. We rely on
 # Content-Type for the multipart form parse, then re-validate the
 # bytes; an attacker can lie about Content-Type but the magic bytes
 # don't lie.
-_COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_COMMUNITY_ALLOWED_TYPES = set(ALLOWED_CONTENT_TYPES)
 
 
-@api_router.post("/community/scan")
+class InternalActorDeletionRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+
+
+class InternalActorNicknameRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+    nickname: str = Field(..., min_length=1, max_length=48)
+
+
+@api_router.post(
+    "/internal/account-deletions",
+    status_code=202,
+    include_in_schema=False,
+)
+async def internal_account_deletion(
+    payload: InternalActorDeletionRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Immediately tombstone an actor; physical removal is retryable."""
+    if not internal_service_authorized(
+        request.headers.get("x-internal-service-token", "")
+    ):
+        raise HTTPException(status_code=401, detail="auth_required")
+    try:
+        actor_id = str(uuid.UUID(payload.actor_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_request") from None
+    accepted = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_request_actor_deletion(actor_id)
+    )
+    if not accepted:
+        raise HTTPException(status_code=422, detail="invalid_request")
+    background_tasks.add_task(community_process_cleanup_jobs)
+    return JSONResponse(status_code=202, content={"status": "accepted"})
+
+
+@api_router.post(
+    "/internal/account-nicknames",
+    status_code=202,
+    include_in_schema=False,
+)
+async def internal_account_nickname(
+    payload: InternalActorNicknameRequest,
+    request: Request,
+):
+    """Idempotently replace an actor's denormalized historical nickname."""
+    if not internal_service_authorized(
+        request.headers.get("x-internal-service-token", "")
+    ):
+        raise HTTPException(status_code=401, detail="auth_required")
+    try:
+        actor_id = str(uuid.UUID(payload.actor_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_request") from None
+    updated = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_update_actor_nickname(actor_id, payload.nickname),
+    )
+    return JSONResponse(
+        status_code=202,
+        content={"status": "accepted", "updated": updated},
+    )
+
+
+@api_router.post("/community/scan", dependencies=[Depends(community_bearer)])
 async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
-    user_pseudo_id: str = Form(...),
     country: str | None = Form(None),
     region: str = Form(""),
     lat: float | None = Form(None),
@@ -3347,21 +3408,23 @@ async def community_scan_upload(
     species: str | None = Form(None),
     species_score: float | None = Form(None),
     locale: str | None = Form(None),
-    nickname: str | None = Form(None),
     image: UploadFile | None = File(None),
 ):
     """Append one community-shared scan to the corpus.
 
+    Identity and nickname come exclusively from the verified access token.
     Location is supplied by the opted-in client from its coarse location
     (``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no
-    server-side IP geolocation. ``nickname`` is the author's generated handle.
-    The image is optional.
+    server-side IP geolocation.
+    The image is required and must be byte-for-byte identical to the upload
+    accepted by ``/api/analyze`` when ``scan_id`` was issued. The server derives
+    the stored thumbnail from that already-sanitized upload.
     """
 
+    principal = await _require_account(request)
     try:
         payload = CommunityScanRequest(
             scan_id=scan_id,
-            user_pseudo_id=user_pseudo_id,
             country=country,
             region=region,
             disease=disease,
@@ -3369,14 +3432,14 @@ async def community_scan_upload(
             species=species,
             species_score=species_score,
             locale=locale,
-            nickname=nickname,
         )
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
-        logger.info("Community scan validation failed: %s", exc)
+        logger.info("Community scan validation failed")
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
-    # Bind the shared scan to a scan_id we actually issued at /api/analyze —
-    # the same integrity gate /api/feedback uses. Without it any client could
+    # Bind the shared scan to a publication token we actually issued at
+    # /api/analyze. This capability is independent from feedback receipts;
+    # without it any client could
     # post a fabricated diagnosis (arbitrary species/disease/confidence) into
     # the public feed under a made-up or copied scan_id. On-device Aqua scans
     # have no server-issued id and are kept private client-side, so a
@@ -3385,13 +3448,10 @@ async def community_scan_upload(
     # us ingesting its payload.
     issued = await asyncio.get_running_loop().run_in_executor(
         None,
-        lambda: is_scan_id_issued(payload.scan_id, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+        lambda: community_analysis_token_issued(payload.scan_id),
     )
     if not issued:
-        logger.warning(
-            "Rejected community scan on unissued scan_id=%s",
-            payload.scan_id[:16],
-        )
+        logger.warning("Community publication capability rejected")
         raise HTTPException(
             status_code=422,
             detail="Unknown scan_id — re-scan before sharing to the community.",
@@ -3403,16 +3463,8 @@ async def community_scan_upload(
     # image body — an over-quota client should be rejected without us
     # ingesting its payload first.
     client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
-    today_writes = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_daily_writes(ip_hash),
-    )
-    if today_writes >= COMMUNITY_DAILY_QUOTA:
-        logger.warning(
-            "Community daily quota hit ip_hash=%s writes=%d cap=%d",
-            ip_hash, today_writes, COMMUNITY_DAILY_QUOTA,
-        )
+    if not _consume_daily_write("community_scan", client_ip, COMMUNITY_DAILY_QUOTA):
+        logger.warning("Community daily upload quota reached")
         raise HTTPException(
             status_code=429,
             detail="Daily community-upload quota reached.",
@@ -3423,53 +3475,57 @@ async def community_scan_upload(
         if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail="Community thumbnail must be JPEG / PNG / WebP",
+                detail="Community image must be JPEG / PNG / WebP / BMP",
             )
         try:
             image_bytes = await _read_upload(image)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
-            logger.info("Community thumb read failed: %s", exc)
+        except Exception:  # noqa: BLE001
+            logger.info("Community image read failed")
             image_bytes = None
         # Re-validate the actual bytes — Content-Type is attacker-controlled
-        # (and optional), but the magic bytes don't lie. Anything that isn't
-        # a real JPEG/PNG/WebP is refused so arbitrary bytes can never be
-        # stored and re-served from /api/community/thumb/.
+        # (and optional), but the magic bytes don't lie. The exact bytes are
+        # also matched against the digest stored with the analysis capability.
         if image_bytes:
-            head = image_bytes[:16]
-            if not (
-                head.startswith(b"\xff\xd8\xff")
-                or head.startswith(b"\x89PNG\r\n\x1a\n")
-                or _is_webp(head, image_bytes)
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Community thumbnail must be JPEG / PNG / WebP",
-                )
+            _validate_image_bytes(image_bytes)
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: community_record_scan(
+            lambda: community_record_analysis_scan(
                 scan_id=payload.scan_id,
-                user_pseudo_id=payload.user_pseudo_id,
+                account_actor_id=principal.actor_id,
                 country=geo["country"] or "",
                 region=geo["city"] or "",
                 city=geo["city"],
                 lat=geo["lat"],
                 lon=geo["lon"],
-                disease=payload.disease,
-                confidence=payload.confidence,
-                species=payload.species,
-                nickname=payload.nickname,
-                species_score=payload.species_score,
+                client_disease=payload.disease,
+                client_confidence=payload.confidence,
+                client_species=payload.species,
+                nickname=principal.nickname,
+                client_species_score=payload.species_score,
                 image_bytes=image_bytes,
                 locale=payload.locale,
-                client_ip=client_ip,
             ),
         )
+    except AnalysisTokenUnknownError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — re-scan before sharing to the community.",
+        ) from exc
+    except AnalysisImageMismatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Community image does not match the analyzed image.",
+        ) from exc
+    except AnalysisTokenConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This scan_id has already been published.",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Community scan write failed: %s", exc)
+        logger.error("Community scan write failed")
         raise HTTPException(status_code=500, detail="Failed to record scan") from exc
 
     # A new scan can change "popular near you" — drop the cached bundles so it
@@ -3479,114 +3535,255 @@ async def community_scan_upload(
 
 
 class TelemetryErrorRequest(BaseModel):
-    """One client-side problem report. Errors-only diagnostic context — no
-    images, no precise location, no PII. ``breadcrumbs`` is a short trail of
-    recent app actions leading up to the error."""
+    """One consented report containing only allowlisted technical enums."""
 
-    stage: str = Field(..., min_length=1, max_length=64)
-    kind: str = Field(..., min_length=1, max_length=64)
+    model_config = ConfigDict(extra="forbid")
+
+    telemetry_consent: bool = False
+    telemetry_consent_version: str | None = Field(default=None, max_length=32)
+    stage: str = Field(..., min_length=1, max_length=32)
+    kind: str = Field(..., min_length=1, max_length=32)
     fatal: bool = False
-    http_status: int | None = Field(default=None, ge=0, le=599)
-    family: str | None = Field(default=None, max_length=32)
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    family: str | None = Field(default=None, max_length=16)
     app_version: str | None = Field(default=None, max_length=32)
-    android_api: int | None = Field(default=None, ge=0, le=100)
-    message: str | None = Field(default=None, max_length=2000)
-    breadcrumbs: list[str] | None = Field(default=None, max_length=40)
+    android_api: int | None = Field(default=None, ge=1, le=100)
+    breadcrumbs: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("stage")
+    @classmethod
+    def _known_stage(cls, value: str) -> str:
+        if value not in TELEMETRY_ALLOWED_STAGES:
+            raise ValueError("stage is not allowlisted")
+        return value
+
+    @field_validator("kind")
+    @classmethod
+    def _known_kind(cls, value: str) -> str:
+        if value not in TELEMETRY_ALLOWED_KINDS:
+            raise ValueError("kind is not allowlisted")
+        return value
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str | None) -> str | None:
+        if value is not None and value not in TELEMETRY_ALLOWED_FAMILIES:
+            raise ValueError("family is not allowlisted")
+        return value
+
+    @field_validator("app_version")
+    @classmethod
+    def _safe_app_version(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or any(
+            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._+-"
+            for character in value
+        ):
+            raise ValueError("app_version is invalid")
+        return value
+
+    @field_validator("breadcrumbs")
+    @classmethod
+    def _known_breadcrumbs(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        if any(value not in TELEMETRY_ALLOWED_BREADCRUMBS for value in values):
+            raise ValueError("breadcrumb is not allowlisted")
+        return values
 
 
 @api_router.post("/telemetry/errors")
 async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
-    """Record one client error/problem for triage. Errors-only: the app sends
-    nothing on the happy path and bundles diagnostic context (stage, kind,
-    model family, HTTP status, app version, Android API, breadcrumbs) only when
-    something goes wrong. Fire-and-forget from the client; degrades silently."""
-    if not TELEMETRY_ENABLED:
+    """Record minimized error telemetry only under the current consent text."""
+    if not TELEMETRY_ENABLED or not payload.telemetry_consent:
         return JSONResponse(content={"ok": True, "recorded": False})
+    if (
+        (payload.telemetry_consent_version or "").strip().lower()
+        != TELEMETRY_CONSENT_VERSION.lower()
+    ):
+        raise HTTPException(status_code=422, detail="telemetry_consent_version_invalid")
     client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
-    loop = asyncio.get_running_loop()
-    today = await loop.run_in_executor(None, lambda: telemetry_daily_writes(ip_hash))
-    if today >= TELEMETRY_DAILY_CAP_PER_IP:
+    if not _consume_daily_write(
+        "telemetry", client_ip, TELEMETRY_DAILY_CAP_PER_IP
+    ):
         raise HTTPException(status_code=429, detail="Daily telemetry quota reached.")
-    rid = await loop.run_in_executor(
-        None,
-        lambda: telemetry_record_error(
-            stage=payload.stage,
-            kind=payload.kind,
-            fatal=payload.fatal,
-            http_status=payload.http_status,
-            family=payload.family,
-            app_version=payload.app_version,
-            android_api=payload.android_api,
-            message=payload.message,
-            breadcrumbs=payload.breadcrumbs,
-            client_ip_hash=ip_hash,
-        ),
-    )
-    return JSONResponse(content={"ok": True, "recorded": rid is not None})
-
-
-async def _resolve_community_author_id(key_hash: str | None, *, seed_display_name: str) -> str | None:
-    """Best-effort author_id for a write endpoint that predates durable
-    identity and must keep working without it.
-
-    A present-but-malformed key is rejected (422) — the same validation
-    ``/community/authors/adopt`` applies — but a MISSING key just means "no
-    identity to bind", not an error: older app builds, and any caller that
-    hasn't adopted yet, still write normally, just without author_id. In
-    practice the app calls adopt on every launch, so a row already exists
-    by the time this runs and the call below only refreshes last_seen_at
-    (see resolve_author's docstring) rather than creating a fresh one.
-    """
-    key = (key_hash or "").strip()
-    if not key:
-        return None
-    if len(key) != 64 or not all(c in "0123456789abcdef" for c in key):
-        raise HTTPException(status_code=422, detail="Malformed author key")
     loop = asyncio.get_running_loop()
-    author = await loop.run_in_executor(
-        None,
-        lambda: community_resolve_author(key_hash=key, seed_display_name=seed_display_name),
-    )
-    return str(author["author_id"])
+    try:
+        rid = await loop.run_in_executor(
+            None,
+            lambda: telemetry_record_error(
+                stage=payload.stage,
+                kind=payload.kind,
+                fatal=payload.fatal,
+                http_status_bucket=telemetry_http_status_bucket(
+                    payload.http_status
+                ),
+                family=payload.family,
+                app_version=payload.app_version,
+                android_api_bucket=telemetry_android_api_bucket(
+                    payload.android_api
+                ),
+                breadcrumbs=payload.breadcrumbs,
+            ),
+        )
+    except Exception:  # noqa: BLE001 - telemetry never breaks the caller
+        logger.warning("Minimized telemetry write failed")
+        return JSONResponse(content={"ok": True, "recorded": False})
+    return JSONResponse(content={"ok": True, "recorded": rid is not None})
 
 
 class CommunityOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
     suggested_disease: str = Field(..., min_length=1, max_length=64)
     note: str | None = Field(default=None, max_length=500)
-    nickname: str | None = Field(default=None, max_length=64)
-
-    @field_validator("nickname")
-    @classmethod
-    def _clean_opinion_nickname(cls, v: str | None) -> str | None:
-        return _normalise_nickname(v)
 
 
-@api_router.post("/community/opinion")
-async def community_opinion_submit(
-    payload: CommunityOpinionRequest,
-    request: Request,
-    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+class CommunityReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=1, max_length=32)
+
+
+class CommunityBlockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+
+
+def _raise_community_safety_error(error: ValueError) -> None:
+    code = str(error)
+    if code == "report_limit":
+        raise HTTPException(status_code=429, detail=code) from None
+    if code in {"self_target", "target_not_blockable", "block_limit"}:
+        raise HTTPException(status_code=409, detail=code) from None
+    if code == "deleted account actor":
+        raise HTTPException(status_code=403, detail="account_deleted") from None
+    if code in {
+        "invalid_actor",
+        "invalid_reason",
+        "target_not_found",
+    }:
+        raise HTTPException(status_code=422, detail=code) from None
+    raise HTTPException(status_code=500, detail="community_safety_failed") from None
+
+
+@api_router.post(
+    "/community/safety/report", dependencies=[Depends(community_bearer)]
+)
+async def community_report_content(
+    payload: CommunityReportRequest, request: Request,
 ):
+    """Queue a report bound to the signed actor and stored content author.
+
+    The request contains only an opaque public content token plus a fixed
+    reason.  It never accepts an actor id or free-form moderation text.
+    """
+    principal = await _require_account(request)
+    kind = payload.target_type.strip().lower()
+    if kind not in {"scan", "opinion"}:
+        raise HTTPException(status_code=422, detail="invalid_target_type")
+    try:
+        created = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: community_record_content_report(
+                reporter_actor_id=principal.actor_id,
+                target_type=kind,
+                target_id=payload.target_id.strip(),
+                reason=payload.reason,
+            ),
+        )
+    except ValueError as exc:
+        _raise_community_safety_error(exc)
+        raise AssertionError("unreachable") from exc
+    return JSONResponse(
+        content={"ok": True, "created": bool(created)},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.post(
+    "/community/safety/block", dependencies=[Depends(community_bearer)]
+)
+async def community_block_author(
+    payload: CommunityBlockRequest, request: Request,
+):
+    """Block the verified author resolved from an opaque content token."""
+    principal = await _require_account(request)
+    kind = payload.target_type.strip().lower()
+    if kind not in {"scan", "opinion"}:
+        raise HTTPException(status_code=422, detail="invalid_target_type")
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: community_block_content_author(
+                blocker_actor_id=principal.actor_id,
+                target_type=kind,
+                target_id=payload.target_id.strip(),
+            ),
+        )
+    except ValueError as exc:
+        _raise_community_safety_error(exc)
+        raise AssertionError("unreachable") from exc
+    return JSONResponse(
+        content={"ok": True, **result},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.get(
+    "/community/safety/blocks", dependencies=[Depends(community_bearer)]
+)
+async def community_list_blocks(request: Request):
+    """List only the caller's blocks using unlinkable opaque block ids."""
+    principal = await _require_account(request)
+    items = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_actor_blocks(principal.actor_id)
+    )
+    return JSONResponse(
+        content={"items": items}, headers={"Cache-Control": "no-store"}
+    )
+
+
+@api_router.delete(
+    "/community/safety/blocks/{block_id}",
+    dependencies=[Depends(community_bearer)],
+)
+async def community_remove_block(block_id: str, request: Request):
+    """Delete only a block owned by the signed caller."""
+    principal = await _require_account(request)
+    if len(block_id) != 32 or not block_id.startswith("cb"):
+        raise HTTPException(status_code=422, detail="invalid_block_id")
+    removed = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_unblock_actor(principal.actor_id, block_id)
+    )
+    if not removed:
+        raise HTTPException(status_code=404, detail="block_not_found")
+    return JSONResponse(
+        content={"ok": True}, headers={"Cache-Control": "no-store"}
+    )
+
+
+@api_router.post("/community/opinion", dependencies=[Depends(community_bearer)])
+async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
     """Record one community 'second opinion' on a shared scan.
 
     The suggested disease must be a known classifier class so the consensus
     tally stays clean; any free text lives only in the optional note.
     """
+    principal = await _require_account(request)
     disease = payload.suggested_disease.strip()
     if disease not in DISEASES_DATABASE:
         raise HTTPException(status_code=422, detail="Unknown suggested disease")
 
     client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
-    today = await loop.run_in_executor(
-        None,
-        lambda: community_daily_opinion_writes(ip_hash),
-    )
-    if today >= COMMUNITY_OPINION_DAILY_QUOTA:
+    if not _consume_daily_write(
+        "community_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
+    ):
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
 
     # Viewers arrive with the feed's public token; the scan's owner (and
@@ -3599,116 +3796,85 @@ async def community_opinion_submit(
     known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
     if not known:
         raise HTTPException(status_code=422, detail="Unknown scan")
-    # Public handles rotate every 30 days; a scan older than that goes
-    # read-only so stale photos can't keep collecting opinions.
+    owner_actor = await loop.run_in_executor(
+        None, lambda: community_account_owner_of(sid)
+    )
+    if owner_actor is None:
+        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
+    # A scan older than 30 days goes read-only so stale photos cannot keep
+    # collecting opinions. Its per-scan public read handle remains stable.
     fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
     if not fresh:
         raise HTTPException(status_code=410, detail="Scan too old for new opinions")
-    # Resolved last, after every cheaper gate above has had a chance to
-    # reject the request — same "don't pay for expensive work a forged/bad
-    # request never earns" discipline as community_scan_upload's ordering.
-    author_id = await _resolve_community_author_id(
-        x_community_author_key, seed_display_name=payload.nickname or "",
-    )
     try:
-        await loop.run_in_executor(
+        _opinion_id, created = await loop.run_in_executor(
             None,
             lambda: community_record_opinion(
                 scan_id=sid,
-                author_pseudo_id=payload.user_pseudo_id.strip(),
-                author_id=author_id,
+                account_actor_id=principal.actor_id,
                 suggested_disease=disease,
                 note=payload.note,
-                nickname=payload.nickname,
-                client_ip=client_ip,
+                nickname=principal.nickname,
             ),
         )
+    except OpinionTargetUnavailableError as exc:
+        raise HTTPException(
+            status_code=410,
+            detail="Scan no longer accepts opinions",
+        ) from exc
+    except ValueError as exc:
+        if str(exc) == "blocked_interaction":
+            raise HTTPException(status_code=409, detail="blocked_interaction") from None
+        logger.error("Community opinion write failed")
+        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Community opinion write failed: %s", exc)
+        logger.error("Community opinion write failed")
         raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
 
     # Push the scan's owner a notification (best-effort; no-op when push isn't
     # configured). Skip self-opinions — you don't get pinged for your own note.
     # Only owners who explicitly REQUESTED a second opinion get pushed: sharing
     # a scan to the corpus is not a request to be notified.
-    author = payload.user_pseudo_id.strip()
+    author = principal.actor_id
 
     def _push_owner() -> None:
         try:
+            if not created:
+                return
             if not community_wants_opinion(sid):
                 return
-            owner = community_owner_of(sid)
+            owner = owner_actor
             if owner and owner != author:
-                push_send_opinion(owner, sid, disease, payload.note, payload.nickname)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Opinion push failed: %s", exc)
+                # Delivery is delegated to the account service, which resolves
+                # encrypted device registrations privately. Wired below via
+                # the internal notification client.
+                _send_account_opinion_notification(
+                    owner, sid, disease, payload.note, principal.nickname
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Opinion push failed")
 
     # FCM is external HTTP — keep it off the default (DB-op) pool too.
     await loop.run_in_executor(_get_net_executor(), _push_owner)
 
     result = await loop.run_in_executor(
         None,
-        lambda: community_opinions_for(sid, user_pseudo_id=author, author_id=author_id),
+        lambda: community_opinions_for(
+            sid, viewer_account_actor_id=principal.actor_id
+        ),
     )
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
     )
 
 
-class CommunityAuthorAdoptRequest(BaseModel):
-    # Seeded from the device's CURRENT display handle / pseudo id so the
-    # forum identity picks up right where the anonymous one left off —
-    # nobody's name changes and no history looks new on the day this
-    # ships. Neither is re-applied on a later adopt call; see
-    # community.resolve_author's docstring.
-    seed_display_name: str = Field(..., min_length=1, max_length=80)
-    legacy_pseudo_id: str | None = Field(None, max_length=128)
-
-
-@api_router.post("/community/authors/adopt")
-async def community_author_adopt(
-    payload: CommunityAuthorAdoptRequest,
-    x_community_author_key: str = Header(..., alias="X-Community-Author-Key"),
-):
-    """Create-or-return this device's durable forum identity.
-
-    ``X-Community-Author-Key`` is SHA-256 of a 32-byte secret the client
-    generates once and never sends in raw form (see
-    util/CommunityIdentity.kt) — the server only ever sees the hash, never
-    the secret itself. Fire-and-forget from the app on every launch;
-    idempotent, so calling it repeatedly just refreshes ``last_seen_at``.
-
-    Groundwork only (COMMUNITY_FORUM_PLAN.docx §4): nothing in the app yet
-    reads or writes with this identity. F1 wires the forum's write
-    endpoints to it and backfills old activity via ``legacy_pseudo_id``.
-    """
-    key_hash = x_community_author_key.strip()
-    if len(key_hash) != 64 or not all(c in "0123456789abcdef" for c in key_hash):
-        raise HTTPException(status_code=422, detail="Malformed author key")
-    loop = asyncio.get_running_loop()
-    try:
-        author = await loop.run_in_executor(
-            None,
-            lambda: community_resolve_author(
-                key_hash=key_hash,
-                seed_display_name=payload.seed_display_name.strip(),
-                legacy_pseudo_id=payload.legacy_pseudo_id,
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Community author adopt failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to adopt author") from exc
-    return JSONResponse(content={"ok": True, **author})
-
-
 class CommunityRequestOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
 
 
-@api_router.post("/community/request-opinion")
+@api_router.post(
+    "/community/request-opinion", dependencies=[Depends(community_bearer)]
+)
 async def community_request_opinion(
     payload: CommunityRequestOpinionRequest, request: Request,
 ):
@@ -3717,7 +3883,7 @@ async def community_request_opinion(
     Unlike ``/community/opinion`` (where a *viewer* suggests a diagnosis
     for someone else's scan), this is the *scanner* raising their hand:
     "I'm unsure — community, please weigh in." The flag is owner-scoped
-    (the update only matches a row owned by ``user_pseudo_id``) and
+    (the update only matches the signed account actor) and
     idempotent.
 
     Degrades gracefully: the community upload is fire-and-forget and the
@@ -3725,32 +3891,35 @@ async def community_request_opinion(
     yet. We still return 200 with ``flagged: false`` — the client shows
     its local "waiting for the community" state regardless.
     """
+    principal = await _require_account(request)
     sid = payload.scan_id.strip()
-    pid = payload.user_pseudo_id.strip()
     client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
-    today = await loop.run_in_executor(
-        None,
-        lambda: community_daily_opinion_writes(ip_hash),
-    )
-    if today >= COMMUNITY_OPINION_DAILY_QUOTA:
+    if not _consume_daily_write(
+        "community_request_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
+    ):
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
     try:
         flagged = await loop.run_in_executor(
             None,
-            lambda: community_set_wants_opinion(sid, pid),
+            lambda: community_set_wants_opinion(
+                sid, account_actor_id=principal.actor_id
+            ),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Community request-opinion failed: %s", exc)
+        logger.error("Community request-opinion failed")
         raise HTTPException(
             status_code=500, detail="Failed to request opinion",
         ) from exc
     return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
 
 
-@api_router.post("/community/request-opinion/cancel")
-async def community_request_opinion_cancel(payload: CommunityRequestOpinionRequest):
+@api_router.post(
+    "/community/request-opinion/cancel", dependencies=[Depends(community_bearer)]
+)
+async def community_request_opinion_cancel(
+    payload: CommunityRequestOpinionRequest, request: Request,
+):
     """Withdraw an open second-opinion request on the caller's own scan.
 
     The inverse of ``/community/request-opinion``: drops the durable
@@ -3763,16 +3932,18 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
     (Requests also lapse on their own after
     ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
     """
+    principal = await _require_account(request)
     sid = payload.scan_id.strip()
-    pid = payload.user_pseudo_id.strip()
     loop = asyncio.get_running_loop()
     try:
         cleared = await loop.run_in_executor(
             None,
-            lambda: community_clear_wants_opinion(sid, pid),
+            lambda: community_clear_wants_opinion(
+                sid, account_actor_id=principal.actor_id
+            ),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Community cancel-request-opinion failed: %s", exc)
+        logger.error("Community cancel-request-opinion failed")
         raise HTTPException(
             status_code=500, detail="Failed to cancel opinion request",
         ) from exc
@@ -3780,160 +3951,86 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
 
 
 @api_router.get("/community/opinions/{scan_id}")
-async def community_opinions_list(
-    scan_id: str,
-    user_pseudo_id: str | None = None,
-    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
-):
+async def community_opinions_list(scan_id: str, request: Request):
     """List community opinions + a consensus tally for one shared scan.
 
     Accepts the real scan_id (owner's own app) or the feed's public
     token (viewers); echoes back whichever form the caller sent.
-    ``user_pseudo_id`` is optional — pass it to get an accurate
-    ``liked_by_me`` and ``my_opinion`` in the response; omitted, they read
-    as not-liked / no opinion. ``X-Community-Author-Key`` is also optional
-    here and, when sent, is what ``my_opinion`` actually keys on — see
-    opinions_for's docstring for why the two aren't the same identity.
     """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
     loop = asyncio.get_running_loop()
+    principal = await _optional_account(request)
     resolved = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(sid),
     )
-    author_id = await _resolve_community_author_id(x_community_author_key, seed_display_name="")
     result = await loop.run_in_executor(
         None,
-        lambda: community_opinions_for(resolved, user_pseudo_id=user_pseudo_id, author_id=author_id),
+        lambda: community_opinions_for(
+            resolved,
+            viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
 
-@api_router.get("/community/my-scan-opinions/{user_pseudo_id}")
-async def community_my_scan_opinions(user_pseudo_id: str):
+@api_router.get(
+    "/community/my-scan-opinions", dependencies=[Depends(community_bearer)]
+)
+async def community_my_scan_opinions(request: Request):
     """Opinion counts on the caller's OWN shared scans. The client polls this
     on a schedule to notify the user when someone leaves a second opinion on a
     scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
-    uid = (user_pseudo_id or "").strip()
-    if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
-        raise HTTPException(status_code=422, detail="Invalid user id")
+    principal = await _require_account(request)
     result = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinion_counts_for_user(uid),
+        None, lambda: community_opinion_counts_for_actor(principal.actor_id),
     )
     return JSONResponse(content=result)
 
 
-class PushRegisterRequest(BaseModel):
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
-    token: str = Field(..., min_length=1, max_length=512)
-    platform: str = Field(default="android", max_length=16)
-
-
-@api_router.post("/push/register")
-async def push_register_endpoint(payload: PushRegisterRequest):
-    """Register this install's FCM token under its pseudo-id so the server can
-    push opinion notifications to a closed / idle device. Upserts by token."""
-    await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: push_register(
-            payload.user_pseudo_id.strip(),
-            payload.token.strip(),
-            payload.platform.strip() or "android",
-        ),
-    )
-    return JSONResponse(content={"ok": True})
-
-
 class CommunityViewRequest(BaseModel):
-    # ``scan_id`` (singular) is the original single-open shape, kept required
-    # in name only — older installs still send it alone. ``scan_ids`` is the
-    # newer batch shape for reporting many feed impressions in one call. A
-    # request must carry at least one of the two; see the validator below.
-    scan_id: str | None = Field(None, max_length=128)
-    scan_ids: list[str] | None = Field(None, max_length=50)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
-
-    @model_validator(mode="after")
-    def _require_a_target(self) -> "CommunityViewRequest":
-        if not (self.scan_id or "").strip() and not any(
-            (s or "").strip() for s in (self.scan_ids or [])
-        ):
-            raise ValueError("scan_id or scan_ids is required")
-        return self
-
-
-@api_router.post("/community/view")
-async def community_record_scan_view(payload: CommunityViewRequest):
-    """Record that the caller opened (or merely scrolled past) someone
-    else's shared scan — one id via ``scan_id``, or up to 50 via
-    ``scan_ids`` for feed-scroll impressions. Deduped per viewer
-    server-side; a scan owner viewing their own scan and views of an
-    unknown scan never count, so this is safe to fire liberally.
-
-    The whole batch is resolved and written in one pass (one connection,
-    one lock acquisition) — see ``community.record_views``."""
-    loop = asyncio.get_running_loop()
-    ids = [s.strip() for s in (payload.scan_ids or []) if s and s.strip()]
-    if payload.scan_id and payload.scan_id.strip():
-        ids.append(payload.scan_id.strip())
-    # The declared cap is per-field; ``scan_id`` + a full ``scan_ids`` can
-    # exceed it, and a client may repeat an id across the two.
-    ids = list(dict.fromkeys(ids))[:50]
-    uid = payload.user_pseudo_id.strip()
-
-    counted = await loop.run_in_executor(
-        None, lambda: community_record_views(ids, uid),
-    )
-    return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
-
-
-class CommunityLikeRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
-    liked: bool = True
 
 
-@api_router.post("/community/like")
-async def community_like_scan(payload: CommunityLikeRequest, request: Request):
-    """Like or unlike a shared scan. A self-like is refused (0 either way);
-    liking your own scan makes no more sense than viewing it does."""
-    client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
+@api_router.post("/community/view", dependencies=[Depends(community_bearer)])
+async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
+    """Record that the caller opened someone else's shared scan. Deduped per
+    viewer server-side; a scan owner viewing their own scan and views of an
+    unknown scan never count, so this is safe to fire on every open."""
+    principal = await _require_account(request)
     loop = asyncio.get_running_loop()
-    if payload.liked:
-        today = await loop.run_in_executor(
-            None, lambda: community_daily_like_writes(ip_hash),
-        )
-        if today >= COMMUNITY_LIKE_DAILY_QUOTA:
-            raise HTTPException(status_code=429, detail="Daily like quota reached.")
+    # Viewers send the feed's public token — resolve it to the real id.
     sid = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
     )
-    liked = await loop.run_in_executor(
+    owner_actor = await loop.run_in_executor(
+        None, lambda: community_account_owner_of(sid)
+    )
+    if owner_actor is None:
+        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
+    counted = await loop.run_in_executor(
         None,
-        lambda: community_set_like(
-            sid, payload.user_pseudo_id.strip(), payload.liked, client_ip,
-        ),
+        lambda: community_record_view(sid, account_actor_id=principal.actor_id),
     )
-    count = await loop.run_in_executor(
-        None, lambda: community_like_counts([sid]).get(sid, 0),
-    )
-    return JSONResponse(content={"ok": True, "liked": liked, "count": count})
+    return JSONResponse(content={"ok": True, "counted": bool(counted)})
 
 
 class CommunityScanCountsRequest(BaseModel):
     scan_ids: list[str] = Field(..., max_length=500)
 
 
-@api_router.post("/community/scan-counts")
-async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
+@api_router.post("/community/scan-counts", dependencies=[Depends(community_bearer)])
+async def community_scan_counts_endpoint(
+    payload: CommunityScanCountsRequest, request: Request,
+):
     """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
     caller's own rows in one round-trip. Unknown/zero scans are omitted."""
+    principal = await _require_account(request)
     ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
     counts = (
         await asyncio.get_running_loop().run_in_executor(
-            None, lambda: community_scan_counts(ids),
+            None, lambda: community_scan_counts_for_actor(principal.actor_id, ids),
         )
         if ids else {}
     )
@@ -3950,9 +4047,7 @@ async def community_scan_nearby(
     disease: str | None = None,
     species: str | None = None,
     limit: int = 20,
-    user_pseudo_id: str | None = None,
     scope: str | None = None,
-    before: int | None = None,
 ):
     """List the most recent community-shared scans near the requester.
 
@@ -3963,19 +4058,8 @@ async def community_scan_nearby(
     the geo filter entirely (every country, newest first — needs no location).
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
-
-    ``before`` pages the feed: pass the previous page's ``next_before`` to
-    fetch older rows. The response's ``next_before`` is null once a page
-    comes back short — that's the end of the scope. It is single-pass only:
-    combining it with ``disease`` or ``species`` is rejected with 422,
-    because those widen the query into several concatenated passes whose
-    concatenation has no single global ``created_at`` order to page on.
     """
-    if before is not None and ((disease or "").strip() or (species or "").strip()):
-        raise HTTPException(
-            status_code=422,
-            detail="before cannot be combined with disease or species.",
-        )
+    principal = await _optional_account(request)
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -3993,23 +4077,16 @@ async def community_scan_nearby(
     # so it never sets the flag. Storage stays privacy-preserving — there is
     # deliberately no server-side IP geolocation.
     location_required = not worldwide and not (bool(country_norm) or has_coords)
-    effective_limit = max(1, min(int(limit), 50))
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
         lon=geo["lon"] if nearby else None,
         disease=(disease or None),
         species=(species or None),
-        limit=effective_limit,
-        exclude_user_pseudo_id=user_pseudo_id,
+        limit=max(1, min(int(limit), 50)),
+        exclude_account_actor_id=principal.actor_id if principal else None,
+        viewer_account_actor_id=principal.actor_id if principal else None,
         scope=scope_norm,
-        before=before,
-    )
-    # A short page means the scope is exhausted; a full page might have more
-    # (the very last page just happens to also be full-sized, and the client
-    # finds out on the follow-up request that comes back empty).
-    next_before = (
-        rows[-1]["created_at"] if rows and len(rows) >= effective_limit else None
     )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
@@ -4018,14 +4095,18 @@ async def community_scan_nearby(
     summary = community_region_summary(
         country_norm or "",
         None,
-        exclude_user_pseudo_id=user_pseudo_id,
+        exclude_account_actor_id=principal.actor_id if principal else None,
+        viewer_account_actor_id=principal.actor_id if principal else None,
     )
     # Annotate each cell with how many second opinions it has so the carousel
-    # can show a badge, then swap the real scan_id for the public token —
-    # the real id authorises /api/feedback writes and must never reach
-    # other users (see community.public_scan_token).
+    # can show a badge, then swap the publication capability for its stable,
+    # per-scan public token. The author pseudonym rotates independently;
+    # feedback uses a separate receipt.
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = community_opinion_counts(scan_ids)
+    counts = community_opinion_counts(
+        scan_ids,
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     views = community_view_counts(scan_ids)
     for r in rows:
         sid = str(r.get("scan_id"))
@@ -4053,9 +4134,7 @@ async def community_scan_nearby(
     # compatibility for what's already installed. Only the nested copy is
     # coerced — the top-level `country` field stays nullable.
     summary["country"] = summary.get("country") or ""
-    return JSONResponse(
-        content={"items": rows, "summary": summary, "next_before": next_before, **meta},
-    )
+    return JSONResponse(content={"items": rows, "summary": summary, **meta})
 
 
 def _valid_bbox(
@@ -4077,10 +4156,10 @@ def _valid_bbox(
 
 @api_router.get("/community/map")
 async def community_map(
+    request: Request,
     min_lat: float, min_lon: float, max_lat: float, max_lon: float,
     disease: str | None = None,
     days: int = 30,
-    user_pseudo_id: str | None = None,
     limit: int = 300,
 ):
     """Individual community scans inside a bbox — the zoomed-in map markers.
@@ -4089,6 +4168,7 @@ async def community_map(
     real scan_id), so the app can pin a marker and open the existing opinion
     sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
     signals an over-full bbox."""
+    principal = await _optional_account(request)
     box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
@@ -4100,13 +4180,17 @@ async def community_map(
             disease=(disease or None),
             days=days,
             limit=max(1, min(int(limit), 500)),
-            exclude_user_pseudo_id=user_pseudo_id,
+            exclude_account_actor_id=principal.actor_id if principal else None,
+            viewer_account_actor_id=principal.actor_id if principal else None,
         ),
     )
     rows = data["items"]
     # Same opinion-count annotation + public-token swap + country localization as
     # the nearby feed; here we KEEP lat/lon for the markers.
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    counts = community_opinion_counts(
+        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
@@ -4141,12 +4225,13 @@ async def community_heatmap(
 
 @api_router.get("/community/by-species")
 async def community_by_species(
+    request: Request,
     species: str | None = None,
     limit: int = 12,
-    user_pseudo_id: str | None = None,
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
+    principal = await _optional_account(request)
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
@@ -4155,13 +4240,17 @@ async def community_by_species(
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
-            exclude_user_pseudo_id=user_pseudo_id,
+            exclude_account_actor_id=principal.actor_id if principal else None,
+            viewer_account_actor_id=principal.actor_id if principal else None,
         ),
     )
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    counts = community_opinion_counts(
+        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
+        viewer_account_actor_id=principal.actor_id if principal else None,
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
-        # Public token only — never the feedback-authorising real id.
+        # Public token only — never the community publication capability.
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
         # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
         _localize_item_country(r)
@@ -4313,6 +4402,11 @@ async def community_scan_thumb(filename: str, request: Request):
     """
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid thumbnail name")
+    visible = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: community_thumbnail_is_visible(filename)
+    )
+    if not visible:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
@@ -4321,7 +4415,7 @@ async def community_scan_thumb(filename: str, request: Request):
     return _cached_image_response(
         request, path,
         media_type="image/jpeg",
-        cache_control="public, max-age=86400",
+        cache_control="public, max-age=300, must-revalidate",
     )
 
 
@@ -4367,8 +4461,25 @@ async def plant_photo(request: Request, u: str | None = None,
     # and serve that; fall back to the original bytes if transcoding fails.
     # Backward compatible: Glide decodes WebP transparently on any app version.
     webp = await loop.run_in_executor(
-        None, lambda: _webp_variant(path, _PLANT_PHOTO_MAX_SIDE, _PLANT_PHOTO_QUALITY),
+        None,
+        lambda: _webp_variant(
+            path,
+            _PLANT_PHOTO_MAX_SIDE,
+            _PLANT_PHOTO_QUALITY,
+            plant_photo_prune_cache,
+        ),
     )
+    if webp is None:
+        # A transcode failure normally falls back to the original. Dimension
+        # policy failures are different: returning that compressed source
+        # would pass a decompression bomb or extreme allocation risk through
+        # to the mobile decoder, defeating the pre-load guard above.
+        dimensions_allowed = await loop.run_in_executor(
+            None,
+            lambda: _webp_source_dimensions_allowed(path),
+        )
+        if dimensions_allowed is False:
+            raise HTTPException(status_code=404, detail="Photo unavailable")
     serve, media = (
         (webp, "image/webp") if webp is not None
         else (path, plant_photo_media_type(path))
@@ -4391,15 +4502,43 @@ async def plant_photo(request: Request, u: str | None = None,
 # compatible with already-shipped clients.
 _WEBP_DIR_NAME = ".webp"
 _webp_lock = threading.Lock()
+_WEBP_MAX_SOURCE_SIDE = 16_384
+_WEBP_MAX_SOURCE_PIXELS = 20_000_000
 
 
-def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
+def _webp_source_dimensions_allowed(src: Path) -> bool | None:
+    """Return False only for a source that violates the decode-size policy.
+
+    ``None`` preserves the historical raw-file fallback for unrelated Pillow
+    failures. Oversized sources, including Pillow's decompression-bomb error,
+    must never be served as that fallback.
+    """
+    try:
+        with Image.open(src) as opened:
+            width, height = opened.size
+    except Image.DecompressionBombError:
+        return False
+    except Exception:  # noqa: BLE001 - caller may safely use the old fallback
+        return None
+    return (
+        width > 0
+        and height > 0
+        and max(width, height) <= _WEBP_MAX_SOURCE_SIDE
+        and width * height <= _WEBP_MAX_SOURCE_PIXELS
+    )
+
+
+def _webp_variant(
+    src: Path,
+    max_side: int,
+    quality: int,
+    after_write=None,
+) -> Path | None:
     """Return a cached downscaled-WebP variant of ``src`` (``max_side`` px on
     the longest edge, ``quality`` 0–100), generating it if stale.
 
-    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the caller
-    falls back to serving the original — the optimisation must never take the
-    endpoint down.
+    Any failure (PIL hiccup, unwritable dir) returns ``None``. Callers may fall
+    back to the original after enforcing their own source-safety policy.
     """
     try:
         out_dir = src.parent / _WEBP_DIR_NAME
@@ -4418,10 +4557,17 @@ def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
             if out.is_file():
                 return out
             out_dir.mkdir(parents=True, exist_ok=True)
-            img = Image.open(src)
-            img.load()
-            img = img.convert("RGB")
-            w, h = img.size
+            with Image.open(src) as opened:
+                w, h = opened.size
+                if (
+                    w <= 0
+                    or h <= 0
+                    or max(w, h) > _WEBP_MAX_SOURCE_SIDE
+                    or w * h > _WEBP_MAX_SOURCE_PIXELS
+                ):
+                    raise ValueError("image dimensions exceed WebP source limit")
+                opened.load()
+                img = opened.convert("RGB")
             scale = max_side / float(max(w, h))
             if scale < 1.0:
                 img = img.resize(
@@ -4431,9 +4577,11 @@ def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
             tmp = out.with_suffix(".webp.tmp")
             img.save(tmp, format="WEBP", quality=quality, method=4)
             tmp.replace(out)
+            if after_write is not None:
+                after_write()
         return out
-    except Exception as exc:  # noqa: BLE001 — fall back to the original
-        logger.warning("WebP transcode failed for %s: %s", src, exc)
+    except Exception:  # noqa: BLE001 — fall back to the original
+        logger.warning("WebP transcode failed")
         return None
 
 
@@ -4796,8 +4944,8 @@ def _refresh_popular_bg(
                 _popular_cache.move_to_end(key)
                 while len(_popular_cache) > _POPULAR_CACHE_MAX:
                     _popular_cache.popitem(last=False)
-        except Exception as exc:  # noqa: BLE001 — background best-effort
-            logger.info("popular background refresh failed: %s", exc)
+        except Exception:  # noqa: BLE001 — background best-effort
+            logger.info("Popular background refresh failed")
         finally:
             with _popular_lock:
                 _popular_refreshing.discard(key)
@@ -4813,7 +4961,9 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         app,
-        host=get_str("HOST", "0.0.0.0"),
+        # The API is intentionally reachable on the container network; the
+        # reviewed ingress/firewall owns public exposure and TLS termination.
+        host=get_str("HOST", "0.0.0.0"),  # nosec B104
         port=get_int("PORT", 8000),
         forwarded_allow_ips=get_str("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         proxy_headers=True,

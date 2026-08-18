@@ -93,7 +93,7 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
             data = json.loads(path.read_text(encoding="utf-8"))
             method = str(data.get("method", "raps")).lower()
             if method not in ("aps", "raps"):
-                logger.warning("Unknown conformal method %r in %s", method, path)
+                logger.warning("Unknown conformal method in model metadata")
                 return None
             cfg = ConformalConfig(
                 method=method,
@@ -108,12 +108,12 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
                 ),
             )
             logger.info(
-                "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f)",
-                path, cfg.method, cfg.alpha, cfg.q_hat,
+                "Loaded conformal config (method=%s alpha=%.3f q_hat=%.3f)",
+                cfg.method, cfg.alpha, cfg.q_hat,
             )
             return cfg
-        except (KeyError, ValueError, TypeError, json.JSONDecodeError) as e:
-            logger.warning("Could not parse %s: %s", path, e)
+        except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+            logger.warning("Could not parse conformal model metadata")
             return None
     return None
 

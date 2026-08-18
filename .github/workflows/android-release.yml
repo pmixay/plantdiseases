@@ -1,0 +1,1149 @@
+name: protected Android signing
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Signed APK channel
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+          - recovery-production
+          - recovery-staging
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: protected-android-signing-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  build_unsigned:
+    name: Build reviewed unsigned APK
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_id: ${{ steps.upload_unsigned.outputs['artifact-id'] }}
+      artifact_digest: ${{ steps.upload_unsigned.outputs['artifact-digest'] }}
+      unsigned_sha256: ${{ steps.inspect_unsigned.outputs.unsigned_sha256 }}
+      yandex_client_id_sha256: ${{ steps.inspect_unsigned.outputs.yandex_client_id_sha256 }}
+      vkid_client_id_sha256: ${{ steps.inspect_unsigned.outputs.vkid_client_id_sha256 }}
+      vkid_client_secret_sha256: ${{ steps.inspect_unsigned.outputs.vkid_client_secret_sha256 }}
+    defaults:
+      run:
+        working-directory: android
+
+    # This job may execute repository-controlled Gradle code, so it has no
+    # protected environment and can see only public/extractable mobile config.
+    # The permanent app key and every RELEASE_* password are absent by design.
+    steps:
+      - name: Validate requested source branch
+        shell: bash
+        working-directory: .
+        run: |
+          set -eu
+          case "${{ inputs.channel }}:${GITHUB_REF}" in
+            production:refs/heads/main) ;;
+            recovery-production:refs/heads/main) ;;
+            staging:refs/heads/main) ;;
+            recovery-staging:refs/heads/main) ;;
+            *)
+              echo "::error::Every signing channel must use trusted workflow code from protected main."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Block unresolved identity-data policy releases
+        if: inputs.channel == 'staging' || inputs.channel == 'production'
+        shell: bash
+        working-directory: .
+        run: |
+          set -eu
+          test -f privacy.html
+          test -f deploy/account-beta-test/release-policy-gates.json
+          blocked=false
+          if ! python3 - <<'PY'
+          import json
+          import re
+          from datetime import datetime, timedelta
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+
+          class ReleasePolicyParser(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.schema_versions = []
+                  self.links = {}
+                  self.markers = {}
+                  self.element_ids = set()
+                  self.main_depth = 0
+                  self.open_ids = []
+                  self.text_by_id = {}
+
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  if tag == "main":
+                      self.main_depth += 1
+                  if (
+                      tag == "meta"
+                      and values.get("name") == "plantdiseases-release-policy-schema"
+                  ):
+                      self.schema_versions.append(values.get("content"))
+                  element_id = values.get("id")
+                  if not element_id:
+                      return
+                  if element_id in self.element_ids:
+                      raise ValueError(f"duplicate policy element ID: {element_id}")
+                  self.element_ids.add(element_id)
+                  target = self.links if tag == "a" else self.markers
+                  target[element_id] = (tag, values, self.main_depth > 0)
+                  self.open_ids.append((tag, element_id))
+                  self.text_by_id[element_id] = []
+
+              def handle_endtag(self, tag):
+                  if self.open_ids and self.open_ids[-1][0] == tag:
+                      self.open_ids.pop()
+                  if tag == "main":
+                      self.main_depth -= 1
+
+              def handle_data(self, data):
+                  for _, element_id in self.open_ids:
+                      self.text_by_id[element_id].append(data)
+
+
+          def require_https_reference(value, label):
+              if not isinstance(value, str) or not value.strip():
+                  raise SystemExit(f"{label} approval reference is missing")
+              parsed = urlsplit(value)
+              if (
+                  parsed.scheme != "https"
+                  or not parsed.hostname
+                  or parsed.username is not None
+                  or parsed.password is not None
+                  or any(ch.isspace() for ch in value)
+              ):
+                  raise SystemExit(f"{label} approval reference must be a credential-free HTTPS URL")
+
+
+          def require_approval_metadata(value, label):
+              require_https_reference(value.get("decision_reference"), label)
+              approved_at = value.get("approved_at_utc")
+              if not isinstance(approved_at, str):
+                  raise SystemExit(f"{label} approval timestamp is missing")
+              try:
+                  parsed = datetime.fromisoformat(approved_at.replace("Z", "+00:00"))
+              except ValueError as exc:
+                  raise SystemExit(f"{label} approval timestamp is invalid") from exc
+              if parsed.utcoffset() != timedelta(0):
+                  raise SystemExit(f"{label} approval timestamp must use UTC")
+
+
+          def require_contact_uri(value):
+              if not isinstance(value, str) or not value.strip() or value != value.strip():
+                  raise SystemExit("approved private contact URI is missing or padded")
+              if any(ch.isspace() for ch in value):
+                  raise SystemExit("approved private contact URI contains whitespace")
+              parsed = urlsplit(value)
+              if parsed.scheme == "mailto":
+                  if (
+                      parsed.netloc
+                      or parsed.query
+                      or parsed.fragment
+                      or not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", parsed.path)
+                  ):
+                      raise SystemExit("approved mailto contact is malformed")
+              elif parsed.scheme == "https":
+                  if (
+                      not parsed.hostname
+                      or parsed.username is not None
+                      or parsed.password is not None
+                      or parsed.fragment
+                  ):
+                      raise SystemExit("approved HTTPS contact is malformed")
+              else:
+                  raise SystemExit("approved private contact must use mailto: or HTTPS")
+
+          gates = json.loads(
+              Path("deploy/account-beta-test/release-policy-gates.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          policy = Path("privacy.html").read_text(encoding="utf-8")
+          if gates.get("schema_version") != 2:
+              raise SystemExit("unsupported release-policy gate schema")
+          parsed_policy = ReleasePolicyParser()
+          parsed_policy.feed(policy)
+          if parsed_policy.schema_versions != ["2"]:
+              raise SystemExit("privacy.html release-policy schema marker is missing or duplicated")
+
+          contact = gates.get("private_contact", {})
+          contact_uri = contact.get("uri")
+          if contact.get("status") != "approved":
+              raise SystemExit("private data/deletion contact is not approved")
+          require_approval_metadata(contact, "private contact")
+          require_contact_uri(contact_uri)
+          if contact.get("policy_link_id") != "privacy-private-contact":
+              raise SystemExit("private contact policy link ID is not the required stable marker")
+          contact_link = parsed_policy.links.get("privacy-private-contact")
+          if contact_link is None:
+              raise SystemExit("approved private contact link is absent from privacy.html")
+          contact_tag, contact_attributes, contact_in_main = contact_link
+          if (
+              contact_tag != "a"
+              or not contact_in_main
+              or contact_attributes.get("href") != contact_uri
+              or contact_attributes.get("data-policy-purpose")
+              != "privacy-and-deletion"
+              or "hidden" in contact_attributes
+              or contact_attributes.get("aria-hidden") == "true"
+              or not "".join(
+                  parsed_policy.text_by_id.get("privacy-private-contact", [])
+              ).strip()
+          ):
+              raise SystemExit("approved private contact does not match the policy link exactly")
+
+          tombstone = gates.get("deleted_actor_tombstone", {})
+          mode = tombstone.get("mode")
+          disclosure_en = tombstone.get("disclosure_en")
+          disclosure_ru = tombstone.get("disclosure_ru")
+          retention_days = tombstone.get("retention_days")
+          legal_basis = tombstone.get("legal_basis")
+          if tombstone.get("status") != "approved":
+              raise SystemExit("deleted-actor tombstone policy is not approved")
+          require_approval_metadata(tombstone, "deleted-actor tombstone")
+          if mode == "fixed_days":
+              if not (
+                  isinstance(retention_days, int)
+                  and not isinstance(retention_days, bool)
+                  and retention_days > 0
+                  and legal_basis is None
+              ):
+                  raise SystemExit("fixed-days tombstone policy requires only positive retention_days")
+          elif mode == "legal_basis":
+              if retention_days is not None or not (
+                  isinstance(legal_basis, str) and legal_basis.strip()
+              ):
+                  raise SystemExit("legal-basis tombstone policy requires only a legal_basis")
+          else:
+              raise SystemExit("approved tombstone mode must be fixed_days or legal_basis")
+          if not all(
+              isinstance(value, str) and value.strip()
+              for value in (disclosure_en, disclosure_ru)
+          ) or disclosure_en == disclosure_ru:
+              raise SystemExit("distinct English and Russian tombstone disclosures are required")
+          if mode == "fixed_days" and not all(
+              str(retention_days) in value for value in (disclosure_en, disclosure_ru)
+          ):
+              raise SystemExit("both tombstone disclosures must contain the approved day count")
+          if mode == "legal_basis" and not all(
+              legal_basis in value for value in (disclosure_en, disclosure_ru)
+          ):
+              raise SystemExit("both tombstone disclosures must contain the legal-basis reference")
+          if tombstone.get("policy_marker_id") != "deleted-actor-tombstone-policy":
+              raise SystemExit("tombstone policy marker ID is not the required stable marker")
+          marker = parsed_policy.markers.get("deleted-actor-tombstone-policy")
+          if marker is None:
+              raise SystemExit("deleted-actor tombstone policy marker is absent")
+          marker_tag, marker_attributes, marker_in_main = marker
+          expected_marker = {
+              "data-policy-status": "approved",
+              "data-retention-mode": mode,
+              "data-retention-days": str(retention_days) if retention_days is not None else "",
+              "data-legal-basis": legal_basis or "",
+              "data-en": disclosure_en,
+              "data-ru": disclosure_ru,
+          }
+          if marker_tag != "p" or not marker_in_main or any(
+              marker_attributes.get(name) != value
+              for name, value in expected_marker.items()
+          ) or "".join(
+              parsed_policy.text_by_id.get("deleted-actor-tombstone-policy", [])
+          ).strip() != disclosure_ru:
+              raise SystemExit("tombstone JSON and bilingual policy marker do not match exactly")
+          PY
+          then
+            echo "::error::Real-provider distribution is blocked by deploy/account-beta-test/release-policy-gates.json"
+            blocked=true
+          fi
+          # This is intentionally a code-level stop, not a prose grep or an
+          # operator-controlled boolean. Remove it only in the reviewed commit
+          # that implements and restore-tests the deferred deletion journal
+          # and coordinated cross-store backup epoch.
+          if [ "${{ inputs.channel }}" = production ]; then
+            echo "::error::Production distribution is blocked until the deferred backup epoch and deletion replay journal are owned, implemented, and restore-tested"
+            blocked=true
+          fi
+          if [ "$blocked" = true ]; then
+            exit 1
+          fi
+
+      - name: Require successful CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          success=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=completed&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          if [ "$success" -lt 1 ]; then
+            echo "::error::No successful CI workflow exists for exact commit $GITHUB_SHA"
+            exit 1
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          cmdline-tools-version: latest
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          cache-provider: basic
+
+      - name: Grant gradlew execute permission
+        run: chmod +x gradlew
+
+      - name: Validate optional staging VK configuration
+        if: inputs.channel == 'staging'
+        env:
+          VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
+        shell: bash
+        run: |
+          set -eu
+          if { [ -n "$VKID_CLIENT_ID" ] && [ -z "$VKID_CLIENT_SECRET" ]; } || \
+             { [ -z "$VKID_CLIENT_ID" ] && [ -n "$VKID_CLIENT_SECRET" ]; }; then
+            echo "::error::Staging VK ID and mobile value must be set together"
+            exit 1
+          fi
+          case "$VKID_CLIENT_ID" in
+            ''|*[!0-9]*) [ -z "$VKID_CLIENT_ID" ] || { echo "::error::Staging VK ID must be decimal"; exit 1; } ;;
+          esac
+
+      - name: Validate reviewed German staging endpoint configuration
+        if: inputs.channel == 'staging' || inputs.channel == 'recovery-staging'
+        env:
+          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
+          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -eu
+          for name in STAGING_APP_API_BASE_URL STAGING_ACCOUNT_API_BASE_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name repository variable is required for staging and staging recovery"
+              exit 1
+            fi
+          done
+          if [ "$STAGING_APP_API_BASE_URL" != https://pdis.arbuz.lol/plantdisease-test/ ] || \
+             [ "$STAGING_ACCOUNT_API_BASE_URL" != https://pdis.arbuz.lol/plantdisease-test/id/ ]; then
+            echo "::error::Staging endpoints must equal the reviewed German staging pair"
+            exit 1
+          fi
+
+      - name: Validate public production provider and endpoint configuration
+        if: inputs.channel == 'production'
+        env:
+          VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
+          STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
+          STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
+          APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -eu
+          for name in APP_API_BASE_URL ACCOUNT_API_BASE_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name production repository variable is required"
+              exit 1
+            fi
+          done
+          validate_vk_pair() {
+            label=$1
+            client_id=$2
+            client_value=$3
+            if { [ -n "$client_id" ] && [ -z "$client_value" ]; } || \
+               { [ -z "$client_id" ] && [ -n "$client_value" ]; }; then
+              echo "::error::$label VK ID and mobile value must be set together"
+              exit 1
+            fi
+            case "$client_id" in
+              ''|*[!0-9]*) [ -z "$client_id" ] || { echo "::error::$label VK ID must be decimal"; exit 1; } ;;
+            esac
+          }
+          validate_vk_pair production "$VKID_CLIENT_ID" "$VKID_CLIENT_SECRET"
+          validate_vk_pair staging "$STAGING_VKID_CLIENT_ID" "$STAGING_VKID_CLIENT_SECRET"
+          if [ -n "$VKID_CLIENT_ID" ] && [ -n "$STAGING_VKID_CLIENT_ID" ]; then
+            if [ "$VKID_CLIENT_ID" = "$STAGING_VKID_CLIENT_ID" ] || \
+               [ "$VKID_CLIENT_SECRET" = "$STAGING_VKID_CLIENT_SECRET" ]; then
+              echo "::error::Configured production and staging VK applications must be distinct"
+              exit 1
+            fi
+          fi
+          validate_reviewed_production_pair() {
+            reviewed_app=$1
+            reviewed_account=$2
+            if [ "$reviewed_app" = https://pdis.arbuz.lol/plantdisease-test/ ] || \
+               [ "$reviewed_account" = https://pdis.arbuz.lol/plantdisease-test/id/ ]; then
+              echo "::error::Production and production-recovery endpoints must not use German staging"
+              exit 1
+            fi
+            for endpoint in "$reviewed_app" "$reviewed_account"; do
+              case "$endpoint" in
+                *'@'*|*'?'*|*'#'*|*[[:space:]]*)
+                  echo "::error::Reviewed production endpoints must be credential-, query-, and whitespace-free"
+                  exit 1
+                  ;;
+              esac
+            done
+            case "$reviewed_app" in
+              https://*/) ;;
+              *) echo "::error::Production app endpoint must be an HTTPS origin ending in /"; exit 1 ;;
+            esac
+            if [ "$reviewed_account" != "${reviewed_app}id/" ]; then
+              echo "::error::Production account endpoint must be the reviewed app origin plus id/"
+              exit 1
+            fi
+            authority=${reviewed_app#https://}
+            authority=${authority%/}
+            case "$authority" in
+              ''|*'/'*|*'['*|*']'*)
+                echo "::error::Production origin must use a reviewed DNS hostname, not an IP literal"
+                exit 1
+                ;;
+            esac
+            case "$authority" in
+              *:*)
+                host=${authority%%:*}
+                port=${authority#*:}
+                if [ "$port" != 443 ]; then
+                  echo "::error::Production origin may use only the default HTTPS port"
+                  exit 1
+                fi
+                ;;
+              *) host=$authority ;;
+            esac
+            host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+            case "$host" in
+              localhost|*.localhost|invalid|*.invalid)
+                echo "::error::Production origin must not use localhost or a reserved invalid domain"
+                exit 1
+                ;;
+            esac
+            case "$host" in
+              *[!a-z0-9.-]*|.*|*.|*..*|-*|*-|*.-*|*-.*)
+                echo "::error::Production origin hostname is malformed"
+                exit 1
+                ;;
+            esac
+            case "$host" in
+              *.*) ;;
+              *) echo "::error::Production origin must use a reviewed fully-qualified DNS hostname"; exit 1 ;;
+            esac
+            case "$host" in
+              *[a-z-]*) ;;
+              *) echo "::error::Production origin must not use an IPv4 literal"; exit 1 ;;
+            esac
+          }
+          validate_reviewed_production_pair "$APP_API_BASE_URL" "$ACCOUNT_API_BASE_URL"
+
+      - name: Validate production-recovery endpoint configuration
+        if: inputs.channel == 'recovery-production'
+        env:
+          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -eu
+          for name in PRODUCTION_APP_API_BASE_URL PRODUCTION_ACCOUNT_API_BASE_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name repository variable is required; staging and hard-coded fallback are forbidden"
+              exit 1
+            fi
+          done
+          validate_reviewed_production_pair() {
+            reviewed_app=$1
+            reviewed_account=$2
+            if [ "$reviewed_app" = https://pdis.arbuz.lol/plantdisease-test/ ] || \
+               [ "$reviewed_account" = https://pdis.arbuz.lol/plantdisease-test/id/ ]; then
+              echo "::error::Production and production-recovery endpoints must not use German staging"
+              exit 1
+            fi
+            for endpoint in "$reviewed_app" "$reviewed_account"; do
+              case "$endpoint" in
+                *'@'*|*'?'*|*'#'*|*[[:space:]]*)
+                  echo "::error::Reviewed production endpoints must be credential-, query-, and whitespace-free"
+                  exit 1
+                  ;;
+              esac
+            done
+            case "$reviewed_app" in
+              https://*/) ;;
+              *) echo "::error::Production app endpoint must be an HTTPS origin ending in /"; exit 1 ;;
+            esac
+            if [ "$reviewed_account" != "${reviewed_app}id/" ]; then
+              echo "::error::Production account endpoint must be the reviewed app origin plus id/"
+              exit 1
+            fi
+            authority=${reviewed_app#https://}
+            authority=${authority%/}
+            case "$authority" in
+              ''|*'/'*|*'['*|*']'*)
+                echo "::error::Production origin must use a reviewed DNS hostname, not an IP literal"
+                exit 1
+                ;;
+            esac
+            case "$authority" in
+              *:*)
+                host=${authority%%:*}
+                port=${authority#*:}
+                if [ "$port" != 443 ]; then
+                  echo "::error::Production origin may use only the default HTTPS port"
+                  exit 1
+                fi
+                ;;
+              *) host=$authority ;;
+            esac
+            host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+            case "$host" in
+              localhost|*.localhost|invalid|*.invalid)
+                echo "::error::Production origin must not use localhost or a reserved invalid domain"
+                exit 1
+                ;;
+              *[!a-z0-9.-]*|.*|*.|*..*|-*|*-|*.-*|*-.*)
+                echo "::error::Production origin hostname is malformed"
+                exit 1
+                ;;
+            esac
+            case "$host" in
+              *.*) ;;
+              *) echo "::error::Production origin must use a reviewed fully-qualified DNS hostname"; exit 1 ;;
+            esac
+            case "$host" in
+              *[a-z-]*) ;;
+              *) echo "::error::Production origin must not use an IPv4 literal"; exit 1 ;;
+            esac
+          }
+          validate_reviewed_production_pair \
+            "$PRODUCTION_APP_API_BASE_URL" "$PRODUCTION_ACCOUNT_API_BASE_URL"
+
+      - name: Build unsigned staging APK with polling notifications
+        if: inputs.channel == 'staging'
+        env:
+          ANDROID_UNSIGNED_DISTRIBUTION: "true"
+          ANDROID_DISTRIBUTION_CHANNEL: staging
+          ACCOUNT_REAL_OAUTH: "true"
+          VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
+          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
+          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          FCM_APP_ID: ""
+          FCM_API_KEY: ""
+          FCM_PROJECT_ID: ""
+          FCM_SENDER_ID: ""
+        shell: bash
+        run: |
+          set -eu
+          ./gradlew :app:testStagingUnitTest :app:assembleStaging --build-cache --stacktrace
+
+      - name: Build unsigned production APK with polling notifications
+        if: inputs.channel == 'production'
+        env:
+          ANDROID_UNSIGNED_DISTRIBUTION: "true"
+          ANDROID_DISTRIBUTION_CHANNEL: production
+          ACCOUNT_REAL_OAUTH: "true"
+          VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
+          VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
+          APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          FCM_APP_ID: ""
+          FCM_API_KEY: ""
+          FCM_PROJECT_ID: ""
+          FCM_SENDER_ID: ""
+        shell: bash
+        run: |
+          set -eu
+          ./gradlew :app:testReleaseUnitTest :app:assembleRelease --build-cache --stacktrace
+
+      - name: Build unsigned account-disabled production-recovery APK
+        if: inputs.channel == 'recovery-production'
+        env:
+          ANDROID_UNSIGNED_DISTRIBUTION: "true"
+          ANDROID_DISTRIBUTION_CHANNEL: recovery-production
+          ACCOUNT_REAL_OAUTH: "false"
+          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          VKID_CLIENT_ID: ""
+          VKID_CLIENT_SECRET: ""
+          FCM_APP_ID: ""
+          FCM_API_KEY: ""
+          FCM_PROJECT_ID: ""
+          FCM_SENDER_ID: ""
+        shell: bash
+        run: |
+          set -eu
+          ./gradlew :app:testRecoveryProductionUnitTest :app:assembleRecoveryProduction --build-cache --stacktrace
+
+      - name: Build unsigned account-disabled staging-recovery APK
+        if: inputs.channel == 'recovery-staging'
+        env:
+          ANDROID_UNSIGNED_DISTRIBUTION: "true"
+          ANDROID_DISTRIBUTION_CHANNEL: recovery-staging
+          ACCOUNT_REAL_OAUTH: "false"
+          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
+          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          VKID_CLIENT_ID: ""
+          VKID_CLIENT_SECRET: ""
+          FCM_APP_ID: ""
+          FCM_API_KEY: ""
+          FCM_PROJECT_ID: ""
+          FCM_SENDER_ID: ""
+        shell: bash
+        run: |
+          set -eu
+          ./gradlew :app:testRecoveryStagingUnitTest :app:assembleRecoveryStaging --build-cache --stacktrace
+
+      - name: Prove unsigned package identity, provider mode, and endpoints
+        id: inspect_unsigned
+        env:
+          STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
+          STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
+          PRODUCTION_VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
+          PRODUCTION_VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
+          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
+          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          variant="${{ inputs.channel }}"
+          [ "$variant" = production ] && variant=release
+          [ "$variant" = recovery-production ] && variant=recoveryProduction
+          [ "$variant" = recovery-staging ] && variant=recoveryStaging
+
+          shopt -s nullglob
+          apks=("app/build/outputs/apk/$variant"/*.apk)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one $variant APK, found ${#apks[@]}"
+            exit 1
+          fi
+          apk=${apks[0]}
+          apksigner=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner -type f | sort -V | tail -1)
+          aapt=$(find "$ANDROID_SDK_ROOT/build-tools" -name aapt -type f | sort -V | tail -1)
+          test -n "$apksigner"
+          test -n "$aapt"
+          if "$apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::Gradle output is already signed; refusing to expose a signing key to this build path"
+            exit 1
+          fi
+
+          mapfile -t build_configs < <(find app/build/generated -name BuildConfig.java -path "*$variant*")
+          if [ "${#build_configs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one generated $variant BuildConfig"
+            exit 1
+          fi
+          build_config=${build_configs[0]}
+          grep -q 'APPLICATION_ID = "com.plantdiseases.app"' "$build_config"
+          grep -q 'SYNTHETIC_AUTH_ENABLED = false' "$build_config"
+          grep -q 'FCM_API_KEY = ""' "$build_config"
+
+          expected_yandex_client_id=cfefdff8ae4d4dd8a7426308751ef95a
+          expected_vkid_client_id=
+          expected_vkid_client_secret=
+          if [ "${{ inputs.channel }}" = staging ]; then
+            expected_vkid_client_id=$STAGING_VKID_CLIENT_ID
+            expected_vkid_client_secret=$STAGING_VKID_CLIENT_SECRET
+          elif [ "${{ inputs.channel }}" = production ]; then
+            expected_vkid_client_id=$PRODUCTION_VKID_CLIENT_ID
+            expected_vkid_client_secret=$PRODUCTION_VKID_CLIENT_SECRET
+          fi
+          provider_sha256() {
+            printf '%s' "$1" | sha256sum | cut -d ' ' -f 1
+          }
+          yandex_client_id_sha=$(provider_sha256 "$expected_yandex_client_id")
+          vkid_client_id_sha=$(provider_sha256 "$expected_vkid_client_id")
+          vkid_client_secret_sha=$(provider_sha256 "$expected_vkid_client_secret")
+          grep -Fq "YANDEX_CLIENT_ID_SHA256 = \"$yandex_client_id_sha\"" "$build_config"
+          grep -Fq "VKID_CLIENT_ID_SHA256 = \"$vkid_client_id_sha\"" "$build_config"
+          grep -Fq "VKID_CLIENT_SECRET_SHA256 = \"$vkid_client_secret_sha\"" "$build_config"
+          echo "yandex_client_id_sha256=$yandex_client_id_sha" >> "$GITHUB_OUTPUT"
+          echo "vkid_client_id_sha256=$vkid_client_id_sha" >> "$GITHUB_OUTPUT"
+          echo "vkid_client_secret_sha256=$vkid_client_secret_sha" >> "$GITHUB_OUTPUT"
+          expected_version_code=19
+          expected_version_name=1.9
+          expected_app=$STAGING_APP_API_BASE_URL
+          expected_account=$STAGING_ACCOUNT_API_BASE_URL
+          if [ "$variant" = recoveryProduction ]; then
+            expected_version_code=20
+            expected_version_name=1.9-recovery-production
+            expected_app=$PRODUCTION_APP_API_BASE_URL
+            expected_account=$PRODUCTION_ACCOUNT_API_BASE_URL
+            grep -q 'VERSION_CODE = 20' "$build_config"
+            grep -q 'VERSION_NAME = "1.9-recovery-production"' "$build_config"
+            grep -q 'ACCOUNT_UI_ENABLED = false' "$build_config"
+            grep -q 'RECOVERY_ENDPOINTS_CONFIGURED = true' "$build_config"
+            grep -q 'RECOVERY_ENDPOINT_SCOPE = "production"' "$build_config"
+            grep -q 'YANDEX_OAUTH_CONFIGURED = false' "$build_config"
+            grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+          elif [ "$variant" = recoveryStaging ]; then
+            expected_version_code=20
+            expected_version_name=1.9-recovery-staging
+            expected_app=$STAGING_APP_API_BASE_URL
+            expected_account=$STAGING_ACCOUNT_API_BASE_URL
+            grep -q 'VERSION_CODE = 20' "$build_config"
+            grep -q 'VERSION_NAME = "1.9-recovery-staging"' "$build_config"
+            grep -q 'ACCOUNT_UI_ENABLED = false' "$build_config"
+            grep -q 'RECOVERY_ENDPOINTS_CONFIGURED = true' "$build_config"
+            grep -q 'RECOVERY_ENDPOINT_SCOPE = "staging"' "$build_config"
+            grep -q 'YANDEX_OAUTH_CONFIGURED = false' "$build_config"
+            grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+          else
+            grep -q 'VERSION_CODE = 19' "$build_config"
+            grep -q 'VERSION_NAME = "1.9"' "$build_config"
+            grep -q 'ACCOUNT_UI_ENABLED = true' "$build_config"
+            grep -q 'YANDEX_OAUTH_CONFIGURED = true' "$build_config"
+            if [ -n "$expected_vkid_client_id" ]; then
+              grep -q 'VK_OAUTH_CONFIGURED = true' "$build_config"
+            else
+              grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+            fi
+            if [ "$variant" = release ]; then
+              expected_app=$PRODUCTION_APP_API_BASE_URL
+              expected_account=$PRODUCTION_ACCOUNT_API_BASE_URL
+            fi
+          fi
+          grep -Fq "APP_API_BASE_URL = \"$expected_app\"" "$build_config"
+          grep -Fq "ACCOUNT_API_BASE_URL = \"$expected_account\"" "$build_config"
+
+          badging_output=$("$aapt" dump badging "$apk")
+          badging=${badging_output%%$'\n'*}
+          case "$badging" in
+            *"package: name='com.plantdiseases.app'"*"versionCode='$expected_version_code'"*"versionName='$expected_version_name'"*) ;;
+            *)
+              echo "::error::Unsigned APK package/version identity is not the reviewed channel identity"
+              exit 1
+              ;;
+          esac
+
+          stage="$RUNNER_TEMP/unsigned-artifact"
+          mkdir -p "$stage"
+          cp -- "$apk" "$stage/plantdiseases-unsigned.apk"
+          unsigned_sha=$(sha256sum "$stage/plantdiseases-unsigned.apk" | cut -d ' ' -f 1)
+          echo "unsigned_sha256=$unsigned_sha" >> "$GITHUB_OUTPUT"
+          app_endpoint_sha=$(printf '%s' "$expected_app" | sha256sum | cut -d ' ' -f 1)
+          account_endpoint_sha=$(printf '%s' "$expected_account" | sha256sum | cut -d ' ' -f 1)
+          printf '%s\n' \
+            'format=plantdiseases-android-unsigned-v1' \
+            "commit=$GITHUB_SHA" \
+            "ref=$GITHUB_REF" \
+            "channel=${{ inputs.channel }}" \
+            "variant=$variant" \
+            'package=com.plantdiseases.app' \
+            "version_code=$expected_version_code" \
+            "version_name=$expected_version_name" \
+            'notifications=polling-only' \
+            "app_endpoint_sha256=$app_endpoint_sha" \
+            "account_endpoint_sha256=$account_endpoint_sha" \
+            "yandex_client_id_sha256=$yandex_client_id_sha" \
+            "vkid_client_id_sha256=$vkid_client_id_sha" \
+            "vkid_client_secret_sha256=$vkid_client_secret_sha" \
+            "unsigned_sha256=$unsigned_sha" \
+            'signature=absent' > "$stage/unsigned.provenance"
+
+      - name: Upload exact unsigned APK for protected signing
+        id: upload_unsigned
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unsigned-plantdiseases-${{ inputs.channel }}-${{ github.sha }}
+          path: ${{ runner.temp }}/unsigned-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 3
+
+  sign:
+    name: Sign reviewed APK without checkout
+    needs: build_unsigned
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: none
+    # Approval happens only after the unsigned artifact exists. This job has no
+    # checkout or Gradle/JDK setup. Its inline shell is trusted workflow code
+    # loaded from protected main, so the reviewer must inspect this exact SHA.
+    # Permanent key material is scoped to one fixed apksigner step and removed.
+    environment: android-signing
+
+    steps:
+      - name: Download exact immutable unsigned artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.build_unsigned.outputs.artifact_id }}
+          path: ${{ runner.temp }}/unsigned-artifact
+          merge-multiple: true
+
+      - name: Align, sign, and independently verify reviewed APK
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+          RUSSIAN_CUTOVER_APPROVED: ${{ vars.PRODUCTION_RUSSIAN_CUTOVER_APPROVED }}
+          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
+          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          APPROVED_PRODUCTION_APP_API_BASE_URL: ${{ vars.APPROVED_PRODUCTION_APP_API_BASE_URL }}
+          APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL }}
+          UNSIGNED_ARTIFACT_ID: ${{ needs.build_unsigned.outputs.artifact_id }}
+          UNSIGNED_ARTIFACT_DIGEST: ${{ needs.build_unsigned.outputs.artifact_digest }}
+          EXPECTED_UNSIGNED_SHA256: ${{ needs.build_unsigned.outputs.unsigned_sha256 }}
+          EXPECTED_YANDEX_CLIENT_ID_SHA256: ${{ needs.build_unsigned.outputs.yandex_client_id_sha256 }}
+          EXPECTED_VKID_CLIENT_ID_SHA256: ${{ needs.build_unsigned.outputs.vkid_client_id_sha256 }}
+          EXPECTED_VKID_CLIENT_SECRET_SHA256: ${{ needs.build_unsigned.outputs.vkid_client_secret_sha256 }}
+          ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          case "${{ inputs.channel }}:${GITHUB_REF}" in
+            production:refs/heads/main) ;;
+            recovery-production:refs/heads/main) ;;
+            staging:refs/heads/main) ;;
+            recovery-staging:refs/heads/main) ;;
+            *)
+              echo "::error::Artifact source branch is not allowed for this channel"
+              exit 1
+              ;;
+          esac
+          if [ "${{ inputs.channel }}" = production ] && [ "$RUSSIAN_CUTOVER_APPROVED" != true ]; then
+            echo "::error::PRODUCTION_RUSSIAN_CUTOVER_APPROVED must be true"
+            exit 1
+          fi
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD \
+            RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD RELEASE_CERT_SHA256; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required in the protected android-signing environment"
+              exit 1
+            fi
+          done
+          if [ "${{ inputs.channel }}" = production ] || \
+             [ "${{ inputs.channel }}" = recovery-production ]; then
+            for name in APPROVED_PRODUCTION_APP_API_BASE_URL \
+              APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::$name is required in the protected android-signing environment"
+                exit 1
+              fi
+            done
+            if [ "$PRODUCTION_APP_API_BASE_URL" != "$APPROVED_PRODUCTION_APP_API_BASE_URL" ] || \
+               [ "$PRODUCTION_ACCOUNT_API_BASE_URL" != "$APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL" ]; then
+              echo "::error::Unsigned artifact endpoints differ from the protected approved production origin"
+              exit 1
+            fi
+          fi
+          # Convert the four inherited secret environment values into
+          # unexported shell variables, then remove them from the environment.
+          # Package-inspection and alignment subprocesses must not inherit the
+          # permanent key or passwords.
+          release_keystore_base64=$RELEASE_KEYSTORE_BASE64
+          release_store_password=$RELEASE_STORE_PASSWORD
+          release_key_alias=$RELEASE_KEY_ALIAS
+          release_key_password=$RELEASE_KEY_PASSWORD
+          unset RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD \
+            RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD
+          case "$UNSIGNED_ARTIFACT_ID" in
+            ''|*[!0-9]*) echo "::error::Unsigned artifact ID is invalid"; exit 1 ;;
+          esac
+          # upload-artifact exposes artifact-digest as 64 lowercase hex
+          # characters (without a "sha256:" prefix).
+          case "$UNSIGNED_ARTIFACT_DIGEST" in
+            ''|*[!0-9a-f]*) echo "::error::Unsigned artifact digest is invalid"; exit 1 ;;
+          esac
+          if [ "${#UNSIGNED_ARTIFACT_DIGEST}" -ne 64 ]; then
+            echo "::error::Unsigned artifact digest must contain 64 hexadecimal characters"
+            exit 1
+          fi
+          case "$EXPECTED_UNSIGNED_SHA256" in
+            ''|*[!0-9a-f]*) echo "::error::Expected unsigned APK digest is invalid"; exit 1 ;;
+          esac
+          if [ "${#EXPECTED_UNSIGNED_SHA256}" -ne 64 ]; then
+            echo "::error::Expected unsigned APK digest must contain 64 hexadecimal characters"
+            exit 1
+          fi
+          for name in EXPECTED_YANDEX_CLIENT_ID_SHA256 \
+            EXPECTED_VKID_CLIENT_ID_SHA256 EXPECTED_VKID_CLIENT_SECRET_SHA256; do
+            value=${!name:-}
+            case "$value" in
+              ''|*[!0-9a-f]*) echo "::error::$name is invalid"; exit 1 ;;
+            esac
+            if [ "${#value}" -ne 64 ]; then
+              echo "::error::$name must contain 64 lowercase hexadecimal characters"
+              exit 1
+            fi
+          done
+
+          expected_cert=$(printf '%s' "$RELEASE_CERT_SHA256" | tr '[:upper:]' '[:lower:]')
+          expected_cert=${expected_cert#sha-256}
+          expected_cert=${expected_cert#sha256}
+          expected_cert=$(printf '%s' "$expected_cert" | tr -d ':[:space:]')
+          case "$expected_cert" in
+            ''|*[!0-9a-f]*) echo "::error::RELEASE_CERT_SHA256 is invalid"; exit 1 ;;
+          esac
+          if [ "${#expected_cert}" -ne 64 ]; then
+            echo "::error::RELEASE_CERT_SHA256 must contain 64 hexadecimal characters"
+            exit 1
+          fi
+
+          sdk_root=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
+          tools="$sdk_root/build-tools/$ANDROID_BUILD_TOOLS_VERSION"
+          apksigner="$tools/apksigner"
+          zipalign="$tools/zipalign"
+          aapt="$tools/aapt"
+          for executable in "$apksigner" "$zipalign" "$aapt"; do
+            if [ ! -x "$executable" ]; then
+              echo "::error::Trusted Android Build Tools $ANDROID_BUILD_TOOLS_VERSION are not preinstalled: $executable"
+              exit 1
+            fi
+          done
+
+          input_dir="$RUNNER_TEMP/unsigned-artifact"
+          unsigned_apk="$input_dir/plantdiseases-unsigned.apk"
+          unsigned_provenance="$input_dir/unsigned.provenance"
+          if [ ! -f "$unsigned_apk" ] || [ -L "$unsigned_apk" ] || \
+             [ ! -f "$unsigned_provenance" ] || [ -L "$unsigned_provenance" ]; then
+            echo "::error::Unsigned artifact must contain regular APK and provenance files"
+            exit 1
+          fi
+          entry_count=$(find "$input_dir" -mindepth 1 -maxdepth 1 -printf . | wc -c)
+          if [ "$entry_count" -ne 2 ]; then
+            echo "::error::Unsigned artifact contains unexpected entries"
+            exit 1
+          fi
+
+          variant="${{ inputs.channel }}"
+          expected_version_code=19
+          expected_version_name=1.9
+          expected_app=https://pdis.arbuz.lol/plantdisease-test/
+          expected_account=https://pdis.arbuz.lol/plantdisease-test/id/
+          if [ "$variant" = production ]; then
+            variant=release
+            expected_app=$APPROVED_PRODUCTION_APP_API_BASE_URL
+            expected_account=$APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL
+          elif [ "$variant" = recovery-production ]; then
+            variant=recoveryProduction
+            expected_version_code=20
+            expected_version_name=1.9-recovery-production
+            expected_app=$APPROVED_PRODUCTION_APP_API_BASE_URL
+            expected_account=$APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL
+          elif [ "$variant" = recovery-staging ]; then
+            variant=recoveryStaging
+            expected_version_code=20
+            expected_version_name=1.9-recovery-staging
+          fi
+          for endpoint in "$expected_app" "$expected_account"; do
+            case "$endpoint" in
+              *'@'*|*'?'*|*'#'*|*[[:space:]]*)
+                echo "::error::Reviewed endpoints are invalid"
+                exit 1
+                ;;
+            esac
+          done
+          if [ "${{ inputs.channel }}" = production ] || \
+             [ "${{ inputs.channel }}" = recovery-production ]; then
+            if [ "$expected_app" = https://pdis.arbuz.lol/plantdisease-test/ ] || \
+               [ "$expected_account" = https://pdis.arbuz.lol/plantdisease-test/id/ ]; then
+              echo "::error::Production and production-recovery endpoints must not use German staging"
+              exit 1
+            fi
+            case "$expected_app" in
+              https://*/) ;;
+              *) echo "::error::Reviewed production app endpoint is invalid"; exit 1 ;;
+            esac
+            if [ "$expected_account" != "${expected_app}id/" ]; then
+              echo "::error::Production account endpoint no longer matches the reviewed origin"
+              exit 1
+            fi
+            authority=${expected_app#https://}
+            authority=${authority%/}
+            case "$authority" in
+              ''|*'/'*|*'['*|*']'*)
+                echo "::error::Production origin must use a reviewed DNS hostname, not an IP literal"
+                exit 1
+                ;;
+            esac
+            case "$authority" in
+              *:*)
+                host=${authority%%:*}
+                port=${authority#*:}
+                if [ "$port" != 443 ]; then
+                  echo "::error::Production origin may use only the default HTTPS port"
+                  exit 1
+                fi
+                ;;
+              *) host=$authority ;;
+            esac
+            host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+            case "$host" in
+              localhost|*.localhost|invalid|*.invalid)
+                echo "::error::Production origin must not use localhost or a reserved invalid domain"
+                exit 1
+                ;;
+              *[!a-z0-9.-]*|.*|*.|*..*|-*|*-|*.-*|*-.*)
+                echo "::error::Production origin hostname is malformed"
+                exit 1
+                ;;
+            esac
+            case "$host" in
+              *.*) ;;
+              *) echo "::error::Production origin must use a reviewed fully-qualified DNS hostname"; exit 1 ;;
+            esac
+            case "$host" in
+              *[a-z-]*) ;;
+              *) echo "::error::Production origin must not use an IPv4 literal"; exit 1 ;;
+            esac
+          fi
+
+          unsigned_sha=$(sha256sum "$unsigned_apk" | cut -d ' ' -f 1)
+          if [ "$unsigned_sha" != "$EXPECTED_UNSIGNED_SHA256" ]; then
+            echo "::error::Downloaded unsigned APK digest differs from the build-job output"
+            exit 1
+          fi
+          app_endpoint_sha=$(printf '%s' "$expected_app" | sha256sum | cut -d ' ' -f 1)
+          account_endpoint_sha=$(printf '%s' "$expected_account" | sha256sum | cut -d ' ' -f 1)
+          require_provenance() {
+            line=$1
+            count=$(grep -Fxc -- "$line" "$unsigned_provenance" || true)
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Unsigned provenance mismatch: $line"
+              exit 1
+            fi
+          }
+          if [ "$(wc -l < "$unsigned_provenance")" -ne 16 ]; then
+            echo "::error::Unsigned provenance has an unexpected shape"
+            exit 1
+          fi
+          require_provenance 'format=plantdiseases-android-unsigned-v1'
+          require_provenance "commit=$GITHUB_SHA"
+          require_provenance "ref=$GITHUB_REF"
+          require_provenance "channel=${{ inputs.channel }}"
+          require_provenance "variant=$variant"
+          require_provenance 'package=com.plantdiseases.app'
+          require_provenance "version_code=$expected_version_code"
+          require_provenance "version_name=$expected_version_name"
+          require_provenance 'notifications=polling-only'
+          require_provenance "app_endpoint_sha256=$app_endpoint_sha"
+          require_provenance "account_endpoint_sha256=$account_endpoint_sha"
+          require_provenance "yandex_client_id_sha256=$EXPECTED_YANDEX_CLIENT_ID_SHA256"
+          require_provenance "vkid_client_id_sha256=$EXPECTED_VKID_CLIENT_ID_SHA256"
+          require_provenance "vkid_client_secret_sha256=$EXPECTED_VKID_CLIENT_SECRET_SHA256"
+          require_provenance "unsigned_sha256=$unsigned_sha"
+          require_provenance 'signature=absent'
+
+          if "$apksigner" verify "$unsigned_apk" >/dev/null 2>&1; then
+            echo "::error::Downloaded input is signed; only the reviewed unsigned APK may cross this boundary"
+            exit 1
+          fi
+          badging_output=$("$aapt" dump badging "$unsigned_apk")
+          badging=${badging_output%%$'\n'*}
+          case "$badging" in
+            *"package: name='com.plantdiseases.app'"*"versionCode='$expected_version_code'"*"versionName='$expected_version_name'"*) ;;
+            *) echo "::error::Unsigned APK package/version does not match provenance"; exit 1 ;;
+          esac
+
+          keystore="$RUNNER_TEMP/release.keystore"
+          aligned="$RUNNER_TEMP/plantdiseases-aligned-unsigned.apk"
+          output_dir="$RUNNER_TEMP/signed-artifact"
+          output_name="plantdiseases-1.9-${{ inputs.channel }}.apk"
+          signed_apk="$output_dir/$output_name"
+          cleanup() {
+            rm -f -- "$keystore" "$aligned"
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          mkdir -p "$output_dir"
+          "$zipalign" -f -p 4 "$unsigned_apk" "$aligned"
+
+          printf '%s' "$release_keystore_base64" | base64 --decode > "$keystore"
+          release_keystore_base64=
+          test -s "$keystore"
+
+          RELEASE_STORE_PASSWORD=$release_store_password \
+          RELEASE_KEY_PASSWORD=$release_key_password \
+          "$apksigner" sign \
+            --ks "$keystore" \
+            --ks-key-alias "$release_key_alias" \
+            --ks-pass env:RELEASE_STORE_PASSWORD \
+            --key-pass env:RELEASE_KEY_PASSWORD \
+            --out "$signed_apk" \
+            "$aligned"
+          release_store_password=
+          release_key_password=
+          release_key_alias=
+          "$zipalign" -c -p 4 "$signed_apk"
+          certs=$("$apksigner" verify --verbose --print-certs "$signed_apk")
+          actual_cert=$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+          if [ -z "$actual_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
+            echo "::error::Signed APK certificate does not match RELEASE_CERT_SHA256"
+            exit 1
+          fi
+          signed_badging_output=$("$aapt" dump badging "$signed_apk")
+          signed_badging=${signed_badging_output%%$'\n'*}
+          case "$signed_badging" in
+            *"package: name='com.plantdiseases.app'"*"versionCode='$expected_version_code'"*"versionName='$expected_version_name'"*) ;;
+            *) echo "::error::Signing changed or obscured the reviewed package identity"; exit 1 ;;
+          esac
+
+          signed_sha=$(sha256sum "$signed_apk" | cut -d ' ' -f 1)
+          (cd "$output_dir" && sha256sum "$output_name" > "$output_name.sha256")
+          printf '%s\n' \
+            'format=plantdiseases-android-signed-v1' \
+            "commit=$GITHUB_SHA" \
+            "ref=$GITHUB_REF" \
+            "channel=${{ inputs.channel }}" \
+            "variant=$variant" \
+            'package=com.plantdiseases.app' \
+            "version_code=$expected_version_code" \
+            "version_name=$expected_version_name" \
+            'notifications=polling-only' \
+            "app_endpoint_sha256=$app_endpoint_sha" \
+            "account_endpoint_sha256=$account_endpoint_sha" \
+            "yandex_client_id_sha256=$EXPECTED_YANDEX_CLIENT_ID_SHA256" \
+            "vkid_client_id_sha256=$EXPECTED_VKID_CLIENT_ID_SHA256" \
+            "vkid_client_secret_sha256=$EXPECTED_VKID_CLIENT_SECRET_SHA256" \
+            "unsigned_sha256=$unsigned_sha" \
+            "unsigned_artifact_id=$UNSIGNED_ARTIFACT_ID" \
+            "unsigned_artifact_digest=$UNSIGNED_ARTIFACT_DIGEST" \
+            "signed_sha256=$signed_sha" \
+            "certificate_sha256=$actual_cert" \
+            'signing_boundary=checkout-free' > "$signed_apk.provenance"
+
+      - name: Upload signed APK, checksum, and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: plantdiseases-1.9-${{ inputs.channel }}-${{ github.sha }}
+          path: ${{ runner.temp }}/signed-artifact/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 3

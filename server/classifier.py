@@ -111,8 +111,8 @@ def _load_metadata(model_dir: Path) -> dict:
         return {}
     try:
         return json.loads(meta.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.warning("Failed to read %s: %s", meta, e)
+    except Exception:
+        logger.warning("Failed to read classifier metadata")
         return {}
 
 
@@ -282,13 +282,13 @@ class DiseaseClassifier:
         try:
             warm = np.zeros((1, 3, self.img_size, self.img_size), dtype=np.float32)
             sess.run(None, {inp.name: warm})
-        except Exception as e:  # noqa: BLE001 — warmup is best-effort
-            logger.debug("Classifier ONNX warmup skipped: %s", e)
+        except Exception:  # noqa: BLE001 — warmup is best-effort
+            logger.debug("Classifier ONNX warmup skipped")
 
         logger.info(
-            "Classifier (ONNX) loaded from %s (%d classes, img_size=%d, "
+            "Classifier (ONNX) loaded (%d classes, img_size=%d, "
             "arch=%s, tta=%s, embedding_output=%s)",
-            path, self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
+            self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
             self._has_embedding,
         )
 

@@ -1,0 +1,139 @@
+contract_version: account-beta-ru-de-v1
+status: deployment-blocked-until-legal-and-operator-gates
+
+services:
+  ru-ingress:
+    country: RU
+    public_android_endpoint: true
+    persists: []
+    receives:
+      - sanitized_image
+      - public_api_request
+      - account_bearer_token
+    must_not_send_to_de:
+      - authorization
+      - account_id
+      - actor_id
+      - session_id
+      - nickname
+      - provider_data
+      - installation_id
+      - fcm_token
+      - source_filename
+      - image_metadata
+
+  ru-egress-proxy:
+    country: RU
+    public_android_endpoint: false
+    persists: []
+    receives:
+      - tls_connect_destination
+    destination_policy:
+      exact_allowlist_only: true
+      private_and_link_local_denied: true
+      tls_port: 443
+
+  ru-account-api:
+    country: RU
+    public_android_endpoint: true
+    schema_revision: 0006_signup_completion_idempotency
+    database_tables:
+      - account_consents
+      - account_deletion_jobs
+      - account_identities
+      - account_nickname_claims
+      - account_nickname_jobs
+      - account_security_events
+      - accounts
+      - alembic_version
+      - pending_signups
+      - push_devices
+      - reauth_challenges
+      - refresh_tokens
+      - sessions
+      - signup_completions
+    account_features:
+      - installation_bound_pending_signup
+      - two_phase_signup_completion
+      - bounded_signup_completion_idempotency
+      - explicit_signup_confirmation_or_cancellation
+      - runtime_read_only_migration_metadata
+      - nickname_claim_registry
+      - durable_nickname_propagation
+    persists:
+      - account_private_postgresql
+      - encrypted_push_registrations
+      - deletion_jobs
+      - nickname_propagation_jobs
+      - nickname_claim_registry
+    receives:
+      - yandex_access_token
+      - vk_access_token
+      - application_refresh_token
+      - account_profile_request
+
+  ru-app-api:
+    country: RU
+    public_android_endpoint: true
+    persists:
+      - community
+      - user_media
+      - anonymous_training_store
+      - telemetry
+      - application_logs
+    receives:
+      - sanitized_image
+      - optional_account_bearer_token
+      - community_request
+      - structured_feedback
+    de_outbound_contract: ml-worker.openapi.json
+
+  ru-backup:
+    country: RU
+    public_android_endpoint: false
+    persists:
+      - encrypted_ru_backup
+    retention:
+      daily: 7
+      weekly: 4
+
+  de-ml-worker:
+    country: DE
+    public_android_endpoint: false
+    persists: []
+    receives:
+      - sanitized_image
+      - one_use_request_id
+      - model_family
+      - language
+      - result_options
+    forbidden_import_domains:
+      - account
+      - community
+      - push
+      - telemetry
+      - feedback
+      - training_store
+    runtime:
+      request_storage: memory-only
+      temporary_storage: tmpfs
+      model_storage: read-only
+      request_access_log: disabled
+      metrics: aggregate-only
+
+flows:
+  android_to_ru:
+    source: Android
+    destination: ru-ingress
+    transport: HTTPS
+  ru_to_de_inference:
+    source: ru-app-api
+    destination: de-ml-worker
+    transport: mTLS
+    schema: ml-worker.openapi.json
+    direct_android_access: forbidden
+  deletion:
+    source: ru-account-api
+    destination: ru-app-api
+    transport: private-RU-authenticated
+    de_participation: forbidden

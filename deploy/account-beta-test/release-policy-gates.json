@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "private_contact": {
+    "status": "blocked",
+    "uri": null,
+    "policy_link_id": "privacy-private-contact",
+    "decision_reference": null,
+    "approved_at_utc": null
+  },
+  "deleted_actor_tombstone": {
+    "status": "blocked",
+    "mode": null,
+    "retention_days": null,
+    "legal_basis": null,
+    "policy_marker_id": "deleted-actor-tombstone-policy",
+    "disclosure_en": null,
+    "disclosure_ru": null,
+    "decision_reference": null,
+    "approved_at_utc": null
+  }
+}

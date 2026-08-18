@@ -120,7 +120,6 @@ class MainActivity : AppCompatActivity() {
             navigateToContext = ::navigateOnboardingTo,
         )
         setContentView(binding.root)
-        maybeShowConsentDialog()
 
         // Single root inset listener — dispatches status-bar + nav-bar + cutout insets
         // to the toolbar (top) and the bottom navigation (bottom/sides).
@@ -162,15 +161,30 @@ class MainActivity : AppCompatActivity() {
         // Kick off the periodic second-opinion poll from a UI context (not
         // Application.onCreate, which would touch WorkManager too early), plus
         // an immediate catch-up check so a reply that arrived while the app was
-        // closed notifies now instead of at the next periodic tick. Runs
-        // regardless of the opinion-notifications preference: the poll drives
-        // the notification centre, not just the popup, and OpinionNotifier
-        // decides per-event whether to also interrupt the user. PushManager
-        // keeps its own internal gate on the same preference (registering a
-        // push token is a separate concern from recording an opinion event).
-        (application as PlantDiseasesApp).apply {
-            scheduleOpinionChecks()
-            checkOpinionsNow()
+        // closed notifies now instead of at the next periodic tick.
+        val opinionAction = opinionWorkAction(
+            BuildConfig.ACCOUNT_UI_ENABLED,
+            com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this),
+        )
+        when (opinionAction) {
+            OpinionWorkAction.CANCEL -> {
+                // Recovery/account-disabled builds must remove work inherited
+                // from v19 before it can touch private account endpoints.
+                androidx.work.WorkManager.getInstance(this).apply {
+                    cancelUniqueWork("opinion_check")
+                    cancelUniqueWork("opinion_check_now")
+                }
+            }
+
+            OpinionWorkAction.SCHEDULE -> {
+                (application as PlantDiseasesApp).apply {
+                    scheduleOpinionChecks()
+                    checkOpinionsNow()
+                }
+                com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+            }
+
+            OpinionWorkAction.NONE -> Unit
         }
         com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         // Warm the guide/disease example photos into Glide's disk cache so they
@@ -238,34 +252,6 @@ class MainActivity : AppCompatActivity() {
         inAppUpdateManager?.release()
         inAppUpdateManager = null
         super.onDestroy()
-    }
-
-    /** Upgrade path for installs that completed onboarding before the consent
-     *  page existed: a one-time BLOCKING dialog with the same disclosure +
-     *  Agree button (no decline path — Play "prominent disclosure" pattern,
-     *  same as the onboarding consent page new installs see). */
-    private fun maybeShowConsentDialog() {
-        if (OnboardingActivity.isDataConsentGiven(this)) return
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.consent_title)
-            .setMessage(R.string.consent_body)
-            .setCancelable(false)
-            .setPositiveButton(R.string.consent_agree) { _, _ ->
-                OnboardingActivity.setDataConsentGiven(this)
-            }
-            .setNeutralButton(R.string.consent_privacy_link, null)
-            .create()
-            .apply {
-                setOnShowListener {
-                    // Keep the dialog open when the privacy link is tapped —
-                    // the default neutral handler would dismiss it and let
-                    // the user bypass Agree.
-                    getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                        startActivity(PrivacyPolicyActivity.intent(this@MainActivity))
-                    }
-                }
-            }
-            .show()
     }
 
     // Up arrow on non-top-level destinations (e.g. the disease guide opened
@@ -462,6 +448,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        (application as PlantDiseasesApp).retryPendingAccountLogouts()
         // Check if there's a new scan result to show badge
         val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
         if (prefs.getBoolean("new_scan_result", false)) {

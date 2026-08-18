@@ -163,11 +163,11 @@ def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
             embed_dim=embed_dim,
             bank_file=str(emb.get("bank_file", "ood_embedding.npz")),
         )
-    except (KeyError, ValueError, TypeError) as e:
-        logger.warning("Malformed ood.embedding section in classes.json: %s", e)
+    except (KeyError, ValueError, TypeError):
+        logger.warning("Malformed embedding OOD model metadata")
         return None
     if cfg.method != "knn":
-        logger.warning("Unsupported ood.embedding method %r — ignoring", cfg.method)
+        logger.warning("Unsupported embedding OOD method; ignoring")
         return None
     return cfg
 
@@ -185,10 +185,7 @@ def load_embedding_ood(model_dir: Path | None, meta: dict) -> EmbeddingOODScorer
         return None
     npz_path = Path(model_dir) / cfg.bank_file
     if not npz_path.exists():
-        logger.warning(
-            "ood.embedding configured but bank file %s is missing — "
-            "embedding OOD disabled", npz_path,
-        )
+        logger.warning("Configured embedding OOD bank is missing; OOD disabled")
         return None
     try:
         with np.load(npz_path) as data:
@@ -200,13 +197,13 @@ def load_embedding_ood(model_dir: Path | None, meta: dict) -> EmbeddingOODScorer
                 f"bank embed_dim {bank.shape[1]} != config embed_dim {cfg.embed_dim}"
             )
         scorer = EmbeddingOODScorer(bank, cfg)
-    except Exception as e:  # noqa: BLE001 — never block boot on OOD setup
-        logger.warning("Failed to load embedding OOD bank %s: %s", npz_path, e)
+    except Exception:  # noqa: BLE001 — never block boot on OOD setup
+        logger.warning("Failed to load embedding OOD bank")
         return None
     logger.info(
         "Embedding OOD loaded: method=%s metric=%s k=%d threshold=%.4f "
-        "bank=%d×%d from %s",
+        "bank=%d×%d",
         cfg.method, cfg.metric, scorer._k, cfg.threshold,
-        bank.shape[0], bank.shape[1], npz_path,
+        bank.shape[0], bank.shape[1],
     )
     return scorer

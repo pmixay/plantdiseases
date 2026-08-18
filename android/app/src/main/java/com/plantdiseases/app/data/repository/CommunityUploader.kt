@@ -1,20 +1,18 @@
 package com.plantdiseases.app.data.repository
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Log
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.UploadImageSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Glue between a freshly-saved [ScanEntity] and the server's community
@@ -23,10 +21,9 @@ import java.io.FileOutputStream
  * Responsibilities, in order:
  *   1. Confirm uploads are enabled (opt-in, default OFF — the user
  *      enables community in-context; see [CommunityPrefs]).
- *   2. Generate a 512px JPEG thumbnail in the app's cache dir so the
- *      upload stays under the server's COMMUNITY_MAX_THUMB_BYTES
- *      ceiling.
- *   3. POST the row + thumb via [ScanRepository.uploadCommunityScan].
+ *   2. Load the exact metadata-free JPEG bytes submitted to /api/analyze.
+ *      Publication is SHA-bound, so a second JPEG encode is invalid.
+ *   3. POST the row + retained image via [ScanRepository.uploadCommunityScan].
  *      Location is client-supplied (coarse country/city + rounded coords);
  *      there is no server-side IP geolocation. Only scans with a
  *      server-issued scan_id are shared — on-device Aqua scans stay private.
@@ -37,6 +34,12 @@ import java.io.FileOutputStream
 class CommunityUploader(
     private val context: Context,
     private val scanRepository: ScanRepository,
+    private val authRepository: AuthRepository,
+    // Source-compatible until the independently owned DI module is updated.
+    // Never call this here: a second encode cannot satisfy the server's
+    // byte-for-byte /api/analyze publication binding.
+    @Suppress("UNUSED_PARAMETER")
+    imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
 ) {
     suspend fun uploadIfEnabled(
         scan: ScanEntity,
@@ -44,6 +47,9 @@ class CommunityUploader(
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (!CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
+        }
+        if (authRepository.state.value !is AuthState.Authenticated) {
+            return@withContext UploadOutcome.AuthRequired
         }
         // On-device (Aqua) scans never hit /api/analyze, so they carry no
         // server-issued scan_id. Those stay private by default — we don't
@@ -63,12 +69,15 @@ class CommunityUploader(
         if (disease in HIDDEN_COMMUNITY_DISEASES) {
             return@withContext UploadOutcome.HiddenDisease
         }
-        val thumb = makeThumbnail(scan)
         val species = analysis.species?.best?.scientificName
         val score = analysis.species?.best?.score?.takeIf { it > 0f }
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
-        val pseudoId = TelemetryIds.userPseudoId(context)
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
+        if (analysis.scanId != scanId) {
+            return@withContext UploadOutcome.MissingScanId
+        }
+        val analysisImage = scanRepository.retainedAnalysisImage(scan)
+            ?: return@withContext UploadOutcome.MissingAnalysisImage
         // Opt-in is confirmed above, so reading the coarse location here is the
         // "check user location on every scan" step — attaches where the scan
         // was taken so it can be grouped by the 30 km nearby radius.
@@ -83,7 +92,6 @@ class CommunityUploader(
 
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
-            userPseudoId = pseudoId,
             country = region?.country,
             region = region?.locality.orEmpty(),
             lat = region?.lat,
@@ -93,17 +101,12 @@ class CommunityUploader(
             species = species,
             speciesScore = score,
             locale = locale,
-            nickname = Nicknames.nickname(context),
-            thumbnail = thumb,
+            analysisImage = analysisImage,
         )
-        // The thumbnail is a transient cache file; delete it once the
-        // upload either succeeded or hard-failed so we don't leak
-        // them into the user's cache dir.
-        thumb?.let { runCatching { it.delete() } }
         result.fold(
             onSuccess = { UploadOutcome.Uploaded },
-            onFailure = { exc ->
-                Log.i(TAG, "Community upload skipped: ${exc.message}")
+            onFailure = {
+                Log.i(TAG, "Community upload skipped")
                 UploadOutcome.Failed
             },
         )
@@ -128,6 +131,9 @@ class CommunityUploader(
         if (!force && !CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
         }
+        if (authRepository.state.value !is AuthState.Authenticated) {
+            return@withContext UploadOutcome.AuthRequired
+        }
         // On-device (Aqua) scans are private by default — an offline scan has
         // no server-issued scan_id, so sharing it would only send the image
         // for a guaranteed server-side rejection. The persisted ``offline_aqua``
@@ -141,9 +147,9 @@ class CommunityUploader(
             return@withContext UploadOutcome.HiddenDisease
         }
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
-        val thumb = makeThumbnail(scan)
+        val analysisImage = scanRepository.retainedAnalysisImage(scan)
+            ?: return@withContext UploadOutcome.MissingAnalysisImage
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
-        val pseudoId = TelemetryIds.userPseudoId(context)
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
         // Same lazy, share-time registration as uploadIfEnabled. On the
         // second-opinion path `force` bypasses the global toggle, and that tap
@@ -151,7 +157,6 @@ class CommunityUploader(
         scanRepository.ensureCommunityAuthorAdopted(context, force = force)
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
-            userPseudoId = pseudoId,
             country = region?.country,
             region = region?.locality.orEmpty(),
             lat = region?.lat,
@@ -161,14 +166,12 @@ class CommunityUploader(
             species = scan.speciesScientific,
             speciesScore = scan.speciesScore,
             locale = locale,
-            nickname = Nicknames.nickname(context),
-            thumbnail = thumb,
+            analysisImage = analysisImage,
         )
-        thumb?.let { runCatching { it.delete() } }
         result.fold(
             onSuccess = { UploadOutcome.Uploaded },
-            onFailure = { exc ->
-                Log.i(TAG, "Community on-demand upload skipped: ${exc.message}")
+            onFailure = {
+                Log.i(TAG, "Community on-demand upload skipped")
                 UploadOutcome.Failed
             },
         )
@@ -180,8 +183,10 @@ class CommunityUploader(
         Uploaded,
         OptedOut,
         MissingScanId,
+        MissingAnalysisImage,
         Failed,
         HiddenDisease,
+        AuthRequired,
 
         // On-device (Aqua/offline) scan with no server-issued scan_id — kept
         // private, never shared to the community.
@@ -216,52 +221,8 @@ class CommunityUploader(
             .takeIf { it.isNotBlank() }
     }
 
-    private fun makeThumbnail(scan: ScanEntity): File? {
-        val src = File(scan.imagePath)
-        if (!src.exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(src.absolutePath, bounds)
-        val srcW = bounds.outWidth.takeIf { it > 0 } ?: return null
-        val srcH = bounds.outHeight.takeIf { it > 0 } ?: return null
-        // Power-of-two inSampleSize so we don't decode the full image
-        // off-device just to throw 95% of the pixels away.
-        var sample = 1
-        while ((srcW / (sample * 2)) >= THUMB_LONG_EDGE && (srcH / (sample * 2)) >= THUMB_LONG_EDGE) {
-            sample *= 2
-        }
-        val decoded = BitmapFactory.decodeFile(
-            src.absolutePath,
-            BitmapFactory.Options().apply { inSampleSize = sample },
-        ) ?: return null
-        val scaled = if (maxOf(decoded.width, decoded.height) > THUMB_LONG_EDGE) {
-            val ratio = THUMB_LONG_EDGE.toFloat() / maxOf(decoded.width, decoded.height)
-            val w = (decoded.width * ratio).toInt().coerceAtLeast(1)
-            val h = (decoded.height * ratio).toInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(decoded, w, h, true).also { decoded.recycle() }
-        } else {
-            decoded
-        }
-        val out = File(
-            context.cacheDir,
-            "community_thumb_${scan.id}_${System.currentTimeMillis()}.jpg",
-        )
-        return try {
-            FileOutputStream(out).use { os ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, THUMB_QUALITY, os)
-            }
-            scaled.recycle()
-            out
-        } catch (exc: Exception) {
-            Log.i(TAG, "Thumb encode failed: ${exc.message}")
-            scaled.recycle()
-            null
-        }
-    }
-
     companion object {
         private const val TAG = "CommunityUploader"
-        private const val THUMB_LONG_EDGE = 512
-        private const val THUMB_QUALITY = 78
 
         // Mirrors the server's ``_HIDDEN_COMMUNITY_DISEASES`` set —
         // diagnoses we never surface in the community feed and so

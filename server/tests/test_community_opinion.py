@@ -7,6 +7,9 @@ test_community_endpoint.py.
 from __future__ import annotations
 
 import importlib
+import sqlite3
+import time
+import uuid
 
 import pytest
 
@@ -21,7 +24,18 @@ def comm(tmp_path, monkeypatch):
     return c
 
 
+def _scan(comm, scan_id: str) -> None:
+    comm.record_scan(
+        scan_id=scan_id,
+        user_pseudo_id="owner",
+        country="GB",
+        region="London",
+        disease="leaf_spot",
+    )
+
+
 def test_record_and_list_opinions_with_consensus(comm):
+    _scan(comm, "s1")
     comm.record_opinion(scan_id="s1", author_pseudo_id="u1",
                         suggested_disease="leaf_spot", note="undersides spotted")
     comm.record_opinion(scan_id="s1", author_pseudo_id="u2",
@@ -41,10 +55,73 @@ def test_record_and_list_opinions_with_consensus(comm):
 
 def test_opinions_for_unknown_scan_is_empty(comm):
     assert comm.opinions_for("does-not-exist") == {
-        "opinions": [], "consensus": [], "my_opinion": None, "views": 0,
+        "opinions": [], "consensus": [], "views": 0,
         "wants_opinion": False, "opinion_requested_at": None,
-        "like_count": 0, "liked_by_me": False,
     }
+
+
+def test_opinions_for_orphaned_companion_rows_fails_closed(comm):
+    comm.init_db()
+    now = int(time.time())
+    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+        connection.execute(
+            "INSERT INTO community_opinions "
+            "(scan_id, author_pseudo_id, suggested_disease, created_at) "
+            "VALUES ('orphan', 'author', 'leaf_spot', ?)",
+            (now,),
+        )
+        connection.execute(
+            "INSERT INTO community_opinion_requests "
+            "(scan_id, user_pseudo_id, created_at) VALUES ('orphan', 'owner', ?)",
+            (now,),
+        )
+        connection.execute(
+            "INSERT INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES ('orphan', 'viewer', ?)",
+            (now,),
+        )
+
+    assert comm.opinions_for("orphan") == {
+        "opinions": [], "consensus": [], "views": 0,
+        "wants_opinion": False, "opinion_requested_at": None,
+    }
+
+
+@pytest.mark.parametrize("target_state", ["absent", "deleted", "stale"])
+def test_record_opinion_rejects_unavailable_target_in_write_transaction(
+    comm, target_state,
+):
+    owner = str(uuid.uuid4())
+    if target_state != "absent":
+        comm.record_scan(
+            scan_id="closed-target",
+            account_actor_id=owner,
+            nickname="Owner",
+            country="GB",
+            region="London",
+            disease="leaf_spot",
+        )
+    if target_state == "deleted":
+        comm.request_actor_deletion(owner)
+    elif target_state == "stale":
+        stale = int(time.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
+        with comm._connect() as connection:
+            connection.execute(
+                "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+                (stale, "closed-target"),
+            )
+
+    with pytest.raises(comm.OpinionTargetUnavailableError):
+        comm.record_opinion(
+            scan_id="closed-target",
+            author_pseudo_id="responder",
+            suggested_disease="healthy",
+        )
+    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM community_opinions WHERE scan_id = ?",
+            ("closed-target",),
+        ).fetchone()[0] == 0
 
 
 def test_daily_opinion_count_guards_none(comm):
@@ -52,8 +129,8 @@ def test_daily_opinion_count_guards_none(comm):
 
 
 def test_opinion_open_respects_30_day_cutoff(comm):
-    """A freshly shared scan accepts opinions; once its public handle has
-    rotated (older than 30 days) it goes read-only."""
+    """A freshly shared scan accepts opinions; after 30 days it goes
+    read-only while its public handle remains stable."""
     comm.record_scan(
         scan_id="fresh", user_pseudo_id="owner", country="PL",
         disease="leaf_spot",
@@ -97,10 +174,10 @@ def test_author_token_rotates_with_identity_epoch(comm):
         _t.time = real_time
 
 
-def test_repeat_author_keeps_every_comment_but_consensus_takes_latest(comm):
-    """Community v2: comments are a thread, not a single vote slot. The same
-    author posting twice keeps BOTH rows (Community v2 unlocked repeat
-    commenting), but the consensus tally counts their latest pick only."""
+def test_one_opinion_per_author_per_scan(comm):
+    """A second submit by the same author on the same scan is ignored — the
+    original opinion stands (the client locks its input to match)."""
+    _scan(comm, "s9")
     id1 = comm.record_opinion(
         scan_id="s9", author_pseudo_id="bob", suggested_disease="leaf_spot",
     )
@@ -108,66 +185,13 @@ def test_repeat_author_keeps_every_comment_but_consensus_takes_latest(comm):
         scan_id="s9", author_pseudo_id="bob",
         suggested_disease="powdery_mildew", note="changed my mind",
     )
-    assert id1 != id2  # a new row, not a dedupe
-
+    assert id1 == id2  # same row, no duplicate
     res = comm.opinions_for("s9")
-    assert len(res["opinions"]) == 2  # both comments kept, newest first
-    assert res["opinions"][0]["suggested_disease"] == "powdery_mildew"
-    assert res["opinions"][1]["suggested_disease"] == "leaf_spot"
-    # Consensus counts bob once, for his latest pick.
-    assert res["consensus"] == [{"disease": "powdery_mildew", "count": 1}]
+    assert len(res["opinions"]) == 1
+    assert res["opinions"][0]["suggested_disease"] == "leaf_spot"  # original kept
 
-    # A different author's own opinion adds a second, independent vote.
+    # A different author can still leave their own opinion.
     comm.record_opinion(
         scan_id="s9", author_pseudo_id="carol", suggested_disease="viral_disease",
     )
-    res = comm.opinions_for("s9")
-    assert len(res["opinions"]) == 3
-    assert sum(c["count"] for c in res["consensus"]) == 2
-
-
-# ── Durable forum identity (resolve_author) ───────────────────────────
-
-def test_resolve_author_creates_one_row_per_key_hash(comm):
-    a = comm.resolve_author(key_hash="k" * 64, seed_display_name="Leafy Sage 7")
-    assert a["author_id"].startswith("au_")
-    assert a["display_name"] == "Leafy Sage 7"
-    assert a["account_id"] is None
-    assert a["status"] == "active"
-
-
-def test_resolve_author_is_idempotent_and_does_not_overwrite_the_seed(comm):
-    first = comm.resolve_author(
-        key_hash="a" * 64, seed_display_name="Leafy Sage 7", legacy_pseudo_id="pseudo-1",
-    )
-    # Same key, different (later) seed values -- a re-adopt call must not
-    # rename the author or swap which legacy pseudo id it backfills from.
-    second = comm.resolve_author(
-        key_hash="a" * 64, seed_display_name="Renamed Later", legacy_pseudo_id="pseudo-2",
-    )
-    assert second["author_id"] == first["author_id"]
-    assert second["display_name"] == "Leafy Sage 7"
-    assert second["last_seen_at"] >= first["last_seen_at"]
-
-    with comm._connect() as conn:
-        stored = conn.execute(
-            "SELECT legacy_pseudo_id FROM community_authors WHERE author_id = ?",
-            (first["author_id"],),
-        ).fetchone()
-    assert stored[0] == "pseudo-1"
-
-
-def test_resolve_author_different_keys_never_collide(comm):
-    a = comm.resolve_author(key_hash="b" * 64, seed_display_name="Author A")
-    b = comm.resolve_author(key_hash="c" * 64, seed_display_name="Author B")
-    assert a["author_id"] != b["author_id"]
-
-
-def test_resolve_author_blank_key_hash_rejected(comm):
-    with pytest.raises(ValueError):
-        comm.resolve_author(key_hash="", seed_display_name="Someone")
-
-
-def test_resolve_author_blank_display_name_falls_back(comm):
-    a = comm.resolve_author(key_hash="d" * 64, seed_display_name="   ")
-    assert a["display_name"] == "Plant grower"
+    assert len(comm.opinions_for("s9")["opinions"]) == 2

@@ -106,6 +106,10 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
+        supportFragmentManager.setFragmentResultListener(
+            CommunityOpinionSheet.CONTENT_BLOCKED,
+            this,
+        ) { _, _ -> reload() }
         // Pick the markers back up as soon as the server is reachable — the
         // pans made while offline deliberately fetched nothing.
         onReconnected(connectivity.isOnline) { reload() }
@@ -320,7 +324,7 @@ class CommunityMapActivity : AppCompatActivity() {
     private fun loadThumbInto(marker: Marker, item: CommunityScanItem) {
         val thumb = item.thumbPath
         if (thumb.isNullOrBlank()) return
-        val url = "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+        val url = "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
         val sizePx = (MARKER_SIZE_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
         Glide.with(this).asBitmap().load(url).circleCrop().override(sizePx, sizePx)
             .into(object : CustomTarget<Bitmap>() {

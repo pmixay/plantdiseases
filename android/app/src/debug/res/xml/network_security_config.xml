@@ -8,7 +8,9 @@
     the release file). Cleartext is permitted only for the local development
     hosts, so a developer can point a debug build at the emulator host:
 
-        ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/
+        ./gradlew :app:assembleDebug \
+          -PAPP_API_BASE_URL=http://10.0.2.2:18000/ \
+          -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
 
     Android does not support CIDR ranges here — add a specific LAN IP below if
     you serve from one during development.

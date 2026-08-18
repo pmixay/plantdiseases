@@ -18,6 +18,45 @@ def test_security_headers_present(client):
     assert r.headers["X-Frame-Options"] == "DENY"
 
 
+def test_request_log_uses_route_template_and_server_correlation_id(client, caplog):
+    import logging
+
+    client_trace = "CLIENT_TRACE_SENTINEL_A91F"
+    query_secret = "QUERY_TOKEN_SENTINEL_14B7"
+    auth_secret = "AUTHORIZATION_SENTINEL_70CC"
+    forwarded_address = "198.51.100.187"
+    caplog.set_level(logging.INFO, logger="plantdiseases")
+
+    response = client.get(
+        f"/api/health?token={query_secret}",
+        headers={
+            "Authorization": f"Bearer {auth_secret}",
+            "X-Trace-ID": client_trace,
+            "X-Request-ID": client_trace,
+            "X-Forwarded-For": forwarded_address,
+        },
+    )
+    assert response.status_code == 200
+    server_trace = response.headers["X-Trace-ID"]
+    assert server_trace != client_trace
+    assert len(server_trace) == 32
+    assert all(character in "0123456789abcdef" for character in server_trace)
+
+    application_logs = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "plantdiseases"
+    )
+    assert "REQUEST GET /api/health -> 200" in application_logs
+    for forbidden in (
+        client_trace,
+        query_secret,
+        auth_secret,
+        forwarded_address,
+    ):
+        assert forbidden not in application_logs
+
+
 def test_health_capabilities_not_rate_limited(client):
     # Hammer free endpoints — none should ever produce a 429.
     for _ in range(5):
@@ -32,6 +71,49 @@ def test_metrics_endpoints_still_answer(client):
     unaffected — `client` uses the default burst."""
     assert client.get("/api/metrics").status_code == 200
     assert client.get("/api/metrics/prometheus").status_code == 200
+
+
+def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
+    client, monkeypatch,
+):
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "REQUIRE_API_KEY", True)
+    monkeypatch.setattr(server_main, "API_KEYS", {})
+    monkeypatch.setattr(
+        server_main, "community_density_grid", lambda *_args, **_kwargs: {"cells": []}
+    )
+    assert server_main._is_public_community_read(
+        "GET", "/api/community/thumb/example.webp"
+    )
+    assert not server_main._is_public_community_read(
+        "POST", "/api/community/thumb/example.webp"
+    )
+
+    public = client.get(
+        "/api/community/heatmap",
+        headers={
+            "Authorization": "Bearer a.b.c",
+            "X-API-Key": "deliberately-invalid",
+        },
+        params={"min_lat": 1, "min_lon": 1, "max_lat": 2, "max_lon": 2},
+    )
+    protected = client.post(
+        "/api/community/opinion",
+        headers={
+            "Authorization": "Bearer a.b.c",
+            "X-API-Key": "deliberately-invalid",
+        },
+        json={"scan_id": "unknownscan01", "suggested_disease": "rust"},
+    )
+    legacy = client.get(
+        "/api/version", headers={"Authorization": "Bearer a.b.c"}
+    )
+
+    assert public.status_code == 200
+    assert protected.status_code == 401
+    assert protected.json()["detail"] == "auth_required"
+    assert legacy.status_code == 401
 
 
 def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, png_bytes):
@@ -131,20 +213,23 @@ def test_metrics_endpoints_are_rate_limited(rate_limited_client):
     assert 429 in statuses, f"metrics never throttled: {statuses}"
 
 
-def test_client_supplied_trace_id_is_bounded_and_sanitised(client):
-    """The trace id is echoed in a response header and stamped on every log
-    line for the request, so an unbounded or arbitrary-alphabet value from
-    the client would land in both."""
-    good = client.get("/api/health", headers={"X-Trace-ID": "abc-123_XYZ.9"})
-    assert good.headers["X-Trace-ID"] == "abc-123_XYZ.9"
-
+def test_client_supplied_trace_id_is_ignored(client):
+    """A caller-selected ID must not become an undeclared stable correlate."""
     # Non-ASCII is omitted deliberately: the HTTP client refuses to encode it,
-    # so it never reaches the server. These are the values that do.
-    for hostile in ("x" * 500, "trace id with spaces", "a\tb", "id;drop=1"):
-        r = client.get("/api/health", headers={"X-Trace-ID": hostile})
-        echoed = r.headers["X-Trace-ID"]
-        assert echoed != hostile, f"echoed hostile trace id verbatim: {hostile!r}"
-        assert len(echoed) == 32 and echoed.isalnum(), echoed
+    # so it never reaches the server. Valid-looking and hostile values are both
+    # replaced with fresh server correlation IDs.
+    for supplied in (
+        "abc-123_XYZ.9",
+        "x" * 500,
+        "trace id with spaces",
+        "a\tb",
+        "id;drop=1",
+    ):
+        response = client.get("/api/health", headers={"X-Trace-ID": supplied})
+        generated = response.headers["X-Trace-ID"]
+        assert generated != supplied
+        assert len(generated) == 32
+        assert all(character in "0123456789abcdef" for character in generated)
 
 
 def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
@@ -152,7 +237,7 @@ def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
     POSTs to /api/feedback must all succeed even though the steady-
     state rate is 1 req/s — that's what the burst bucket is for.
     """
-    body = {"scan_id": "burst-scan-001", "correct": True}
+    body = {"feedback_receipt": "x" * 43, "correct": True}
     for i in range(5):
         r = client.post("/api/feedback", json=body)
         assert r.status_code in (200, 422), f"burst[{i}] got {r.status_code}: {r.text}"

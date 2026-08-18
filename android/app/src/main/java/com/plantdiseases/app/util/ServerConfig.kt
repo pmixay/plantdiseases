@@ -2,9 +2,10 @@ package com.plantdiseases.app.util
 
 import com.plantdiseases.app.BuildConfig
 
-/** Server base URL is fixed at build time through [BuildConfig.API_BASE_URL]. */
+/** Build-time endpoints. No user-controlled or runtime URL override exists. */
 object ServerConfig {
-    val baseUrl: String get() = BuildConfig.API_BASE_URL
+    val appBaseUrl: String get() = BuildConfig.APP_API_BASE_URL
+    val accountBaseUrl: String get() = BuildConfig.ACCOUNT_API_BASE_URL
 
     /**
      * Resolve a photo URL for loading. The server now returns plant photos as
@@ -13,5 +14,5 @@ object ServerConfig {
      * responses, or anything already http) are passed through unchanged.
      */
     fun photoUrl(raw: String): String =
-        if (raw.isBlank() || raw.startsWith("http", ignoreCase = true)) raw else baseUrl + raw
+        if (raw.isBlank() || raw.startsWith("http", ignoreCase = true)) raw else appBaseUrl + raw
 }

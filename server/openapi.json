@@ -118,6 +118,33 @@
               "default": "gamma",
               "title": "Family"
             }
+          },
+          {
+            "name": "training_consent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Training Consent"
+            }
+          },
+          {
+            "name": "training_consent_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Training Consent Version"
+            }
           }
         ],
         "requestBody": {
@@ -362,7 +389,7 @@
     "/api/feedback": {
       "post": {
         "summary": "Feedback Endpoint",
-        "description": "Capture a thumbs-up / thumbs-down on a diagnosis, with full\ndiagnostic + client context.\n\nAppend-only — there is no update / delete path. The 1 req/s per-IP\nrate limit from the global middleware applies; the endpoint\nadditionally caps ``note`` length via the pydantic model so a\nmalicious client can't bloat the SQLite file with megabytes of\ntext.\n\nThe raw client IP is hashed (peppered SHA-256) before persistence\nso we never store PII at rest. The hash is stable across a single\ndeployment, which is enough for abuse-rate detection.",
+        "description": "Apply one structured correction through a short-lived receipt.\n\nThe receipt is independent from accounts, community publication tokens,\nand client scan identifiers. Only its digest exists at rest. The live\nconnection address is used for an in-process quota and is never written.",
         "operationId": "feedback_endpoint_api_feedback_post",
         "requestBody": {
           "content": {
@@ -399,7 +426,7 @@
     "/api/feedback/image": {
       "post": {
         "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the collection store.",
+        "description": "Apply feedback and optionally retain a detector-backed leaf crop.\n\nFull frames are never stored by this endpoint. If the detector cannot\nprovide a bounded leaf crop, the upload is rejected without retaining\npixels. Re-encoding strips metadata before hashes are calculated.",
         "operationId": "feedback_image_upload_api_feedback_image_post",
         "requestBody": {
           "content": {
@@ -436,7 +463,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``nickname`` is the author's generated handle.\nThe image is optional.",
+        "description": "Append one community-shared scan to the corpus.\n\nIdentity and nickname come exclusively from the verified access token.\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation.\nThe image is required and must be byte-for-byte identical to the upload\naccepted by ``/api/analyze`` when ``scan_id`` was issued. The server derives\nthe stored thumbnail from that already-sanitized upload.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {
@@ -467,13 +494,18 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/telemetry/errors": {
       "post": {
         "summary": "Telemetry Errors",
-        "description": "Record one client error/problem for triage. Errors-only: the app sends\nnothing on the happy path and bundles diagnostic context (stage, kind,\nmodel family, HTTP status, app version, Android API, breadcrumbs) only when\nsomething goes wrong. Fire-and-forget from the client; degrades silently.",
+        "description": "Record minimized error telemetry only under the current consent text.",
         "operationId": "telemetry_errors_api_telemetry_errors_post",
         "requestBody": {
           "content": {
@@ -507,38 +539,169 @@
         }
       }
     },
+    "/api/community/safety/report": {
+      "post": {
+        "summary": "Community Report Content",
+        "description": "Queue a report bound to the signed actor and stored content author.\n\nThe request contains only an opaque public content token plus a fixed\nreason.  It never accepts an actor id or free-form moderation text.",
+        "operationId": "community_report_content_api_community_safety_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/block": {
+      "post": {
+        "summary": "Community Block Author",
+        "description": "Block the verified author resolved from an opaque content token.",
+        "operationId": "community_block_author_api_community_safety_block_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/blocks": {
+      "get": {
+        "summary": "Community List Blocks",
+        "description": "List only the caller's blocks using unlinkable opaque block ids.",
+        "operationId": "community_list_blocks_api_community_safety_blocks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/safety/blocks/{block_id}": {
+      "delete": {
+        "summary": "Community Remove Block",
+        "description": "Delete only a block owned by the signed caller.",
+        "operationId": "community_remove_block_api_community_safety_blocks__block_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "block_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Block Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/opinion": {
       "post": {
         "summary": "Community Opinion Submit",
         "description": "Record one community 'second opinion' on a shared scan.\n\nThe suggested disease must be a known classifier class so the consensus\ntally stays clean; any free text lives only in the optional note.",
         "operationId": "community_opinion_submit_api_community_opinion_post",
-        "parameters": [
-          {
-            "name": "X-Community-Author-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Community-Author-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityOpinionRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -559,61 +722,18 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/community/authors/adopt": {
-      "post": {
-        "summary": "Community Author Adopt",
-        "description": "Create-or-return this device's durable forum identity.\n\n``X-Community-Author-Key`` is SHA-256 of a 32-byte secret the client\ngenerates once and never sends in raw form (see\nutil/CommunityIdentity.kt) — the server only ever sees the hash, never\nthe secret itself. Fire-and-forget from the app on every launch;\nidempotent, so calling it repeatedly just refreshes ``last_seen_at``.\n\nGroundwork only (COMMUNITY_FORUM_PLAN.docx §4): nothing in the app yet\nreads or writes with this identity. F1 wires the forum's write\nendpoints to it and backfills old activity via ``legacy_pseudo_id``.",
-        "operationId": "community_author_adopt_api_community_authors_adopt_post",
-        "parameters": [
+        },
+        "security": [
           {
-            "name": "X-Community-Author-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Community-Author-Key"
-            }
+            "HTTPBearer": []
           }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityAuthorAdoptRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/api/community/request-opinion": {
       "post": {
         "summary": "Community Request Opinion",
-        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches a row owned by ``user_pseudo_id``) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
+        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches the signed account actor) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
         "operationId": "community_request_opinion_api_community_request_opinion_post",
         "requestBody": {
           "content": {
@@ -644,7 +764,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/request-opinion/cancel": {
@@ -681,13 +806,18 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\n``user_pseudo_id`` is optional — pass it to get an accurate\n``liked_by_me`` and ``my_opinion`` in the response; omitted, they read\nas not-liked / no opinion. ``X-Community-Author-Key`` is also optional\nhere and, when sent, is what ``my_opinion`` actually keys on — see\nopinions_for's docstring for why the two aren't the same identity.",
+        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.",
         "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
         "parameters": [
           {
@@ -698,38 +828,6 @@
               "type": "string",
               "title": "Scan Id"
             }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
-            }
-          },
-          {
-            "name": "X-Community-Author-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Community-Author-Key"
-            }
           }
         ],
         "responses": {
@@ -754,22 +852,11 @@
         }
       }
     },
-    "/api/community/my-scan-opinions/{user_pseudo_id}": {
+    "/api/community/my-scan-opinions": {
       "get": {
         "summary": "Community My Scan Opinions",
         "description": "Opinion counts on the caller's OWN shared scans. The client polls this\non a schedule to notify the user when someone leaves a second opinion on a\nscan they shared (the per-scan view already exists via /opinions/{scan_id}).",
-        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions__user_pseudo_id__get",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
+        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -778,61 +865,19 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
-      }
-    },
-    "/api/push/register": {
-      "post": {
-        "summary": "Push Register Endpoint",
-        "description": "Register this install's FCM token under its pseudo-id so the server can\npush opinion notifications to a closed / idle device. Upserts by token.",
-        "operationId": "push_register_endpoint_api_push_register_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PushRegisterRequest"
-              }
-            }
-          },
-          "required": true
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+        "security": [
+          {
+            "HTTPBearer": []
           }
-        }
+        ]
       }
     },
     "/api/community/view": {
       "post": {
         "summary": "Community Record Scan View",
-        "description": "Record that the caller opened (or merely scrolled past) someone\nelse's shared scan — one id via ``scan_id``, or up to 50 via\n``scan_ids`` for feed-scroll impressions. Deduped per viewer\nserver-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire liberally.\n\nThe whole batch is resolved and written in one pass (one connection,\none lock acquisition) — see ``community.record_views``.",
+        "description": "Record that the caller opened someone else's shared scan. Deduped per\nviewer server-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire on every open.",
         "operationId": "community_record_scan_view_api_community_view_post",
         "requestBody": {
           "content": {
@@ -863,44 +908,12 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/community/like": {
-      "post": {
-        "summary": "Community Like Scan",
-        "description": "Like or unlike a shared scan. A self-like is refused (0 either way);\nliking your own scan makes no more sense than viewing it does.",
-        "operationId": "community_like_scan_api_community_like_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityLikeRequest"
-              }
-            }
-          },
-          "required": true
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+        "security": [
+          {
+            "HTTPBearer": []
           }
-        }
+        ]
       }
     },
     "/api/community/scan-counts": {
@@ -937,13 +950,18 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``before`` pages the feed: pass the previous page's ``next_before`` to\nfetch older rows. The response's ``next_before`` is null once a page\ncomes back short — that's the end of the scope. It is single-pass only:\ncombining it with ``disease`` or ``species`` is rejected with 422,\nbecause those widen the query into several concatenated passes whose\nconcatenation has no single global ``created_at`` order to page on.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -1053,22 +1071,6 @@
             }
           },
           {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
-            }
-          },
-          {
             "name": "scope",
             "in": "query",
             "required": false,
@@ -1082,22 +1084,6 @@
                 }
               ],
               "title": "Scope"
-            }
-          },
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Before"
             }
           }
         ],
@@ -1189,22 +1175,6 @@
               "type": "integer",
               "default": 30,
               "title": "Days"
-            }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
             }
           },
           {
@@ -1361,22 +1331,6 @@
               "type": "integer",
               "default": 12,
               "title": "Limit"
-            }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
             }
           }
         ],
@@ -1883,10 +1837,6 @@
             "type": "string",
             "title": "Scan Id"
           },
-          "user_pseudo_id": {
-            "type": "string",
-            "title": "User Pseudo Id"
-          },
           "country": {
             "anyOf": [
               {
@@ -1973,17 +1923,6 @@
             ],
             "title": "Locale"
           },
-          "nickname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nickname"
-          },
           "image": {
             "anyOf": [
               {
@@ -2000,16 +1939,41 @@
         "type": "object",
         "required": [
           "scan_id",
-          "user_pseudo_id",
           "disease"
         ],
         "title": "Body_community_scan_upload_api_community_scan_post"
       },
       "Body_feedback_image_upload_api_feedback_image_post": {
         "properties": {
-          "scan_id": {
+          "feedback_receipt": {
             "type": "string",
-            "title": "Scan Id"
+            "title": "Feedback Receipt"
+          },
+          "correct": {
+            "type": "boolean",
+            "title": "Correct"
+          },
+          "corrected_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Class"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "image": {
             "type": "string",
@@ -2019,7 +1983,8 @@
         },
         "type": "object",
         "required": [
-          "scan_id",
+          "feedback_receipt",
+          "correct",
           "image"
         ],
         "title": "Body_feedback_image_upload_api_feedback_image_post"
@@ -2129,59 +2094,28 @@
         ],
         "title": "ChatRequest"
       },
-      "CommunityAuthorAdoptRequest": {
+      "CommunityBlockRequest": {
         "properties": {
-          "seed_display_name": {
+          "target_type": {
             "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Seed Display Name"
+            "maxLength": 7,
+            "minLength": 4,
+            "title": "Target Type"
           },
-          "legacy_pseudo_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Legacy Pseudo Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "seed_display_name"
-        ],
-        "title": "CommunityAuthorAdoptRequest"
-      },
-      "CommunityLikeRequest": {
-        "properties": {
-          "scan_id": {
+          "target_id": {
             "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
-          },
-          "liked": {
-            "type": "boolean",
-            "title": "Liked",
-            "default": true
+            "title": "Target Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "scan_id",
-          "user_pseudo_id"
+          "target_type",
+          "target_id"
         ],
-        "title": "CommunityLikeRequest"
+        "title": "CommunityBlockRequest"
       },
       "CommunityOpinionRequest": {
         "properties": {
@@ -2190,12 +2124,6 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
           },
           "suggested_disease": {
             "type": "string",
@@ -2214,27 +2142,44 @@
               }
             ],
             "title": "Note"
-          },
-          "nickname": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nickname"
           }
         },
         "type": "object",
         "required": [
           "scan_id",
-          "user_pseudo_id",
           "suggested_disease"
         ],
         "title": "CommunityOpinionRequest"
+      },
+      "CommunityReportRequest": {
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "maxLength": 7,
+            "minLength": 4,
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id",
+          "reason"
+        ],
+        "title": "CommunityReportRequest"
       },
       "CommunityRequestOpinionRequest": {
         "properties": {
@@ -2243,18 +2188,11 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
           }
         },
         "type": "object",
         "required": [
-          "scan_id",
-          "user_pseudo_id"
+          "scan_id"
         ],
         "title": "CommunityRequestOpinionRequest"
       },
@@ -2278,52 +2216,25 @@
       "CommunityViewRequest": {
         "properties": {
           "scan_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scan Id"
-          },
-          "scan_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scan Ids"
-          },
-          "user_pseudo_id": {
             "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "User Pseudo Id"
+            "title": "Scan Id"
           }
         },
         "type": "object",
         "required": [
-          "user_pseudo_id"
+          "scan_id"
         ],
         "title": "CommunityViewRequest"
       },
       "FeedbackRequest": {
         "properties": {
-          "scan_id": {
+          "feedback_receipt": {
             "type": "string",
-            "maxLength": 64,
-            "minLength": 8,
-            "title": "Scan Id"
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Feedback Receipt"
           },
           "correct": {
             "type": "boolean",
@@ -2341,18 +2252,6 @@
             ],
             "title": "Corrected Class"
           },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
           "reason": {
             "anyOf": [
               {
@@ -2364,184 +2263,16 @@
               }
             ],
             "title": "Reason"
-          },
-          "predicted_class": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Class"
-          },
-          "predicted_confidence": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Confidence"
-          },
-          "top3": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array",
-                "maxItems": 3
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Top3"
-          },
-          "model_version": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Version"
-          },
-          "app_version": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "App Version"
-          },
-          "locale": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 8
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locale"
-          },
-          "platform": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 16
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Platform"
-          },
-          "user_pseudo_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "minLength": 8
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Pseudo Id"
-          },
-          "region_count": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 64.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Region Count"
-          },
-          "primary_region_index": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 63.0,
-                "minimum": -1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Primary Region Index"
-          },
-          "feedback_latency_ms": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 2592000000.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feedback Latency Ms"
-          },
-          "image_hash": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Hash"
-          },
-          "prediction_set": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 16
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prediction Set"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "scan_id",
+          "feedback_receipt",
           "correct"
         ],
         "title": "FeedbackRequest",
-        "description": "Single user-feedback signal on a scan.\n\nThe classifier is stateless, so the *scan* lives only on the\nclient. ``scan_id`` is therefore client-generated and just has to\nbe stable across the lifetime of one scan: we de-dupe by\n(user_pseudo_id, scan_id) downstream.\n\nRequired: ``scan_id``, ``correct``.\nOptional: every other field — kept nullable so clients can roll\nout the richer payload progressively. Length bounds protect the\nappend-only SQLite file from runaway clients."
+        "description": "One structured correction authorized by an unlinkable receipt."
       },
       "HTTPValidationError": {
         "properties": {
@@ -2574,34 +2305,6 @@
         "title": "ProgressionRequest",
         "description": "Time-ordered list of scans (oldest first) for the disease-\nprogression sparkline + trend the plant-detail screen renders."
       },
-      "PushRegisterRequest": {
-        "properties": {
-          "user_pseudo_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Pseudo Id"
-          },
-          "token": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Token"
-          },
-          "platform": {
-            "type": "string",
-            "maxLength": 16,
-            "title": "Platform",
-            "default": "android"
-          }
-        },
-        "type": "object",
-        "required": [
-          "user_pseudo_id",
-          "token"
-        ],
-        "title": "PushRegisterRequest"
-      },
       "SymptomDiagnoseRequest": {
         "properties": {
           "answers": {
@@ -2623,15 +2326,32 @@
       },
       "TelemetryErrorRequest": {
         "properties": {
+          "telemetry_consent": {
+            "type": "boolean",
+            "title": "Telemetry Consent",
+            "default": false
+          },
+          "telemetry_consent_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Consent Version"
+          },
           "stage": {
             "type": "string",
-            "maxLength": 64,
+            "maxLength": 32,
             "minLength": 1,
             "title": "Stage"
           },
           "kind": {
             "type": "string",
-            "maxLength": 64,
+            "maxLength": 32,
             "minLength": 1,
             "title": "Kind"
           },
@@ -2645,7 +2365,7 @@
               {
                 "type": "integer",
                 "maximum": 599.0,
-                "minimum": 0.0
+                "minimum": 100.0
               },
               {
                 "type": "null"
@@ -2657,7 +2377,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 32
+                "maxLength": 16
               },
               {
                 "type": "null"
@@ -2682,25 +2402,13 @@
               {
                 "type": "integer",
                 "maximum": 100.0,
-                "minimum": 0.0
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Android Api"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
           },
           "breadcrumbs": {
             "anyOf": [
@@ -2709,7 +2417,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 40
+                "maxItems": 20
               },
               {
                 "type": "null"
@@ -2718,13 +2426,14 @@
             "title": "Breadcrumbs"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "stage",
           "kind"
         ],
         "title": "TelemetryErrorRequest",
-        "description": "One client-side problem report. Errors-only diagnostic context — no\nimages, no precise location, no PII. ``breadcrumbs`` is a short trail of\nrecent app actions leading up to the error."
+        "description": "One consented report containing only allowlisted technical enums."
       },
       "ValidationError": {
         "properties": {
@@ -2765,6 +2474,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

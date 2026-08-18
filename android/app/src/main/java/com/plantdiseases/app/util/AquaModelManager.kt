@@ -88,8 +88,8 @@ object AquaModelManager {
                 .apply()
             Log.i(TAG, "Aqua model installed (version=$version, sha=$actualSha)")
             true
-        } catch (e: Exception) {
-            Log.w(TAG, "Aqua model install failed: ${e.message}")
+        } catch (_: Exception) {
+            Log.w(TAG, "Aqua model install failed")
             tmp.delete()
             false
         }

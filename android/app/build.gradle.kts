@@ -1,3 +1,6 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +9,196 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("org.jlleitschuh.gradle.ktlint")
     id("io.gitlab.arturbosch.detekt")
+}
+
+// OAuth configuration can come from an environment variable or a Gradle
+// property. Environment values deliberately win: the protected distribution
+// workflow must not be shadowed by a committed or runner-local
+// gradle.properties value. This also keeps extractable mobile client values
+// out of command lines and lets CI inject them without committing local state.
+fun configuredValue(name: String): String =
+    providers.environmentVariable(name)
+        .orElse(providers.gradleProperty(name))
+        .orNull
+        ?.trim()
+        .orEmpty()
+
+fun sha256(value: String): String =
+    MessageDigest
+        .getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+// Yandex LoginSDK uses a public native client ID. Pin the registered
+// com.plantdiseases.app value so every PlantDiseases 1.9 RuStore release has
+// Yandex enabled without accepting or embedding the Yandex client secret.
+val yandexClientId = "cfefdff8ae4d4dd8a7426308751ef95a"
+val vkClientId = configuredValue("VKID_CLIENT_ID")
+val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
+val yandexOAuthConfigured = yandexClientId.isNotBlank()
+val vkOAuthConfigured = vkClientId.isNotBlank() && vkClientSecret.isNotBlank()
+val reviewedStagingAppApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/"
+val reviewedStagingAccountApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/id/"
+val stagingAppApiBaseUrl = configuredValue("STAGING_APP_API_BASE_URL")
+    .ifBlank { reviewedStagingAppApiBaseUrl }
+val stagingAccountApiBaseUrl = configuredValue("STAGING_ACCOUNT_API_BASE_URL")
+    .ifBlank { reviewedStagingAccountApiBaseUrl }
+// A plain Android Studio/Gradle debug or release build is an internal beta
+// artifact. Production automation overrides this pair explicitly and proves
+// the resulting APK endpoints before the protected signing step.
+val appApiBaseUrl = configuredValue("APP_API_BASE_URL")
+    .ifBlank { stagingAppApiBaseUrl }
+val accountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
+    .ifBlank { stagingAccountApiBaseUrl }
+val productionAppApiBaseUrl = configuredValue("PRODUCTION_APP_API_BASE_URL")
+val productionAccountApiBaseUrl = configuredValue("PRODUCTION_ACCOUNT_API_BASE_URL")
+val recoveryVersionCode = 20
+val realOAuthEnabled = when (
+    val raw = configuredValue("ACCOUNT_REAL_OAUTH").lowercase()
+) {
+    "", "true" -> true
+    "false" -> false
+    else -> throw GradleException("ACCOUNT_REAL_OAUTH must be true or false")
+}
+val unsignedDistributionBuild = when (
+    val raw = configuredValue("ANDROID_UNSIGNED_DISTRIBUTION").lowercase()
+) {
+    "", "false" -> false
+    "true" -> true
+    else -> throw GradleException("ANDROID_UNSIGNED_DISTRIBUTION must be true or false")
+}
+val distributionChannel = configuredValue("ANDROID_DISTRIBUTION_CHANNEL").lowercase()
+val distributionChannels =
+    setOf("staging", "production", "recovery-production", "recovery-staging")
+if (distributionChannel.isNotBlank() && distributionChannel !in distributionChannels) {
+    throw GradleException(
+        "ANDROID_DISTRIBUTION_CHANNEL must be staging, production, " +
+            "recovery-production, or recovery-staging",
+    )
+}
+if (unsignedDistributionBuild && distributionChannel.isBlank()) {
+    throw GradleException("ANDROID_DISTRIBUTION_CHANNEL is required for an unsigned distribution build")
+}
+
+fun validateHttpsEndpoint(name: String, raw: String): URI {
+    val uri = runCatching { URI(raw) }.getOrNull()
+    val valid = uri != null &&
+        uri.scheme == "https" &&
+        !uri.host.isNullOrBlank() &&
+        uri.userInfo == null &&
+        uri.query == null &&
+        uri.fragment == null &&
+        raw.endsWith("/") &&
+        raw.none(Char::isWhitespace)
+    if (!valid) {
+        throw GradleException("$name must be an absolute credential-free HTTPS URL ending in /")
+    }
+    return checkNotNull(uri)
+}
+
+val recoveryEndpointsConfigured =
+    productionAppApiBaseUrl.isNotBlank() && productionAccountApiBaseUrl.isNotBlank()
+if (productionAppApiBaseUrl.isNotBlank() || productionAccountApiBaseUrl.isNotBlank()) {
+    if (!recoveryEndpointsConfigured) {
+        throw GradleException(
+            "PRODUCTION_APP_API_BASE_URL and PRODUCTION_ACCOUNT_API_BASE_URL must be set together",
+        )
+    }
+    validateHttpsEndpoint("PRODUCTION_APP_API_BASE_URL", productionAppApiBaseUrl)
+    validateHttpsEndpoint("PRODUCTION_ACCOUNT_API_BASE_URL", productionAccountApiBaseUrl)
+    if (!productionAccountApiBaseUrl.endsWith("/id/")) {
+        throw GradleException("PRODUCTION_ACCOUNT_API_BASE_URL must end in /id/")
+    }
+    if (productionAppApiBaseUrl.removeSuffix("/") != productionAccountApiBaseUrl.removeSuffix("/id/")) {
+        throw GradleException("Production app and account endpoints must use the same reviewed base URL")
+    }
+}
+if (distributionChannel == "recovery-production" && !recoveryEndpointsConfigured) {
+    throw GradleException(
+        "Recovery distribution requires explicit PRODUCTION_APP_API_BASE_URL and " +
+            "PRODUCTION_ACCOUNT_API_BASE_URL; no staging or hard-coded fallback is allowed",
+    )
+}
+
+val stagingEndpointsConfigured =
+    stagingAppApiBaseUrl.isNotBlank() && stagingAccountApiBaseUrl.isNotBlank()
+if (stagingAppApiBaseUrl.isNotBlank() || stagingAccountApiBaseUrl.isNotBlank()) {
+    if (!stagingEndpointsConfigured) {
+        throw GradleException(
+            "STAGING_APP_API_BASE_URL and STAGING_ACCOUNT_API_BASE_URL must be set together",
+        )
+    }
+    validateHttpsEndpoint("STAGING_APP_API_BASE_URL", stagingAppApiBaseUrl)
+    validateHttpsEndpoint("STAGING_ACCOUNT_API_BASE_URL", stagingAccountApiBaseUrl)
+    if (stagingAccountApiBaseUrl != "${stagingAppApiBaseUrl}id/") {
+        throw GradleException("Staging account endpoint must be the staging app endpoint plus id/")
+    }
+}
+if (distributionChannel == "staging" || distributionChannel == "recovery-staging") {
+    if (!stagingEndpointsConfigured) {
+        throw GradleException(
+            "Staging distribution requires explicit STAGING_APP_API_BASE_URL and " +
+                "STAGING_ACCOUNT_API_BASE_URL",
+        )
+    }
+    if (
+        stagingAppApiBaseUrl != reviewedStagingAppApiBaseUrl ||
+        stagingAccountApiBaseUrl != reviewedStagingAccountApiBaseUrl
+    ) {
+        throw GradleException("Staging distribution endpoints must equal the reviewed German staging pair")
+    }
+}
+
+if (realOAuthEnabled) {
+    if (vkClientId.isBlank() != vkClientSecret.isBlank()) {
+        throw GradleException(
+            "VK ID requires both VKID_CLIENT_ID and VKID_CLIENT_SECRET when enabled",
+        )
+    }
+    if (!yandexOAuthConfigured && !vkOAuthConfigured) {
+        throw GradleException(
+            "Real OAuth requires a bundled Yandex client ID, or both " +
+                "VKID_CLIENT_ID and VKID_CLIENT_SECRET",
+        )
+    }
+    if (vkOAuthConfigured && !vkClientId.all { it.isDigit() }) {
+        throw GradleException("VKID_CLIENT_ID must be a decimal application ID")
+    }
+    val oauthAppApiBaseUrl = when (distributionChannel) {
+        "staging", "recovery-staging" -> stagingAppApiBaseUrl
+        "recovery-production" -> productionAppApiBaseUrl
+        else -> appApiBaseUrl
+    }
+    val oauthAccountApiBaseUrl = when (distributionChannel) {
+        "staging", "recovery-staging" -> stagingAccountApiBaseUrl
+        "recovery-production" -> productionAccountApiBaseUrl
+        else -> accountApiBaseUrl
+    }
+    val oauthAppApiName = when (distributionChannel) {
+        "staging", "recovery-staging" -> "STAGING_APP_API_BASE_URL"
+        "recovery-production" -> "PRODUCTION_APP_API_BASE_URL"
+        else -> "APP_API_BASE_URL"
+    }
+    val oauthAccountApiName = when (distributionChannel) {
+        "staging", "recovery-staging" -> "STAGING_ACCOUNT_API_BASE_URL"
+        "recovery-production" -> "PRODUCTION_ACCOUNT_API_BASE_URL"
+        else -> "ACCOUNT_API_BASE_URL"
+    }
+    val missingEndpoints = buildList {
+        if (oauthAppApiBaseUrl.isBlank()) add(oauthAppApiName)
+        if (oauthAccountApiBaseUrl.isBlank()) add(oauthAccountApiName)
+    }
+    if (missingEndpoints.isNotEmpty()) {
+        throw GradleException(
+            "Real OAuth requires: ${missingEndpoints.joinToString()}",
+        )
+    }
+    listOf(
+        oauthAppApiName to oauthAppApiBaseUrl,
+        oauthAccountApiName to oauthAccountApiBaseUrl,
+    ).forEach { (name, raw) ->
+        validateHttpsEndpoint(name, raw)
+    }
 }
 
 android {
@@ -27,31 +220,63 @@ android {
         // on its own terms, not a side effect of a dependency refresh.
         // Compiling against a newer SDK than you target is supported.
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.8"
+        versionCode = 19
+        versionName = "1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Default API base URL — HTTPS in production (TLS terminated in
-        // front of the uvicorn process). Override at build time, e.g. to
-        // point a debug build at the emulator host over cleartext (only
-        // local/LAN hosts are allowed cleartext, see
-        // res/xml/network_security_config.xml):
-        //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/
-        val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
-            .orElse("https://pdis.arbuz.lol/")
-            .get()
-            .let { if (it.endsWith("/")) it else "$it/" }
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
+        // Public application traffic and private account traffic deliberately
+        // have independent base URLs. Plain local builds default to the live
+        // German beta pair so fetching and pressing Run is sufficient for
+        // account testing. Protected production automation overrides both
+        // values together and independently verifies the packaged APK.
+        val configuredAppApiBaseUrl = appApiBaseUrl
+            .ifBlank { reviewedStagingAppApiBaseUrl }
+        val configuredAccountApiBaseUrl = accountApiBaseUrl
+            .ifBlank { reviewedStagingAccountApiBaseUrl }
+        fun quotedUrl(raw: String): String {
+            val normalized = if (raw.endsWith("/")) raw else "$raw/"
+            return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        }
+        buildConfigField("String", "APP_API_BASE_URL", quotedUrl(configuredAppApiBaseUrl))
+        buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(configuredAccountApiBaseUrl))
+        buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+        buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", (!realOAuthEnabled).toString())
+        buildConfigField(
+            "String",
+            "DISTRIBUTION_CHANNEL",
+            "\"${distributionChannel.ifBlank { "local-beta" }}\"",
+        )
+
+        // OAuth mobile application values are public/extractable client
+        // configuration. Yandex is pinned for the 1.9 RuStore release; VK still
+        // fails closed unless its own complete configuration is supplied.
+        // Package/signature registration remains an operator step.
+        buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", yandexOAuthConfigured.toString())
+        buildConfigField("String", "YANDEX_CLIENT_ID_SHA256", "\"${sha256(yandexClientId)}\"")
+        buildConfigField(
+            "boolean",
+            "VK_OAUTH_CONFIGURED",
+            vkOAuthConfigured.toString(),
+        )
+        buildConfigField("String", "VKID_CLIENT_ID_SHA256", "\"${sha256(vkClientId)}\"")
+        buildConfigField("String", "VKID_CLIENT_SECRET_SHA256", "\"${sha256(vkClientSecret)}\"")
+        manifestPlaceholders += mapOf(
+            "YANDEX_CLIENT_ID" to yandexClientId.ifBlank { "0" },
+            "YANDEX_OAUTH_ENABLED" to yandexOAuthConfigured.toString(),
+            "VKIDClientID" to vkClientId.ifBlank { "0" },
+            "VKIDClientSecret" to vkClientSecret.ifBlank { "unconfigured" },
+            "VKIDRedirectHost" to "vk.ru",
+            "VKIDRedirectScheme" to "vk${vkClientId.ifBlank { "0" }}",
+            "VKID_OAUTH_ENABLED" to vkOAuthConfigured.toString(),
+        )
 
         // Firebase Cloud Messaging client config. These four values are the
         // public client identifiers of a Firebase project (the same ones that
         // normally live in google-services.json). They are NOT injected with
         // any default here — they must be supplied at build time via a Gradle
         // property, a same-named environment variable, or (in CI) a GitHub
-        // Actions secret. See DEPLOYMENT.md (Android release).
+        // Actions variable. See DEPLOYMENT.md (Android release).
         //   ./gradlew :app:assembleRelease -PFCM_APP_ID=... -PFCM_API_KEY=...
         // When any of them is blank the app builds fine and push messaging
         // simply stays dormant (PushManager.isConfigured() returns false and
@@ -104,6 +329,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // When the operator has configured the permanent key outside the
+            // repository, Android Studio's Run button uses it too, matching
+            // the certificate registered with Yandex. A fresh contributor
+            // checkout still falls back to Gradle's ordinary debug key.
+            signingConfigs.findByName("release")
+                ?.takeIf { it.storeFile != null }
+                ?.let { signingConfig = it }
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -112,19 +347,107 @@ android {
                 "proguard-rules.pro"
             )
             val releaseConfig = signingConfigs.findByName("release")
-            // Always sign the release APK so it is INSTALLABLE. A real
-            // keystore (pass -PRELEASE_STORE_FILE=… for a store build) is used
-            // when present; otherwise (CI, local sideload) fall back to the
-            // auto-provisioned debug key. An UNSIGNED release APK fails to
-            // install with "App not installed as package appears to be
-            // invalid" — which is what packaging only the release variant in
-            // CI (no keystore) exposed.
-            signingConfig = if (releaseConfig?.storeFile != null) {
-                releaseConfig
-            } else {
-                signingConfigs.getByName("debug")
+            // Local and ordinary CI APKs stay installable: a configured store
+            // key wins, otherwise they use the auto-provisioned debug key.
+            // The manual distribution workflow is the sole exception and sets
+            // ANDROID_UNSIGNED_DISTRIBUTION=true so signing happens later in a
+            // checkout-free protected job.
+            signingConfig = when {
+                // The protected release workflow compiles in a credential-free
+                // job, proves this APK has no signer, then passes only that
+                // immutable artifact to a checkout-free signing job. Gradle
+                // must never receive the permanent app key in that flow.
+                unsignedDistributionBuild -> null
+                releaseConfig?.storeFile != null -> releaseConfig
+                else -> signingConfigs.getByName("debug")
             }
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
         }
+
+        // This is an endpoint-selecting build type, not another application.
+        // It deliberately keeps the release application ID, launcher label,
+        // version and signing certificate, so PlantDiseases 1.9 updates the
+        // installed 1.8 app instead of coexisting with it.
+        create("staging") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+
+            val appUrl = stagingAppApiBaseUrl.ifBlank {
+                appApiBaseUrl.ifBlank { reviewedStagingAppApiBaseUrl }
+            }
+            val accountUrl = stagingAccountApiBaseUrl.ifBlank {
+                accountApiBaseUrl.ifBlank { reviewedStagingAccountApiBaseUrl }
+            }
+            fun quotedUrl(raw: String): String {
+                val normalized = if (raw.endsWith("/")) raw else "$raw/"
+                return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            }
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+            // Synthetic auth remains an explicit ACCOUNT_REAL_OAUTH=false
+            // opt-out for local mock-stack development. Normal builds use the
+            // integrated official provider SDK flows and reviewed beta URLs.
+            buildConfigField(
+                "boolean",
+                "SYNTHETIC_AUTH_ENABLED",
+                (!realOAuthEnabled).toString(),
+            )
+        }
+
+        // Same-package, same-certificate emergency rollback targets. Both use
+        // versionCode 20 and disable account UI, but each stays bound to one
+        // endpoint scope so its encrypted vault and queued remote revocations
+        // are never silently redirected to the other environment.
+        create("recoveryProduction") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-recovery-production"
+            val appUrl = productionAppApiBaseUrl.ifBlank { "https://invalid.invalid/" }
+            val accountUrl = productionAccountApiBaseUrl.ifBlank { "https://invalid.invalid/id/" }
+            fun quotedUrl(raw: String) = "\"${raw.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("String", "RECOVERY_ENDPOINT_SCOPE", "\"production\"")
+            buildConfigField(
+                "boolean",
+                "RECOVERY_ENDPOINTS_CONFIGURED",
+                recoveryEndpointsConfigured.toString(),
+            )
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
+            buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
+        }
+
+        create("recoveryStaging") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-recovery-staging"
+            val appUrl = stagingAppApiBaseUrl.ifBlank { reviewedStagingAppApiBaseUrl }
+            val accountUrl = stagingAccountApiBaseUrl.ifBlank { reviewedStagingAccountApiBaseUrl }
+            fun quotedUrl(raw: String) = "\"${raw.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
+            buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
+            buildConfigField("String", "RECOVERY_ENDPOINT_SCOPE", "\"staging\"")
+            buildConfigField("boolean", "RECOVERY_ENDPOINTS_CONFIGURED", "true")
+            buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
+            buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
+            buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
+        }
+    }
+
+    sourceSets {
+        getByName("testRecoveryProduction").java.srcDir("src/testRecovery/java")
+        getByName("testRecoveryStaging").java.srcDir("src/testRecovery/java")
     }
 
     buildFeatures {
@@ -193,6 +516,26 @@ android {
                     showStackTraces = true
                     showCauses = true
                 }
+            }
+        }
+    }
+}
+
+androidComponents {
+    // AGP 9 creates only the debug unit-test component by default for this
+    // legacy-DSL project. Release signing depends on identity assertions for
+    // release, staging, and both recovery variants, so keep those components
+    // explicit instead of allowing the workflow tasks to disappear silently.
+    beforeVariants(selector().all()) { variantBuilder ->
+        (variantBuilder as com.android.build.api.variant.ApplicationVariantBuilder)
+            .hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]
+            ?.enable = true
+    }
+
+    listOf("recoveryProduction", "recoveryStaging").forEach { recoveryBuildType ->
+        onVariants(selector().withBuildType(recoveryBuildType)) { variant ->
+            variant.outputs.forEach { output ->
+                output.versionCode.set(recoveryVersionCode)
             }
         }
     }
@@ -267,8 +610,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
-    // logging). Retrofit/converter-gson were removed once the last endpoint
+    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor).
+    // Retrofit/converter-gson were removed once the last endpoint
     // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
     // OkHttp 5 keeps the OkHttpClient/Interceptor API this project uses, and
     // com.squareup.okhttp3:mockwebserver still ships the legacy
@@ -303,6 +646,12 @@ dependencies {
     // the build works with or without credentials.
     implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-messaging")
+
+    // Official mobile OAuth SDKs. Each remains inert until its own build-time
+    // client configuration is supplied; Yandex-only, VK-only, and combined
+    // builds are all supported.
+    implementation("com.yandex.android:authsdk:3.2.1")
+    implementation("com.vk.id:vkid:2.7.2")
 
     // RuStore in-app updates — installs that came from RuStore get offered new
     // builds in-place (flexible flow, util/InAppUpdateManager). Resolved from
@@ -346,10 +695,19 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
-    // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    // Lifecycle 2.11's Compose artifact is compiled against API 37 and declares
+    // AGP 9.1 as its minimum. Keep the atomic Lifecycle family on 2.10 while
+    // this project intentionally remains on compileSdk 36 / AGP 8.13.2.
+    val lifecycleVersion = "2.10.0"
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
+    constraints {
+        implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion") {
+            version { strictly(lifecycleVersion) }
+            because("Lifecycle 2.11 requires compileSdk 37 and AGP 9.1+")
+        }
+    }
 
     // Lottie animations
     implementation("com.airbnb.android:lottie:6.7.1")

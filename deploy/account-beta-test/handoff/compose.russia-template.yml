@@ -1,0 +1,328 @@
+# Contract template, not a deployment authorization. Extracted app/push/backup
+# images, Russian infrastructure, real secrets, and every release gate in the
+# handoff runbook must exist before an operator renders this file.
+name: ${RU_COMPOSE_PROJECT_NAME:?Set a dedicated Russian project name}
+
+x-account-environment: &account-environment
+  ENVIRONMENT: production
+  AUTH_PROVIDER_MODE: remote
+  # Providers are independent; the account service requires at least one.
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:-}
+  PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
+  ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
+  ACCOUNT_AUDIENCE: plantdiseases-app
+  ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/account-secrets/internal.token
+  COMMUNITY_DELETION_URL: http://ru-app-api:8000/api/internal/account-deletions
+  HTTPS_PROXY: http://ru-egress-proxy:3128
+  HTTP_PROXY: http://ru-egress-proxy:3128
+  NO_PROXY: 127.0.0.1,localhost,ru-postgres,ru-account-api,ru-app-api
+  CORS_ORIGINS: ""
+
+x-service-hardening: &service-hardening
+  read_only: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  ru-ingress:
+    image: ${RU_INGRESS_IMAGE:?Set an immutable digest-pinned ingress image}
+    depends_on:
+      ru-account-api:
+        condition: service_healthy
+      ru-app-api:
+        condition: service_healthy
+    ports:
+      - name: https
+        target: 8443
+        published: "443"
+        protocol: tcp
+    volumes:
+      - ${RU_INGRESS_CONFIG_DIR:?Set the reviewed ingress config directory}:/etc/nginx/conf.d:ro
+      - ${RU_INGRESS_TLS_DIR:?Set the Russian TLS directory}:/run/tls:ro
+    networks:
+      ru-edge: {}
+      ru-ingress-backend:
+        ipv4_address: ${RU_INGRESS_BACKEND_IP:-172.30.0.10}
+    tmpfs:
+      - /var/cache/nginx:size=16m
+      - /var/run:size=2m
+      - /tmp:size=8m
+    <<: *service-hardening
+
+  # The only workload egress path. (Ingress separately terminates public
+  # traffic on ru-edge.) Operator-owned Squid ACLs allow CONNECT only to the
+  # reviewed provider, ML and backup destinations and deny private targets.
+  ru-egress-proxy:
+    image: ${RU_EGRESS_PROXY_IMAGE:?Set a digest-pinned hardened Squid image}
+    volumes:
+      - ${RU_EGRESS_PROXY_CONFIG_DIR:?Set the reviewed egress ACL directory}:/etc/squid:ro
+    expose:
+      - "3128"
+    networks:
+      - ru-egress-clients
+      - ru-egress
+    tmpfs:
+      - /var/log/squid:size=8m
+      - /var/spool/squid:size=8m
+      - /var/run:size=2m
+      - /tmp:size=8m
+    <<: *service-hardening
+
+  ru-postgres:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    environment:
+      POSTGRES_DB: plantdisease
+      POSTGRES_USER: account_bootstrap
+      POSTGRES_PASSWORD: ${RU_POSTGRES_ADMIN_PASSWORD:?Load the bootstrap password from the protected host environment}
+      RU_POSTGRES_RUNTIME_PASSWORD: ${RU_POSTGRES_RUNTIME_PASSWORD:?Load the runtime role password}
+      RU_POSTGRES_MIGRATOR_PASSWORD: ${RU_POSTGRES_MIGRATOR_PASSWORD:?Load the migrator role password}
+      RU_POSTGRES_BACKUP_PASSWORD: ${RU_POSTGRES_BACKUP_PASSWORD:?Load the backup role password}
+      PGDATA: /var/lib/postgresql/18/docker
+    expose:
+      - "5432"
+    volumes:
+      - ru_postgres:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ru-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U account_bootstrap -d plantdisease"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # This explicit idempotent pass also runs for an existing reviewed volume;
+  # docker-entrypoint-initdb.d alone runs only during first initialization.
+  ru-account-role-provision:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    entrypoint: ["/bin/sh", "/role-init/10-account-roles.sh"]
+    environment:
+      PGHOST: ru-postgres
+      PGPORT: "5432"
+      PGPASSWORD: ${RU_POSTGRES_ADMIN_PASSWORD:?Load the bootstrap password}
+      POSTGRES_DB: plantdisease
+      POSTGRES_USER: account_bootstrap
+      RU_POSTGRES_RUNTIME_PASSWORD: ${RU_POSTGRES_RUNTIME_PASSWORD:?Set a 64-hex runtime password}
+      RU_POSTGRES_MIGRATOR_PASSWORD: ${RU_POSTGRES_MIGRATOR_PASSWORD:?Set a 64-hex migrator password}
+      RU_POSTGRES_BACKUP_PASSWORD: ${RU_POSTGRES_BACKUP_PASSWORD:?Set a 64-hex backup password}
+    depends_on:
+      ru-postgres:
+        condition: service_healthy
+    volumes:
+      - ./postgres-init:/role-init:ro
+    networks:
+      - ru-db
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ru-account-migrate:
+    image: ${RU_ACCOUNT_API_IMAGE:?Set an immutable digest-pinned account image}
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://account_migrator:${RU_POSTGRES_MIGRATOR_PASSWORD:?Load the migrator role password}@ru-postgres/plantdisease
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        python -m alembic upgrade head
+        python /role-contract/converge-runtime-grants.py --contract russian-production
+    depends_on:
+      ru-account-role-provision:
+        condition: service_completed_successfully
+    volumes:
+      - ${RU_ACCOUNT_SECRETS_DIR:?Set the account-owned mode-0400 secret directory}:/run/account-secrets:ro
+      - ../converge-runtime-grants.py:/role-contract/converge-runtime-grants.py:ro
+    networks:
+      - ru-db
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ru-account-api:
+    image: ${RU_ACCOUNT_API_IMAGE:?Set an immutable digest-pinned account image}
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://account_runtime:${RU_POSTGRES_RUNTIME_PASSWORD:?Load the runtime role password}@ru-postgres/plantdisease
+    depends_on:
+      ru-account-migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+    volumes:
+      - ${RU_ACCOUNT_SECRETS_DIR:?Set the account-owned mode-0400 secret directory}:/run/account-secrets:ro
+    networks:
+      - ru-ingress-backend
+      - ru-db
+      - ru-egress-clients
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${RU_INGRESS_BACKEND_IP:-172.30.0.10}
+      - --no-access-log
+      - --limit-concurrency
+      - "64"
+      - --timeout-keep-alive
+      - "5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    <<: *service-hardening
+
+  ru-app-api:
+    image: ${RU_APP_API_IMAGE:?Set the extracted immutable Russian application image}
+    environment:
+      ENVIRONMENT: production
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "false"
+      ACCOUNT_FEATURE_EXPECTED: "true"
+      ACCOUNT_API_BASE_URL: http://ru-account-api:8000/
+      ACCOUNT_ISSUER: https://${RU_PUBLIC_HOST:?Set the Russian public host}/id
+      ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_INTERNAL_BASE_URL: http://ru-account-api:8000
+      ACCOUNT_JWKS_URL: http://ru-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://ru-account-api:8000/v1/internal/auth/verify
+      # Push is absent; owner updates use polling.
+      ACCOUNT_NOTIFICATION_URL: ""
+      INTERNAL_SERVICE_TOKEN_FILE: /run/app-secrets/internal.token
+      FCM_CREDENTIALS_FILE: ""
+      ML_WORKER_URL: ${DE_ML_WORKER_URL:?Set the private German mTLS endpoint}
+      ML_WORKER_CA_FILE: /run/app-secrets/ml-worker-ca.pem
+      ML_WORKER_CLIENT_CERT_FILE: /run/app-secrets/ml-worker-client.pem
+      ML_WORKER_CLIENT_KEY_FILE: /run/app-secrets/ml-worker-client.key
+      ML_WORKER_FORWARD_AUTHORIZATION: "false"
+      ML_WORKER_ALLOWED_FIELDS: image,request_id,model_family,language,result_options
+      COMMUNITY_DB_PATH: /data/community/community.db
+      COMMUNITY_THUMB_DIR: /data/community-thumbs
+      TRAINING_DB_PATH: /data/training/training.db
+      TRAINING_IMAGE_DIR: /data/training-images
+      TELEMETRY_DB_PATH: /data/telemetry/telemetry.db
+      LOG_DIR: /data/logs
+      CORS_ORIGINS: ""
+      TRUSTED_PROXIES: ${RU_INGRESS_BACKEND_IP:-172.30.0.10}
+      FORWARDED_ALLOW_IPS: ${RU_INGRESS_BACKEND_IP:-172.30.0.10}
+      HTTPS_PROXY: http://ru-egress-proxy:3128
+      HTTP_PROXY: http://ru-egress-proxy:3128
+      NO_PROXY: 127.0.0.1,localhost,ru-postgres,ru-account-api,ru-app-api
+    depends_on:
+      ru-account-api:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - ${RU_APP_SECRETS_DIR:?Set the app-owned mode-0400 secret directory}:/run/app-secrets:ro
+      - ru_community:/data/community
+      - ru_thumbnails:/data/community-thumbs
+      - ru_training:/data/training
+      - ru_training_images:/data/training-images
+      - ru_telemetry:/data/telemetry
+      - ru_app_logs:/data/logs
+    networks:
+      - ru-ingress-backend
+      - ru-egress-clients
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${RU_INGRESS_BACKEND_IP:-172.30.0.10}
+      - --no-access-log
+      - --limit-concurrency
+      - "64"
+      - --timeout-keep-alive
+      - "5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    <<: *service-hardening
+
+  ru-backup:
+    image: ${RU_BACKUP_IMAGE:?Set the immutable encrypted-backup image}
+    profiles: ["operations"]
+    environment:
+      BACKUP_DATABASE_URL: postgresql://account_backup:${RU_POSTGRES_BACKUP_PASSWORD:?Load the backup role password}@ru-postgres/plantdisease
+      BACKUP_POSTGRES_MODE: pg-dump-custom
+      BACKUP_SQLITE_MODE: online-backup-api
+      BACKUP_RETENTION_DAILY: "7"
+      BACKUP_RETENTION_WEEKLY: "4"
+      BACKUP_ENCRYPTION_KEY_FILE: /run/backup-secrets/recipient.key
+      BACKUP_DESTINATION: ${RU_BACKUP_DESTINATION:?Set a Russian encrypted backup destination}
+      HTTPS_PROXY: http://ru-egress-proxy:3128
+      HTTP_PROXY: http://ru-egress-proxy:3128
+      NO_PROXY: 127.0.0.1,localhost,ru-postgres,ru-account-api,ru-app-api
+    depends_on:
+      ru-postgres:
+        condition: service_healthy
+    volumes:
+      - ${RU_BACKUP_SECRETS_DIR:?Set the backup-owned mode-0400 secret directory}:/run/backup-secrets:ro
+      - ru_community:/source/community:ro
+      - ru_thumbnails:/source/thumbnails:ro
+      - ru_training:/source/training:ro
+      - ru_training_images:/source/training-images:ro
+      - ru_telemetry:/source/telemetry:ro
+    networks:
+      - ru-db
+      - ru-egress-clients
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    <<: *service-hardening
+
+networks:
+  ru-edge: {}
+  ru-ingress-backend:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${RU_INGRESS_BACKEND_SUBNET:-172.30.0.0/28}
+  ru-db:
+    internal: true
+  ru-egress-clients:
+    internal: true
+  ru-egress: {}
+
+volumes:
+  ru_postgres: {}
+  ru_community: {}
+  ru_thumbnails: {}
+  ru_training: {}
+  ru_training_images: {}
+  ru_telemetry: {}
+  ru_app_logs: {}

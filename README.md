@@ -157,8 +157,10 @@ systemd, API keys, Android signing/FCM) lives in [`DEPLOYMENT.md`](DEPLOYMENT.md
 
 1. Open `android/` in Android Studio (Hedgehog 2023.1+), sync Gradle, run on a
    device or emulator.
-2. The server URL is baked in via `BuildConfig.API_BASE_URL`; override per build:
-   `./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/`.
+2. A fresh checkout's debug and local release builds enable real Yandex OAuth
+   and use the live beta application/account URLs under `/plantdisease-test/`.
+   No endpoint arguments are required. Local mock development explicitly sets
+   `ACCOUNT_REAL_OAUTH=false`, `APP_API_BASE_URL`, and `ACCOUNT_API_BASE_URL`.
 
 Release signing, FCM push, TLS, and the optional integrations — `PLANTNET_API_KEY`
 (species ID) and `OPENROUTER_API_KEY` (AI doctor); the server runs fine without them
@@ -214,11 +216,15 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
 | `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
 | `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
+| `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
+| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).
+Content criteria and the private operator workflow are documented in
+[`docs/COMMUNITY_RULES_AND_MODERATION.md`](docs/COMMUNITY_RULES_AND_MODERATION.md).
 
 ---
 

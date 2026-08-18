@@ -1,6 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PlantDiseases</string>
+    <string name="account_title">Account</string>
+    <string name="account_manage">Manage account</string>
+    <string name="account_guest">Guest</string>
+    <string name="account_restoring">Restoring account…</string>
+    <string name="account_temporarily_unavailable">Account temporarily unavailable. Check your connection and try again later.</string>
+    <string name="account_retry">Retry account connection</string>
+    <string name="account_guest_body">Create an account or sign in to publish community contributions, receive account push notifications, and manage sessions. Scans and your garden stay on this device.</string>
+    <string name="account_disclosure_title">Before you sign in</string>
+    <string name="account_disclosure_body">Signing in shares your provider identity, display name, and avatar with PlantDiseases. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked providers, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
+    <string name="account_disclosure_acknowledge">Acknowledge and continue</string>
+    <string name="account_disclosure_privacy">Privacy policy</string>
+    <string name="account_disclosure_save_failed">The acknowledgement could not be saved. Sign-in was not started.</string>
+    <string name="account_privacy_open_failed">The privacy policy could not be opened.</string>
+    <string name="account_continue_yandex">Sign in with Yandex ID</string>
+    <string name="account_continue_vk">Continue with VK ID</string>
+    <string name="account_vk_coming_soon">VK ID — coming soon</string>
+    <string name="account_finish_profile">Choose a nickname</string>
+    <string name="account_finish_profile_body">A public nickname is required before the account is created. You can cancel and return to Guest.</string>
+    <string name="account_nickname">Nickname</string>
+    <string name="account_nickname_required">Enter a nickname</string>
+    <string name="account_create">Create account</string>
+    <string name="account_finish_creation">Finish creating account</string>
+    <string name="account_cancel_signup">Cancel and stay Guest</string>
+    <string name="account_provider_avatar">Private provider avatar</string>
+    <string name="account_provider_name">%1$s · %2$s</string>
+    <string name="account_save_nickname">Save nickname</string>
+    <string name="account_linked_accounts">Linked sign-in methods</string>
+    <string name="account_provider_yandex">Yandex ID</string>
+    <string name="account_provider_vk">VK ID</string>
+    <string name="account_provider_unknown">Sign-in provider</string>
+    <string name="account_link_yandex">Link Yandex ID</string>
+    <string name="account_link_vk">Link VK ID</string>
+    <string name="account_sessions">Active sessions</string>
+    <string name="account_device_android">Android device</string>
+    <string name="account_current_session">%1$s (this session)</string>
+    <string name="account_session_details">Signed in %1$s\nLast active %2$s\nExpires after inactivity %3$s</string>
+    <string name="account_session_summary">%1$s\n%2$s</string>
+    <string name="account_session_time_unknown">Unknown</string>
+    <string name="account_revoke_session">Revoke</string>
+    <string name="account_logout">Log out</string>
+    <string name="account_delete">Delete account</string>
+    <string name="account_delete_warning">You will sign in again to confirm deletion. Sessions are revoked immediately and account data is queued for removal. Local scans, garden entries, and reminders remain on this device.</string>
+    <string name="account_delete_confirm">Reauthenticate and delete</string>
+    <string name="account_choose_reauth_provider">Confirm with a linked sign-in method</string>
+    <string name="account_link_restart_required">Linking was interrupted. Start the link again to keep your account secure.</string>
+    <string name="account_provider_unconfigured">This sign-in provider is not configured in this build.</string>
+    <string name="account_synthetic_notice">Synthetic team test: these buttons use generated mock identities, never a real Yandex or VK account.</string>
+    <string name="account_oauth_cancelled">Sign-in cancelled</string>
+    <string name="account_error_nickname_taken">That nickname is already in use.</string>
+    <string name="account_error_nickname_invalid">Choose a different nickname and try again.</string>
+    <string name="account_error_nickname_cooldown">The nickname can’t be changed again yet.</string>
+    <string name="account_error_provider_unavailable">The sign-in provider is temporarily unavailable.</string>
+    <string name="account_error_identity_linked">That sign-in identity already belongs to an account.</string>
+    <string name="account_error_generic">The account request could not be completed.</string>
+    <string name="account_error_logout_not_durable">Signed out for now, but the app could not securely save or finish sign-out. Reopen the app while online and try again.</string>
+    <string name="account_error_retry_online">The account request is still pending. Check your connection and try again.</string>
+    <string name="account_signup_already_confirmed">Account creation had already completed. If the account is not shown, sign in again to manage or delete it.</string>
+    <string name="feedback_expired">This feedback window has expired. Run a new scan to submit feedback.</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString —
          only reachable through ``R.plurals.X``, never via
@@ -111,10 +169,16 @@
 
     <!-- Onboarding -->
 
-    <!-- Data-use consent (blocking; Play prominent disclosure) -->
-    <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
-    <string name="consent_agree">Agree</string>
+    <!-- Independent optional privacy choices -->
+    <string name="consent_title">Privacy choices</string>
+    <string name="consent_body">Plant diagnosis works without either optional data use below. You can change each choice later in Profile. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
+    <string name="consent_agree">Continue</string>
+    <string name="training_consent_title">Help improve diagnosis models</string>
+    <string name="training_consent_subtitle">Allow de-identified, metadata-free plant images and structured model results to enter the model-improvement store. No account, installation, community, or location identifier is attached. Previously contributed material cannot be tied back to you for withdrawal because it is intentionally unlinkable.</string>
+    <string name="telemetry_consent_title">Send minimal error reports</string>
+    <string name="telemetry_consent_subtitle">Allow errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
+    <string name="community_sign_in_required">Sign in to publish or change community content. Tap the action again after sign-in.</string>
+    <string name="community_location_cta">Allow approximate location</string>
     <string name="consent_privacy_link">Privacy policy</string>
 
     <!-- Interactive contextual guidance -->
@@ -274,12 +338,44 @@
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
     <string name="community_opinion_photo_desc">Shared plant scan</string>
+    <string name="community_report_content">Report</string>
+    <string name="community_block_author">Block author</string>
+    <string name="community_report_title">Report community content</string>
+    <string name="community_report_prompt">Why does this break the Community Rules?</string>
+    <string-array name="community_report_reasons">
+        <item>Sexual content</item>
+        <item>Violence or threats</item>
+        <item>Hate or harassment</item>
+        <item>Illegal or dangerous content</item>
+        <item>Spam or misleading content</item>
+        <item>Privacy violation or impersonation</item>
+        <item>Another rules violation</item>
+    </string-array>
+    <string name="community_report_sent">Report sent to moderation.</string>
+    <string name="community_block_title">Block this author?</string>
+    <string name="community_block_body">While using the community signed in, their scans and replies will be hidden from you, yours will be hidden from them, and the two accounts cannot interact. This applies on every device signed into your account.</string>
+    <string name="community_block_confirm">Block</string>
+    <string name="community_author_blocked">Author blocked.</string>
+    <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
+    <string name="community_rules_action">Community Rules &amp; safety</string>
+    <string name="community_rules_title">Community Rules &amp; safety</string>
+    <string name="community_rules_body">Share only plant-related scans and helpful second opinions. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
+    <string name="community_contact_moderation">Contact moderation</string>
+    <string name="community_manage_blocks">Blocked authors</string>
+    <string name="community_blocks_empty">You haven\'t blocked any authors.</string>
+    <string name="community_unblock_title">Unblock %1$s?</string>
+    <string name="community_unblock_confirm">Unblock</string>
+    <string name="community_author_unblocked">Author unblocked.</string>
+    <string name="community_unknown_author">Unknown author</string>
+    <string name="community_moderation_url" translatable="false">https://github.com/pmixay/plantdiseases/issues</string>
+    <string name="gallery_community_badge">💬 %1$d</string>
+    <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
     <string name="second_opinion_needs_community_title">Enable community?</string>
-    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. You can leave the community anytime.</string>
+    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. By enabling, you agree to the Community Rules; reporting, blocking, and moderation contact are available in the community screen. You can leave anytime.</string>
     <string name="second_opinion_waiting_hours">Waiting for opinions · %1$d h left</string>
     <string name="second_opinion_open_replies">Opinions (%1$d) · %2$d h left</string>
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
@@ -829,8 +925,7 @@
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
     <string name="feedback_nap_subtitle">Did we get it wrong? If there\'s a real plant in this photo, tell us — that\'s exactly what teaches the model.</string>
     <string name="feedback_is_a_plant">This is a plant</string>
-    <string name="feedback_is_a_plant_body">We\'ll use this photo to improve the scanner. You can add a note — what plant it is or what\'s in the frame.</string>
-    <string name="feedback_is_a_plant_note_hint">Note (optional)</string>
+    <string name="feedback_is_a_plant_body">Confirm that this photo contains a plant. The sanitized photo may be retained for model improvement after privacy checks.</string>
 
     <!-- Feedback correction bottom-sheet. Class chips map 1:1 to the
          server's known class keys; reason chips map to the
@@ -840,7 +935,6 @@
     <string name="feedback_sheet_we_thought">We diagnosed</string>
     <string name="feedback_sheet_actual_label">What is it actually?</string>
     <string name="feedback_sheet_reason_label">Why was it wrong?</string>
-    <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
     <!-- Class chips — match server class keys 1:1. -->
     <string name="feedback_class_healthy">Healthy</string>
     <string name="feedback_class_pests">Pests (mealybugs, scale)</string>

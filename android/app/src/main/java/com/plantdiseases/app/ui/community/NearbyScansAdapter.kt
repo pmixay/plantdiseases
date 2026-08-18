@@ -138,12 +138,12 @@ class NearbyScansAdapter(
             photo.setOnClickListener(open)
             commentsRow.setOnClickListener(open)
 
-            // ServerConfig.baseUrl ends with `/`; relative path appended.
+            // ServerConfig.appBaseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
             val url = if (thumb.isNullOrBlank()) {
                 null
             } else {
-                "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+                "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
             }
             ThumbLoader.load(shimmer, photo, url)
         }

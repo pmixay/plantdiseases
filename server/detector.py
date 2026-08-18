@@ -158,7 +158,7 @@ class LeafDetector:
         # Warm up so the first request isn't paying JIT/init cost.
         dummy_input = np.zeros((1, 3, DETECTOR_IMG_SIZE, DETECTOR_IMG_SIZE), dtype=np.float32)
         self.model.run(None, {self.input_name: dummy_input})
-        logger.info("ONNX YOLOv8 detector loaded from %s", path)
+        logger.info("ONNX YOLOv8 detector loaded")
 
     # ── public API ───────────────────────────────────────────────────
 

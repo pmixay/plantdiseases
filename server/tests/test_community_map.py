@@ -23,14 +23,37 @@ def mapenv(tmp_path, monkeypatch):
     importlib.reload(comm)
     import main as server_main
     server_main.community_record_scan = comm.record_scan
+
+    def legacy_analysis_write(**kwargs):
+        return comm.record_scan(
+            scan_id=kwargs["scan_id"],
+            account_actor_id=kwargs["account_actor_id"],
+            country=kwargs["country"],
+            region=kwargs.get("region", ""),
+            city=kwargs.get("city"),
+            lat=kwargs.get("lat"),
+            lon=kwargs.get("lon"),
+            disease=kwargs.get("client_disease") or "healthy",
+            confidence=kwargs.get("client_confidence"),
+            species=kwargs.get("client_species"),
+            species_score=kwargs.get("client_species_score"),
+            image_bytes=kwargs.get("image_bytes"),
+            locale=kwargs.get("locale"),
+            nickname=kwargs.get("nickname"),
+        )
+
+    server_main.community_record_analysis_scan = legacy_analysis_write
     server_main.community_map_scans = comm.map_scans
     server_main.community_density_grid = comm.density_grid
     server_main.community_opinion_counts = comm.opinion_counts
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
+    server_main._daily_write_counts.clear()
     # /api/community/scan now requires a server-issued scan_id; these tests
     # post synthetic ids, so treat them all as issued.
-    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: True)
+    monkeypatch.setattr(
+        server_main, "community_analysis_token_issued", lambda *a, **k: True
+    )
     return comm
 
 
@@ -96,34 +119,6 @@ def test_map_scans_time_window(mapenv):
         )
     ids = {it["scan_id"] for it in comm.map_scans(52.0, 52.5, 20.5, 21.5, days=30)["items"]}
     assert ids == {"freshrow0001"}
-
-
-def test_map_scans_attaches_like_count_and_liked_by_me(mapenv):
-    """map_scans used to return bare rows with no like fields at all, unlike
-    nearby_scans — every marker on the map read as 0 likes regardless of the
-    real count. exclude_user_pseudo_id doubles as the viewer's own id here,
-    same as it already does for the "did I visit my own scan" exclusion."""
-    comm = mapenv
-    _scan(comm, "likedrow0001", 52.23, 21.01, user="pseudo-map-owner")
-    comm.set_like("likedrow0001", "pseudo-map-liker", True)
-
-    as_liker = comm.map_scans(
-        52.0, 52.5, 20.5, 21.5, exclude_user_pseudo_id="pseudo-map-liker",
-    )["items"][0]
-    assert as_liker["like_count"] == 1
-    assert as_liker["liked_by_me"] is True
-
-    as_stranger = comm.map_scans(
-        52.0, 52.5, 20.5, 21.5, exclude_user_pseudo_id="pseudo-someone-else",
-    )["items"][0]
-    assert as_stranger["like_count"] == 1
-    assert as_stranger["liked_by_me"] is False
-
-    # No viewer id at all — count still real, liked_by_me can't be anything
-    # but False since there's no identity to check it against.
-    anonymous = comm.map_scans(52.0, 52.5, 20.5, 21.5)["items"][0]
-    assert anonymous["like_count"] == 1
-    assert anonymous["liked_by_me"] is False
 
 
 def test_endpoint_map_uses_public_token_and_keeps_coords(client, mapenv):

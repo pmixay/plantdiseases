@@ -1,6 +1,5 @@
 package com.plantdiseases.app.data.remote
 
-import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.PopularResponse
@@ -30,7 +29,6 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -115,24 +113,22 @@ class RetryInterceptor(
  * MockWebServer without a device.
  */
 class PlantApiClient(
-    private val baseUrl: String = ServerConfig.baseUrl,
+    private val baseUrl: String = ServerConfig.appBaseUrl,
     /** Where call outcomes are published. Defaults to a private instance so
      *  tests (and any standalone use) need not wire one up. */
     private val reachabilityReporter: ReachabilityReporter = ReachabilityReporter(),
 ) {
 
     private val client: OkHttpClient = run {
-        val logging = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
-        }
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            // Signed community calls share this client with public app calls.
+            // Never replay an application bearer—or any request body—to a
+            // redirect target; every release endpoint is fixed at build time.
+            .followRedirects(false)
+            .followSslRedirects(false)
             // Tell the reporter whether the server answered, for every call
             // the app makes anyway — which is what lets ConnectivityObserver
             // stop polling a health endpoint on a timer. Installed BEFORE the
@@ -150,7 +146,13 @@ class PlantApiClient(
                 }
             }
             .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
-            .addInterceptor(logging)
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("User-Agent", "PlantDiseases-Android")
+                        .build(),
+                )
+            }
             .build()
     }
 
@@ -203,6 +205,10 @@ class PlantApiClient(
     val httpClient: HttpClient by lazy {
         HttpClient(OkHttp) {
             engine { preconfigured = client }
+            // Ktor's redirect plugin is independent of OkHttp's redirect
+            // setting. Disable both layers so signed community requests can
+            // never replay an application bearer to a Location target.
+            followRedirects = false
             expectSuccess = false
             install(ContentNegotiation) {
                 json(

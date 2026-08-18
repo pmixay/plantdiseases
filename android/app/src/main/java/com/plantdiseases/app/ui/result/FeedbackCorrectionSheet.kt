@@ -9,22 +9,18 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
 
 /**
  * Structured correction sheet shown when the user taps "Wrong" on a
- * diagnosis. Collects three signals:
+ * diagnosis. Collects two allowlisted signals:
  *
  *   1. ``corrected_class`` — one of the server's known class keys,
  *      picked from a single-selection chip group. Maps 1:1 to the
  *      server's ``_FEEDBACK_ALLOWED_CORRECTIONS`` set; if the user
- *      can't find their answer they pick *Something else*, which
- *      lets them describe it in the free-text note instead.
+ *      can't find their answer they pick *Something else*.
  *   2. ``reason`` — one of the server's known reason keys, picked
  *      from a separate chip group.
- *   3. ``note`` — free-text up to 2000 chars (the server caps it
- *      identically). The TextInputLayout shows a live char counter.
  *
  * The sheet delivers the result via the Fragment Result API
  * ([REQUEST_KEY]); the host activity does the actual /api/feedback
@@ -48,7 +44,6 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
 
         val classGroup = view.findViewById<ChipGroup>(R.id.chip_group_class)
         val reasonGroup = view.findViewById<ChipGroup>(R.id.chip_group_reason)
-        val noteInput = view.findViewById<TextInputEditText>(R.id.et_note)
         val sendBtn = view.findViewById<MaterialButton>(R.id.btn_send)
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_cancel)
         val predictedView = view.findViewById<android.widget.TextView>(R.id.tv_predicted_name)
@@ -87,29 +82,13 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
 
         cancelBtn.setOnClickListener { dismiss() }
 
-        // Send is disabled until the user gives us at least one of
-        // {corrected class, free-text note}. A reason chip alone
-        // doesn't qualify — ``reason=wrong_class`` with no class +
-        // no note was the most common empty-row shape in the
-        // feedback corpus (rows 3, 4, 18) and carries no retraining
-        // signal. The catalogues are seeded with chips that have
-        // ``isCheckable=true``, so we listen for selection changes
-        // on both groups + every keystroke in the note field.
+        // Require a structured class correction. Reasons remain optional and
+        // every transmitted value comes from an explicit server allowlist.
         val updateSendState = {
-            val classChecked = classGroup.checkedChipId != View.NO_ID
-            val noteFilled = !noteInput.text?.toString()?.trim().isNullOrBlank()
-            sendBtn.isEnabled = classChecked || noteFilled
+            sendBtn.isEnabled = classGroup.checkedChipId != View.NO_ID
         }
         sendBtn.isEnabled = false
         classGroup.setOnCheckedStateChangeListener { _, _ -> updateSendState() }
-        reasonGroup.setOnCheckedStateChangeListener { _, _ -> updateSendState() }
-        noteInput.addTextChangedListener(
-            object : android.text.TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: android.text.Editable?) = updateSendState()
-            },
-        )
 
         sendBtn.setOnClickListener {
             // ``KEY_OTHER`` ("other") is a valid out-of-head
@@ -123,13 +102,11 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
             val reason = reasonGroup.checkedChipId
                 .takeIf { it != View.NO_ID }
                 ?.let { reasonGroup.findViewById<Chip>(it).tag as? String }
-            val note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null }
             parentFragmentManager.setFragmentResult(
                 REQUEST_KEY,
                 Bundle().apply {
                     putString(RESULT_CORRECTED_CLASS, correctedClass)
                     putString(RESULT_REASON, reason)
-                    putString(RESULT_NOTE, note)
                 },
             )
             dismiss()
@@ -145,7 +122,6 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
         const val REQUEST_KEY = "feedback_correction"
         const val RESULT_CORRECTED_CLASS = "corrected_class"
         const val RESULT_REASON = "reason"
-        const val RESULT_NOTE = "note"
 
         /**
          * Class chip catalog. Keys must match the server's

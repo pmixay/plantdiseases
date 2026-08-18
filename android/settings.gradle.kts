@@ -14,7 +14,17 @@ dependencyResolutionManagement {
         // Central. Content-filtered so every other dependency keeps resolving
         // from google()/mavenCentral() only.
         maven("https://artifactory-external.vkpartner.ru/artifactory/maven") {
-            content { includeGroupByRegex("""ru\.rustore(\..*)?""") }
+            content {
+                includeGroupByRegex("""ru\.rustore(\..*)?""")
+                includeGroup("com.vk")
+                includeGroup("com.vk.id")
+            }
+        }
+        maven("https://artifactory-external.vkpartner.ru/artifactory/vkid-sdk-android/") {
+            content { includeGroup("com.vk.id") }
+        }
+        maven("https://artifactory-external.vkpartner.ru/artifactory/vk-id-captcha/android/") {
+            content { includeGroup("com.vk.id.captcha") }
         }
     }
 }
