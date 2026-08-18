@@ -139,18 +139,26 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Like control, next to the vote counts it sits above. A plain
-             toggle: icon swaps outline/filled programmatically, no separate
-             "liked" color state needed beyond the icon itself. -->
+        <!-- Like control, next to the vote counts it sits above. A tonal pill
+             (not a bare icon+text floating with no container) so it reads as
+             a control rather than leftover markup, sized to the 48dp minimum
+             touch target, and left-aligned to space_lg — the diagnosis
+             card's own contentPadding — so its icon lines up with the card's
+             icon column above rather than the screen edge. Icon swaps
+             outline/filled programmatically; the count hides at zero instead
+             of showing a bare "0" (see renderLike). -->
         <LinearLayout
             android:id="@+id/ll_opinion_like"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
+            android:layout_height="48dp"
+            android:layout_marginTop="@dimen/space_md"
+            android:layout_marginStart="@dimen/space_lg"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:paddingVertical="@dimen/space_xs"
+            android:background="@drawable/bg_opinion_like_pill"
+            android:foreground="?attr/selectableItemBackground"
+            android:clipToOutline="true"
+            android:paddingHorizontal="@dimen/space_md"
             android:clickable="true"
             android:focusable="true">
 
@@ -204,6 +212,40 @@
                 android:layout_marginStart="@dimen/space_sm"
                 android:textAllCaps="false"
                 android:text="@string/community_opinion_disagree" />
+
+        </LinearLayout>
+
+        <!-- Shown instead of ll_opinion_vote once the server confirms this
+             viewer already has a pick on this scan (my_opinion in the
+             response) — a second vote silently REPLACES the first server-side
+             (opinions_for dedupes per author), so presenting Agree/Disagree
+             again as if it were a fresh, additive vote was misleading. -->
+        <LinearLayout
+            android:id="@+id/ll_opinion_current_vote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:id="@+id/tv_opinion_current_vote"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textAppearance="@style/TextAppearance.App.Body"
+                android:textColor="@color/on_surface_secondary"
+                tools:text="Your opinion: Leaf Spot" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_opinion_change"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAllCaps="false"
+                android:text="@string/community_opinion_change" />
 
         </LinearLayout>
 

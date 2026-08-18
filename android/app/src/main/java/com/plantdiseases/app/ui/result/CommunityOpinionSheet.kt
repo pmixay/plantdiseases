@@ -27,7 +27,9 @@ import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.TelemetryIds
@@ -66,6 +68,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var emptyView: TextView? = null
     private var metaView: TextView? = null
     private var voteRow: View? = null
+    private var currentVoteRow: View? = null
+    private var currentVoteText: TextView? = null
+    private var changeVoteBtn: MaterialButton? = null
     private var chipGroup: ChipGroup? = null
     private var noteInput: TextInputEditText? = null
     private var sendBtn: MaterialButton? = null
@@ -79,6 +84,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     // can't tell "liked" apart from "unknown" and must not overwrite this).
     private var liked = false
     private var likeInFlight = false
+
+    // The caller's own current pick, per the server's my_opinion (opinions_for
+    // dedupes per author, so a second vote replaces this rather than adding to
+    // it) — null means "haven't voted", in which case the sheet still shows
+    // Agree/Disagree instead of Change opinion.
+    private var myOpinion: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -103,6 +114,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         emptyView = view.findViewById(R.id.tv_opinion_empty)
         metaView = view.findViewById(R.id.tv_opinion_meta)
         voteRow = view.findViewById(R.id.ll_opinion_vote)
+        currentVoteRow = view.findViewById(R.id.ll_opinion_current_vote)
+        currentVoteText = view.findViewById(R.id.tv_opinion_current_vote)
+        changeVoteBtn = view.findViewById(R.id.btn_opinion_change)
         chipGroup = view.findViewById(R.id.chip_group_opinion)
         noteInput = view.findViewById(R.id.et_opinion_note)
         sendBtn = view.findViewById(R.id.btn_opinion_send)
@@ -158,6 +172,11 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         view.findViewById<MaterialButton>(R.id.btn_opinion_disagree).setOnClickListener {
             voteRow?.visibility = View.GONE
             showPicker(view, visible = true)
+        }
+        changeVoteBtn?.setOnClickListener {
+            currentVoteRow?.visibility = View.GONE
+            showPicker(view, visible = true)
+            myOpinion?.takeIf { it.isNotBlank() }?.let { preselectChip(it) }
         }
 
         cancelBtn.setOnClickListener { dismiss() }
@@ -247,6 +266,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         emptyView = null
         metaView = null
         voteRow = null
+        currentVoteRow = null
+        currentVoteText = null
+        changeVoteBtn = null
         chipGroup = null
         noteInput = null
         sendBtn = null
@@ -262,6 +284,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 .onSuccess {
                     render(it.consensus, it.opinions)
                     renderLike(it.likeCount, it.likedByMe)
+                    renderVoteState(it.myOpinion)
                 }
                 .onFailure { render(emptyList(), emptyList()) }
         }
@@ -287,7 +310,11 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     private fun renderLike(count: Int, likedByMe: Boolean) {
         liked = likedByMe
+        // Text stays set even at zero (the optimistic-update read-back in
+        // setupLike parses it back with toIntOrNull()) — only visibility
+        // hides the "0" a bare heart icon reads better without.
         likeCountView?.text = count.toString()
+        likeCountView?.visibility = if (count > 0) View.VISIBLE else View.GONE
         likeIcon?.setImageResource(if (likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart)
         likeIcon?.imageTintList = android.content.res.ColorStateList.valueOf(
             ContextCompat.getColor(
@@ -295,6 +322,23 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 if (likedByMe) R.color.primary else R.color.on_surface_secondary,
             ),
         )
+    }
+
+    /** Agree/Disagree vs. "Your opinion: X — Change opinion": the row the
+     *  viewer sees depends on whether the server already has a pick from
+     *  them (opinions_for's my_opinion), since a second vote replaces the
+     *  first server-side rather than adding to it — presenting Agree/Disagree
+     *  again would offer an action whose real effect is hidden. Only touches
+     *  the two rows; [showPicker] governs the chips/note/Send underneath. */
+    private fun renderVoteState(opinion: String?) {
+        val current = opinion?.takeIf { it.isNotBlank() }
+        myOpinion = current
+        voteRow?.visibility = if (current == null) View.VISIBLE else View.GONE
+        currentVoteRow?.visibility = if (current == null) View.GONE else View.VISIBLE
+        if (current != null) {
+            val label = DiseaseLabels.displayName(current, LocaleHelper.isRussian(requireContext())) ?: current
+            currentVoteText?.text = getString(R.string.community_opinion_my_vote, label)
+        }
     }
 
     /** "Disagree" path: submit the disease the user picked from the chips. */
@@ -330,7 +374,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             scanRepository.submitCommunityOpinion(ctx, request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
-                    resetInputAfterSubmit()
+                    resetInputAfterSubmit(key)
                     render(resp.consensus, resp.opinions)
                 }
                 .onFailure {
@@ -343,17 +387,19 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     }
 
     /** After a successful post: clear the note + chip pick, hide the picker,
-     *  bring the Agree/Disagree row back, and re-enable both vote buttons —
-     *  ready for another comment. */
-    private fun resetInputAfterSubmit() {
+     *  re-enable both vote buttons (for if the row comes back later — see
+     *  [renderVoteState]), and switch to "Your opinion: X — Change opinion"
+     *  for [justSubmittedKey] rather than bringing Agree/Disagree back, since
+     *  the server now has a pick from this viewer. */
+    private fun resetInputAfterSubmit(justSubmittedKey: String) {
         val v = view ?: return
         noteInput?.text?.clear()
         chipGroup?.clearCheck()
         showPicker(v, visible = false)
-        voteRow?.visibility = View.VISIBLE
         v.findViewById<MaterialButton>(R.id.btn_opinion_agree).isEnabled = true
         v.findViewById<MaterialButton>(R.id.btn_opinion_disagree).isEnabled = true
         sendBtn?.isEnabled = false
+        renderVoteState(justSubmittedKey)
     }
 
     private fun render(consensus: List<CommunityTopDisease>, opinions: List<CommunityOpinion>) {

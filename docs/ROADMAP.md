@@ -280,8 +280,16 @@ None of it blocks a release.
 - **Target store: RuStore** (RU audience; app already bilingual). No Google Play.
 - **No Compose rewrite** — keep XML Views, single-module; modernize the guts
   (Hilt, Ktor).
-- **Stay free + honest** — calibrated, OOD-aware, on-device offline, no account,
-  privacy-first.
+- **Stay free + honest** — calibrated, OOD-aware, on-device offline,
+  privacy-first. "No account" is superseded as of 17 Aug 2026: the forum
+  direction (COMMUNITY_FORUM_PLAN.docx §3.1) introduces a durable per-device
+  identity, one `community_authors` row per install, claimable by a real
+  account system later. This is not a login — no email, no password, nothing
+  to sign into — so the app itself is still free and anonymous by default.
+  As of the identity binding fix (COMMUNITY_FORUM_CORRECTION_PLAN.docx C1)
+  it is attached to community opinions when the app sends it; there is no
+  forum to post to yet (F1-F3 unbuilt), so nothing beyond that carries it.
+  Disclosed in privacy_policy.html.
 - **Data loop is local** — collect/judge offline → Kaggle supplement → notebook
   pulls it.
 

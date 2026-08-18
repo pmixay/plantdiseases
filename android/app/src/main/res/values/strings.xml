@@ -264,6 +264,8 @@
     <string name="community_opinion_send">Post opinion</string>
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
+    <string name="community_opinion_my_vote">Your opinion: %1$s</string>
+    <string name="community_opinion_change">Change opinion</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
