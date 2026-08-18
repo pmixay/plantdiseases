@@ -14,7 +14,16 @@ class ReleaseBuildIdentityTest {
         assertThat(BuildConfig.SYNTHETIC_AUTH_ENABLED).isFalse()
         assertThat(BuildConfig.YANDEX_OAUTH_CONFIGURED).isTrue()
         assertThat(BuildConfig.VK_OAUTH_CONFIGURED).isFalse()
-        assertThat(BuildConfig.APP_API_BASE_URL).isEqualTo("https://pdis.arbuz.lol/")
-        assertThat(BuildConfig.ACCOUNT_API_BASE_URL).isEqualTo("https://pdis.arbuz.lol/id/")
+        if (BuildConfig.DISTRIBUTION_CHANNEL == "production") {
+            assertThat(BuildConfig.APP_API_BASE_URL).doesNotContain("/plantdisease-test/")
+            assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
+                .isEqualTo("${BuildConfig.APP_API_BASE_URL}id/")
+        } else {
+            assertThat(BuildConfig.DISTRIBUTION_CHANNEL).isEqualTo("local-beta")
+            assertThat(BuildConfig.APP_API_BASE_URL)
+                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
+            assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
+                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
+        }
     }
 }

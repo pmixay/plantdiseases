@@ -123,12 +123,14 @@ contract tests did pass in the account suite.
 
 ## Blocking release gates
 
-1. **Deploy the account origin.** On 2026-08-16 production `/api/health` and
-   `/api/capabilities` returned 200, but production `/id/health` and
-   `/id/ready`, plus staging `/plantdisease-test/id/health`, `/id/ready`,
-   `/api/health`, and `/api/capabilities`, returned 404. Until nginx routing
-   and the account service are live in remote-provider mode, Yandex sign-in
-   cannot complete after LoginSDK returns a token.
+1. **Deploy the account origin.** Resolved for beta on 2026-08-18: staging
+   `/plantdisease-test/id/health`, `/id/ready`, `/api/health`, and
+   `/api/capabilities` return 200, the account service reports remote-provider
+   mode, and readiness advertises Yandex only. Production `/id/health` and
+   `/id/ready` remain a separate undeployed origin and correctly return 404;
+   zero-configuration local debug/release/staging builds use the complete beta
+   pair instead. A production artifact must still wait for a separate
+   production account/app deployment rather than aliasing beta health checks.
 2. **Recover and prove the permanent RuStore signing identity.** The supplied
    certificate is `CN=Android Debug`. Existing local APKs match it, but no
    PlantDiseases 1.8/RuStore APK or permanent keystore is present. Compare the

@@ -146,14 +146,21 @@ Real login requires all of the following before building the APK:
    matches the provider registration. A Yandex client secret is neither
    required nor accepted by the build.
 
-Put build values in the developer's private
-`~/.gradle/gradle.properties`, not in this repository:
+The public beta build values are committed in `android/gradle.properties`:
 
 ```properties
 ACCOUNT_REAL_OAUTH=true
-APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
-ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
+STAGING_APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
+STAGING_ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
+
+Consequently, a fresh checkout needs no OAuth or endpoint flags for
+`assembleDebug`, `assembleStaging`, or a local `assembleRelease`: all three
+select the live German beta pair and real Yandex flow. `ACCOUNT_REAL_OAUTH=false`
+is now an explicit local-mock opt-out. Signing credentials remain private in
+`~/.gradle/gradle.properties`; when the permanent release key is configured,
+debug builds use it as well so Android Studio's Run action matches the
+certificate registered with Yandex.
 
 The server receives the public Yandex client ID through its protected host
 environment. If VK is added later, its mobile client value is used only by the
@@ -223,7 +230,7 @@ token, nickname, provider profile, FCM value, or image body.
 | Symptom | Check |
 |---|---|
 | Lifecycle AAR asks for API 37/AGP 9.1 | Confirm every resolved Lifecycle artifact is `2.10.0`; do not suppress AAR metadata checks |
-| Synthetic notice is still visible | `ACCOUNT_REAL_OAUTH` was absent/false or a different APK was installed |
+| Synthetic notice is still visible | `ACCOUNT_REAL_OAUTH=false` explicitly overrode the committed default, or a different APK was installed |
 | Provider button says unconfigured | Client values were not available during that APK build |
 | Yandex/VK application mismatch | Client ID, package ID, redirect scheme, or signing fingerprint differs between APK, provider console, and server |
 | Account API returns invalid provider token | Server is in mock mode, token expired, or server client ID does not match the issuing application |

@@ -611,12 +611,13 @@ The Yandex native client ID is pinned in the Android source and needs no
 Actions variable. Optionally create the public/extractable
 `STAGING_VKID_CLIENT_ID` / `STAGING_VKID_CLIENT_SECRET` and equivalent
 `PRODUCTION_*` VK variables only after VK registration; each pair must be
-complete, and leaving both pairs absent keeps VK disabled. Also create the
-exact reviewed `STAGING_APP_API_BASE_URL` /
-`STAGING_ACCOUNT_API_BASE_URL` German pair, and the reviewed
-`PRODUCTION_APP_API_BASE_URL` / `PRODUCTION_ACCOUNT_API_BASE_URL`. Both the
-normal staging APK and `recovery-staging` consume the same explicit staging
-pair; the workflow refuses any drift from the reviewed URLs. Copy the two
+complete, and leaving both pairs absent keeps VK disabled. The exact reviewed
+`STAGING_APP_API_BASE_URL` / `STAGING_ACCOUNT_API_BASE_URL` German pair and
+`ACCOUNT_REAL_OAUTH=true` are committed public defaults in
+`android/gradle.properties`, so ordinary local debug/release/staging builds
+need no flags. Protected staging automation still checks that pair for drift.
+Create the reviewed `PRODUCTION_APP_API_BASE_URL` /
+`PRODUCTION_ACCOUNT_API_BASE_URL` variables for production. Copy the two
 production values into the
 protected `android-signing` environment under the distinct names
 `APPROVED_PRODUCTION_APP_API_BASE_URL` and

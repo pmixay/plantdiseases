@@ -319,11 +319,24 @@ curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/health
 curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/capabilities
 ```
 
-## 7. Local release build, install, and verification
+## 7. Local beta build, production override, install, and verification
 
-For a local build, keep values outside this repository in the user's private
-`~/.gradle/gradle.properties` and restrict that file to the user. Example key
-names:
+The repository commits the public, non-secret beta defaults. After fetching,
+Android Studio Run and plain `assembleDebug`, `assembleStaging`, or local
+`assembleRelease` builds use real Yandex OAuth plus:
+
+```text
+https://pdis.arbuz.lol/plantdisease-test/
+https://pdis.arbuz.lol/plantdisease-test/id/
+```
+
+No `ACCOUNT_REAL_OAUTH` or endpoint arguments are needed. A local release is
+therefore an internal beta artifact unless both production URLs are explicitly
+overridden. Never upload a beta-default artifact to RuStore.
+
+Keep only signing credentials and any deliberate production override outside
+the repository in the user's private `~/.gradle/gradle.properties`, and
+restrict that file to the user. Example production values:
 
 ```properties
 ACCOUNT_REAL_OAUTH=true
@@ -335,7 +348,15 @@ RELEASE_KEY_ALIAS=plantdiseases
 RELEASE_KEY_PASSWORD=<key password>
 ```
 
-Build from `android/`:
+For the zero-configuration beta, build from `android/` with either:
+
+```sh
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
+```
+
+For an actual production artifact, use the protected production workflow or
+explicitly supply the reviewed production pair before running:
 
 ```sh
 ./gradlew :app:assembleRelease

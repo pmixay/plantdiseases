@@ -37,20 +37,27 @@ val vkClientId = configuredValue("VKID_CLIENT_ID")
 val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
 val yandexOAuthConfigured = yandexClientId.isNotBlank()
 val vkOAuthConfigured = vkClientId.isNotBlank() && vkClientSecret.isNotBlank()
-val appApiBaseUrl = configuredValue("APP_API_BASE_URL")
-val accountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
-val stagingAppApiBaseUrl = configuredValue("STAGING_APP_API_BASE_URL")
-val stagingAccountApiBaseUrl = configuredValue("STAGING_ACCOUNT_API_BASE_URL")
-val productionAppApiBaseUrl = configuredValue("PRODUCTION_APP_API_BASE_URL")
-val productionAccountApiBaseUrl = configuredValue("PRODUCTION_ACCOUNT_API_BASE_URL")
 val reviewedStagingAppApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/"
 val reviewedStagingAccountApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/id/"
+val stagingAppApiBaseUrl = configuredValue("STAGING_APP_API_BASE_URL")
+    .ifBlank { reviewedStagingAppApiBaseUrl }
+val stagingAccountApiBaseUrl = configuredValue("STAGING_ACCOUNT_API_BASE_URL")
+    .ifBlank { reviewedStagingAccountApiBaseUrl }
+// A plain Android Studio/Gradle debug or release build is an internal beta
+// artifact. Production automation overrides this pair explicitly and proves
+// the resulting APK endpoints before the protected signing step.
+val appApiBaseUrl = configuredValue("APP_API_BASE_URL")
+    .ifBlank { stagingAppApiBaseUrl }
+val accountApiBaseUrl = configuredValue("ACCOUNT_API_BASE_URL")
+    .ifBlank { stagingAccountApiBaseUrl }
+val productionAppApiBaseUrl = configuredValue("PRODUCTION_APP_API_BASE_URL")
+val productionAccountApiBaseUrl = configuredValue("PRODUCTION_ACCOUNT_API_BASE_URL")
 val recoveryVersionCode = 20
 val realOAuthEnabled = when (
     val raw = configuredValue("ACCOUNT_REAL_OAUTH").lowercase()
 ) {
-    "", "false" -> false
-    "true" -> true
+    "", "true" -> true
+    "false" -> false
     else -> throw GradleException("ACCOUNT_REAL_OAUTH must be true or false")
 }
 val unsignedDistributionBuild = when (
@@ -219,22 +226,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Public application traffic and private account traffic deliberately
-        // have independent origins. Production defaults stay on the reviewed
-        // public endpoint. The release build contains the 1.9 account system;
-        // the staging build below points the same app identity at the parallel
-        // German test stack.
+        // have independent base URLs. Plain local builds default to the live
+        // German beta pair so fetching and pressing Run is sufficient for
+        // account testing. Protected production automation overrides both
+        // values together and independently verifies the packaged APK.
         val configuredAppApiBaseUrl = appApiBaseUrl
-            .ifBlank { "https://pdis.arbuz.lol/" }
+            .ifBlank { reviewedStagingAppApiBaseUrl }
         val configuredAccountApiBaseUrl = accountApiBaseUrl
-            .ifBlank { "https://pdis.arbuz.lol/id/" }
+            .ifBlank { reviewedStagingAccountApiBaseUrl }
         fun quotedUrl(raw: String): String {
             val normalized = if (raw.endsWith("/")) raw else "$raw/"
             return "\"${normalized.replace("\\", "\\\\").replace("\"", "\\\"")}\""
         }
         buildConfigField("String", "APP_API_BASE_URL", quotedUrl(configuredAppApiBaseUrl))
         buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(configuredAccountApiBaseUrl))
-        buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
-        buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+        buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
+        buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", (!realOAuthEnabled).toString())
+        buildConfigField(
+            "String",
+            "DISTRIBUTION_CHANNEL",
+            "\"${distributionChannel.ifBlank { "local-beta" }}\"",
+        )
 
         // OAuth mobile application values are public/extractable client
         // configuration. Yandex is pinned for the 1.9 RuStore release; VK still
@@ -317,6 +329,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // When the operator has configured the permanent key outside the
+            // repository, Android Studio's Run button uses it too, matching
+            // the certificate registered with Yandex. A fresh contributor
+            // checkout still falls back to Gradle's ordinary debug key.
+            signingConfigs.findByName("release")
+                ?.takeIf { it.storeFile != null }
+                ?.let { signingConfig = it }
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -364,10 +386,9 @@ android {
             buildConfigField("String", "APP_API_BASE_URL", quotedUrl(appUrl))
             buildConfigField("String", "ACCOUNT_API_BASE_URL", quotedUrl(accountUrl))
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
-            // Synthetic auth remains available only for local mock-stack
-            // development. ACCOUNT_REAL_OAUTH=true selects the integrated
-            // official provider SDK flows after validating every configured
-            // provider independently and the explicit HTTPS endpoints above.
+            // Synthetic auth remains an explicit ACCOUNT_REAL_OAUTH=false
+            // opt-out for local mock-stack development. Normal builds use the
+            // integrated official provider SDK flows and reviewed beta URLs.
             buildConfigField(
                 "boolean",
                 "SYNTHETIC_AUTH_ENABLED",

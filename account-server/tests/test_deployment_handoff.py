@@ -29,6 +29,7 @@ RELEASE_POLICY_GATES = DEPLOY / "release-policy-gates.json"
 ANDROID_RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "android-release.yml"
 CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 ANDROID_BUILD_GRADLE = REPOSITORY_ROOT / "android" / "app" / "build.gradle.kts"
+ANDROID_GRADLE_PROPERTIES = REPOSITORY_ROOT / "android" / "gradle.properties"
 GERMAN_ROLE_INIT = DEPLOY / "postgres-init" / "10-account-roles.sh"
 RU_ROLE_INIT = HANDOFF / "postgres-init" / "10-account-roles.sh"
 GRANT_CONVERGENCE = DEPLOY / "converge-runtime-grants.py"
@@ -611,6 +612,34 @@ def test_protected_android_signing_has_checkout_free_key_boundary():
     assert 'buildConfigField("String", "YANDEX_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_SECRET_SHA256"' in gradle
+
+
+def test_fresh_android_checkout_defaults_to_live_real_oauth_beta():
+    properties = {
+        key: value
+        for raw_line in ANDROID_GRADLE_PROPERTIES.read_text(encoding="utf-8").splitlines()
+        if (line := raw_line.strip()) and not line.startswith("#") and "=" in line
+        for key, value in [line.split("=", maxsplit=1)]
+    }
+    assert properties["ACCOUNT_REAL_OAUTH"] == "true"
+    assert properties["STAGING_APP_API_BASE_URL"] == (
+        "https://pdis.arbuz.lol/plantdisease-test/"
+    )
+    assert properties["STAGING_ACCOUNT_API_BASE_URL"] == (
+        "https://pdis.arbuz.lol/plantdisease-test/id/"
+    )
+
+    gradle = ANDROID_BUILD_GRADLE.read_text(encoding="utf-8")
+    assert '"", "true" -> true' in gradle
+    assert ".ifBlank { stagingAppApiBaseUrl }" in gradle
+    assert ".ifBlank { stagingAccountApiBaseUrl }" in gradle
+    assert 'buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")' in gradle
+    assert 'distributionChannel.ifBlank { "local-beta" }' in gradle
+    assert 'debug {' in gradle
+    assert "?.takeIf { it.storeFile != null }" in gradle
+
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert "Verify zero-configuration Yandex beta build mode" in workflow
 
 
 def test_private_repository_android_ci_uses_github_basic_gradle_cache():

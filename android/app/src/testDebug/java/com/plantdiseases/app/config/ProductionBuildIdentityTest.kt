@@ -4,12 +4,18 @@ import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.BuildConfig
 import org.junit.Test
 
-class ProductionBuildIdentityTest {
+class BetaDefaultBuildIdentityTest {
     @Test
-    fun ordinaryDebugBuildKeepsAccountUiDisabled() {
-        assertThat(BuildConfig.ACCOUNT_UI_ENABLED).isFalse()
+    fun ordinaryDebugBuildUsesLiveRealOauthBeta() {
+        assertThat(BuildConfig.ACCOUNT_UI_ENABLED).isTrue()
         assertThat(BuildConfig.SYNTHETIC_AUTH_ENABLED).isFalse()
+        assertThat(BuildConfig.YANDEX_OAUTH_CONFIGURED).isTrue()
+        assertThat(BuildConfig.VK_OAUTH_CONFIGURED).isFalse()
         assertThat(BuildConfig.APPLICATION_ID).isEqualTo("com.plantdiseases.app")
-        assertThat(BuildConfig.APP_API_BASE_URL).doesNotContain("/plantdisease-test/")
+        assertThat(BuildConfig.DISTRIBUTION_CHANNEL).isEqualTo("local-beta")
+        assertThat(BuildConfig.APP_API_BASE_URL)
+            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
+        assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
+            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
     }
 }

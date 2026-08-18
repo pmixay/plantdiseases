@@ -149,15 +149,11 @@ jobs:
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
-      # Compile and execute the staging identity test with only the pinned
-      # Yandex client. This prevents Yandex and VK from becoming coupled.
-      - name: Verify Yandex-only real OAuth staging build mode
-        env:
-          ACCOUNT_REAL_OAUTH: "true"
-          APP_API_BASE_URL: https://app-api.invalid/
-          ACCOUNT_API_BASE_URL: https://account-api.invalid/
+      # Prove that a fresh checkout needs no endpoint/OAuth flags: committed
+      # public defaults select the live beta pair and pinned Yandex client.
+      - name: Verify zero-configuration Yandex beta build mode
         run: >-
-          ./gradlew :app:testStagingUnitTest
+          ./gradlew :app:testDebugUnitTest :app:testStagingUnitTest
           --build-cache --configuration-cache --stacktrace
 
       # Ordinary CI never receives permanent signing/provider credentials and

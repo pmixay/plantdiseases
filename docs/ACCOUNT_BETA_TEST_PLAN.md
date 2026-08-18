@@ -345,6 +345,7 @@ avatars. Automated tests must not require real provider network access or real O
 The emulator configuration should be:
 
 ```text
+ACCOUNT_REAL_OAUTH=false
 APP_API_BASE_URL=http://10.0.2.2:18000/
 ACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
 ```
@@ -381,9 +382,13 @@ Account API:     https://pdis.arbuz.lol/plantdisease-test/id/
 Android account-beta defaults:
 
 ```text
-APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
-ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
+ACCOUNT_REAL_OAUTH=true
+STAGING_APP_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/
+STAGING_ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 ```
+
+These public values are committed in `android/gradle.properties`; debug,
+staging, and ordinary local release builds need no command-line configuration.
 
 Nginx routing semantics:
 

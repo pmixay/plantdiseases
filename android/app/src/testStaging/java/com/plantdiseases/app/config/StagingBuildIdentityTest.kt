@@ -19,17 +19,13 @@ class StagingBuildIdentityTest {
         assertThat(BuildConfig.VERSION_NAME).isEqualTo("1.9")
         val context = ApplicationProvider.getApplicationContext<Context>()
         assertThat(context.getString(R.string.app_name)).isEqualTo("PlantDiseases")
-        if (BuildConfig.SYNTHETIC_AUTH_ENABLED) {
-            assertThat(BuildConfig.APP_API_BASE_URL)
-                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
-            assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
-                .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
-        } else {
-            assertThat(
-                BuildConfig.YANDEX_OAUTH_CONFIGURED || BuildConfig.VK_OAUTH_CONFIGURED,
-            ).isTrue()
-            assertThat(BuildConfig.APP_API_BASE_URL).startsWith("https://")
-            assertThat(BuildConfig.ACCOUNT_API_BASE_URL).startsWith("https://")
-        }
+        assertThat(BuildConfig.SYNTHETIC_AUTH_ENABLED).isFalse()
+        assertThat(BuildConfig.YANDEX_OAUTH_CONFIGURED).isTrue()
+        assertThat(BuildConfig.VK_OAUTH_CONFIGURED).isFalse()
+        assertThat(BuildConfig.DISTRIBUTION_CHANNEL).isAnyOf("local-beta", "staging")
+        assertThat(BuildConfig.APP_API_BASE_URL)
+            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/")
+        assertThat(BuildConfig.ACCOUNT_API_BASE_URL)
+            .isEqualTo("https://pdis.arbuz.lol/plantdisease-test/id/")
     }
 }

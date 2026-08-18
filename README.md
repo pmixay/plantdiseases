@@ -157,8 +157,10 @@ systemd, API keys, Android signing/FCM) lives in [`DEPLOYMENT.md`](DEPLOYMENT.md
 
 1. Open `android/` in Android Studio (Hedgehog 2023.1+), sync Gradle, run on a
    device or emulator.
-2. The server URL is baked in via `BuildConfig.API_BASE_URL`; override per build:
-   `./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/`.
+2. A fresh checkout's debug and local release builds enable real Yandex OAuth
+   and use the live beta application/account URLs under `/plantdisease-test/`.
+   No endpoint arguments are required. Local mock development explicitly sets
+   `ACCOUNT_REAL_OAUTH=false`, `APP_API_BASE_URL`, and `ACCOUNT_API_BASE_URL`.
 
 Release signing, FCM push, TLS, and the optional integrations — `PLANTNET_API_KEY`
 (species ID) and `OPENROUTER_API_KEY` (AI doctor); the server runs fine without them
