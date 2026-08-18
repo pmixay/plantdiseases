@@ -6,12 +6,9 @@ import java.security.SecureRandom
 
 /**
  * The forum's durable per-device identity (COMMUNITY_FORUM_PLAN.docx §3.1 /
- * §4). Distinct from [TelemetryIds.userPseudoId]: that one is documented as
- * telemetry-only and travels in a URL path today, so it must never also
- * authorise anything. This is a separate 32-byte secret, generated once and
- * persisted the same way TelemetryIds already is — plain SharedPreferences,
- * MODE_PRIVATE (Android's own per-app sandbox is this codebase's existing
- * bar for a device-generated identifier; there is no
+ * §4). This is a 32-byte secret, generated once and persisted via plain
+ * SharedPreferences MODE_PRIVATE (Android's own per-app sandbox is this
+ * codebase's existing bar for a device-generated identifier; there is no
  * androidx.security:security-crypto dependency here to add one for).
  *
  * The secret itself never leaves the device. [keyHash] — its SHA-256 —

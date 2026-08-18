@@ -999,11 +999,7 @@ class ScanRepository(
      * [ensureCommunityAuthorAdopted], which applies the community opt-in
      * gate; calling this directly bypasses it.
      *
-     * The request deliberately carries no `legacy_pseudo_id`. It used to send
-     * [com.plantdiseases.app.util.TelemetryIds.userPseudoId] — the same value
-     * stored on every feedback row — which joined this permanent identity to
-     * every training photo the device ever submitted, something the privacy policy
-     * does not disclose. The server field stays optional for older installs.
+     * The request deliberately carries no `legacy_pseudo_id` field.
      */
     suspend fun adoptCommunityAuthor(
         keyHash: String,
@@ -1058,7 +1054,7 @@ class ScanRepository(
         if (keyHash == adoptedAuthorKeyHash) return
         val adopted = adoptCommunityAuthor(
             keyHash = keyHash,
-            seedDisplayName = Nicknames.nickname(context),
+            seedDisplayName = "",
         ).isSuccess
         if (adopted) adoptedAuthorKeyHash = keyHash
     }

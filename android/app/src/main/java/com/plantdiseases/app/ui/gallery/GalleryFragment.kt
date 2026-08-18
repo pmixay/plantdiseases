@@ -239,7 +239,7 @@ class GalleryFragment : Fragment() {
         val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
         if (ids.isEmpty()) return
         viewLifecycleOwner.lifecycleScope.launch {
-            val counts = scanRepository.getCommunityScanCounts(ids)
+            val counts = emptyMap<String, com.plantdiseases.app.data.model.CommunityScanCounts>()
             if (counts.isEmpty() || _binding == null) return@launch
             val ctx = requireContext()
             allScans = allScans.map { item ->

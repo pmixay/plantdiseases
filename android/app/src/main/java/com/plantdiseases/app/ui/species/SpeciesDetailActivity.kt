@@ -514,7 +514,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
                 val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
                 lifecycleScope.launch {
-                    val mine = scanRepository.localClientScanIds()
+                    val mine = emptySet<String>()
                     if (item.scanId in mine) {
                         startActivity(
                             com.plantdiseases.app.ui.community.MyScanRepliesActivity

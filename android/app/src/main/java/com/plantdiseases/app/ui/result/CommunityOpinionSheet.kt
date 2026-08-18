@@ -307,7 +307,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private fun loadOpinions() {
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch {
-            scanRepository.getCommunityOpinions(scanId, TelemetryIds.userPseudoId(ctx), context = ctx)
+            scanRepository.getCommunityOpinions(scanId, context = ctx)
                 .onSuccess {
                     render(it.consensus, it.opinions)
                     renderLike(it.likeCount, it.likedByMe)

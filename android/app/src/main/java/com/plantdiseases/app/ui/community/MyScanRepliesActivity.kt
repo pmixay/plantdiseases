@@ -22,7 +22,6 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityMyScanRepliesBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.TelemetryIds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
@@ -137,7 +136,7 @@ class MyScanRepliesActivity : AppCompatActivity() {
         binding.btnRepliesStopRequest.setOnClickListener {
             binding.btnRepliesStopRequest.isEnabled = false
             lifecycleScope.launch {
-                scanRepository.cancelSecondOpinion(scanId, TelemetryIds.userPseudoId(this@MyScanRepliesActivity))
+                scanRepository.cancelSecondOpinion(scanId)
                     .onSuccess {
                         Toast.makeText(this@MyScanRepliesActivity, R.string.second_opinion_stopped, Toast.LENGTH_SHORT).show()
                         binding.llRepliesStatus.visibility = View.GONE

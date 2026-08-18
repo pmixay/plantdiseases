@@ -43,7 +43,6 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
-import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -413,7 +412,7 @@ class CommunityMapActivity : AppCompatActivity() {
         val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
         adapter.updateLike(item.scanId, optimisticCount, next)
         lifecycleScope.launch {
-            scanRepository.setCommunityLike(item.scanId, TelemetryIds.userPseudoId(this@CommunityMapActivity), next)
+            scanRepository.setCommunityLike(item.scanId, "", next)
                 .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
                 .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
         }
