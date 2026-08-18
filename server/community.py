@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import logging
 import math
 import secrets
@@ -35,6 +36,8 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 try:
     from .config import get_str  # type: ignore[import-not-found]
@@ -458,13 +461,25 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
         logger.info("Community: backfilled public ids for %d legacy rows", len(rows))
 
 
+# Matches the client's own CommunityUploader.makeThumbnail (THUMB_LONG_EDGE /
+# THUMB_QUALITY) — the honest client already produces exactly this, so a
+# legitimate upload is unaffected; only a modified client sending something
+# larger, EXIF-laden or non-JPEG actually gets clamped.
+_THUMB_LONG_EDGE = 512
+_THUMB_QUALITY = 78
+
+
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
-    """Persist a 512px JPEG thumbnail under COMMUNITY_THUMB_DIR.
+    """Decode, downscale and re-encode a 512px JPEG thumbnail under
+    COMMUNITY_THUMB_DIR, dropping EXIF (including GPS) by construction.
 
     Returns the relative file path (suitable for storage in the
-    ``thumb_path`` column) or ``None`` when the bytes are missing /
-    oversized. Image decoding is the caller's job — we only validate
-    the byte ceiling and write the bytes straight through.
+    ``thumb_path`` column) or ``None`` when the bytes are missing,
+    oversized, or don't decode as an image. The upload endpoint already
+    magic-byte-gates to JPEG/PNG/WebP before this runs, but that only
+    checks the header — decoding here is what actually enforces the
+    512px/no-EXIF contract this filename and its callers depend on,
+    rather than trusting an already-honest client to have done it.
     """
     if not image_bytes:
         return None
@@ -473,17 +488,39 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
             "Community thumb rejected (oversized: %d bytes)", len(image_bytes)
         )
         return None
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img.load()
+        # Orientation tag applied BEFORE convert("RGB"), which drops EXIF —
+        # same order main.py's _open_image uses, for the same reason: skip
+        # this and a portrait phone photo decodes sideways.
+        img = ImageOps.exif_transpose(img).convert("RGB")
+    except Image.DecompressionBombError:
+        logger.info("Community thumb rejected (decompression bomb): scan_id=%s", scan_id[:16])
+        return None
+    except UnidentifiedImageError:
+        logger.info("Community thumb rejected (not a decodable image): scan_id=%s", scan_id[:16])
+        return None
+    except Exception as exc:  # noqa: BLE001 — any decode failure is a rejection, not a 500
+        logger.info("Community thumb rejected (decode error: %s): scan_id=%s", exc, scan_id[:16])
+        return None
+    if max(img.size) > _THUMB_LONG_EDGE:
+        img.thumbnail((_THUMB_LONG_EDGE, _THUMB_LONG_EDGE), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=_THUMB_QUALITY)  # no exif= => stripped
+    encoded = buf.getvalue()
     # Hash-prefix the filename so two scans with the same scan_id (a
     # mis-behaved client) can't collide. Truncate to 24 hex chars —
     # plenty of collision resistance for a per-pseudo-id namespace.
     # Named by the PUBLIC token, not the raw scan_id: the filename is
     # served to every feed reader via ``thumb_path`` and must not leak
-    # the feedback-authorising id.
-    digest = hashlib.sha256(image_bytes).hexdigest()[:24]
+    # the feedback-authorising id. Hashed on the RE-ENCODED bytes, not the
+    # upload, so an identical re-upload still dedupes to the same file.
+    digest = hashlib.sha256(encoded).hexdigest()[:24]
     filename = f"{public_scan_token(scan_id)}_{digest}.jpg"
     target = COMMUNITY_THUMB_DIR / filename
     try:
-        target.write_bytes(image_bytes)
+        target.write_bytes(encoded)
     except OSError as exc:
         logger.warning("Failed to write community thumb %s: %s", target, exc)
         return None
@@ -1382,7 +1419,19 @@ def map_scans(
         ).fetchall()
     truncated = len(rows) > limit
     # _row_to_dict keeps lat/lon — the map needs them (the feed strips them).
-    return {"items": [_row_to_dict(r) for r in rows[:limit]], "truncated": truncated}
+    items = [_row_to_dict(r) for r in rows[:limit]]
+    # Same attachment nearby_scans does — exclude_user_pseudo_id doubles as
+    # the viewer's own id here too, so this needs no extra parameter.
+    item_ids = [item["scan_id"] for item in items]
+    counts = like_counts(item_ids)
+    liked = (
+        liked_scan_ids(exclude_user_pseudo_id, item_ids)
+        if exclude_user_pseudo_id else set()
+    )
+    for item in items:
+        item["like_count"] = counts.get(item["scan_id"], 0)
+        item["liked_by_me"] = item["scan_id"] in liked
+    return {"items": items, "truncated": truncated}
 
 
 _DENSITY_K = 3

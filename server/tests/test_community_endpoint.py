@@ -54,6 +54,20 @@ def _png_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _jpeg_with_exif_bytes(size=(1200, 900)) -> bytes:
+    """An oversized (> the 512px thumbnail cap), EXIF-carrying JPEG — proof
+    material for _save_thumbnail actually decoding and re-encoding rather
+    than writing client bytes straight through."""
+    from PIL import Image
+    img = Image.new("RGB", size, color=(60, 140, 60))
+    buf = io.BytesIO()
+    exif = Image.Exif()
+    exif[0x010F] = "TestMake"  # Make — stands in for the GPS tags a real
+    exif[0x0131] = "TestSoftware"  # phone photo would carry alongside them.
+    img.save(buf, format="JPEG", exif=exif)
+    return buf.getvalue()
+
+
 # ── Happy paths ─────────────────────────────────────────────────────
 
 
@@ -252,6 +266,58 @@ def test_community_scan_thumbnail_size_limit(client, isolated_community):
         files={"image": ("big.png", big, "image/png")},
     )
     assert r.status_code == 200
+
+
+def test_community_thumbnail_is_decoded_downscaled_and_exif_stripped(client, isolated_community):
+    """_save_thumbnail used to write whatever bytes the client sent straight
+    to disk — its own docstring claimed a 512px JPEG while enforcing nothing
+    of the kind. A modified client could put a full-resolution, GPS-tagged
+    photo behind a publicly served .jpg filename. Now it actually decodes."""
+    _, thumb_dir = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanexif0001",
+            user_pseudo_id="pseudoexif1",
+            region="Berlin", country="DE",
+            disease="healthy",
+        ),
+        files={"image": ("scan.jpg", _jpeg_with_exif_bytes((1200, 900)), "image/jpeg")},
+    )
+    assert r.status_code == 200, r.text
+
+    files = list(thumb_dir.iterdir())
+    assert len(files) == 1
+    from PIL import Image
+    with Image.open(files[0]) as saved:
+        assert max(saved.size) <= 512
+        assert not saved.getexif()
+
+
+def test_community_thumbnail_rejects_undecodable_bytes(client, isolated_community):
+    """Bytes that pass the size cap but aren't a real image (a modified
+    client, or a truncated upload) must not land on disk at all — the row
+    is still recorded (best-effort thumbnail), just with no thumb_path."""
+    db_path, thumb_dir = isolated_community
+    garbage = b"\x89PNG\r\n\x1a\n" + b"not actually a png" * 100
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scangarbage1",
+            user_pseudo_id="pseudogarba1",
+            region="Berlin", country="DE",
+            disease="healthy",
+        ),
+        files={"image": ("scan.png", garbage, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    assert list(thumb_dir.iterdir()) == []
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT thumb_path FROM community_scans WHERE scan_id = ?",
+            ("scangarbage1",),
+        ).fetchone()
+    assert row[0] is None
 
 
 # ── Nearby + region summary ─────────────────────────────────────────
