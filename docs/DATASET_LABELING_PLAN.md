@@ -611,6 +611,38 @@ inspection names it only loosely: high-transfer = whole-plant collapse and dieba
 low-transfer = textbook marginal tip-burn on a turgid leaf. **Final selection should be
 done in embedding space against an anchor set, not from a photographic checklist.**
 
+### 6b. The out-of-domain ship gate — published and validated (2026-08-18)
+
+The benchmark now lives at `maxayyt5/plantvision-ood-benchmark` (**private**, 213
+images + both manifests, 1.6 MB) and §6 pulls it through the same
+`_kaggle_download` choke point as every other source, then **blocks**. A missing
+benchmark is a hard failure unless `REQUIRE_OOD_BENCHMARK` is turned off as a
+deliberate edit — absence is how a check like this quietly stops existing.
+
+Validated against both bundles on the published data, through the real
+kagglehub download path, with the gate's own preprocessing (resize ×1.05,
+centre-crop 224, hflip TTA):
+
+| | hibiscus (31) | banana_bush (31) | healthy false-fire (151) | verdict |
+|---|---|---|---|---|
+| **2.6.8** (deployed) | 1.000 | 0.129 | 0.026 | **PASSED** |
+| **2.7.2** (rejected) | 0.097 | 0.097 | 0.040 | **FAILED** — hibiscus 0.097 < 0.70 |
+
+The gate accepts the model we kept and rejects the model we rejected. Both
+in-domain gates passed 2.7.2.
+
+`banana_bush` is reported but deliberately **unfloored**: no release has exceeded
+0.16 and on this benchmark its clusters are statistically indistinguishable from
+the healthy ones, so a floor there would block every run for a reason no data can
+fix. The healthy ceiling sits on the same never-trained clusters so cost and
+benefit share one population — a recall floor alone is satisfiable by firing
+`leaf_scorch` more often, which the bias sweep in §7 shows explicitly.
+
+**Keep the dataset private.** Its whole value is being outside every training
+corpus; a public copy gets scraped into someone's "houseplant disease dataset"
+and then into ours, which is exactly how the `aditisalvi04` contamination
+happened.
+
 ### 7. Two cheap levers to measure before the next A100 run
 
 Both testable on existing data, neither replacing the collection round:
