@@ -253,15 +253,44 @@ dataset re-uploads the same photographs.
 | ref | folders | why |
 |---|---|---|
 | `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update` | all | is the OOD benchmark |
-| `aditisalvi04/indoor-plant-disease-dataset` | `Hibiscus_Scorch`, `Hibiscus_Healthy` | **60/60 and 20/20 sampled files match the benchmark at pHash Hamming 0** |
+| `aditisalvi04/indoor-plant-disease-dataset` | **the whole `Hibiscus_*` branch** | re-upload of the row above — `Scorch` 60/60 and `Healthy` 20/20 match the benchmark at Hamming 0; `Necrosis` 12/12 matches its *source* at Hamming 0 |
 
-The rest of `aditisalvi04/indoor-plant-disease-dataset` (49,878 files, 20+ folders —
-Aloe, Rose, Money Plant, Turmeric, `Hibiscus_Necrosis`) is **clean of the benchmark on
-a 0/101 sample and not augmentation-collapsed**, so it is genuine candidate supply.
-`Aloe_Sunburn` (3,343 files, a real houseplant genus) maps to the deferred
-`sunburn_or_scorch` label. Same rule as ever applies before wiring any of it: judge a
-sample against the reference exemplars, count **originals** rather than folder size,
-and re-run the pHash gate on the specific folders you intend to use.
+### The deny-list widened: a clean pHash gate is not proof of independence (2026-08-17)
+
+This entry used to name only `Hibiscus_Scorch` and `Hibiscus_Healthy`, and the paragraph
+that followed recommended the rest of the slug — **`Hibiscus_Necrosis` explicitly** — as
+"genuine candidate supply, clean of the benchmark on a 0/101 sample". That reading was
+wrong, and it was wrong in a way worth understanding rather than just patching.
+
+`Hibiscus_Necrosis` really does read 0/30 against our 213 benchmark clusters. It is also
+`flower_data/*/hibiscus/death_leaf` from the deny-listed `shuvokumarbasak4004` dataset,
+re-uploaded: an independent fresh sample of 12 files, drawn under a different seed and
+downloaded from Kaggle rather than reused from any cache, matches that folder at pHash
+Hamming **0**, 12 of 12. The candidate's four folders are one-to-one with the upstream's
+four hibiscus subclasses (`blight / death_leaf / healthy / scorch`).
+
+It passed because **the gate can only detect the frames we happened to sample into the
+benchmark.** We built the benchmark from that source's `healthy` and `scorch` folders and
+left `death_leaf` out, so `death_leaf` is invisible to a 213-cluster comparison while
+carrying the same leaves, the same session, the same sheet and the same lighting. Those
+are exactly the properties that make the eval set independent. Wiring it in would have
+been the `aditisalvi04` incident a second time, through a gate built to prevent it.
+
+Two rules follow, and both are now enforced in §2 of the notebook:
+
+1. **Gate against the benchmark's upstream datasets, not only against its clusters.** A
+   re-upload of the *source* passes a cluster-level gate.
+2. **Deny at the branch, not the folder.** If one folder of a genus/collection is the
+   benchmark, treat the whole branch as contaminated until proven otherwise — the
+   deny-list is substring-matched, so the entry is `('hibiscus',)`.
+
+The rest of the slug (49,878 files — Aloe, Rose, Money Plant, Turmeric) remains clean on
+sampling and is genuine candidate supply; `Aloe_Sunburn` (3,343 files, a real houseplant
+genus) maps to the deferred `sunburn_or_scorch` label. The same rule as ever applies
+before wiring any of it: judge a sample against the reference exemplars, count
+**originals** rather than folder size, re-run the pHash gate on the specific folders you
+intend to use — and now also check the folder's provenance against every dataset the
+benchmark was built from.
 
 **Fix the lister before trusting any "nothing here".** The inventory tooling caps
 pagination and returns silently: a full listing of the dataset above is 49,878 files
@@ -434,6 +463,191 @@ staying ≥ 0.80, healthy false-fire not up, powdery held. Keep aqua KD val-macr
 **Diff `model_card.json → source_inventory` between the two runs first** — a paired
 bootstrap across two different corpora is not a comparison, however tight the CI. That is
 the lesson of 2.6.10, and the inventory now exists precisely so this check is possible.
+
+## v9 — what to collect, and the finding that changes the target (2026-08-17)
+
+Four sourcing lanes (Kaggle uncapped, HuggingFace/Zenodo/Mendeley, iNaturalist/GBIF
+live, CC web) plus two zero-train characterisation probes on the shipped embeddings.
+**Eight candidates were pHash-gated; none survived.** That is the honest headline, and
+the reasons are more useful than a source list would have been.
+
+### 1. The scorch collapse is a decision-layer failure, not a data shortage
+
+Measured on the shipped ONNX graphs (384-d DINOv2 CLS, `output[1]`), both bundles:
+
+| | 2.6.8 | 2.7.2 |
+|---|---|---|
+| within-benchmark 5-fold CV probe AUROC | 0.997 ± 0.002 | **0.993 ± 0.004** |
+| corpus-trained probe, transferred to benchmark | 0.924 | 0.824 |
+| shipped head, P(leaf_scorch) AUROC on benchmark | 0.935 | 0.744 |
+| shipped head, argmax recall on 62 scorch clusters | 36/62 | **5/62** |
+| served (full pipeline) | 0.565 | 0.000 |
+| **in-domain** supplement scorch recall | 0.784 | **0.941** |
+
+2.7.2's representation has **not** lost the distinction — a linear probe on its own
+frozen features separates the benchmark's arms at 0.993. The head allocates that
+signal elsewhere: on the 62 scorch clusters the argmax moves scorch 36→5, healthy
+18→32, leaf_spot 8→20. Meanwhile in-domain recall went **up** 15.7 points, which is
+precisely why the ship gate passed three collapsed releases in a row.
+
+**Ceiling on any data-side fix.** Oracle-perfect reselection of the existing 663 rows
+— using benchmark labels to choose, which no real collector can do — moves the probe
+from 0.812 to 0.921 AUROC. The best label-free rule reaches 0.859. The gap that has to
+close is a head ranking at 0.744 and deciding at 0.000. **Data selection is
+second-order here; the head and the operating point are first-order.**
+
+### 2. The target is 31 clusters, not 62 — and 0.565 was one arm
+
+Served recall decomposes: 2.6.8 scored **hibiscus 31/31 and banana_bush 4/31**. On the
+benchmark the 31 banana_bush/turgor clusters are statistically indistinguishable from
+the 151 healthy ones on nearly every measured property (nongreen-in-subject AUC 0.605,
+marginality 0.581, lesion count 0.492, tan-necrosis 0.529); the largest separation is
+an exposure difference. No release has ever exceeded 4/31 there.
+
+> Sizing a collection round against "restore 0.565" is really "restore hibiscus", and
+> sizing against 62 clusters systematically over-promises. Report the arms separately
+> and enforce that in the ship gate.
+
+### 3. Framing: two probes disagreed, and the disagreement is the finding
+
+The transfer probe found photographic regime carries **no** transfer signal (|Δ| ≤
+0.031 AUROC across border-plainness, subject fraction, saturation, blur, resolution —
+with signs that flip between bundles). The causal ablation found framing is the
+**single largest** axis: shrinking each of the 663 corpus scorch images onto a plain
+light canvas at the benchmark's subject fraction drops recall 0.950 → 0.630 (McNemar
+221 lost / 9 gained, p=5.1e-54), and the errors land on `healthy` (16 → 205).
+
+Both are correct, and reconciling them is the point:
+
+- The probe asked **"can I select better rows from what I have, by framing?"** No —
+  because only **4.4%** of corpus scorch is in that regime. There is almost no
+  variance to select on, so nothing correlates.
+- The ablation asked **"does the model fail when framing changes?"** Yes,
+  catastrophically — it had to *create* the variance synthetically to see it.
+
+So framing is a **coverage** deficit, not a **selection** criterion. The probe's
+conclusion ("restaging collection to imitate the plain-sheet regime is unsupported")
+is right about re-weighting existing rows and wrong as collection guidance. A control
+rules out the transform simply being destructive: the same operation on 300 healthy
+hard-negatives costs 4.6× less (0.967 → 0.897).
+
+**Mechanism.** In the corpus a plain foliage-free ground is a 16× `not_a_plant` cue:
+237/377 `not_a_plant` rows sit inside the benchmark's own plainness/subject-fraction
+window versus 117/3,012 across all eight plant classes; P(not_a_plant | plain ground)
+= 0.669. This is a live product risk, not a benchmark quirk — **a user who photographs
+a picked leaf on a worktop is in the regime we reject.**
+
+### 4. A second, independent axis: morphology, and it is disjoint
+
+Re-framing the benchmark does **not** recover scorch — it converts it to `leaf_spot`.
+Tight-cropping the 31 hibiscus clusters to corpus-like framing moves leaf_spot 11 → 14;
+adding a 3× chroma boost moves it to 23 (p=4.9e-4) while scorch never rises above 2.
+
+The cause is what the two populations mean by "scorch". Chromatic tan/brown fraction,
+corpus scorch deciles [10,25,50,75,90] = [0.044, 0.087, 0.170, 0.267, 0.409]; benchmark
+hibiscus = [0.0029, 0.0051, 0.0079, 0.0098, 0.0110], **max 0.0176**. Only 9 of 663
+corpus scorch images (1.4%) fall below the benchmark's brownest cluster. Most damning:
+corpus **healthy** hard-negatives have brown fraction 0.122 — **15.4× the benchmark's
+scorch median.**
+
+> In our corpus's own colour statistics, the benchmark's scorched leaves are *less
+> brown than our healthy images*. A classifier that learned "scorch = large tan area"
+> **must** call them healthy. The corpus defines the class at end-stage desiccation;
+> the benchmark shows it early, dull and achromatic, edge-concentrated on a green
+> blade — which is the model's `leaf_spot` prototype.
+
+Roughly 22 of 62 clusters are lost to framing and 24 to morphology — different fixes.
+
+### 5. Public supply does not exist. This needs first-party collection.
+
+Every lane searched exhaustively, with the truncation bug fixed in each (see below):
+
+| lane | redistributable abiotic-scorch supply found |
+|---|---|
+| HuggingFace / Zenodo / Mendeley / Figshare | **0** — HF full-text "leaf scorch" = 2 hits, both PlantVillage strawberry *Diplocarpon* (rule 4); "tip burn"/"tipburn" = 0; Zenodo title queries all 0 |
+| iNaturalist + GBIF | ~20–39 usable, and the gate rejected 41% of a hand-audit as mislabelled |
+| Wikimedia / Flickr CC / Openverse | ~50–95 distinct, best single block ~30 CC0 images |
+| Kaggle (1,684 datasets across 100 query formulations) | 0 clean, correctly-labelled ornamental abiotic scorch |
+| Bugwood / IPM Images / extension services | ~47, **licence-blocked** (non-commercial / all-rights-reserved) |
+
+Total redistributable: **~50–95 distinct photographs**, or 1–2% of what the corpus
+already holds — and none of it in the missing stratum. Measured on the project's own
+statistics, every candidate pool sits with the corpus, not the benchmark:
+
+```
+                corpus  bench   Bugwood  ScotNelson  Openverse  Commons
+bg_plainness     0.491  0.960    0.636      0.545      0.628     0.605
+subj_frac_bg     0.541  0.233    0.388      0.457      0.424     0.392
+sat_mean         0.371  0.101    0.397      0.369      0.354     0.222
+colorfulness     44.2    9.3     37.9       41.8       40.7      28.4
+```
+
+**Conclusion: the scorch gap is not closeable from public sources.** Not because the
+search was shallow — it was exhaustive and the negatives are measured — but because
+the missing thing is a photographic regime and a disease stage that nobody publishes.
+
+### 6. What to collect first-party, sized against measured deficits
+
+Per-stratum acceptance predicates, not volume targets. Current coverage in brackets.
+
+| stratum | target | acceptance predicate | why |
+|---|---|---|---|
+| **scorch, plain ground** | 250 | `bg_plainness ≥ 0.636`, `subj_frac_bg ≤ 0.406`, `border_green_frac ≤ 0.030` | 4.4% coverage; −31.9 pp causal; also removes the 16× `not_a_plant` cue |
+| **scorch, early/dull** | 250 | `brown_frac < 0.05`, marginal necrosis on a **still-green** blade | 1.4% coverage; the morphology axis re-framing cannot fix |
+| **scorch, low chroma** | 150 | `sat_mean ≤ 0.15`, dull ambient light | 12.2% coverage; −10.6 pp, largely subsumed by framing |
+| **healthy, plain ground** | 250 | same framing predicate, healthy subject | breaks "plain ground ⇒ not_a_plant" |
+| **healthy, ND regime** | 250 | `det_union_frac ≥ 0.40`, `sat_mean ≥ 0.38`, `achro_bright ≤ 0.05` | ND precision 0.621 is a 6.4× prior distortion, not a label problem — the fix is **negatives**, not positives |
+| **leaf_spot, houseplant** | 200 | one soft-lit glossy leaf indoors, confluent lesions | 98 rows / ~10 genera; recall 0.311 vs 0.744 garden |
+| **pests + gray_mold, with boxes** | 200 | must carry bounding boxes | Stage 1 returns no box on 44.9% / 43.5%; `pests` is 21 rows and 19% under the 384 px floor |
+
+~1,550 clusters. The first two strata have no substitute; the rest are supporting.
+
+**A words-and-thresholds spec cannot capture all of it.** A cross-validated oracle split
+of the existing scorch shows a real 0.33-AUROC transfer axis — 4–8× larger than any
+measurable property — that correlates with *nothing* we can measure (|ρ| ≤ 0.16 across
+15 properties, R² ≤ 2.6%; medians of the top and bottom quartiles are indistinguishable
+on brown fraction, plant fraction, subject fraction, saturation, resolution). Visual
+inspection names it only loosely: high-transfer = whole-plant collapse and dieback;
+low-transfer = textbook marginal tip-burn on a turgid leaf. **Final selection should be
+done in embedding space against an anchor set, not from a photographic checklist.**
+
+### 7. Two cheap levers to measure before the next A100 run
+
+Both testable on existing data, neither replacing the collection round:
+
+1. **Re-weight the in-regime slice we already own.** The low-saturation quartile
+   (n=166) transfers at 0.677 benchmark recall versus 0.161 for the other three
+   quartiles — currently diluted 1:3.
+2. **Fit the decision threshold on a regime-stratified calibration set.** Across seven
+   stratifications probe AUC barely moves (0.921–0.965) while recall moves 7× (0.097 →
+   0.677). The ranking is fine; the operating point is not.
+
+Also: Stage 1 misses **14/62** benchmark scorch clusters versus 5/151 healthy (Fisher
+OR 8.5, p=3.2e-05). A shrivelled, curled leaf is not leaf-shaped to a PlantDoc-trained
+detector — the same structural cause as pests and gray_mold. New plain-ground scorch
+should ship with boxes.
+
+### 8. Method corrections found while searching
+
+- **Kaggle's *search* endpoint truncates too**, not just the file lister: it caps at 20
+  results per page regardless of `pageSize`. Paginating to an empty page returned
+  **1,684** datasets versus 329 — 5.1×. Any negative result from a short-page break
+  condition is worthless.
+- **The iNat harvest capped at 600/term**, silently truncating 5 of 9 broad terms.
+- **pHash alone does not count distinct images.** Roboflow exports augmented by
+  *rotation* survive pHash as distinct. Count by original stem where the source
+  exposes one.
+- **`kaggle_inventory.gate()` reports `augmentation_ratio` as sampled/distinct**, which
+  understates collapse when the sample is small relative to the folder.
+
+### 9. What remains unknown
+
+- Whether the 0.33-AUROC latent transfer axis is *collectable* by instruction at all,
+  or only selectable in embedding space after the fact.
+- Whether the banana_bush/turgor arm is learnable from any imagery, or should be
+  retired from the benchmark as degenerate.
+- Whether fixing the head/operating point alone recovers hibiscus without new data —
+  untested, and the cheapest experiment available.
 
 ## Standing disciplines
 
