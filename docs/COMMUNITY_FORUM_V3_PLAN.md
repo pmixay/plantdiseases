@@ -20,6 +20,17 @@ Gone, with the client plumbing still lying around: `/api/community/like` with it
 
 **A like call now sends an empty identity.** `NearbyScansActivity:191` calls `setCommunityLike(item.scanId, "", next)` against a route that no longer exists. Phase 0 deletes the whole path.
 
+### Correction to `BUILD_REPAIR_PLAN.docx`
+
+A parallel session wrote `docs/BUILD_REPAIR_PLAN.docx` after the merge and landed its Stage 1. Its section 2, "Nine endpoints the client calls that no longer exist", is wrong about seven of the nine. Checked route by route against `server/main.py`:
+
+- `POST /api/community/like` and `POST /api/community/authors/adopt` really are gone. They are the two this merge removed.
+- `POST /api/community/request-opinion`, `POST /api/community/request-opinion/cancel`, `GET /api/community/my-scan-opinions`, `POST /api/community/safety/report`, `POST /api/community/safety/block`, `GET /api/community/safety/blocks` and `DELETE /api/community/safety/blocks/{block_id}` are all live and all carry `community_bearer`.
+
+`api_router` is declared with `prefix="/api"` at `main.py:1918` and included at `main.py:4957`, so those paths resolve exactly as the client calls them. The likely cause of the error is a search pattern that expects the path on the same line as the decorator; the account branch wraps its decorators across lines, so such a pattern misses them. The same mistake was made and caught while writing this plan.
+
+This matters because that document's Stage 2 tells the next engineer to stop and get a product decision on all nine routes before touching them, and its Stage 3 defers work behind that. Only the two genuinely dead routes need a decision, and it has already been made: they are deleted in Phase 0 below. Do not stall on the other seven.
+
 ### What exists on the server
 
 Read `server/main.py` from roughly line 3398 to 4400 before writing anything. Community routes: `POST /community/scan`, `GET /community/nearby`, `GET /community/map`, `/heatmap`, `/by-species`, `POST /community/opinion`, `GET /community/opinions/{scan_id}`, `POST /community/view`, `POST /community/scan-counts`, the four `/community/safety/*` routes, and `GET /community/thumb/{filename}`.
