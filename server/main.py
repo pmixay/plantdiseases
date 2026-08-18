@@ -3526,6 +3526,31 @@ async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
     return JSONResponse(content={"ok": True, "recorded": rid is not None})
 
 
+async def _resolve_community_author_id(key_hash: str | None, *, seed_display_name: str) -> str | None:
+    """Best-effort author_id for a write endpoint that predates durable
+    identity and must keep working without it.
+
+    A present-but-malformed key is rejected (422) — the same validation
+    ``/community/authors/adopt`` applies — but a MISSING key just means "no
+    identity to bind", not an error: older app builds, and any caller that
+    hasn't adopted yet, still write normally, just without author_id. In
+    practice the app calls adopt on every launch, so a row already exists
+    by the time this runs and the call below only refreshes last_seen_at
+    (see resolve_author's docstring) rather than creating a fresh one.
+    """
+    key = (key_hash or "").strip()
+    if not key:
+        return None
+    if len(key) != 64 or not all(c in "0123456789abcdef" for c in key):
+        raise HTTPException(status_code=422, detail="Malformed author key")
+    loop = asyncio.get_running_loop()
+    author = await loop.run_in_executor(
+        None,
+        lambda: community_resolve_author(key_hash=key, seed_display_name=seed_display_name),
+    )
+    return str(author["author_id"])
+
+
 class CommunityOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
     user_pseudo_id: str = Field(..., min_length=1, max_length=128)
@@ -3540,7 +3565,11 @@ class CommunityOpinionRequest(BaseModel):
 
 
 @api_router.post("/community/opinion")
-async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
+async def community_opinion_submit(
+    payload: CommunityOpinionRequest,
+    request: Request,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
     """Record one community 'second opinion' on a shared scan.
 
     The suggested disease must be a known classifier class so the consensus
@@ -3575,12 +3604,19 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
     if not fresh:
         raise HTTPException(status_code=410, detail="Scan too old for new opinions")
+    # Resolved last, after every cheaper gate above has had a chance to
+    # reject the request — same "don't pay for expensive work a forged/bad
+    # request never earns" discipline as community_scan_upload's ordering.
+    author_id = await _resolve_community_author_id(
+        x_community_author_key, seed_display_name=payload.nickname or "",
+    )
     try:
         await loop.run_in_executor(
             None,
             lambda: community_record_opinion(
                 scan_id=sid,
                 author_pseudo_id=payload.user_pseudo_id.strip(),
+                author_id=author_id,
                 suggested_disease=disease,
                 note=payload.note,
                 nickname=payload.nickname,
@@ -3611,7 +3647,8 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     await loop.run_in_executor(_get_net_executor(), _push_owner)
 
     result = await loop.run_in_executor(
-        None, lambda: community_opinions_for(sid),
+        None,
+        lambda: community_opinions_for(sid, user_pseudo_id=author, author_id=author_id),
     )
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
@@ -3743,13 +3780,20 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
 
 
 @api_router.get("/community/opinions/{scan_id}")
-async def community_opinions_list(scan_id: str, user_pseudo_id: str | None = None):
+async def community_opinions_list(
+    scan_id: str,
+    user_pseudo_id: str | None = None,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
     """List community opinions + a consensus tally for one shared scan.
 
     Accepts the real scan_id (owner's own app) or the feed's public
     token (viewers); echoes back whichever form the caller sent.
     ``user_pseudo_id`` is optional — pass it to get an accurate
-    ``liked_by_me`` in the response; omitted, it reads as not-liked.
+    ``liked_by_me`` and ``my_opinion`` in the response; omitted, they read
+    as not-liked / no opinion. ``X-Community-Author-Key`` is also optional
+    here and, when sent, is what ``my_opinion`` actually keys on — see
+    opinions_for's docstring for why the two aren't the same identity.
     """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
@@ -3758,8 +3802,10 @@ async def community_opinions_list(scan_id: str, user_pseudo_id: str | None = Non
     resolved = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(sid),
     )
+    author_id = await _resolve_community_author_id(x_community_author_key, seed_display_name="")
     result = await loop.run_in_executor(
-        None, lambda: community_opinions_for(resolved, user_pseudo_id=user_pseudo_id),
+        None,
+        lambda: community_opinions_for(resolved, user_pseudo_id=user_pseudo_id, author_id=author_id),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 

@@ -512,15 +512,33 @@
         "summary": "Community Opinion Submit",
         "description": "Record one community 'second opinion' on a shared scan.\n\nThe suggested disease must be a known classifier class so the consensus\ntally stays clean; any free text lives only in the optional note.",
         "operationId": "community_opinion_submit_api_community_opinion_post",
+        "parameters": [
+          {
+            "name": "X-Community-Author-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Community-Author-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityOpinionRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -669,7 +687,7 @@
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\n``user_pseudo_id`` is optional — pass it to get an accurate\n``liked_by_me`` in the response; omitted, it reads as not-liked.",
+        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\n``user_pseudo_id`` is optional — pass it to get an accurate\n``liked_by_me`` and ``my_opinion`` in the response; omitted, they read\nas not-liked / no opinion. ``X-Community-Author-Key`` is also optional\nhere and, when sent, is what ``my_opinion`` actually keys on — see\nopinions_for's docstring for why the two aren't the same identity.",
         "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
         "parameters": [
           {
@@ -695,6 +713,22 @@
                 }
               ],
               "title": "User Pseudo Id"
+            }
+          },
+          {
+            "name": "X-Community-Author-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Community-Author-Key"
             }
           }
         ],

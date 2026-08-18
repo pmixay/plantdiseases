@@ -86,7 +86,7 @@ class MyScanRepliesActivity : AppCompatActivity() {
                 return@launch
             }
             renderScan(scan)
-            scanRepository.getCommunityOpinions(scanId)
+            scanRepository.getCommunityOpinions(scanId, context = this@MyScanRepliesActivity)
                 .onSuccess {
                     renderStatus(it.wantsOpinion, it.opinionRequestedAt)
                     renderThread(it.consensus, it.opinions)

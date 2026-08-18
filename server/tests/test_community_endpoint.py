@@ -1057,6 +1057,78 @@ def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
     assert r.status_code == 410, r.text
 
 
+def test_opinion_consensus_dedupes_on_author_key_not_body_pseudo_id(client, isolated_community):
+    """The roadmap's "forgeable second opinions" finding: author_pseudo_id
+    is a plain client-chosen body field, so a caller varying it per request
+    used to vote as many times as it liked. With a real X-Community-Author-Key
+    attached, the consensus tally must dedupe on THAT instead — two posts
+    under the same header count as one vote even with two different bodies."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="dedupeauthor1", user_pseudo_id="pseudo-owner-1",
+            region="Berlin", country="DE", disease="leaf_spot",
+        ),
+    )
+    key = "a" * 64
+    first = client.post(
+        "/api/community/opinion",
+        headers={"X-Community-Author-Key": key},
+        json={
+            "scan_id": "dedupeauthor1",
+            "user_pseudo_id": "pseudo-forger-1",
+            "suggested_disease": "leaf_spot",
+        },
+    )
+    assert first.status_code == 200, first.text
+    second = client.post(
+        "/api/community/opinion",
+        headers={"X-Community-Author-Key": key},
+        json={
+            "scan_id": "dedupeauthor1",
+            "user_pseudo_id": "pseudo-forger-2",
+            "suggested_disease": "leaf_spot",
+        },
+    )
+    assert second.status_code == 200, second.text
+
+    result = client.get("/api/community/opinions/dedupeauthor1").json()
+    # Two comments were posted (the thread keeps every row) but they resolve
+    # to the same author, so the consensus tally counts one vote, not two.
+    assert len(result["opinions"]) == 2
+    assert result["consensus"] == [{"disease": "leaf_spot", "count": 1}]
+
+
+def test_opinions_list_returns_the_callers_current_pick(client, isolated_community):
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="myopinionscan1", user_pseudo_id="pseudo-owner-2",
+            region="Berlin", country="DE", disease="leaf_spot",
+        ),
+    )
+    key = "b" * 64
+    client.post(
+        "/api/community/opinion",
+        headers={"X-Community-Author-Key": key},
+        json={
+            "scan_id": "myopinionscan1",
+            "user_pseudo_id": "pseudo-viewer-9",
+            "suggested_disease": "powdery_mildew",
+        },
+    )
+
+    mine = client.get(
+        "/api/community/opinions/myopinionscan1",
+        headers={"X-Community-Author-Key": key},
+    ).json()
+    assert mine["my_opinion"] == "powdery_mildew"
+
+    # No identity attached at all — reads as "haven't voted", not an error.
+    anonymous = client.get("/api/community/opinions/myopinionscan1").json()
+    assert anonymous["my_opinion"] is None
+
+
 def test_nearby_before_cursor_pages_without_overlap(client, isolated_community):
     """Keyset pagination: page 1 (limit=2) then page 2 (before=next_before)
     together cover all 3 rows with no repeats, and the short second page

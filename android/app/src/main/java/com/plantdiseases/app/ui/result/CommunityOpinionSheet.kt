@@ -258,7 +258,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private fun loadOpinions() {
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch {
-            scanRepository.getCommunityOpinions(scanId, TelemetryIds.userPseudoId(ctx))
+            scanRepository.getCommunityOpinions(scanId, TelemetryIds.userPseudoId(ctx), context = ctx)
                 .onSuccess {
                     render(it.consensus, it.opinions)
                     renderLike(it.likeCount, it.likedByMe)
@@ -327,7 +327,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             nickname = Nicknames.nickname(ctx),
         )
         viewLifecycleOwner.lifecycleScope.launch {
-            scanRepository.submitCommunityOpinion(request)
+            scanRepository.submitCommunityOpinion(ctx, request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
                     resetInputAfterSubmit()

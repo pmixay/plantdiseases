@@ -479,6 +479,10 @@ data class CommunityOpinionsResponse(
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("opinions") @SerialName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
     @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
+    // The caller's own most recent pick on this scan, resolved server-side
+    // from X-Community-Author-Key (or the legacy pseudo id) — null when the
+    // caller hasn't voted, or didn't send an identity to check against.
+    @SerializedName("my_opinion") @SerialName("my_opinion") val myOpinion: String? = null,
     // Distinct-viewer count on this scan (per-user deduped server-side).
     @SerializedName("views") @SerialName("views") val views: Int = 0,
     // Whether the owner has a LIVE second-opinion request on this scan

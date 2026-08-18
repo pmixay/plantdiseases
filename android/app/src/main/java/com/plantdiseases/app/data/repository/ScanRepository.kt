@@ -371,10 +371,15 @@ class ScanRepository(
 
     /** List community "second opinions" + consensus for a shared scan.
      *  [userPseudoId] is optional — pass the caller's own id to get an
-     *  accurate `likedByMe` in the response. */
+     *  accurate `likedByMe` in the response. [context] is optional too and
+     *  drives `myOpinion` the same way — omit it (e.g. a background poll
+     *  with no UI context handy) and it just reads as "no opinion yet"
+     *  instead of failing; see opinions_for's docstring server-side for why
+     *  `myOpinion` keys on the device identity rather than userPseudoId. */
     suspend fun getCommunityOpinions(
         scanId: String,
         userPseudoId: String? = null,
+        context: Context? = null,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -382,6 +387,7 @@ class ScanRepository(
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
                         parameter("user_pseudo_id", it)
                     }
+                    context?.let { header("X-Community-Author-Key", CommunityIdentity.keyHash(it)) }
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
@@ -396,15 +402,23 @@ class ScanRepository(
             }
         }
 
-    /** List the second opinions this install has authored. */
-    /** Submit one community "second opinion". Returns the refreshed list. */
+    /** Submit one community "second opinion". Returns the refreshed list.
+     *  [context] resolves the device's durable identity key — reachable
+     *  unconditionally here because posting an opinion is only ever
+     *  reachable after the user has already opted into community sharing
+     *  (CommunityController / NearbyScansActivity both gate on
+     *  CommunityPrefs.uploadsEnabled before this call site is reachable at
+     *  all), so sending it here doesn't contradict the privacy policy's
+     *  "nothing sent while community sharing is off". */
     suspend fun submitCommunityOpinion(
+        context: Context,
         request: CommunityOpinionRequest,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val response = apiClient.httpClient.post("api/community/opinion") {
                     contentType(ContentType.Application.Json)
+                    header("X-Community-Author-Key", CommunityIdentity.keyHash(context))
                     setBody(request)
                 }
                 when (response.status.value) {

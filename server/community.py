@@ -378,6 +378,24 @@ def init_db() -> None:
             _add_column_if_missing(
                 conn, "community_likes", "liked", "INTEGER NOT NULL DEFAULT 1",
             )
+            # Durable identity, resolved from X-Community-Author-Key. NULL on
+            # every row until a client actually sends the header — see
+            # _resolve_community_author_id in main.py. Kept alongside (not
+            # instead of) author_pseudo_id / user_pseudo_id so old rows keep
+            # counting under the legacy dedupe with no backfill required.
+            #
+            # community_likes deliberately does NOT get the same column here.
+            # Its dedupe is the (scan_id, user_pseudo_id) PRIMARY KEY itself,
+            # not a query-time COALESCE like opinions' window function, so
+            # closing the same client-varies-its-pseudo-id hole for likes
+            # means rebuilding that key — a table rebuild, not an ADD COLUMN.
+            # Adding an author_id column that nothing then dedupes on would
+            # be exactly the kind of unwired groundwork this audit exists to
+            # catch. Tracked as a follow-up, not attempted here.
+            _add_column_if_missing(conn, "community_opinions", "author_id", "TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_opinions_author_id ON community_opinions(author_id)"
+            )
             _backfill_public_ids(conn)
             _canonicalize_countries(conn)
         _initialised = True
@@ -672,6 +690,7 @@ def record_opinion(
     scan_id: str,
     author_pseudo_id: str,
     suggested_disease: str,
+    author_id: str | None = None,
     note: str | None = None,
     nickname: str | None = None,
     client_ip: str | None = None,
@@ -683,7 +702,13 @@ def record_opinion(
     running comment list, not a single vote slot. ``opinions_for`` folds
     repeat authors down to their latest pick for the consensus tally so a
     talkative commenter can't inflate it; the comment list itself keeps
-    every row."""
+    every row.
+
+    ``author_id`` is the durable identity resolved from
+    ``X-Community-Author-Key`` (NULL for a caller with no adopted identity —
+    an old app build, or a malformed/missing header). When present it's what
+    the consensus tally dedupes on instead of ``author_pseudo_id``, which the
+    client chooses and can vary per request — see ``opinions_for``."""
     init_db()
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
@@ -692,10 +717,10 @@ def record_opinion(
     with _write_lock, _connect() as conn:
         cur = conn.execute(
             "INSERT INTO community_opinions ("
-            "  scan_id, author_pseudo_id, suggested_disease, note, "
+            "  scan_id, author_pseudo_id, author_id, suggested_disease, note, "
             "  nickname, client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (scan_id, author_pseudo_id, suggested_disease, note_clean,
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (scan_id, author_pseudo_id, author_id, suggested_disease, note_clean,
              nick_clean, ip_hash, now),
         )
         return int(cur.lastrowid or 0)
@@ -703,18 +728,34 @@ def record_opinion(
 
 def opinions_for(
     scan_id: str, *, limit: int = 50, user_pseudo_id: str | None = None,
+    author_id: str | None = None,
 ) -> dict:
     """Opinions for one scan plus a per-disease consensus tally.
 
     Shape::
 
         {"opinions":  [{"suggested_disease", "note", "created_at"}, ...],
-         "consensus": [{"disease", "count"}, ...]}   # most-voted first
+         "consensus": [{"disease", "count"}, ...],    # most-voted first
+         "my_opinion": "leaf_spot" | None}
 
     ``opinions`` lists every comment, newest first — an author may have
     posted more than once. ``consensus`` folds each author down to their
     MOST RECENT pick first (a window-function dedupe, not a plain
     GROUP BY) so a repeat commenter contributes one vote, not one per post.
+
+    The dedupe key is ``COALESCE(author_id, author_pseudo_id)``: author_id
+    is the durable identity resolved from X-Community-Author-Key, and
+    author_pseudo_id is the client-chosen legacy id that key exists to stop
+    being forgeable — a caller who varies the pseudo id per request no
+    longer counts as a fresh voter each time once they have a real
+    author_id. Rows written before the identity existed have a NULL
+    author_id and fall back to the legacy id, so nothing needs a backfill.
+
+    ``my_opinion`` is the caller's own most recent pick under that same
+    coalesced identity (``author_id`` if the caller resolved one this
+    request, else ``user_pseudo_id``) — None if they haven't voted. Reuses
+    the tally's identity logic rather than a second, potentially
+    inconsistent notion of "who is this".
 
     Also carries ``wants_opinion`` (is there a live, non-expired request?)
     plus ``opinion_requested_at`` (epoch seconds of that request, else
@@ -725,6 +766,7 @@ def opinions_for(
     _sweep_expired_requests()
     limit = max(1, min(int(limit), 100))
     request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
+    my_key = (author_id or user_pseudo_id or "").strip() or None
     with _connect() as conn:
         rows = conn.execute(
             "SELECT suggested_disease, note, created_at, nickname "
@@ -736,13 +778,19 @@ def opinions_for(
             "SELECT suggested_disease, COUNT(*) AS n FROM ("
             "  SELECT suggested_disease,"
             "         ROW_NUMBER() OVER ("
-            "           PARTITION BY author_pseudo_id"
+            "           PARTITION BY COALESCE(author_id, author_pseudo_id)"
             "           ORDER BY created_at DESC, id DESC"
             "         ) AS rn"
             "  FROM community_opinions WHERE scan_id = ?"
             ") WHERE rn = 1 GROUP BY suggested_disease ORDER BY n DESC",
             (scan_id,),
         ).fetchall()
+        my_row = conn.execute(
+            "SELECT suggested_disease FROM community_opinions "
+            "WHERE scan_id = ? AND COALESCE(author_id, author_pseudo_id) = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (scan_id, my_key),
+        ).fetchone() if my_key else None
         request_row = conn.execute(
             "SELECT created_at FROM community_opinion_requests "
             "WHERE scan_id = ? AND created_at >= ? LIMIT 1",
@@ -758,6 +806,7 @@ def opinions_for(
     return {
         "opinions": opinions,
         "consensus": consensus,
+        "my_opinion": str(my_row[0]) if my_row else None,
         "views": view_count_for(scan_id),
         "wants_opinion": request_row is not None,
         "opinion_requested_at": int(request_row[0]) if request_row else None,
