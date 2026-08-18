@@ -7,8 +7,6 @@ on:
   # how four auto-fixable lint errors blocked the Android suite for two days.
   push:
     branches: [main, account-beta-test, "claude/**", "work/**", "codex/**"]
-  pull_request:
-    branches: [main, account-beta-test]
 
 # Push-only, deliberately — there is no `pull_request` trigger. Every branch
 # that reaches a PR here is pushed to one of the globs above first, so a PR
@@ -38,9 +36,6 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       android: ${{ steps.filter.outputs.android }}
       account: ${{ steps.filter.outputs.account }}
