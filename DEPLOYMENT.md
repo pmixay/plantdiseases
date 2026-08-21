@@ -175,23 +175,66 @@ server/ai_cache/care_plan_polish_v2`). Bump the generation whenever you
 change a prompt, model or effort in a way that should reach users before
 the TTL does.
 
-**Prompt caching (on by default).** Every chat turn re-sends the same
-~600-token system prompt plus the conversation so far. With
-`openrouter_prompt_caching` enabled the server asks OpenRouter to cache
-that prefix and pins each conversation to one provider (a hashed
-`session_id`, so no client identifier leaves the box), so repeat turns
-are billed at a fraction of input price — 0.1× on Anthropic/DeepSeek,
-0.25× on Google/Grok, 0.5× on Groq — instead of full price.
+**Prompt caching (on by default).** Every OpenRouter request this server
+makes — chat turn, species lookup, care-plan polish — leads with the same
+~1400-token block of house rules (`ai_services._HOUSE_PREAMBLE`: the
+classifier taxonomy, the care-guide keys, the safety, numeric and
+bilingual rules). That block is not there for the model's benefit alone.
+gpt-5.6 caches a prefix only once it reaches **1024 tokens**, and every
+task prompt on its own was 200–650 tokens, so before this the provider
+silently skipped caching on every call and `cache_hit_ratio` sat at a
+flat `0.0`. One shared preamble clears the minimum on the first turn, and
+because all four surfaces send it byte for byte, one warm cache entry
+serves them all — a chat turn keeps the species screens warm and vice
+versa. On gpt-5.6 an entry lives 30 minutes from the write and the clock
+restarts on every reuse, so under continuous traffic it stays hot.
 
-It is opportunistic and safe to leave on: providers that cache
-automatically (OpenAI, Groq, DeepSeek, Grok, Z.AI, Gemini 2.5 — including
-the default `openai/gpt-5.6-luna`, whose cached input reads bill at 0.1×)
-ignore the breakpoint, and a prompt
-under a provider's minimum cacheable prefix (1024 tokens for
-OpenAI/Anthropic) simply doesn't cache and costs what it costs today.
-Set `openrouter_prompt_caching: false` to opt out entirely.
+Three request fields carry it, all gated on `openrouter_prompt_caching`:
 
-Verify it is working via `GET /api/metrics` → `ai_doctor`:
+* `prompt_cache_key` (`openrouter_prompt_cache_key`, default
+  `plantvision-v1`) — OpenAI's cache-routing key, combined with the
+  prefix hash to route a request to the machine holding that prefix.
+  gpt-5.6 needs it for reliable matching. Sent on every call. Keep it
+  **identical across replicas that share a preamble**; only give replicas
+  distinct suffixes if one key becomes a hotspot under measured load.
+* `session_id` — OpenRouter's sticky-routing key, sent for the chat
+  doctor only. A hash of the client's session id, so no client
+  identifier leaves the box.
+* `cache_control: {"type": "ephemeral"}` — the breakpoint for the growing
+  chat history. Required by Anthropic/Qwen; OpenRouter translates it into
+  OpenAI's `prompt_cache_breakpoint` when it routes to a model that takes
+  one.
+
+Billing on gpt-5.6: a cached read is **0.1×** input price, but a cache
+**write costs 1.25×** (earlier models wrote for free). That is why the
+preamble is shared rather than per-surface — a prefix written once and
+never re-read is 25% worse than not caching at all. Set
+`openrouter_prompt_caching: false` to send none of the three.
+
+Verify it is working via `GET /api/metrics` → `prompt_cache`, which
+counts **every** OpenRouter caller:
+
+```json
+"prompt_cache": {
+  "enabled": true, "model": "openai/gpt-5.6-luna",
+  "requests": 128, "tokens_in": 214000,
+  "cached_tokens_in": 179000, "cache_write_tokens_in": 12800,
+  "hit_ratio": 0.8364,
+  "min_prefix_tokens": 1024, "shared_prefix_tokens_est": 1434
+}
+```
+
+`cached_tokens_in` is the share of `tokens_in` served from the provider's
+cache (a subset, not an addition). The healthy shape is a `hit_ratio`
+somewhat under 1.0 with a small steady `cache_write_tokens_in`: the tail
+of each request is new, everything ahead of it is a read. A ratio near
+`0.0` over real traffic means the prefix changed or fell under
+`min_prefix_tokens` — check that `shared_prefix_tokens_est` still clears
+it, and that nothing volatile crept in ahead of the preamble (build every
+system prompt through `ai_services._system_prompt()`, which appends).
+
+`ai_doctor` in the same payload carries the same three counters for the
+chat doctor alone, whose per-session budget caps are tracked separately:
 
 ```json
 "ai_doctor": {
@@ -201,12 +244,6 @@ Verify it is working via `GET /api/metrics` → `ai_doctor`:
   "cache_hit_ratio": 0.6262
 }
 ```
-
-`cached_tokens_in` is the share of `tokens_in` served from the provider's
-cache (a subset, not an addition). A `cache_hit_ratio` stuck at `0.0`
-over real multi-turn traffic means caching is not engaging — usually a
-model whose provider doesn't cache, or first turns whose prompt is still
-under the provider's minimum.
 
 The same endpoint carries `care_plan_polish`, the quality signal for
 care-plan prose:
