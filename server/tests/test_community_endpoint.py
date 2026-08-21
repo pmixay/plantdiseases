@@ -1387,6 +1387,115 @@ def test_nearby_before_cursor_pages_without_overlap(client, isolated_community):
     assert len(ids1) + len(ids2) == 3
 
 
+def _share(client, scan_id: str, species: str):
+    """Share one FR scan, identified in the feed by its species.
+
+    The feed deliberately returns an opaque per-response ``scan_id`` rather
+    than the stored one, so ranking assertions key off a field that survives
+    the round trip.
+    """
+    response = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id=scan_id,
+            user_pseudo_id=f"pseudo-owner-{scan_id}",
+            region="Lyon",
+            country="FR",
+            disease="leaf_spot",
+            species=species,
+        ),
+    )
+    assert response.status_code == 200, response.text
+
+
+def _recommended_species(client):
+    feed = client.get(
+        "/api/community/nearby",
+        params={
+            "country": "FR",
+            "scope": "country",
+            "ranking": "recommended",
+            "user_pseudo_id": "pseudo-reader",
+            "limit": 10,
+        },
+    )
+    assert feed.status_code == 200, feed.text
+    return [row["species"] for row in feed.json()["items"]]
+
+
+def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
+    client, isolated_community,
+):
+    """Freshness is the ranking's baseline, not a tiebreak.
+
+    Under the pre-``_RANK_*`` weights freshness ticked once per six hours
+    while a like was worth 120 points — about a month of recency — and the
+    row-id jitter alone was worth ~25 days, so a quiet week-old post
+    routinely outranked everything posted today and the feed read as
+    shuffled rather than dated. Every term is now denominated in hours of
+    freshness, so five days of age outweighs a single like.
+    """
+    db_path, _ = isolated_community
+    _share(client, "freshpost0001", "Fresh nothing")
+    _share(client, "staleliked001", "Stale liked")
+    _share(client, "stalequiet001", "Stale quiet")
+    liked = client.post(
+        "/api/community/like",
+        json={"scan_id": "staleliked001", "user_pseudo_id": "pseudo-liker", "liked": True},
+    )
+    assert liked.status_code == 200, liked.text
+    assert liked.json()["count"] == 1
+
+    now = 1_800_000_000
+    day = 86_400
+    with sqlite3.connect(str(db_path)) as conn:
+        for scan_id, created_at in (
+            ("freshpost0001", now),
+            ("staleliked001", now - 5 * day),
+            ("stalequiet001", now - 10 * day),
+        ):
+            changed = conn.execute(
+                "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+                (created_at, scan_id),
+            ).rowcount
+            assert changed == 1, scan_id
+
+    assert _recommended_species(client) == ["Fresh nothing", "Stale liked", "Stale quiet"]
+
+
+def test_recommended_feed_keeps_a_live_opinion_request_ahead_of_fresher_posts(
+    client, isolated_community,
+):
+    """The needs-help pin has to outlast the request, not the universe.
+
+    ``_RANK_LIVE_REQUEST`` is finite now — it used to be 50000, worth about
+    34 years of freshness — so this pins the property that making it finite
+    could break: a scan whose request is still open leads the feed even
+    against a post made a full ``OPINION_REQUEST_TTL_HOURS`` later, which is
+    the widest freshness gap that can open up while the request is live.
+    """
+    import community as comm
+
+    db_path, _ = isolated_community
+    _share(client, "askingpost001", "Asking for help")
+    _share(client, "newerpost0001", "Newer and quiet")
+    _request_opinion(client, "askingpost001", "pseudo-owner-askingpost001")
+
+    now = 1_800_000_000
+    with sqlite3.connect(str(db_path)) as conn:
+        changed = conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now - comm.OPINION_REQUEST_TTL_HOURS * 3600, "askingpost001"),
+        ).rowcount
+        assert changed == 1
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now, "newerpost0001"),
+        )
+
+    assert _recommended_species(client) == ["Asking for help", "Newer and quiet"]
+
+
 def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
     client, isolated_community,
 ):
