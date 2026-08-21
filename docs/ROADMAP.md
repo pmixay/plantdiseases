@@ -158,11 +158,65 @@ histories.
 
 ## Model track
 
-`MODEL_VERSION` is **2.7.2** (notebook §1), with `RUN_272` selecting which of
-the three planned runs a given execution is. `server/models/` holds only
+`MODEL_VERSION` is **2.7.3** (notebook §1). `server/models/` holds only
 `.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed**, and 2.6.8 now
 runs behind the NAP head veto (`pipeline.py`), which is a server-side change
 requiring no new weights.
+
+### 2.7.3 — the decision layer, not more data
+
+2.7.0/2.7.1/2.7.2 each scored ~0 on the never-trained benchmark's scorch arm
+while passing the in-domain gate. Zero-train probes on the **shipped 2.7.2
+graph** located the fault:
+
+| measured on 2.7.2's own frozen features | value |
+|---|---|
+| within-benchmark 5-fold CV linear probe AUROC | **0.993 ± 0.004** |
+| shipped head, P(leaf_scorch) AUROC on the benchmark | 0.744 |
+| shipped head, argmax recall on the scorch arm | 5/62 |
+| in-domain supplement scorch recall, 2.6.8 → 2.7.2 | 0.784 → **0.941** |
+
+The representation still separates the classes; the head allocates the signal to
+`healthy` and `leaf_spot`. In-domain recall *rising* is why the old gate passed.
+An oracle re-selection of the existing corpus — using benchmark labels, which no
+collector can do — buys at most +0.109 probe AUROC, so data is second-order here.
+
+**Two changes, deliberately only two:**
+
+1. **Regime-aware sampling** (§1 `REGIME_*`, §4 `regime_multipliers`). Training a
+   probe on the corpus's lowest-saturation scorch quartile alone (n=166) reaches
+   0.677 benchmark recall; each of the other three quartiles reaches 0.161. That
+   stratum is supply we already own, diluted 1:3. It is upweighted to ~50% of the
+   class's draws — **normalised within the class so the class's total draw share,
+   and therefore the LogitAdjustment prior, is unchanged.** Without that
+   normalisation the run would move the regime mix and the class prior at once
+   and a gain would be unattributable.
+2. **Regime-stratified conformal audit** (§6). q_hat is a marginal quantile over
+   a calibration set where the dull regime is a few per cent, so coverage can be
+   met marginally while that regime is under-covered. The audit reports coverage
+   per stratum and what a stratum-balanced q_hat *would* be. **Reported, not
+   applied** — changing q_hat changes every served prediction set and deserves
+   its own A/B rather than arriving as a side effect.
+
+**What 2.7.3 deliberately does not do: refit temperature to recover recall.**
+`argmax(z / T) == argmax(z)` for every `T > 0`. Temperature scaling is monotone
+per sample and cannot change a single prediction — it moves confidence, set
+sizes and the MaxLogit scale. Any plan to "recalibrate temperature to fix the
+scorch arm" is wrong on the arithmetic. The knobs that move an argmax are the
+sampler, the loss prior, and `CLASS_LOGIT_BIAS`.
+
+**Falsifier.** If the OOD gate's `hibiscus` recall does not clear 0.70 with
+in-domain disease macro-F1 held, regime-aware sampling is not the lever and the
+next move is `CLASS_LOGIT_BIAS` or a head-architecture change — not more data.
+Watch for the predicted cost: upweighting a quarter of scorch trades in-class
+diversity, so a drop in in-domain scorch recall is the expected failure mode and
+the in-domain gate is what catches it.
+
+**Serve-time bias, measured and rejected.** On 2.6.8, a +1.88 `leaf_scorch`
+logit bias recovers 10 benchmark scorch clusters (36→46) for 5 new healthy false
+alarms (4→9), and goes net-negative past +2.2. Every recovered cluster was on
+the arm since retired as mislabelled. Not shipped; recorded so it is not
+re-proposed.
 
 Closed history: **2.6.9** gate-passed but lost a paired A/B vs 2.6.8 (kept
 2.6.8). **2.6.10** recovered leaf_scorch but silently lost a 2.26k-image source

@@ -255,3 +255,63 @@ def test_whole_group_moves_together(tmp_path):
     ns["make_holdout"](permille=1000)        # take everything, then check co-location
     assert len(_held(ns)) == len(CLASSES)
     assert not list(ns["_iter_images"](train_root))
+
+
+# ── 2.7.3: regime-aware sampling + the calibration arithmetic ──────────────
+
+def _section_source(marker: str) -> str:
+    """Source of the notebook cell containing ``marker``.
+
+    Located by content rather than by index: cell numbers shift whenever a cell
+    is added, and a test that silently reads the wrong cell passes for the wrong
+    reason.
+    """
+    if not NOTEBOOK.exists():
+        pytest.skip("train_notebook.ipynb not present")
+    nb = json.loads(NOTEBOOK.read_text())
+    for cell in nb["cells"]:
+        src = "".join(cell["source"])
+        if marker in src:
+            return src
+    pytest.fail(f"no notebook cell contains {marker!r} — was it renamed?")
+
+def test_regime_multiplier_preserves_the_class_draw_share():
+    """The 2.7.3 sampler change must move WHICH scorch images are drawn, not
+    how much scorch is drawn.
+
+    Boosting a quarter of a class 3x without normalising also raises the whole
+    class's draw share ~1.5x, which would (a) make the run untestable — a gain
+    could not be attributed between "the dull stratum transfers" and "more
+    scorch overall" — and (b) silently desynchronise the LogitAdjustment prior,
+    which assumes log_prior matches the batch distribution it is trained under.
+    """
+    src = _section_source("def regime_multipliers")
+    assert "scale = len(rows) / float(sum(mult[i] for i in rows))" in src, \
+        "the per-class normalisation is gone; the sampler now moves the class prior too"
+    assert "regime_mult=_regime_mult" in src, "the multiplier is computed but not passed"
+    assert "REGIME_UPWEIGHT_CLASSES" in _section_source("MODEL_VERSION ="), "the knob left §1"
+
+
+def test_regime_threshold_is_derived_not_hardcoded():
+    """A fixed saturation cut goes stale as the corpus changes; the class's own
+    quantile does not."""
+    src = _section_source("def regime_multipliers")
+    assert "np.quantile(sat, quantile)" in src, \
+        "the low-chroma threshold must be the class's own quantile, computed at run time"
+
+
+def test_conformal_regime_audit_does_not_ship_its_own_q_hat():
+    """The stratum-balanced q_hat is REPORTED, never applied. Changing q_hat
+    changes every served prediction set and deserves its own A/B rather than
+    arriving as a side effect of adding a diagnostic."""
+    src = _section_source("regime_audit")
+    assert "stratum_balanced_q_hat" in src, "the regime conformal audit is gone"
+    assert "cfg['q_hat'] = _q_bal" not in src, \
+        "the balanced q_hat is being shipped; it is a diagnostic, not a release change"
+
+
+def test_temperature_is_not_claimed_to_move_predictions():
+    """argmax(z/T) == argmax(z) for every T > 0. Guard the comment that says so,
+    because 'recalibrate temperature to fix recall' is the plausible-sounding
+    wrong answer this project has to keep not taking."""
+    assert "argmax(z / T) == argmax(z)" in _section_source("regime_audit")
