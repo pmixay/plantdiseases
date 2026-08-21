@@ -117,9 +117,10 @@ themselves. The exclusion that survives every widening is **commercial agricultu
 photographic distribution, it is what the 2.6.7 gray_mold fix removed, and it is still ~39%
 of gray_mold's eval slice today. Species is not the test; the grower is.
 
-> **Assumption flagged.** "Cucumbers and similar" was read as *home-grown edibles, commercial
-> agriculture still out*. If commercial rows are meant to be in-domain too, say so — it is a
-> one-line change to the upstream judge prompt and **zero** notebook changes (below).
+> **ANSWERED (2026-08-18): commercial agriculture stays OUT for now**, and is recorded as a
+> target for a future domain expansion rather than a permanent exclusion. So the reading above
+> holds: home-grown edibles in, plantations / monoculture fields / production greenhouses out.
+> Revisiting it is a one-line change to the upstream judge prompt and **zero** notebook changes.
 
 Code-side this costs nothing, by design. As of **2.6.13** the notebook **records and reports**
 `subject_domain` verbatim and **never gates on it** — no enum, no allowlist, no mapping table.
@@ -680,6 +681,29 @@ should ship with boxes.
   retired from the benchmark as degenerate.
 - Whether fixing the head/operating point alone recovers hibiscus without new data —
   untested, and the cheapest experiment available.
+
+## Build rules answered this round (2026-08-18)
+
+**`banana_bush` scorch arm retired** — benchmark v2, 213 → 182 clusters. Its folder is
+turgor loss, not `leaf_scorch_underwatering`, so the pooled 0.565 was never measuring one
+thing; the honest 2.6.8 figure is hibiscus 1.000. The 24 *healthy* banana_bush clusters
+stay (correctly labelled, in-domain ornamental, and cutting them would shrink the
+false-fire arm to 127 for no gain). Enforced in `tools/build_ood_benchmark.py`
+(`RETIRED_DISEASE_ARMS`, dropped before anything reaches disk) with tests.
+
+**Blur-gate failures route `train_only` in the next build.** A frame below
+`BLUR_LAPLACIAN_FLOOR` is short-circuited to `not_a_plant` by the server before Stage 2
+ever runs, so grading a disease class on one measures something that cannot happen in
+production. **Be clear about the size of this: it is 2 rows of 3,389 and it will not move
+any metric.** It is an eval-correctness rule for every future build, not a model
+improvement — worth having precisely because the corpus will grow and the rule should
+already be in place. `not_a_plant` is exempt: blur is a legitimate example of that class.
+
+**Serve-time scorch bias: not shipped.** +10 scorch clusters for +5 healthy false alarms
+on the never-trained set, every gain on the arm since retired as mislabelled. Contradicts
+the safety asymmetry. Recorded so it is not re-proposed.
+
+**Collection scope: deferred** — to be scoped separately against the §6 per-stratum table.
 
 ## Standing disciplines
 

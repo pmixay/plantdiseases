@@ -112,9 +112,23 @@ MIN_CLUSTERS_PER_CLASS = 60
 # deciding which condition they show; the tool warns rather than guessing.
 SPECIES_ARMS = {
     "hibiscus": "necrosis",       # dead brown tissue — what our class is trained on
-    "banana_bush": "turgor",      # green wilting; 2.6.8+veto scores 4/31 here
 }
 DEFAULT_ARM = "unassigned"
+
+# Arms whose diseased images are NOT our class, dropped from the build rather
+# than labelled and shipped. `banana_bush` was retired in benchmark v2
+# (2026-08-18): its "scorch" folder is turgor loss — wilting with the foliage
+# still green — and `leaf_scorch_underwatering` is marginal necrosis from
+# underwatering, salt or sun. Pooling the two produced the 0.565 headline that
+# three releases were judged against, when the honest hibiscus-only figure for
+# the same bundle is 1.000. It was also indistinguishable from the healthy arm
+# on every measured property (nongreen-in-subject AUC 0.605, marginality 0.581,
+# lesion count 0.492) and no release ever beat 4/31.
+#
+# Only the DISEASED images are dropped. Healthy banana_bush stays: it is
+# correctly labelled, the species is an in-domain garden ornamental, and cutting
+# it would shrink the false-fire arm for no gain.
+RETIRED_DISEASE_ARMS = {"banana_bush"}
 
 # Two-sided 95% Student-t critical values by degrees of freedom, for the
 # between-species interval in ``report()``. Inlined rather than importing scipy:
@@ -140,25 +154,31 @@ def brown_fraction(path: Path) -> float | None:
     measurement toward zero.
     """
     try:
+        import numpy as np
         from PIL import Image
     except ImportError:
         return None
-    import colorsys
     try:
         with Image.open(path) as im:
-            im = im.convert("RGB").resize((160, 160))
-            px = list(im.getdata())
+            rgb = im.convert("RGB").resize((160, 160))
+            hsv = np.asarray(rgb.convert("HSV"), dtype=np.float32) / 255.0
     except Exception:
         return None
-    subject = brown = 0
-    for r, g, b in px:
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        if v > 0.90 and s < 0.15:        # paper / blown-out background
-            continue
-        subject += 1
-        if not (60 / 360 <= h <= 170 / 360) and v < 0.75:
-            brown += 1
-    return (brown / subject) if subject else None
+    # Vectorised over the 160x160 grid. The per-pixel colorsys loop this
+    # replaces called Image.getdata(), removed in Pillow 14 (Oct 2027), and ran
+    # 25,600 Python-level conversions per image. PIL's HSV is 8-bit quantised
+    # where colorsys is float, so the two disagree slightly: measured over 40
+    # benchmark images, max |diff| 0.011, mean 0.005. That is immaterial here —
+    # this column is DIAGNOSTIC ONLY (see SPECIES_ARMS above), nothing branches
+    # on it, and the arm assignment is declared rather than derived. Do not
+    # start branching on it without re-checking that bound.
+    h, sat, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    background = (v > 0.90) & (sat < 0.15)        # paper / blown-out background
+    subject = ~background
+    green = (h >= 60 / 360) & (h <= 170 / 360)
+    brown = subject & ~green & (v < 0.75)
+    n = int(subject.sum())
+    return (float(brown.sum()) / n) if n else None
 
 
 def _phash(path: Path):
@@ -213,6 +233,13 @@ def build(src: Path, out: Path, per_class_cap: int) -> None:
         print(f"\n{cls}:")
         (out / cls).mkdir(parents=True, exist_ok=True)
         for species, files in sorted(by_species.items()):
+            # Before dedup or copying: a retired arm must not reach disk at all.
+            # Dropping it later would leave orphan images with no manifest row,
+            # and the ship gate joins images to the manifest by filename.
+            if cls != "healthy" and species in RETIRED_DISEASE_ARMS:
+                print(f"  {species:28s} RETIRED for {cls} — not our condition, see "
+                      f"RETIRED_DISEASE_ARMS ({len(files)} files skipped)")
+                continue
             uniq = dedup(files)
             # Cap PER SPECIES so no single species can dominate a class the way
             # hibiscus dominated the first benchmark's scorch arm.

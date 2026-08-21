@@ -53,17 +53,30 @@ ViT-B/14, GPU). The whole bundle is produced **deterministically** by
    | ONNX/TFLite export, INT8 quantization + drift gate, the `models/` artefact contract, "server won't boot" | `references/export-and-quantization.md` |
    | the serving pipeline (gates, voting, severity), the feedback/retraining loop, the test suite | `references/pipeline-and-feedback.md` |
 
-3. **Verify with the bundled scripts** rather than eyeballing:
-   - `scripts/check_bundle.py models/` — does a bundle satisfy the boot
-     contract? (catches `classes.json` ↔ head mismatch, missing calibration,
-     OOD bank/decl drift).
-   - `scripts/nbtool.py grep "CONST"` — confirm a live constant before quoting
-     one; the numbers in the references are v2.6.x-era anchors, not eternal.
-   - For model A/B testing, use the **repo's own** `tools/eval_bootstrap.py`
-     (paired bootstrap) — don't reinvent it.
-   - `assets/analysis_boilerplate.py` / `nbtool.py scaffold` — start any new
-     analysis notebook from the canonical taxonomy + disease-macro-F1 so numbers
-     stay comparable to the gate.
+3. **Measure with a tool, don't eyeball.** Every question below has a tool
+   that already answers it; reinventing one is how this project got a
+   truncating lister and a strided augmentation count.
+
+   **In the skill** (agent workflow):
+
+   | Tool | Answers |
+   |---|---|
+   | `scripts/nbtool.py list \| section N \| grep PATTERN \| scaffold OUT.ipynb` | where is X in the notebook? what is the live value of CONST? — **never read the notebook whole**, its cells run to thousands of lines |
+   | `scripts/check_bundle.py models/` | does this bundle satisfy the fail-fast boot contract? (`classes.json` ↔ head width, missing calibration, OOD bank drift) |
+   | `assets/analysis_boilerplate.py` | canonical taxonomy + disease-macro-F1 for a new analysis notebook, so numbers stay comparable to the gate |
+
+   **In the repo** (`cd server`; these are lint- and CI-tested, which is why
+   they live there and not here — one copy, one source of truth):
+
+   | Tool | Answers |
+   |---|---|
+   | `tools/eval_bootstrap.py` | is this A/B difference real? paired bootstrap CI — **the** answer to "did it improve" |
+   | `tools/paired_eval.py` | two bundles, one held-out set, per-class + McNemar |
+   | `tools/filter_supplement.py --root D --bench B --out R` | is a downloaded corpus what its manifest claims? benchmark leakage, duplicate clusters, blur, resolution. **Exits non-zero on leakage** |
+   | `tools/kaggle_inventory.py --list REF \| --gate REF --folder F` | what is *actually* in a Kaggle dataset, and is it the benchmark? raises rather than truncating |
+   | `tools/build_ood_benchmark.py` | build/score the never-trained OOD benchmark |
+   | `tools/analyse_feedback.py` | read-only production-feedback corpus analysis |
+   | `tools/export_data.py` | bundle the production stores for offline labelling |
 
 ## Golden rules (the project's discipline)
 
@@ -77,10 +90,21 @@ them even when a request doesn't mention them.
 2. **`classes.json` is the boot contract.** Its class set must match the trained
    head exactly; the server is **fail-fast** with no migration shim and no demo
    fallback. After any taxonomy change, re-export and run `check_bundle.py`.
-3. **Nothing ships until the gate passes.** `val_realworld`: disease macro-F1 ≥
-   **0.70**, no disease class at recall 0, healthy-bias < 1.5, healthy recall ≥
-   0.70. The gate is the metric that *ships*; `val_indomain` is the metric that
-   *stops training* — keep them separate. `val_studio` never blocks.
+3. **Nothing ships until BOTH gates pass — and the in-domain one is not
+   enough.** In-domain (`val_realworld`): disease macro-F1 ≥ **0.70**, no
+   disease class at recall 0, healthy-bias < 1.5, healthy recall ≥ 0.70.
+   Out-of-domain (§6, blocking since 2026-08-18): the never-trained OOD
+   benchmark, **per arm, never pooled** — `hibiscus` scorch recall ≥ 0.70 and
+   healthy false-fire ≤ 0.12 on the same 151 never-trained clusters.
+
+   The second gate exists because the first one is satisfiable by a collapsed
+   model: **2.7.0, 2.7.1 and 2.7.2 each passed in-domain while scoring ~0
+   out-of-domain**, because in-domain scorch recall went *up* (0.784 → 0.941)
+   over the same releases. An in-domain split drawn from the same supplement is
+   the same photographic regime, however carefully it is grouped.
+
+   `val_indomain` is the metric that *stops training*; keep it separate from
+   both. `val_studio` never blocks.
 4. **Calibrate, then express uncertainty.** Temperature scaling fixes
    probabilities; conformal sets express "either of these two"; OOD/blur gates
    refuse non-leaf/blurry inputs. `temperature.json.source` and
@@ -90,12 +114,33 @@ them even when a request doesn't mention them.
    false-positive on a healthy plant, never reassure on a weak-healthy one. Flag
    (`uncertain_healthy`, `low_confidence`, `blurry_image`) rather than commit.
 6. **Don't split on the image — split on the plant.** Group-aware splits by
-   `plant_id` prevent same-plant/same-session leakage, the silent metric
-   inflator in plant-disease data. Supplements are train-only.
-7. **`MODEL_VERSION` is the single source of truth.** One string in §1, written
+   **`(source, plant_id)`** prevent same-plant/same-session leakage, the silent
+   metric inflator in plant-disease data. The supplement is **supply *and*
+   eval**, not train-only: §2 routes each row by its own `split_hint`
+   (`eval_ok` / `train_only`), and only `hn_kind=boundary` rows are forced
+   train-only (via the `supplement_boundary` source, listed in no split's
+   `allowed_sources`). A permanent holdout is carved by a stable sha1 bucket
+   over `(source, plant_id)`, so membership is a property of the row rather
+   than of the draw.
+7. **A dataset that is "never trained on" is not automatically usable — it
+   also has to not be the thing we grade with, or a re-upload of it.** pHash
+   every candidate against the OOD benchmark at Hamming ≤ 6 *before* proposing
+   it, and against the datasets the benchmark was **built from**: a re-upload of
+   the source passes a cluster-level gate while carrying the same leaves,
+   session and background. Deny at the *branch*, not the folder
+   (`KAGGLE_DENY_FOLDERS` is substring-matched). Both mistakes have been made
+   here — see the deny-list in `docs/DATASET_LABELING_PLAN.md`.
+8. **Count distinct photographs, never files, and never trust a lister that can
+   truncate.** The benchmark's own source folder is ~1,400 files and 62
+   photographs. Report pHash clusters; estimate augmentation from a *contiguous*
+   sample (a strided one steps over adjacent duplicates and reports 1.0 on a 37×
+   collapsed folder). A negative result from a capped lister is not evidence of
+   absence — one dataset re-listed uncapped went 24,000 → 49,878 files, and
+   Kaggle's *search* endpoint truncates at 20/page independently of `pageSize`.
+9. **`MODEL_VERSION` is the single source of truth.** One string in §1, written
    into `classes.json` + `model_card.json`. Bump it on any change to shipped
    numerics.
-8. **Determinism.** `SEED=0`; the exported ONNX (parity-checked on CPU) is the
+10. **Determinism.** `SEED=0`; the exported ONNX (parity-checked on CPU) is the
    stable reference, not the seeded-but-not-bitwise GPU training path.
 
 ## Mental model — families & the artefact bundle
@@ -130,8 +175,9 @@ cards + `/api/feedback` acceptance exist, but the head doesn't predict them yet.
 
 - **Lint/format:** `ruff` — line-length 110, target `py311`, rules `E,F,I,B`,
   ignore `E501,B008`, notebook excluded. Run `cd server && ruff check .`.
-- **Tests:** `pytest` (~36 files); `cd server && pytest -q`. Mirror existing
-  invariant tests when you touch the contract.
+- **Tests:** `pytest` (45 files); `cd server && pytest -q`. Mirror existing
+  invariant tests when you touch the contract. `tests/conftest.py` swaps in a
+  `FakePipeline`, so **no trained weights are needed** to run the suite.
 - **Deps:** runtime `requirements.txt` is lean (ONNX-only; **no** torch/sklearn);
   eval/dev tools live in `requirements-dev.txt`. Don't add a training/eval dep to
   the runtime image.
@@ -151,11 +197,17 @@ conformal.py  ood.py   RAPS prediction sets · embedding-kNN / MaxLogit OOD
 diseases_data.py       bilingual disease database (content cards)
 feedback.py            append-only feedback store + per-class metrics
 ai_services.py         optional PlantNet / OpenRouter / care-plan (graceful)
+labeling.py labeling_auto.py   data-collection / labelling loop
+community.py feedback.py         nearby-scans feed · append-only training signal
 tools/eval_bootstrap.py    paired-bootstrap CIs (the trustworthy A/B)
+tools/paired_eval.py       two bundles on one held-out set (per-class + McNemar)
+tools/build_ood_benchmark.py   build/score the never-trained OOD benchmark
+tools/filter_supplement.py     QA a downloaded corpus on the bytes (leakage, dups, blur)
+tools/kaggle_inventory.py      uncapped Kaggle lister + benchmark-contamination gate
 tools/analyse_feedback.py  read-only feedback corpus analysis
 tools/export_data.py       bundle production stores for offline labelling
 models/                drop trained artefacts here (not committed); MODEL_CARD.md
-tests/                 ~36 pytest files encoding the invariants
+tests/                 45 pytest files encoding the invariants
 ```
 
 ## Portability note

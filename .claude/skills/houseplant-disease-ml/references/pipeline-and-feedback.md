@@ -93,7 +93,7 @@ The flywheel that the notebook §2 ultimately consumes:
 judging + a **read-only** analysis pass that surfaces overconfident errors. Keep
 all training/judging off the serving box; the server only emits signal.
 
-## Tests guard the contract (`server/tests/`, ~36 files, pytest)
+## Tests guard the contract (`server/tests/`, 45 files, pytest)
 
 The suite encodes the invariants above — run it before trusting a change:
 - `test_pipeline_helpers.py`, `test_ood.py`, `test_conformal.py` — gate logic,
