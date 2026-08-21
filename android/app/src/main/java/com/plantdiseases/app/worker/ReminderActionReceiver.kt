@@ -63,15 +63,11 @@ class ReminderActionReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val changed = plantRepository.resolveReminderEvent(eventId, resolution)
+                val hasReminderContext = plantId > 0 && !type.isNullOrBlank() && !plantName.isNullOrBlank()
                 // Schedule only after the event transition commits. Replayed
                 // broadcasts are repository no-ops and cannot enqueue several
                 // one-shot snoozes or reset periodic cadence more than once.
-                if (
-                    changed &&
-                    plantId > 0 &&
-                    !type.isNullOrBlank() &&
-                    !plantName.isNullOrBlank()
-                ) {
+                if (changed && hasReminderContext) {
                     if (action == ACTION_SNOOZE) {
                         ReminderManager.snooze(context, plantId, plantName, type, reminderId, eventId)
                     } else if (action == ACTION_DONE) {

@@ -72,6 +72,7 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -79,6 +80,9 @@ try:
         COMMUNITY_THUMB_DIR,
         OpinionLockedError,
         OpinionOwnerError,
+    )
+    from .community import (
+        block_content_author as community_block_content_author,
     )
     from .community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -96,12 +100,13 @@ try:
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from .community import (
-        block_content_author as community_block_content_author,
         decode_recommendation_cursor as community_decode_recommendation_cursor,
-        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from .community import (
         density_grid as community_density_grid,
+    )
+    from .community import (
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from .community import (
         init_db as init_community_db,
@@ -140,9 +145,10 @@ try:
         prune_older_than as community_prune_older_than,
     )
     from .community import (
-        record_requested_opinion as community_record_requested_opinion,
         recommended_scans as community_recommended_scans,
-        report_content as community_report_content,
+    )
+    from .community import (
+        record_requested_opinion as community_record_requested_opinion,
     )
     from .community import (
         record_scan as community_record_scan,
@@ -152,6 +158,9 @@ try:
     )
     from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        report_content as community_report_content,
     )
     from .community import (
         resolve_author as community_resolve_author,
@@ -261,6 +270,7 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -268,6 +278,9 @@ except ImportError:
         COMMUNITY_THUMB_DIR,
         OpinionLockedError,
         OpinionOwnerError,
+    )
+    from community import (
+        block_content_author as community_block_content_author,
     )
     from community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -285,12 +298,13 @@ except ImportError:
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from community import (
-        block_content_author as community_block_content_author,
         decode_recommendation_cursor as community_decode_recommendation_cursor,
-        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from community import (
         density_grid as community_density_grid,
+    )
+    from community import (
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from community import (
         init_db as init_community_db,
@@ -329,9 +343,10 @@ except ImportError:
         prune_older_than as community_prune_older_than,
     )
     from community import (
-        record_requested_opinion as community_record_requested_opinion,
         recommended_scans as community_recommended_scans,
-        report_content as community_report_content,
+    )
+    from community import (
+        record_requested_opinion as community_record_requested_opinion,
     )
     from community import (
         record_scan as community_record_scan,
@@ -341,6 +356,9 @@ except ImportError:
     )
     from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        report_content as community_report_content,
     )
     from community import (
         resolve_author as community_resolve_author,
@@ -1920,6 +1938,9 @@ async def metrics():
         "uptime_seconds": round(uptime, 1),
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
+        # Across every OpenRouter caller, not just the doctor — the number that
+        # answers "is prompt caching engaging at all" after a model switch.
+        "prompt_cache": prompt_cache_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),

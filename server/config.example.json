@@ -37,6 +37,8 @@
     "species_diseases_reasoning_effort": "medium",
     "care_plan_polish_reasoning_effort": "medium",
     "openrouter_prompt_caching": true,
+    "openrouter_prompt_cache_key": "plantvision-v1",
+    "_prompt_caching_note": "gpt-5.6 caches a prompt prefix only once it reaches 1024 tokens, charges 1.25x for the cache write and 0.1x for a cached read, and matches reliably only when the request carries a prompt_cache_key. Every system prompt this server sends therefore leads with one shared ~1400-token house preamble (ai_services._HOUSE_PREAMBLE), so the prefix clears the minimum on the first turn and one warm cache entry serves the chat doctor, both species screens and the care-plan polish alike. Keep prompt_cache_key identical across replicas that share a preamble — that is what routes them to the same warm machine; only give replicas distinct suffixes if one key becomes a hotspot under measured load. Watch /api/metrics -> prompt_cache.hit_ratio: a ratio near 0.0 over real traffic means the prefix changed or fell under the minimum.",
     "chat_max_tokens": 2048,
     "chat_session_turn_cap": 20,
     "chat_session_token_cap": 32000,
