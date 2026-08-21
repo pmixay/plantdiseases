@@ -72,6 +72,7 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -269,6 +270,7 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -1936,6 +1938,9 @@ async def metrics():
         "uptime_seconds": round(uptime, 1),
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
+        # Across every OpenRouter caller, not just the doctor — the number that
+        # answers "is prompt caching engaging at all" after a model switch.
+        "prompt_cache": prompt_cache_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),

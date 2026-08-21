@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,21 @@ if str(SERVER_DIR) not in sys.path:
 # want to exercise the 429 path re-tune the middleware through the
 # ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
+
+# Redirect the AI disk caches (species profile/diseases, care-plan polish) at a
+# throwaway directory. They default to ``server/ai_cache/``, so without this a
+# test that exercises a real polish/lookup path writes into the working tree —
+# and, worse, the entry it leaves behind is a cache HIT for the next run, which
+# turns "did this call OpenRouter?" tests into order-dependent flakes. Set
+# before any test module imports ai_services (it reads the dir at import).
+_AI_CACHE_TMPDIR = tempfile.mkdtemp(prefix="plantvision-ai-cache-")
+os.environ.setdefault("AI_CACHE_DIR", _AI_CACHE_TMPDIR)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_ai_cache_tmpdir():
+    yield
+    shutil.rmtree(_AI_CACHE_TMPDIR, ignore_errors=True)
 
 
 def _encode_image(img: Image.Image, fmt: str) -> bytes:
