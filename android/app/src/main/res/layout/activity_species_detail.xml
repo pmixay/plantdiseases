@@ -802,12 +802,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone">
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
 
                         <LinearLayout
                             android:id="@+id/native_range_header"
@@ -819,9 +822,18 @@
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_map"
+                                app:tint="@color/primary" />
+
                             <TextView
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
                                 android:layout_weight="1"
                                 android:fontFamily="sans-serif-medium"
                                 android:text="@string/native_range_title"

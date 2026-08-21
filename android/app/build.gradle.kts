@@ -27,8 +27,8 @@ android {
         // on its own terms, not a side effect of a dependency refresh.
         // Compiling against a newer SDK than you target is supported.
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.8"
+        versionCode = 19
+        versionName = "1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
