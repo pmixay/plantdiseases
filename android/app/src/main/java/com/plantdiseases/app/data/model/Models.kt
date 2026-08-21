@@ -306,6 +306,10 @@ data class CommunityScansResponse(
     // Cursor for the next (older) page — pass back as the `before` param.
     // Null once a page comes back short, meaning the scope is exhausted.
     @SerializedName("next_before") @SerialName("next_before") val nextBefore: Long? = null,
+    // Recommended pages use an opaque composite cursor because their order is
+    // score + time + id, not time alone. Clients must return it unchanged.
+    @SerializedName("next_cursor") @SerialName("next_cursor") val nextCursor: String? = null,
+    @SerializedName("ranking") @SerialName("ranking") val ranking: String? = null,
 )
 
 @Serializable
@@ -356,6 +360,8 @@ data class CommunityScanItem(
     @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
     @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
     @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
+    @SerializedName("recommendation_reason") @SerialName("recommendation_reason")
+    val recommendationReason: String? = null,
 )
 
 /** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
@@ -470,6 +476,10 @@ data class CommunityOpinion(
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    // Public moderation token. It is intentionally unrelated to the database
+    // row id or the anonymous author identity.
+    @SerializedName("content_id") @SerialName("content_id") val contentId: String? = null,
+    @SerializedName("is_mine") @SerialName("is_mine") val isMine: Boolean = false,
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the
@@ -514,6 +524,30 @@ data class CommunityLikeResponse(
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
+/** Account-free community safety requests. The anonymous pseudo id only
+ * deduplicates reports/blocks and is never displayed to other users. */
+@Serializable
+data class CommunityReportRequest(
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
+    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
+    @SerializedName("reason") @SerialName("reason") val reason: String,
+)
+
+@Serializable
+data class CommunityBlockRequest(
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
+    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
+)
+
+@Serializable
+data class CommunitySafetyResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("created") @SerialName("created") val created: Boolean = false,
+    @SerializedName("blocked") @SerialName("blocked") val blocked: Boolean = false,
+)
+
 /** /api/community/authors/adopt request body. The device key itself travels
  *  as the X-Community-Author-Key header, not in this body — see
  *  ScanRepository.adoptCommunityAuthor. */
@@ -523,8 +557,8 @@ data class CommunityAuthorAdoptRequest(
     @SerializedName("legacy_pseudo_id") @SerialName("legacy_pseudo_id") val legacyPseudoId: String? = null,
 )
 
-/** /api/community/authors/adopt response — this device's durable forum
- *  identity. `accountId` stays null until a real account claims this row. */
+/** /api/community/authors/adopt response — this device's account-free,
+ * durable forum identity. */
 @Serializable
 data class CommunityAuthorAdoptResponse(
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
@@ -532,7 +566,6 @@ data class CommunityAuthorAdoptResponse(
     @SerializedName("display_name") @SerialName("display_name") val displayName: String = "",
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("last_seen_at") @SerialName("last_seen_at") val lastSeenAt: Long = 0L,
-    @SerializedName("account_id") @SerialName("account_id") val accountId: String? = null,
     @SerializedName("status") @SerialName("status") val status: String = "active",
 )
 

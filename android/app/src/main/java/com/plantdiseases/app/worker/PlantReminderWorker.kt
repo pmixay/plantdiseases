@@ -49,6 +49,7 @@ class PlantReminderWorker(
         val plantId = inputData.getLong(KEY_PLANT_ID, -1L)
         val reminderType = inputData.getString(KEY_REMINDER_TYPE) ?: return Result.failure()
         val plantName = inputData.getString(KEY_PLANT_NAME) ?: return Result.failure()
+        val existingEventId = inputData.getLong(KEY_EXISTING_EVENT_ID, -1L)
 
         if (plantId == -1L) return Result.failure()
 
@@ -87,8 +88,15 @@ class PlantReminderWorker(
         // the row stays "pending" and the recent-events list shows it
         // — that's an audit signal, not a bug.
         val reminder = if (reminderId > 0) plantRepository.getReminderById(reminderId) else null
-        val eventId = if (reminder != null) {
-            plantRepository.recordReminderFire(reminder)
+        if (reminderId > 0L && reminder == null) return Result.success()
+        val eventId = if (existingEventId > 0L) {
+            if (reminder == null) return Result.success()
+            plantRepository.reactivateSnoozedReminderEvent(existingEventId) ?: return Result.success()
+        } else if (reminder != null) {
+            // A worker retry, or an in-app Done racing this firing, may have
+            // already materialised today's occurrence. The repository returns
+            // null in that case; do not post a stale duplicate notification.
+            plantRepository.recordReminderFire(reminder) ?: return Result.success()
         } else {
             -1L
         }
@@ -138,16 +146,19 @@ class PlantReminderWorker(
             .setAutoCancel(true)
 
         // Done + Snooze actions are only useful when we know which
-        // event to resolve; if recordReminderFire couldn't find the
-        // PlantReminder row (e.g. the user deleted it but the worker
-        // already enqueued), skip them silently — the notification
-        // still shows.
+        // event to resolve. Legacy workers with no reminder row id keep a
+        // plain notification; positive ids were authoritatively re-read above,
+        // so deleted/disabled rows never reach this point.
         if (eventId > 0) {
             val doneIntent = ReminderActionReceiver.buildIntent(
                 context,
                 eventId,
                 notificationId,
                 ReminderActionReceiver.ACTION_DONE,
+                plantId = plantId,
+                reminderId = reminderId,
+                type = reminderType,
+                plantName = plantName,
             )
             val donePending = PendingIntent.getBroadcast(
                 context,
@@ -222,6 +233,7 @@ class PlantReminderWorker(
         const val KEY_REMINDER_ID = "reminder_id"
         const val KEY_REMINDER_TYPE = "reminder_type"
         const val KEY_PLANT_NAME = "plant_name"
+        const val KEY_EXISTING_EVENT_ID = "existing_event_id"
 
         const val TYPE_WATERING = "watering"
         const val TYPE_CHECK = "check"

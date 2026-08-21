@@ -24,8 +24,12 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.ui.garden.ReminderScheduleSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PlantHealth
 import com.plantdiseases.app.util.localizedSpeciesName
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Header / actions controller: the green hero panel, the four-tile action row
@@ -54,6 +58,7 @@ class DetailHeaderController(
         plant: PlantEntity,
         scans: List<ScanEntity>,
         journal: List<PlantJournalEntity>,
+        health: PlantHealth.Verdict,
     ): View {
         // Cover photo strip — user-picked first, latest-scan image
         // second, hide when neither exists so the text-only hero
@@ -149,13 +154,38 @@ class DetailHeaderController(
                 ).apply { topMargin = 4.dp() }
             },
         )
+        val healthLabel = activity.getString(
+            when (health.status) {
+                PlantHealth.Status.HEALTHY -> R.string.plant_status_healthy
+                PlantHealth.Status.WATCH -> R.string.plant_status_watch
+                PlantHealth.Status.TREATMENT -> R.string.plant_status_treatment
+                PlantHealth.Status.RECOVERING -> R.string.plant_status_recovering
+                PlantHealth.Status.UNKNOWN -> R.string.plant_status_no_scans
+            },
+        )
+        body.addView(
+            TextView(activity).apply {
+                text = health.score?.let { score ->
+                    activity.getString(R.string.plant_health_header_score, healthLabel, score)
+                } ?: activity.getString(R.string.plant_health_header_status, healthLabel)
+                textSize = 13f
+                setTextColor(activity.getColor(R.color.hero_stat_text))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setBackgroundResource(R.drawable.bg_plant_stat_pill)
+                setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 12.dp() }
+            },
+        )
         val stats = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 18.dp() }
+            ).apply { topMargin = 14.dp() }
         }
         stats.addView(activity.statPill(activity.getString(R.string.scans), scans.size.toString()))
         stats.addView(activity.statPill(activity.getString(R.string.journal), journal.size.toString()))
@@ -295,19 +325,26 @@ class DetailHeaderController(
             .setView(view)
             .setPositiveButton(R.string.reminder_save) { _, _ ->
                 val raw = input.text?.toString()
-                activity.lifecycleScope.launch {
-                    when (kind) {
-                        JournalAction.FERTILISE -> plantRepository.addFertilising(plantId, raw)
-                        JournalAction.PRUNE -> plantRepository.addPruning(plantId, raw)
-                        JournalAction.REPOT -> plantRepository.addRepotting(plantId, raw)
-                        JournalAction.MIST -> plantRepository.addMisting(plantId, raw)
+                activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    val rescheduledDays = withContext(NonCancellable) {
+                        when (kind) {
+                            JournalAction.FERTILISE -> plantRepository.addFertilising(plantId, raw)
+                            JournalAction.PRUNE -> plantRepository.addPruning(plantId, raw)
+                            JournalAction.REPOT -> plantRepository.addRepotting(plantId, raw)
+                            JournalAction.MIST -> plantRepository.addMisting(plantId, raw)
+                        }
+                        if (kind == JournalAction.FERTILISE) {
+                            rescheduleReminderAfterCare(
+                                com.plantdiseases.app.worker.PlantReminderWorker.TYPE_FERTILIZE,
+                            )
+                        } else {
+                            null
+                        }
                     }
-                    if (kind == JournalAction.FERTILISE) {
-                        rescheduleReminderAfterCare(
-                            com.plantdiseases.app.worker.PlantReminderWorker.TYPE_FERTILIZE,
-                        )
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        rescheduledDays?.let(::showRescheduledToast)
+                        onReload()
                     }
-                    onReload()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -353,9 +390,9 @@ class DetailHeaderController(
         hintRes = R.string.note_hint,
         iconRes = R.drawable.ic_note_pencil,
     ) { text ->
-        activity.lifecycleScope.launch {
-            plantRepository.addNote(plantId, text)
-            onReload()
+        activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) { plantRepository.addNote(plantId, text) }
+            if (!activity.isFinishing && !activity.isDestroyed) onReload()
         }
     }
 
@@ -365,12 +402,17 @@ class DetailHeaderController(
         iconRes = R.drawable.ic_watering,
         allowEmpty = true,
     ) { text ->
-        activity.lifecycleScope.launch {
-            plantRepository.addWatering(plantId, text)
-            rescheduleReminderAfterCare(
-                com.plantdiseases.app.worker.PlantReminderWorker.TYPE_WATERING,
-            )
-            onReload()
+        activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val rescheduledDays = withContext(NonCancellable) {
+                plantRepository.addWatering(plantId, text)
+                rescheduleReminderAfterCare(
+                    com.plantdiseases.app.worker.PlantReminderWorker.TYPE_WATERING,
+                )
+            }
+            if (!activity.isFinishing && !activity.isDestroyed) {
+                rescheduledDays?.let(::showRescheduledToast)
+                onReload()
+            }
         }
     }
 
@@ -381,12 +423,12 @@ class DetailHeaderController(
      * — not on the stale cadence the morning after they already did the
      * work. No-op when the plant has no enabled reminder of this type.
      */
-    private suspend fun rescheduleReminderAfterCare(type: String) {
-        val plant = currentPlant ?: return
+    private suspend fun rescheduleReminderAfterCare(type: String): Int? {
+        val plant = currentPlant ?: return null
         val reminder = plantRepository.getReminders(plant.id)
-            .firstOrNull { it.type == type && it.enabled } ?: return
+            .firstOrNull { it.type == type && it.enabled } ?: return null
         com.plantdiseases.app.util.ReminderManager.rescheduleAfterCare(
-            context = activity,
+            context = activity.applicationContext,
             plantId = plant.id,
             plantName = plant.name,
             type = reminder.type,
@@ -395,12 +437,16 @@ class DetailHeaderController(
             minute = reminder.minute,
             reminderId = reminder.id,
         )
+        return reminder.intervalDays
+    }
+
+    private fun showRescheduledToast(intervalDays: Int) {
         Toast.makeText(
             activity,
             activity.resources.getQuantityString(
                 R.plurals.care_reminder_rescheduled,
-                reminder.intervalDays,
-                reminder.intervalDays,
+                intervalDays,
+                intervalDays,
             ),
             Toast.LENGTH_SHORT,
         ).show()
@@ -448,21 +494,26 @@ class DetailHeaderController(
             .setMessage(R.string.delete_plant_confirm)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
-                activity.lifecycleScope.launch {
-                    com.plantdiseases.app.util.ReminderManager.cancelAll(
-                        activity,
-                        plant.id,
-                        // Generic reminders cancel by row id — fetch
-                        // before the CASCADE delete wipes them.
-                        plantRepository.getReminders(plant.id),
-                    )
-                    plantRepository.deletePlant(plant.id)
-                    Toast.makeText(
-                        activity,
-                        R.string.plant_deleted,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    activity.finish()
+                val appContext = activity.applicationContext
+                activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    withContext(NonCancellable) {
+                        com.plantdiseases.app.util.ReminderManager.cancelAll(
+                            appContext,
+                            plant.id,
+                            // Generic reminders cancel by row id — fetch
+                            // before the CASCADE delete wipes them.
+                            plantRepository.getReminders(plant.id),
+                        )
+                        plantRepository.deletePlant(plant.id)
+                    }
+                    if (!activity.isDestroyed) {
+                        Toast.makeText(
+                            activity,
+                            R.string.plant_deleted,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        activity.finish()
+                    }
                 }
             }
             .show()

@@ -115,6 +115,18 @@ class LunarCalendarTest {
     }
 
     @Test
+    fun `current and next calendar years are fully navigable`() {
+        val currentYear = LocalDate.now().year
+        for (year in currentYear..(currentYear + 1)) {
+            assertTrue(LunarCalendar.isInRange(LocalDate.of(year, 1, 1)))
+            assertTrue(LunarCalendar.isInRange(LocalDate.of(year, 12, 31)))
+            for (month in 1..12) {
+                assertEquals(LocalDate.of(year, month, 1).lengthOfMonth(), LunarCalendar.month(year, month).size)
+            }
+        }
+    }
+
+    @Test
     fun `clampMonth and clampDate stay within the navigable range`() {
         assertEquals(LunarCalendar.MIN_MONTH, LunarCalendar.clampMonth(LunarCalendar.MIN_MONTH.minusMonths(1)))
         assertEquals(LunarCalendar.MAX_MONTH, LunarCalendar.clampMonth(LunarCalendar.MAX_MONTH.plusMonths(1)))

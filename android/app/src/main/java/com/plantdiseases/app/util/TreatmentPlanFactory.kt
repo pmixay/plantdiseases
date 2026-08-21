@@ -12,9 +12,9 @@ import java.util.Calendar
  * treatment checklist. Pure: takes the DTO + a start time, returns entities;
  * persists nothing (CareRepository.startTreatmentPlan does the writing).
  *
- * The server already produces the treatment text (ai_services.py
- * generate_care_plan) — this factory never invents steps, only splits and
- * schedules the ones the server returned.
+ * The server already produces treatment actions and observation checkpoints
+ * (ai_services.py generate_care_plan) — this factory never invents steps,
+ * only splits and schedules the ones the server returned.
  */
 object TreatmentPlanFactory {
 
@@ -35,17 +35,9 @@ object TreatmentPlanFactory {
         startedAtMs: Long,
     ): Built? {
         val treatment = plan.treatment
-        if (treatment.isNullOrEmpty()) return null
-
-        // Checkpoints are (day, check) pairs with no explicit step index in
-        // the wire format — map by POSITION: the i-th checkpoint overrides
-        // the i-th step's due day, same convention the mockup's "Step 2 of 5
-        // · Fungicide" progression implies (checkpoints walk the same steps
-        // in order).
-        val checkpointByIndex = plan.checkpoints.orEmpty()
-            .mapIndexed { index, checkpoint -> index to checkpoint.day }
-            .filter { it.second > 0 }
-            .toMap()
+            ?.mapNotNull { text -> text.trim().takeIf { it.isNotEmpty() } }
+            .orEmpty()
+        if (treatment.isEmpty()) return null
 
         // Full product objects, not just keys — see TreatmentStepEntity's
         // kdoc for why the app can't resolve a bare key against a
@@ -69,27 +61,55 @@ object TreatmentPlanFactory {
                 array.toString()
             }
 
-        val lastIndex = treatment.lastIndex
-        val steps = treatment.mapIndexed { index, text ->
+        data class Draft(
+            val title: String,
+            val detail: String?,
+            val bullets: String?,
+            val productsJson: String?,
+            val dueAt: Long,
+            val sourceOrder: Int,
+        )
+
+        // Treatment actions and observation checkpoints are different things
+        // in the API contract. A checkpoint's `check` text is itself a future
+        // re-check task; mapping its day onto treatment[index] discarded that
+        // text and could move an unrelated action weeks into the future.
+        val treatmentDrafts = treatment.mapIndexed { index, text ->
             val (title, detail) = splitTitleAndDetail(text)
-            var dueAt = dueAtForIndex(startedAtMs, index, checkpointByIndex)
-            // The follow-up-day floor is a FALLBACK for when nothing else pins
-            // the final step's timing. An explicit checkpoint on that step is
-            // the server's own re-check day and takes precedence over it.
-            if (index == lastIndex && index !in checkpointByIndex) {
-                val followUpDueAt = addDays(startedAtMs, plan.followUpDays)
-                if (followUpDueAt > dueAt) dueAt = followUpDueAt
-            }
-            TreatmentStepEntity(
-                planId = 0, // patched by the caller after the plan row's id is known
-                stepIndex = index,
+            Draft(
                 title = title,
                 detail = detail,
                 bullets = bulletsFor(index, detail ?: text, plan),
                 productsJson = if (index == 0) productsJson else null,
-                dueAt = dueAt,
+                dueAt = addDays(startedAtMs, index * STEP_SPACING_DAYS),
+                sourceOrder = index,
             )
         }
+        val checkpointDrafts = plan.checkpoints.orEmpty().mapIndexedNotNull { index, checkpoint ->
+            val check = checkpoint.check.trim().takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
+            val (title, detail) = splitTitleAndDetail(check)
+            Draft(
+                title = title,
+                detail = detail,
+                bullets = null,
+                productsJson = null,
+                dueAt = addDays(startedAtMs, checkpoint.day.coerceAtLeast(0)),
+                sourceOrder = treatment.size + index,
+            )
+        }
+        val steps = (treatmentDrafts + checkpointDrafts)
+            .sortedWith(compareBy<Draft>({ it.dueAt }, { it.sourceOrder }))
+            .mapIndexed { index, draft ->
+                TreatmentStepEntity(
+                    planId = 0, // patched by the caller after the plan row's id is known
+                    stepIndex = index,
+                    title = draft.title,
+                    detail = draft.detail,
+                    bullets = draft.bullets,
+                    productsJson = draft.productsJson,
+                    dueAt = draft.dueAt,
+                )
+            }
 
         val conditionsJson = plan.treatmentConditions?.let { conditions ->
             JSONObject().apply {
@@ -112,11 +132,6 @@ object TreatmentPlanFactory {
             ),
             steps = steps,
         )
-    }
-
-    private fun dueAtForIndex(startedAtMs: Long, index: Int, checkpointByIndex: Map<Int, Int>): Long {
-        val days = checkpointByIndex[index] ?: (index * STEP_SPACING_DAYS)
-        return addDays(startedAtMs, days)
     }
 
     /** Adds [days] to [startedAtMs] and re-bases onto 12:00 local — the

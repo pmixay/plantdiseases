@@ -14,8 +14,9 @@ import org.robolectric.annotation.Config
 import java.util.Locale
 
 /**
- * Exercises [AppDatabase.MIGRATION_6_7] and [AppDatabase.MIGRATION_7_8]
- * the way a real upgrade runs them: a v6- (or v7-) shaped file is built by
+ * Exercises [AppDatabase.MIGRATION_6_7], [AppDatabase.MIGRATION_7_8], and
+ * [AppDatabase.MIGRATION_8_9] the way a real upgrade runs them: a v6-, v7-,
+ * or v8-shaped file is built by
  * hand — `exportSchema = false`, so there is no schema JSON for Room's
  * `MigrationTestHelper` to replay from — and then **opened through Room**
  * with every migration registered.
@@ -204,7 +205,7 @@ class Migration6To7Test {
     }
 
     /**
-     * Writes a database file stamped at [version] (6 or 7) and closes it, so
+     * Writes a database file stamped at [version] (6, 7, or 8) and closes it, so
      * the subsequent Room open sees an un-migrated file. `migrate()` is
      * deliberately NOT called by hand for the 6→7 step under test: doing so
      * would leave `user_version` at 6, Room would re-run MIGRATION_6_7 and
@@ -223,6 +224,7 @@ class Migration6To7Test {
                             // A v7 fixture is "v6 plus what 6→7 does" — reusing
                             // the production migration keeps the two in step.
                             if (version >= 7) AppDatabase.MIGRATION_6_7.migrate(db)
+                            if (version >= 8) AppDatabase.MIGRATION_7_8.migrate(db)
                         }
 
                         override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
@@ -249,6 +251,7 @@ class Migration6To7Test {
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
                 AppDatabase.MIGRATION_7_8,
+                AppDatabase.MIGRATION_8_9,
             )
             .allowMainThreadQueries()
             .build()
@@ -349,6 +352,32 @@ class Migration6To7Test {
             // Nothing MIGRATION_7_8 touches, so it must be untouched.
             assertThat(count(db, "plants")).isEqualTo(1)
             assertThat(count(db, "rooms")).isEqualTo(1)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateV8ThroughRoom_backfillsReminderCreationAnchorAndValidates() {
+        createDatabaseFile("migration_v8_reminder_anchor", version = 8) { db ->
+            db.execSQL("INSERT INTO `plants` (`id`, `name`, `created_at`) VALUES (1, 'Old plant', 1000)")
+            db.execSQL(
+                "INSERT INTO `plant_reminders` " +
+                    "(`id`, `plant_id`, `type`, `interval_days`, `hour`, `minute`, `enabled`) " +
+                    "VALUES (1, 1, 'watering', 7, 9, 0, 1)"
+            )
+        }
+
+        val beforeOpen = System.currentTimeMillis() - 5_000L
+        val db = openThroughRoom("migration_v8_reminder_anchor")
+        try {
+            val createdAt = raw(db).query(
+                "SELECT `created_at` FROM `plant_reminders` WHERE `id` = 1"
+            ).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getLong(0)
+            }
+            assertThat(createdAt).isAtLeast(beforeOpen)
         } finally {
             db.close()
         }

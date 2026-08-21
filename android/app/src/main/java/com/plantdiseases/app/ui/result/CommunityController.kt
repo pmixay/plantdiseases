@@ -84,7 +84,9 @@ class CommunityController(
      *  viewer + ignores owner self-views, so this is safe to call on any tap. */
     private fun recordView(scanId: String, viewerPseudoId: String) {
         if (scanId.isBlank() || viewerPseudoId.isBlank()) return
-        activity.lifecycleScope.launch { repository.recordCommunityView(scanId, viewerPseudoId) }
+        activity.lifecycleScope.launch {
+            repository.recordCommunityView(scanId, viewerPseudoId, activity)
+        }
     }
 
     /**
@@ -116,7 +118,11 @@ class CommunityController(
 
     private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(scan.clientScanId, context = activity).onSuccess { resp ->
+            repository.getCommunityOpinions(
+                scan.clientScanId,
+                userPseudoId = TelemetryIds.userPseudoId(activity),
+                context = activity,
+            ).onSuccess { resp ->
                 val n = resp.opinions.size
                 when {
                     resp.wantsOpinion ->
@@ -230,10 +236,29 @@ class CommunityController(
         activity.lifecycleScope.launch {
             // Ensure the scan is in the community corpus so others can
             // see the ask (force = explicit consent).
-            communityUploader.uploadFromEntity(scan, force = true)
+            val upload = communityUploader.uploadFromEntity(scan, force = true)
+            if (upload != com.plantdiseases.app.data.repository.CommunityUploader.UploadOutcome.Uploaded) {
+                opinionRequestInFlight = false
+                showAsk(scan, isRu)
+                Toast.makeText(
+                    activity,
+                    R.string.result_second_opinion_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@launch
+            }
             repository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                .onSuccess {
+                .onSuccess { flagged ->
                     opinionRequestInFlight = false
+                    if (!flagged) {
+                        showAsk(scan, isRu)
+                        Toast.makeText(
+                            activity,
+                            R.string.result_second_opinion_failed,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        return@onSuccess
+                    }
                     // Fresh request: 0 replies, full 72 h window.
                     showOpenRequest(
                         scan,
@@ -373,6 +398,7 @@ class CommunityController(
                 species = speciesScientific,
                 userPseudoId = TelemetryIds.userPseudoId(activity),
                 limit = 12,
+                context = activity,
             ).onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = if (isRu) {

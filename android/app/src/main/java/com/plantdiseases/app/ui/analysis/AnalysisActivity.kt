@@ -18,7 +18,8 @@ import com.bumptech.glide.signature.ObjectKey
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
@@ -45,7 +46,7 @@ class AnalysisActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
-    lateinit var plantRepository: PlantRepository
+    lateinit var careRepository: CareRepository
     private var imagePath: String = ""
 
     // When set (≥0), the resulting scan is auto-attached to this plant after
@@ -320,7 +321,11 @@ class AnalysisActivity : AppCompatActivity() {
         // server-issued scan_id) is never added to the garden, even from the
         // in-garden scanner (which forces at least gamma anyway).
         if (attachPlantId >= 0L && !response.scanId.isNullOrBlank()) {
-            plantRepository.assignScanToPlant(scanId, attachPlantId)
+            careRepository.attachScanWithStoredChecklist(
+                scanId = scanId,
+                existingPlantId = attachPlantId,
+                storedChecklist = storedChecklist(response),
+            )
         }
 
         // "Improve online" upgrade: carry over the replaced offline scan's plant
@@ -328,7 +333,11 @@ class AnalysisActivity : AppCompatActivity() {
         // place instead of leaving a duplicate in history.
         if (replaceScanId >= 0L && replaceScanId != scanId) {
             scanRepository.getScanById(replaceScanId)?.plantId?.let { pid ->
-                plantRepository.assignScanToPlant(scanId, pid)
+                careRepository.attachScanWithStoredChecklist(
+                    scanId = scanId,
+                    existingPlantId = pid,
+                    storedChecklist = storedChecklist(response),
+                )
             }
             scanRepository.deleteScan(replaceScanId)
         }
@@ -349,6 +358,31 @@ class AnalysisActivity : AppCompatActivity() {
         }
         startActivity(intent)
         finish()
+    }
+
+    /** Local fallback for scans created directly from a plant detail. This
+     * path never opens the Add-to-garden sheet, so attachment itself must
+     * materialise the stored treatment checklist. */
+    private fun storedChecklist(
+        response: com.plantdiseases.app.data.model.AnalysisResponse,
+    ): CareRepository.StoredChecklist? {
+        if (response.isHealthy || response.classKey == NOT_A_PLANT_CLASS) return null
+        val preferred = if (LocaleHelper.isRussian(this)) response.treatmentRu else response.treatment
+        val alternate = if (LocaleHelper.isRussian(this)) response.treatment else response.treatmentRu
+        val treatment = preferred.filter { it.isNotBlank() }.ifEmpty { alternate.filter { it.isNotBlank() } }
+        if (treatment.isEmpty()) return null
+        val diseaseKey = response.classKey?.takeIf { it.isNotBlank() }
+            ?: response.diseaseName.lowercase().replace(' ', '_')
+        return CareRepository.StoredChecklist(
+            carePlan = CarePlanResponse(
+                disease = diseaseKey,
+                keyAction = treatment.first(),
+                treatment = treatment,
+            ),
+            diseaseKey = diseaseKey,
+            diseaseLabelEn = response.diseaseName,
+            diseaseLabelRu = response.diseaseNameRu,
+        )
     }
 
     /** Run the Aqua TFLite model on-device, off the main thread. Returns a

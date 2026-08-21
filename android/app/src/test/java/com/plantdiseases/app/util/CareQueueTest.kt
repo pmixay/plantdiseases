@@ -43,9 +43,8 @@ class CareQueueTest {
         val anchor = now - 10L * CareSchedule.DAY_MS
         val reminder = watering(anchor)
 
-        // Occurrences land on anchor + 0/7/14/21 days = Aug5, Aug12, Aug19, Aug26
-        // (all at 09:00). A window of [Aug4, Aug20) keeps exactly the first
-        // three — Aug26 falls on/after the toMs cutoff and is excluded.
+        // Occurrences land one full interval after the anchor: Aug12, Aug19,
+        // Aug26… A window of [Aug4, Aug20) keeps the first two.
         val tasks = CareQueue.project(
             reminders = listOf(reminder),
             steps = emptyList(),
@@ -54,11 +53,11 @@ class CareQueueTest {
             toMs = now + 5L * CareSchedule.DAY_MS,
         )
 
-        assertThat(tasks).hasSize(3)
+        assertThat(tasks).hasSize(2)
         val sorted = tasks.sortedBy { it.dueAt }
         assertThat(sorted[0].status).isEqualTo(CareQueue.CareTask.Status.PENDING)
         assertThat(sorted[0].dueAt).isLessThan(now)
-        assertThat(sorted[2].dueAt).isGreaterThan(now)
+        assertThat(sorted[1].dueAt).isGreaterThan(now)
 
         val cal0 = Calendar.getInstance().apply { timeInMillis = sorted[0].dueAt }
         assertThat(cal0.get(Calendar.HOUR_OF_DAY)).isEqualTo(9)
@@ -69,10 +68,10 @@ class CareQueueTest {
     fun project_anchorMovedToToday_pushesNextOccurrenceOutByOneInterval() {
         val now = cal(2026, Calendar.AUGUST, 15, 9, 0).timeInMillis
         // The reminder is exactly due right now under the OLD schedule
-        // (anchored one full interval back) — occurrence 1 of that schedule
+        // (anchored one full interval back) — occurrence 0 of that schedule
         // lands on `now` exactly.
         val staleAnchor = now - 7L * CareSchedule.DAY_MS
-        // Logging today re-anchors to `now` — its occurrence 1 (the first
+        // Logging today re-anchors to `now` — its occurrence 0 (the first
         // one AFTER today's log) lands on now + 7 days.
         val freshAnchor = now
 
@@ -172,13 +171,11 @@ class CareQueueTest {
     }
 
     @Test
-    fun project_lateCompletionMarkedOnBothDays_rendersTheCompletionDayDone() {
+    fun project_lateCompletionReanchorsWithoutRespawningOnCompletionDay() {
         // Due Aug 10, ticked Aug 15. Completing writes a journal entry, which
-        // re-anchors the reminder onto the completion — so occurrence 0 now
-        // lands on Aug 15. CareRepository therefore emits a DoneEvent for the
-        // occurrence's original due day AND for the day it was actually done;
-        // with only the former the just-completed task re-appeared as pending
-        // (and overdue-red), costing a second tap and a second journal entry.
+        // re-anchors the reminder onto the completion. Occurrence 0 must land
+        // one interval later, not back on Aug 15 (which used to respawn the
+        // just-completed task and require a second tap).
         val originalDue = cal(2026, Calendar.AUGUST, 10, 9, 0).timeInMillis
         val completedAt = cal(2026, Calendar.AUGUST, 15, 18, 0).timeInMillis
 
@@ -187,7 +184,6 @@ class CareQueueTest {
             steps = emptyList(),
             doneEvents = listOf(
                 CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = CareQueue.epochDayOf(originalDue)),
-                CareQueue.DoneEvent(plantId = 1, reminderId = 1, type = "watering", epochDay = CareQueue.epochDayOf(completedAt)),
             ),
             fromMs = originalDue - CareSchedule.DAY_MS,
             toMs = completedAt + CareSchedule.DAY_MS,
@@ -196,8 +192,35 @@ class CareQueueTest {
         val onCompletionDay = tasks.filter {
             CareQueue.epochDayOf(it.dueAt) == CareQueue.epochDayOf(completedAt)
         }
-        assertThat(onCompletionDay).isNotEmpty()
-        assertThat(onCompletionDay.map { it.status }).containsExactly(CareQueue.CareTask.Status.DONE)
+        assertThat(onCompletionDay).isEmpty()
+    }
+
+    @Test
+    fun latestOccurrenceBefore_returnsOneCurrentOccurrenceWithoutLookbackCutoff() {
+        val now = cal(2026, Calendar.AUGUST, 15, 12, 0).timeInMillis
+        val oldAnchor = now - 1_000L * CareSchedule.DAY_MS
+        val todayEnd = CareQueue.dayStartMs(CareQueue.epochDayOf(now) + 1L)
+
+        val latest = CareQueue.latestOccurrenceBefore(
+            watering(anchorMs = oldAnchor, intervalDays = 1, hour = 9),
+            todayEnd,
+        )
+
+        assertThat(latest).isNotNull()
+        assertThat(CareQueue.epochDayOf(latest!!.dueAt)).isEqualTo(CareQueue.epochDayOf(now))
+    }
+
+    @Test
+    fun firstOccurrence_isOneFullIntervalAfterReminderAnchor() {
+        val anchor = cal(2026, Calendar.AUGUST, 1, 18, 0).timeInMillis
+        val expectedDay = CareQueue.epochDayOf(cal(2026, Calendar.AUGUST, 8, 9, 0).timeInMillis)
+        val task = CareQueue.latestOccurrenceBefore(
+            watering(anchorMs = anchor, intervalDays = 7, hour = 9),
+            cal(2026, Calendar.AUGUST, 9, 0, 0).timeInMillis,
+        )
+
+        assertThat(task).isNotNull()
+        assertThat(CareQueue.epochDayOf(task!!.dueAt)).isEqualTo(expectedDay)
     }
 
     @Test

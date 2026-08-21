@@ -229,6 +229,8 @@ object OnboardingCatalog {
             OnboardingContext.COMMUNITY,
             OnboardingAnchorKey.COMMUNITY_FEED,
             R.string.guidance_community_feed,
+            conditional = true,
+            skipWhenUnavailable = true,
         ),
     )
 

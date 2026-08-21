@@ -52,6 +52,8 @@
   },
   "security": {
     "feedback_ip_pepper": "",
+    "community_author_key_pepper": "community-author-storage-v2",
+    "_community_author_key_pepper_note": "Stable server-side transform for account-free Community author credentials at rest. Set the same value on every replica and do not rotate it without a key-migration plan; changing it makes existing device handles unreachable. It is intentionally independent from the rotatable IP privacy pepper.",
     "_feedback_ip_pepper_note": "Secret used to pepper the SHA-256 of a client IP before it is stored (feedback / community / telemetry client_ip_hash). IPv4 is only a 32-bit space, so a hash with a known or empty pepper enumerates back to the raw IP in seconds \u2014 it MUST be a high-entropy per-deployment secret. Leave blank and the server generates one on first use and persists it beside the feedback DB as .ip_hash_pepper; set it explicitly to control rotation or to share one pepper across replicas.",
     "require_api_key": false,
     "api_keys": {

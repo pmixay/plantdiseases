@@ -108,4 +108,27 @@ class TreatmentPlanDaoTest {
         assertThat(db.treatmentPlanDao().getAllForPlant(plantId).none { it.scanId == secondScanId })
             .isTrue()
     }
+
+    @Test
+    fun careQueueRange_onlyReturnsStepsFromActivePlans() = runBlocking {
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        val scanIds = List(3) { db.scanDao().insert(minimalScan(plantId)) }
+        val activeId = db.treatmentPlanDao().insert(plan(plantId, scanId = scanIds[0], status = "active"))
+        val abandonedId = db.treatmentPlanDao().insert(plan(plantId, scanId = scanIds[1], status = "abandoned"))
+        val completedId = db.treatmentPlanDao().insert(plan(plantId, scanId = scanIds[2], status = "completed"))
+        val dueAt = 10_000L
+        db.treatmentStepDao().insertAll(
+            listOf(
+                TreatmentStepEntity(planId = activeId, stepIndex = 0, title = "Active", dueAt = dueAt),
+                TreatmentStepEntity(planId = abandonedId, stepIndex = 0, title = "Old", dueAt = dueAt),
+                TreatmentStepEntity(planId = completedId, stepIndex = 0, title = "Finished", dueAt = dueAt),
+            ),
+        )
+
+        val ranged = db.treatmentStepDao().getAllInRangeWithPlantId(0L, 20_000L)
+        val actionable = db.treatmentStepDao().getActionableDueBeforeWithPlantId(20_000L)
+
+        assertThat(ranged.map { it.step.title }).containsExactly("Active")
+        assertThat(actionable.map { it.step.title }).containsExactly("Active")
+    }
 }

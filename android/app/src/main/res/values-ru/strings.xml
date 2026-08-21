@@ -120,7 +120,7 @@
 
     <!-- Согласие на использование данных (блокирующее) -->
     <string name="consent_title">Ваши данные и наши модели</string>
-    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке (без фото и геолокации), чтобы помочь исправить сбои. Отправленные данные нельзя отозвать — они хранятся защищённо и не содержат аккаунта, имени и точного местоположения.</string>
+    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения моделей диагностики. Данные хранятся без аккаунта, имени и точной геолокации; метаданные фото (EXIF, включая GPS) удаляются. Для защиты от злоупотреблений и качества данных прикрепляется анонимный идентификатор установки, поэтому записи с одного устройства могут быть связаны между собой. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке без фото и геолокации. Условия хранения и удаления описаны в политике конфиденциальности.</string>
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
@@ -161,7 +161,7 @@
     <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
     <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
     <string name="guidance_community_scope">Показывать сканы рядом, по стране или со всего мира.</string>
-    <string name="guidance_community_feed">Откройте фото, чтобы увидеть диагноз и оставить комментарий. Сердечком ставится лайк.</string>
+    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации. Откройте фото, чтобы читать ответы; ответить можно, только пока владелец активно просит второе мнение. Сердечком ставится лайк.</string>
     <string name="guidance_previous">Предыдущий шаг</string>
     <string name="guidance_next">Следующий шаг</string>
     <string name="guidance_activate_target">Нажать выделенный элемент</string>
@@ -268,6 +268,7 @@
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
+    <string name="community_opinion_loading">Загружаем ответы сообщества…</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
@@ -287,8 +288,31 @@
     <string name="community_opinion_list_header">Ответы (%1$d)</string>
     <string name="community_wants_opinion_badge">Ждёт мнения</string>
     <string name="community_like_action">Нравится</string>
+    <string name="community_open_replies">Открыть ответы: %1$d</string>
+    <string name="community_replies_locked_short">Ответы закрыты</string>
+    <string name="community_replies_locked_readable">Ответы доступны только для чтения: владелец не запрашивает мнения</string>
+    <string name="community_opinion_locked_body">Ответы доступны только для чтения. Владелец не запрашивал второе мнение либо запрос уже завершён.</string>
+    <string name="community_opinion_locked_toast">Запрос второго мнения уже завершён.</string>
+    <string name="community_report_action">Пожаловаться</string>
+    <string name="community_block_action">Заблокировать автора</string>
+    <string name="community_report_title">Почему вы жалуетесь?</string>
+    <string name="community_report_sent">Жалоба отправлена. Спасибо.</string>
+    <string name="community_block_title">Заблокировать автора?</string>
+    <string name="community_block_body">Его сканы и ответы будут скрыты от вас, а ваши публикации — от него.</string>
+    <string name="community_block_confirm">Заблокировать</string>
+    <string name="community_blocked">Автор заблокирован.</string>
+    <string name="community_safety_error">Не удалось обновить настройки безопасности. Попробуйте снова.</string>
+    <string-array name="community_report_reason_labels">
+        <item>Контент сексуального характера</item>
+        <item>Насилие или угрозы</item>
+        <item>Ненависть или травля</item>
+        <item>Незаконный или опасный совет</item>
+        <item>Спам или ложная информация</item>
+        <item>Нарушение приватности или подмена личности</item>
+        <item>Другое нарушение правил</item>
+    </string-array>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Сообщество</string>
+    <string name="nearby_scans_title">Лента сообщества</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
@@ -319,11 +343,8 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
     <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
-    <!-- Nearby scans sort & filter overlay -->
-    <string name="nearby_filter_title">Сортировка и фильтр</string>
-    <string name="nearby_filter_by_date">По дате</string>
-    <string name="nearby_filter_date_newest">Сначала новые</string>
-    <string name="nearby_filter_date_oldest">Сначала старые</string>
+    <!-- Фильтр рекомендательной ленты сообщества -->
+    <string name="nearby_filter_title">Фильтр по заболеванию</string>
     <string name="nearby_filter_by_type">По типу</string>
     <string name="nearby_filter_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
@@ -429,6 +450,8 @@
     <string name="plant_tab_history">История</string>
     <string name="plant_tab_gallery">Галерея</string>
     <string name="plant_health_title">Здоровье</string>
+    <string name="plant_health_header_status">Здоровье · %1$s</string>
+    <string name="plant_health_header_score">Здоровье · %1$s · %2$d%%</string>
     <string name="plant_health_delta_week">%1$s за неделю</string>
     <string name="plant_health_need_scans">Отсканируйте растение дважды, чтобы увидеть динамику здоровья</string>
     <string name="treatment_plan_current">Текущий план лечения</string>
@@ -444,6 +467,15 @@
     <string name="calendar_legend_overdue">Просрочено</string>
     <string name="calendar_legend_done">Выполнено</string>
     <string name="calendar_today_prefix">Сегодня, %1$s</string>
+    <string name="garden_do_today_title">Сделать сегодня</string>
+    <string name="garden_do_today_summary">%1$s · %2$s</string>
+    <plurals name="garden_do_today_overdue_count">
+        <item quantity="one">%d просрочена</item>
+        <item quantity="few">%d просрочены</item>
+        <item quantity="many">%d просрочено</item>
+        <item quantity="other">%d просрочено</item>
+    </plurals>
+    <string name="garden_do_today_open_calendar">Открыть календарь</string>
     <string name="calendar_all_caught_up">Всё сделано 🌿</string>
     <string name="calendar_empty_day">На этот день задач нет</string>
     <string name="calendar_show_done">Показать выполненные (%1$d)</string>

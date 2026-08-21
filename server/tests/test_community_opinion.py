@@ -132,7 +132,6 @@ def test_resolve_author_creates_one_row_per_key_hash(comm):
     a = comm.resolve_author(key_hash="k" * 64, seed_display_name="Leafy Sage 7")
     assert a["author_id"].startswith("au_")
     assert a["display_name"] == "Leafy Sage 7"
-    assert a["account_id"] is None
     assert a["status"] == "active"
 
 

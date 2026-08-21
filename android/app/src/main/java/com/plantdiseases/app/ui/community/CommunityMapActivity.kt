@@ -81,6 +81,7 @@ class CommunityMapActivity : AppCompatActivity() {
     lateinit var connectivity: ConnectivityObserver
     private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
+    private val likeWritesInFlight = mutableSetOf<String>()
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -186,6 +187,8 @@ class CommunityMapActivity : AppCompatActivity() {
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
                     maxLon = box.lonEast,
+                    userPseudoId = TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                    context = this@CommunityMapActivity,
                 ).getOrNull()
                 binding.mapProgress.visibility = View.GONE
                 val items = res?.items.orEmpty()
@@ -394,6 +397,13 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun openScan(item: CommunityScanItem) {
+        lifecycleScope.launch {
+            scanRepository.recordCommunityView(
+                item.scanId,
+                TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                this@CommunityMapActivity,
+            )
+        }
         CommunityOpinionSheet.show(
             supportFragmentManager,
             item,
@@ -405,13 +415,20 @@ class CommunityMapActivity : AppCompatActivity() {
      *  same contract as [NearbyScansActivity]'s, just parameterised by which
      *  adapter instance owns the tapped row. */
     private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
+        if (!likeWritesInFlight.add(item.scanId)) return
         val next = !item.likedByMe
         val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
         adapter.updateLike(item.scanId, optimisticCount, next)
         lifecycleScope.launch {
-            scanRepository.setCommunityLike(item.scanId, TelemetryIds.userPseudoId(this@CommunityMapActivity), next)
+            scanRepository.setCommunityLike(
+                item.scanId,
+                TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                next,
+                this@CommunityMapActivity,
+            )
                 .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
                 .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
+            likeWritesInFlight.remove(item.scanId)
         }
     }
 

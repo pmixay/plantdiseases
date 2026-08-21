@@ -74,6 +74,53 @@ class PlantHealthTest {
     }
 
     @Test
+    fun evaluate_newActivePlanWithNoDueWork_staysInTreatment() {
+        val now = 1_000_000_000L
+        val verdict = PlantHealth.evaluate(
+            scans = listOf(
+                scan(now - PlantHealth.WEEK_MS, healthy = false, confidence = 0.7f),
+                scan(now, healthy = false, confidence = 0.6f),
+            ),
+            hasActiveTreatmentPlan = true,
+            adherence = PlantHealth.Adherence(due = 0, done = 0),
+            nowMs = now,
+        )
+
+        assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
+        assertThat(PlantHealth.Adherence(due = 0, done = 0).ratio).isEqualTo(0f)
+    }
+
+    @Test
+    fun evaluate_activePlanWithOnlyOneScan_stillShowsTreatment() {
+        val now = 1_000_000_000L
+        val verdict = PlantHealth.evaluate(
+            scans = listOf(scan(now, healthy = false, confidence = 0.9f)),
+            hasActiveTreatmentPlan = true,
+            adherence = noAdherence,
+            nowMs = now,
+        )
+
+        assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
+        assertThat(verdict.score).isNull()
+    }
+
+    @Test
+    fun evaluate_goodChecklistAdherenceWithoutScanImprovement_isNotRecovering() {
+        val now = 1_000_000_000L
+        val verdict = PlantHealth.evaluate(
+            scans = listOf(
+                scan(now - PlantHealth.WEEK_MS, healthy = false, confidence = 0.5f),
+                scan(now, healthy = false, confidence = 0.9f),
+            ),
+            hasActiveTreatmentPlan = true,
+            adherence = PlantHealth.Adherence(due = 3, done = 3),
+            nowMs = now,
+        )
+
+        assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
+    }
+
+    @Test
     fun evaluate_activePlanWithPoorAdherence_isTreatment() {
         val now = 1_000_000_000L
         val verdict = PlantHealth.evaluate(

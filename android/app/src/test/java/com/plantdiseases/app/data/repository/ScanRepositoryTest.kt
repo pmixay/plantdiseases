@@ -35,6 +35,7 @@ class ScanRepositoryTest {
         confidence: Float = 0.8f,
         isHealthy: Boolean = false,
         allProbs: String? = null,
+        displayedClassKey: String? = null,
         warnings: String? = null,
         severity: String = "low",
         timestamp: Long = System.currentTimeMillis(),
@@ -51,6 +52,7 @@ class ScanRepositoryTest {
         preventionRu = "[]",
         isHealthy = isHealthy,
         allProbs = allProbs,
+        displayedClassKey = displayedClassKey,
         warnings = warnings,
         severity = severity,
         timestamp = timestamp,
@@ -115,6 +117,16 @@ class ScanRepositoryTest {
             .isTrue()
         // a real diagnosis is not NAP
         assertThat(repo.isNotAPlantScan(scan(diseaseName = "Leaf Spot"))).isFalse()
+        // A server-rerouted displayed diagnosis is authoritative over the
+        // raw argmax, so checklist/health UI follows what the user actually saw.
+        assertThat(
+            repo.isNotAPlantScan(
+                scan(
+                    allProbs = """{"not_a_plant":0.9,"leaf_spot":0.1}""",
+                    displayedClassKey = "leaf_spot",
+                )
+            )
+        ).isFalse()
     }
 
     @Test

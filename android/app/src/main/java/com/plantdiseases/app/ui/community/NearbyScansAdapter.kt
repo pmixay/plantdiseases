@@ -101,6 +101,7 @@ class NearbyScansAdapter(
         private val likeIcon: ImageView = itemView.findViewById(R.id.iv_nearby_like)
         private val likes: TextView = itemView.findViewById(R.id.tv_nearby_likes)
         private val commentsRow: View = itemView.findViewById(R.id.ll_nearby_comments)
+        private val commentsIcon: ImageView = itemView.findViewById(R.id.iv_nearby_comments)
         private val views: TextView = itemView.findViewById(R.id.tv_nearby_views)
         private val comments: TextView = itemView.findViewById(R.id.tv_nearby_comments)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
@@ -131,7 +132,22 @@ class NearbyScansAdapter(
             // post ("chaotic"): a like/comment landing on a post made a pill
             // pop into existence that wasn't there a moment before.
             views.text = item.viewCount.toString()
-            comments.text = item.opinionCount.toString()
+            if (item.wantsOpinion) {
+                comments.text = item.opinionCount.toString()
+                commentsIcon.setImageResource(R.drawable.ic_comment)
+                commentsRow.alpha = 1f
+                commentsRow.contentDescription = itemView.context.getString(
+                    R.string.community_open_replies,
+                    item.opinionCount,
+                )
+            } else {
+                comments.text = itemView.context.getString(R.string.community_replies_locked_short)
+                commentsIcon.setImageResource(R.drawable.ic_lock)
+                commentsRow.alpha = 0.55f
+                commentsRow.contentDescription = itemView.context.getString(
+                    R.string.community_replies_locked_readable,
+                )
+            }
             bindLike(item)
 
             val open = View.OnClickListener { onOpen(item) }

@@ -31,7 +31,10 @@ import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PlantHealth
 import com.plantdiseases.app.util.localizedSpeciesName
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The "extra cards" stacked between the header and the tabs (care plan,
@@ -116,8 +119,9 @@ class DetailExtraCardsController(
             )
             val result = scanRepository.fetchCarePlan(request)
             result.onSuccess { plan ->
+                val materializablePlan = plan.withStoredTreatmentFallback(latestScan, isRu)
                 card.bind(
-                    plan = plan,
+                    plan = materializablePlan,
                     speciesDisplay = speciesDisplay,
                     showApplyToReminders = true,
                     onApplyToReminders = { applied ->
@@ -128,30 +132,78 @@ class DetailExtraCardsController(
                         )
                     },
                 )
-                maybeStartTreatmentPlan(plant, latestScan, classKey, plan)
+                maybeStartTreatmentPlan(plant, latestScan, classKey, materializablePlan)
             }.onFailure {
-                card.showError(onRetry = {
-                    val replacement = buildCarePlanSlot(plant, scans)
-                    val idx = content.indexOfChild(card)
-                    if (idx >= 0) {
-                        content.removeViewAt(idx)
-                        content.addView(replacement, idx)
-                    }
-                })
+                val fallback = storedTreatmentPlan(latestScan, classKey, isRu)
+                if (fallback != null) {
+                    card.bind(
+                        plan = fallback,
+                        speciesDisplay = speciesDisplay,
+                        showApplyToReminders = true,
+                        onApplyToReminders = { applied ->
+                            ReminderScheduleSheet.showWithCarePlanDefaults(
+                                activity.supportFragmentManager,
+                                plant,
+                                applied,
+                            )
+                        },
+                        offlineBasic = true,
+                    )
+                    maybeStartTreatmentPlan(plant, latestScan, classKey, fallback)
+                } else {
+                    card.showError(onRetry = {
+                        val replacement = buildCarePlanSlot(plant, scans)
+                        val idx = content.indexOfChild(card)
+                        if (idx >= 0) {
+                            content.removeViewAt(idx)
+                            content.addView(replacement, idx)
+                        }
+                    })
+                }
             }
         }
         return card
     }
 
-    /**
-     * Best-effort: read the disease class key from the scan's stored top
-     * probability (canonical model class name like "powdery_mildew"); fall
-     * back to a normalised lowercase of the human-readable name.
-     */
+    /** Prefer the exact class key used for the displayed diagnosis after all
+     * server reroutes; only legacy scans need the human-name fallback. */
     private fun resolveClassKey(scan: ScanEntity): String =
-        scanRepository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
+        scanRepository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
+
+    private fun CarePlanResponse.withStoredTreatmentFallback(
+        scan: ScanEntity,
+        isRu: Boolean,
+    ): CarePlanResponse {
+        if (!treatment.isNullOrEmpty()) return this
+        val stored = storedTreatment(scan, isRu)
+        return if (stored.isEmpty()) this else copy(treatment = stored)
+    }
+
+    private fun storedTreatmentPlan(
+        scan: ScanEntity,
+        classKey: String,
+        isRu: Boolean,
+    ): CarePlanResponse? {
+        val stored = storedTreatment(scan, isRu)
+        if (stored.isEmpty()) return null
+        return CarePlanResponse(
+            disease = classKey,
+            keyAction = stored.first(),
+            followUpDays = 14,
+            treatment = stored,
+        )
+    }
+
+    private fun storedTreatment(scan: ScanEntity, isRu: Boolean): List<String> {
+        val preferred = scanRepository
+            .parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
+            .filter { it.isNotBlank() }
+        if (preferred.isNotEmpty()) return preferred
+        return scanRepository
+            .parseStringList(if (isRu) scan.treatment else scan.treatmentRu)
+            .filter { it.isNotBlank() }
+    }
 
     /** Materialises a treatment plan from a disease-diagnosing scan, once
      *  the care plan it's built from has actually loaded (Garden refactor
@@ -169,19 +221,13 @@ class DetailExtraCardsController(
         classKey: String,
         carePlan: CarePlanResponse,
     ) {
-        val isNotAPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-            scan.diseaseName.equals("Не растение", ignoreCase = true)
-        if (scan.isHealthy || isNotAPlant) return
+        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isNotAPlantScan(scan)) return
 
         activity.lifecycleScope.launch {
             val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
             if (newestScanId != scan.id) return@launch // a newer scan landed while this card was loading
 
-            val existing = careRepository.activePlan(plant.id)
-            if (existing?.plan?.diseaseKey == classKey) return@launch
-            if (careRepository.hasPlanForScan(plant.id, scan.id)) return@launch
-
-            careRepository.startTreatmentPlan(
+            val createdPlanId = careRepository.ensureTreatmentPlanForScan(
                 plantId = plant.id,
                 scanId = scan.id,
                 carePlan = carePlan,
@@ -189,7 +235,7 @@ class DetailExtraCardsController(
                 diseaseLabelEn = scan.diseaseName,
                 diseaseLabelRu = scan.diseaseNameRu,
             )
-            onReload()
+            if (createdPlanId != null) onReload()
         }
     }
 
@@ -288,36 +334,46 @@ class DetailExtraCardsController(
                 cornerRadius = 12.dp()
                 setOnClickListener {
                     Haptics.tick(activity)
-                    activity.lifecycleScope.launch {
-                        val existing = plantRepository.getReminders(plant.id)
-                            .firstOrNull { it.type == s.type }
-                        val updated = (
-                            existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
-                                plantId = plant.id,
-                                type = s.type,
+                    val appContext = activity.applicationContext
+                    activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        withContext(NonCancellable) {
+                            val existing = plantRepository.getReminders(plant.id)
+                                .firstOrNull { it.type == s.type }
+                            val updated = (
+                                existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
+                                    plantId = plant.id,
+                                    type = s.type,
+                                )
+                                ).copy(
+                                intervalDays = s.proposedIntervalDays,
+                                enabled = true,
+                                createdAt = System.currentTimeMillis(),
                             )
-                            ).copy(
-                            intervalDays = s.proposedIntervalDays,
-                            enabled = true,
-                        )
-                        val rid = plantRepository.saveReminder(updated)
-                        com.plantdiseases.app.util.ReminderManager.schedule(
-                            context = activity,
-                            plantId = plant.id,
-                            plantName = plant.name,
-                            type = updated.type,
-                            intervalDays = updated.intervalDays,
-                            hour = updated.hour,
-                            minute = updated.minute,
-                            reminderId = rid,
-                        )
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        onClearWateringSuggestion()
-                        onReload()
+                            val rid = if (existing == null) {
+                                plantRepository.saveReminder(updated)
+                            } else {
+                                plantRepository.saveReminderRow(updated)
+                            }
+                            com.plantdiseases.app.util.ReminderManager.schedule(
+                                context = appContext,
+                                plantId = plant.id,
+                                plantName = plant.name,
+                                type = updated.type,
+                                intervalDays = updated.intervalDays,
+                                hour = updated.hour,
+                                minute = updated.minute,
+                                reminderId = rid,
+                            )
+                        }
+                        if (!activity.isFinishing && !activity.isDestroyed) {
+                            Toast.makeText(
+                                activity,
+                                activity.getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            onClearWateringSuggestion()
+                            onReload()
+                        }
                     }
                 }
             },
@@ -1019,7 +1075,7 @@ class DetailExtraCardsController(
 
         activity.lifecycleScope.launch {
             val activePlan = careRepository.activePlan(plant.id)
-            val verdict = plantRepository.getPlantHealth(plant.id, scans, activePlan != null)
+            val verdict = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
             accent.setBackgroundColor(activity.getColor(healthAccentColor(verdict.status)))
 
             if (verdict.score == null) {

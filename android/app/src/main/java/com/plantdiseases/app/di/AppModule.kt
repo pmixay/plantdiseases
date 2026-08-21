@@ -91,11 +91,14 @@ object AppModule {
         database.chatMessageDao(),
         database.roomDao(),
         database.treatmentPlanDao(),
+        database.treatmentStepDao(),
+        database,
     )
 
     @Provides
     @Singleton
     fun provideRoomRepository(database: AppDatabase): RoomRepository = RoomRepository(
+        database,
         database.roomDao(),
         database.plantDao(),
         database.scanDao(),
@@ -107,7 +110,9 @@ object AppModule {
         database: AppDatabase,
         plantRepository: PlantRepository,
     ): CareRepository = CareRepository(
+        database = database,
         plantDao = database.plantDao(),
+        scanDao = database.scanDao(),
         roomDao = database.roomDao(),
         reminderDao = database.plantReminderDao(),
         reminderEventDao = database.plantReminderEventDao(),

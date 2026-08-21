@@ -25,8 +25,12 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.util.ReminderManager
+import com.plantdiseases.app.util.SpeciesIdentity
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The add/edit-plant dialog and the delete-plant confirmation, shared
@@ -104,7 +108,9 @@ fun FragmentActivity.showAddEditPlantDialog(
         setPadding(18.dp(root), 18.dp(root), 18.dp(root), 4.dp(root))
     }
     val name = inputField(root, getString(R.string.plant_name), existing?.name)
-    val species = inputField(root, getString(R.string.plant_species), existing?.species)
+    val initialSpeciesDisplay = existing?.species
+        ?: SpeciesIdentity.canonicalDisplay(existing?.scientificName, existing?.commonName)
+    val species = inputField(root, getString(R.string.plant_species), initialSpeciesDisplay)
     fields.addView(name.first)
     fields.addView(species.first)
     var selectedRoomId = existing?.roomId ?: preselectedRoomId
@@ -128,12 +134,26 @@ fun FragmentActivity.showAddEditPlantDialog(
         }
         hideKeyboard(root, dialog.window?.decorView ?: name.second)
         dialog.dismiss()
+        val typedSpecies = species.second.text?.toString()
+        val manualClearsCanonical = SpeciesIdentity.manualEditClearsCanonical(
+            typedSpecies,
+            existing?.scientificName,
+            existing?.commonName,
+        )
+        val fillsPreviouslyBlankCanonical = existing != null &&
+            SpeciesIdentity.canonicalDisplay(existing.scientificName, existing.commonName) == null &&
+            SpeciesIdentity.displayChanged(initialSpeciesDisplay, typedSpecies)
         root.lifecycleScope.launch {
             plantRepository.savePlant(
                 plantName,
-                species.second.text?.toString(),
+                typedSpecies,
                 existing,
                 roomId = selectedRoomId,
+                canonicalSpeciesUpdate = if (manualClearsCanonical || fillsPreviouslyBlankCanonical) {
+                    PlantRepository.CanonicalSpeciesUpdate.REPLACE
+                } else {
+                    PlantRepository.CanonicalSpeciesUpdate.PRESERVE
+                },
             )
             awaitKeyboardClosed(root)
             onSaved()
@@ -152,11 +172,16 @@ fun FragmentActivity.confirmDeletePlantDialog(
         .setMessage(R.string.delete_plant_confirm)
         .setNegativeButton(R.string.cancel, null)
         .setPositiveButton(R.string.delete) { _, _ ->
-            root.lifecycleScope.launch {
-                ReminderManager.cancelAll(root, plant.id, plantRepository.getReminders(plant.id))
-                plantRepository.deletePlant(plant.id)
-                Toast.makeText(root, R.string.plant_deleted, Toast.LENGTH_SHORT).show()
-                onDeleted()
+            val appContext = root.applicationContext
+            root.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                withContext(NonCancellable) {
+                    ReminderManager.cancelAll(appContext, plant.id, plantRepository.getReminders(plant.id))
+                    plantRepository.deletePlant(plant.id)
+                }
+                if (!root.isDestroyed) {
+                    Toast.makeText(root, R.string.plant_deleted, Toast.LENGTH_SHORT).show()
+                    onDeleted()
+                }
             }
         }
         .show()

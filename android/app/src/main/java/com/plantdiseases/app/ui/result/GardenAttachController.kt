@@ -16,13 +16,20 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.dpx
 import com.plantdiseases.app.ui.common.sectionRow
 import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Owns "add this scan to a garden plant": picking an existing plant or creating
@@ -34,8 +41,16 @@ class GardenAttachController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val plantRepository: PlantRepository,
+    private val scanRepository: ScanRepository,
+    private val careRepository: CareRepository,
     private val reviewManager: InAppReviewManager,
 ) {
+
+    private data class ChecklistSeed(
+        val classKey: String,
+        val isRu: Boolean,
+        val stored: CareRepository.StoredChecklist?,
+    )
 
     fun registerCreatePlantListener() {
         activity.supportFragmentManager.setFragmentResultListener(
@@ -112,9 +127,17 @@ class GardenAttachController(
     }
 
     private fun attachScanToPlant(scan: ScanEntity, plantId: Long) {
-        activity.lifecycleScope.launch {
-            plantRepository.assignScanToPlant(scan.id, plantId)
+        val checklistSeed = checklistSeed(scan)
+        activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val attachedPlantId = careRepository.attachScanWithStoredChecklist(
+                scanId = scan.id,
+                existingPlantId = plantId,
+                storedChecklist = checklistSeed?.stored,
+            ) ?: return@launch
             onAddedToGarden()
+            checklistSeed?.let { seed ->
+                enrichChecklist(scan, attachedPlantId, seed.classKey, seed.isRu)
+            }
         }
     }
 
@@ -134,16 +157,94 @@ class GardenAttachController(
         if (scanId <= 0L) return
         val roomId = result.getLong(CreatePlantSheet.RESULT_ROOM_ID, CreatePlantSheet.RESULT_ROOM_ID_UNASSIGNED)
             .takeIf { it != CreatePlantSheet.RESULT_ROOM_ID_UNASSIGNED }
-        activity.lifecycleScope.launch {
-            val plantId = plantRepository.savePlant(
-                name = plantName,
-                species = result.getString(CreatePlantSheet.RESULT_SPECIES),
-                scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
-                commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
-                roomId = roomId,
-            )
-            plantRepository.assignScanToPlant(scanId, plantId)
+        activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            // Once Save has been accepted, lifecycle cancellation may suppress
+            // stale UI work but must not split/create only part of the local
+            // operation. The repository also guards its transaction, while
+            // this outer block protects the prerequisite scan read.
+            val attached = withContext(NonCancellable) {
+                val scan = scanRepository.getScanById(scanId) ?: return@withContext null
+                val seed = checklistSeed(scan)
+                val plantId = careRepository.attachScanWithStoredChecklist(
+                    scanId = scanId,
+                    newPlant = CareRepository.NewPlantDraft(
+                        name = plantName,
+                        species = result.getString(CreatePlantSheet.RESULT_SPECIES),
+                        scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
+                        commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
+                        roomId = roomId,
+                    ),
+                    storedChecklist = seed?.stored,
+                ) ?: return@withContext null
+                Triple(scan, plantId, seed)
+            } ?: return@launch
             onAddedToGarden()
+            attached.third?.let { seed ->
+                enrichChecklist(attached.first, attached.second, seed.classKey, seed.isRu)
+            }
+        }
+    }
+
+    /** Attachment is the durable checklist trigger. The stored diagnosis is
+     * committed before the UI confirms attachment, so closing Result cannot
+     * cancel the only checklist write. The server request runs afterwards and
+     * may safely enrich an untouched fallback. */
+    private fun checklistSeed(scan: ScanEntity): ChecklistSeed? {
+        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isNotAPlantScan(scan)) return null
+        val classKey = scanRepository.verdictClassKey(scan)
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+        val isRu = LocaleHelper.isRussian(activity)
+        val preferredTreatment = scanRepository
+            .parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
+            .filter { it.isNotBlank() }
+        val storedTreatment = preferredTreatment.ifEmpty {
+            scanRepository
+                .parseStringList(if (isRu) scan.treatment else scan.treatmentRu)
+                .filter { it.isNotBlank() }
+        }
+        val stored = storedTreatment.takeIf { it.isNotEmpty() }?.let { treatment ->
+            CareRepository.StoredChecklist(
+                carePlan = CarePlanResponse(
+                    disease = classKey,
+                    keyAction = treatment.first(),
+                    treatment = treatment,
+                ),
+                diseaseKey = classKey,
+                diseaseLabelEn = scan.diseaseName,
+                diseaseLabelRu = scan.diseaseNameRu,
+            )
+        }
+        return ChecklistSeed(classKey, isRu, stored)
+    }
+
+    /** Plant Detail calls the same idempotent repository path, covering a
+     * transient failure or process cancellation during this optional upgrade. */
+    private suspend fun enrichChecklist(
+        scan: ScanEntity,
+        plantId: Long,
+        classKey: String,
+        isRu: Boolean,
+    ) {
+        val plant = plantRepository.getPlant(plantId) ?: return
+        val speciesHint = plant.scientificName?.takeIf { it.isNotBlank() }
+            ?: plant.commonName?.takeIf { it.isNotBlank() }
+            ?: plant.species?.takeIf { it.isNotBlank() }
+        scanRepository.fetchCarePlan(
+            CarePlanRequest(
+                disease = classKey,
+                species = speciesHint,
+                light = "bright_indirect",
+                locale = if (isRu) "ru" else "en",
+            )
+        ).onSuccess { plan ->
+            careRepository.ensureTreatmentPlanForScan(
+                plantId = plantId,
+                scanId = scan.id,
+                carePlan = plan,
+                diseaseKey = classKey,
+                diseaseLabelEn = scan.diseaseName,
+                diseaseLabelRu = scan.diseaseNameRu,
+            )
         }
     }
 

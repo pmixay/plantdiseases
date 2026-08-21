@@ -77,6 +77,8 @@ try:
     )
     from .community import (
         COMMUNITY_THUMB_DIR,
+        OpinionLockedError,
+        OpinionOwnerError,
     )
     from .community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -88,7 +90,15 @@ try:
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from .community import (
+        daily_safety_count_for_ip_hash as community_daily_safety_writes,
+    )
+    from .community import (
         daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from .community import (
+        block_content_author as community_block_content_author,
+        decode_recommendation_cursor as community_decode_recommendation_cursor,
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from .community import (
         density_grid as community_density_grid,
@@ -98,6 +108,9 @@ try:
     )
     from .community import (
         like_counts as community_like_counts,
+    )
+    from .community import (
+        lookup_author as community_lookup_author,
     )
     from .community import (
         map_scans as community_map_scans,
@@ -127,7 +140,9 @@ try:
         prune_older_than as community_prune_older_than,
     )
     from .community import (
-        record_opinion as community_record_opinion,
+        record_requested_opinion as community_record_requested_opinion,
+        recommended_scans as community_recommended_scans,
+        report_content as community_report_content,
     )
     from .community import (
         record_scan as community_record_scan,
@@ -161,6 +176,9 @@ try:
     )
     from .community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from .community import (
+        touch_author as community_touch_author,
     )
     from .community import (
         view_counts as community_view_counts,
@@ -248,6 +266,8 @@ except ImportError:
     )
     from community import (
         COMMUNITY_THUMB_DIR,
+        OpinionLockedError,
+        OpinionOwnerError,
     )
     from community import (
         clear_wants_opinion as community_clear_wants_opinion,
@@ -259,7 +279,15 @@ except ImportError:
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from community import (
+        daily_safety_count_for_ip_hash as community_daily_safety_writes,
+    )
+    from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from community import (
+        block_content_author as community_block_content_author,
+        decode_recommendation_cursor as community_decode_recommendation_cursor,
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from community import (
         density_grid as community_density_grid,
@@ -269,6 +297,9 @@ except ImportError:
     )
     from community import (
         like_counts as community_like_counts,
+    )
+    from community import (
+        lookup_author as community_lookup_author,
     )
     from community import (
         map_scans as community_map_scans,
@@ -298,7 +329,9 @@ except ImportError:
         prune_older_than as community_prune_older_than,
     )
     from community import (
-        record_opinion as community_record_opinion,
+        record_requested_opinion as community_record_requested_opinion,
+        recommended_scans as community_recommended_scans,
+        report_content as community_report_content,
     )
     from community import (
         record_scan as community_record_scan,
@@ -332,6 +365,9 @@ except ImportError:
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
+        touch_author as community_touch_author,
     )
     from community import (
         view_counts as community_view_counts,
@@ -788,6 +824,7 @@ COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Likes are cheap and low-stakes compared to an opinion, so they get their
 # own (looser) daily cap rather than sharing the opinion quota.
 COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+COMMUNITY_SAFETY_DAILY_QUOTA = get_int("COMMUNITY_SAFETY_DAILY_QUOTA", 100)
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
@@ -3349,6 +3386,7 @@ async def community_scan_upload(
     locale: str | None = Form(None),
     nickname: str | None = Form(None),
     image: UploadFile | None = File(None),
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """Append one community-shared scan to the corpus.
 
@@ -3447,6 +3485,7 @@ async def community_scan_upload(
                     status_code=400,
                     detail="Community thumbnail must be JPEG / PNG / WebP",
                 )
+    author_id = await _touch_community_author_id(x_community_author_key)
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             None,
@@ -3462,6 +3501,7 @@ async def community_scan_upload(
                 confidence=payload.confidence,
                 species=payload.species,
                 nickname=payload.nickname,
+                author_id=author_id,
                 species_score=payload.species_score,
                 image_bytes=image_bytes,
                 locale=payload.locale,
@@ -3526,17 +3566,14 @@ async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
     return JSONResponse(content={"ok": True, "recorded": rid is not None})
 
 
-async def _resolve_community_author_id(key_hash: str | None, *, seed_display_name: str) -> str | None:
-    """Best-effort author_id for a write endpoint that predates durable
-    identity and must keep working without it.
+async def _touch_community_author_id(key_hash: str | None) -> str | None:
+    """Best-effort durable id for an ordinary Community write.
 
     A present-but-malformed key is rejected (422) — the same validation
     ``/community/authors/adopt`` applies — but a MISSING key just means "no
-    identity to bind", not an error: older app builds, and any caller that
-    hasn't adopted yet, still write normally, just without author_id. In
-    practice the app calls adopt on every launch, so a row already exists
-    by the time this runs and the call below only refreshes last_seen_at
-    (see resolve_author's docstring) rather than creating a fresh one.
+    identity to bind", not an error: older app builds still write normally via
+    their body pseudo id. A valid but unadopted key also remains legacy-only;
+    only the explicit adoption endpoint may create an author or run backfill.
     """
     key = (key_hash or "").strip()
     if not key:
@@ -3544,11 +3581,20 @@ async def _resolve_community_author_id(key_hash: str | None, *, seed_display_nam
     if len(key) != 64 or not all(c in "0123456789abcdef" for c in key):
         raise HTTPException(status_code=422, detail="Malformed author key")
     loop = asyncio.get_running_loop()
-    author = await loop.run_in_executor(
-        None,
-        lambda: community_resolve_author(key_hash=key, seed_display_name=seed_display_name),
-    )
-    return str(author["author_id"])
+    author = await loop.run_in_executor(None, lambda: community_touch_author(key))
+    return str(author["author_id"]) if author else None
+
+
+async def _lookup_community_author_id(key_hash: str | None) -> str | None:
+    """Resolve a durable viewer identity without creating one on a GET."""
+    key = (key_hash or "").strip()
+    if not key:
+        return None
+    if len(key) != 64 or not all(c in "0123456789abcdef" for c in key):
+        raise HTTPException(status_code=422, detail="Malformed author key")
+    loop = asyncio.get_running_loop()
+    author = await loop.run_in_executor(None, lambda: community_lookup_author(key))
+    return str(author["author_id"]) if author else None
 
 
 class CommunityOpinionRequest(BaseModel):
@@ -3604,16 +3650,20 @@ async def community_opinion_submit(
     fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
     if not fresh:
         raise HTTPException(status_code=410, detail="Scan too old for new opinions")
+    active = await loop.run_in_executor(None, lambda: community_wants_opinion(sid))
+    if not active:
+        raise HTTPException(status_code=423, detail="opinions_locked")
+    owner = await loop.run_in_executor(None, lambda: community_owner_of(sid))
+    if owner == payload.user_pseudo_id.strip():
+        raise HTTPException(status_code=403, detail="owner_cannot_opine")
     # Resolved last, after every cheaper gate above has had a chance to
     # reject the request — same "don't pay for expensive work a forged/bad
     # request never earns" discipline as community_scan_upload's ordering.
-    author_id = await _resolve_community_author_id(
-        x_community_author_key, seed_display_name=payload.nickname or "",
-    )
+    author_id = await _touch_community_author_id(x_community_author_key)
     try:
         await loop.run_in_executor(
             None,
-            lambda: community_record_opinion(
+            lambda: community_record_requested_opinion(
                 scan_id=sid,
                 author_pseudo_id=payload.user_pseudo_id.strip(),
                 author_id=author_id,
@@ -3623,6 +3673,10 @@ async def community_opinion_submit(
                 client_ip=client_ip,
             ),
         )
+    except OpinionLockedError as exc:
+        raise HTTPException(status_code=423, detail="opinions_locked") from exc
+    except OpinionOwnerError as exc:
+        raise HTTPException(status_code=403, detail="owner_cannot_opine") from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Community opinion write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
@@ -3675,12 +3729,13 @@ async def community_author_adopt(
     ``X-Community-Author-Key`` is SHA-256 of a 32-byte secret the client
     generates once and never sends in raw form (see
     util/CommunityIdentity.kt) — the server only ever sees the hash, never
-    the secret itself. Fire-and-forget from the app on every launch;
-    idempotent, so calling it repeatedly just refreshes ``last_seen_at``.
+    the secret itself. The app calls this lazily after Community opt-in,
+    alongside the first Community action; retries are idempotent and only
+    refresh ``last_seen_at``.
 
-    Groundwork only (COMMUNITY_FORUM_PLAN.docx §4): nothing in the app yet
-    reads or writes with this identity. F1 wires the forum's write
-    endpoints to it and backfills old activity via ``legacy_pseudo_id``.
+    Scan uploads and opinion writes attach the resolved anonymous author id,
+    which prevents one device from multiplying votes by changing a body
+    pseudo-id and prevents scan owners from voting on their own post that way.
     """
     key_hash = x_community_author_key.strip()
     if len(key_hash) != 64 or not all(c in "0123456789abcdef" for c in key_hash):
@@ -3802,7 +3857,7 @@ async def community_opinions_list(
     resolved = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(sid),
     )
-    author_id = await _resolve_community_author_id(x_community_author_key, seed_display_name="")
+    author_id = await _lookup_community_author_id(x_community_author_key)
     result = await loop.run_in_executor(
         None,
         lambda: community_opinions_for(resolved, user_pseudo_id=user_pseudo_id, author_id=author_id),
@@ -3864,7 +3919,10 @@ class CommunityViewRequest(BaseModel):
 
 
 @api_router.post("/community/view")
-async def community_record_scan_view(payload: CommunityViewRequest):
+async def community_record_scan_view(
+    payload: CommunityViewRequest,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
     """Record that the caller opened (or merely scrolled past) someone
     else's shared scan — one id via ``scan_id``, or up to 50 via
     ``scan_ids`` for feed-scroll impressions. Deduped per viewer
@@ -3881,9 +3939,15 @@ async def community_record_scan_view(payload: CommunityViewRequest):
     # exceed it, and a client may repeat an id across the two.
     ids = list(dict.fromkeys(ids))[:50]
     uid = payload.user_pseudo_id.strip()
+    author_id = await _touch_community_author_id(x_community_author_key)
 
     counted = await loop.run_in_executor(
-        None, lambda: community_record_views(ids, uid),
+        None,
+        lambda: community_record_views(
+            ids,
+            uid,
+            viewer_author_id=author_id,
+        ),
     )
     return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
 
@@ -3895,7 +3959,11 @@ class CommunityLikeRequest(BaseModel):
 
 
 @api_router.post("/community/like")
-async def community_like_scan(payload: CommunityLikeRequest, request: Request):
+async def community_like_scan(
+    payload: CommunityLikeRequest,
+    request: Request,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
     """Like or unlike a shared scan. A self-like is refused (0 either way);
     liking your own scan makes no more sense than viewing it does."""
     client_ip = _client_ip(request)
@@ -3910,16 +3978,111 @@ async def community_like_scan(payload: CommunityLikeRequest, request: Request):
     sid = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
     )
+    author_id = await _touch_community_author_id(x_community_author_key)
     liked = await loop.run_in_executor(
         None,
         lambda: community_set_like(
-            sid, payload.user_pseudo_id.strip(), payload.liked, client_ip,
+            sid,
+            payload.user_pseudo_id.strip(),
+            payload.liked,
+            client_ip,
+            author_id=author_id,
         ),
     )
     count = await loop.run_in_executor(
         None, lambda: community_like_counts([sid]).get(sid, 0),
     )
     return JSONResponse(content={"ok": True, "liked": liked, "count": count})
+
+
+_COMMUNITY_REPORT_REASONS = {
+    "sexual_content",
+    "violence_or_threats",
+    "hate_or_harassment",
+    "illegal_or_dangerous",
+    "spam_or_misleading",
+    "privacy_or_impersonation",
+    "other_rules_violation",
+}
+
+
+class CommunityReportRequest(BaseModel):
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    target_type: str = Field(..., min_length=1, max_length=16)
+    target_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=1, max_length=64)
+
+
+class CommunityBlockRequest(BaseModel):
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    target_type: str = Field(..., min_length=1, max_length=16)
+    target_id: str = Field(..., min_length=1, max_length=128)
+
+
+@api_router.post("/community/safety/report")
+async def community_report(
+    payload: CommunityReportRequest,
+    request: Request,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
+    """Report one public scan or reply without exposing its author's id."""
+    kind = payload.target_type.strip().lower()
+    reason = payload.reason.strip().lower()
+    if kind not in {"scan", "opinion"} or reason not in _COMMUNITY_REPORT_REASONS:
+        raise HTTPException(status_code=422, detail="Invalid community report.")
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    if await loop.run_in_executor(
+        None, lambda: community_daily_safety_writes(ip_hash),
+    ) >= COMMUNITY_SAFETY_DAILY_QUOTA:
+        raise HTTPException(status_code=429, detail="Daily community safety quota reached.")
+    author_id = await _touch_community_author_id(x_community_author_key)
+    created = await loop.run_in_executor(
+        None,
+        lambda: community_report_content(
+            reporter_pseudo_id=payload.user_pseudo_id,
+            reporter_author_id=author_id,
+            target_type=kind,
+            target_id=payload.target_id,
+            reason=reason,
+            client_ip=client_ip,
+        ),
+    )
+    return JSONResponse(content={"ok": True, "created": bool(created)})
+
+
+@api_router.post("/community/safety/block")
+async def community_block(
+    payload: CommunityBlockRequest,
+    request: Request,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
+):
+    """Hide the server-resolved author mutually from this anonymous install."""
+    kind = payload.target_type.strip().lower()
+    if kind not in {"scan", "opinion"}:
+        raise HTTPException(status_code=422, detail="Invalid community target.")
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    if await loop.run_in_executor(
+        None, lambda: community_daily_safety_writes(ip_hash),
+    ) >= COMMUNITY_SAFETY_DAILY_QUOTA:
+        raise HTTPException(status_code=429, detail="Daily community safety quota reached.")
+    author_id = await _touch_community_author_id(x_community_author_key)
+    blocked = await loop.run_in_executor(
+        None,
+        lambda: community_block_content_author(
+            blocker_pseudo_id=payload.user_pseudo_id,
+            blocker_author_id=author_id,
+            target_type=kind,
+            target_id=payload.target_id,
+            client_ip=client_ip,
+        ),
+    )
+    if blocked is None:
+        raise HTTPException(status_code=404, detail="Community target unavailable.")
+    return JSONResponse(content={"ok": True, **blocked})
 
 
 class CommunityScanCountsRequest(BaseModel):
@@ -3953,6 +4116,9 @@ async def community_scan_nearby(
     user_pseudo_id: str | None = None,
     scope: str | None = None,
     before: int | None = None,
+    ranking: str | None = None,
+    cursor: str | None = None,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """List the most recent community-shared scans near the requester.
 
@@ -3964,9 +4130,11 @@ async def community_scan_nearby(
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
 
-    ``before`` pages the feed: pass the previous page's ``next_before`` to
-    fetch older rows. The response's ``next_before`` is null once a page
-    comes back short — that's the end of the scope. It is single-pass only:
+    ``cursor`` pages both recommendation and recent order with a signed,
+    opaque composite key; tied upload timestamps therefore cannot lose rows.
+    ``before`` remains a legacy recent-only epoch cursor for older clients.
+    The response cursor is null once a page comes back short. Paging is
+    single-pass only:
     combining it with ``disease`` or ``species`` is rejected with 422,
     because those widen the query into several concatenated passes whose
     concatenation has no single global ``created_at`` order to page on.
@@ -3976,6 +4144,30 @@ async def community_scan_nearby(
             status_code=422,
             detail="before cannot be combined with disease or species.",
         )
+    ranking_norm = (ranking or "recent").strip().lower()
+    if ranking_norm not in {"recent", "recommended"}:
+        raise HTTPException(status_code=422, detail="Invalid community ranking.")
+    if cursor and before is not None:
+        raise HTTPException(status_code=422, detail="cursor cannot be combined with before.")
+    if cursor and ((disease or "").strip() or (species or "").strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="cursor cannot be combined with disease or species.",
+        )
+    if before is not None and ranking_norm == "recommended":
+        raise HTTPException(status_code=422, detail="before cannot page recommended ranking.")
+    if ranking_norm == "recommended" and ((disease or "").strip() or (species or "").strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="recommended ranking cannot be combined with disease or species.",
+        )
+    try:
+        recommendation_cursor = community_decode_recommendation_cursor(cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
+    if ranking_norm == "recent" and recommendation_cursor is not None \
+            and recommendation_cursor[0] != 0:
+        raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -3994,23 +4186,47 @@ async def community_scan_nearby(
     # deliberately no server-side IP geolocation.
     location_required = not worldwide and not (bool(country_norm) or has_coords)
     effective_limit = max(1, min(int(limit), 50))
-    rows = community_nearby_scans(
-        country=country_norm,
-        lat=geo["lat"] if nearby else None,
-        lon=geo["lon"] if nearby else None,
-        disease=(disease or None),
-        species=(species or None),
-        limit=effective_limit,
-        exclude_user_pseudo_id=user_pseudo_id,
-        scope=scope_norm,
-        before=before,
-    )
+    viewer_author_id = await _lookup_community_author_id(x_community_author_key)
+    if ranking_norm == "recommended":
+        rows = community_recommended_scans(
+            country=country_norm,
+            lat=geo["lat"] if nearby else None,
+            lon=geo["lon"] if nearby else None,
+            limit=effective_limit,
+            exclude_user_pseudo_id=user_pseudo_id,
+            viewer_author_id=viewer_author_id,
+            scope=scope_norm,
+            cursor=recommendation_cursor,
+        )
+    else:
+        rows = community_nearby_scans(
+            country=country_norm,
+            lat=geo["lat"] if nearby else None,
+            lon=geo["lon"] if nearby else None,
+            disease=(disease or None),
+            species=(species or None),
+            limit=effective_limit,
+            exclude_user_pseudo_id=user_pseudo_id,
+            viewer_author_id=viewer_author_id,
+            scope=scope_norm,
+            before=before,
+            cursor=(recommendation_cursor[1], recommendation_cursor[2])
+            if recommendation_cursor is not None else None,
+        )
     # A short page means the scope is exhausted; a full page might have more
     # (the very last page just happens to also be full-sized, and the client
     # finds out on the follow-up request that comes back empty).
     next_before = (
         rows[-1]["created_at"] if rows and len(rows) >= effective_limit else None
-    )
+    ) if ranking_norm == "recent" else None
+    next_cursor = None
+    if rows and len(rows) >= effective_limit:
+        last = rows[-1]
+        next_cursor = community_encode_recommendation_cursor(
+            int(last.get("_cursor_score", 0)),
+            int(last["created_at"]),
+            int(last["_cursor_row_id"]),
+        )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
     # around" readout). Excludes the requester's own rows so the row doesn't
@@ -4019,19 +4235,22 @@ async def community_scan_nearby(
         country_norm or "",
         None,
         exclude_user_pseudo_id=user_pseudo_id,
+        viewer_author_id=viewer_author_id,
     )
     # Annotate each cell with how many second opinions it has so the carousel
     # can show a badge, then swap the real scan_id for the public token —
     # the real id authorises /api/feedback writes and must never reach
     # other users (see community.public_scan_token).
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = community_opinion_counts(scan_ids)
-    views = community_view_counts(scan_ids)
+    counts = community_opinion_counts(scan_ids) if ranking_norm == "recent" else {}
+    views = community_view_counts(scan_ids) if ranking_norm == "recent" else {}
     for r in rows:
         sid = str(r.get("scan_id"))
-        r["opinion_count"] = counts.get(sid, 0)
-        r["view_count"] = views.get(sid, 0)
+        r.setdefault("opinion_count", counts.get(sid, 0))
+        r.setdefault("view_count", views.get(sid, 0))
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
+        r.pop("_cursor_score", None)
+        r.pop("_cursor_row_id", None)
         # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
         _localize_item_country(r)
     meta = _country_display(country_norm)
@@ -4054,7 +4273,14 @@ async def community_scan_nearby(
     # coerced — the top-level `country` field stays nullable.
     summary["country"] = summary.get("country") or ""
     return JSONResponse(
-        content={"items": rows, "summary": summary, "next_before": next_before, **meta},
+        content={
+            "items": rows,
+            "summary": summary,
+            "ranking": ranking_norm,
+            "next_before": next_before,
+            "next_cursor": next_cursor,
+            **meta,
+        },
     )
 
 
@@ -4082,6 +4308,7 @@ async def community_map(
     days: int = 30,
     user_pseudo_id: str | None = None,
     limit: int = 300,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """Individual community scans inside a bbox — the zoomed-in map markers.
 
@@ -4093,6 +4320,7 @@ async def community_map(
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
     lo_lat, lo_lon, hi_lat, hi_lon = box
+    viewer_author_id = await _lookup_community_author_id(x_community_author_key)
     data = await asyncio.get_running_loop().run_in_executor(
         None,
         lambda: community_map_scans(
@@ -4101,6 +4329,7 @@ async def community_map(
             days=days,
             limit=max(1, min(int(limit), 500)),
             exclude_user_pseudo_id=user_pseudo_id,
+            viewer_author_id=viewer_author_id,
         ),
     )
     rows = data["items"]
@@ -4144,18 +4373,21 @@ async def community_by_species(
     species: str | None = None,
     limit: int = 12,
     user_pseudo_id: str | None = None,
+    x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
+    viewer_author_id = await _lookup_community_author_id(x_community_author_key)
     rows = await asyncio.get_running_loop().run_in_executor(
         None,
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
             exclude_user_pseudo_id=user_pseudo_id,
+            viewer_author_id=viewer_author_id,
         ),
     )
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])

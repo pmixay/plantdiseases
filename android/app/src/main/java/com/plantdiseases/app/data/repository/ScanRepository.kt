@@ -26,6 +26,7 @@ import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.CommunityIdentity
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.Nicknames
+import com.plantdiseases.app.util.TelemetryIds
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
@@ -382,12 +383,13 @@ class ScanRepository(
         context: Context? = null,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.get("api/community/opinions/$scanId") {
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
                         parameter("user_pseudo_id", it)
                     }
-                    context?.let { header("X-Community-Author-Key", CommunityIdentity.keyHash(it)) }
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
@@ -415,14 +417,16 @@ class ScanRepository(
         request: CommunityOpinionRequest,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.post("api/community/opinion") {
                     contentType(ContentType.Application.Json)
-                    header("X-Community-Author-Key", CommunityIdentity.keyHash(context))
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(request)
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    423 -> Result.failure(CommunityOpinionsLockedException())
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
@@ -685,6 +689,7 @@ class ScanRepository(
     class RateLimitException : Exception("Server is busy, please wait")
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
     class UnsupportedImageException : Exception("Unsupported image format")
+    class CommunityOpinionsLockedException : Exception("Second opinions are locked")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
@@ -843,11 +848,17 @@ class ScanRepository(
     /** Record that this install opened someone else's shared scan. Best-effort
      *  and fire-and-forget — the server dedups per viewer and ignores
      *  owner/self + unknown scans, so failures are swallowed silently. */
-    suspend fun recordCommunityView(scanId: String, viewerPseudoId: String) {
+    suspend fun recordCommunityView(
+        scanId: String,
+        viewerPseudoId: String,
+        context: Context? = null,
+    ) {
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 apiClient.httpClient.post("api/community/view") {
                     contentType(ContentType.Application.Json)
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityViewRequest(
                             scanId = scanId,
@@ -865,12 +876,18 @@ class ScanRepository(
      *  50 shared scans in the feed. Same fire-and-forget contract as
      *  [recordCommunityView]; the caller is expected to have already
      *  filtered out ids already reported this screen session. */
-    suspend fun recordCommunityViews(scanIds: List<String>, viewerPseudoId: String) {
+    suspend fun recordCommunityViews(
+        scanIds: List<String>,
+        viewerPseudoId: String,
+        context: Context? = null,
+    ) {
         if (scanIds.isEmpty()) return
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 apiClient.httpClient.post("api/community/view") {
                     contentType(ContentType.Application.Json)
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityViewRequest(
                             scanIds = scanIds.take(50),
@@ -891,11 +908,14 @@ class ScanRepository(
         scanId: String,
         userPseudoId: String,
         liked: Boolean,
+        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityLikeResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.post("api/community/like") {
                     contentType(ContentType.Application.Json)
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityLikeRequest(
                             scanId = scanId,
@@ -915,26 +935,92 @@ class ScanRepository(
             }
         }
 
+    /** Report a scan or reply without requiring an account. The server
+     * deduplicates the same reporter/target pair. */
+    suspend fun reportCommunityContent(
+        userPseudoId: String,
+        targetType: String,
+        targetId: String,
+        reason: String,
+        context: Context? = null,
+    ): Result<com.plantdiseases.app.data.model.CommunitySafetyResponse> =
+        withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
+            try {
+                val response = apiClient.httpClient.post("api/community/safety/report") {
+                    contentType(ContentType.Application.Json)
+                    authorKey?.let { header("X-Community-Author-Key", it) }
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityReportRequest(
+                            userPseudoId = userPseudoId,
+                            targetType = targetType,
+                            targetId = targetId,
+                            reason = reason,
+                        ),
+                    )
+                }
+                if (response.status.value in 200..299) {
+                    Result.success(response.body<com.plantdiseases.app.data.model.CommunitySafetyResponse>())
+                } else {
+                    Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Block the anonymous author of a scan or reply. Future feed/reply reads
+     * hide both directions of the block on the server. */
+    suspend fun blockCommunityAuthor(
+        userPseudoId: String,
+        targetType: String,
+        targetId: String,
+        context: Context? = null,
+    ): Result<com.plantdiseases.app.data.model.CommunitySafetyResponse> =
+        withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
+            try {
+                val response = apiClient.httpClient.post("api/community/safety/block") {
+                    contentType(ContentType.Application.Json)
+                    authorKey?.let { header("X-Community-Author-Key", it) }
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityBlockRequest(
+                            userPseudoId = userPseudoId,
+                            targetType = targetType,
+                            targetId = targetId,
+                        ),
+                    )
+                }
+                if (response.status.value in 200..299) {
+                    Result.success(response.body<com.plantdiseases.app.data.model.CommunitySafetyResponse>())
+                } else {
+                    Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /**
      * Create-or-return this device's durable forum identity. [keyHash] is
      * [com.plantdiseases.app.util.CommunityIdentity.keyHash] — never the raw
      * secret — sent as a header, never in the body or a URL (see
-     * CommunityIdentity's kdoc for why). Groundwork only for now — nothing
-     * else in the app reads the response yet.
+     * CommunityIdentity's kdoc for why). Scan and opinion writes send the
+     * same key so server-side author dedupe survives a changed pseudo id.
      *
      * This is the raw transport. Production code goes through
      * [ensureCommunityAuthorAdopted], which applies the community opt-in
      * gate; calling this directly bypasses it.
      *
-     * The request deliberately carries no `legacy_pseudo_id`. It used to send
-     * [com.plantdiseases.app.util.TelemetryIds.userPseudoId] — the same value
-     * stored on every feedback row — which joined this permanent identity to
-     * every training photo the device ever submitted, something the privacy policy
-     * does not disclose. The server field stays optional for older installs.
+     * [legacyPseudoId] attaches Community activity written by older app versions
+     * to this durable identity. That pseudonym can also appear on diagnosis and
+     * feedback records, so same-device records can be linkable; onboarding and
+     * the privacy policy disclose that explicitly.
      */
     suspend fun adoptCommunityAuthor(
         keyHash: String,
         seedDisplayName: String,
+        legacyPseudoId: String? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -944,6 +1030,7 @@ class ScanRepository(
                     setBody(
                         com.plantdiseases.app.data.model.CommunityAuthorAdoptRequest(
                             seedDisplayName = seedDisplayName,
+                            legacyPseudoId = legacyPseudoId,
                         ),
                     )
                 }
@@ -979,15 +1066,32 @@ class ScanRepository(
      * Best-effort and silent on failure; nothing in the app reads the response
      * yet. Only the first success per process actually hits the network.
      */
-    suspend fun ensureCommunityAuthorAdopted(context: Context, force: Boolean = false) {
-        if (!force && !CommunityPrefs.uploadsEnabled(context)) return
+    suspend fun ensureCommunityAuthorAdopted(context: Context, force: Boolean = false): Boolean {
+        if (!force && !CommunityPrefs.uploadsEnabled(context)) return false
         val keyHash = CommunityIdentity.keyHash(context)
-        if (keyHash == adoptedAuthorKeyHash) return
+        if (keyHash == adoptedAuthorKeyHash) return true
         val adopted = adoptCommunityAuthor(
             keyHash = keyHash,
             seedDisplayName = Nicknames.nickname(context),
+            legacyPseudoId = TelemetryIds.userPseudoId(context),
         ).isSuccess
         if (adopted) adoptedAuthorKeyHash = keyHash
+        return adopted
+    }
+
+    /** Return a durable header only after the explicit adopt request has
+     * succeeded. This prevents a keyed read from creating a blank server-side
+     * author before the adoption request can attach legacy Community activity. */
+    private suspend fun adoptedCommunityKey(context: Context?): String? {
+        if (context == null) return null
+        val enabled = CommunityPrefs.uploadsEnabled(context)
+        // Do not mint a key merely because an opt-out code path asks for a
+        // header. A forced one-scan share may already have adopted one, though.
+        if (!enabled && adoptedAuthorKeyHash == null) return null
+        val keyHash = CommunityIdentity.keyHash(context)
+        if (keyHash == adoptedAuthorKeyHash) return keyHash
+        if (!enabled || !ensureCommunityAuthorAdopted(context)) return null
+        return keyHash
     }
 
     /** Delete a scan */
@@ -1049,13 +1153,11 @@ class ScanRepository(
     fun verdictClassKey(scan: ScanEntity): String? =
         scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: topClassKey(scan)
 
-    /**
-     * NAP detection: prefer the canonical class key from `all_probs`;
-     * fall back to the localised display name (covers legacy scans
-     * without `all_probs`).
-     */
+    /** NAP detection follows the canonical displayed verdict. The persisted
+     * displayed key wins over the raw argmax after a server reroute; legacy
+     * scans fall back to the argmax and then their localised display name. */
     fun isNotAPlantScan(scan: ScanEntity): Boolean {
-        if (topClassKey(scan) == "not_a_plant") return true
+        if (verdictClassKey(scan) == "not_a_plant") return true
         return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
             scan.diseaseNameRu == "Не растение"
     }
@@ -1210,10 +1312,13 @@ class ScanRepository(
         locale: String? = null,
         nickname: String? = null,
         thumbnail: File? = null,
+        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.post("api/community/scan") {
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         MultiPartFormDataContent(
                             formData {
@@ -1279,10 +1384,15 @@ class ScanRepository(
         limit: Int = 12,
         scope: String? = null,
         before: Long? = null,
+        ranking: String? = null,
+        cursor: String? = null,
+        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.get("api/community/nearby") {
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
                     lat?.let { parameter("lat", it) }
@@ -1294,6 +1404,8 @@ class ScanRepository(
                     }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     before?.let { parameter("before", it) }
+                    ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
+                    cursor?.takeIf { it.isNotBlank() }?.let { parameter("cursor", it) }
                     parameter("limit", limit)
                 }
                 when (response.status.value) {
@@ -1319,10 +1431,13 @@ class ScanRepository(
         days: Int = 30,
         userPseudoId: String? = null,
         limit: Int = 300,
+        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.get("api/community/map") {
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     parameter("min_lat", minLat)
                     parameter("min_lon", minLon)
                     parameter("max_lat", maxLat)
@@ -1523,10 +1638,13 @@ class ScanRepository(
         species: String,
         userPseudoId: String?,
         limit: Int = 12,
+        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
+            val authorKey = adoptedCommunityKey(context)
             try {
                 val response = apiClient.httpClient.get("api/community/by-species") {
+                    authorKey?.let { header("X-Community-Author-Key", it) }
                     parameter("species", species)
                     parameter("limit", limit)
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {

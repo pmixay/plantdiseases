@@ -189,6 +189,11 @@ data class PlantReminderEntity(
     @ColumnInfo(name = "description") val description: String? = null,
     /** Preset icon key (see ReminderPresets). NULL → derive from [type]. */
     @ColumnInfo(name = "icon") val icon: String? = null,
+    /** Durable cadence anchor for a reminder that has no matching care log
+     * yet. A reminder added to a years-old plant must start its interval now,
+     * not inherit the plant's creation date and appear instantly overdue. */
+    @ColumnInfo(name = "created_at", defaultValue = "0")
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 @Dao
@@ -207,7 +212,10 @@ abstract class PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE id = :id LIMIT 1")
     abstract suspend fun getById(id: Long): PlantReminderEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Room @Upsert updates an existing primary key in place. INSERT(REPLACE)
+    // performs DELETE + INSERT in SQLite and would cascade-delete every
+    // plant_reminder_events history row whenever the reminder was edited.
+    @Upsert
     abstract suspend fun upsert(reminder: PlantReminderEntity): Long
 
     @Query("DELETE FROM plant_reminders WHERE id = :id")
@@ -225,14 +233,15 @@ abstract class PlantReminderDao {
         // Merge-by-type callers (care-plan defaults, adaptive watering,
         // follow-up CTA) only carry scheduling fields — preserve any
         // user-customised label/description/icon already on the row.
-        return upsert(
-            entity.copy(
-                id = existing?.id ?: entity.id,
-                label = entity.label ?: existing?.label,
-                description = entity.description ?: existing?.description,
-                icon = entity.icon ?: existing?.icon,
-            )
+        val target = entity.copy(
+            id = existing?.id ?: entity.id,
+            label = entity.label ?: existing?.label,
+            description = entity.description ?: existing?.description,
+            icon = entity.icon ?: existing?.icon,
+            createdAt = existing?.createdAt ?: entity.createdAt,
         )
+        val insertedId = upsert(target)
+        return if (target.id != 0L) target.id else insertedId
     }
 }
 
@@ -280,24 +289,33 @@ interface PlantReminderEventDao {
     @Update
     suspend fun update(event: PlantReminderEventEntity)
 
-    /** Undo path for CareRepository.complete(): a day-view "Done" tap on a
-     *  recurring occurrence usually has no prior notification-fired row to
-     *  revert to pending (unlike the notification action receivers, which
-     *  always resolve an existing row), so it inserts a fresh done event and
-     *  undoing it deletes that row.
-     *
-     *  One case does NOT delete a row this app-side tap created: when the
-     *  occurrence was already marked done — by a notification action, or by
-     *  the other UI path — completeRecurring is idempotent and hands back the
-     *  EXISTING event's id, so undo deletes that instead. That is still the
-     *  right outcome (the occurrence really does become un-done), but it means
-     *  this DELETE can remove a notification-fired row, and the journal entry
-     *  written by the earlier completion is not reverted with it. */
+    /** Undo path for a checklist-created completion marker. If completion
+     * resolved a pre-existing pending/snoozed notification row, Undo restores
+     * that exact row with [update] instead. Duplicate completion is a no-op,
+     * so this never deletes an earlier action's event. */
     @Query("DELETE FROM plant_reminder_events WHERE id = :id")
     suspend fun deleteById(id: Long)
 
     @Query("SELECT * FROM plant_reminder_events WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PlantReminderEventEntity?
+
+    /** Any disposition already stored for this reminder occurrence. Used by
+     * the worker's transactional insert so an in-app Done racing a worker
+     * firing cannot leave both a synthetic done row and a pending row. */
+    @Query(
+        """
+        SELECT * FROM plant_reminder_events
+        WHERE reminder_id = :reminderId
+          AND fired_at >= :fromMs AND fired_at < :toMs
+        ORDER BY fired_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun anyForOccurrence(
+        reminderId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): PlantReminderEventEntity?
 
     @Query(
         """
@@ -317,8 +335,10 @@ interface PlantReminderEventDao {
      *
      *  Both timestamps are tested: `CareRepository.completeRecurring` stamps
      *  `fired_at` with the occurrence's ORIGINAL due instant while `done_at`
-     *  records when the user actually ticked it, and a late completion needs
-     *  both days marked done. Covered by Index(["plant_id", "fired_at"]). */
+     *  records when the user actually ticked it. Including either timestamp
+     *  keeps occurrence rendering and recent adherence/history reads complete;
+     *  the queue still keys Done status only to the original fired day.
+     *  Covered by Index(["plant_id", "fired_at"]). */
     @Query(
         """
         SELECT * FROM plant_reminder_events
@@ -328,6 +348,40 @@ interface PlantReminderEventDao {
     """
     )
     suspend fun doneBetween(plantId: Long, fromMs: Long, toMs: Long): List<PlantReminderEventEntity>
+
+    /** A notification firing that still represents this projected
+     * occurrence. Completing care from an in-app checklist must resolve this
+     * row instead of inserting a second event and leaving the notification
+     * event pending forever. */
+    @Query(
+        """
+        SELECT * FROM plant_reminder_events
+        WHERE reminder_id = :reminderId
+          AND action IN ('pending', 'snoozed')
+          AND fired_at >= :fromMs AND fired_at < :toMs
+        ORDER BY fired_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun pendingForOccurrence(
+        reminderId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): PlantReminderEventEntity?
+
+    @Query(
+        """
+        SELECT * FROM plant_reminder_events
+        WHERE reminder_id = :reminderId AND action = 'done'
+          AND fired_at >= :fromMs AND fired_at < :toMs
+        LIMIT 1
+        """
+    )
+    suspend fun doneForOccurrence(
+        reminderId: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): PlantReminderEventEntity?
 
     @Query(
         """
@@ -490,6 +544,9 @@ interface PlantDao {
 
     @Update
     suspend fun update(plant: PlantEntity)
+
+    @Query("UPDATE plants SET room_id = NULL WHERE room_id = :roomId")
+    suspend fun clearRoom(roomId: Long)
 
     @Query("DELETE FROM plants WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -700,6 +757,9 @@ interface TreatmentStepDao {
     @Update
     suspend fun update(step: TreatmentStepEntity)
 
+    @Query("DELETE FROM treatment_steps WHERE plan_id = :planId")
+    suspend fun deleteForPlan(planId: Long)
+
     @Query("SELECT * FROM treatment_steps WHERE status = 'pending' AND due_at < :cutoff")
     suspend fun pendingDueBefore(cutoff: Long): List<TreatmentStepEntity>
 
@@ -711,9 +771,26 @@ interface TreatmentStepDao {
         FROM treatment_steps
         JOIN treatment_plans ON treatment_steps.plan_id = treatment_plans.id
         WHERE treatment_steps.due_at >= :from AND treatment_steps.due_at < :to
+          AND treatment_plans.status = 'active'
         """
     )
     suspend fun getAllInRangeWithPlantId(from: Long, to: Long): List<StepWithPlantId>
+
+    /** The home-screen Today queue intentionally includes every still-open
+     * overdue step. Only active plans are actionable: steps belonging to a
+     * superseded/abandoned plan must never leak back into the user's list. */
+    @Query(
+        """
+        SELECT treatment_steps.*, treatment_plans.plant_id AS plant_id
+        FROM treatment_steps
+        JOIN treatment_plans ON treatment_steps.plan_id = treatment_plans.id
+        WHERE treatment_steps.status = 'pending'
+          AND treatment_steps.due_at < :cutoff
+          AND treatment_plans.status = 'active'
+        ORDER BY treatment_steps.due_at ASC
+        """
+    )
+    suspend fun getActionableDueBeforeWithPlantId(cutoff: Long): List<StepWithPlantId>
 
     /** Step totals for a batch of plans ("Step 2 of 5"). One grouped read
      *  instead of one COUNT per plan on every calendar month/day load. */
@@ -804,7 +881,7 @@ interface NotificationDao {
     // resort for version pairs with NO registered path (a downgrade, or a
     // developer build that skipped a step) — it does not rescue a migration
     // that leaves the schema drifted from the entities; that throws.
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1087,6 +1164,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Persists the reminder's own cadence anchor. Existing reminders are
+         * anchored at upgrade time so an old plant does not generate years of
+         * synthetic overdue work immediately after installing this version. */
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `plant_reminders` " +
+                        "ADD COLUMN `created_at` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "UPDATE `plant_reminders` SET `created_at` = " +
+                        "CAST(strftime('%s', 'now') AS INTEGER) * 1000 " +
+                        "WHERE `created_at` = 0"
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase = databaseInstance ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
@@ -1101,6 +1195,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
                 )
                 // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                 // true` preserves the previous behaviour (wipe everything

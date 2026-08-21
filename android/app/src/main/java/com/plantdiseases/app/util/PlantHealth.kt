@@ -32,7 +32,10 @@ object PlantHealth {
     data class ScanInput(val atMs: Long, val isHealthy: Boolean, val confidence: Float, val isNotAPlant: Boolean)
 
     data class Adherence(val due: Int, val done: Int) {
-        val ratio: Float get() = if (due == 0) 1f else done.toFloat() / due
+        // No due work is absence of evidence, not perfect adherence. Treating
+        // 0/0 as 100% made a newly-created treatment plan instantly read
+        // "Recovering" before the user completed a single checklist item.
+        val ratio: Float get() = if (due == 0) 0f else done.toFloat() / due
     }
 
     // ── tunables — the single place these live ─────────────────────────
@@ -57,7 +60,7 @@ object PlantHealth {
 
         if (included.size < MIN_SCANS_FOR_SCORE) {
             return Verdict(
-                status = Status.UNKNOWN,
+                status = if (hasActiveTreatmentPlan) Status.TREATMENT else Status.UNKNOWN,
                 score = null,
                 weekDelta = null,
                 series = series,
@@ -71,7 +74,10 @@ object PlantHealth {
         val weekDelta = weekAgoOrOlder?.let { score - scoreOf(it) }
 
         val status = when {
-            hasActiveTreatmentPlan && adherence.ratio >= ADHERENCE_GOOD -> Status.RECOVERING
+            hasActiveTreatmentPlan &&
+                adherence.due > 0 &&
+                adherence.ratio >= ADHERENCE_GOOD &&
+                (latest.isHealthy || (weekDelta != null && weekDelta > 0)) -> Status.RECOVERING
             hasActiveTreatmentPlan -> Status.TREATMENT
             score >= SCORE_HEALTHY_MIN && (weekDelta == null || weekDelta > DECLINE_DELTA_PP) -> Status.HEALTHY
             score >= SCORE_WATCH_MIN -> Status.WATCH

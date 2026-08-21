@@ -77,8 +77,8 @@ class CommunityUploader(
         // Register the durable forum identity here — on a real share, behind
         // the opt-in — rather than from Application.onCreate(), which used to
         // transmit it on every cold start before the onboarding disclosure had
-        // even rendered. Best-effort: nothing reads the response yet, so a
-        // failure must never block the upload the user actually asked for.
+        // even rendered. Best-effort: the upload also sends the same key, but
+        // identity adoption failure must never block the share itself.
         scanRepository.ensureCommunityAuthorAdopted(context)
 
         val result = scanRepository.uploadCommunityScan(
@@ -95,6 +95,7 @@ class CommunityUploader(
             locale = locale,
             nickname = Nicknames.nickname(context),
             thumbnail = thumb,
+            context = context,
         )
         // The thumbnail is a transient cache file; delete it once the
         // upload either succeeded or hard-failed so we don't leak
@@ -163,6 +164,7 @@ class CommunityUploader(
             locale = locale,
             nickname = Nicknames.nickname(context),
             thumbnail = thumb,
+            context = context,
         )
         thumb?.let { runCatching { it.delete() } }
         result.fold(

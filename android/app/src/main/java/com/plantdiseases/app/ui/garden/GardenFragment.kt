@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.garden
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -19,6 +20,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
@@ -27,19 +29,29 @@ import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
+import com.plantdiseases.app.databinding.ItemCareTaskBinding
 import com.plantdiseases.app.databinding.ItemRoomCardBinding
 import com.plantdiseases.app.ui.garden.care.CareCalendarView
 import com.plantdiseases.app.ui.garden.care.CareDayActivity
+import com.plantdiseases.app.ui.garden.care.CareTaskActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.PlantCategoryClassifier
+import com.plantdiseases.app.util.ReminderManager
+import com.plantdiseases.app.util.ReminderPresets
 import com.plantdiseases.app.util.RoomPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.YearMonth
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -60,6 +72,7 @@ class GardenFragment : Fragment() {
 
     private var allSummaries: List<PlantRepository.PlantSummary> = emptyList()
     private var allRooms: List<RoomRepository.RoomSummary> = emptyList()
+    private var todayTasks: List<CareRepository.CareTaskView> = emptyList()
 
     /** True until the first load renders. Gates the entry fade to the
      *  genuine first paint and lets onResume skip the redundant reload that
@@ -69,6 +82,7 @@ class GardenFragment : Fragment() {
     private var searchVisible = false
     private var selectedPane = PANE_ROOMS
     private var selectedCalendarSubPane = SUBPANE_CARE
+    private var lunarNavigationState: LunarCalendarView.NavigationState? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -93,6 +107,7 @@ class GardenFragment : Fragment() {
         binding.gardenScroll.applyStatusBarTopInset()
         selectedPane = savedInstanceState?.getInt(KEY_PANE, PANE_ROOMS) ?: PANE_ROOMS
         selectedCalendarSubPane = savedInstanceState?.getInt(KEY_CALENDAR_SUBPANE, SUBPANE_CARE) ?: SUBPANE_CARE
+        lunarNavigationState = savedInstanceState?.let(::readLunarNavigationState)
 
         binding.gardenAddFab.setOnClickListener {
             Haptics.medium(requireContext())
@@ -115,6 +130,12 @@ class GardenFragment : Fragment() {
             if (!searchVisible) binding.gardenSearch.text = null
             renderGarden(animate = false)
             if (searchVisible) binding.gardenSearch.requestFocus()
+        }
+        binding.gardenDoTodayCalendar.setOnClickListener {
+            Haptics.tick(requireContext())
+            selectedCalendarSubPane = SUBPANE_CARE
+            binding.gardenSegment.getTabAt(PANE_CALENDAR)?.select()
+            binding.gardenCalendarSegment.check(binding.gardenCalendarToggleCare.id)
         }
 
         setupSegmentedControl()
@@ -152,6 +173,11 @@ class GardenFragment : Fragment() {
         super.onSaveInstanceState(outState)
         outState.putInt(KEY_PANE, selectedPane)
         outState.putInt(KEY_CALENDAR_SUBPANE, selectedCalendarSubPane)
+        (lunarView?.navigationState() ?: lunarNavigationState)?.let { state ->
+            outState.putInt(KEY_LUNAR_YEAR, state.shownMonth.year)
+            outState.putInt(KEY_LUNAR_MONTH, state.shownMonth.monthValue)
+            outState.putLong(KEY_LUNAR_SELECTED_DAY, state.selectedDate.toEpochDay())
+        }
     }
 
     override fun onDestroyView() {
@@ -168,6 +194,7 @@ class GardenFragment : Fragment() {
         // on the next onCreateView and that pane renders empty until the
         // Fragment instance itself is recreated.
         calendarView = null
+        lunarNavigationState = lunarView?.navigationState() ?: lunarNavigationState
         lunarView = null
     }
 
@@ -221,9 +248,12 @@ class GardenFragment : Fragment() {
      *  it, so deleting the last plant used to leave the previous render's
      *  room cards (and "+ Add room") stacked on top of the empty state. */
     private fun applyPaneVisibility(animate: Boolean = false) {
+        val hasGardenContent = allSummaries.isNotEmpty() || allRooms.isNotEmpty()
         binding.gardenRoomsPane.visibility =
-            if (selectedPane == PANE_ROOMS && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
+            if (selectedPane == PANE_ROOMS && hasGardenContent) View.VISIBLE else View.GONE
         binding.gardenCalendarPane.visibility = if (selectedPane == PANE_CALENDAR) View.VISIBLE else View.GONE
+        binding.gardenDoTodayCard.visibility =
+            if (selectedPane == PANE_ROOMS && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
         // Searching a month grid means nothing — the toggle and box only
         // apply to the Rooms pane.
         binding.gardenSearchToggle.visibility = if (selectedPane == PANE_ROOMS) View.VISIBLE else View.INVISIBLE
@@ -241,18 +271,23 @@ class GardenFragment : Fragment() {
      *  because only [renderGarden]'s "does the garden have any plants" check
      *  drove it, with no awareness of which pane was actually showing. */
     private fun updateFabVisibility() {
-        val show = allSummaries.isNotEmpty() && selectedPane == PANE_ROOMS
+        val show = (allSummaries.isNotEmpty() || allRooms.isNotEmpty()) && selectedPane == PANE_ROOMS
         binding.gardenAddFab.visibility = if (show) View.VISIBLE else View.GONE
         if (show) binding.gardenAddFab.extend()
     }
 
     private fun loadGarden(animate: Boolean = true) {
         lifecycleScope.launch {
-            val plants = plantRepository.getPlants()
-            val rooms = roomRepository.getRooms()
+            val plantsRequest = async { plantRepository.getPlants() }
+            val roomsRequest = async { roomRepository.getRooms() }
+            val todayRequest = async { careRepository.today() }
+            val plants = plantsRequest.await()
+            val rooms = roomsRequest.await()
+            val currentTasks = todayRequest.await()
             if (_binding != null) {
                 allSummaries = plants
                 allRooms = rooms
+                todayTasks = currentTasks
                 renderGarden(animate = animate && isFirstLoad)
                 isFirstLoad = false
                 if (selectedPane == PANE_CALENDAR) loadCalendarPane()
@@ -264,12 +299,13 @@ class GardenFragment : Fragment() {
      *  follows the FULL garden; the rooms pane itself follows the filter. */
     private fun renderGarden(animate: Boolean) {
         val hasAnyPlant = allSummaries.isNotEmpty()
-        binding.gardenEmptyState.visibility = if (hasAnyPlant) View.GONE else View.VISIBLE
-        binding.gardenSegment.visibility = if (hasAnyPlant) View.VISIBLE else View.GONE
+        val hasGardenContent = hasAnyPlant || allRooms.isNotEmpty()
+        binding.gardenEmptyState.visibility = if (hasGardenContent) View.GONE else View.VISIBLE
+        binding.gardenSegment.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
         updateFabVisibility()
 
         val scanTotal = allSummaries.sumOf { it.scanCount }
-        binding.gardenSummaryBody.text = if (hasAnyPlant) {
+        binding.gardenSummaryBody.text = if (hasGardenContent) {
             getString(
                 R.string.garden_subtitle_combined,
                 resources.getQuantityString(R.plurals.room_count, allRooms.size, allRooms.size),
@@ -293,7 +329,8 @@ class GardenFragment : Fragment() {
         // Re-evaluated on every load, not only on a tab change — the pane's
         // own visibility depends on whether any plant is left.
         applyPaneVisibility(animate)
-        registerOnboardingAnchors(!hasAnyPlant)
+        renderDoToday()
+        registerOnboardingAnchors(!hasGardenContent)
     }
 
     /** The filter is subordinate to the visible control. `searchVisible` is
@@ -322,6 +359,148 @@ class GardenFragment : Fragment() {
         )
     }
 
+    // ─── Do today ─────────────────────────────────────────────────────
+
+    private fun renderDoToday() {
+        val container = binding.gardenDoTodayList
+        container.removeAllViews()
+        val nowMs = System.currentTimeMillis()
+        val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
+        val overdueCount = todayTasks.count { it.task.dueAt < nowMs }
+        val taskCount = resources.getQuantityString(
+            R.plurals.care_tasks_count,
+            todayTasks.size,
+            todayTasks.size,
+        )
+        binding.gardenDoTodaySubtitle.text = when {
+            todayTasks.isEmpty() -> getString(R.string.calendar_all_caught_up)
+            overdueCount == 0 -> taskCount
+            else -> getString(
+                R.string.garden_do_today_summary,
+                taskCount,
+                resources.getQuantityString(
+                    R.plurals.garden_do_today_overdue_count,
+                    overdueCount,
+                    overdueCount,
+                ),
+            )
+        }
+        todayTasks.forEach { task ->
+            container.addView(buildTodayRow(task, todayStart))
+        }
+    }
+
+    private fun buildTodayRow(
+        view: CareRepository.CareTaskView,
+        todayStart: Long,
+    ): View {
+        val row = ItemCareTaskBinding.inflate(layoutInflater, binding.gardenDoTodayList, false)
+        val isFromEarlierDay = view.task.dueAt < todayStart
+        row.careTaskTime.text = if (isFromEarlierDay) {
+            SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(view.task.dueAt))
+        } else {
+            DateFormat.getTimeFormat(requireContext()).format(Date(view.task.dueAt))
+        }
+        if (isFromEarlierDay) {
+            row.careTaskTime.setTextColor(requireContext().getColor(R.color.disease_red))
+        }
+        row.careTaskIcon.setImageResource(
+            if (view.task.type == "treatment") {
+                R.drawable.ic_treatment
+            } else {
+                ReminderPresets.iconRes(null, view.task.type)
+            },
+        )
+        row.careTaskTitle.text = when {
+            view.task.type == "treatment" -> view.task.title
+            view.task.title == view.task.type ->
+                getString(ReminderPresets.fallbackLabelRes(view.task.type))
+            else -> view.task.title
+        }
+        row.careTaskSubtitle.text = view.roomName?.let { "${view.plantName} · $it" } ?: view.plantName
+        row.careTaskCheckbox.isChecked = false
+        row.careTaskCheckbox.contentDescription = getString(R.string.task_mark_done)
+        row.careTaskCheckbox.setOnClickListener {
+            row.careTaskCheckbox.isEnabled = false
+            Haptics.medium(requireContext())
+            completeTodayTask(view)
+        }
+        row.root.setOnClickListener {
+            Haptics.tick(requireContext())
+            openTaskDetail(view)
+        }
+        return row.root
+    }
+
+    private fun completeTodayTask(view: CareRepository.CareTaskView) {
+        val appContext = requireContext().applicationContext
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val record = withContext(NonCancellable) {
+                val completed = careRepository.complete(view)
+                if (completed != CareRepository.CompletionRecord.NoChange) {
+                    rescheduleRecurring(appContext, view, afterCare = true)
+                }
+                completed
+            }
+            loadGarden(animate = false)
+            val currentBinding = _binding ?: return@launch
+            Snackbar.make(currentBinding.gardenRoot, R.string.task_mark_done, Snackbar.LENGTH_LONG)
+                .setAction(R.string.task_undo) {
+                    lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        withContext(NonCancellable) {
+                            careRepository.undo(record)
+                            if (record != CareRepository.CompletionRecord.NoChange) {
+                                rescheduleRecurring(appContext, view, afterCare = false)
+                            }
+                        }
+                        loadGarden(animate = false)
+                    }
+                }
+                .show()
+        }
+    }
+
+    private suspend fun rescheduleRecurring(
+        context: android.content.Context,
+        view: CareRepository.CareTaskView,
+        afterCare: Boolean,
+    ) {
+        val id = view.task.id as? CareQueue.CareTask.TaskId.Recurring ?: return
+        val reminder = careRepository.getReminder(id.reminderId) ?: return
+        if (!reminder.enabled) return
+        if (afterCare) {
+            ReminderManager.rescheduleAfterCare(
+                context = context,
+                plantId = reminder.plantId,
+                plantName = view.plantName,
+                type = reminder.type,
+                intervalDays = reminder.intervalDays,
+                hour = reminder.hour,
+                minute = reminder.minute,
+                reminderId = reminder.id,
+            )
+        } else {
+            ReminderManager.restoreAfterUndo(context, reminder, view.plantName)
+        }
+    }
+
+    private fun openTaskDetail(view: CareRepository.CareTaskView) {
+        val intent = Intent(requireContext(), CareTaskActivity::class.java)
+            .putExtra(CareTaskActivity.EXTRA_IS_DONE, false)
+        when (val id = view.task.id) {
+            is CareQueue.CareTask.TaskId.Step ->
+                intent
+                    .putExtra(CareTaskActivity.EXTRA_TASK_KIND, "step")
+                    .putExtra(CareTaskActivity.EXTRA_STEP_ID, id.stepId)
+            is CareQueue.CareTask.TaskId.Recurring ->
+                intent
+                    .putExtra(CareTaskActivity.EXTRA_TASK_KIND, "recurring")
+                    .putExtra(CareTaskActivity.EXTRA_REMINDER_ID, id.reminderId)
+                    .putExtra(CareTaskActivity.EXTRA_DUE_AT, view.task.dueAt)
+        }
+        startActivity(intent)
+    }
+
     // ─── Rooms pane ─────────────────────────────────────────────────────
 
     private fun renderRoomsPane(animate: Boolean) {
@@ -330,7 +509,6 @@ class GardenFragment : Fragment() {
         // cards attached also leaves registerOnboardingAnchors anchoring
         // GARDEN_PLANTS onto a stale card.
         container.removeAllViews()
-        if (allSummaries.isEmpty()) return
         val query = currentQuery()
 
         val plantsByRoom: Map<Long?, List<PlantRepository.PlantSummary>> =
@@ -546,11 +724,9 @@ class GardenFragment : Fragment() {
             // would silently blank it, so that case keeps its own read.
             val monthTasks = careRepository.queue(monthStartMs, monthEndMs).map { it.task }
             val summary = CareQueue.monthSummary(monthTasks, monthStartMs, monthEndMs, nowMs)
-            val todayTasks = if (todayStart in monthStartMs until monthEndMs) {
-                CareQueue.forDay(monthTasks, todayStart)
-            } else {
-                careRepository.day(todayStart).map { it.task }
-            }
+            // The summary mirrors the home-screen queue: pending tasks due
+            // today plus overdue work, with no arbitrary look-back cutoff.
+            val todayTasks = careRepository.today(nowMs).map { it.task }
             if (_binding == null) return@launch
             calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
             renderTodayCard(todayStart, todayTasks)
@@ -581,9 +757,24 @@ class GardenFragment : Fragment() {
 
     private fun ensureLunarViewAttached() {
         if (lunarView != null) return
-        val view = LunarCalendarView(requireContext())
+        val view = LunarCalendarView(requireContext()).apply {
+            lunarNavigationState?.let { state -> restoreNavigationState(state) }
+        }
         binding.gardenLunarContainer.addView(view)
         lunarView = view
+    }
+
+    private fun readLunarNavigationState(bundle: Bundle): LunarCalendarView.NavigationState? {
+        if (!bundle.containsKey(KEY_LUNAR_YEAR) || !bundle.containsKey(KEY_LUNAR_SELECTED_DAY)) return null
+        return runCatching {
+            LunarCalendarView.NavigationState(
+                shownMonth = YearMonth.of(
+                    bundle.getInt(KEY_LUNAR_YEAR),
+                    bundle.getInt(KEY_LUNAR_MONTH),
+                ),
+                selectedDate = LocalDate.ofEpochDay(bundle.getLong(KEY_LUNAR_SELECTED_DAY)),
+            )
+        }.getOrNull()
     }
 
     /** Feeds every plant the user owns into the aggregate view — cheap
@@ -596,7 +787,10 @@ class GardenFragment : Fragment() {
             allSummaries.map { summary ->
                 LunarCalendarView.AggregateEntry(
                     label = summary.plant.name,
-                    category = PlantCategoryClassifier.classify(summary.plant.scientificName, summary.plant.commonName),
+                    category = PlantCategoryClassifier.classify(
+                        summary.plant.scientificName,
+                        summary.plant.commonName ?: summary.plant.species,
+                    ),
                 )
             },
         )
@@ -709,6 +903,9 @@ class GardenFragment : Fragment() {
         const val SUBPANE_CARE = 0
         const val SUBPANE_LUNAR = 1
         const val KEY_CALENDAR_SUBPANE = "garden_selected_calendar_subpane"
+        const val KEY_LUNAR_YEAR = "garden_lunar_year"
+        const val KEY_LUNAR_MONTH = "garden_lunar_month"
+        const val KEY_LUNAR_SELECTED_DAY = "garden_lunar_selected_day"
         const val UNASSIGNED_ROOM_ID = -1L
     }
 

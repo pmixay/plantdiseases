@@ -51,6 +51,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.YearMonth
 import javax.inject.Inject
 
 /**
@@ -84,6 +86,8 @@ class PlantDetailActivity : AppCompatActivity() {
     // reloads from the repository by plantId).
     private var restoredTabIndex = 0
     private var restoredScrollY = 0
+    private var lunarNavigationState: LunarCalendarView.NavigationState? = null
+    private var lunarCalendarView: LunarCalendarView? = null
 
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
     private var lastWateredAt: Long? = null
@@ -211,8 +215,9 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun tryPersistRead(uri: Uri): Boolean = try {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         true
-    } catch (e: SecurityException) {
-        android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
+    } catch (_: SecurityException) {
+        // Do not log the URI: document-provider paths can contain user data.
+        android.util.Log.w("PlantDetail", "Persistable URI grant refused")
         Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
         false
     }
@@ -340,6 +345,7 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
         restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
+        lunarNavigationState = savedInstanceState?.let(::readLunarNavigationState)
         buildLayout()
         onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
         loadPlant()
@@ -356,6 +362,11 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         if (::binding.isInitialized) {
             outState.putInt(KEY_SCROLL, binding.detailScroll.scrollY)
+        }
+        (lunarCalendarView?.navigationState() ?: lunarNavigationState)?.let { state ->
+            outState.putInt(KEY_LUNAR_YEAR, state.shownMonth.year)
+            outState.putInt(KEY_LUNAR_MONTH, state.shownMonth.monthValue)
+            outState.putLong(KEY_LUNAR_SELECTED_DAY, state.selectedDate.toEpochDay())
         }
     }
 
@@ -465,9 +476,13 @@ class PlantDetailActivity : AppCompatActivity() {
         header.bind(plantId, plant)
         extraCards.bindPlantId(plantId)
 
+        val activePlan = careRepository.activePlan(plant.id)
+        val health = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
+
+        lunarNavigationState = lunarCalendarView?.navigationState() ?: lunarNavigationState
         content.removeAllViews()
         toolbarTitle.text = plant.name
-        val summaryAnchor = header.buildHeader(plant, scans, journalEntries)
+        val summaryAnchor = header.buildHeader(plant, scans, journalEntries, health)
         val actionsAnchor = header.buildActionRow()
         content.addView(summaryAnchor)
         content.addView(actionsAnchor)
@@ -499,14 +514,15 @@ class PlantDetailActivity : AppCompatActivity() {
         overviewContainer.addView(sectionLabel(R.string.lunar_title))
         overviewContainer.addView(
             LunarCalendarView(this).apply {
-                setSpecies(plant.scientificName, plant.commonName)
+                setSpecies(plant.scientificName, plant.commonName ?: plant.species)
+                lunarNavigationState?.let { state -> restoreNavigationState(state) }
                 onRequestScrollTo = { target ->
                     val rect = android.graphics.Rect()
                     target.getDrawingRect(rect)
                     binding.detailScroll.offsetDescendantRectToMyCoords(target, rect)
                     binding.detailScroll.smoothScrollTo(0, rect.top)
                 }
-            },
+            }.also { lunarCalendarView = it },
         )
 
         // ── Care ──────────────────────────────────────────────────────
@@ -586,10 +602,26 @@ class PlantDetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun readLunarNavigationState(bundle: Bundle): LunarCalendarView.NavigationState? {
+        if (!bundle.containsKey(KEY_LUNAR_YEAR) || !bundle.containsKey(KEY_LUNAR_SELECTED_DAY)) return null
+        return runCatching {
+            LunarCalendarView.NavigationState(
+                shownMonth = YearMonth.of(
+                    bundle.getInt(KEY_LUNAR_YEAR),
+                    bundle.getInt(KEY_LUNAR_MONTH),
+                ),
+                selectedDate = LocalDate.ofEpochDay(bundle.getLong(KEY_LUNAR_SELECTED_DAY)),
+            )
+        }.getOrNull()
+    }
+
     companion object {
         const val EXTRA_PLANT_ID = "extra_plant_id"
 
         private const val KEY_TAB = "plant_detail_tab"
         private const val KEY_SCROLL = "plant_detail_scroll"
+        private const val KEY_LUNAR_YEAR = "plant_detail_lunar_year"
+        private const val KEY_LUNAR_MONTH = "plant_detail_lunar_month"
+        private const val KEY_LUNAR_SELECTED_DAY = "plant_detail_lunar_selected_day"
     }
 }

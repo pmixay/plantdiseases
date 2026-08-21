@@ -1,11 +1,16 @@
 package com.plantdiseases.app.data.repository
 
+import androidx.room.withTransaction
+import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.local.PlantDao
+import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalDao
+import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.PlantReminderDao
 import com.plantdiseases.app.data.local.PlantReminderEventDao
 import com.plantdiseases.app.data.local.PlantReminderEventEntity
 import com.plantdiseases.app.data.local.RoomDao
+import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.TreatmentPlanDao
 import com.plantdiseases.app.data.local.TreatmentPlanEntity
 import com.plantdiseases.app.data.local.TreatmentStepDao
@@ -15,6 +20,9 @@ import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.TreatmentPlanFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -25,7 +33,9 @@ import kotlinx.coroutines.withContext
  * plant rows themselves; this repository is Garden-refactor-only.
  */
 class CareRepository(
+    private val database: AppDatabase,
     private val plantDao: PlantDao,
+    private val scanDao: ScanDao,
     private val roomDao: RoomDao,
     private val reminderDao: PlantReminderDao,
     private val reminderEventDao: PlantReminderEventDao,
@@ -34,6 +44,9 @@ class CareRepository(
     private val treatmentStepDao: TreatmentStepDao,
     private val plantRepository: PlantRepository,
 ) {
+    private val treatmentPlanMutex = Mutex()
+    private val recurringCompletionMutex = Mutex()
+
     data class CareTaskView(
         val task: CareQueue.CareTask,
         val plantName: String,
@@ -51,11 +64,43 @@ class CareRepository(
         val steps: List<TreatmentStepEntity>,
     )
 
+    /** Local-only payload for the accepted "create from scan" operation.
+     * Keeping this beside [attachScanWithStoredChecklist] makes the plant row,
+     * scan association and stored fallback checklist one durable commit. */
+    data class NewPlantDraft(
+        val name: String,
+        val species: String?,
+        val scientificName: String?,
+        val commonName: String?,
+        val roomId: Long?,
+    )
+
+    data class StoredChecklist(
+        val carePlan: CarePlanResponse,
+        val diseaseKey: String,
+        val diseaseLabelEn: String,
+        val diseaseLabelRu: String,
+    )
+
     /** What complete() mutated, precisely enough for undo() to reverse
      *  exactly those rows — no heuristic re-derivation. */
     sealed interface CompletionRecord {
-        data class RecurringDone(val eventId: Long, val journalEntryId: Long?) : CompletionRecord
+        data class RecurringDone(
+            val eventId: Long,
+            val reminderId: Long,
+            val journalEntryId: Long?,
+            val previousReminderCreatedAt: Long,
+            val completionAnchorAt: Long,
+            /** Non-null when completion resolved a notification-created row;
+             * undo restores this exact prior disposition. Null means the
+             * checklist inserted a new marker and undo deletes it. */
+            val previousEvent: PlantReminderEventEntity? = null,
+        ) : CompletionRecord
         data class StepDone(val stepId: Long, val autoCompletedPlanId: Long?) : CompletionRecord
+
+        /** A duplicate completion changed no rows, so Undo must not remove a
+         * completion (or journal entry) written by an earlier UI/action. */
+        data object NoChange : CompletionRecord
     }
 
     suspend fun queue(fromMs: Long, toMs: Long): List<CareTaskView> = withContext(Dispatchers.IO) {
@@ -63,10 +108,83 @@ class CareRepository(
     }
 
     suspend fun day(dayStartMs: Long): List<CareTaskView> = withContext(Dispatchers.IO) {
-        val all = buildQueue(dayStartMs, dayStartMs + CareSchedule.DAY_MS)
+        val dayEndMs = CareQueue.dayStartMs(CareQueue.epochDayOf(dayStartMs) + 1L)
+        val all = buildQueue(dayStartMs, dayEndMs)
         val tasksById = all.associateBy { it.task.id }
         CareQueue.forDay(all.map { it.task }, dayStartMs).mapNotNull { tasksById[it.id] }
     }
+
+    /** Pending work for the home-screen "Do today" list: every treatment
+     * step due through the end of today, plus one current occurrence for each
+     * recurring reminder. This deliberately has no arbitrary look-back
+     * window, while also avoiding hundreds of historical instances of the
+     * same daily reminder. */
+    suspend fun today(nowMs: Long = System.currentTimeMillis()): List<CareTaskView> =
+        withContext(Dispatchers.IO) {
+            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
+            val todayEnd = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs) + 1L)
+            val plants = plantDao.getAllPlants()
+            val plantsById = plants.associateBy { it.id }
+            val roomNamesById = roomDao.getAll().associate { it.id to it.name }
+            val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
+            val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
+
+            val recurring = buildList {
+                for (plant in plants) {
+                    val journal = journalByPlant[plant.id].orEmpty()
+                    for (reminder in remindersByPlant[plant.id].orEmpty()) {
+                        if (!reminder.enabled) continue
+                        val anchor = plantRepository.reminderCadenceAnchor(reminder, journal)
+                        val input = CareQueue.ReminderInput(
+                            reminderId = reminder.id,
+                            plantId = plant.id,
+                            type = reminder.type,
+                            title = reminder.label ?: reminder.type,
+                            intervalDays = reminder.intervalDays,
+                            hour = reminder.hour,
+                            minute = reminder.minute,
+                            enabled = true,
+                            anchorMs = anchor,
+                        )
+                        val task = CareQueue.latestOccurrenceBefore(input, todayEnd) ?: continue
+                        val occurrenceStart = CareQueue.dayStartMs(CareQueue.epochDayOf(task.dueAt))
+                        val occurrenceEnd = CareQueue.dayStartMs(CareQueue.epochDayOf(task.dueAt) + 1L)
+                        val completedOnOccurrence = reminderEventDao.doneForOccurrence(
+                            reminder.id,
+                            occurrenceStart,
+                            occurrenceEnd,
+                        ) != null
+                        if (!completedOnOccurrence) {
+                            add(task)
+                        }
+                    }
+                }
+            }
+
+            val steps = treatmentStepDao.getActionableDueBeforeWithPlantId(todayEnd).map { row ->
+                CareQueue.CareTask(
+                    id = CareQueue.CareTask.TaskId.Step(row.step.id),
+                    plantId = row.plantId,
+                    type = "treatment",
+                    title = row.step.title,
+                    dueAt = row.step.dueAt,
+                    status = CareQueue.CareTask.Status.PENDING,
+                    stepIndex = row.step.stepIndex,
+                )
+            }
+
+            (recurring + steps)
+                .sortedWith(compareBy<CareQueue.CareTask>({ it.dueAt >= todayStart }, { it.dueAt }, { it.title }))
+                .mapNotNull { task ->
+                    val plant = plantsById[task.plantId] ?: return@mapNotNull null
+                    CareTaskView(
+                        task = task,
+                        plantName = plant.name,
+                        roomName = plant.roomId?.let { roomNamesById[it] },
+                        thumbnailSource = plant.coverPhotoUri,
+                    )
+                }
+        }
 
     suspend fun month(monthStartMs: Long, monthEndMs: Long, nowMs: Long): Map<Long, CareQueue.DayState> =
         withContext(Dispatchers.IO) {
@@ -81,6 +199,7 @@ class CareRepository(
 
         val reminderInputs = mutableListOf<CareQueue.ReminderInput>()
         val doneEvents = mutableListOf<CareQueue.DoneEvent>()
+        val historicalDoneTasks = mutableListOf<CareQueue.CareTask>()
         // Table-wide, not per plant: this runs on every calendar month swipe and
         // every day-view open. Both queries keep the ORDER BY of the per-plant
         // ones they replace, and groupBy preserves encounter order, so the
@@ -88,14 +207,11 @@ class CareRepository(
         val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
         val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         for (plant in plants) {
-            val reminders = remindersByPlant[plant.id].orEmpty().filter { it.enabled }
-            if (reminders.isEmpty()) continue
+            val allReminders = remindersByPlant[plant.id].orEmpty()
+            val reminders = allReminders.filter { it.enabled }
             val journal = journalByPlant[plant.id].orEmpty() // timestamp DESC
             for (reminder in reminders) {
-                val journalType = plantRepository.reminderTypeToJournalType(reminder.type)
-                val anchor = journalType
-                    ?.let { type -> journal.firstOrNull { it.type == type.value }?.timestamp }
-                    ?: plant.createdAt
+                val anchor = plantRepository.reminderCadenceAnchor(reminder, journal)
                 reminderInputs += CareQueue.ReminderInput(
                     reminderId = reminder.id,
                     plantId = plant.id,
@@ -108,22 +224,24 @@ class CareRepository(
                     anchorMs = anchor,
                 )
             }
-            // completeRecurring stamps `fired_at` with the occurrence's
-            // ORIGINAL due instant while `done_at` is when the user actually
-            // ticked it. For a journal-mapped type the anchor above jumps to
-            // that journal entry, so occurrence 0 lands on the completion day
-            // and would show pending again on the very day it was completed —
-            // hence the second marker. For the types with no journal mapping
-            // the anchor is pinned to plant.createdAt and never moves, so the
-            // cadence is unchanged and a completion-day marker would falsely
-            // clear whatever genuine occurrence happens to fall there.
+            val remindersById = allReminders.associateBy { it.id }
+            // Current/future cadence uses the latest anchor above, but a later
+            // care log must not erase an older completed occurrence from the
+            // browsable calendar. Materialise persisted fired_at history as
+            // tasks independently, then let it override a matching projection.
             reminderEventDao.doneBetween(plant.id, fromMs, toMs).forEach { event ->
                 val firedDay = CareQueue.epochDayOf(event.firedAt)
                 doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, firedDay)
-                if (plantRepository.reminderTypeToJournalType(event.type) == null) return@forEach
-                val doneDay = event.doneAt?.let { CareQueue.epochDayOf(it) }
-                if (doneDay != null && doneDay != firedDay) {
-                    doneEvents += CareQueue.DoneEvent(plant.id, event.reminderId, event.type, doneDay)
+                if (event.firedAt >= fromMs && event.firedAt < toMs) {
+                    val reminder = remindersById[event.reminderId] ?: return@forEach
+                    historicalDoneTasks += CareQueue.CareTask(
+                        id = CareQueue.CareTask.TaskId.Recurring(event.reminderId, firedDay),
+                        plantId = plant.id,
+                        type = reminder.type,
+                        title = reminder.label ?: reminder.type,
+                        dueAt = event.firedAt,
+                        status = CareQueue.CareTask.Status.DONE,
+                    )
                 }
             }
         }
@@ -148,7 +266,11 @@ class CareRepository(
             )
         }
 
-        val tasks = CareQueue.project(reminderInputs, stepInputs, doneEvents, fromMs, toMs)
+        val tasksById = linkedMapOf<CareQueue.CareTask.TaskId, CareQueue.CareTask>()
+        CareQueue.project(reminderInputs, stepInputs, doneEvents, fromMs, toMs)
+            .forEach { tasksById[it.id] = it }
+        historicalDoneTasks.forEach { tasksById[it.id] = it }
+        val tasks = tasksById.values
         return tasks.mapNotNull { task ->
             val plant = plantsById[task.plantId] ?: return@mapNotNull null
             CareTaskView(
@@ -164,38 +286,64 @@ class CareRepository(
 
     suspend fun complete(view: CareTaskView): CompletionRecord = withContext(Dispatchers.IO) {
         when (val id = view.task.id) {
-            is CareQueue.CareTask.TaskId.Recurring -> completeRecurring(id, view.task)
-            is CareQueue.CareTask.TaskId.Step -> completeStep(id)
+            is CareQueue.CareTask.TaskId.Recurring -> recurringCompletionMutex.withLock {
+                database.withTransaction { completeRecurring(id, view.task) }
+            }
+            is CareQueue.CareTask.TaskId.Step -> treatmentPlanMutex.withLock {
+                database.withTransaction { completeStep(id) }
+            }
         }
     }
 
     suspend fun undo(record: CompletionRecord) = withContext(Dispatchers.IO) {
         when (record) {
-            is CompletionRecord.RecurringDone -> {
-                reminderEventDao.deleteById(record.eventId)
-                record.journalEntryId?.let { plantRepository.deleteJournalEntry(it) }
-            }
-            is CompletionRecord.StepDone -> {
-                val step = treatmentStepDao.getById(record.stepId) ?: return@withContext
-                treatmentStepDao.update(step.copy(status = "pending", doneAt = null))
-                record.autoCompletedPlanId?.let { planId ->
-                    val plan = treatmentPlanDao.getById(planId) ?: return@let
-                    treatmentPlanDao.update(plan.copy(status = "active", completedAt = null))
+            is CompletionRecord.RecurringDone -> recurringCompletionMutex.withLock {
+                database.withTransaction {
+                    if (record.previousEvent == null) {
+                        reminderEventDao.deleteById(record.eventId)
+                    } else {
+                        reminderEventDao.update(record.previousEvent)
+                    }
+                    record.journalEntryId?.let { journalDao.deleteById(it) }
+                    reminderDao.getById(record.reminderId)
+                        ?.takeIf { it.createdAt == record.completionAnchorAt }
+                        ?.let { reminder ->
+                            reminderDao.upsert(reminder.copy(createdAt = record.previousReminderCreatedAt))
+                        }
                 }
             }
+            is CompletionRecord.StepDone -> treatmentPlanMutex.withLock {
+                database.withTransaction {
+                    val step = treatmentStepDao.getById(record.stepId) ?: return@withTransaction
+                    val autoCompletedPlan = record.autoCompletedPlanId?.let { planId ->
+                        treatmentPlanDao.getById(planId)
+                    }
+                    if (autoCompletedPlan != null) {
+                        val otherActive = treatmentPlanDao.getActiveForPlant(autoCompletedPlan.plantId)
+                        if (otherActive != null && otherActive.id != autoCompletedPlan.id) {
+                            return@withTransaction
+                        }
+                    }
+                    treatmentStepDao.update(step.copy(status = "pending", doneAt = null))
+                    autoCompletedPlan?.let { plan ->
+                        treatmentPlanDao.update(plan.copy(status = "active", completedAt = null))
+                    }
+                }
+            }
+            CompletionRecord.NoChange -> Unit
         }
     }
 
     /** A recurring occurrence has no row of its own, so "done" is recorded as
      *  a `plant_reminder_events` row whose `fired_at` is the occurrence's
      *  original due instant and whose `done_at` is now. Both timestamps
-     *  matter: buildQueue marks *both* days done, because completing late
-     *  re-anchors the reminder onto today and would otherwise re-spawn the
-     *  task as pending on the very day it was completed. */
+     *  matter: firedAt preserves occurrence identity, while doneAt drives
+     *  history/adherence and the matching care journal re-anchors the next
+     *  occurrence one full interval into the future. */
     private suspend fun completeRecurring(
         id: CareQueue.CareTask.TaskId.Recurring,
         task: CareQueue.CareTask,
-    ): CompletionRecord.RecurringDone {
+    ): CompletionRecord {
         val now = System.currentTimeMillis()
         // Idempotent: the day view's checkbox and the task-detail screen can
         // both reach the same occurrence, and a second completion would write
@@ -209,20 +357,34 @@ class CareRepository(
         // its reminder id plus its fired day — matching on type instead would
         // collide across two same-type reminders on one plant, which the schema
         // deliberately allows (see PlantReminderEntity's index comment).
+        val dayEnd = CareQueue.dayStartMs(id.epochDay + 1L)
         val alreadyDone = reminderEventDao
-            .doneBetween(task.plantId, dayStart, dayStart + CareSchedule.DAY_MS)
+            .doneBetween(task.plantId, dayStart, dayEnd)
             .firstOrNull {
                 it.reminderId == id.reminderId && CareQueue.epochDayOf(it.firedAt) == id.epochDay
             }
         if (alreadyDone != null) {
-            // Undo still reverses this occurrence's marker; the earlier
-            // completion's journal entry is not this call's to delete.
-            return CompletionRecord.RecurringDone(alreadyDone.id, journalEntryId = null)
+            return CompletionRecord.NoChange
         }
-        val reminder = reminderDao.getById(id.reminderId)
-        val journalEntryId = reminder?.let {
-            val journalType = plantRepository.reminderTypeToJournalType(it.type)
-            journalType?.let { type -> logCareByType(task.plantId, type) }
+        val reminder = reminderDao.getById(id.reminderId) ?: return CompletionRecord.NoChange
+        reminderDao.upsert(reminder.copy(createdAt = now))
+        val journalType = plantRepository.reminderTypeToJournalType(reminder.type)
+        val journalEntryId = journalType?.let { type -> logCareByType(task.plantId, type, now) }
+        val pending = reminderEventDao.pendingForOccurrence(
+            reminderId = id.reminderId,
+            fromMs = dayStart,
+            toMs = dayEnd,
+        )
+        if (pending != null) {
+            reminderEventDao.update(pending.copy(action = "done", doneAt = now))
+            return CompletionRecord.RecurringDone(
+                eventId = pending.id,
+                reminderId = reminder.id,
+                journalEntryId = journalEntryId,
+                previousReminderCreatedAt = reminder.createdAt,
+                completionAnchorAt = now,
+                previousEvent = pending,
+            )
         }
         val eventId = reminderEventDao.insert(
             PlantReminderEventEntity(
@@ -234,33 +396,42 @@ class CareRepository(
                 doneAt = now,
             )
         )
-        return CompletionRecord.RecurringDone(eventId, journalEntryId)
+        return CompletionRecord.RecurringDone(
+            eventId = eventId,
+            reminderId = reminder.id,
+            journalEntryId = journalEntryId,
+            previousReminderCreatedAt = reminder.createdAt,
+            completionAnchorAt = now,
+        )
     }
 
-    private suspend fun logCareByType(plantId: Long, type: PlantRepository.JournalType): Long? =
-        when (type) {
-            PlantRepository.JournalType.WATERING -> plantRepository.addWatering(plantId, text = null)
-            PlantRepository.JournalType.FERTILISING -> plantRepository.addFertilising(plantId, text = null)
-            PlantRepository.JournalType.MISTING -> plantRepository.addMisting(plantId, text = null)
-            PlantRepository.JournalType.REPOTTING -> plantRepository.addRepotting(plantId, text = null)
-            PlantRepository.JournalType.PRUNING -> plantRepository.addPruning(plantId, text = null)
-            else -> null
-        }
+    private suspend fun logCareByType(
+        plantId: Long,
+        type: PlantRepository.JournalType,
+        timestamp: Long,
+    ): Long? = if (type == PlantRepository.JournalType.NOTE || type == PlantRepository.JournalType.PHOTO) {
+        null
+    } else {
+        journalDao.insert(PlantJournalEntity(plantId = plantId, type = type.value, timestamp = timestamp))
+    }
 
-    private suspend fun completeStep(id: CareQueue.CareTask.TaskId.Step): CompletionRecord.StepDone {
+    private suspend fun completeStep(id: CareQueue.CareTask.TaskId.Step): CompletionRecord {
         val step = treatmentStepDao.getById(id.stepId)
-            ?: return CompletionRecord.StepDone(id.stepId, autoCompletedPlanId = null)
+            ?: return CompletionRecord.NoChange
+        if (step.status != "pending") return CompletionRecord.NoChange
+        val owningPlan = treatmentPlanDao.getById(step.planId)
+            ?.takeIf { it.status == "active" }
+            ?: return CompletionRecord.NoChange
         treatmentStepDao.update(step.copy(status = "done", doneAt = System.currentTimeMillis()))
 
         val siblings = treatmentStepDao.getForPlan(step.planId)
         val stillPending = siblings.any { it.id != step.id && it.status == "pending" }
         var autoCompletedPlanId: Long? = null
         if (!stillPending) {
-            val plan = treatmentPlanDao.getById(step.planId)
-            if (plan != null && plan.status == "active") {
-                treatmentPlanDao.update(plan.copy(status = "completed", completedAt = System.currentTimeMillis()))
-                autoCompletedPlanId = plan.id
-            }
+            treatmentPlanDao.update(
+                owningPlan.copy(status = "completed", completedAt = System.currentTimeMillis())
+            )
+            autoCompletedPlanId = owningPlan.id
         }
         return CompletionRecord.StepDone(step.id, autoCompletedPlanId)
     }
@@ -279,6 +450,28 @@ class CareRepository(
         diseaseLabelEn: String,
         diseaseLabelRu: String,
     ): Long? = withContext(Dispatchers.IO) {
+        treatmentPlanMutex.withLock {
+            database.withTransaction {
+                startTreatmentPlanLocked(
+                    plantId,
+                    scanId,
+                    carePlan,
+                    diseaseKey,
+                    diseaseLabelEn,
+                    diseaseLabelRu,
+                )
+            }
+        }
+    }
+
+    private suspend fun startTreatmentPlanLocked(
+        plantId: Long,
+        scanId: Long?,
+        carePlan: CarePlanResponse,
+        diseaseKey: String,
+        diseaseLabelEn: String,
+        diseaseLabelRu: String,
+    ): Long? {
         val built = TreatmentPlanFactory.build(
             plan = carePlan,
             plantId = plantId,
@@ -287,7 +480,7 @@ class CareRepository(
             diseaseLabelEn = diseaseLabelEn,
             diseaseLabelRu = diseaseLabelRu,
             startedAtMs = System.currentTimeMillis(),
-        ) ?: return@withContext null
+        ) ?: return null
 
         treatmentPlanDao.getActiveForPlant(plantId)?.let { existing ->
             treatmentPlanDao.update(existing.copy(status = "abandoned", completedAt = System.currentTimeMillis()))
@@ -295,8 +488,142 @@ class CareRepository(
 
         val planId = treatmentPlanDao.insert(built.plan)
         treatmentStepDao.insertAll(built.steps.map { it.copy(planId = planId) })
-        planId
+        return planId
     }
+
+    /** Idempotently materialise the checklist for a scan. The mutex closes
+     * the race between the cached care-plan render and a simultaneous
+     * onResume/retry render. A same-diagnosis active plan is kept (progress is
+     * never reset), and its immutable source scan association is preserved. */
+    suspend fun ensureTreatmentPlanForScan(
+        plantId: Long,
+        scanId: Long,
+        carePlan: CarePlanResponse,
+        diseaseKey: String,
+        diseaseLabelEn: String,
+        diseaseLabelRu: String,
+    ): Long? = withContext(Dispatchers.IO) {
+        treatmentPlanMutex.withLock {
+            database.withTransaction {
+                ensureTreatmentPlanForScanLocked(
+                    plantId,
+                    scanId,
+                    carePlan,
+                    diseaseKey,
+                    diseaseLabelEn,
+                    diseaseLabelRu,
+                )
+            }
+        }
+    }
+
+    private suspend fun ensureTreatmentPlanForScanLocked(
+        plantId: Long,
+        scanId: Long,
+        carePlan: CarePlanResponse,
+        diseaseKey: String,
+        diseaseLabelEn: String,
+        diseaseLabelRu: String,
+    ): Long? {
+        val existingForScan = treatmentPlanDao.getAllForPlant(plantId)
+            .firstOrNull { it.scanId == scanId }
+        if (existingForScan != null) {
+            if (existingForScan.status != "active") return null
+            val oldSteps = treatmentStepDao.getForPlan(existingForScan.id)
+            // Never replace in-progress work. Before the first Done tap,
+            // however, a compact stored-scan fallback may be upgraded to
+            // the richer server care plan (checkpoints/products/conditions)
+            // without losing user state.
+            if (oldSteps.any { it.status != "pending" }) return null
+            val enriched = TreatmentPlanFactory.build(
+                plan = carePlan,
+                plantId = plantId,
+                scanId = scanId,
+                diseaseKey = diseaseKey,
+                diseaseLabelEn = diseaseLabelEn,
+                diseaseLabelRu = diseaseLabelRu,
+                startedAtMs = existingForScan.startedAt,
+            ) ?: return null
+            val sameSteps = oldSteps.map(::stepContentKey) == enriched.steps.map(::stepContentKey)
+            val sameConditions = existingForScan.conditionsJson == enriched.plan.conditionsJson
+            if (sameSteps && sameConditions) return null
+
+            treatmentStepDao.deleteForPlan(existingForScan.id)
+            treatmentStepDao.insertAll(enriched.steps.map { it.copy(planId = existingForScan.id) })
+            treatmentPlanDao.update(
+                existingForScan.copy(
+                    diseaseKey = diseaseKey,
+                    diseaseLabelEn = diseaseLabelEn,
+                    diseaseLabelRu = diseaseLabelRu,
+                    conditionsJson = enriched.plan.conditionsJson,
+                )
+            )
+            return existingForScan.id
+        }
+        val active = treatmentPlanDao.getActiveForPlant(plantId)
+        if (active?.diseaseKey == diseaseKey) return null
+        return startTreatmentPlanLocked(
+            plantId = plantId,
+            scanId = scanId,
+            carePlan = carePlan,
+            diseaseKey = diseaseKey,
+            diseaseLabelEn = diseaseLabelEn,
+            diseaseLabelRu = diseaseLabelRu,
+        )
+    }
+
+    /** Finish an accepted add-to-garden action even if Result rotates or
+     * closes. All durable local rows commit atomically; optional server
+     * enrichment deliberately remains outside this transaction. */
+    suspend fun attachScanWithStoredChecklist(
+        scanId: Long,
+        existingPlantId: Long? = null,
+        newPlant: NewPlantDraft? = null,
+        storedChecklist: StoredChecklist? = null,
+    ): Long? = withContext(Dispatchers.IO + NonCancellable) {
+        treatmentPlanMutex.withLock {
+            database.withTransaction {
+                val scan = scanDao.getScanById(scanId) ?: return@withTransaction null
+                val plantId = existingPlantId
+                    ?: scan.plantId
+                    ?: newPlant?.let { draft ->
+                        plantDao.insert(
+                            PlantEntity(
+                                name = draft.name.trim(),
+                                species = draft.species.cleanSpeciesValue(),
+                                scientificName = draft.scientificName.cleanSpeciesValue(),
+                                commonName = draft.commonName.cleanSpeciesValue(),
+                                roomId = draft.roomId,
+                            )
+                        )
+                    }
+                    ?: return@withTransaction null
+                if (plantDao.getPlantById(plantId) == null) return@withTransaction null
+                if (scan.plantId != plantId) scanDao.assignScanToPlant(scanId, plantId)
+                storedChecklist?.let { checklist ->
+                    ensureTreatmentPlanForScanLocked(
+                        plantId = plantId,
+                        scanId = scanId,
+                        carePlan = checklist.carePlan,
+                        diseaseKey = checklist.diseaseKey,
+                        diseaseLabelEn = checklist.diseaseLabelEn,
+                        diseaseLabelRu = checklist.diseaseLabelRu,
+                    )
+                }
+                plantId
+            }
+        }
+    }
+
+    private fun String?.cleanSpeciesValue(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun stepContentKey(step: TreatmentStepEntity): List<Any?> = listOf(
+        step.title,
+        step.detail,
+        step.bullets,
+        step.productsJson,
+        step.dueAt,
+    )
 
     suspend fun activePlan(plantId: Long): PlanWithSteps? = withContext(Dispatchers.IO) {
         val plan = treatmentPlanDao.getActiveForPlant(plantId) ?: return@withContext null

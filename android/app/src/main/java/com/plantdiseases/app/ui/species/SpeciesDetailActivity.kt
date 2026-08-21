@@ -47,6 +47,7 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.FertiliserGuide
@@ -503,6 +504,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
      * stays hidden when the community has nothing for this species.
      */
     private fun loadCommunityScans() {
+        if (!CommunityPrefs.uploadsEnabled(this)) {
+            binding.tvSpeciesCommunityLabel.visibility = View.GONE
+            binding.rvSpeciesCommunity.visibility = View.GONE
+            return
+        }
         val pseudoId = TelemetryIds.userPseudoId(this)
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
@@ -512,7 +518,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
             preview = true,
             onClick = { item ->
                 if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
-                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
+                    lifecycleScope.launch {
+                        scanRepository.recordCommunityView(
+                            item.scanId,
+                            pseudoId,
+                            this@SpeciesDetailActivity,
+                        )
+                    }
                 }
                 val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
                 lifecycleScope.launch {
@@ -538,7 +550,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpeciesCommunity.adapter = adapter
         lifecycleScope.launch {
-            scanRepository.communityScansBySpecies(scientificName, pseudoId).onSuccess { resp ->
+            scanRepository.communityScansBySpecies(
+                scientificName,
+                pseudoId,
+                context = this@SpeciesDetailActivity,
+            ).onSuccess { resp ->
                 if (resp.items.isEmpty()) return@onSuccess
                 adapter.submit(resp.items)
                 binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE

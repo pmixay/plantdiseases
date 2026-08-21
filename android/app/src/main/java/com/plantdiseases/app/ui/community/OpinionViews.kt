@@ -114,7 +114,12 @@ object OpinionViews {
     /** One forum-style comment row: monogram avatar, nickname + relative
      *  time header, the suggested class (a comment is always at least a
      *  vote), and the free-text note underneath when the author wrote one. */
-    fun buildOpinionRow(ctx: Context, op: CommunityOpinion): View {
+    fun buildOpinionRow(
+        ctx: Context,
+        op: CommunityOpinion,
+        onReport: ((CommunityOpinion) -> Unit)? = null,
+        onBlock: ((CommunityOpinion) -> Unit)? = null,
+    ): View {
         val density = ctx.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val nick = op.nickname?.takeIf { it.isNotBlank() }
@@ -201,6 +206,47 @@ object OpinionViews {
                     ).apply { topMargin = dp(2) }
                 },
             )
+        }
+
+        // Moderation is attached to every visible reply, not hidden behind an
+        // account-only menu. The server-issued content token prevents leaking
+        // database ids or anonymous author identities to the client.
+        if (!op.isMine && !op.contentId.isNullOrBlank() && (onReport != null || onBlock != null)) {
+            val actions = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(4) }
+            }
+            onReport?.let { callback ->
+                actions.addView(
+                    TextView(ctx).apply {
+                        text = ctx.getString(R.string.community_report_action)
+                        textSize = 12f
+                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                        setPadding(0, dp(6), dp(16), dp(6))
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { callback(op) }
+                    },
+                )
+            }
+            onBlock?.let { callback ->
+                actions.addView(
+                    TextView(ctx).apply {
+                        text = ctx.getString(R.string.community_block_action)
+                        textSize = 12f
+                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                        setPadding(0, dp(6), dp(8), dp(6))
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { callback(op) }
+                    },
+                )
+            }
+            col.addView(actions)
         }
 
         row.addView(col)

@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.os.bundleOf
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.setFragmentResult
 import androidx.lifecycle.lifecycleScope
@@ -23,6 +24,7 @@ import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.garden.buildRoomPickerRow
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.SpeciesIdentity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
@@ -59,6 +61,8 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     private var prefilledCommon: String? = null
     private var prefilledScore: Float? = null
     private var selectedRoomId: Long? = null
+    private var pickedScientific: String? = null
+    private var pickedCommon: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -88,17 +92,35 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         val textLimitFilter = InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH)
         etName.filters = arrayOf(textLimitFilter)
         etSpecies.filters = arrayOf(textLimitFilter)
-        etName.setText(initialName.orEmpty())
+        etName.setText(savedInstanceState?.getString(STATE_DRAFT_NAME) ?: initialName.orEmpty())
 
         // Pre-fill from the species PlantNet already identified at
         // scan time. The user can still tap "Identify" to widen the
         // candidate set or override, but the common case (the
         // scan-time detection was correct) needs zero extra taps.
-        var pickedScientific: String? = prefilledScientific
-        var pickedCommon: String? = prefilledCommon
-        val prefilledDisplay = prefilledCommon ?: prefilledScientific
-        if (!prefilledDisplay.isNullOrBlank()) {
-            etSpecies.setText(prefilledDisplay)
+        // A saved null is meaningful: it means the user manually corrected
+        // the visible species and deliberately cleared the scan identification.
+        // Do not Elvis-fallback to the stale prefill after rotation.
+        pickedScientific = if (savedInstanceState != null) {
+            savedInstanceState.getString(STATE_PICKED_SCIENTIFIC)
+        } else {
+            prefilledScientific
+        }
+        pickedCommon = if (savedInstanceState != null) {
+            savedInstanceState.getString(STATE_PICKED_COMMON)
+        } else {
+            prefilledCommon
+        }
+        selectedRoomId = savedInstanceState
+            ?.takeIf { it.containsKey(STATE_ROOM_ID) }
+            ?.getLong(STATE_ROOM_ID)
+            ?.takeIf { it != RESULT_ROOM_ID_UNASSIGNED }
+        val restoredSpeciesDraft = savedInstanceState?.getString(STATE_DRAFT_SPECIES)
+        val canonicalDisplay = SpeciesIdentity.canonicalDisplay(pickedScientific, pickedCommon)
+        (restoredSpeciesDraft ?: canonicalDisplay)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { etSpecies.setText(it) }
+        if (!canonicalDisplay.isNullOrBlank()) {
             statusText.text = getString(
                 R.string.species_suggest_prefilled,
                 ((prefilledScore ?: 0f) * 100).toInt().coerceIn(0, 100),
@@ -108,6 +130,22 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             // redundant (it re-runs the same identify). It stays only for
             // scans where no species was detected, as the manual fallback.
             identifyBtn.visibility = View.GONE
+        }
+        var applyingCanonicalDisplay = false
+        etSpecies.doAfterTextChanged { editable ->
+            if (
+                !applyingCanonicalDisplay &&
+                SpeciesIdentity.manualEditClearsCanonical(
+                    editable?.toString(),
+                    pickedScientific,
+                    pickedCommon,
+                )
+            ) {
+                pickedScientific = null
+                pickedCommon = null
+                identifyBtn.visibility = View.VISIBLE
+                statusText.text = ""
+            }
         }
 
         identifyBtn.setOnClickListener {
@@ -147,7 +185,10 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                                 val display = picked.displayCommonName
                                     ?: picked.scientificName
                                     ?: getString(R.string.species_suggest_unknown_name)
+                                applyingCanonicalDisplay = true
                                 etSpecies.setText(display)
+                                applyingCanonicalDisplay = false
+                                identifyBtn.visibility = View.GONE
                                 if (etName.text.isNullOrBlank() ||
                                     etName.text?.toString() == initialName
                                 ) {
@@ -193,6 +234,22 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             )
             dismiss()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val sheetView = view
+        outState.putString(
+            STATE_DRAFT_NAME,
+            sheetView?.findViewById<TextInputEditText>(R.id.et_name)?.text?.toString(),
+        )
+        outState.putString(
+            STATE_DRAFT_SPECIES,
+            sheetView?.findViewById<TextInputEditText>(R.id.et_species)?.text?.toString(),
+        )
+        outState.putString(STATE_PICKED_SCIENTIFIC, pickedScientific)
+        outState.putString(STATE_PICKED_COMMON, pickedCommon)
+        outState.putLong(STATE_ROOM_ID, selectedRoomId ?: RESULT_ROOM_ID_UNASSIGNED)
     }
 
     /**
@@ -308,6 +365,11 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         private const val ARG_PREFILL_SCIENTIFIC = "arg_prefill_scientific"
         private const val ARG_PREFILL_COMMON = "arg_prefill_common"
         private const val ARG_PREFILL_SCORE = "arg_prefill_score"
+        private const val STATE_DRAFT_NAME = "state_draft_name"
+        private const val STATE_DRAFT_SPECIES = "state_draft_species"
+        private const val STATE_PICKED_SCIENTIFIC = "state_picked_scientific"
+        private const val STATE_PICKED_COMMON = "state_picked_common"
+        private const val STATE_ROOM_ID = "state_room_id"
 
         fun show(
             fm: FragmentManager,

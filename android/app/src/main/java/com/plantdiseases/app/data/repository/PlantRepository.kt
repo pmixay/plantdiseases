@@ -1,5 +1,7 @@
 package com.plantdiseases.app.data.repository
 
+import androidx.room.withTransaction
+import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.local.ChatMessageDao
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantDao
@@ -14,6 +16,8 @@ import com.plantdiseases.app.data.local.RoomDao
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.local.TreatmentPlanDao
+import com.plantdiseases.app.data.local.TreatmentStepDao
+import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.PlantHealth
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +32,11 @@ class PlantRepository(
     private val chatMessageDao: ChatMessageDao,
     private val roomDao: RoomDao,
     private val treatmentPlanDao: TreatmentPlanDao,
+    private val treatmentStepDao: TreatmentStepDao,
+    private val database: AppDatabase,
 ) {
+    enum class CanonicalSpeciesUpdate { PRESERVE, REPLACE }
+
     /** Every plant with the garden list's decorations.
      *
      *  This used to issue four queries **per plant** — scans, journal,
@@ -51,7 +59,7 @@ class PlantRepository(
         val scansByPlant = scanDao.getAllAssignedScans().groupBy { it.plantId }
         val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
-        val plantIdsUnderTreatment = treatmentPlanDao.getAllActive().mapTo(mutableSetOf()) { it.plantId }
+        val activePlansByPlant = treatmentPlanDao.getAllActive().associateBy { it.plantId }
         plantDao.getAllPlants().map { plant ->
             val scans = scansByPlant[plant.id].orEmpty()
             val journal = journalByPlant[plant.id].orEmpty()
@@ -61,9 +69,9 @@ class PlantRepository(
                 scanCount = scans.size,
                 latestScan = scans.maxByOrNull { it.timestamp },
                 lastJournalEntry = journal.firstOrNull(),
-                nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
+                nextAction = soonestReminderDueAt(reminders, journal),
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                health = getPlantHealth(plant.id, scans, plant.id in plantIdsUnderTreatment, nowMs),
+                health = getPlantHealth(plant.id, scans, activePlansByPlant[plant.id]?.id, nowMs),
             )
         }
     }
@@ -98,20 +106,33 @@ class PlantRepository(
     suspend fun getPlantHealth(
         plantId: Long,
         scans: List<ScanEntity>,
-        hasActivePlan: Boolean,
+        activePlanId: Long?,
         nowMs: Long = System.currentTimeMillis(),
     ): PlantHealth.Verdict {
-        val adherence = if (hasActivePlan) {
+        val adherence = if (activePlanId != null) {
             val cutoff = nowMs - ADHERENCE_WINDOW_DAYS * CareSchedule.DAY_MS
             val events = reminderEventDao.recentForPlant(plantId, limit = 50)
                 .filter { it.firedAt >= cutoff }
-            PlantHealth.Adherence(due = events.size, done = events.count { it.action == "done" })
+            // The scan-derived treatment checklist is the primary active-plan
+            // adherence signal. Reminder events remain additive so scheduled
+            // watering/fertilising done during treatment also counts.
+            val dueSteps = treatmentStepDao.getForPlan(activePlanId)
+                .filter { it.dueAt <= nowMs && it.status != "skipped" }
+            PlantHealth.Adherence(
+                due = events.size + dueSteps.size,
+                done = events.count { it.action == "done" } + dueSteps.count { it.status == "done" },
+            )
         } else {
             PlantHealth.Adherence(due = 0, done = 0)
         }
         val scanInputs = scans.map { scan ->
-            val isNotAPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-                scan.diseaseName.equals("Не растение", ignoreCase = true)
+            val displayedClassKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
+            val isNotAPlant = if (displayedClassKey != null) {
+                displayedClassKey == "not_a_plant"
+            } else {
+                scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+                    scan.diseaseNameRu.equals("Не растение", ignoreCase = true)
+            }
             PlantHealth.ScanInput(
                 atMs = scan.timestamp,
                 isHealthy = scan.isHealthy,
@@ -119,29 +140,36 @@ class PlantRepository(
                 isNotAPlant = isNotAPlant,
             )
         }
-        return PlantHealth.evaluate(scanInputs, hasActivePlan, adherence, nowMs)
+        return PlantHealth.evaluate(scanInputs, activePlanId != null, adherence, nowMs)
     }
 
     /** Compute the soonest reminder due-time across all enabled reminders
-     *  for a plant. ``dueAt = (mostRecent matching-type journal entry's
-     *  timestamp OR plant_created_at) + interval_days * 86_400_000``.
+     *  for a plant. ``dueAt = max(mostRecent matching care log,
+     *  reminder_created_at) + interval_days``, at the reminder's configured
+     *  wall-clock time.
      *  Returns ``null`` when no reminder is enabled.
      *
-     *  The fallback anchor is the plant's creation time — anchoring at
+     *  The fallback anchor is the reminder's creation time — anchoring at
      *  epoch 0 (the old behaviour) flagged every never-yet-logged
      *  reminder as "overdue" the moment it was enabled. */
     private fun soonestReminderDueAt(
         reminders: List<PlantReminderEntity>,
         journal: List<PlantJournalEntity>,
-        plantCreatedAt: Long,
     ): NextAction? {
         val active = reminders.filter { it.enabled }
         if (active.isEmpty()) return null
         return active.mapNotNull { reminder ->
-            val journalType = reminderTypeToJournalType(reminder.type) ?: return@mapNotNull null
-            val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp
-                ?: plantCreatedAt
-            NextAction(reminder.type, CareSchedule.nextDueAt(anchor, reminder.intervalDays))
+            if (reminderTypeToJournalType(reminder.type) == null) return@mapNotNull null
+            val anchor = reminderCadenceAnchor(reminder, journal)
+            NextAction(
+                reminder.type,
+                CareSchedule.scheduledDueAt(
+                    anchorMs = anchor,
+                    intervalDays = reminder.intervalDays,
+                    hour = reminder.hour,
+                    minute = reminder.minute,
+                ),
+            )
         }.minByOrNull { it.dueAt }
     }
 
@@ -163,6 +191,23 @@ class PlantRepository(
             else -> null
         }
 
+    /** Later of the reminder's own schedule reset and its latest matching
+     * care log. An old watering/fertilising log must not pull a newly enabled
+     * or edited reminder back onto the plant's historical cadence. */
+    internal fun reminderCadenceAnchor(
+        reminder: PlantReminderEntity,
+        journal: List<PlantJournalEntity>,
+    ): Long {
+        // Watering/fertilising are legacy single-row reminder types, so their
+        // plant-wide quick journal actions can safely satisfy that one cadence.
+        // Newer preset types may have several same-type rows; those use only
+        // their row-specific createdAt anchor so completing one cannot move all.
+        if (reminder.type !in LEGACY_JOURNAL_CADENCE_TYPES) return reminder.createdAt
+        val journalType = reminderTypeToJournalType(reminder.type) ?: return reminder.createdAt
+        val latestCareAt = journal.firstOrNull { it.type == journalType.value }?.timestamp
+        return maxOf(reminder.createdAt, latestCareAt ?: reminder.createdAt)
+    }
+
     suspend fun getPlant(id: Long): PlantEntity? = withContext(Dispatchers.IO) {
         plantDao.getPlantById(id)
     }
@@ -174,6 +219,7 @@ class PlantRepository(
         scientificName: String? = null,
         commonName: String? = null,
         roomId: Long? = null,
+        canonicalSpeciesUpdate: CanonicalSpeciesUpdate = CanonicalSpeciesUpdate.PRESERVE,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
         val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
@@ -193,11 +239,17 @@ class PlantRepository(
                 existing.copy(
                     name = name.trim(),
                     species = cleanSpecies,
-                    // Preserve previously-stored canonical names when the
-                    // caller didn't pass new values (edit dialog without a
-                    // re-identification step).
-                    scientificName = cleanScientific ?: existing.scientificName,
-                    commonName = cleanCommon ?: existing.commonName,
+                    // A manual species correction must explicitly clear old
+                    // identification fields; otherwise health/care/lunar keep
+                    // classifying the plant under the stale scan species.
+                    scientificName = when (canonicalSpeciesUpdate) {
+                        CanonicalSpeciesUpdate.PRESERVE -> cleanScientific ?: existing.scientificName
+                        CanonicalSpeciesUpdate.REPLACE -> cleanScientific
+                    },
+                    commonName = when (canonicalSpeciesUpdate) {
+                        CanonicalSpeciesUpdate.PRESERVE -> cleanCommon ?: existing.commonName
+                        CanonicalSpeciesUpdate.REPLACE -> cleanCommon
+                    },
                     // Unlike the names above, roomId is always overwritten,
                     // never defaulted to the existing value — the room picker
                     // always sends the plant's current selection (including
@@ -336,38 +388,95 @@ class PlantRepository(
     // ─── Reminder events ──────────────────────────────────────────────────────
 
     /** Record a reminder firing as a pending event. The worker calls
-     *  this right before posting the notification. Returns the event
-     *  id so the notification action receivers can resolve back to
-     *  this row. */
-    suspend fun recordReminderFire(reminder: PlantReminderEntity): Long =
+     *  this right before posting the notification. Returns the new event
+     *  id, or null when that occurrence already exists (worker replay or an
+     *  in-app completion won the race), so no stale notification is posted. */
+    suspend fun recordReminderFire(reminder: PlantReminderEntity): Long? =
         withContext(Dispatchers.IO) {
-            reminderEventDao.insert(
-                PlantReminderEventEntity(
-                    reminderId = reminder.id,
-                    plantId = reminder.plantId,
-                    type = reminder.type,
-                    firedAt = System.currentTimeMillis(),
-                    action = "pending",
+            database.withTransaction {
+                val current = reminderDao.getById(reminder.id) ?: return@withTransaction null
+                if (!current.enabled) return@withTransaction null
+                val triggeredAt = System.currentTimeMillis()
+                val journal = journalDao.getEntriesForPlant(current.plantId)
+                val anchor = reminderCadenceAnchor(current, journal)
+                val firedAt = CareQueue.latestOccurrenceBefore(
+                    CareQueue.ReminderInput(
+                        reminderId = current.id,
+                        plantId = current.plantId,
+                        type = current.type,
+                        title = current.label ?: current.type,
+                        intervalDays = current.intervalDays,
+                        hour = current.hour,
+                        minute = current.minute,
+                        enabled = current.enabled,
+                        anchorMs = anchor,
+                    ),
+                    cutoffExclusive = triggeredAt + 1L,
+                )?.dueAt ?: return@withTransaction null
+                val dayStart = CareQueue.dayStartMs(
+                    CareQueue.epochDayOf(firedAt)
                 )
-            )
+                val dayEnd = CareQueue.dayStartMs(
+                    CareQueue.epochDayOf(firedAt) + 1L
+                )
+                if (reminderEventDao.anyForOccurrence(current.id, dayStart, dayEnd) != null) {
+                    return@withTransaction null
+                }
+                reminderEventDao.insert(
+                    PlantReminderEventEntity(
+                        reminderId = current.id,
+                        plantId = current.plantId,
+                        type = current.type,
+                        firedAt = firedAt,
+                        action = "pending",
+                    )
+                )
+            }
+        }
+
+    /** Re-fire a snoozed notification using its original event row and
+     * fired_at occurrence identity. If the user completed it in-app while it
+     * slept, action is already done and the one-shot worker becomes a no-op. */
+    suspend fun reactivateSnoozedReminderEvent(eventId: Long): Long? =
+        withContext(Dispatchers.IO) {
+            database.withTransaction {
+                val event = reminderEventDao.getById(eventId) ?: return@withTransaction null
+                if (event.action != "snoozed") return@withTransaction null
+                val reminder = reminderDao.getById(event.reminderId) ?: return@withTransaction null
+                if (!reminder.enabled) return@withTransaction null
+                reminderEventDao.update(event.copy(action = "pending", doneAt = null))
+                event.id
+            }
         }
 
     /** Resolve a previously-fired event with an action (done /
      *  snoozed / skipped). "done" additionally back-fills a matching
-     *  journal entry (watering / fertilising) so the user sees their
-     *  care record without an extra tap. */
-    suspend fun resolveReminderEvent(eventId: Long, action: String) =
+     *  care journal entry so the user sees their record without an extra tap.
+     *  Returns false for replays and invalid transitions. */
+    suspend fun resolveReminderEvent(eventId: Long, action: String): Boolean =
         withContext(Dispatchers.IO) {
-            val event = reminderEventDao.getById(eventId) ?: return@withContext
-            val now = System.currentTimeMillis()
-            reminderEventDao.update(event.copy(action = action, doneAt = now))
-            if (action == "done") {
-                when (event.type) {
-                    "watering" -> addWatering(event.plantId, text = null)
-                    "fertilize" -> addFertilising(event.plantId, text = null)
-                    // "check" doesn't have a matching journal type — it's
-                    // a re-shoot prompt, not a logged care action.
+            database.withTransaction {
+                if (action !in setOf("done", "snoozed", "skipped")) return@withTransaction false
+                val event = reminderEventDao.getById(eventId) ?: return@withTransaction false
+                if (event.action == action || event.action == "done") return@withTransaction false
+                if (action != "done" && event.action != "pending") return@withTransaction false
+                val now = System.currentTimeMillis()
+                reminderEventDao.update(event.copy(action = action, doneAt = now))
+                if (action == "done") {
+                    reminderDao.getById(event.reminderId)?.let { reminder ->
+                        reminderDao.upsert(reminder.copy(createdAt = now))
+                    }
+                    reminderTypeToJournalType(event.type)?.let { type ->
+                        journalDao.insert(
+                            PlantJournalEntity(
+                                plantId = event.plantId,
+                                type = type.value,
+                                timestamp = now,
+                            )
+                        )
+                    }
                 }
+                true
             }
         }
 
@@ -474,8 +583,8 @@ class PlantRepository(
         val thumbnailSource: String?,
     )
 
-    /** Soonest "do something" hint for a plant, computed off the most
-     *  recently logged matching-type journal entry + reminder interval.
+    /** Soonest "do something" hint for a plant, computed from the later of
+     *  the reminder's schedule anchor and its newest matching care log.
      *  ``dueAt`` is an absolute epoch-ms; the UI renders relative. */
     data class NextAction(
         val type: String, // "watering" / "fertilize" / …
@@ -497,6 +606,7 @@ class PlantRepository(
     }
 
     private companion object {
+        val LEGACY_JOURNAL_CADENCE_TYPES = setOf("watering", "fertilize")
         const val ADHERENCE_WINDOW_DAYS = 30L
     }
 }

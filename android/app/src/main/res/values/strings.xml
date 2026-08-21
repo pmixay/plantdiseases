@@ -113,7 +113,7 @@
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is stored without an account, name or precise location, and photo metadata (EXIF, including GPS) is removed. An anonymous per-install identifier is attached for abuse prevention and data quality, so records sent from one device may be linkable. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent; see the privacy policy for retention and deletion details.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
 
@@ -154,7 +154,7 @@
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
     <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
-    <string name="guidance_community_feed">Tap a photo to see the diagnosis and leave a comment. The heart likes a post.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -270,6 +270,7 @@
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
+    <string name="community_opinion_loading">Loading community replies…</string>
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
@@ -289,9 +290,32 @@
     <string name="community_opinion_list_header">Replies (%1$d)</string>
     <string name="community_wants_opinion_badge">Needs an opinion</string>
     <string name="community_like_action">Like</string>
+    <string name="community_open_replies">Open %1$d replies</string>
+    <string name="community_replies_locked_short">Replies locked</string>
+    <string name="community_replies_locked_readable">Replies are read-only because the owner is not asking for opinions</string>
+    <string name="community_opinion_locked_body">Replies are read-only. The owner did not request a second opinion, or their request has ended.</string>
+    <string name="community_opinion_locked_toast">This opinion request has ended.</string>
+    <string name="community_report_action">Report</string>
+    <string name="community_block_action">Block author</string>
+    <string name="community_report_title">Why are you reporting this?</string>
+    <string name="community_report_sent">Report sent. Thank you.</string>
+    <string name="community_block_title">Block this author?</string>
+    <string name="community_block_body">Their scans and replies will be hidden from you, and your posts will be hidden from them.</string>
+    <string name="community_block_confirm">Block</string>
+    <string name="community_blocked">Author blocked.</string>
+    <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
+    <string-array name="community_report_reason_labels">
+        <item>Sexual content</item>
+        <item>Violence or threats</item>
+        <item>Hate or harassment</item>
+        <item>Illegal or dangerous advice</item>
+        <item>Spam or misleading content</item>
+        <item>Privacy or impersonation</item>
+        <item>Other rules violation</item>
+    </string-array>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Community</string>
+    <string name="nearby_scans_title">Community feed</string>
     <string name="nearby_scans_cd">Community scans</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
@@ -322,11 +346,8 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
-    <!-- Nearby scans sort & filter overlay -->
-    <string name="nearby_filter_title">Sort &amp; filter</string>
-    <string name="nearby_filter_by_date">By date</string>
-    <string name="nearby_filter_date_newest">Newest first</string>
-    <string name="nearby_filter_date_oldest">Oldest first</string>
+    <!-- Community recommendation-feed filter -->
+    <string name="nearby_filter_title">Filter by disease</string>
     <string name="nearby_filter_by_type">By type</string>
     <string name="nearby_filter_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
@@ -435,6 +456,8 @@
     <string name="plant_tab_history">History</string>
     <string name="plant_tab_gallery">Gallery</string>
     <string name="plant_health_title">Health</string>
+    <string name="plant_health_header_status">Health · %1$s</string>
+    <string name="plant_health_header_score">Health · %1$s · %2$d%%</string>
     <string name="plant_health_delta_week">%1$s this week</string>
     <string name="plant_health_need_scans">Scan this plant twice to see its health trend</string>
     <string name="treatment_plan_current">Current treatment plan</string>
@@ -450,6 +473,13 @@
     <string name="calendar_legend_overdue">Overdue</string>
     <string name="calendar_legend_done">Done</string>
     <string name="calendar_today_prefix">Today, %1$s</string>
+    <string name="garden_do_today_title">Do today</string>
+    <string name="garden_do_today_summary">%1$s · %2$s</string>
+    <plurals name="garden_do_today_overdue_count">
+        <item quantity="one">%d overdue</item>
+        <item quantity="other">%d overdue</item>
+    </plurals>
+    <string name="garden_do_today_open_calendar">Open calendar</string>
     <string name="calendar_all_caught_up">All caught up 🌿</string>
     <string name="calendar_empty_day">Nothing scheduled for this day</string>
     <string name="calendar_show_done">Show completed (%1$d)</string>

@@ -118,6 +118,81 @@
                 app:tabMode="fixed"
                 app:tabGravity="fill" />
 
+            <!-- The actionable queue belongs on the default Garden surface,
+                 not behind Calendars. Rows are rendered in place with a
+                 one-tap checkbox; completion exposes Snackbar Undo. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/garden_do_today_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/surface"
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_stroke"
+                app:strokeWidth="1dp"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_lg">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="@string/garden_do_today_title"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_title_sm" />
+
+                            <TextView
+                                android:id="@+id/garden_do_today_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xxs"
+                                android:textColor="@color/on_surface_secondary"
+                                android:textSize="@dimen/text_body_sm"
+                                tools:text="3 tasks · 1 overdue" />
+
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/garden_do_today_calendar"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="0dp"
+                            android:text="@string/garden_do_today_open_calendar"
+                            android:textSize="@dimen/text_caption" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/garden_do_today_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Search — only shown once the garden grows past a handful of
                  plants/rooms, toggled by garden_search_toggle above. Filters
                  by room name AND by any plant name inside that room. Hidden

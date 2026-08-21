@@ -20,13 +20,17 @@ import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.databinding.ActivityCareDayBinding
 import com.plantdiseases.app.databinding.ItemCareTaskBinding
 import com.plantdiseases.app.util.CareQueue
-import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
@@ -98,8 +102,7 @@ class CareDayActivity : AppCompatActivity() {
             // strictly before today, surfaced here so they are never
             // silently invisible just because "today" moved past them.
             val overdue = if (isToday) {
-                careRepository.queue(dayStartMs - 30L * CareSchedule.DAY_MS, dayStartMs)
-                    .filter { it.task.status == CareQueue.CareTask.Status.PENDING && it.task.dueAt < dayStartMs }
+                careRepository.today(nowMs).filter { it.task.dueAt < dayStartMs }
             } else {
                 emptyList()
             }
@@ -153,7 +156,7 @@ class CareDayActivity : AppCompatActivity() {
 
     private fun buildRow(view: CareRepository.CareTaskView): View {
         val row = ItemCareTaskBinding.inflate(layoutInflater, binding.careDayPendingContainer, false)
-        row.careTaskTime.text = DateFormat.getTimeFormat(this).format(view.task.dueAt)
+        row.careTaskTime.text = DateFormat.getTimeFormat(this).format(Date(view.task.dueAt))
         row.careTaskIcon.setImageResource(iconFor(view.task.type))
         // CareRepository folds a missing custom reminder label into the raw
         // type key (title == type) before this screen ever sees it — resolve
@@ -193,17 +196,51 @@ class CareDayActivity : AppCompatActivity() {
     }
 
     private fun completeTask(view: CareRepository.CareTaskView) {
-        lifecycleScope.launch {
-            val record = careRepository.complete(view)
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val record = withContext(NonCancellable) {
+                val completed = careRepository.complete(view)
+                if (completed != CareRepository.CompletionRecord.NoChange) {
+                    rescheduleRecurring(view, afterCare = true)
+                }
+                completed
+            }
             loadDay()
             Snackbar.make(binding.careDayRoot, R.string.task_mark_done, Snackbar.LENGTH_LONG)
                 .setAction(R.string.task_undo) {
-                    lifecycleScope.launch {
-                        careRepository.undo(record)
+                    lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        withContext(NonCancellable) {
+                            careRepository.undo(record)
+                            if (record != CareRepository.CompletionRecord.NoChange) {
+                                rescheduleRecurring(view, afterCare = false)
+                            }
+                        }
                         loadDay()
                     }
                 }
                 .show()
+        }
+    }
+
+    private suspend fun rescheduleRecurring(
+        view: CareRepository.CareTaskView,
+        afterCare: Boolean,
+    ) {
+        val id = view.task.id as? CareQueue.CareTask.TaskId.Recurring ?: return
+        val reminder = careRepository.getReminder(id.reminderId) ?: return
+        if (!reminder.enabled) return
+        if (afterCare) {
+            ReminderManager.rescheduleAfterCare(
+                context = applicationContext,
+                plantId = reminder.plantId,
+                plantName = view.plantName,
+                type = reminder.type,
+                intervalDays = reminder.intervalDays,
+                hour = reminder.hour,
+                minute = reminder.minute,
+                reminderId = reminder.id,
+            )
+        } else {
+            ReminderManager.restoreAfterUndo(applicationContext, reminder, view.plantName)
         }
     }
 

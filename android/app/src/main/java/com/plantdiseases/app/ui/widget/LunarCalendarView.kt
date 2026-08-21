@@ -50,6 +50,14 @@ class LunarCalendarView @JvmOverloads constructor(
     /** One plant in [setAggregate]'s garden-wide view. */
     data class AggregateEntry(val label: String, val category: PlantCategory)
 
+    /** Small host-saveable navigation snapshot. The view is normally created
+     * programmatically (without a stable view id), so Android cannot restore
+     * its browsed month/selected date automatically. */
+    data class NavigationState(
+        val shownMonth: YearMonth,
+        val selectedDate: LocalDate,
+    )
+
     /** Non-null in aggregate mode ([setAggregate]) — null means the
      *  single-species mode [setSpecies] already supported. */
     private var aggregateEntries: List<AggregateEntry>? = null
@@ -135,6 +143,14 @@ class LunarCalendarView @JvmOverloads constructor(
      *  decides whether to show this view or an empty-state message instead. */
     fun setAggregate(entries: List<AggregateEntry>) {
         aggregateEntries = entries
+        renderAll()
+    }
+
+    fun navigationState(): NavigationState = NavigationState(shownMonth, selected)
+
+    fun restoreNavigationState(state: NavigationState) {
+        shownMonth = LunarCalendar.clampMonth(state.shownMonth)
+        selected = LunarCalendar.clampDate(state.selectedDate)
         renderAll()
     }
 

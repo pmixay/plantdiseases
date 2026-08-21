@@ -22,8 +22,9 @@ object CareQueue {
         val hour: Int,
         val minute: Int,
         val enabled: Boolean,
-        /** Anchor for occurrence 0 — the most recent matching-type journal
-         *  entry's timestamp, or the plant's createdAt. Computed by the
+        /** Care anchor — the most recent matching-type journal entry's
+         *  timestamp, or the reminder's createdAt. Occurrence 0 is one full
+         *  interval after this anchor. Computed by the
          *  caller exactly as PlantRepository.soonestReminderDueAt does. */
         val anchorMs: Long,
     )
@@ -162,20 +163,57 @@ object CareQueue {
         return results
     }
 
-    /** occurrence N's due instant: the anchor shifted forward N intervals,
-     *  then re-based onto the reminder's hour:minute — matching
-     *  CareSchedule.nextDueAt's anchor + interval*N day math, but landing
-     *  on the configured time of day rather than the anchor's own time. */
+    /** occurrence N's due instant: the anchor shifted forward N + 1 intervals,
+     *  then re-based onto the reminder's hour:minute using the same wall-clock
+     *  day arithmetic as WorkManager's first schedule. */
     private fun occurrenceDueAt(reminder: ReminderInput, occurrence: Int): Long {
-        val dayShifted = CareSchedule.nextDueAt(reminder.anchorMs, reminder.intervalDays * occurrence)
-        val cal = java.util.Calendar.getInstance().apply {
-            timeInMillis = dayShifted
-            set(java.util.Calendar.HOUR_OF_DAY, reminder.hour)
-            set(java.util.Calendar.MINUTE, reminder.minute)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
+        val intervalCount = occurrence.toLong() + 1L
+        val days = (reminder.intervalDays.coerceAtLeast(1).toLong() * intervalCount)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        return CareSchedule.scheduledDueAt(
+            anchorMs = reminder.anchorMs,
+            intervalDays = days,
+            hour = reminder.hour,
+            minute = reminder.minute,
+        )
+    }
+
+    /** Most recent occurrence strictly before [cutoffExclusive], or null when
+     * occurrence zero has not happened yet. This is the home-screen Today
+     * projection: it gives one current action per recurring reminder instead
+     * of expanding years of missed daily occurrences (and then arbitrarily
+     * cutting them off at 30/400 days). The small correction loops account
+     * for DST while the initial index estimate stays O(1). */
+    fun latestOccurrenceBefore(
+        reminder: ReminderInput,
+        cutoffExclusive: Long,
+    ): CareTask? {
+        val first = occurrenceDueAt(reminder, 0)
+        if (!reminder.enabled || first >= cutoffExclusive) return null
+
+        val stepMs = reminder.intervalDays.coerceAtLeast(1).toLong() * CareSchedule.DAY_MS
+        var occurrence = ((cutoffExclusive - 1L - first) / stepMs)
+            .coerceAtLeast(0L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        while (occurrence > 0 && occurrenceDueAt(reminder, occurrence) >= cutoffExclusive) {
+            occurrence--
         }
-        return cal.timeInMillis
+        while (occurrence < Int.MAX_VALUE) {
+            val next = occurrenceDueAt(reminder, occurrence + 1)
+            if (next >= cutoffExclusive) break
+            occurrence++
+        }
+        val dueAt = occurrenceDueAt(reminder, occurrence)
+        return CareTask(
+            id = CareTask.TaskId.Recurring(reminder.reminderId, epochDayOf(dueAt)),
+            plantId = reminder.plantId,
+            type = reminder.type,
+            title = reminder.title,
+            dueAt = dueAt,
+            status = CareTask.Status.PENDING,
+        )
     }
 
     /** Public so CareRepository can bucket a `plant_reminder_events.fired_at`
@@ -220,9 +258,9 @@ object CareQueue {
 
     /** Tasks due on the calendar day containing [dayStartMs], sorted by
      *  time of day then title. */
-    fun forDay(all: List<CareTask>, dayStartMs: Long): List<CareTask> {
-        val end = dayStartMs + CareSchedule.DAY_MS
-        return all.filter { it.dueAt >= dayStartMs && it.dueAt < end }
+    fun forDay(all: List<CareTask>, dayStart: Long): List<CareTask> {
+        val end = dayStartMs(epochDayOf(dayStart) + 1L)
+        return all.filter { it.dueAt >= dayStart && it.dueAt < end }
             .sortedWith(compareBy({ it.dueAt }, { it.title }))
     }
 

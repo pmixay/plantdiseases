@@ -1,5 +1,7 @@
 package com.plantdiseases.app.data.repository
 
+import androidx.room.withTransaction
+import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.local.PlantDao
 import com.plantdiseases.app.data.local.RoomDao
 import com.plantdiseases.app.data.local.RoomEntity
@@ -19,6 +21,7 @@ import kotlinx.coroutines.withContext
  * for plant rows.
  */
 class RoomRepository(
+    private val database: AppDatabase,
     private val roomDao: RoomDao,
     private val plantDao: PlantDao,
     private val scanDao: ScanDao,
@@ -82,18 +85,22 @@ class RoomRepository(
     suspend fun createRoom(name: String, icon: String?): RoomNameResult = withContext(Dispatchers.IO) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return@withContext RoomNameResult.BlankName
-        if (findClash(trimmed) != null) return@withContext RoomNameResult.NameTaken
-        RoomNameResult.Success(roomDao.insert(RoomEntity(name = trimmed, icon = icon)))
+        database.withTransaction {
+            if (findClash(trimmed) != null) return@withTransaction RoomNameResult.NameTaken
+            RoomNameResult.Success(roomDao.insert(RoomEntity(name = trimmed, icon = icon)))
+        }
     }
 
     suspend fun renameRoom(id: Long, name: String): RoomNameResult = withContext(Dispatchers.IO) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return@withContext RoomNameResult.BlankName
-        val existing = roomDao.getById(id) ?: return@withContext RoomNameResult.NotFound
-        val clash = findClash(trimmed)
-        if (clash != null && clash.id != id) return@withContext RoomNameResult.NameTaken
-        roomDao.update(existing.copy(name = trimmed))
-        RoomNameResult.Success(id)
+        database.withTransaction {
+            val existing = roomDao.getById(id) ?: return@withTransaction RoomNameResult.NotFound
+            val clash = findClash(trimmed)
+            if (clash != null && clash.id != id) return@withTransaction RoomNameResult.NameTaken
+            roomDao.update(existing.copy(name = trimmed))
+            RoomNameResult.Success(id)
+        }
     }
 
     /** Name uniqueness is decided in Kotlin, never in SQL. SQLite's
@@ -109,10 +116,10 @@ class RoomRepository(
     /** Plants in the room survive — they fall into the unassigned bucket,
      *  never deleted alongside their room. */
     suspend fun deleteRoom(id: Long) = withContext(Dispatchers.IO) {
-        plantDao.getAllPlants()
-            .filter { it.roomId == id }
-            .forEach { plantDao.update(it.copy(roomId = null)) }
-        roomDao.deleteById(id)
+        database.withTransaction {
+            plantDao.clearRoom(id)
+            roomDao.deleteById(id)
+        }
     }
 
     suspend fun getRoom(id: Long): RoomEntity? = withContext(Dispatchers.IO) { roomDao.getById(id) }

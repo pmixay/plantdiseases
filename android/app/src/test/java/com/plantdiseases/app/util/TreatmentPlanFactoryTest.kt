@@ -74,7 +74,7 @@ class TreatmentPlanFactoryTest {
     }
 
     @Test
-    fun build_followUpDaysFourteenWithFiveStepsAtThreeDaySpacing_pushesFinalStepToDayFourteen() {
+    fun build_followUpDoesNotDelayAnUnrelatedTreatmentAction() {
         val plan = CarePlanResponse(
             treatment = listOf("A.", "B.", "C.", "D.", "E."),
             followUpDays = 14,
@@ -90,15 +90,20 @@ class TreatmentPlanFactoryTest {
         )!!
 
         val started = startedAt()
-        val expectedDay12 = started + 12L * 24 * 60 * 60 * 1000
+        val expectedDay12 = Calendar.getInstance().apply {
+            timeInMillis = started
+            add(Calendar.DAY_OF_MONTH, 12)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
         val lastStep = built.steps.last()
-        // Default spacing (4 * 3 = day 12) would land before followUpDays (14);
-        // the factory must push it out to day 14, not leave it at day 12.
-        assertThat(lastStep.dueAt).isGreaterThan(expectedDay12)
+        assertThat(lastStep.dueAt).isEqualTo(expectedDay12)
     }
 
     @Test
-    fun build_checkpointOverridesDefaultSpacingForThatStepOnly() {
+    fun build_checkpointsBecomeSeparateRecheckTasksAtTheirOwnDays() {
         val plan = CarePlanResponse(
             treatment = listOf("A.", "B.", "C."),
             checkpoints = listOf(CarePlanCheckpoint(day = 0, check = "start"), CarePlanCheckpoint(day = 1, check = "x"), CarePlanCheckpoint(day = 7, check = "recheck")),
@@ -115,10 +120,7 @@ class TreatmentPlanFactoryTest {
         )!!
 
         val started = startedAt()
-        val step2 = built.steps[2]
-        // TreatmentPlanFactory.addDays re-bases every computed due date onto
-        // 12:00 local, regardless of startedAt's own time-of-day (9:00 here)
-        // — a flat `started + 7 days` would stay at 9:00 and never match.
+        assertThat(built.steps).hasSize(6)
         val expectedDay7 = Calendar.getInstance().apply {
             timeInMillis = started
             add(Calendar.DAY_OF_MONTH, 7)
@@ -127,7 +129,10 @@ class TreatmentPlanFactoryTest {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        assertThat(step2.dueAt).isEqualTo(expectedDay7)
+        val recheck = built.steps.single { it.title == "recheck" }
+        assertThat(recheck.dueAt).isEqualTo(expectedDay7)
+        assertThat(built.steps.map { it.stepIndex }).isEqualTo((0..5).toList())
+        assertThat(built.steps.map { it.dueAt }).isEqualTo(built.steps.map { it.dueAt }.sorted())
     }
 
     @Test

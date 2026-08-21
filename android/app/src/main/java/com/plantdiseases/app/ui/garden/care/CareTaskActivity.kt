@@ -22,11 +22,16 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityCareTaskBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Date
 
 /**
  * Task detail — serves both [com.plantdiseases.app.util.CareQueue.CareTask]
@@ -94,7 +99,7 @@ class CareTaskActivity : AppCompatActivity() {
         val isRu = LocaleHelper.isRussian(this)
 
         binding.careTaskTypeLabel.text = getString(R.string.task_type_treatment)
-        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(step.dueAt)
+        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(Date(step.dueAt))
         bindPlantChip(plant.name, plant.coverPhotoUri)
         binding.careTaskPlantStep.visibility = View.VISIBLE
         binding.careTaskPlantStep.text = getString(
@@ -143,7 +148,7 @@ class CareTaskActivity : AppCompatActivity() {
 
         binding.careTaskTypeLabel.text =
             ReminderPresets.displayLabel(reminder.label, reminder.type) { getString(it) }
-        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(dueAt)
+        binding.careTaskTimeLabel.text = android.text.format.DateFormat.getTimeFormat(this).format(Date(dueAt))
         bindPlantChip(plant.name, plant.coverPhotoUri)
         binding.careTaskPlantStep.visibility = View.GONE
 
@@ -162,7 +167,7 @@ class CareTaskActivity : AppCompatActivity() {
 
         val epochDay = com.plantdiseases.app.util.CareQueue.epochDayOf(dueAt)
         pendingComplete = {
-            careRepository.complete(
+            val record = careRepository.complete(
                 view = CareRepository.CareTaskView(
                     task = com.plantdiseases.app.util.CareQueue.CareTask(
                         id = com.plantdiseases.app.util.CareQueue.CareTask.TaskId.Recurring(reminderId, epochDay),
@@ -177,6 +182,19 @@ class CareTaskActivity : AppCompatActivity() {
                     thumbnailSource = plant.coverPhotoUri,
                 ),
             )
+            if (record != CareRepository.CompletionRecord.NoChange && reminder.enabled) {
+                ReminderManager.rescheduleAfterCare(
+                    context = applicationContext,
+                    plantId = reminder.plantId,
+                    plantName = plant.name,
+                    type = reminder.type,
+                    intervalDays = reminder.intervalDays,
+                    hour = reminder.hour,
+                    minute = reminder.minute,
+                    reminderId = reminder.id,
+                )
+            }
+            record
         }
         // Recurring occurrences have no row of their own, so there is no
         // status to read back here — the caller tells us whether this
@@ -352,8 +370,8 @@ class CareTaskActivity : AppCompatActivity() {
     private fun onDoneClicked() {
         val action = pendingComplete ?: return
         Haptics.medium(this)
-        lifecycleScope.launch {
-            action()
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) { action() }
             finish()
         }
     }

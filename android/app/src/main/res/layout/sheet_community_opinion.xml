@@ -182,6 +182,71 @@
 
         </LinearLayout>
 
+        <!-- Read-only state for scans whose owner did not request an opinion,
+             or whose request expired/was cancelled. Existing replies stay
+             readable; all mutation controls are hidden in code. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_opinion_locked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/surface_variant"
+            app:cardCornerRadius="@dimen/radius_md"
+            app:cardElevation="0dp"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="@dimen/space_md">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_lock"
+                    app:tint="@color/on_surface_secondary" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:text="@string/community_opinion_locked_body"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Reachable account-free safety controls for the scan itself.
+             Individual replies expose the same controls beside each row. -->
+        <LinearLayout
+            android:id="@+id/ll_opinion_safety"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end|center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_opinion_report"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_report_action"
+                android:textAllCaps="false" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_opinion_block"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_block_action"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
         <!-- Agree / Disagree vote. Both open the same picker + note; Agree
              pre-selects the model's own class. -->
         <LinearLayout

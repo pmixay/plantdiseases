@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.widget.Toast
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.MotionEvent
@@ -12,6 +11,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -27,6 +27,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -39,8 +40,8 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.InAppReviewManager
-import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.enableWhileOnline
 import dagger.hilt.android.AndroidEntryPoint
@@ -80,6 +81,9 @@ class ResultActivity : AppCompatActivity() {
     lateinit var plantRepository: PlantRepository
 
     @Inject
+    lateinit var careRepository: CareRepository
+
+    @Inject
     lateinit var communityUploader: CommunityUploader
 
     private var scaleFactor = 1.0f
@@ -99,7 +103,16 @@ class ResultActivity : AppCompatActivity() {
         CarePlanController(this, binding, scanRepository, plantRepository, reviewManager)
     }
     private val feedback by lazy { FeedbackController(this, binding, scanRepository, reviewManager) }
-    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository, reviewManager) }
+    private val gardenAttach by lazy {
+        GardenAttachController(
+            this,
+            binding,
+            plantRepository,
+            scanRepository,
+            careRepository,
+            reviewManager,
+        )
+    }
     private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
         CommunityController(
