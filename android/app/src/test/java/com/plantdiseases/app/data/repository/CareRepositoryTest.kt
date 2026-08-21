@@ -424,7 +424,7 @@ class CareRepositoryTest {
     }
 
     @Test
-    fun ensurePlan_preservesSourceScanAndOldScanNeverRecreatesAfterCompletion() = runBlocking {
+    fun ensurePlan_preservesSourceScanAndOldScanNeverRecreatesAfterCompletion(): Unit = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val firstScanId = db.scanDao().insert(diseaseScan(plantId))
         val secondScanId = db.scanDao().insert(diseaseScan(plantId))

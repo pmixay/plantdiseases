@@ -70,7 +70,7 @@ class TreatmentPlanDaoTest {
     )
 
     @Test
-    fun getAllForPlant_stillReturnsThePlanAfterItIsCompleted() = runBlocking {
+    fun getAllForPlant_stillReturnsThePlanAfterItIsCompleted(): Unit = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val scanId = db.scanDao().insert(minimalScan(plantId))
         val planId = db.treatmentPlanDao().insert(plan(plantId, scanId, "active"))
@@ -110,7 +110,7 @@ class TreatmentPlanDaoTest {
     }
 
     @Test
-    fun careQueueRange_onlyReturnsStepsFromActivePlans() = runBlocking {
+    fun careQueueRange_onlyReturnsStepsFromActivePlans(): Unit = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val scanIds = List(3) { db.scanDao().insert(minimalScan(plantId)) }
         val activeId = db.treatmentPlanDao().insert(plan(plantId, scanId = scanIds[0], status = "active"))
