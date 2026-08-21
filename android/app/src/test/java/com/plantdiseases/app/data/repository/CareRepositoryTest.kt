@@ -424,7 +424,7 @@ class CareRepositoryTest {
     }
 
     @Test
-    fun ensurePlan_preservesSourceScanAndOldScanNeverRecreatesAfterCompletion() = runBlocking {
+    fun ensurePlan_preservesSourceScanAndOldScanNeverRecreatesAfterCompletion(): Unit = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
         val firstScanId = db.scanDao().insert(diseaseScan(plantId))
         val secondScanId = db.scanDao().insert(diseaseScan(plantId))
@@ -506,10 +506,10 @@ class CareRepositoryTest {
 
         assertThat(enrichedId).isEqualTo(planId)
         assertThat(db.treatmentStepDao().getForPlan(planId).map { it.title })
-            .containsExactly("Remove damaged leaves", "Photograph new growth")
+            .containsExactly("Remove damaged leaves.", "Photograph new growth.")
 
         val firstCheckpointDueAt = db.treatmentStepDao().getForPlan(planId)
-            .single { it.title == "Photograph new growth" }
+            .single { it.title == "Photograph new growth." }
             .dueAt
         val rescheduledId = careRepository.ensureTreatmentPlanForScan(
             plantId,
@@ -522,7 +522,7 @@ class CareRepositoryTest {
         val rescheduledSteps = db.treatmentStepDao().getForPlan(planId)
 
         assertThat(rescheduledId).isEqualTo(planId)
-        assertThat(rescheduledSteps.single { it.title == "Photograph new growth" }.dueAt)
+        assertThat(rescheduledSteps.single { it.title == "Photograph new growth." }.dueAt)
             .isGreaterThan(firstCheckpointDueAt)
 
         val completed = rescheduledSteps.first()
@@ -543,7 +543,7 @@ class CareRepositoryTest {
 
         assertThat(rejectedAfterProgress).isNull()
         assertThat(db.treatmentStepDao().getForPlan(planId).map { it.title })
-            .containsExactly("Remove damaged leaves", "Photograph new growth")
+            .containsExactly("Remove damaged leaves.", "Photograph new growth.")
         assertThat(db.treatmentStepDao().getById(completed.id)?.status).isEqualTo("done")
     }
 

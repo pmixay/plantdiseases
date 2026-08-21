@@ -237,6 +237,29 @@ _IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
 OPINION_REQUEST_TTL_HOURS = 72
 _OPINION_REQUEST_TTL_S = OPINION_REQUEST_TTL_HOURS * 3600
 
+# Recommendation ranking weights. One point is ONE HOUR OF FRESHNESS, so every
+# other term below reads directly as "worth N hours of being newer". That
+# common unit is the point: freshness used to tick once per six hours while the
+# other terms kept their own scale, which made a single like worth a month of
+# recency, one opinion worth 100 days, and the exploration jitter alone worth
+# 25 days — engagement and noise both buried the date order the feed is
+# supposed to lead with.
+_RANK_FRESHNESS_BUCKET_S = 3600
+# Comfortably outlives OPINION_REQUEST_TTL_HOURS, so a post that is actively
+# waiting on help leads the feed for the whole time the request is live —
+# without the old 50000 (≈34 years) that pinned it effectively forever.
+_RANK_LIVE_REQUEST = 14 * 24
+_RANK_PER_OPINION = 24  # a distinct opinion is worth a day of freshness
+_RANK_PER_LIKE = 6  # a distinct like, six hours
+_RANK_PER_VIEW = 1  # a distinct view, an hour
+_RANK_OPINION_CAP = 50
+_RANK_LIKE_CAP = 100
+_RANK_VIEW_CAP = 500
+# Deterministic per-row wobble so equally fresh, equally quiet posts don't
+# always come back in insertion order. Bounded to under a day: exploration
+# should reshuffle within a morning, not reorder a week.
+_RANK_JITTER_MOD = 7
+
 # Expired requests are swept lazily from the hot read paths, throttled so the
 # sweep doesn't run on every feed request.
 _EXPIRY_SWEEP_INTERVAL_S = 300
@@ -1827,12 +1850,14 @@ def recommended_scans(
     """Ranked Community feed with composite keyset pagination.
 
     Ranking is deterministic for a database snapshot and deliberately easy to
-    explain: live second-opinion requests lead, then useful engagement
-    (distinct opinions, likes and views), freshness in six-hour buckets, and a
-    tiny row-id exploration term that keeps equally fresh/quiet posts from
-    always appearing in insertion order. The cursor carries the complete
-    ``(score, created_at, row_id)`` order key, so tied timestamps never repeat or
-    disappear between pages.
+    explain, because every term is denominated in hours of freshness (see the
+    ``_RANK_*`` weights): recency is the baseline, live second-opinion requests
+    lead while their request is open, engagement (distinct opinions, likes and
+    views) buys a bounded number of days of staleness, and a sub-day row-id
+    term keeps equally fresh, equally quiet posts from always appearing in
+    insertion order. The cursor carries the complete ``(score, created_at,
+    row_id)`` order key, so tied timestamps never repeat or disappear between
+    pages.
     """
     init_db()
     _sweep_expired_requests()
@@ -1889,12 +1914,12 @@ def recommended_scans(
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
 
     score_sql = (
-        "CAST(s.created_at / 21600 AS INTEGER) "
-        "+ CASE WHEN req.scan_id IS NOT NULL THEN 50000 ELSE 0 END "
-        "+ MIN(COALESCE(oc.n, 0), 50) * 400 "
-        "+ MIN(COALESCE(lc.n, 0), 100) * 120 "
-        "+ MIN(COALESCE(vc.n, 0), 500) * 3 "
-        "+ ((s.id * 37) % 101)"
+        f"CAST(s.created_at / {_RANK_FRESHNESS_BUCKET_S} AS INTEGER) "
+        f"+ CASE WHEN req.scan_id IS NOT NULL THEN {_RANK_LIVE_REQUEST} ELSE 0 END "
+        f"+ MIN(COALESCE(oc.n, 0), {_RANK_OPINION_CAP}) * {_RANK_PER_OPINION} "
+        f"+ MIN(COALESCE(lc.n, 0), {_RANK_LIKE_CAP}) * {_RANK_PER_LIKE} "
+        f"+ MIN(COALESCE(vc.n, 0), {_RANK_VIEW_CAP}) * {_RANK_PER_VIEW} "
+        f"+ ((s.id * 37) % {_RANK_JITTER_MOD})"
     )
     cursor_sql = ""
     cursor_params: list[int] = []
