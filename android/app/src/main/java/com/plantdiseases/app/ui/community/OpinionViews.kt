@@ -211,7 +211,8 @@ object OpinionViews {
         // Moderation is attached to every visible reply, not hidden behind an
         // account-only menu. The server-issued content token prevents leaking
         // database ids or anonymous author identities to the client.
-        if (!op.isMine && !op.contentId.isNullOrBlank() && (onReport != null || onBlock != null)) {
+        val hasModerationAction = onReport != null || onBlock != null
+        if (!op.isMine && !op.contentId.isNullOrBlank() && hasModerationAction) {
             val actions = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL

@@ -1144,8 +1144,9 @@ def test_cancelled_request_locks_new_replies_but_keeps_thread_readable(
 
 
 def test_expired_request_is_locked_at_write_time(client, isolated_community):
-    import community as comm
     import time as _time
+
+    import community as comm
 
     db_path, _ = isolated_community
     client.post(
