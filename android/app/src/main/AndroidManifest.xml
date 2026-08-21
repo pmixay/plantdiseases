@@ -79,6 +79,12 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.garden.care.CareCalendarActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.garden.care.CareDayActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity"

@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Garden tab — rebuilt per the Garden refactor (docs/ROADMAP.md
-    "Garden refactor" + the approved mockup). Two panes behind a
-    segmented control:
+    Garden tab — a single surface (no pane switcher). Room cards
+    (item_room_card rows inflated into garden_rooms_container, with an
+    Unassigned bucket at the bottom when any plant has no room) sit under
+    the do-today queue.
 
-      • Rooms — room cards (item_room_card rows inflated into
-        garden_rooms_container) with an Unassigned bucket at the bottom
-        when any plant has no room.
-      • Care calendar — a month grid (populated by CareCalendarView,
-        added to garden_calendar_container at runtime) + legend + a
-        "Today, N tasks" summary card that opens the day view.
+    The two calendars that used to live behind a segmented control here
+    are gone from this screen: the care month grid moved to its own
+    screen (ui/garden/care/CareCalendarActivity, opened by
+    garden_care_calendar_button below), and the lunar calendar is now
+    shown per plant on the plant detail screen only.
 
     The hero card, search box and empty state keep their existing shape
     (bg_hero_card, the same illustration) — this app's header language
-    is shared across every tab, so it stays even though the mockup's
-    background is flatter; only the CONTENT changes (search icon,
-    segmented control, room cards instead of a flat plant list).
+    is shared across every tab.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -108,18 +106,23 @@
 
             </LinearLayout>
 
-            <!-- Rooms | Care calendar. Fixed mode — exactly two destinations,
-                 nothing to scroll horizontally. -->
-            <com.google.android.material.tabs.TabLayout
-                android:id="@+id/garden_segment"
+            <!-- Care calendar — a separate destination rather than a pane
+                 of this screen, so the Garden tab has no switcher at all.
+                 Hidden while the garden is empty (same rule the segmented
+                 control it replaces used): a month grid with nothing to
+                 schedule on it is a dead end. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/garden_care_calendar_button"
+                style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
-                app:tabMode="fixed"
-                app:tabGravity="fill" />
+                android:text="@string/garden_care_calendar"
+                app:icon="@drawable/ic_calendar"
+                app:iconGravity="textStart" />
 
-            <!-- The actionable queue belongs on the default Garden surface,
-                 not behind Calendars. Rows are rendered in place with a
+            <!-- The actionable queue belongs on the Garden surface itself,
+                 not behind a calendar. Rows are rendered in place with a
                  one-tap checkbox; completion exposes Snackbar Undo. -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/garden_do_today_card"
@@ -195,9 +198,7 @@
 
             <!-- Search — only shown once the garden grows past a handful of
                  plants/rooms, toggled by garden_search_toggle above. Filters
-                 by room name AND by any plant name inside that room. Hidden
-                 entirely on the calendar pane (searching a month grid means
-                 nothing). -->
+                 by room name AND by any plant name inside that room. -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/garden_search_layout"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -251,181 +252,6 @@
                     android:text="@string/room_add"
                     app:icon="@drawable/ic_add"
                     app:iconGravity="textStart" />
-
-            </LinearLayout>
-
-            <!-- ── Calendars pane ─────────────────────────────────────── -->
-            <LinearLayout
-                android:id="@+id/garden_calendar_pane"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_lg"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <!-- Care / Lunar inner toggle. Deliberately NOT another
-                     full-width TabLayout: two identical tab bars stacked
-                     directly on top of each other (garden_segment above
-                     switches Rooms/Calendars; this used to be a second one
-                     for Care/Lunar) gave the eye no way to tell which one
-                     was the parent, so the screen read as four peer
-                     destinations instead of two containing two. A segmented
-                     button group is the M3 control for "switch the view
-                     within a destination" and is visually lighter than a
-                     tab bar, which is the whole point. -->
-                <com.google.android.material.button.MaterialButtonToggleGroup
-                    android:id="@+id/garden_calendar_segment"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/space_md"
-                    app:singleSelection="true"
-                    app:selectionRequired="true"
-                    app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Button">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/garden_calendar_toggle_care"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/garden_calendar_tab_care" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/garden_calendar_toggle_lunar"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/garden_calendar_tab_lunar" />
-
-                </com.google.android.material.button.MaterialButtonToggleGroup>
-
-                <LinearLayout
-                    android:id="@+id/garden_care_subpane"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <!-- CareCalendarView is added here at runtime (see
-                         ui/garden/care/CareCalendarView.kt). -->
-                    <FrameLayout
-                        android:id="@+id/garden_calendar_container"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-
-                    <LinearLayout
-                        android:id="@+id/garden_calendar_legend"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:orientation="horizontal"
-                        android:gravity="center" />
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:id="@+id/garden_today_card"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_lg"
-                        android:clickable="true"
-                        android:focusable="true"
-                        app:cardBackgroundColor="@color/surface"
-                        app:cardCornerRadius="@dimen/radius_lg"
-                        app:cardElevation="2dp"
-                        app:strokeWidth="0dp"
-                        app:rippleColor="@color/primary_light">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:padding="@dimen/space_lg">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:id="@+id/garden_today_title"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:textColor="@color/on_surface"
-                                    android:textSize="@dimen/text_title_sm"
-                                    android:fontFamily="sans-serif-medium"
-                                    tools:text="Today, 8 May" />
-
-                                <TextView
-                                    android:id="@+id/garden_today_subtitle"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="@dimen/space_xxs"
-                                    android:textColor="@color/on_surface_secondary"
-                                    android:textSize="@dimen/text_body_sm"
-                                    tools:text="3 tasks" />
-
-                            </LinearLayout>
-
-                            <ImageView
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
-                                android:src="@drawable/ic_chevron_right"
-                                android:contentDescription="@null"
-                                app:tint="@color/on_surface_secondary" />
-
-                        </LinearLayout>
-
-                    </com.google.android.material.card.MaterialCardView>
-
-                </LinearLayout>
-
-                <!-- Aggregate Lunar Calendar across every plant the user
-                     owns — LunarCalendarView added here at runtime (see
-                     GardenFragment.ensureLunarViewAttached). -->
-                <FrameLayout
-                    android:id="@+id/garden_lunar_container"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/garden_lunar_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xl"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:paddingHorizontal="@dimen/space_2xl"
-                    android:visibility="gone">
-
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:src="@drawable/ic_garden"
-                        android:contentDescription="@null"
-                        app:tint="@color/on_surface_secondary" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:text="@string/garden_lunar_empty_title"
-                        android:textColor="@color/on_surface"
-                        android:textSize="@dimen/text_title_sm"
-                        android:fontFamily="sans-serif-medium"
-                        android:gravity="center" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:text="@string/garden_lunar_empty_body"
-                        android:textColor="@color/on_surface_secondary"
-                        android:textSize="@dimen/text_body_sm"
-                        android:gravity="center" />
-
-                </LinearLayout>
 
             </LinearLayout>
 
