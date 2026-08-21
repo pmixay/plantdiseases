@@ -27,8 +27,8 @@ import com.plantdiseases.app.util.LocaleHelper
  * them in JS, so JavaScript has to stay on — but nothing else does. The
  * WebView loads exactly one local asset, has no JS bridge, no DOM storage and
  * no file access beyond `file:///android_asset`, and hands every outbound
- * link (the GitHub contact link) to the browser rather than following it
- * in-app.
+ * link (the mailto: contact link) to the handling app rather than following
+ * it in-app.
  */
 class PrivacyPolicyActivity : AppCompatActivity() {
 
@@ -66,8 +66,8 @@ class PrivacyPolicyActivity : AppCompatActivity() {
         binding.privacyWeb.loadUrl("file:///android_asset/privacy_policy.html?lang=$lang")
     }
 
-    /** The policy's only outbound link is the GitHub contact link. Follow it
-     *  in the browser — an in-app WebView is no place to browse the web. */
+    /** The policy's only outbound link is the mailto: contact link. Hand it
+     *  to the email app — an in-app WebView is no place to browse the web. */
     private inner class ExternalLinksInBrowser : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url ?: return true
