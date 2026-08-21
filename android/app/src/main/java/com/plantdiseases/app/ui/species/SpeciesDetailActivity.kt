@@ -655,6 +655,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
+            // Unlike Result and garden detail, this screen already folds the
+            // card under its own "Care" section header. Leaving the card's
+            // accordion on stacked a second chevron directly under the first
+            // and shipped it closed, so an open Care section still showed
+            // nothing but a title. Details keep their own toggle.
+            accordionEnabled = false
         }
         binding.careSlot.removeAllViews()
         binding.careSlot.addView(careCard)

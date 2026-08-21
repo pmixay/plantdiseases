@@ -299,7 +299,9 @@
                 <!-- Care. The same rich CarePlanCardView the scan result and
                      garden detail render (gradient header + watering/light/
                      humidity pills + expandable details), inserted into
-                     care_slot at runtime. -->
+                     care_slot at runtime with its own accordion disabled —
+                     this section's header is the only collapse level, and
+                     "Show details" the only truncation inside it. -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_care"
                     style="@style/App.GlassCard"
