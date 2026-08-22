@@ -892,6 +892,7 @@ class DetailExtraCardsController(
         val ordered = scans.sortedBy { it.timestamp }.takeLast(12)
         val historyPayload = ordered.map { scanRepository.scanToProgressionPayload(it) }
         val newest = ordered.last()
+        val plantName = currentPlant?.name
         activity.lifecycleScope.launch {
             val res = scanRepository.fetchProgression(
                 ProgressionRequest(history = historyPayload),
@@ -928,8 +929,8 @@ class DetailExtraCardsController(
                 // flags two-in-a-row worsening points, push a
                 // high-priority notification with a "Take a scan"
                 // CTA so the user sees it even if the app isn't open.
-                if (resp.alert) {
-                    fireProgressionAlert(currentPlant?.name ?: "")
+                if (resp.alert && plantName != null) {
+                    fireProgressionAlert(plantName, newest.id)
                 }
             }.onFailure {
                 // No data to show — hide the whole section rather than
@@ -948,8 +949,30 @@ class DetailExtraCardsController(
      *  [NotificationCenter.record][com.plantdiseases.app.util.NotificationCenter.record]:
      *  a user who denied the permission is exactly the user the in-app
      *  notification centre exists for. */
-    private suspend fun fireProgressionAlert(plantName: String) {
+    private suspend fun fireProgressionAlert(plantName: String, latestScanId: Long) {
+        // A previous render's network request may finish after a newer scan
+        // has already rebuilt this screen. Never notify from that stale
+        // history window.
+        if (plantRepository.getLatestScanForPlant(plantId)?.id != latestScanId) return
+
         val notificationId = (plantId * 10 + 9).toInt()
+        val title = activity.getString(R.string.progression_alert_title, plantName)
+        val body = activity.getString(R.string.progression_alert_body)
+        val recorded = ProgressionAlertGate.recordOnce(
+            context = activity,
+            plantId = plantId,
+            latestScanId = latestScanId,
+        ) {
+            com.plantdiseases.app.util.NotificationCenter.record(
+                activity,
+                type = "garden",
+                title = title,
+                body = body,
+                deeplink = "plant:$plantId",
+            )
+        }
+        if (!recorded) return
+
         val contentIntent = android.app.PendingIntent.getActivity(
             activity,
             notificationId,
@@ -957,15 +980,6 @@ class DetailExtraCardsController(
                 putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plantId)
             },
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
-        )
-        val title = activity.getString(R.string.progression_alert_title, plantName)
-        val body = activity.getString(R.string.progression_alert_body)
-        com.plantdiseases.app.util.NotificationCenter.record(
-            activity,
-            type = "garden",
-            title = title,
-            body = body,
-            deeplink = "plant:$plantId",
         )
         val builder = androidx.core.app.NotificationCompat.Builder(
             activity,

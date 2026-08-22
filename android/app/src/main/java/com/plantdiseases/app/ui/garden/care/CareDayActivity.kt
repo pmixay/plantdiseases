@@ -26,6 +26,7 @@ import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +47,7 @@ class CareDayActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCareDayBinding
     private var dayStartMs: Long = 0L
     private var doneExpanded = false
+    private var loadJob: Job? = null
 
     @Inject
     lateinit var careRepository: CareRepository
@@ -57,6 +59,7 @@ class CareDayActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         dayStartMs = intent.getLongExtra(EXTRA_DAY_START_MS, todayStartMs())
+        doneExpanded = savedInstanceState?.getBoolean(KEY_DONE_EXPANDED, false) ?: false
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityCareDayBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -81,6 +84,11 @@ class CareDayActivity : AppCompatActivity() {
         loadDay()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_DONE_EXPANDED, doneExpanded)
+    }
+
     /** Local midnight of today, built through the same helper the calendar
      *  tap handler uses so both agree on where a day starts. */
     private fun todayStartMs(): Long = CareQueue.dayStartMs(CareQueue.epochDayOf(System.currentTimeMillis()))
@@ -88,7 +96,8 @@ class CareDayActivity : AppCompatActivity() {
     private var lastDoneCount = 0
 
     private fun loadDay() {
-        lifecycleScope.launch {
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val nowMs = System.currentTimeMillis()
             val isToday = CareQueue.epochDayOf(dayStartMs) == CareQueue.epochDayOf(nowMs)
             val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(dayStartMs)
@@ -175,11 +184,15 @@ class CareDayActivity : AppCompatActivity() {
         }
         row.careTaskCheckbox.setOnCheckedChangeListener(null)
         row.careTaskCheckbox.isChecked = view.task.status == CareQueue.CareTask.Status.DONE
+        row.careTaskCheckbox.isEnabled = view.task.status != CareQueue.CareTask.Status.DONE
         row.careTaskCheckbox.setOnClickListener {
             if (view.task.status == CareQueue.CareTask.Status.DONE) {
                 row.careTaskCheckbox.isChecked = true
                 return@setOnClickListener
             }
+            // Prevent two completion coroutines (and two competing Undo
+            // snackbars) when the checkbox is tapped rapidly.
+            row.careTaskCheckbox.isEnabled = false
             Haptics.medium(this)
             completeTask(view)
         }
@@ -205,6 +218,7 @@ class CareDayActivity : AppCompatActivity() {
                 completed
             }
             loadDay()
+            if (record == CareRepository.CompletionRecord.NoChange) return@launch
             Snackbar.make(binding.careDayRoot, R.string.task_mark_done, Snackbar.LENGTH_LONG)
                 .setAction(R.string.task_undo) {
                     lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -271,5 +285,6 @@ class CareDayActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_DAY_START_MS = "extra_day_start_ms"
+        private const val KEY_DONE_EXPANDED = "care_day_done_expanded"
     }
 }

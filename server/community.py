@@ -259,6 +259,15 @@ _RANK_VIEW_CAP = 500
 # always come back in insertion order. Bounded to under a day: exploration
 # should reshuffle within a morning, not reorder a week.
 _RANK_JITTER_MOD = 7
+# Likes, opinions, views and exploration share ONE promotion budget. The
+# per-signal caps above protect each aggregate independently, but without a
+# cap on their sum they could still buy almost 96 days of rank at once. That
+# let a heavily engaged month-old post outrank a brand-new one even though the
+# feed is meant to lead with freshness. Seven days leaves engagement meaningful
+# within the current week while giving us a simple invariant: except for an
+# actively open second-opinion request, a post at least a week newer always
+# ranks first, even against maximum engagement.
+_RANK_PROMOTION_CAP = 7 * 24
 
 # Expired requests are swept lazily from the hot read paths, throttled so the
 # sweep doesn't run on every feed request.
@@ -1845,12 +1854,12 @@ def recommended_scans(
     Ranking is deterministic for a database snapshot and deliberately easy to
     explain, because every term is denominated in hours of freshness (see the
     ``_RANK_*`` weights): recency is the baseline, live second-opinion requests
-    lead while their request is open, engagement (distinct opinions, likes and
-    views) buys a bounded number of days of staleness, and a sub-day row-id
-    term keeps equally fresh, equally quiet posts from always appearing in
-    insertion order. The cursor carries the complete ``(score, created_at,
-    row_id)`` order key, so tied timestamps never repeat or disappear between
-    pages.
+    lead while their request is open, and engagement (distinct opinions, likes
+    and views) plus the deterministic exploration term share a seven-day
+    promotion cap. Thus an ordinary post at least a week newer always wins,
+    even against maximum engagement. The cursor carries the complete ``(score,
+    created_at, row_id)`` order key, so tied timestamps never repeat or
+    disappear between pages.
     """
     init_db()
     _sweep_expired_requests()
@@ -1906,13 +1915,18 @@ def recommended_scans(
         )
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
 
+    promotion_sql = (
+        "MIN("
+        f"MIN(COALESCE(oc.n, 0), {_RANK_OPINION_CAP}) * {_RANK_PER_OPINION} "
+        f"+ MIN(COALESCE(lc.n, 0), {_RANK_LIKE_CAP}) * {_RANK_PER_LIKE} "
+        f"+ MIN(COALESCE(vc.n, 0), {_RANK_VIEW_CAP}) * {_RANK_PER_VIEW} "
+        f"+ ((s.id * 37) % {_RANK_JITTER_MOD}), "
+        f"{_RANK_PROMOTION_CAP})"
+    )
     score_sql = (
         f"CAST(s.created_at / {_RANK_FRESHNESS_BUCKET_S} AS INTEGER) "
         f"+ CASE WHEN req.scan_id IS NOT NULL THEN {_RANK_LIVE_REQUEST} ELSE 0 END "
-        f"+ MIN(COALESCE(oc.n, 0), {_RANK_OPINION_CAP}) * {_RANK_PER_OPINION} "
-        f"+ MIN(COALESCE(lc.n, 0), {_RANK_LIKE_CAP}) * {_RANK_PER_LIKE} "
-        f"+ MIN(COALESCE(vc.n, 0), {_RANK_VIEW_CAP}) * {_RANK_PER_VIEW} "
-        f"+ ((s.id * 37) % {_RANK_JITTER_MOD})"
+        f"+ {promotion_sql}"
     )
     cursor_sql = ""
     cursor_params: list[int] = []

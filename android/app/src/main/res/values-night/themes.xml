@@ -14,6 +14,9 @@
              activity recreate (theme / language switch) paints the app
              background instead of defaulting to black. -->
         <item name="android:windowBackground">@color/background</item>
+        <!-- Keep screen motion identical when night resources replace the
+             complete Theme.PlantDiseases declaration. -->
+        <item name="android:windowAnimationStyle">@style/App.Animation.Navigation</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorSurfaceVariant">@color/surface_variant</item>
         <item name="colorOnSurface">@color/on_surface</item>

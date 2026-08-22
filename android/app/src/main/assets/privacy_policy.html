@@ -5,20 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PlantDiseases · Политика конфиденциальности / Privacy Policy</title>
 <meta name="description" content="Политика конфиденциальности приложения PlantDiseases / PlantDiseases privacy policy.">
+<script>
+  // Resolve the colour mode before CSS paints. The activity supplies its
+  // actual AppCompat mode (which may intentionally differ from Android's
+  // system theme); prefers-color-scheme is only the browser fallback.
+  (function () {
+    var match = /[?&]theme=(light|dark)/.exec(location.search);
+    var theme = match ? match[1] :
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
 <style>
-  :root { --green: #15924A; --ink: #16241c; --muted: #5c6b62; --bg: #f7faf7; --line: #e2ebe4; }
+  :root {
+    color-scheme: light;
+    --green: #15924A;
+    --active-ink: #fff;
+    --ink: #16241c;
+    --muted: #5c6b62;
+    --bg: #f7faf7;
+    --line: #e2ebe4;
+    --nav-bg: rgba(247,250,247,.9);
+    --control-bg: #fff;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --green: #4ADE80;
+    --active-ink: #052E16;
+    --ink: #F0FDF4;
+    --muted: #9CA3AF;
+    --bg: #0A0F0C;
+    --line: #1F2820;
+    --nav-bg: rgba(10,15,12,.92);
+    --control-bg: #131A14;
+  }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, 'Roboto', sans-serif; color: var(--ink); background: var(--bg); }
   h1, h2, .brand { font-family: system-ui, -apple-system, 'Roboto', sans-serif; }
   a { color: var(--green); }
-  .nav { position: sticky; top: 0; z-index: 10; background: rgba(247,250,247,.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav { position: sticky; top: 0; z-index: 10; background: var(--nav-bg); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
   .nav-inner { max-width: 960px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; justify-content: flex-end; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; color: var(--ink); text-decoration: none; }
   .tile { width: 32px; height: 32px; border-radius: 9px; background: var(--green); display: grid; place-items: center; }
   .tile svg { width: 20px; height: 20px; }
-  .lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: #fff; }
+  .lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--control-bg); }
   .lang-toggle button { border: 0; background: transparent; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer; color: var(--muted); }
-  .lang-toggle button.active { background: var(--green); color: #fff; }
+  .lang-toggle button.active { background: var(--green); color: var(--active-ink); }
   .legal { max-width: 860px; margin: 0 auto; padding: 24px 20px 48px; }
   .legal h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .4em; }
   .legal h2 { font-size: 1.25rem; margin: 1.8em 0 .5em; }

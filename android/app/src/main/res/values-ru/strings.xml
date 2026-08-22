@@ -160,7 +160,7 @@
     <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
     <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
     <string name="guidance_community_scope">Показывать сканы рядом, по стране или со всего мира.</string>
-    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации. Откройте фото, чтобы читать ответы; ответить можно, только пока владелец активно просит второе мнение. Сердечком ставится лайк.</string>
+    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации; через «Сортировать по» можно включить строгий порядок от новых к старым. Откройте фото, чтобы читать ответы; ответить можно, только пока владелец активно просит второе мнение. Сердечком ставится лайк.</string>
     <string name="guidance_previous">Предыдущий шаг</string>
     <string name="guidance_next">Следующий шаг</string>
     <string name="guidance_activate_target">Нажать выделенный элемент</string>
@@ -315,6 +315,7 @@
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
     <string name="privacy_policy_title">Политика конфиденциальности</string>
+    <string name="privacy_policy_subtitle">Как обрабатываются фото сканов и другие данные приложения.</string>
     <string name="notifications_empty">Пока пусто — здесь появятся ответы, напоминания об уходе и подсказки по саду.</string>
     <string name="notifications_mark_all_read">Отметить все прочитанными</string>
     <string name="notifications_clear_all">Очистить всё</string>
@@ -341,10 +342,11 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
     <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
-    <!-- Фильтр рекомендательной ленты сообщества -->
-    <string name="nearby_filter_title">Фильтр по заболеванию</string>
-    <string name="nearby_filter_by_type">По типу</string>
-    <string name="nearby_filter_apply">Применить</string>
+    <!-- Сортировка ленты сообщества -->
+    <string name="nearby_sort_title">Сортировать по</string>
+    <string name="nearby_sort_recommended">Рекомендованные</string>
+    <string name="nearby_sort_newest">Новые</string>
+    <string name="nearby_sort_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_scope_global">по всему миру</string>
@@ -954,6 +956,7 @@
 
     <!-- Определение вида -->
     <string name="identify_unavailable">Определение вида сейчас недоступно на этом сервере.</string>
+    <string name="identify_not_a_plant">На фото не удалось обнаружить растение. Переснимите ближе: один чёткий, хорошо освещённый лист или цветок должен занимать большую часть кадра.</string>
     <string name="identify_no_match">Уверенного совпадения нет — попробуйте более близкое фото одного листа или цветка при хорошем свете.</string>
     <string name="identify_failed">Что-то пошло не так. Проверьте соединение и повторите.</string>
     <string name="identify_loading">Загрузка…</string>

@@ -19,6 +19,7 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnNextLayout
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
@@ -49,6 +50,7 @@ import com.plantdiseases.app.util.OnboardingStateStore
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -88,6 +90,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private var restoredScrollY = 0
     private var lunarNavigationState: LunarCalendarView.NavigationState? = null
     private var lunarCalendarView: LunarCalendarView? = null
+    private var loadJob: Job? = null
+    private var scrollRestorePosted = false
 
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
     private var lastWateredAt: Long? = null
@@ -345,14 +349,14 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
         restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
+        pendingScanFile = savedInstanceState
+            ?.getString(KEY_PENDING_SCAN_PATH)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it) }
         lunarNavigationState = savedInstanceState?.let(::readLunarNavigationState)
         buildLayout()
         onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
         loadPlant()
-        // Best-effort scroll restore once the content has been laid out.
-        if (restoredScrollY > 0) {
-            binding.detailScroll.post { binding.detailScroll.scrollTo(0, restoredScrollY) }
-        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -361,8 +365,15 @@ class PlantDetailActivity : AppCompatActivity() {
             outState.putInt(KEY_TAB, tabLayout.selectedTabPosition.coerceAtLeast(0))
         }
         if (::binding.isInitialized) {
-            outState.putInt(KEY_SCROLL, binding.detailScroll.scrollY)
+            // If the repository-backed content has not rendered yet, the
+            // ScrollView is still empty and reports 0. Preserve the original
+            // target through another recreation instead of overwriting it.
+            outState.putInt(
+                KEY_SCROLL,
+                restoredScrollY.takeIf { it > 0 } ?: binding.detailScroll.scrollY,
+            )
         }
+        pendingScanFile?.absolutePath?.let { outState.putString(KEY_PENDING_SCAN_PATH, it) }
         (lunarCalendarView?.navigationState() ?: lunarNavigationState)?.let { state ->
             outState.putInt(KEY_LUNAR_YEAR, state.shownMonth.year)
             outState.putInt(KEY_LUNAR_MONTH, state.shownMonth.monthValue)
@@ -436,7 +447,8 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun loadPlant() {
-        lifecycleScope.launch {
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val plant = plantRepository.getPlant(plantId)
             if (plant == null) {
                 // Reachable from a notification-centre row up to 30 days after
@@ -456,6 +468,24 @@ class PlantDetailActivity : AppCompatActivity() {
             wateringSuggestion = plantRepository.adaptiveWateringSuggestion(plantId)
             lastWateredAt = plantRepository.lastReminderDoneAt(plantId, "watering")
             render(plant, scans, journalEntries)
+            restoreScrollAfterContentRender()
+        }
+    }
+
+    /**
+     * The old onCreate `ScrollView.post` ran while the repository load was
+     * still suspended and the content container was empty, so rotation always
+     * snapped back to the top. Post only after render has rebuilt the complete
+     * tab hierarchy, then consume the saved target exactly once.
+     */
+    private fun restoreScrollAfterContentRender() {
+        val target = restoredScrollY
+        if (target <= 0 || scrollRestorePosted) return
+        scrollRestorePosted = true
+        binding.detailScroll.doOnNextLayout {
+            binding.detailScroll.scrollTo(0, target)
+            restoredScrollY = 0
+            scrollRestorePosted = false
         }
     }
 
@@ -623,5 +653,6 @@ class PlantDetailActivity : AppCompatActivity() {
         private const val KEY_LUNAR_YEAR = "plant_detail_lunar_year"
         private const val KEY_LUNAR_MONTH = "plant_detail_lunar_month"
         private const val KEY_LUNAR_SELECTED_DAY = "plant_detail_lunar_selected_day"
+        private const val KEY_PENDING_SCAN_PATH = "plant_detail_pending_scan_path"
     }
 }

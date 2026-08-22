@@ -41,6 +41,7 @@ import com.plantdiseases.app.util.RoomPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -74,6 +75,7 @@ class GardenFragment : Fragment() {
     private var isFirstLoad = true
 
     private var searchVisible = false
+    private var loadJob: Job? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -153,6 +155,8 @@ class GardenFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        loadJob?.cancel()
+        loadJob = null
         (activity as? MainActivity)?.apply {
             unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO)
             unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS)
@@ -181,7 +185,12 @@ class GardenFragment : Fragment() {
     }
 
     private fun loadGarden(animate: Boolean = true) {
-        lifecycleScope.launch {
+        if (_binding == null) return
+        // Dialog callbacks, onResume and task completion can all request a
+        // reload close together. Cancel the older snapshot so it cannot land
+        // after a newer one and repaint deleted rooms/tasks back into view.
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val plantsRequest = async { plantRepository.getPlants() }
             val roomsRequest = async { roomRepository.getRooms() }
             val todayRequest = async { careRepository.today() }

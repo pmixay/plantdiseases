@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.legal
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -63,7 +64,14 @@ class PrivacyPolicyActivity : AppCompatActivity() {
         }
 
         val lang = if (LocaleHelper.isRussian(this)) "ru" else "en"
-        binding.privacyWeb.loadUrl("file:///android_asset/privacy_policy.html?lang=$lang")
+        // Pass the app's RESOLVED mode, not the device preference. A user can
+        // force dark mode while Android itself is light (and vice versa), so a
+        // plain prefers-color-scheme query is not a sufficient source of truth.
+        val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val theme = if (nightMode == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"
+        binding.privacyWeb.loadUrl(
+            "file:///android_asset/privacy_policy.html?lang=$lang&theme=$theme",
+        )
     }
 
     /** The policy's only outbound link is the mailto: contact link. Hand it

@@ -40,7 +40,11 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.localizedSpeciesName
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -94,6 +98,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     /** True while a reply is in flight — send is locked until it lands. */
     private var isSending = false
+    private var sendJob: Job? = null
+    private var activeSendToken: Any? = null
 
     /** Diagnosis-payload label (`plant_name`, sent to the chat endpoint for a
      *  scan session) — kept distinct from the header subtitle
@@ -273,108 +279,129 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
         val pid = persistPlantId
         val sid = persistScanId
+        // Freeze the server session for this turn. Clear-chat may bump the
+        // persisted epoch while this job is suspended, but an older request
+        // must never migrate into (and consume budget from) the new session.
+        val requestSessionId = sessionId
 
-        lifecycleScope.launch {
-            // Persist the user message before the network round-trip so it
-            // survives a server timeout / process death.
-            when {
-                pid != null -> plantRepo.saveChatMessage(
-                    ChatMessageEntity(plantId = pid, role = "user", content = text, timestamp = now),
-                )
-                sid != null -> scanRepo.saveChatMessage(
-                    ScanChatMessageEntity(scanId = sid, role = "user", content = text, timestamp = now),
-                )
-            }
+        val sendToken = Any()
+        activeSendToken = sendToken
+        sendJob = lifecycleScope.launch {
+            try {
+                // Persist the user message before the network round-trip so it
+                // survives a server timeout / process death.
+                when {
+                    pid != null -> plantRepo.saveChatMessage(
+                        ChatMessageEntity(plantId = pid, role = "user", content = text, timestamp = now),
+                    )
+                    sid != null -> scanRepo.saveChatMessage(
+                        ScanChatMessageEntity(scanId = sid, role = "user", content = text, timestamp = now),
+                    )
+                }
 
-            // Build a compact diagnosis context. The server caps this dict at
-            // 8 KB on the wire — we keep it tiny on purpose. Plant mode pulls
-            // the latest scan for the plant; scan mode uses the scan directly.
-            val diagnosis: Map<String, Any?>? = plant?.let { p ->
-                val latestScan = plantRepo.getLatestScanForPlant(p.id)
-                latestScan?.let {
-                    val classKey = scanRepo.topClassKey(it)
-                        ?: it.diseaseName.lowercase().replace(' ', '_')
-                    mapOf(
-                        "class_name" to classKey,
-                        "disease_name" to it.diseaseName,
-                        "confidence" to it.confidence.toDouble(),
-                        "severity" to it.severity,
-                        "is_healthy" to it.isHealthy,
-                        "warnings" to scanRepo.parseWarnings(it.warnings),
+                // Build a compact diagnosis context. The server caps this dict at
+                // 8 KB on the wire — we keep it tiny on purpose. Plant mode pulls
+                // the latest scan for the plant; scan mode uses the scan directly.
+                val diagnosis: Map<String, Any?>? = plant?.let { p ->
+                    val latestScan = plantRepo.getLatestScanForPlant(p.id)
+                    latestScan?.let {
+                        val classKey = scanRepo.topClassKey(it)
+                            ?: it.diseaseName.lowercase().replace(' ', '_')
+                        mapOf(
+                            "class_name" to classKey,
+                            "disease_name" to it.diseaseName,
+                            "confidence" to it.confidence.toDouble(),
+                            "severity" to it.severity,
+                            "is_healthy" to it.isHealthy,
+                            "warnings" to scanRepo.parseWarnings(it.warnings),
+                            "plant_name" to p.name,
+                            "species" to (p.scientificName ?: p.species),
+                        )
+                    } ?: mapOf(
                         "plant_name" to p.name,
                         "species" to (p.scientificName ?: p.species),
                     )
-                } ?: mapOf(
-                    "plant_name" to p.name,
-                    "species" to (p.scientificName ?: p.species),
-                )
-            } ?: scan?.let { s ->
-                val classKey = scanRepo.topClassKey(s)
-                    ?: s.diseaseName.lowercase().replace(' ', '_')
-                mapOf(
-                    "class_name" to classKey,
-                    "disease_name" to s.diseaseName,
-                    "confidence" to s.confidence.toDouble(),
-                    "severity" to s.severity,
-                    "is_healthy" to s.isHealthy,
-                    "warnings" to scanRepo.parseWarnings(s.warnings),
-                    "plant_name" to displayName,
-                    "species" to (s.speciesScientific ?: s.speciesCommon),
-                )
-            }
+                } ?: scan?.let { s ->
+                    val classKey = scanRepo.topClassKey(s)
+                        ?: s.diseaseName.lowercase().replace(' ', '_')
+                    mapOf(
+                        "class_name" to classKey,
+                        "disease_name" to s.diseaseName,
+                        "confidence" to s.confidence.toDouble(),
+                        "severity" to s.severity,
+                        "is_healthy" to s.isHealthy,
+                        "warnings" to scanRepo.parseWarnings(s.warnings),
+                        "plant_name" to displayName,
+                        "species" to (s.speciesScientific ?: s.speciesCommon),
+                    )
+                }
 
-            val request = ChatRequest(
-                sessionId = sessionId,
-                message = text,
-                locale = if (isRu) "ru" else "en",
-                diagnosis = diagnosis,
-            )
-            val result = scanRepo.sendChat(request)
-
-            // Drop the thinking placeholder and unlock send regardless of
-            // outcome (success or failure).
-            thinkingView?.let { messagesLayout.removeView(it) }
-            thinkingView = null
-            setSending(false)
-
-            val replyTime = System.currentTimeMillis()
-            val replyText = result.fold(
-                onSuccess = { resp ->
-                    when {
-                        resp.available && resp.reply.isNotBlank() -> resp.reply
-                        // Server declined the turn (no API key, budget,
-                        // empty reply, etc.). Surface its `fallback`
-                        // verbatim if present, else a translated reason.
-                        !resp.fallback.isNullOrBlank() -> resp.fallback
-                        else -> formatChatUnavailable(resp.reason)
-                    }
-                },
-                onFailure = { err -> formatChatNetworkError(err) },
-            )
-
-            if (_binding != null) {
-                addMessageBubble("bot", replyText, replyTime)
-                scrollToBottom()
-            }
-            when {
-                pid != null -> plantRepo.saveChatMessage(
-                    ChatMessageEntity(
-                        plantId = pid,
-                        role = "bot",
-                        content = replyText,
-                        timestamp = replyTime,
-                    ),
+                val request = ChatRequest(
+                    sessionId = requestSessionId,
+                    message = text,
+                    locale = if (isRu) "ru" else "en",
+                    diagnosis = diagnosis,
                 )
-                sid != null -> scanRepo.saveChatMessage(
-                    ScanChatMessageEntity(
-                        scanId = sid,
-                        role = "bot",
-                        content = replyText,
-                        timestamp = replyTime,
-                    ),
+                val result = scanRepo.sendChat(request)
+
+                removeThinkingBubble()
+
+                val replyTime = System.currentTimeMillis()
+                val replyText = result.fold(
+                    onSuccess = { resp ->
+                        when {
+                            resp.available && resp.reply.isNotBlank() -> resp.reply
+                            // Server declined the turn (no API key, budget,
+                            // empty reply, etc.). Surface its `fallback`
+                            // verbatim if present, else a translated reason.
+                            !resp.fallback.isNullOrBlank() -> resp.fallback
+                            else -> formatChatUnavailable(resp.reason)
+                        }
+                    },
+                    onFailure = { err -> formatChatNetworkError(err) },
                 )
+
+                if (_binding != null) {
+                    addMessageBubble("bot", replyText, replyTime)
+                    scrollToBottom()
+                }
+                when {
+                    pid != null -> plantRepo.saveChatMessage(
+                        ChatMessageEntity(
+                            plantId = pid,
+                            role = "bot",
+                            content = replyText,
+                            timestamp = replyTime,
+                        ),
+                    )
+                    sid != null -> scanRepo.saveChatMessage(
+                        ScanChatMessageEntity(
+                            scanId = sid,
+                            role = "bot",
+                            content = replyText,
+                            timestamp = replyTime,
+                        ),
+                    )
+                }
+            } finally {
+                // Clear may have replaced the active token before cancelling
+                // this job. In that case the clear coroutine owns the controls
+                // and unlocks them only after the transcript is durably gone.
+                if (activeSendToken === sendToken) {
+                    removeThinkingBubble()
+                    activeSendToken = null
+                    sendJob = null
+                    setSending(false)
+                }
             }
         }
+    }
+
+    private fun removeThinkingBubble() {
+        thinkingView?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+        }
+        thinkingView = null
     }
 
     /** "Server replied 200 OK with available=false" — translate the reason.
@@ -526,17 +553,36 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         if (plant == null && scan == null) return
         val pid = persistPlantId
         val sid = persistScanId
+        val inFlight = sendJob
+        activeSendToken = null
+        sendJob = null
+        setSending(true)
+        _binding?.chatClearBtn?.isEnabled = false
+        removeThinkingBubble()
         // Start a fresh server session so the per-session budget resets
         // alongside the wiped transcript.
         bumpSessionEpoch(requireContext(), ownerKey)
         lifecycleScope.launch {
-            when {
-                pid != null -> plantRepository.clearChat(pid)
-                sid != null -> scanRepository.clearChat(sid)
-            }
-            if (_binding != null) {
-                messagesLayout.removeAllViews()
-                suggestionsContainer.visibility = View.VISIBLE
+            try {
+                withContext(NonCancellable) {
+                    // Wait for the cancelled request (including its local user
+                    // message write) to stop before clearing Room. Otherwise that
+                    // write or the old bot reply can land after DELETE and make a
+                    // supposedly cleared transcript reappear. Finish the Room
+                    // clear even if the sheet is dismissed while this is running.
+                    inFlight?.cancelAndJoin()
+                    when {
+                        pid != null -> plantRepository.clearChat(pid)
+                        sid != null -> scanRepository.clearChat(sid)
+                    }
+                }
+                if (_binding != null) {
+                    messagesLayout.removeAllViews()
+                    suggestionsContainer.visibility = View.VISIBLE
+                }
+            } finally {
+                _binding?.chatClearBtn?.isEnabled = true
+                setSending(false)
             }
         }
     }

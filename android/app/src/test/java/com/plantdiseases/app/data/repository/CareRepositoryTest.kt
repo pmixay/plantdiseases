@@ -547,6 +547,31 @@ class CareRepositoryTest {
         assertThat(db.treatmentStepDao().getById(completed.id)?.status).isEqualTo("done")
     }
 
+    @Test
+    fun getStep_keepsFullStepCountAfterPlanCompletion() = runBlocking {
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        val planId = careRepository.startTreatmentPlan(
+            plantId = plantId,
+            scanId = null,
+            carePlan = CarePlanResponse(
+                treatment = listOf("First action.", "Second action.", "Third action."),
+            ),
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+        )!!
+        val plan = db.treatmentPlanDao().getById(planId)!!
+        db.treatmentPlanDao().update(
+            plan.copy(status = "completed", completedAt = System.currentTimeMillis()),
+        )
+        val firstStep = db.treatmentStepDao().getForPlan(planId).first()
+
+        val loaded = careRepository.getStep(firstStep.id)
+
+        assertThat(loaded?.stepCount).isEqualTo(3)
+        assertThat(loaded?.plan?.status).isEqualTo("completed")
+    }
+
     private fun recurringView(
         plantId: Long,
         reminderId: Long,

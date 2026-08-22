@@ -79,8 +79,6 @@ class GalleryFragment : Fragment() {
             confirmClearHistory()
         }
 
-        binding.swipeRefresh.setOnRefreshListener { loadScans() }
-
         binding.btnFirstScan.setOnClickListener {
             // Select the Scan bottom-nav tab (routes through MainActivity) rather
             // than navigating the camera into Gallery's own back stack.
@@ -205,7 +203,6 @@ class GalleryFragment : Fragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            binding.swipeRefresh.isRefreshing = !isFirstLoad
             // NAP / blur rejects never belong in the gallery. Their rows exist
             // briefly (they back the reject's result screen + "this is a
             // plant" feedback) and are swept after 48 h; this filter keeps
@@ -222,7 +219,6 @@ class GalleryFragment : Fragment() {
                 isFirstLoad = false
             }
 
-            binding.swipeRefresh.isRefreshing = false
             applyFilter(animate = runStagger)
         }
     }
@@ -256,8 +252,8 @@ class GalleryFragment : Fragment() {
         super.onResume()
         // onViewCreated already did the first load (this fires synchronously
         // right after it, while isFirstLoad is still true → skip, no double
-        // load). On genuine returns it refreshes silently: animate=false so the
-        // already-shown grid doesn't blink through the entry stagger again.
+        // load). Every genuine return refreshes automatically and silently:
+        // no pull-to-refresh gesture, spinner, or replayed entry animation.
         if (!isFirstLoad) loadScans(animate = false)
     }
 

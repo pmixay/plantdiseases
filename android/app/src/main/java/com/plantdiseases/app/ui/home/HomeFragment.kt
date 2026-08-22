@@ -159,8 +159,8 @@ class HomeFragment : Fragment() {
         binding.tileSymptom.setOnClickListener {
             startActivity(Intent(requireContext(), SymptomCheckerActivity::class.java))
         }
-        binding.tileGuide.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
-        binding.tvGuideAll.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
+        binding.tileGuide.setOnClickListener { openGuide() }
+        binding.tvGuideAll.setOnClickListener { openGuide() }
 
         binding.rvSpecies.layoutManager =
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
@@ -191,6 +191,16 @@ class HomeFragment : Fragment() {
                 OnboardingAnchorKey.HOME_NOTIFICATIONS,
                 binding.btnNotifications,
             )
+        }
+    }
+
+    /** Push the guide above the tab shell through the graph action that owns
+     *  its forward/back motion. Both Guide entry points deliberately share
+     *  this path so their animation and back-stack behaviour cannot drift. */
+    private fun openGuide() {
+        val controller = findNavController()
+        if (controller.currentDestination?.id == R.id.shellFragment) {
+            controller.navigate(R.id.action_shellFragment_to_guideFragment)
         }
     }
 

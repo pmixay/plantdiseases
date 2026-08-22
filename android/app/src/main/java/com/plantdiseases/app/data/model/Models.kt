@@ -729,7 +729,14 @@ data class IdentifyResponse(
      *  the UI — kept on the wire for future "served from cache"
      *  indicator next to species suggestions. */
     @SerializedName("cached") @SerialName("cached") val cached: Boolean? = null,
-)
+) {
+    /** The shared disease pipeline rejected this upload before PlantNet was
+     *  called. Keep this separate from [available]: both states deliberately
+     *  use `available=false`, but only this one should ask for a clearer plant
+     *  photo instead of claiming that the species service is unavailable. */
+    val wasRejectedAsNotAPlant: Boolean
+        get() = source == "skipped_nap"
+}
 
 /** /api/species-info response — localized Wikipedia blurb + lead photo. */
 @Serializable

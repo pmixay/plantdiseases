@@ -29,6 +29,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PlantHealth
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -45,6 +46,7 @@ class RoomDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivityRoomDetailBinding
     private var roomId: Long = UNASSIGNED_ID
     private var currentRoom: RoomEntity? = null
+    private var loadJob: Job? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -125,7 +127,10 @@ class RoomDetailActivity : AppCompatActivity() {
     }
 
     private fun loadRoom() {
-        lifecycleScope.launch {
+        // onResume plus add/edit callbacks may overlap; only the newest Room
+        // snapshot is allowed to render.
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val isUnassigned = roomId == UNASSIGNED_ID
             currentRoom = if (isUnassigned) null else roomRepository.getRoom(roomId)
             if (!isUnassigned && currentRoom == null) {

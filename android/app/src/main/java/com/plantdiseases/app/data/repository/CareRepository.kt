@@ -652,12 +652,20 @@ class CareRepository(
 
     // ─── Single-row lookups (CareTaskActivity resolving one task by id) ───
 
-    data class StepWithPlan(val step: TreatmentStepEntity, val plan: TreatmentPlanEntity)
+    data class StepWithPlan(
+        val step: TreatmentStepEntity,
+        val plan: TreatmentPlanEntity,
+        val stepCount: Int,
+    )
 
     suspend fun getStep(stepId: Long): StepWithPlan? = withContext(Dispatchers.IO) {
         val step = treatmentStepDao.getById(stepId) ?: return@withContext null
         val plan = treatmentPlanDao.getById(step.planId) ?: return@withContext null
-        StepWithPlan(step, plan)
+        // Do not derive this through activePlan(): completed-plan rows are
+        // still browsable from the calendar history, but activePlan() quite
+        // correctly excludes them. Falling back to stepIndex + 1 made an old
+        // "Step 1 of 3" render as "Step 1 of 1" after plan completion.
+        StepWithPlan(step, plan, treatmentStepDao.getForPlan(plan.id).size)
     }
 
     suspend fun getReminder(reminderId: Long) = withContext(Dispatchers.IO) {

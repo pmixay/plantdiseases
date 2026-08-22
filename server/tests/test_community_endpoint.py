@@ -1463,6 +1463,52 @@ def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
     assert _recommended_species(client) == ["Fresh nothing", "Stale liked", "Stale quiet"]
 
 
+def test_recommended_feed_caps_total_engagement_below_material_freshness(
+    client, isolated_community,
+):
+    """No combination of ordinary engagement can bury a materially fresh post.
+
+    The individual metric caps are not sufficient on their own: at the current
+    weights, 50 opinions + 100 likes + 500 views are worth almost 96 days of
+    freshness when summed. Pin the aggregate promotion cap by saturating every
+    input; even then, a brand-new post must rank ahead of one from 30 days ago.
+    Live second-opinion requests deliberately sit outside this cap and are
+    covered by the following test.
+    """
+    db_path, _ = isolated_community
+    _share(client, "freshmax0001", "Fresh post")
+    _share(client, "staleengaged1", "Max-engaged stale post")
+
+    now = 1_800_000_000
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now, "freshmax0001"),
+        )
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now - 30 * 86_400, "staleengaged1"),
+        )
+        conn.executemany(
+            "INSERT INTO community_opinions "
+            "(scan_id, author_pseudo_id, suggested_disease, created_at) "
+            "VALUES (?, ?, 'leaf_spot', ?)",
+            [("staleengaged1", f"opinion-{i}", now) for i in range(50)],
+        )
+        conn.executemany(
+            "INSERT INTO community_likes "
+            "(scan_id, user_pseudo_id, liked, created_at) VALUES (?, ?, 1, ?)",
+            [("staleengaged1", f"like-{i}", now) for i in range(100)],
+        )
+        conn.executemany(
+            "INSERT INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            [("staleengaged1", f"view-{i}", now) for i in range(500)],
+        )
+
+    assert _recommended_species(client) == ["Fresh post", "Max-engaged stale post"]
+
+
 def test_recommended_feed_keeps_a_live_opinion_request_ahead_of_fresher_posts(
     client, isolated_community,
 ):

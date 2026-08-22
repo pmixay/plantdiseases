@@ -43,8 +43,8 @@ class NearbyScansAdapter(
         val added = newItems.size - old.size
         // Cursor paging appends: the new list is the old one plus a tail, so
         // only the tail is actually new — rebinding (and re-Glide-ing) every
-        // visible photo mid-fling is pure waste. Anything else (the filter /
-        // sort overlay genuinely reordering the feed) still needs a full
+        // visible photo mid-fling is pure waste. Anything else (a server sort
+        // genuinely replacing the feed) still needs a full
         // invalidation.
         val isAppend = added > 0 && old.indices.all { old[it] == newItems[it] }
         items = newItems.toMutableList()

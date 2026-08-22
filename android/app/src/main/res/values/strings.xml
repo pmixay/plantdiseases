@@ -153,7 +153,7 @@
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
     <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
-    <string name="guidance_community_feed">Your feed starts with recommended posts. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -318,6 +318,7 @@
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
     <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_policy_subtitle">See how scan photos and other app data are handled.</string>
     <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>
@@ -344,10 +345,11 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
-    <!-- Community recommendation-feed filter -->
-    <string name="nearby_filter_title">Filter by disease</string>
-    <string name="nearby_filter_by_type">By type</string>
-    <string name="nearby_filter_apply">Apply</string>
+    <!-- Community feed ordering -->
+    <string name="nearby_sort_title">Sort by</string>
+    <string name="nearby_sort_recommended">Recommended</string>
+    <string name="nearby_sort_newest">Newest</string>
+    <string name="nearby_sort_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>
 
@@ -959,6 +961,7 @@
 
     <!-- Identify species -->
     <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
+    <string name="identify_not_a_plant">No plant was detected in this photo. Retake it closer, with one sharp, well-lit leaf or flower filling most of the frame.</string>
     <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
     <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
     <string name="identify_loading">Loading…</string>
