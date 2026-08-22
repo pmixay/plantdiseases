@@ -275,54 +275,28 @@ def _section_source(marker: str) -> str:
             return src
     pytest.fail(f"no notebook cell contains {marker!r} — was it renamed?")
 
-def test_regime_multiplier_preserves_the_class_draw_share():
-    """The 2.7.3 sampler change must move WHICH scorch images are drawn, not
-    how much scorch is drawn.
+def test_falsified_levers_stay_removed():
+    """2.7.3 ran regime-aware sampling and regime-stratified conformal, and both
+    failed. The code is gone; this pins the DECISION so it is not rebuilt.
 
-    Boosting a quarter of a class without correcting for it also raises the
-    class's own draw share, which would (a) make the run unreadable — a gain
-    could not be attributed between "the dull stratum transfers" and "more
-    scorch overall" — and (b) desynchronise the LogitAdjustment prior, which
-    assumes log_prior matches the batch distribution it trains under.
-
-    The correction must be on the SOURCE-WEIGHTED sum, not the row count. The
-    sampler weight is source_weight * multiplier, so a count-preserving
-    multiplier only preserves the class's share when the boosted rows happen to
-    share the mean source weight of the rest — and scorch draws from sources
-    weighted 0.35 to 1.2. The first version of this normalised on the count and
-    could move the class prior ~30% while logging that it had not.
+    Regime sampling moved the benchmark 3/31 -> 4/31 (Fisher p=1.000) while
+    in-domain held, so it is not a trade that went too far — it does nothing.
+    Regime conformal found the dull stratum already better covered (0.972 vs
+    0.965), so there was no under-coverage to fix. Rebuilding either costs an
+    A100 run and returns nothing.
     """
-    src = _section_source("def regime_multipliers")
-    assert "def _normalise_class_weights" in src, \
-        "the class-weight correction is gone; the sampler now moves the class prior too"
-    assert "per_class_old[y] / new" in src, \
-        "normalisation must divide by the source-WEIGHTED class total"
-    assert "scale = len(rows) / float(sum(mult[i] for i in rows))" not in src, \
-        "count-based normalisation is back; it does not survive source weighting"
-    assert "regime_mult=_regime_mult" in src, "the multiplier is computed but not passed"
-    assert "REGIME_UPWEIGHT_CLASSES" in _section_source("MODEL_VERSION ="), "the knob left §1"
-
-
-def test_regime_threshold_is_derived_not_hardcoded():
-    """A fixed saturation cut goes stale as the corpus changes; the class's own
-    quantile does not."""
-    src = _section_source("def regime_multipliers")
-    assert "np.quantile(sat, quantile)" in src, \
-        "the low-chroma threshold must be the class's own quantile, computed at run time"
-
-
-def test_conformal_regime_audit_does_not_ship_its_own_q_hat():
-    """The stratum-balanced q_hat is REPORTED, never applied. Changing q_hat
-    changes every served prediction set and deserves its own A/B rather than
-    arriving as a side effect of adding a diagnostic."""
-    src = _section_source("regime_audit")
-    assert "stratum_balanced_q_hat" in src, "the regime conformal audit is gone"
-    assert "cfg['q_hat'] = _q_bal" not in src, \
-        "the balanced q_hat is being shipped; it is a diagnostic, not a release change"
+    setup, sampler = _section_source("MODEL_VERSION ="), _section_source("make_source_weighted_sampler")
+    for gone in ("REGIME_UPWEIGHT_CLASSES = ", "REGIME_BOOST = ", "REGIME_SAT_QUANTILE = "):
+        assert gone not in setup, f"{gone.strip()} is back — see the falsification record in §1"
+    for gone in ("def regime_multipliers", "def _mean_saturation", "regime_mult"):
+        assert gone not in sampler, f"{gone} is back in §4 — the lever was falsified"
+    # the record itself must survive, or the next session re-derives the idea
+    assert "falsified" in setup.lower() and "3/31" in setup, \
+        "the 2.7.3 falsification record was deleted along with the code"
 
 
 def test_temperature_is_not_claimed_to_move_predictions():
     """argmax(z/T) == argmax(z) for every T > 0. Guard the comment that says so,
-    because 'recalibrate temperature to fix recall' is the plausible-sounding
+    because "recalibrate temperature to fix recall" is the plausible-sounding
     wrong answer this project has to keep not taking."""
-    assert "argmax(z / T) == argmax(z)" in _section_source("regime_audit")
+    assert "argmax(z / T) == argmax(z)" in _section_source("MODEL_VERSION =")
