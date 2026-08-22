@@ -653,23 +653,24 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
-     *  Wikipedia fetch. Renders the SAME rich [CarePlanCardView] the scan
-     *  result and garden detail use (gradient header + watering/light/humidity
-     *  pills + expandable details) instead of a flat text line. Reminders are
-     *  hidden here — this is a healthy-baseline plan, not a diagnosis. */
+     *  Wikipedia fetch. Renders the SAME [CarePlanCardView] the scan result
+     *  and garden detail use — gradient header + watering/light/humidity
+     *  pills — as its own collapsible card, with no section wrapper and no
+     *  detail panel. Reminders are hidden here: this is a healthy-baseline
+     *  plan, not a diagnosis. */
     private fun loadCare() {
         val careCard = CarePlanCardView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            // Nothing on this screen folds the plan away: the Care section is
-            // a plain card, so the card's own accordion would be a chevron over
-            // already-visible content, and "Show details" would leave the
-            // richest half of the plan (red flags, setup, checkpoints) behind a
-            // second tap. Both off — the whole plan is simply on screen.
-            accordionEnabled = false
-            detailsCollapsible = false
+            // One fold, not two. There is no Care section around this card
+            // any more, so the card's own accordion is the only chevron and
+            // it ships closed like every other section on this screen. The
+            // verbose detail panel is off entirely: unfolding gives the plan
+            // at a glance — the pills, the note, the follow-up — the same
+            // thing the scan result's cure plan shows.
+            detailsEnabled = false
         }
         binding.careSlot.removeAllViews()
         binding.careSlot.addView(careCard)

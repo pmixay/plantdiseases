@@ -39,8 +39,8 @@ class SpeciesSectionsLayoutTest {
     )
 
     private val sections = listOf(
-        // Care is deliberately absent: it is a plain always-open card with no
-        // chevron and no Section entry — see theCareCardIsNotCollapsible.
+        // Care is deliberately absent: it has no section card at all — see
+        // theCarePlanSlotIsNotWrappedInASection.
         SectionIds("about", R.id.card_about, R.id.about_header, R.id.iv_about_chevron, R.id.about_body),
         SectionIds(
             "fertiliser",
@@ -136,40 +136,20 @@ class SpeciesSectionsLayoutTest {
     }
 
     /**
-     * The Care section is the one card on this screen that does NOT collapse:
-     * folding the care plan away folds away the reason the screen exists. It
-     * therefore has no chevron, an inert header, and a body that ships
-     * visible — the exact inverse of every assertion above, so it needs its
-     * own test rather than an exemption inside them.
+     * Care has no section card at all. CarePlanCardView is already a
+     * collapsible card with its own header and chevron, so wrapping it in one
+     * stacked two chevrons over a single body and shipped both closed —
+     * loadCare() drops it straight into this slot instead.
      */
     @Test
-    fun theCareCardIsNotCollapsible() {
-        val root = inflate()
-        val card = root.findViewById<View>(R.id.card_care)
-        val header = root.findViewById<View>(R.id.care_header)
-        val body = root.findViewById<View>(R.id.care_body)
-
-        assertThat(card).isNotNull()
-        assertThat(header).isNotNull()
-        assertThat(body).isNotNull()
-        assertThat(header.isDescendantOf(card)).isTrue()
-        assertThat(body.isDescendantOf(card)).isTrue()
-
-        assertWithMessage("care body must ship visible — nothing toggles it")
-            .that(body.visibility).isEqualTo(View.VISIBLE)
-        assertWithMessage("care header must not look tappable when it toggles nothing")
-            .that(header.isClickable).isFalse()
-    }
-
-    @Test
-    fun theCareCardStillOwnsTheRuntimeCarePlanSlot() {
+    fun theCarePlanSlotIsNotWrappedInASection() {
         val root = inflate()
         val slot = root.findViewById<View>(R.id.care_slot)
-        // loadCare() addViews the CarePlanCardView into care_slot; if the slot
-        // ever escapes care_body it stops inheriting the card's padding and
-        // the plan renders flush against the screen edge.
         assertThat(slot).isNotNull()
-        assertThat(slot.isDescendantOf(root.findViewById<View>(R.id.care_body))).isTrue()
+        for (s in sections) {
+            assertWithMessage("care_slot must not live inside the ${s.name} section")
+                .that(slot.isDescendantOf(root.findViewById<View>(s.body))).isFalse()
+        }
     }
 
     @Test

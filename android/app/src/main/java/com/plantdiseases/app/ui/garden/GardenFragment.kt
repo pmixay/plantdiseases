@@ -119,10 +119,6 @@ class GardenFragment : Fragment() {
             renderGarden(animate = false)
             if (searchVisible) binding.gardenSearch.requestFocus()
         }
-        binding.gardenDoTodayCalendar.setOnClickListener {
-            Haptics.tick(requireContext())
-            openCareCalendar()
-        }
         binding.gardenCareCalendarButton.setOnClickListener {
             Haptics.tick(requireContext())
             openCareCalendar()
@@ -208,7 +204,7 @@ class GardenFragment : Fragment() {
         val hasAnyPlant = allSummaries.isNotEmpty()
         val hasGardenContent = hasAnyPlant || allRooms.isNotEmpty()
         binding.gardenEmptyState.visibility = if (hasGardenContent) View.GONE else View.VISIBLE
-        binding.gardenCareCalendarButton.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
+        binding.gardenActionRow.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
         updateFabVisibility()
 
         val scanTotal = allSummaries.sumOf { it.scanCount }
@@ -435,10 +431,8 @@ class GardenFragment : Fragment() {
                     setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
                 }
             )
-            binding.gardenAddRoom.visibility = View.GONE
             return
         }
-        binding.gardenAddRoom.visibility = View.VISIBLE
 
         var animIndex = 0
         val emit: (View) -> Unit = { view ->

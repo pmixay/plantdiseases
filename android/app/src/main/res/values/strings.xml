@@ -410,7 +410,7 @@
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
-    <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <string name="garden_subtitle">Every plant, scan and watering in one place.</string>
     <string name="profile_subtitle">Your scan stats, server health, theme, language and community settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
@@ -475,7 +475,6 @@
         <item quantity="one">%d overdue</item>
         <item quantity="other">%d overdue</item>
     </plurals>
-    <string name="garden_do_today_open_calendar">Open calendar</string>
     <string name="calendar_all_caught_up">All caught up 🌿</string>
     <string name="calendar_empty_day">Nothing scheduled for this day</string>
     <string name="calendar_show_done">Show completed (%1$d)</string>
@@ -503,7 +502,6 @@
     <string name="empty_garden_title">Your garden is ready</string>
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
     <string name="empty_garden_cta_add">Add your first plant</string>
-    <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
     <string name="plant_detail_title">Plant detail</string>
     <!-- Destination screens reached from a stale notification-centre row -->
     <string name="scan_no_longer_available">This scan is no longer on this device.</string>
@@ -986,6 +984,7 @@
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
     <string name="native_range_title">Native range</string>
+    <string name="native_range_subtitle">Where it grows wild, and the climate it expects.</string>
     <string name="native_range_expand">Show native range</string>
     <string name="native_range_collapse">Hide native range</string>
     <string name="native_range_loading">Loading native range…</string>
@@ -999,6 +998,7 @@
     <string name="native_range_map_content_description">Native-range map showing: %1$s. Tap a country to check it.</string>
     <string name="native_range_map_empty">Native-range map unavailable</string>
     <string name="flowering_title">Flowering by month</string>
+    <string name="flowering_subtitle">When it blooms, and what brings buds on.</string>
     <string name="flowering_loading">Loading flowering calendar…</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
@@ -1080,6 +1080,7 @@
 
     <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
     <string name="lunar_title">Lunar calendar</string>
+    <string name="lunar_subtitle">Favourable and unfavourable days by moon phase.</string>
     <string name="lunar_expand">Show lunar calendar</string>
     <string name="lunar_collapse">Hide lunar calendar</string>
     <string name="lunar_today">Today, %1$s</string>
@@ -1141,8 +1142,6 @@
     <!-- Collapsible sections on the species screen -->
     <string name="section_about_title">About the plant</string>
     <string name="section_about_subtitle">Description, traits and varieties.</string>
-    <string name="section_care_title">Care</string>
-    <string name="section_care_subtitle">Watering, light, temperature, humidity and pruning.</string>
     <string name="section_fertiliser_title">Fertiliser and feeding</string>
     <string name="section_fertiliser_subtitle">What to feed with, and when.</string>
     <string name="section_diseases_title">Diseases and pests</string>

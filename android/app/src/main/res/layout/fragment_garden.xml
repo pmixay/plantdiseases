@@ -11,6 +11,10 @@
     garden_care_calendar_button below), and the lunar calendar is now
     shown per plant on the plant detail screen only.
 
+    Both secondary destinations (Care calendar, Add room) sit in one paired
+    row at a fixed position under the hero: Add room used to trail every room
+    card, so a long list buried the button you need when the list is long.
+
     The hero card, search box and empty state keep their existing shape
     (bg_hero_card, the same illustration) — this app's header language
     is shared across every tab.
@@ -106,20 +110,44 @@
 
             </LinearLayout>
 
-            <!-- Care calendar — a separate destination rather than a pane
-                 of this screen, so the Garden tab has no switcher at all.
-                 Hidden while the garden is empty (same rule the segmented
-                 control it replaces used): a month grid with nothing to
-                 schedule on it is a dead end. -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/garden_care_calendar_button"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+            <!-- The garden's two secondary destinations, paired at a fixed
+                 position under the hero. "Add room" used to sit BELOW every
+                 room card, so the control you reach for once the list is long
+                 was the one the long list pushed off screen. Both hide while
+                 the garden is empty — the empty state offers its own Add room,
+                 and a month grid with nothing to schedule is a dead end. -->
+            <LinearLayout
+                android:id="@+id/garden_action_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
-                android:text="@string/garden_care_calendar"
-                app:icon="@drawable/ic_calendar"
-                app:iconGravity="textStart" />
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_care_calendar_button"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/garden_care_calendar"
+                    app:icon="@drawable/ic_calendar"
+                    app:iconGravity="textStart"
+                    app:iconSize="18dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_add_room"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:layout_weight="1"
+                    android:text="@string/room_add"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart"
+                    app:iconSize="18dp" />
+
+            </LinearLayout>
 
             <!-- The actionable queue belongs on the Garden surface itself,
                  not behind a calendar. Rows are rendered in place with a
@@ -143,47 +171,22 @@
                     android:orientation="vertical"
                     android:padding="@dimen/space_lg">
 
-                    <LinearLayout
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/garden_do_today_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm" />
 
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/garden_do_today_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm" />
-
-                            <TextView
-                                android:id="@+id/garden_do_today_subtitle"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xxs"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm"
-                                tools:text="3 tasks · 1 overdue" />
-
-                        </LinearLayout>
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/garden_do_today_calendar"
-                            style="@style/Widget.Material3.Button.TextButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:minWidth="0dp"
-                            android:text="@string/garden_do_today_open_calendar"
-                            android:textSize="@dimen/text_caption" />
-
-                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/garden_do_today_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xxs"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm"
+                        tools:text="3 tasks · 1 overdue" />
 
                     <LinearLayout
                         android:id="@+id/garden_do_today_list"
@@ -243,16 +246,6 @@
                     android:layout_marginTop="@dimen/space_lg"
                     android:orientation="vertical" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/garden_add_room"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:text="@string/room_add"
-                    app:icon="@drawable/ic_add"
-                    app:iconGravity="textStart" />
-
             </LinearLayout>
 
             <!-- Empty state — the garden has no plants at all. Distinct from
@@ -304,15 +297,6 @@
                     android:text="@string/empty_garden_cta_add"
                     app:icon="@drawable/ic_garden"
                     app:iconGravity="textStart" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:text="@string/empty_garden_secondary_hint"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:gravity="center" />
 
                 <!-- The Rooms pane (and its own "+ Add room" button) is
                      hidden entirely while the garden has no plants, which
