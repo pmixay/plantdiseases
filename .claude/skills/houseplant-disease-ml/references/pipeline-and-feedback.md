@@ -106,7 +106,7 @@ The suite encodes the invariants above — run it before trusting a change:
 - `test_openapi_contract.py`, `test_endpoints.py`, `test_validation.py` — the
   HTTP contract.
 
-Conventions: `ruff` (line-length 110, target py311, rules E/F/I/B; `E501`/`B008`
+Conventions: `ruff` (line-length 110, target py314, rules E/F/I/B; `E501`/`B008`
 ignored; notebook excluded), `pytest>=9`, `httpx` `TestClient`. The runtime
 requirements are deliberately lean (no `scikit-learn` / `torch` in
 `requirements.txt` — they're dev/eval-only) so the production image stays small.

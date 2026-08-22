@@ -26,6 +26,12 @@ class PlantMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var scanRepository: ScanRepository
 
+    // Firebase deprecated onNewToken/getToken in firebase-messaging 25.1.0 in
+    // favour of Firebase Installation IDs. Tokens still work and Google has
+    // published no FID migration guide; moving would also mean changing
+    // server/push.py (its push_tokens table is keyed by token) and the wire
+    // format between them, so it is a coordinated change, not a lint fix.
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onNewToken(token: String) {
         val ctx = applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return
@@ -41,7 +47,9 @@ class PlantMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         if (data["type"] != "opinion") return
-        if (!OpinionPrefs.notificationsEnabled(applicationContext)) return
+        // No notifications-enabled gate here: OpinionNotifier records this to
+        // the notification centre regardless, and decides on its own whether
+        // to also interrupt the user with a system notification.
         val scanId = data["scan_id"].orEmpty()
         if (scanId.isBlank()) return
         val disease = data["disease"].orEmpty()
@@ -51,6 +59,18 @@ class PlantMessagingService : FirebaseMessagingService() {
         // notify is quick and well within FCM's processing window.
         runBlocking {
             OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease, note, nickname)
+            // Advance the poll baseline, exactly as OpinionCheckWorker does after
+            // it notifies. Without this the next poll still sees
+            // opinionCount > lastSeen and records a SECOND notification-centre row
+            // for the same opinion (NotificationRepository.record is a bare
+            // @Insert with no dedupe key). The push payload carries no count, so
+            // an increment is the only option — and it self-heals, because the
+            // next poll rewrites the baseline to the scan's true opinionCount.
+            OpinionPrefs.setSeen(
+                applicationContext,
+                scanId,
+                OpinionPrefs.lastSeen(applicationContext, scanId) + 1,
+            )
         }
     }
 }

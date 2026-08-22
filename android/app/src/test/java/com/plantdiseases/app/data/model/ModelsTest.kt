@@ -91,6 +91,34 @@ class ModelsTest {
     }
 
     @Test
+    fun carePlan_missingProductsFields_staysNullNotACrash() {
+        // Pre-Garden-refactor server response shape — no "products" or
+        // "treatment_conditions" keys at all. Must degrade to null, the
+        // same way every other v2-additive field already does.
+        val plan = gson.fromJson(
+            """{"species":"Ficus","disease":"leaf_spot","light_tier":"t"}""",
+            CarePlanResponse::class.java,
+        )
+        assertThat(plan.products).isNull()
+        assertThat(plan.treatmentConditions).isNull()
+    }
+
+    @Test
+    fun carePlan_parsesProductsAndTreatmentConditions() {
+        val json = """
+            {"species":"Ficus","disease":"gray_mold_botrytis","light_tier":"t",
+             "products":[{"key":"switch","kind":"fungicide","name":"Switch 62.5WG",
+               "active_ingredient":"cyprodinil + fludioxonil","note":"Alternate modes of action."}],
+             "treatment_conditions":{"best_time":"Morning.","temp_c":[15,25],"dry_hours":24}}
+        """.trimIndent()
+        val plan = gson.fromJson(json, CarePlanResponse::class.java)
+        assertThat(plan.products).hasSize(1)
+        assertThat(plan.products!![0].activeIngredient).isEqualTo("cyprodinil + fludioxonil")
+        assertThat(plan.treatmentConditions?.tempC).containsExactly(15, 25).inOrder()
+        assertThat(plan.treatmentConditions?.dryHours).isEqualTo(24)
+    }
+
+    @Test
     fun speciesMatch_displayName_prefersCommonThenScientific() {
         assertThat(SpeciesMatch("Ficus elastica", "Rubber Plant", 0.5f).displayName)
             .isEqualTo("Rubber Plant")
@@ -147,9 +175,10 @@ class ModelsTest {
         assertThat(r.scope).isEqualTo("country")
         assertThat(r.country).isEqualTo("US")
         assertThat(r.countryNameEn).isEqualTo("United States")
-        assertThat(r.summary!!.scope).isEqualTo("country")
-        assertThat(r.summary!!.countryNameEn).isEqualTo("United States")
-        assertThat(r.summary!!.total).isEqualTo(3)
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.scope).isEqualTo("country")
+        assertThat(summary.countryNameEn).isEqualTo("United States")
+        assertThat(summary.total).isEqualTo(3)
         // Absent flag defaults to false (no location prompt).
         assertThat(r.locationRequired).isFalse()
     }
@@ -187,8 +216,9 @@ class ModelsTest {
         """.trimIndent()
         val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
         assertThat(r.scope).isEqualTo("worldwide")
-        assertThat(r.summary!!.country).isNull()
-        assertThat(r.summary!!.countryNameEn).isEqualTo("Worldwide")
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.country).isNull()
+        assertThat(summary.countryNameEn).isEqualTo("Worldwide")
     }
 
     @Test
@@ -201,7 +231,8 @@ class ModelsTest {
              "summary":{"country":null,"total":null,"scope":null}}
         """.trimIndent()
         val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
-        assertThat(r.summary!!.total).isEqualTo(0)
-        assertThat(r.summary!!.scope).isNull()
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.total).isEqualTo(0)
+        assertThat(summary.scope).isNull()
     }
 }

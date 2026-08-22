@@ -529,5 +529,3 @@ def test_feedback_endpoint_accepts_issued_scan_id(client, isolated_feedback_db, 
             "SELECT scan_id, image_hash FROM feedback ORDER BY id DESC LIMIT 1"
         ).fetchone()
     assert row == ("scan-issued-001", "b" * 64)
-
-

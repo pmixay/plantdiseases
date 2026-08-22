@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // No org.jetbrains.kotlin.android — AGP 9's built-in Kotlin compiles this
+    // module. The serialization compiler plugin still applies on top of it.
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
@@ -18,7 +19,7 @@ android {
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
-        minSdk = 29 // Android 10
+        minSdk = 31 // Android 12
         // Deliberately behind compileSdk, and stated explicitly (AGP 9
         // otherwise defaults targetSdk to compileSdk when unset). targetSdk is
         // what opts the app into a platform's *behaviour* changes; raising it
@@ -27,8 +28,8 @@ android {
         // on its own terms, not a side effect of a dependency refresh.
         // Compiling against a newer SDK than you target is supported.
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.8"
+        versionCode = 19
+        versionName = "1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -145,14 +146,13 @@ android {
             excludes += "**/libLiteRtOpenClAccelerator.so"
             excludes += "**/libLiteRtClGlAccelerator.so"
 
-            // These prebuilt .so libs (DataStore, CameraX JNI) can't be
-            // stripped by the NDK strip tool, which logs a noisy "Unable to
-            // strip the following libraries" warning every build. They are
-            // packaged as-is either way, so declaring them here just keeps
-            // their (already-present) symbols and silences the warning — the
-            // APK size is unchanged.
+            // These prebuilt CameraX JNI .so libs can't be stripped by the
+            // NDK strip tool, which logs a noisy "Unable to strip the
+            // following libraries" warning every build. They are packaged
+            // as-is either way, so declaring them here just keeps their
+            // (already-present) symbols and silences the warning — the APK
+            // size is unchanged.
             keepDebugSymbols += listOf(
-                "**/libdatastore_shared_counter.so",
                 "**/libimage_processing_util_jni.so",
                 "**/libsurface_util_jni.so",
             )
@@ -199,7 +199,10 @@ android {
 }
 
 kotlin {
-    // Replaces the deprecated android.kotlinOptions block (Kotlin 2.x DSL).
+    // Still the right home for compiler options under built-in Kotlin — it is
+    // `android.kotlinOptions` that AGP 9 dropped, not this block. jvmTarget
+    // would default to compileOptions.targetCompatibility; stated explicitly
+    // so the two can't drift apart silently.
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
@@ -207,10 +210,12 @@ kotlin {
 
 // ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
 // Gating: ktlint (formatting/style) + detekt (static analysis) fail the build
-// on any NEW violation. The pre-existing tree is grandfathered via baselines
-// (config/ktlint/baseline.xml, config/detekt/baseline.xml) generated once with
-// `./gradlew ktlintGenerateBaseline detektBaseline` after a `./gradlew
-// ktlintFormat` cleanup, so only newly-introduced issues break CI.
+// on any violation. The baselines (config/ktlint/baseline.xml,
+// config/detekt/baseline.xml) once grandfathered a backlog; that backlog is now
+// fixed and both files are empty, so the gate is zero-tolerance. Keep them empty
+// — a violation is meant to be fixed, not baselined. They stay wired up only for
+// a rule-set bump, where `./gradlew ktlintGenerateBaseline detektBaseline`
+// regenerates them so the bump and the cleanup can land separately.
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
@@ -225,7 +230,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 }
 
 ktlint {
-    version.set("1.3.1")
+    version.set("1.5.0")
     android.set(true)
     ignoreFailures.set(false)
     baseline.set(file("config/ktlint/baseline.xml"))
@@ -311,6 +316,14 @@ dependencies {
     // the app carries on — the usual optional-integration degradation.
     implementation("ru.rustore.sdk:appupdate:10.5.0")
 
+    // RuStore in-app reviews — on a few genuine engaged-user moments on the
+    // Result screen (confirmed-correct diagnosis, scan attached to a garden
+    // plant, care plan turned into reminders), offers RuStore's native
+    // rate/review dialog (util/InAppReviewManager). Same artifactory as
+    // appupdate above; RuStore caps this at one launch a day
+    // (RuStoreRequestLimitReached) and we throttle further locally.
+    implementation("ru.rustore.sdk:review:10.0.0")
+
     // Gson
     implementation("com.google.code.gson:gson:2.14.0")
 
@@ -338,9 +351,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
-    // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.11.0")
+    // Lifecycle. Runtime only — this app has no ViewModel and no LiveData
+    // (activity + controller + repository, see HomeFragment's note), so the
+    // viewmodel/livedata artifacts would only be dead weight.
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 
     // Lottie animations
@@ -353,9 +366,6 @@ dependencies {
     // no Play Services (mavenCentral). We draw the aggregated heat cells +
     // scan markers ourselves; OSM raster tiles need a descriptive User-Agent.
     implementation("org.osmdroid:osmdroid-android:6.1.20")
-
-    // Preferences DataStore
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     // Shimmer effect for skeleton loading
     implementation("com.facebook.shimmer:shimmer:0.5.0")
@@ -412,7 +422,6 @@ dependencies {
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.room:room-testing:2.8.4")
 
     // ─── Instrumented / Espresso UI tests (./gradlew connectedDebugAndroidTest,
@@ -421,10 +430,7 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
-    androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
     androidTestImplementation("androidx.fragment:fragment-testing:1.9.0")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

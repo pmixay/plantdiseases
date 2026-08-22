@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Grid column counts. Overridden per smallest-width bucket
-     (values-sw600dp / values-sw720dp) so the photo gallery and the community
-     feed use more columns on tablets instead of two oversized ones. -->
+<!-- Grid column count. Overridden per smallest-width bucket
+     (values-sw600dp / values-sw720dp) so the photo gallery uses more columns
+     on tablets instead of two oversized ones. The community feed is a
+     single scrolling column at every width (Community v2). -->
 <resources>
     <integer name="gallery_span_count">2</integer>
-    <integer name="community_span_count">2</integer>
 
     <!-- Lines of the Wikipedia description the species-info card shows before
          it offers "show full description". Kept short because the card is

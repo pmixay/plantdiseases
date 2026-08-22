@@ -1,15 +1,5 @@
 <?xml version="1.0" ?>
 <SmellBaseline>
   <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>ComplexCondition:CameraFragment.kt$CameraFragment$result.isSuccessful &amp;&amp; cropped != null &amp;&amp; cropped.exists() &amp;&amp; cropped.length() &gt; 0L</ID>
-    <ID>ComplexCondition:HeatmapOverlayView.kt$HeatmapOverlayView$!showOverlay || overlayAlpha == 0f || imgWidth &lt;= 0 || imgHeight &lt;= 0 || boxes.isEmpty()</ID>
-    <ID>ImplicitDefaultLocale:DetailExtraCardsController.kt$DetailExtraCardsController$String.format("%.1f", s.meanGapDays)</ID>
-    <ID>UnusedParameter:DetailExtraCardsController.kt$DetailExtraCardsController$scans: List&lt;ScanEntity&gt;</ID>
-    <ID>VariableNaming:CameraFragment.kt$CameraFragment$private val KEY_GRID_OVERLAY = "grid_overlay_enabled"</ID>
-    <ID>VariableNaming:CameraFragment.kt$CameraFragment$private val PREFS_NAME = "plantdiseases_prefs"</ID>
-    <ID>VariableNaming:GuideFragment.kt$GuideFragment$private val KEY_RECENT_SEARCHES = "recent_searches"</ID>
-    <ID>VariableNaming:GuideFragment.kt$GuideFragment$private val MAX_RECENT_SEARCHES = 5</ID>
-    <ID>VariableNaming:GuideFragment.kt$GuideFragment$private val PREFS_NAME = "plantdiseases_prefs"</ID>
-  </CurrentIssues>
+  <CurrentIssues/>
 </SmellBaseline>

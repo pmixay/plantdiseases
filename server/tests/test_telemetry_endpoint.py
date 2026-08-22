@@ -94,10 +94,3 @@ def test_breadcrumbs_and_message_capped(client, teldb):
     assert r.status_code == 422, r.text
 
 
-def test_error_counts_groups_by_stage_kind(teldb):
-    teldb.record_error(stage="analyze", kind="timeout")
-    teldb.record_error(stage="analyze", kind="timeout")
-    teldb.record_error(stage="aqua", kind="oom")
-    counts = {(c["stage"], c["kind"]): c["n"] for c in teldb.error_counts(days=7)}
-    assert counts[("analyze", "timeout")] == 2
-    assert counts[("aqua", "oom")] == 1

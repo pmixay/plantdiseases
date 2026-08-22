@@ -49,15 +49,13 @@ def test_score_one_for_far_vector():
     assert scorer.score(q) == pytest.approx(1.0)
 
 
-def test_is_ood_respects_threshold():
+def test_score_for_45_degree_vector():
     scorer = EmbeddingOODScorer(_basis_bank(), _cfg(threshold=0.5, k=1))
-    assert scorer.is_ood(np.array([1.0, 0, 0, 0], dtype=np.float32)) is False  # score 0
     # A 45° vector between two axes: nearest cos = cos(45°) ≈ 0.707 → score ≈ 0.293
     half = np.array([1.0, 1.0, 0, 0], dtype=np.float32)
     assert scorer.score(half) == pytest.approx(1 - (1 / np.sqrt(2)), abs=1e-6)
-    assert scorer.is_ood(half) is False  # 0.293 < 0.5
-    # A vector mostly opposite the basis is far → OOD.
-    assert scorer.is_ood(np.array([-1.0, -1.0, 0, 0], dtype=np.float32)) is True
+    # A vector mostly opposite the basis scores far from the manifold.
+    assert scorer.score(np.array([-1.0, -1.0, 0, 0], dtype=np.float32)) > 0.5
 
 
 def test_k_is_clamped_to_bank_size():
@@ -68,11 +66,12 @@ def test_k_is_clamped_to_bank_size():
     assert scorer.score(q) == pytest.approx(0.75)
 
 
-def test_dim_mismatch_returns_nan_and_not_ood():
+def test_dim_mismatch_returns_nan():
     scorer = EmbeddingOODScorer(_basis_bank(), _cfg(embed_dim=4))
     s = scorer.score(np.array([1.0, 0, 0], dtype=np.float32))  # 3-dim query
+    # NaN, never a number: the pipeline's finite-check is what routes this
+    # to the MaxLogit fallback rather than to a bogus OOD verdict.
     assert np.isnan(s)
-    assert scorer.is_ood(np.array([1.0, 0, 0], dtype=np.float32)) is False
 
 
 def test_parse_embedding_ood_config_variants():
@@ -105,7 +104,7 @@ def test_load_embedding_ood_round_trip(tmp_path):
     meta = json.loads((tmp_path / "classes.json").read_text())
     scorer = load_embedding_ood(tmp_path, meta)
     assert scorer is not None
-    assert scorer.is_ood(np.array([1.0, 0, 0, 0], dtype=np.float32)) is False
+    assert scorer.score(np.array([1.0, 0, 0, 0], dtype=np.float32)) == pytest.approx(0.0)
 
 
 def test_load_embedding_ood_missing_bank_returns_none(tmp_path):

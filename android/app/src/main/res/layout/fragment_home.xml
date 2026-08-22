@@ -71,6 +71,42 @@
                 app:tint="@color/on_surface"
                 android:contentDescription="@string/nearby_scans_cd" />
 
+            <!-- Notification centre entry — community replies, care reminders,
+                 garden alerts in one list. Badge shows the unread count and
+                 hides at zero. -->
+            <FrameLayout
+                android:layout_width="40dp"
+                android:layout_height="40dp">
+
+                <ImageButton
+                    android:id="@+id/btn_notifications"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_bell"
+                    app:tint="@color/on_surface"
+                    android:contentDescription="@string/notifications_cd" />
+
+                <TextView
+                    android:id="@+id/tv_notifications_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginEnd="4dp"
+                    android:minWidth="16dp"
+                    android:minHeight="16dp"
+                    android:gravity="center"
+                    android:background="@drawable/bg_circle_surface_variant"
+                    android:backgroundTint="@color/disease_red"
+                    android:textColor="@android:color/white"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:paddingHorizontal="3dp"
+                    android:visibility="gone" />
+
+            </FrameLayout>
+
         </LinearLayout>
 
         <!-- Greeting -->

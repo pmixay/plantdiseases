@@ -14,10 +14,13 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.BuildConfig
+import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
@@ -34,6 +37,9 @@ class ProfileFragment : Fragment() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -86,6 +92,9 @@ class ProfileFragment : Fragment() {
         setupAutosaveToggle()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
+        }
+        binding.privacyPolicyRow.setOnClickListener {
+            startActivity(PrivacyPolicyActivity.intent(requireContext()))
         }
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue
@@ -218,6 +227,15 @@ class ProfileFragment : Fragment() {
         // window on a black frame (the "app turns black" bug). One mechanism,
         // one recreate.
         LocaleHelper.setLocale(requireContext(), lang)
+        // Notification-centre rows persist already-rendered title/body text
+        // (NotificationRepository.record takes strings, not resource ids), so
+        // they would keep the previous language for the whole 30-day retention
+        // while every other surface flips. The rows are transient and already
+        // disposable, so drop them rather than ship a half-translated list.
+        // Runs on the app scope because recreate() below cancels this
+        // fragment's lifecycleScope.
+        val app = requireContext().applicationContext as PlantDiseasesApp
+        app.appScope.launch { notificationRepository.clearAll() }
         requireActivity().recreate()
     }
 

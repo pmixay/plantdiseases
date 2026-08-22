@@ -4,28 +4,33 @@ import android.content.Context
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.StaggeredGridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
-import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
+import com.plantdiseases.app.databinding.SheetNearbySortBinding
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.util.CommunityIdentity
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.RegionResolver
+import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.enableWhileOnline
 import com.plantdiseases.app.util.onReconnected
@@ -34,14 +39,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Social-style community feed. The server scopes it by country when it can,
- * then falls back globally (all diagnoses, not just the current scan's), and
- * renders one card per scan. Tapping a card or
- * its "Second opinion" action opens [CommunityOpinionSheet] — the vote
- * graph + opinions + the user's own vote.
+ * Scrolling-forum community feed (Community v2). A single column, cursor-
+ * paged from the server: the first page loads [FEED_PAGE_SIZE] posts, and
+ * scrolling near the end fetches the next (older) page transparently. Each
+ * post's photo or comments row opens [CommunityOpinionSheet] — the vote
+ * graph + comment thread + the user's own vote; its like control toggles
+ * in place via [toggleLike], never opening the sheet.
  *
- * A toolbar filter action opens a bottom-sheet overlay to sort the feed
- * by date (newest / oldest) and narrow it to a single disease type.
+ * A toolbar sort action switches between the server's freshness-led
+ * recommendation order and strict newest-first order.
  */
 @AndroidEntryPoint
 class NearbyScansActivity : AppCompatActivity() {
@@ -54,19 +60,41 @@ class NearbyScansActivity : AppCompatActivity() {
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
-    // Full feed as returned by the server; filtered + sorted client-side
-    // whenever the user applies the overlay.
+    // Full feed in the order returned by the server. Every sort change starts
+    // a new cursor session so recommendation and recent cursors never mix.
     private var allItems: List<CommunityScanItem> = emptyList()
-    private var sortNewestFirst = true
-    private var typeFilter: String? = null
-    private var filterMenuItem: MenuItem? = null
+    private var ranking = RANKING_RECOMMENDED
+    private var sortMenuItem: MenuItem? = null
     private var disableMenuItem: MenuItem? = null
+    private var mapMenuItem: MenuItem? = null
 
     // Server-side scope filter: "nearby" (~30 km radius), "country", or
     // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
+
+    // Stable composite cursor returned by the selected ranking endpoint.
+    private var nextCursor: String? = null
+    private var hasMorePages = true
+    private var isLoadingPage = false
+    private var currentRegion: ResolvedRegion? = null
+
+    // Bumped by every (re)load. A page fetch captures it and drops its result
+    // if it no longer matches — otherwise a loadMore() still in flight when the
+    // user pulls to refresh writes its cursor (and its rows) over the fresh
+    // feed, leaving its cursor pointing past data the list no longer holds.
+    private var loadGeneration = 0
+
+    // Feed-scroll impressions already reported this screen session, so a
+    // post scrolled past twice doesn't get reported twice from the client
+    // side too (the server also dedupes, this just avoids the round trip).
+    private val reportedImpressions = mutableSetOf<String>()
+    private val likeWritesInFlight = mutableSetOf<String>()
 
     // In-context opt-in: tapping Enable requests coarse location only, flips
     // community on, and reloads the feed. Notifications are deliberately NOT
@@ -94,6 +122,13 @@ class NearbyScansActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityNearbyScansBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
+        // Activate only after a visible terminal state is rendered. Starting
+        // during loading leaves the required feed anchor hidden and causes the
+        // coordinator to reschedule forever on empty/error responses.
+        onboardingCoordinator.setContext(null)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.COMMUNITY_SCOPE, binding.cgScope)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.COMMUNITY_FEED, binding.rvNearby)
 
         val baseListPadding = resources.getDimensionPixelSize(R.dimen.space_2xl)
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
@@ -109,7 +144,7 @@ class NearbyScansActivity : AppCompatActivity() {
         // it can't be done offline. The feed itself is guarded inside load().
         enableWhileOnline(connectivity.isOnline, binding.btnEnableCommunity)
         onReconnected(connectivity.isOnline) { load(isRefresh = false) }
-        setupFilterMenu()
+        setupToolbarMenu()
 
         // Nearby (~30 km) / Country / Worldwide scope — reload on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
@@ -126,12 +161,16 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
 
         adapter = NearbyScansAdapter(
-            onSecondOpinion = { item ->
+            onOpen = { item ->
                 // Opening someone else's scan counts as a view (deduped per
                 // viewer server-side).
                 val pseudoId = TelemetryIds.userPseudoId(this)
                 lifecycleScope.launch {
-                    scanRepository.recordCommunityView(item.scanId, pseudoId)
+                    scanRepository.recordCommunityView(
+                        item.scanId,
+                        pseudoId,
+                        this@NearbyScansActivity,
+                    )
                 }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
@@ -139,13 +178,28 @@ class NearbyScansActivity : AppCompatActivity() {
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },
+            onLike = { item -> toggleLike(item) },
         )
-        binding.rvNearby.layoutManager =
-            StaggeredGridLayoutManager(
-                resources.getInteger(R.integer.community_span_count),
-                StaggeredGridLayoutManager.VERTICAL,
-            )
+        val layoutManager = LinearLayoutManager(this)
+        binding.rvNearby.layoutManager = layoutManager
         binding.rvNearby.adapter = adapter
+        // Cursor-page the next (older) batch once the user scrolls near the
+        // end of what's loaded — the classic "5 rows from the bottom" trigger.
+        binding.rvNearby.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0 || isLoadingPage || !hasMorePages) return
+                val lastVisible = layoutManager.findLastVisibleItemPosition()
+                if (lastVisible >= adapter.itemCount - 5) loadMore()
+            }
+
+            // Impressions ("scrolled past", not necessarily opened) report
+            // once scrolling actually settles — not per frame — so a fast
+            // flick through the feed doesn't fire a request per pixel.
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState != RecyclerView.SCROLL_STATE_IDLE) return
+                reportVisibleImpressions(layoutManager)
+            }
+        })
 
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)
         binding.swipeRefresh.setOnRefreshListener { load(isRefresh = true) }
@@ -153,14 +207,59 @@ class NearbyScansActivity : AppCompatActivity() {
         load(isRefresh = false)
     }
 
-    private fun setupFilterMenu() {
+    /** Optimistic like toggle: flips the row immediately, then reconciles
+     *  with the server's authoritative count/state (or rolls back on
+     *  failure). [item] is whatever the adapter last bound, so its
+     *  likeCount/likedByMe are the pre-tap truth to roll back to. */
+    private fun toggleLike(item: CommunityScanItem) {
+        if (!likeWritesInFlight.add(item.scanId)) return
+        val next = !item.likedByMe
+        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
+        adapter.updateLike(item.scanId, optimisticCount, next)
+        lifecycleScope.launch {
+            scanRepository.setCommunityLike(
+                item.scanId,
+                TelemetryIds.userPseudoId(this@NearbyScansActivity),
+                next,
+                this@NearbyScansActivity,
+            )
+                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
+                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
+            likeWritesInFlight.remove(item.scanId)
+        }
+    }
+
+    /** Batch-report every currently visible post not already reported this
+     *  session, capped to [FEED_PAGE_SIZE] * 2 or so — the actual cap that
+     *  matters is the server's 50 per call, applied in
+     *  [ScanRepository.recordCommunityViews]. */
+    private fun reportVisibleImpressions(layoutManager: LinearLayoutManager) {
+        val first = layoutManager.findFirstVisibleItemPosition()
+        val last = layoutManager.findLastVisibleItemPosition()
+        if (first < 0 || last < 0) return
+        val newIds = (first..last).mapNotNull { adapter.itemAt(it)?.scanId }
+            .filter { it.isNotBlank() && it !in reportedImpressions }
+        if (newIds.isEmpty()) return
+        reportedImpressions.addAll(newIds)
+        lifecycleScope.launch {
+            scanRepository.recordCommunityViews(
+                newIds,
+                TelemetryIds.userPseudoId(this@NearbyScansActivity),
+                this@NearbyScansActivity,
+            )
+        }
+    }
+
+    private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.nearby_scans_menu)
-        filterMenuItem = binding.toolbar.menu.findItem(R.id.action_filter)
+        sortMenuItem = binding.toolbar.menu.findItem(R.id.action_sort)
         disableMenuItem = binding.toolbar.menu.findItem(R.id.action_disable_community)
-        // Hidden until a feed loads — filtering an empty screen is a no-op.
-        filterMenuItem?.isVisible = false
+        mapMenuItem = binding.toolbar.menu.findItem(R.id.action_map)
+        // Hidden until a feed loads — sorting an empty screen is a no-op.
+        sortMenuItem?.isVisible = false
         // "Leave community" only makes sense once the user is in it.
         disableMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
+        mapMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_map -> {
@@ -169,8 +268,8 @@ class NearbyScansActivity : AppCompatActivity() {
                     )
                     true
                 }
-                R.id.action_filter -> {
-                    showFilterSheet()
+                R.id.action_sort -> {
+                    showSortSheet()
                     true
                 }
                 R.id.action_disable_community -> {
@@ -192,6 +291,12 @@ class NearbyScansActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
                 CommunityPrefs.setUploadsEnabled(this, false) // also stops opinions
+                // Drop the durable device handle too. Leaving the secret behind
+                // would leave the identity intact and re-adoptable the moment
+                // the user (or any code path) touches the community again —
+                // "you can stop contributing at any time" has to mean the
+                // identifier goes as well, not just the uploads flag.
+                CommunityIdentity.clear(this)
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check")
                 androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check_now")
                 disableMenuItem?.isVisible = false
@@ -217,40 +322,38 @@ class NearbyScansActivity : AppCompatActivity() {
             return
         }
         disableMenuItem?.isVisible = true
+        mapMenuItem?.isVisible = true
         if (!isRefresh) showLoading()
+        // Fresh (re)load starts the cursor over. A pull-to-refresh keeps the
+        // populated list on screen while the location fix resolves, so a
+        // loadMore() can still be in flight (or fire) meanwhile — the
+        // generation bump makes both of them no-ops against this load.
+        nextCursor = null
+        hasMorePages = true
+        val generation = ++loadGeneration
         lifecycleScope.launch {
-            val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             // Refresh location on every (re)load so "nearby" reflects where the
             // user actually is right now. Worldwide needs no anchor, so we skip
             // the location read entirely — the feed then works even when
-            // coarse-location was never granted.
-            val region = if (scope == "worldwide") {
+            // coarse-location was never granted. The resolved region is reused
+            // by loadMore() so every page of one scroll session shares the same
+            // geo anchor instead of drifting as the device moves mid-scroll.
+            currentRegion = if (scope == "worldwide") {
                 null
             } else {
                 runCatching {
                     RegionResolver.resolveRegion(this@NearbyScansActivity)
                 }.getOrNull()
             }
-            val result = scanRepository.communityNearby(
-                country = region?.country,
-                region = region?.locality,
-                lat = region?.lat,
-                lon = region?.lon,
-                // No disease filter — the feed surfaces the whole scope.
-                disease = null,
-                userPseudoId = pseudoId,
-                limit = 100,
-                scope = scope,
-            )
+            val result = fetchPage(cursor = null)
+            // Guard first: a superseded load must not clear the spinner that
+            // belongs to the load which replaced it — that one clears its own.
+            if (generation != loadGeneration) return@launch
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
-                // Belt-and-braces: also drop the user's OWN scans client-side.
-                // The server already excludes by pseudo-id, but a scan uploaded
-                // under a previous install's pseudo-id (after a reinstall) would
-                // slip through — so we additionally hide any item whose globally
-                // unique scan_id matches one in this device's local history.
-                val mine = scanRepository.localClientScanIds()
-                val others = response.items.filter { it.scanId !in mine }
+                nextCursor = response.nextCursor
+                hasMorePages = response.nextCursor != null
+                val others = excludeOwnScans(response.items)
                 when {
                     others.isNotEmpty() -> showFeed(others)
                     // The server couldn't geo-scope the feed (no coords + no
@@ -258,12 +361,69 @@ class NearbyScansActivity : AppCompatActivity() {
                     // never granted / has no fix yet. Prompt to enable location
                     // rather than claim there's nothing nearby.
                     response.locationRequired -> showLocationNeeded()
-                    else -> showState(getString(R.string.similar_scans_empty))
+                    else -> showState(
+                        getString(R.string.similar_scans_empty),
+                        enableOnboarding = true,
+                    )
                 }
             }.onFailure {
                 showState(getString(R.string.community_opinion_error))
             }
         }
+    }
+
+    /** Fetch and append the next (older) page once the user scrolls near the
+     *  end of what's loaded. Silent — no separate loading footer, matching
+     *  the plan's "reuse the existing states" call; a failed page load just
+     *  leaves the feed as it is and lets the next scroll retry. */
+    private fun loadMore() {
+        // No cursor means "page 1" — either nothing has loaded yet or a
+        // (re)load just reset it and is still awaiting its location fix. Either
+        // way, re-requesting page 1 here would append the rows the list already
+        // shows (every post twice) and leave the cursor wherever the last
+        // responder wrote it. hasMorePages covers the exhausted case.
+        val cursor = nextCursor ?: return
+        isLoadingPage = true
+        val generation = loadGeneration
+        lifecycleScope.launch {
+            val result = fetchPage(cursor = cursor)
+            isLoadingPage = false
+            if (generation != loadGeneration) return@launch
+            result.onSuccess { response ->
+                nextCursor = response.nextCursor
+                hasMorePages = response.nextCursor != null
+                val incoming = excludeOwnScans(response.items)
+                val known = allItems.asSequence().map { it.scanId }.toHashSet()
+                allItems = allItems + incoming.filter { known.add(it.scanId) }
+                renderFeed()
+            }
+        }
+    }
+
+    private suspend fun fetchPage(cursor: String?) =
+        scanRepository.communityNearby(
+            country = currentRegion?.country,
+            region = currentRegion?.locality,
+            lat = currentRegion?.lat,
+            lon = currentRegion?.lon,
+            // No disease filter — the feed surfaces the whole scope.
+            disease = null,
+            userPseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity),
+            limit = FEED_PAGE_SIZE,
+            scope = scope,
+            ranking = ranking,
+            cursor = cursor,
+            context = this@NearbyScansActivity,
+        )
+
+    // Belt-and-braces: also drop the user's OWN scans client-side. The
+    // server already excludes by pseudo-id, but a scan uploaded under a
+    // previous install's pseudo-id (after a reinstall) would slip through —
+    // so we additionally hide any item whose globally unique scan_id matches
+    // one in this device's local history.
+    private suspend fun excludeOwnScans(items: List<CommunityScanItem>): List<CommunityScanItem> {
+        val mine = scanRepository.localClientScanIds()
+        return items.filter { it.scanId !in mine }
     }
 
     /** Opt-in prompt shown until the user enables community. */
@@ -275,8 +435,10 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = getString(R.string.community_enable_blurb)
         binding.btnEnableCommunity.visibility = View.VISIBLE
         binding.cgScope.visibility = View.GONE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         disableMenuItem?.isVisible = false
+        mapMenuItem?.isVisible = false
+        onboardingCoordinator.setContext(null)
         binding.rvNearby.visibility = View.GONE
     }
 
@@ -291,101 +453,95 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = getString(R.string.nearby_location_needed)
         binding.btnEnableCommunity.visibility = View.VISIBLE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
+        onboardingCoordinator.setContext(OnboardingContext.COMMUNITY)
     }
 
     private fun showLoading() {
+        onboardingCoordinator.setContext(null)
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
-    private fun showState(message: String) {
+    private fun showState(message: String, enableOnboarding: Boolean = false) {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = message
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
+        onboardingCoordinator.setContext(
+            OnboardingContext.COMMUNITY.takeIf { enableOnboarding },
+        )
     }
 
     private fun showFeed(items: List<CommunityScanItem>) {
         allItems = items
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = true
-        applyFilterAndSort()
+        sortMenuItem?.isVisible = true
+        renderFeed()
+        onboardingCoordinator.setContext(OnboardingContext.COMMUNITY)
     }
 
-    /** Apply the active type filter + date sort and hand the result to the adapter. */
-    private fun applyFilterAndSort() {
-        val filtered = typeFilter?.let { t -> allItems.filter { it.disease == t } } ?: allItems
-        val sorted = if (sortNewestFirst) {
-            filtered.sortedByDescending { it.createdAt }
-        } else {
-            filtered.sortedBy { it.createdAt }
-        }
+    /** Render the server-ordered feed without client-side reordering. */
+    private fun renderFeed() {
         binding.stateLayout.visibility = View.GONE
         binding.rvNearby.visibility = View.VISIBLE
-        adapter.submit(sorted)
+        adapter.submit(allItems)
+        binding.rvNearby.post {
+            (binding.rvNearby.layoutManager as? LinearLayoutManager)
+                ?.let(::reportVisibleImpressions)
+        }
     }
 
     /**
-     * Overlay to sort by date and filter by disease type. The type chips are
-     * built from the diseases actually present in the loaded feed, so every
-     * option yields results; the current selections are pre-checked.
+     * Choose the server-side feed order. Applying a new choice reloads page
+     * one because each ranking has its own opaque cursor contract.
      */
-    private fun showFilterSheet() {
+    private fun showSortSheet() {
         if (allItems.isEmpty()) return
-        val sheet = SheetNearbyFilterBinding.inflate(layoutInflater)
+        val sheet = SheetNearbySortBinding.inflate(layoutInflater)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(sheet.root)
 
-        sheet.cgDate.check(if (sortNewestFirst) R.id.chip_newest else R.id.chip_oldest)
-
-        // "All" + each distinct disease present, ordered by localized label.
-        val allChip = buildTypeChip(sheet.cgType, getString(R.string.filter_all), null)
-        sheet.cgType.addView(allChip)
-        var checkedTypeId = allChip.id
-        allItems.map { it.disease }.distinct()
-            .sortedBy { diseaseLabel(it) }
-            .forEach { key ->
-                val chip = buildTypeChip(
-                    sheet.cgType,
-                    DiseaseLabels.displayName(key, isRu) ?: key,
-                    key,
-                )
-                sheet.cgType.addView(chip)
-                if (key == typeFilter) checkedTypeId = chip.id
-            }
-        sheet.cgType.check(checkedTypeId)
+        sheet.cgSort.check(
+            if (ranking == RANKING_RECENT) {
+                R.id.chip_sort_newest
+            } else {
+                R.id.chip_sort_recommended
+            },
+        )
 
         sheet.btnApply.setOnClickListener {
-            sortNewestFirst = sheet.cgDate.checkedChipId != R.id.chip_oldest
-            typeFilter = sheet.cgType.findViewById<Chip>(sheet.cgType.checkedChipId)
-                ?.tag as? String
-            applyFilterAndSort()
+            val nextRanking = if (sheet.cgSort.checkedChipId == R.id.chip_sort_newest) {
+                RANKING_RECENT
+            } else {
+                RANKING_RECOMMENDED
+            }
             dialog.dismiss()
+            if (nextRanking != ranking) {
+                ranking = nextRanking
+                load(isRefresh = false)
+            }
         }
         dialog.show()
     }
 
-    private fun buildTypeChip(parent: ViewGroup, label: String, key: String?): Chip {
-        val chip = layoutInflater.inflate(R.layout.item_filter_chip, parent, false) as Chip
-        chip.id = View.generateViewId()
-        chip.text = label
-        chip.tag = key
-        return chip
+    private companion object {
+        // First page + every subsequent page. Small enough that a scroll-
+        // triggered fetch feels instant; the server clamps to 50 regardless.
+        const val FEED_PAGE_SIZE = 20
+        const val RANKING_RECOMMENDED = "recommended"
+        const val RANKING_RECENT = "recent"
     }
-
-    private fun diseaseLabel(key: String): String =
-        (DiseaseLabels.displayName(key, isRu) ?: key).lowercase()
 }

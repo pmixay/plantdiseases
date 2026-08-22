@@ -61,13 +61,26 @@ internal fun Context.cardHeading(text: String): TextView = TextView(this).apply 
 }
 
 /**
- * "Label on the left, value on the right" fact row with a tinted icon circle. Used for
- * the About fact grid and the Fertiliser schedule.
+ * A value longer than this cannot share a line with its label: the two columns
+ * are weighted equally, so a full sentence on the right squeezes the left one
+ * to nothing and the row loses its subject — an unlabelled paragraph floating
+ * against the right edge, which is what made the About card read as broken.
+ */
+private const val INLINE_VALUE_MAX_CHARS = 24
+
+/**
+ * Fact row with a tinted icon circle, used by the About fact card and the Fertiliser
+ * schedule. Short values ("Demanding", an NPK ratio) sit on the label's line, right
+ * aligned. Long ones — a native-range sentence, a soil mix — stack UNDER the label
+ * and run the full width of the row instead, so the label always survives and the
+ * paragraph reads left-to-right like the prose it is.
  */
 internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        // TOP, not CENTER_VERTICAL: a wrapped value would otherwise float the
+        // icon to the middle of the block instead of beside its first line.
+        gravity = Gravity.TOP
         setPadding(0, dpx(7), 0, dpx(7))
         addView(
             ImageView(this@factRow).apply {
@@ -80,30 +93,70 @@ internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
             },
             LinearLayout.LayoutParams(dpx(32), dpx(32)),
         )
-        addView(
-            TextView(this@factRow).apply {
-                text = label
-                setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface_secondary))
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body_sm))
-            },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dpx(12)
-                marginEnd = dpx(12)
-            },
-        )
-        addView(
-            TextView(this@factRow).apply {
-                text = value
-                gravity = Gravity.END
-                setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
-        )
+        val labelView = TextView(this@factRow).apply {
+            text = label
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface_secondary))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body_sm))
+        }
+        val valueView = TextView(this@factRow).apply {
+            text = value
+            setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+        }
+        if (value.length > INLINE_VALUE_MAX_CHARS) {
+            valueView.setLineSpacing(dpx(3).toFloat(), 1f)
+            addView(
+                LinearLayout(this@factRow).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(
+                        labelView,
+                        LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ),
+                    )
+                    addView(
+                        valueView,
+                        LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dpx(3) },
+                    )
+                },
+                // 0dp + weight: the column takes whatever the icon leaves, so a
+                // long sentence wraps inside the row instead of widening it.
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = dpx(12) },
+            )
+        } else {
+            valueView.gravity = Gravity.END
+            addView(
+                labelView,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ).apply {
+                    marginStart = dpx(12)
+                    marginEnd = dpx(12)
+                },
+            )
+            addView(
+                // WRAP_CONTENT + equal weights, not 0dp: a 0dp base would split the
+                // row by weight alone and break long RU labels mid-word next to a
+                // short value sitting in dead space. Both sides ask for what they
+                // need first; only the surplus is distributed.
+                valueView,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ),
+            )
+        }
     }
 
 /** A single advice line: coloured dot, then wrapping text. */

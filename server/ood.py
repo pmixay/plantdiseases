@@ -130,10 +130,6 @@ class EmbeddingOODScorer:
             topk = sims[idx]
         return float(1.0 - float(np.mean(topk)))
 
-    def is_ood(self, embedding: np.ndarray) -> bool:
-        s = self.score(embedding)
-        return bool(np.isfinite(s) and s > self.threshold)
-
 
 def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
     """Pull ``ood.embedding`` out of a parsed ``classes.json`` dict.

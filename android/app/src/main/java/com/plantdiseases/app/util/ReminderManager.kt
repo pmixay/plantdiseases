@@ -13,9 +13,16 @@ import java.util.concurrent.TimeUnit
 
 object ReminderManager {
 
+    /** UPDATE preserves an already-running periodic work item's original
+     * period anchor, so a new initial delay would not reliably move the next
+     * firing. Every caller here is explicitly establishing a new cadence. */
+    internal val REANCHOR_POLICY = ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE
+
     /**
      * Schedule a periodic reminder for a plant.
-     * The first trigger fires at [hour]:[minute] on the next available day.
+     * The first trigger fires one full [intervalDays] after the reminder is
+     * created, at [hour]:[minute]. This matches Garden's projected first due
+     * occurrence (care anchor + interval) instead of notifying days early.
      *
      * ``reminderId`` is the PlantReminderEntity row id — threaded
      * through to the worker so each firing can record an event in
@@ -40,7 +47,7 @@ object ReminderManager {
             type,
             intervalDays,
             reminderId,
-            initialDelayMs = CareSchedule.initialDelayMs(hour, minute),
+            initialDelayMs = CareSchedule.delayAfterCareMs(hour, minute, intervalDays),
         )
     }
 
@@ -85,6 +92,43 @@ object ReminderManager {
         )
     }
 
+    /** Restores a recurring reminder after an in-app Undo. Completion had
+     * pushed WorkManager out by a full interval; reusing [schedule] here would
+     * keep the now-restored due/overdue task silent for that whole interval.
+     * Instead, return it to the next available configured wall-clock slot. */
+    fun restoreAfterUndo(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        intervalDays: Int,
+        hour: Int,
+        minute: Int,
+        reminderId: Long = 0L,
+    ) {
+        enqueuePeriodic(
+            context,
+            plantId,
+            plantName,
+            type,
+            intervalDays,
+            reminderId,
+            initialDelayMs = CareSchedule.initialDelayMs(hour, minute),
+        )
+    }
+
+    fun restoreAfterUndo(context: Context, reminder: PlantReminderEntity, plantName: String) =
+        restoreAfterUndo(
+            context = context,
+            plantId = reminder.plantId,
+            plantName = plantName,
+            type = reminder.type,
+            intervalDays = reminder.intervalDays,
+            hour = reminder.hour,
+            minute = reminder.minute,
+            reminderId = reminder.id,
+        )
+
     private fun enqueuePeriodic(
         context: Context,
         plantId: Long,
@@ -102,7 +146,7 @@ object ReminderManager {
             .build()
 
         val request = PeriodicWorkRequestBuilder<PlantReminderWorker>(
-            intervalDays.toLong(),
+            intervalDays.coerceAtLeast(1).toLong(),
             TimeUnit.DAYS,
         )
             .setInputData(inputData)
@@ -111,7 +155,7 @@ object ReminderManager {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             uniqueName(plantId, type, reminderId),
-            ExistingPeriodicWorkPolicy.UPDATE,
+            REANCHOR_POLICY,
             request,
         )
     }
@@ -129,12 +173,14 @@ object ReminderManager {
         plantName: String,
         type: String,
         reminderId: Long,
+        eventId: Long,
     ) {
         val inputData = Data.Builder()
             .putLong(PlantReminderWorker.KEY_PLANT_ID, plantId)
             .putLong(PlantReminderWorker.KEY_REMINDER_ID, reminderId)
             .putString(PlantReminderWorker.KEY_REMINDER_TYPE, type)
             .putString(PlantReminderWorker.KEY_PLANT_NAME, plantName)
+            .putLong(PlantReminderWorker.KEY_EXISTING_EVENT_ID, eventId)
             .build()
 
         val request = OneTimeWorkRequestBuilder<PlantReminderWorker>()
@@ -150,8 +196,10 @@ object ReminderManager {
     }
 
     fun cancel(context: Context, plantId: Long, type: String, reminderId: Long = 0L) {
-        WorkManager.getInstance(context)
-            .cancelUniqueWork(uniqueName(plantId, type, reminderId))
+        val manager = WorkManager.getInstance(context)
+        val name = uniqueName(plantId, type, reminderId)
+        manager.cancelUniqueWork(name)
+        manager.cancelUniqueWork("snooze_$name")
     }
 
     fun cancelReminder(context: Context, reminder: PlantReminderEntity) =
@@ -178,8 +226,8 @@ object ReminderManager {
     /**
      * Unique periodic-work name. The legacy preset types keep the
      * historical ``reminder_{plant}_{type}`` shape so already-enqueued
-     * workers from older app versions are still addressable (UPDATE /
-     * cancel by the same name). Generic reminders may repeat a type
+     * workers from older app versions are still addressable (replacement /
+     * cancellation by the same name). Generic reminders may repeat a type
      * ("custom" twice on one plant), so their name carries the row id.
      */
     private fun uniqueName(plantId: Long, type: String, reminderId: Long = 0L): String =

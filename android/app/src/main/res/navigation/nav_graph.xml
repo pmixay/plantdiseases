@@ -15,11 +15,24 @@
          per-page title the shell sets as pages settle. -->
     <fragment
         android:id="@+id/shellFragment"
-        android:name="com.plantdiseases.app.ui.shell.ShellFragment" />
+        android:name="com.plantdiseases.app.ui.shell.ShellFragment">
+
+        <!-- Guide is the only destination pushed above the tab shell. Keep
+             its motion on the graph action so every entry point uses the
+             same forward/pop pair and a bare destination navigation cannot
+             silently lose the transition again. -->
+        <action
+            android:id="@+id/action_shellFragment_to_guideFragment"
+            app:destination="@id/guideFragment"
+            app:enterAnim="@anim/navigation_forward_enter"
+            app:exitAnim="@anim/navigation_forward_exit"
+            app:popEnterAnim="@anim/navigation_back_enter"
+            app:popExitAnim="@anim/navigation_back_exit" />
+    </fragment>
 
     <!-- Not a bottom tab and not a swipe page: reached from the Home page's
-         tools grid (navigate(R.id.guideFragment)); the bar keeps its last
-         selection while it's open. -->
+         tools grid through the animated shell action above; the bar keeps its
+         last selection while it's open. -->
     <fragment
         android:id="@+id/guideFragment"
         android:name="com.plantdiseases.app.ui.guide.GuideFragment"

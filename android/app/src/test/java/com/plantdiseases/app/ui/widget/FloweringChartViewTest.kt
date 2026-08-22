@@ -113,7 +113,7 @@ class FloweringChartViewTest {
 
     private fun localizedContext(language: String): Context {
         val configuration = Configuration(context.resources.configuration)
-        configuration.setLocale(Locale(language))
+        configuration.setLocale(Locale.forLanguageTag(language))
         return context.createConfigurationContext(configuration)
     }
 }

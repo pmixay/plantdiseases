@@ -15,7 +15,6 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -33,7 +32,10 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -213,15 +215,24 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
     }
 
     private fun setReminderEnabled(reminder: PlantReminderEntity, enabled: Boolean) {
-        lifecycleScope.launch {
-            val updated = reminder.copy(enabled = enabled)
-            plantRepository.saveReminderRow(updated)
-            if (enabled) {
-                ReminderManager.schedule(requireContext(), updated, plant.name)
-            } else {
-                ReminderManager.cancelReminder(requireContext(), updated)
+        val appContext = requireContext().applicationContext
+        val plantName = plant.name
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) {
+                // Enabling creates a fresh WorkManager cadence, so persist the
+                // same anchor the projected Do Today queue will read.
+                val updated = reminder.copy(
+                    enabled = enabled,
+                    createdAt = if (enabled) System.currentTimeMillis() else reminder.createdAt,
+                )
+                plantRepository.saveReminderRow(updated)
+                if (enabled) {
+                    ReminderManager.schedule(appContext, updated, plantName)
+                } else {
+                    ReminderManager.cancelReminder(appContext, updated)
+                }
             }
-            loadReminders()
+            if (isAdded) loadReminders()
         }
     }
 
@@ -376,33 +387,48 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
     }
 
     private fun persistReminder(entity: PlantReminderEntity) {
-        lifecycleScope.launch {
-            // New reminders for the legacy preset types merge into the
-            // existing row of that type (one watering schedule per
-            // plant — care-plan apply and quick-log depend on it).
-            // Everything else is a plain row upsert by id.
-            val savedId = if (entity.id == 0L && ReminderPresets.isLegacyType(entity.type)) {
-                plantRepository.saveReminder(entity)
-            } else {
-                plantRepository.saveReminderRow(entity)
+        val appContext = requireContext().applicationContext
+        val plantName = plant.name
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) {
+                // Saving an enabled reminder replaces its WorkManager schedule.
+                // Re-anchor the database row at the same moment so the Garden
+                // projection cannot show an occurrence earlier than the worker.
+                val anchored = if (entity.enabled) {
+                    entity.copy(createdAt = System.currentTimeMillis())
+                } else {
+                    entity
+                }
+                // New reminders for the legacy preset types merge into the
+                // existing row of that type (one watering schedule per
+                // plant — care-plan apply and quick-log depend on it).
+                // Everything else is a plain row upsert by id.
+                val savedId = if (anchored.id == 0L && ReminderPresets.isLegacyType(anchored.type)) {
+                    plantRepository.saveReminder(anchored)
+                } else {
+                    plantRepository.saveReminderRow(anchored)
+                }
+                val saved = anchored.copy(id = savedId)
+                if (saved.enabled) {
+                    ReminderManager.schedule(appContext, saved, plantName)
+                } else {
+                    ReminderManager.cancelReminder(appContext, saved)
+                }
             }
-            val saved = entity.copy(id = savedId)
-            if (saved.enabled) {
-                ReminderManager.schedule(requireContext(), saved, plant.name)
-            } else {
-                ReminderManager.cancelReminder(requireContext(), saved)
-            }
-            Toast.makeText(requireContext(), R.string.reminder_saved, Toast.LENGTH_SHORT).show()
-            loadReminders()
+            context?.let { Toast.makeText(it, R.string.reminder_saved, Toast.LENGTH_SHORT).show() }
+            if (isAdded) loadReminders()
         }
     }
 
     private fun deleteReminder(reminder: PlantReminderEntity) {
-        lifecycleScope.launch {
-            ReminderManager.cancelReminder(requireContext(), reminder)
-            plantRepository.deleteReminder(reminder.id)
-            Toast.makeText(requireContext(), R.string.reminder_deleted, Toast.LENGTH_SHORT).show()
-            loadReminders()
+        val appContext = requireContext().applicationContext
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) {
+                ReminderManager.cancelReminder(appContext, reminder)
+                plantRepository.deleteReminder(reminder.id)
+            }
+            context?.let { Toast.makeText(it, R.string.reminder_deleted, Toast.LENGTH_SHORT).show() }
+            if (isAdded) loadReminders()
         }
     }
 
@@ -419,54 +445,62 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
      *  - check:     half the watering cadence, capped to [3, 14] days.
      */
     private fun applyCarePlanDefaults(plan: CarePlanResponse) {
-        lifecycleScope.launch {
-            val existingTypes = plantRepository.getReminders(plant.id).map { it.type }.toSet()
-            val defaults = mutableListOf<PlantReminderEntity>()
+        val appContext = requireContext().applicationContext
+        val plantId = plant.id
+        val plantName = plant.name
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val appliedCount = withContext(NonCancellable) {
+                val existingTypes = plantRepository.getReminders(plantId).map { it.type }.toSet()
+                val defaults = mutableListOf<PlantReminderEntity>()
 
-            if (ReminderPresets.TYPE_WATERING !in existingTypes) {
-                plan.wateringDaysInt?.let { days ->
+                if (ReminderPresets.TYPE_WATERING !in existingTypes) {
+                    plan.wateringDaysInt?.let { days ->
+                        defaults += PlantReminderEntity(
+                            plantId = plantId,
+                            type = ReminderPresets.TYPE_WATERING,
+                            intervalDays = days.coerceIn(1, 30),
+                            enabled = true,
+                        )
+                    }
+                }
+                if (ReminderPresets.TYPE_FERTILIZE !in existingTypes && plan.fertiliseWeeks > 0) {
                     defaults += PlantReminderEntity(
-                        plantId = plant.id,
-                        type = ReminderPresets.TYPE_WATERING,
-                        intervalDays = days.coerceIn(1, 30),
+                        plantId = plantId,
+                        type = ReminderPresets.TYPE_FERTILIZE,
+                        intervalDays = (plan.fertiliseWeeks * 7).coerceIn(1, 30),
                         enabled = true,
                     )
                 }
-            }
-            if (ReminderPresets.TYPE_FERTILIZE !in existingTypes && plan.fertiliseWeeks > 0) {
-                defaults += PlantReminderEntity(
-                    plantId = plant.id,
-                    type = ReminderPresets.TYPE_FERTILIZE,
-                    intervalDays = (plan.fertiliseWeeks * 7).coerceIn(1, 30),
-                    enabled = true,
-                )
-            }
-            if (ReminderPresets.TYPE_CHECK !in existingTypes) {
-                val baseDays = plan.wateringDaysInt ?: 7
-                defaults += PlantReminderEntity(
-                    plantId = plant.id,
-                    type = ReminderPresets.TYPE_CHECK,
-                    intervalDays = (baseDays / 2).coerceIn(3, 14),
-                    enabled = true,
-                )
-            }
+                if (ReminderPresets.TYPE_CHECK !in existingTypes) {
+                    val baseDays = plan.wateringDaysInt ?: 7
+                    defaults += PlantReminderEntity(
+                        plantId = plantId,
+                        type = ReminderPresets.TYPE_CHECK,
+                        intervalDays = (baseDays / 2).coerceIn(3, 14),
+                        enabled = true,
+                    )
+                }
 
-            defaults.forEach { entity ->
-                val savedId = plantRepository.saveReminder(entity)
-                ReminderManager.schedule(
-                    requireContext(),
-                    entity.copy(id = savedId),
-                    plant.name,
-                )
+                defaults.forEach { entity ->
+                    val savedId = plantRepository.saveReminder(entity)
+                    ReminderManager.schedule(
+                        appContext,
+                        entity.copy(id = savedId),
+                        plantName,
+                    )
+                }
+                defaults.size
             }
-            if (defaults.isNotEmpty()) {
-                Toast.makeText(
-                    requireContext(),
-                    R.string.care_plan_reminders_applied,
-                    Toast.LENGTH_SHORT,
-                ).show()
+            if (appliedCount > 0) {
+                context?.let {
+                    Toast.makeText(
+                        it,
+                        R.string.care_plan_reminders_applied,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
-            loadReminders()
+            if (isAdded) loadReminders()
         }
     }
 
@@ -502,7 +536,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
                 // Stash the id so the sheet self-heals after recreation.
-                arguments = bundleOf(ARG_PLANT_ID to plant.id)
+                arguments = Bundle().apply { putLong(ARG_PLANT_ID, plant.id) }
             }
             sheet.show(fm, TAG)
         }
@@ -521,7 +555,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
                 this.carePlanDefaults = plan
-                arguments = bundleOf(ARG_PLANT_ID to plant.id)
+                arguments = Bundle().apply { putLong(ARG_PLANT_ID, plant.id) }
             }
             sheet.show(fm, TAG)
         }

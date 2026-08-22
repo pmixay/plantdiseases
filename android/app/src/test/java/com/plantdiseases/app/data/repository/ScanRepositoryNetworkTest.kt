@@ -1,5 +1,7 @@
 package com.plantdiseases.app.data.repository
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ChatRequest
@@ -9,12 +11,18 @@ import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.testutil.FakeScanDao
+import com.plantdiseases.app.util.CommunityIdentity
+import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -29,12 +37,15 @@ import java.io.File
  * `application/json`, so success mocks declare it explicitly — the real
  * server already sends it; Gson never required it.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class ScanRepositoryNetworkTest {
 
     private lateinit var server: MockWebServer
     private lateinit var repo: ScanRepository
     private lateinit var client: PlantApiClient
     private lateinit var imageFile: File
+    private lateinit var appContext: Context
 
     @Before
     fun setup() {
@@ -42,6 +53,9 @@ class ScanRepositoryNetworkTest {
         server.start()
         client = PlantApiClient(server.url("/").toString())
         repo = ScanRepository(FakeScanDao(), client)
+        appContext = ApplicationProvider.getApplicationContext()
+        CommunityPrefs.setUploadsEnabled(appContext, false)
+        CommunityIdentity.clear(appContext)
         imageFile = File.createTempFile("upload", ".jpg")
         imageFile.writeBytes(ByteArray(128) { it.toByte() })
     }
@@ -50,6 +64,24 @@ class ScanRepositoryNetworkTest {
     fun teardown() {
         server.shutdown()
         imageFile.delete()
+    }
+
+    private fun enqueueCommunityAdopt() {
+        CommunityPrefs.enable(appContext)
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"ok":true,"author_id":"au_test","display_name":"Leafy Sage 7","created_at":1,"last_seen_at":1,"status":"active"}""",
+                ),
+        )
+    }
+
+    private fun takeAndAssertCommunityAdopt() {
+        val adopt = server.takeRequest()
+        assertThat(adopt.path).isEqualTo("/api/community/authors/adopt")
+        assertThat(adopt.body.readUtf8())
+            .contains("\"legacy_pseudo_id\":\"${TelemetryIds.userPseudoId(appContext)}\"")
     }
 
     @Test
@@ -466,6 +498,25 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
+    fun identify_napRejection_preservesServerMarker() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"available":false,"results":[],"source":"skipped_nap","organ":"auto"}""",
+                ),
+        )
+
+        val result = runBlocking { repo.identifySpecies(imageFile, organ = "auto") }
+
+        assertThat(result.isSuccess).isTrue()
+        val response = result.getOrThrow()
+        assertThat(response.available).isFalse()
+        assertThat(response.results).isEmpty()
+        assertThat(response.wasRejectedAsNotAPlant).isTrue()
+    }
+
+    @Test
     fun identify_400_mapsToUnsupportedImage() {
         server.enqueue(MockResponse().setResponseCode(400))
         val result = runBlocking { repo.identifySpecies(imageFile) }
@@ -498,6 +549,7 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun uploadCommunityScan_success_sendsRequiredPartsOmitsBlankOptionals() {
+        enqueueCommunityAdopt()
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -511,14 +563,17 @@ class ScanRepositoryNetworkTest {
                 disease = "leaf_spot",
                 confidence = 0.8f,
                 species = null, // null → omitted
+                context = appContext,
             )
         }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.id).isEqualTo(99L)
 
+        takeAndAssertCommunityAdopt()
         val req = server.takeRequest()
         assertThat(req.path).isEqualTo("/api/community/scan")
+        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
         val body = req.body.readUtf8()
         // Quoted parameter values — see the note in the feedback-image test.
         // The doesNotContain assertions have to move with them: against a Ktor
@@ -564,6 +619,48 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("limit=12")
         assertThat(req.path).doesNotContain("region=")
         assertThat(req.path).doesNotContain("disease=")
+    }
+
+    @Test
+    fun communityNearby_recommendedRoundTripsOpaqueCursor() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[],"ranking":"recommended","next_cursor":"r1.next.signature"}"""),
+        )
+        val result = runBlocking {
+            repo.communityNearby(
+                disease = null,
+                userPseudoId = "reader",
+                ranking = "recommended",
+                cursor = "r1.previous.signature",
+            )
+        }
+        assertThat(result.getOrNull()?.ranking).isEqualTo("recommended")
+        assertThat(result.getOrNull()?.nextCursor).isEqualTo("r1.next.signature")
+        val path = server.takeRequest().path.orEmpty()
+        assertThat(path).contains("ranking=recommended")
+        assertThat(path).contains("cursor=r1.previous.signature")
+    }
+
+    @Test
+    fun communityNearby_recentRequestsNewestFirstRanking() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[],"ranking":"recent"}"""),
+        )
+
+        val result = runBlocking {
+            repo.communityNearby(
+                disease = null,
+                userPseudoId = "reader",
+                ranking = "recent",
+            )
+        }
+
+        assertThat(result.getOrThrow().ranking).isEqualTo("recent")
+        assertThat(server.takeRequest().path.orEmpty()).contains("ranking=recent")
     }
 
     @Test
@@ -618,6 +715,7 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun submitCommunityOpinion_success_postsBodyAndParses() {
+        enqueueCommunityAdopt()
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -625,6 +723,7 @@ class ScanRepositoryNetworkTest {
         )
         val result = runBlocking {
             repo.submitCommunityOpinion(
+                appContext,
                 CommunityOpinionRequest(
                     scanId = "sc-2",
                     userPseudoId = "u1",
@@ -634,12 +733,56 @@ class ScanRepositoryNetworkTest {
         }
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.ok).isTrue()
+        takeAndAssertCommunityAdopt()
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/community/opinion")
         val body = req.body.readUtf8()
         assertThat(body).contains("\"scan_id\":\"sc-2\"")
         assertThat(body).contains("\"suggested_disease\":\"rust\"")
+        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
+    }
+
+    @Test
+    fun submitCommunityOpinion_423_mapsToLockedException() {
+        enqueueCommunityAdopt()
+        server.enqueue(MockResponse().setResponseCode(423))
+        val result = runBlocking {
+            repo.submitCommunityOpinion(
+                appContext,
+                CommunityOpinionRequest("sc-locked", "u1", "healthy"),
+            )
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
+        takeAndAssertCommunityAdopt()
+    }
+
+    @Test
+    fun communitySafety_postsReportAndBlockTargets() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"created":true}"""),
+        )
+        val report = runBlocking {
+            repo.reportCommunityContent("reader", "opinion", "co123", "spam_or_misleading")
+        }
+        assertThat(report.getOrNull()?.created).isTrue()
+        val reportRequest = server.takeRequest()
+        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
+        assertThat(reportRequest.body.readUtf8()).contains("\"target_id\":\"co123\"")
+
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"blocked":true}"""),
+        )
+        val block = runBlocking {
+            repo.blockCommunityAuthor("reader", "scan", "cs123")
+        }
+        assertThat(block.getOrNull()?.blocked).isTrue()
+        assertThat(server.takeRequest().path).isEqualTo("/api/community/safety/block")
     }
 
     @Test
@@ -655,32 +798,15 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun getCommunityScanCounts_success_parsesCountMap() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
-        )
-        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
-        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
-        assertThat(counts["sc-1"]?.views).isEqualTo(7)
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/scan-counts")
-    }
-
-    @Test
-    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
-        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
-        assertThat(counts).isEmpty()
-        assertThat(server.requestCount).isEqualTo(0)
-    }
-
-    @Test
     fun recordCommunityView_firesPostWithBody() {
+        enqueueCommunityAdopt()
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-        runBlocking { repo.recordCommunityView("sc-5", "viewer-1") }
+        runBlocking { repo.recordCommunityView("sc-5", "viewer-1", appContext) }
+        takeAndAssertCommunityAdopt()
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/community/view")
+        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
         assertThat(req.body.readUtf8()).contains("\"scan_id\":\"sc-5\"")
     }
 
@@ -692,5 +818,31 @@ class ScanRepositoryNetworkTest {
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/push/register")
         assertThat(req.body.readUtf8()).contains("\"token\":\"fcm-token-xyz\"")
+    }
+
+    @Test
+    fun adoptCommunityAuthor_sendsKeyAsHeaderNotInBody() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"ok":true,"author_id":"au_abc123","display_name":"Leafy Sage 7",
+                       "created_at":1,"last_seen_at":1,"status":"active"}""",
+                ),
+        )
+        val result = runBlocking {
+            repo.adoptCommunityAuthor("f".repeat(64), "Leafy Sage 7", "legacy-reader-7")
+        }
+        assertThat(result.getOrNull()?.authorId).isEqualTo("au_abc123")
+
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/community/authors/adopt")
+        // The key travels as a header — never in the JSON body, never in the URL.
+        assertThat(req.getHeader("X-Community-Author-Key")).isEqualTo("f".repeat(64))
+        val body = req.body.readUtf8()
+        assertThat(body).doesNotContain("f".repeat(64))
+        assertThat(body).contains("\"seed_display_name\":\"Leafy Sage 7\"")
+        assertThat(body).contains("\"legacy_pseudo_id\":\"legacy-reader-7\"")
     }
 }

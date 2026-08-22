@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlantDiseases · Политика конфиденциальности / Privacy Policy</title>
+<meta name="description" content="Политика конфиденциальности приложения PlantDiseases / PlantDiseases privacy policy.">
+<script>
+  // Resolve the colour mode before CSS paints. The activity supplies its
+  // actual AppCompat mode (which may intentionally differ from Android's
+  // system theme); prefers-color-scheme is only the browser fallback.
+  (function () {
+    var match = /[?&]theme=(light|dark)/.exec(location.search);
+    var theme = match ? match[1] :
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --green: #15924A;
+    --active-ink: #fff;
+    --ink: #16241c;
+    --muted: #5c6b62;
+    --bg: #f7faf7;
+    --line: #e2ebe4;
+    --nav-bg: rgba(247,250,247,.9);
+    --control-bg: #fff;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --green: #4ADE80;
+    --active-ink: #052E16;
+    --ink: #F0FDF4;
+    --muted: #9CA3AF;
+    --bg: #0A0F0C;
+    --line: #1F2820;
+    --nav-bg: rgba(10,15,12,.92);
+    --control-bg: #131A14;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, 'Roboto', sans-serif; color: var(--ink); background: var(--bg); }
+  h1, h2, .brand { font-family: system-ui, -apple-system, 'Roboto', sans-serif; }
+  a { color: var(--green); }
+  .nav { position: sticky; top: 0; z-index: 10; background: var(--nav-bg); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav-inner { max-width: 960px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; justify-content: flex-end; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; color: var(--ink); text-decoration: none; }
+  .tile { width: 32px; height: 32px; border-radius: 9px; background: var(--green); display: grid; place-items: center; }
+  .tile svg { width: 20px; height: 20px; }
+  .lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--control-bg); }
+  .lang-toggle button { border: 0; background: transparent; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer; color: var(--muted); }
+  .lang-toggle button.active { background: var(--green); color: var(--active-ink); }
+  .legal { max-width: 860px; margin: 0 auto; padding: 24px 20px 48px; }
+  .legal h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .4em; }
+  .legal h2 { font-size: 1.25rem; margin: 1.8em 0 .5em; }
+  .legal p, .legal li { line-height: 1.65; margin: .5em 0; }
+  .legal ul { padding-left: 1.3em; }
+  .legal .updated { opacity: .7; font-size: .9rem; }
+  footer { border-top: 1px solid var(--line); }
+  .foot-bottom { max-width: 960px; margin: 0 auto; padding: 20px; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="ru" class="active">RU</button>
+      <button data-lang="en">EN</button>
+    </div>
+  </div>
+</nav>
+
+<main class="legal">
+  <h1 data-ru="Политика конфиденциальности" data-en="Privacy Policy">Политика конфиденциальности</h1>
+  <p class="updated" data-ru="Обновлено: август 2026" data-en="Last updated: August 2026">Обновлено: август 2026</p>
+
+  <h2 data-ru="Какие данные мы собираем" data-en="What we collect">Какие данные мы собираем</h2>
+  <ul>
+    <li data-ru="<b>Фотографии сканирования.</b> Снимки растений, которые вы анализируете, сохраняются в анонимизированном виде для улучшения наших моделей диагностики. Снимки «не растение» и размытые кадры не сохраняются."
+        data-en="<b>Scan photos.</b> Plant photos you analyze are stored in anonymized form to improve our diagnosis models. Not-a-plant and blurry shots are not stored."><b>Фотографии сканирования.</b> Снимки растений, которые вы анализируете, сохраняются в анонимизированном виде для улучшения наших моделей диагностики. Снимки «не растение» и размытые кадры не сохраняются.</li>
+    <li data-ru="<b>Отзывы о диагнозе.</b> Оценки «верно / неверно», предложенный вами класс болезни и текстовая заметка; при отрицательном отзыве — фото, к которому он относится."
+        data-en="<b>Diagnosis feedback.</b> Correct/incorrect votes, the disease class you propose and an optional note; for negative feedback, the photo it refers to."><b>Отзывы о диагнозе.</b> Оценки «верно / неверно», предложенный вами класс болезни и текстовая заметка; при отрицательном отзыве — фото, к которому он относится.</li>
+    <li data-ru="<b>Сообщество (по желанию).</b> Если вы делитесь сканом с сообществом — снимок, диагноз и приблизительный регион (страна/город), который вы указали. Мы также храним оставленные вами вторые мнения и заметки, лайки, уникальные показы публикаций, жалобы и блокировки вместе с анонимными идентификаторами, необходимыми для подсчёта без дублей и модерации. Для ограничения злоупотреблений у некоторых действий сохраняется только односторонний отпечаток IP-адреса, а не сам адрес."
+        data-en="<b>Community (opt-in).</b> If you share a scan with the community, we store the photo, diagnosis and approximate region (country/city) you provided. We also store second opinions and notes you submit, likes, unique post impressions, reports and blocks together with anonymous identifiers needed for deduplication and moderation. For abuse controls, some actions retain only a one-way digest of the IP address, not the address itself."><b>Сообщество (по желанию).</b> Если вы делитесь сканом с сообществом — снимок, диагноз и приблизительный регион (страна/город), который вы указали. Мы также храним оставленные вами вторые мнения и заметки, лайки, уникальные показы публикаций, жалобы и блокировки вместе с анонимными идентификаторами, необходимыми для подсчёта без дублей и модерации. Для ограничения злоупотреблений у некоторых действий сохраняется только односторонний отпечаток IP-адреса, а не сам адрес.</li>
+    <li data-ru="<b>Сообщество: постоянный идентификатор.</b> Приложение создаёт на вашем устройстве секретный ключ и связывает с ним ваш псевдоним, публикации, ответы и действия в сообществе, чтобы сохранять авторство и не считать одно действие несколько раз. Ключ не связан с вашим именем, email или номером телефона и не покидает приложение в открытом виде — сервер получает его односторонний отпечаток и дополнительно защищает его серверным преобразованием перед хранением. Идентификатор регистрируется при первом явном действии в сообществе — после включения общего обмена либо когда вы делитесь отдельным сканом или запрашиваете второе мнение — и хранится вместе с псевдонимом и датами первого и последнего обращения. Когда общий обмен с сообществом выключен, идентификатор не отправляется, кроме этих явно выбранных действий с отдельным сканом."
+        data-en="<b>Community: a persistent handle.</b> The app generates a secret key on your device and links it to your nickname, posts, replies and community actions so authorship remains consistent and one action is not counted repeatedly. The key is not tied to your name, email or phone number and never leaves the app in readable form: the server receives a one-way digest and applies an additional server-side transformation before storing it. The handle is registered on your first explicit Community action—after enabling general sharing or when you share a single scan or request a second opinion—and is stored with your nickname and first/last-used dates. When general Community sharing is off, the handle is not sent except for those explicitly chosen single-scan actions."><b>Сообщество: постоянный идентификатор.</b> Приложение создаёт на вашем устройстве секретный ключ и связывает с ним ваш псевдоним, публикации, ответы и действия в сообществе, чтобы сохранять авторство и не считать одно действие несколько раз. Ключ не связан с вашим именем, email или номером телефона и не покидает приложение в открытом виде — сервер получает его односторонний отпечаток и дополнительно защищает его серверным преобразованием перед хранением. Идентификатор регистрируется при первом явном действии в сообществе — после включения общего обмена либо когда вы делитесь отдельным сканом или запрашиваете второе мнение — и хранится вместе с псевдонимом и датами первого и последнего обращения. Когда общий обмен с сообществом выключен, идентификатор не отправляется, кроме этих явно выбранных действий с отдельным сканом.</li>
+    <li data-ru="<b>Отчёты об ошибках.</b> Когда что-то идёт не так (не удался или превысил время анализ, ошибка декодирования снимка, сбой приложения), приложение может отправить анонимный отчёт о проблеме: что именно не сработало, какая модель использовалась, версия приложения и Android, а также короткая цепочка последних действий в приложении. Отчёт не содержит фотографий, местоположения и персональных данных."
+        data-en="<b>Error reports.</b> When something goes wrong (a failed or timed-out analysis, an image-decode error, an app crash), the app may send an anonymous problem report: what failed, which model was used, the app and Android version, and a short trail of recent in-app actions. It contains no photos, no location and no personal data."><b>Отчёты об ошибках.</b> Когда что-то идёт не так (не удался или превысил время анализ, ошибка декодирования снимка, сбой приложения), приложение может отправить анонимный отчёт о проблеме: что именно не сработало, какая модель использовалась, версия приложения и Android, а также короткая цепочка последних действий в приложении. Отчёт не содержит фотографий, местоположения и персональных данных.</li>
+  </ul>
+
+  <h2 data-ru="Как данные анонимизируются" data-en="How data is anonymized">Как данные анонимизируются</h2>
+  <ul>
+    <li data-ru="Все метаданные фотографий (EXIF, включая GPS-координаты) удаляются перед сохранением: изображение перекодируется и уменьшается."
+        data-en="All photo metadata (EXIF, including GPS coordinates) is stripped before storage: the image is re-encoded and downscaled.">Все метаданные фотографий (EXIF, включая GPS-координаты) удаляются перед сохранением: изображение перекодируется и уменьшается.</li>
+    <li data-ru="К сохранённым снимкам не привязываются ваше настоящее имя, email, точное местоположение или открытый IP-адрес. Аккаунт в приложении по-прежнему не требуется. Публикации, ответы и действия в сообществе связываются с постоянным анонимным идентификатором устройства, поэтому другие участники могут узнавать одного автора, а сервер — удалять дубли лайков и показов, хотя ваша настоящая личность остаётся нераскрытой. Диагностические сканы, отзывы и материалы сообщества также содержат анонимный идентификатор установки, поэтому записи с одного устройства могут быть связаны между собой."
+        data-en="Stored photos are not linked to your real name, email, precise location or readable IP address. The app still requires no account. Community posts, replies and actions are linked to a persistent anonymous device handle, so members can recognize one author and the server can deduplicate likes and impressions, while your real identity remains undisclosed. Diagnosis scans, feedback and community material also carry an anonymous per-install identifier, so records sent from one device may be linkable to one another.">К сохранённым снимкам не привязываются ваше настоящее имя, email, точное местоположение или открытый IP-адрес. Аккаунт в приложении по-прежнему не требуется. Публикации, ответы и действия в сообществе связываются с постоянным анонимным идентификатором устройства, поэтому другие участники могут узнавать одного автора, а сервер — удалять дубли лайков и показов, хотя ваша настоящая личность остаётся нераскрытой. Диагностические сканы, отзывы и материалы сообщества также содержат анонимный идентификатор установки, поэтому записи с одного устройства могут быть связаны между собой.</li>
+    <li data-ru="<b>Сканы на устройстве остаются приватными.</b> При работе офлайн-модели (Aqua) снимок анализируется полностью на вашем телефоне — он не загружается на сервер, не сохраняется у нас и не попадает в ленту сообщества."
+        data-en="<b>On-device scans stay private.</b> When the offline (Aqua) model is used, the photo is analyzed entirely on your phone — it is not uploaded to the server, not stored by us, and never enters the community feed."><b>Сканы на устройстве остаются приватными.</b> При работе офлайн-модели (Aqua) снимок анализируется полностью на вашем телефоне — он не загружается на сервер, не сохраняется у нас и не попадает в ленту сообщества.</li>
+    <li data-ru="Приблизительный регион для ленты сообщества берётся только из указанного вами устройством местоположения (страна/город, округлённые координаты) — мы не определяем местоположение по IP-адресу."
+        data-en="The approximate region for the community feed comes only from the location your device provides (country/city, rounded coordinates) — we never derive location from your IP address.">Приблизительный регион для ленты сообщества берётся только из указанного вами устройством местоположения (страна/город, округлённые координаты) — мы не определяем местоположение по IP-адресу.</li>
+  </ul>
+
+  <h2 data-ru="Зачем мы используем данные" data-en="Why we use the data">Зачем мы используем данные</h2>
+  <p data-ru="Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение). Анонимные отчёты об ошибках используются только для поиска и устранения сбоев и повышения стабильности приложения."
+     data-en="Anonymized photos and feedback are used solely to train, evaluate and improve our plant-disease recognition models, and to power app features (the community feed, second opinions). Anonymous error reports are used only to find and fix bugs and improve app reliability.">Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение). Анонимные отчёты об ошибках используются только для поиска и устранения сбоев и повышения стабильности приложения.</p>
+
+  <h2 data-ru="Сколько данные хранятся" data-en="Retention">Сколько данные хранятся</h2>
+  <p data-ru="Непроверенные записанные сканы автоматически удаляются через 90 дней; общий объём хранимых снимков ограничен. Подтверждённые данные могут публиковаться в составе открытого обучающего датасета — только в анонимизированном виде."
+     data-en="Unreviewed recorded scans are automatically deleted after 90 days; the total stored volume is capped. Verified data may be published as part of an open training dataset — anonymized form only.">Непроверенные записанные сканы автоматически удаляются через 90 дней; общий объём хранимых снимков ограничен. Подтверждённые данные могут публиковаться в составе открытого обучающего датасета — только в анонимизированном виде.</p>
+
+  <h2 data-ru="Удаление ваших данных" data-en="Deleting your data">Удаление ваших данных</h2>
+  <p data-ru="<b>Публикации и действия в сообществе</b> связаны с постоянным анонимным идентификатором устройства и показанным рядом псевдонимом. Переустановка приложения, очистка его данных или выход из сообщества удаляют локальный ключ, но не удаляют автоматически уже опубликованные материалы и серверную запись идентификатора. Чтобы запросить удаление однозначно определимой записи, свяжитесь с нами."
+     data-en="<b>Community posts and actions</b> are linked to the persistent anonymous device handle and the nickname shown beside them. Reinstalling the app, clearing its data or leaving the community removes the local key, but does not automatically delete material already posted or the server-side handle record. Contact us to request deletion of a record that can be identified unambiguously."><b>Публикации и действия в сообществе</b> связаны с постоянным анонимным идентификатором устройства и показанным рядом псевдонимом. Переустановка приложения, очистка его данных или выход из сообщества удаляют локальный ключ, но не удаляют автоматически уже опубликованные материалы и серверную запись идентификатора. Чтобы запросить удаление однозначно определимой записи, свяжитесь с нами.</p>
+  <p data-ru="<b>Диагностические снимки и отзывы</b>, отправленные для обучения моделей, хранятся без вашего имени, аккаунта и точного местоположения, но содержат анонимный идентификатор установки — тот же, что прикрепляется к сканам, которыми вы делитесь с сообществом. Удалить отдельную запись из этого набора прямо в приложении сейчас нельзя; напишите нам (контакты ниже), и мы поможем в тех случаях, когда запись можно однозначно определить."
+     data-en="<b>Diagnosis scans and feedback</b> submitted to train our models are stored without your name, account or precise location, but they do carry an anonymous per-install identifier — the same one attached to the scans you share with the community. The app provides no way to delete an individual record from that set today; contact us (details below) and we can help in cases where a record can be identified unambiguously."><b>Диагностические снимки и отзывы</b>, отправленные для обучения моделей, хранятся без вашего имени, аккаунта и точного местоположения, но содержат анонимный идентификатор установки — тот же, что прикрепляется к сканам, которыми вы делитесь с сообществом. Удалить отдельную запись из этого набора прямо в приложении сейчас нельзя; напишите нам (контакты ниже), и мы поможем в тех случаях, когда запись можно однозначно определить.</p>
+  <p data-ru="Что мы делаем взамен: данные хранятся защищённо, обезличиваются перед сохранением (см. раздел выше), непроверенные сканы автоматически удаляются через 90 дней, а обмен с сообществом можно отключить в любой момент на экране сообщества. Обратите внимание: отключение обмена с сообществом не останавливает запись диагностических снимков для улучшения моделей — снимки, которые вы анализируете онлайн, по-прежнему сохраняются в обезличенном виде, как описано в разделе «Какие данные мы собираем»."
+     data-en="What we do instead: data is stored securely, anonymized before storage (see the section above), unreviewed scans are deleted automatically after 90 days, and community sharing can be turned off at any time on the community screen. Note that turning community sharing off does not stop diagnosis scans being recorded for model improvement — photos you analyze online are still stored in anonymized form, as described in &quot;What we collect&quot;.">Что мы делаем взамен: данные хранятся защищённо, обезличиваются перед сохранением (см. раздел выше), непроверенные сканы автоматически удаляются через 90 дней, а обмен с сообществом можно отключить в любой момент на экране сообщества. Обратите внимание: отключение обмена с сообществом не останавливает запись диагностических снимков для улучшения моделей — снимки, которые вы анализируете онлайн, по-прежнему сохраняются в обезличенном виде, как описано в разделе «Какие данные мы собираем».</p>
+  <p data-ru="Чтобы удалить публикации в сообществе или задать вопрос о других данных, напишите нам — контакты ниже."
+     data-en="To delete your community posts, or to ask about any other data, contact us — details below.">Чтобы удалить публикации в сообществе или задать вопрос о других данных, напишите нам — контакты ниже.</p>
+
+  <h2 data-ru="Важное о диагнозах" data-en="About diagnoses">Важное о диагнозах</h2>
+  <p data-ru="PlantDiseases — справочный инструмент. Диагнозы формируются моделью машинного обучения и могут быть неточными; приложение честно показывает неуверенность модели. Для ценных растений и серьёзных случаев обращайтесь к специалисту-агроному."
+     data-en="PlantDiseases is a guidance tool. Diagnoses are produced by a machine-learning model and can be wrong; the app honestly surfaces model uncertainty. For valuable plants and serious cases, consult a professional agronomist.">PlantDiseases — справочный инструмент. Диагнозы формируются моделью машинного обучения и могут быть неточными; приложение честно показывает неуверенность модели. Для ценных растений и серьёзных случаев обращайтесь к специалисту-агроному.</p>
+
+  <h2 data-ru="Контакты" data-en="Contact">Контакты</h2>
+  <p data-ru="Вопросы о данных и приватности, а также запросы на удаление: напишите нам на <a href='mailto:gavel8980@gmail.com'>gavel8980@gmail.com</a>."
+     data-en="Data &amp; privacy questions, including deletion requests: email us at <a href='mailto:gavel8980@gmail.com'>gavel8980@gmail.com</a>.">Вопросы о данных и приватности, а также запросы на удаление: напишите нам на <a href="mailto:gavel8980@gmail.com">gavel8980@gmail.com</a>.</p>
+</main>
+
+
+<script>
+  (function () {
+    var nodes = document.querySelectorAll('[data-ru]');
+    var buttons = document.querySelectorAll('.lang-toggle button');
+    function applyLang(lang) {
+      nodes.forEach(function (el) {
+        var val = el.getAttribute('data-' + lang);
+        if (val == null) return;
+        el.innerHTML = val; // author-controlled strings, safe to inject as markup
+      });
+      document.documentElement.setAttribute('lang', lang);
+      buttons.forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+      });
+      try { localStorage.setItem('pd-lang', lang); } catch (e) {}
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { applyLang(b.getAttribute('data-lang')); });
+    });
+    // The activity appends ?lang=ru|en so the policy opens in the app's
+    // language. Fall back to the last manual choice, then Russian.
+    var m = /[?&]lang=(ru|en)/.exec(location.search);
+    var saved = m ? m[1] : 'ru';
+    if (!m) { try { saved = localStorage.getItem('pd-lang') || 'ru'; } catch (e) {} }
+    if (saved === 'en') applyLang('en');
+  })();
+</script>
+</body>
+</html>

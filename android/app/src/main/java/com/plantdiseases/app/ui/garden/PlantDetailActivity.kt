@@ -11,12 +11,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnNextLayout
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
@@ -25,6 +28,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
@@ -33,15 +37,24 @@ import com.plantdiseases.app.ui.garden.detail.DetailHeaderController
 import com.plantdiseases.app.ui.garden.detail.DetailJournalController
 import com.plantdiseases.app.ui.garden.detail.DetailPhotosController
 import com.plantdiseases.app.ui.garden.detail.DetailTimelineController
+import com.plantdiseases.app.ui.common.sectionRow
 import com.plantdiseases.app.ui.garden.detail.dp
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.widget.LunarCalendarView
+import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.YearMonth
 import javax.inject.Inject
 
 /**
@@ -58,6 +71,10 @@ class PlantDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPlantDetailBinding
     private lateinit var content: LinearLayout
+    private lateinit var overviewContainer: LinearLayout
+    private lateinit var careContainer: LinearLayout
+    private lateinit var historyContainer: LinearLayout
+    private lateinit var galleryContainer: LinearLayout
     private lateinit var timelineContainer: LinearLayout
     private lateinit var photosContainer: LinearLayout
     private lateinit var journalContainer: LinearLayout
@@ -71,6 +88,10 @@ class PlantDetailActivity : AppCompatActivity() {
     // reloads from the repository by plantId).
     private var restoredTabIndex = 0
     private var restoredScrollY = 0
+    private var lunarNavigationState: LunarCalendarView.NavigationState? = null
+    private var lunarCalendarView: LunarCalendarView? = null
+    private var loadJob: Job? = null
+    private var scrollRestorePosted = false
 
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
     private var lastWateredAt: Long? = null
@@ -80,6 +101,9 @@ class PlantDetailActivity : AppCompatActivity() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var careRepository: CareRepository
 
     @Inject
     lateinit var onboardingState: OnboardingStateStore
@@ -100,6 +124,7 @@ class PlantDetailActivity : AppCompatActivity() {
             activity = this,
             plantRepository = plantRepository,
             scanRepository = scanRepository,
+            careRepository = careRepository,
             content = content,
             onReload = ::loadPlant,
             onClearWateringSuggestion = { wateringSuggestion = null },
@@ -109,12 +134,11 @@ class PlantDetailActivity : AppCompatActivity() {
     private val photos by lazy { DetailPhotosController(this) }
     private val journal by lazy { DetailJournalController(this, plantRepository, ::loadPlant) }
 
-    /** "New scan" → opens the camera, runs the capture through the normal
-     *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
-     *  resulting scan to THIS plant (via EXTRA_PLANT_ID) so the photo lands
-     *  in the plant's Photos + Timeline without a manual "Add to garden".
-     *  Replaces the old journal-only gallery photo import — a "scan" means
-     *  the camera. The captured file lives in the same plant_images dir the
+    /** "New scan" → lets the user pick camera or gallery, runs either
+     *  through the normal disease-analysis flow ([AnalysisActivity]) and
+     *  auto-attaches the resulting scan to THIS plant (via EXTRA_PLANT_ID)
+     *  so the photo lands in the plant's Photos + Timeline without a manual
+     *  "Add to garden". Both paths write into the same plant_images dir the
      *  in-app scanner uses, so the saved scan persists identically. */
     private var pendingScanFile: java.io.File? = null
 
@@ -139,6 +163,31 @@ class PlantDetailActivity : AppCompatActivity() {
                 R.string.camera_permission_needed,
                 Toast.LENGTH_SHORT,
             ).show()
+        }
+    }
+
+    /** Gallery-import branch of "New scan" — GetContent needs no runtime
+     *  permission, so this has no camera-permission gate. Copies the picked
+     *  Uri into our own files dir the same way CameraFragment's gallery
+     *  import does (a transient content:// grant may not survive the
+     *  activity hop), then runs it through the same analysis path as a
+     *  fresh capture. */
+    private val pickGalleryScan = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importScanFromGallery(uri)
+    }
+
+    private fun importScanFromGallery(uri: Uri) {
+        lifecycleScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                ImageUtils.copyUriToFile(this@PlantDetailActivity, uri)?.also {
+                    ImageUtils.downscaleForCropInPlace(it.absolutePath)
+                }
+            }
+            if (file != null) {
+                launchAnalysisForScan(file)
+            } else {
+                Toast.makeText(this@PlantDetailActivity, R.string.image_load_error, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -170,15 +219,63 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun tryPersistRead(uri: Uri): Boolean = try {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         true
-    } catch (e: SecurityException) {
-        android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
+    } catch (_: SecurityException) {
+        // Do not log the URI: document-provider paths can contain user data.
+        android.util.Log.w("PlantDetail", "Persistable URI grant refused")
         Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
         false
     }
 
-    /** Entry point for the "New scan" action tile: ensure the camera
-     *  permission, then capture. */
+    /** Entry point for the "New scan" action tile: let the user choose a
+     *  fresh camera capture or an existing photo, then run either through
+     *  the same analysis path. Same icon + title + chevron row style as the
+     *  "To Garden" attach dialog (GardenAttachController) rather than a bare
+     *  setItems list, so the two choices read as tappable instead of as
+     *  disabled-looking text floating over the hero card. */
     private fun requestNewScan() {
+        lateinit var dialog: AlertDialog
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity), 20.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity))
+        }
+        column.addView(
+            TextView(this).apply {
+                text = getString(R.string.new_scan_hint)
+                textSize = 13f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                setPadding(0, 0, 0, 12.dp(this@PlantDetailActivity))
+            },
+        )
+        column.addView(
+            sectionRow(
+                title = getString(R.string.take_photo),
+                subtitle = null,
+                iconRes = R.drawable.ic_scan,
+                onClick = {
+                    dialog.dismiss()
+                    requestCameraScan()
+                },
+            ),
+        )
+        column.addView(
+            sectionRow(
+                title = getString(R.string.gallery),
+                subtitle = null,
+                iconRes = R.drawable.ic_gallery,
+                onClick = {
+                    dialog.dismiss()
+                    pickGalleryScan.launch("image/*")
+                },
+            ),
+        )
+        dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.new_scan)
+            .setView(column)
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun requestCameraScan() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -252,13 +349,14 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
         restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
+        pendingScanFile = savedInstanceState
+            ?.getString(KEY_PENDING_SCAN_PATH)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it) }
+        lunarNavigationState = savedInstanceState?.let(::readLunarNavigationState)
         buildLayout()
         onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
         loadPlant()
-        // Best-effort scroll restore once the content has been laid out.
-        if (restoredScrollY > 0) {
-            binding.detailScroll.post { binding.detailScroll.scrollTo(0, restoredScrollY) }
-        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -267,7 +365,19 @@ class PlantDetailActivity : AppCompatActivity() {
             outState.putInt(KEY_TAB, tabLayout.selectedTabPosition.coerceAtLeast(0))
         }
         if (::binding.isInitialized) {
-            outState.putInt(KEY_SCROLL, binding.detailScroll.scrollY)
+            // If the repository-backed content has not rendered yet, the
+            // ScrollView is still empty and reports 0. Preserve the original
+            // target through another recreation instead of overwriting it.
+            outState.putInt(
+                KEY_SCROLL,
+                restoredScrollY.takeIf { it > 0 } ?: binding.detailScroll.scrollY,
+            )
+        }
+        pendingScanFile?.absolutePath?.let { outState.putString(KEY_PENDING_SCAN_PATH, it) }
+        (lunarCalendarView?.navigationState() ?: lunarNavigationState)?.let { state ->
+            outState.putInt(KEY_LUNAR_YEAR, state.shownMonth.year)
+            outState.putInt(KEY_LUNAR_MONTH, state.shownMonth.monthValue)
+            outState.putLong(KEY_LUNAR_SELECTED_DAY, state.selectedDate.toEpochDay())
         }
     }
 
@@ -337,9 +447,18 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun loadPlant() {
-        lifecycleScope.launch {
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val plant = plantRepository.getPlant(plantId)
             if (plant == null) {
+                // Reachable from a notification-centre row up to 30 days after
+                // the plant was deleted — a bare finish() just flashes an empty
+                // toolbar, so say what happened.
+                Toast.makeText(
+                    this@PlantDetailActivity,
+                    R.string.plant_no_longer_available,
+                    Toast.LENGTH_SHORT,
+                ).show()
                 finish()
                 return@launch
             }
@@ -349,10 +468,34 @@ class PlantDetailActivity : AppCompatActivity() {
             wateringSuggestion = plantRepository.adaptiveWateringSuggestion(plantId)
             lastWateredAt = plantRepository.lastReminderDoneAt(plantId, "watering")
             render(plant, scans, journalEntries)
+            restoreScrollAfterContentRender()
         }
     }
 
-    private fun render(
+    /**
+     * The old onCreate `ScrollView.post` ran while the repository load was
+     * still suspended and the content container was empty, so rotation always
+     * snapped back to the top. Post only after render has rebuilt the complete
+     * tab hierarchy, then consume the saved target exactly once.
+     */
+    private fun restoreScrollAfterContentRender() {
+        val target = restoredScrollY
+        if (target <= 0 || scrollRestorePosted) return
+        scrollRestorePosted = true
+        binding.detailScroll.doOnNextLayout {
+            binding.detailScroll.scrollTo(0, target)
+            restoredScrollY = 0
+            scrollRestorePosted = false
+        }
+    }
+
+    /** Overview / Care / History / Gallery — see docs/ROADMAP.md "Garden
+     *  refactor" §Plant profile. History deliberately stacks Timeline
+     *  then Journal rather than a single chronologically-interleaved
+     *  feed: the two controllers keep their own independent rendering,
+     *  which is far lower-risk than rewriting both to emit into one
+     *  merged list without a working local compiler to verify it. */
+    private suspend fun render(
         plant: PlantEntity,
         scans: List<ScanEntity>,
         journalEntries: List<PlantJournalEntity>,
@@ -363,68 +506,78 @@ class PlantDetailActivity : AppCompatActivity() {
         header.bind(plantId, plant)
         extraCards.bindPlantId(plantId)
 
+        val activePlan = careRepository.activePlan(plant.id)
+        val health = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
+
+        lunarNavigationState = lunarCalendarView?.navigationState() ?: lunarNavigationState
         content.removeAllViews()
         toolbarTitle.text = plant.name
-        // Order is primary-first: identity & quick actions; the
-        // time-sensitive nudge; the diagnosis; the care plan; the
-        // contextual guide link; THEN the tabs. Light Meter +
-        // Doctor used to live above the tabs but they're rare
-        // touches — moving them below lets the user reach the core
-        // data (Timeline / Photos / Journal) in one scroll.
-        val summaryAnchor = header.buildHeader(plant, scans, journalEntries)
+        val summaryAnchor = header.buildHeader(plant, scans, journalEntries, health)
         val actionsAnchor = header.buildActionRow()
         content.addView(summaryAnchor)
         content.addView(actionsAnchor)
-        extraCards.buildLastWateredStrip(lastWateredAt)?.let { content.addView(it) }
-        extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { content.addView(it) }
-        extraCards.buildProgressionCard(scans, currentPlant)?.let { content.addView(it) }
-        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
-        content.addView(careAnchor)
-        extraCards.buildGuideLink(scans)?.let { content.addView(it) }
+
         val historyAnchor = header.buildTabs(
-            timelineContainer = { timelineContainer },
-            photosContainer = { photosContainer },
-            journalContainer = { journalContainer },
+            overviewContainer = { overviewContainer },
+            careContainer = { careContainer },
+            historyContainer = { historyContainer },
+            galleryContainer = { galleryContainer },
         ).also { tabLayout = it }
         content.addView(historyAnchor)
 
-        timelineContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        journalContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        photosContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
-        }
-        content.addView(timelineContainer)
-        content.addView(journalContainer)
-        content.addView(photosContainer)
+        overviewContainer = tabContainer()
+        careContainer = tabContainer().apply { visibility = View.GONE }
+        historyContainer = tabContainer().apply { visibility = View.GONE }
+        galleryContainer = tabContainer().apply { visibility = View.GONE }
+        content.addView(overviewContainer)
+        content.addView(careContainer)
+        content.addView(historyContainer)
+        content.addView(galleryContainer)
         applyRestoredTabSelection()
 
-        // Secondary surfaces — pushed below the tabs so the
-        // primary-actions area stays scannable.
-        content.addView(extraCards.buildLightMeterEntry(plant))
-        content.addView(extraCards.buildWaterCalculatorEntry(plant))
-        val assistantAnchor = extraCards.buildDoctorEntry(plant, scans)
-        content.addView(assistantAnchor)
+        // ── Overview ──────────────────────────────────────────────────
+        overviewContainer.addView(extraCards.buildHealthCard(plant, scans))
+        extraCards.buildTreatmentPlanCard(plant)?.let { overviewContainer.addView(it) }
+        overviewContainer.addView(buildAddObservationEntry())
+        extraCards.buildProgressionCard(scans, currentPlant)?.let { overviewContainer.addView(it) }
+        extraCards.buildGuideLink(scans)?.let { overviewContainer.addView(it) }
+        overviewContainer.addView(sectionLabel(R.string.lunar_title))
+        overviewContainer.addView(
+            LunarCalendarView(this).apply {
+                setSpecies(plant.scientificName, plant.commonName ?: plant.species)
+                lunarNavigationState?.let { state -> restoreNavigationState(state) }
+                onRequestScrollTo = { target ->
+                    val rect = android.graphics.Rect()
+                    target.getDrawingRect(rect)
+                    binding.detailScroll.offsetDescendantRectToMyCoords(target, rect)
+                    binding.detailScroll.smoothScrollTo(0, rect.top)
+                }
+            }.also { lunarCalendarView = it },
+        )
 
+        // ── Care ──────────────────────────────────────────────────────
+        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
+        careContainer.addView(careAnchor)
+        extraCards.buildLastWateredStrip(lastWateredAt)?.let { careContainer.addView(it) }
+        extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { careContainer.addView(it) }
+        careContainer.addView(extraCards.buildLightMeterEntry(plant))
+        careContainer.addView(extraCards.buildWaterCalculatorEntry(plant))
+        val assistantAnchor = extraCards.buildDoctorEntry(plant)
+        careContainer.addView(assistantAnchor)
+
+        // ── History — Timeline then Journal, both visible together ──────
+        timelineContainer = tabContainer()
+        historyContainer.addView(sectionLabel(R.string.timeline))
+        historyContainer.addView(timelineContainer)
+        journalContainer = tabContainer()
+        historyContainer.addView(sectionLabel(R.string.plant_journal))
+        historyContainer.addView(journalContainer)
         timeline.renderTimeline(timelineContainer, plantId, scans)
         journal.renderJournal(journalContainer, plantId, journalEntries)
+
+        // ── Gallery ───────────────────────────────────────────────────
+        photosContainer = tabContainer()
+        galleryContainer.addView(photosContainer)
         photos.renderPhotos(photosContainer, scans, journalEntries)
 
         onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_SUMMARY, summaryAnchor)
@@ -439,10 +592,57 @@ class PlantDetailActivity : AppCompatActivity() {
         onboardingCoordinator.setContext(OnboardingContext.GARDEN_PLANT_DETAILS)
     }
 
+    private fun sectionLabel(@StringRes textRes: Int): View = TextView(this).apply {
+        text = getString(textRes).uppercase()
+        textSize = 11f
+        letterSpacing = 0.06f
+        setTextColor(getColor(R.color.on_surface_secondary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = 16.dp(this@PlantDetailActivity) }
+    }
+
+    private fun tabContainer(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = 14.dp(this@PlantDetailActivity) }
+    }
+
+    private fun buildAddObservationEntry(): View = TextView(this).apply {
+        text = getString(R.string.add_observation)
+        textSize = 13f
+        setTextColor(getColor(R.color.primary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        setPadding(4.dp(this@PlantDetailActivity), 10.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity), 4.dp(this@PlantDetailActivity))
+        isClickable = true
+        isFocusable = true
+        setOnClickListener {
+            Haptics.tick(this@PlantDetailActivity)
+            header.showNoteDialog()
+        }
+    }
+
     private fun applyRestoredTabSelection() {
-        if (restoredTabIndex in 1 until tabLayout.tabCount) {
+        if (restoredTabIndex in 0 until tabLayout.tabCount) {
             tabLayout.getTabAt(restoredTabIndex)?.select()
         }
+    }
+
+    private fun readLunarNavigationState(bundle: Bundle): LunarCalendarView.NavigationState? {
+        if (!bundle.containsKey(KEY_LUNAR_YEAR) || !bundle.containsKey(KEY_LUNAR_SELECTED_DAY)) return null
+        return runCatching {
+            LunarCalendarView.NavigationState(
+                shownMonth = YearMonth.of(
+                    bundle.getInt(KEY_LUNAR_YEAR),
+                    bundle.getInt(KEY_LUNAR_MONTH),
+                ),
+                selectedDate = LocalDate.ofEpochDay(bundle.getLong(KEY_LUNAR_SELECTED_DAY)),
+            )
+        }.getOrNull()
     }
 
     companion object {
@@ -450,5 +650,9 @@ class PlantDetailActivity : AppCompatActivity() {
 
         private const val KEY_TAB = "plant_detail_tab"
         private const val KEY_SCROLL = "plant_detail_scroll"
+        private const val KEY_LUNAR_YEAR = "plant_detail_lunar_year"
+        private const val KEY_LUNAR_MONTH = "plant_detail_lunar_month"
+        private const val KEY_LUNAR_SELECTED_DAY = "plant_detail_lunar_selected_day"
+        private const val KEY_PENDING_SCAN_PATH = "plant_detail_pending_scan_path"
     }
 }

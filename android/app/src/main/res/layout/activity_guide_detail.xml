@@ -73,7 +73,7 @@
                     android:layout_weight="1"
                     android:fontFamily="sans-serif-medium"
                     android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_headline" />
+                    android:textSize="@dimen/text_title" />
             </LinearLayout>
 
             <TextView

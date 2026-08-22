@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A single room card in the Garden tab's Rooms pane. Deliberately flatter
+    than item_plant_card (surface_container background, no elevation-driven
+    shadow beyond 1dp) so the visual hierarchy reads container-then-item:
+    this card holds plants, item_plant_card-style rows are the plants.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/room_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_md"
+    android:clickable="true"
+    android:focusable="true"
+    android:longClickable="true"
+    app:cardBackgroundColor="@color/surface_container"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="1dp"
+    app:strokeWidth="0dp"
+    app:rippleColor="@color/primary_light">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="72dp"
+        android:orientation="vertical"
+        android:padding="@dimen/space_lg">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_icon_circle">
+
+                <ImageView
+                    android:id="@+id/room_icon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_room"
+                    android:contentDescription="@null"
+                    app:tint="@color/primary" />
+
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/room_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_md"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title"
+                android:fontFamily="sans-serif-medium"
+                tools:text="Кабинет" />
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="@dimen/space_sm"
+                android:src="@drawable/ic_chevron_right"
+                android:contentDescription="@null"
+                app:tint="@color/on_surface_secondary" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/room_plant_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:layout_marginStart="56dp"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:paddingVertical="2dp"
+            android:background="@drawable/bg_stat_pill"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_body_sm"
+            tools:text="3 plants" />
+
+        <!-- Up to 3 thumbnails, or a single "no plants yet" line — populated
+             at bind time by GardenFragment.buildRoomCard. -->
+        <LinearLayout
+            android:id="@+id/room_thumb_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:orientation="horizontal" />
+
+        <LinearLayout
+            android:id="@+id/room_empty_hint_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_sm"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_add"
+                android:contentDescription="@null"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/room_empty_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:text="@string/room_empty_plants"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

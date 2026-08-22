@@ -40,7 +40,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="@dimen/space_md"
-            android:textSize="@dimen/text_title"
+            android:textSize="@dimen/text_title_sm"
             android:textColor="@color/on_surface"
             android:fontFamily="sans-serif-medium" />
 
@@ -56,10 +56,14 @@
 
     </LinearLayout>
 
+    <!-- No maxHeight here: NestedScrollView (a FrameLayout) ignores that
+         attribute entirely, so it was dead code. Height is instead capped
+         by the sheet opening STATE_EXPANDED with skipCollapsed = true
+         (GuideDetailSheet.onStart) — the sheet grows to the screen's
+         available height and this scroller handles the rest. -->
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:maxHeight="500dp">
+        android:layout_height="wrap_content">
 
         <LinearLayout
             android:id="@+id/ll_sections"

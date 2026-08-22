@@ -12,6 +12,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.util.InAppReviewManager
 import kotlinx.coroutines.launch
 
 /**
@@ -25,6 +26,7 @@ class CarePlanController(
     private val binding: ActivityResultBinding,
     private val scanRepository: ScanRepository,
     private val plantRepository: PlantRepository,
+    private val reviewManager: InAppReviewManager,
 ) {
     private var card: CarePlanCardView? = null
 
@@ -117,6 +119,9 @@ class CarePlanController(
                 activity.getString(R.string.care_plan_reminders_applied),
                 Toast.LENGTH_SHORT,
             ).show()
+            // Turning a care plan into scheduled reminders is another genuine
+            // engaged-user moment — see InAppReviewManager for the shared cooldown.
+            reviewManager.maybeRequestReview()
         }
     }
 

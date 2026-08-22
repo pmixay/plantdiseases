@@ -59,14 +59,10 @@ class GalleryFragment : Fragment() {
 
         adapter = GalleryAdapter(
             onClick = { item ->
-                val intent = Intent(requireContext(), ResultActivity::class.java).apply {
-                    putExtra(ResultActivity.EXTRA_SCAN_ID, item.id)
-                    // Tapping a row with unseen opinions jumps straight to them.
-                    if (item.newOpinions > 0) {
-                        putExtra(ResultActivity.EXTRA_OPEN_OPINIONS, true)
-                    }
-                }
-                startActivity(intent)
+                startActivity(
+                    Intent(requireContext(), ResultActivity::class.java)
+                        .putExtra(ResultActivity.EXTRA_SCAN_ID, item.id),
+                )
             },
             onDelete = { item ->
                 deleteItem(item.id)
@@ -82,8 +78,6 @@ class GalleryFragment : Fragment() {
             Haptics.tick(requireContext())
             confirmClearHistory()
         }
-
-        binding.swipeRefresh.setOnRefreshListener { loadScans() }
 
         binding.btnFirstScan.setOnClickListener {
             // Select the Scan bottom-nav tab (routes through MainActivity) rather
@@ -196,8 +190,8 @@ class GalleryFragment : Fragment() {
         if (!isFirstLoad) registerOnboardingAnchors(filtered.isEmpty(), allScans.isEmpty())
 
         // Only run the staggered entry animation for user-driven changes and
-        // the first load — not when community badges arrive a moment later and
-        // re-submit the same list, which made the whole grid re-animate.
+        // the first load — a silent resume refresh passes animate=false so
+        // the already-shown grid doesn't replay it.
         if (animate) binding.rvGallery.scheduleLayoutAnimation()
     }
 
@@ -209,7 +203,6 @@ class GalleryFragment : Fragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            binding.swipeRefresh.isRefreshing = !isFirstLoad
             // NAP / blur rejects never belong in the gallery. Their rows exist
             // briefly (they back the reject's result screen + "this is a
             // plant" feedback) and are swept after 48 h; this filter keeps
@@ -226,43 +219,7 @@ class GalleryFragment : Fragment() {
                 isFirstLoad = false
             }
 
-            binding.swipeRefresh.isRefreshing = false
             applyFilter(animate = runStagger)
-            loadCommunityBadges()
-        }
-    }
-
-    /**
-     * Lazily fetch community activity (opinions + per-viewer-deduped views) for
-     * this install's shared scans and re-render with badges. Best-effort: when
-     * community is off, nothing was shared, or the call fails, the list simply
-     * stays unbadged.
-     */
-    private fun loadCommunityBadges() {
-        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
-        val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
-        if (ids.isEmpty()) return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val counts = scanRepository.getCommunityScanCounts(ids)
-            if (counts.isEmpty() || _binding == null) return@launch
-            val ctx = requireContext()
-            allScans = allScans.map { item ->
-                val c = counts[item.clientScanId]
-                if (c != null) {
-                    // "New" = opinions the user hasn't opened this scan to see.
-                    val viewed = com.plantdiseases.app.util.OpinionPrefs
-                        .viewedOpinions(ctx, item.clientScanId)
-                    item.copy(
-                        communityOpinions = c.opinions,
-                        communityViews = c.views,
-                        newOpinions = (c.opinions - viewed).coerceAtLeast(0),
-                    )
-                } else {
-                    item
-                }
-            }
-            // Re-render with badges but don't replay the grid entry animation.
-            applyFilter(animate = false)
         }
     }
 
@@ -295,8 +252,8 @@ class GalleryFragment : Fragment() {
         super.onResume()
         // onViewCreated already did the first load (this fires synchronously
         // right after it, while isFirstLoad is still true → skip, no double
-        // load). On genuine returns it refreshes silently: animate=false so the
-        // already-shown grid doesn't blink through the entry stagger again.
+        // load). Every genuine return refreshes automatically and silently:
+        // no pull-to-refresh gesture, spinner, or replayed entry animation.
         if (!isFirstLoad) loadScans(animate = false)
     }
 

@@ -173,7 +173,7 @@ cards + `/api/feedback` acceptance exist, but the head doesn't predict them yet.
 
 ## Conventions cheat-sheet
 
-- **Lint/format:** `ruff` — line-length 110, target `py311`, rules `E,F,I,B`,
+- **Lint/format:** `ruff` — line-length 110, target `py314`, rules `E,F,I,B`,
   ignore `E501,B008`, notebook excluded. Run `cd server && ruff check .`.
 - **Tests:** `pytest` (45 files); `cd server && pytest -q`. Mirror existing
   invariant tests when you touch the contract. `tests/conftest.py` swaps in a
