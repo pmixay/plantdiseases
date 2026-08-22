@@ -84,6 +84,9 @@ plugins {
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
-task("clean", Delete::class) {
+// `tasks.register` rather than the eager `task(...)`: the latter is deprecated
+// (it builds the task even on runs that never use it) and configuration
+// avoidance is the whole point of the replacement.
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
