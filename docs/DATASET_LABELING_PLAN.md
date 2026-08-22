@@ -20,9 +20,14 @@ ingestion. Roadmap: `docs/ROADMAP.md`; per-run metrics: `server/models/MODEL_CAR
 
 - **Supply (train):** every class folder (incl. the `healthy/` + `not_a_plant/`
   hard-negative folders) is train data.
-- **Eval (held-out):** §2 holds out a deterministic hash fraction into
-  `val_realworld`/`val_indomain` + `temperature_cal`/`conformal_cal`, group-aware
-  (held-out source-disjoint from train).
+- **Eval (held-out):** §2 first carves a stable `holdout` (`HOLDOUT_PERMILLE = 300`,
+  i.e. 30% of eval-eligible supplement, by sha1 bucket of the group key), then draws
+  `val_realworld` / `val_indomain` / `temperature_cal` / `conformal_cal` by ratio.
+  Every split is group-aware on **`(source, plant_id)`**, so all crops of one photo
+  land on one side. The splits are **group-disjoint, not source-disjoint**: `supplement`
+  is in the `allowed_sources` of all four *and* in train. Source-disjointness is a
+  separate claim — it is about the supplement versus the external training-corpus
+  sources (see Acceptance criteria).
 
 Rows are agent-judged (`verified_by=agent_vision`), so the gate is a **proxy**
 until verified production volume exists.
@@ -69,8 +74,8 @@ matching disk exactly. **The published build is current and complete.**
 | viral_disease | 29 | 29 | 1.00 | 652 | 0 | — |
 | pests | 21 | 21 | 1.00 | 320 | 4 | — |
 
-**Benchmark leakage: zero.** Every row pHashed against the 213-cluster OOD benchmark
-at Hamming ≤ 6. Nothing matches. The eval set is outside the training corpus, now
+**Benchmark leakage: zero.** Every row pHashed against the OOD benchmark at Hamming ≤ 6
+(the check ran against v1's 213 clusters; v2's 182 are a subset, so it still holds). Nothing matches. The eval set is outside the training corpus, now
 measured rather than assumed — and the tool exits non-zero if that ever stops being
 true, because a leak does not merely inflate a metric, it removes our ability to
 notice the metric is inflated (see the `aditisalvi04` deny-list entry).
@@ -129,11 +134,16 @@ in `model_card.json → source_inventory.per_split_subject_domain` the first run
 collected. Domain policy lives entirely in the offline labeling pipeline; the runtime gate stays
 bundle-derived (a rebuilt OOD bank on the broader in-distribution).
 
-Two weight comments in §4 now lag the policy and should be revisited **with evidence, not
-reflex**: `doctorp_pepper` is down-weighted 0.8 (prior 0.5) because "pepper is a container
-CROP", and `kaggle_ornamental` sits at 1.0. If domestic edibles are in-domain, pepper's
-down-weight is arguing against the deployment distribution. Leave both alone until 2.7.0 gives
-a baseline — changing sampler weights and the corpus in the same run makes the A/B unreadable.
+One weight comment in §4 still lags the policy: `doctorp_pepper` is down-weighted 0.8
+(prior 0.5) because "pepper is a container CROP", and if domestic edibles are in-domain that
+argues against the deployment distribution. Still open, but low priority.
+
+> **`kaggle_ornamental` is SETTLED — do not revisit.** 2.7.1 ran it as its single knob:
+> down-weighting 1.0 → 0.35 moved never-trained ornamental scorch recall by *exactly nothing*
+> (0.065 argmax / 0.000 served, identical to 2.7.0 to three decimals) and cost healthy
+> (served healthy recall 0.947 → 0.861, false-disease-fire 0.046 → 0.119, McNemar p=0.0074).
+> Reverted to 1.0. **Sampler weights as a class are a falsified lever** — 2.7.3's
+> regime-aware within-class reweighting then failed the same way (below).
 
 ### Original v2.6.12 pivot (kept for the record)
 
@@ -366,13 +376,14 @@ v7 eval; let v8's clean benchmark guide any further move.
    they were fitting the shipped temperature and conformal q̂.** Routing precedence:
    boundary first, then `eval_ok`; anything else (blank, unrecognised, absent from the
    manifest) routes train-only — an unknown verdict must never *promote* a row into a
-   held-out slice. Expect eval/cal slices to **shrink** and train to grow on this run;
-   that is the fix working, not a regression.
+   held-out slice. **Measured: the slices GREW** (nutrient 30→77, scorch 45→107, gray_mold
+   57→82, powdery 66→99 versus the supplement-less run) — the supplement adds more than
+   the routing withholds, even with 695 rows held back.
    **Fallback:** a build that predates `split_hint` but carries `confidence` routes on
    `confidence >= 0.80` instead — the same floor the hint is derived from, so the fix
    works without waiting on a re-upload. Only a build with *neither* column raises.
-   Measured on the currently-published manifest: **1,502 eval-eligible / 340 train-only
-   / 697 boundary**, and the 340 are exactly the sub-floor positives the item asks for
+   Measured on the *then*-published v7-era manifest (superseded; the published v8 routes
+   **1,907 / 695 / 787**): 1,502 eval-eligible / 340 train-only / 697 boundary, and the 340 are exactly the sub-floor positives the item asks for
    (gray_mold 75, leaf_scorch 112, nutrient 113, plus 40 hard-negatives).
 
 ## ✅ RESOLVED — the stale-upload incident (2026-08-05 → 2026-08-07)
