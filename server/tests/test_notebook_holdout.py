@@ -279,15 +279,26 @@ def test_regime_multiplier_preserves_the_class_draw_share():
     """The 2.7.3 sampler change must move WHICH scorch images are drawn, not
     how much scorch is drawn.
 
-    Boosting a quarter of a class 3x without normalising also raises the whole
-    class's draw share ~1.5x, which would (a) make the run untestable — a gain
+    Boosting a quarter of a class without correcting for it also raises the
+    class's own draw share, which would (a) make the run unreadable — a gain
     could not be attributed between "the dull stratum transfers" and "more
-    scorch overall" — and (b) silently desynchronise the LogitAdjustment prior,
-    which assumes log_prior matches the batch distribution it is trained under.
+    scorch overall" — and (b) desynchronise the LogitAdjustment prior, which
+    assumes log_prior matches the batch distribution it trains under.
+
+    The correction must be on the SOURCE-WEIGHTED sum, not the row count. The
+    sampler weight is source_weight * multiplier, so a count-preserving
+    multiplier only preserves the class's share when the boosted rows happen to
+    share the mean source weight of the rest — and scorch draws from sources
+    weighted 0.35 to 1.2. The first version of this normalised on the count and
+    could move the class prior ~30% while logging that it had not.
     """
     src = _section_source("def regime_multipliers")
-    assert "scale = len(rows) / float(sum(mult[i] for i in rows))" in src, \
-        "the per-class normalisation is gone; the sampler now moves the class prior too"
+    assert "def _normalise_class_weights" in src, \
+        "the class-weight correction is gone; the sampler now moves the class prior too"
+    assert "per_class_old[y] / new" in src, \
+        "normalisation must divide by the source-WEIGHTED class total"
+    assert "scale = len(rows) / float(sum(mult[i] for i in rows))" not in src, \
+        "count-based normalisation is back; it does not survive source weighting"
     assert "regime_mult=_regime_mult" in src, "the multiplier is computed but not passed"
     assert "REGIME_UPWEIGHT_CLASSES" in _section_source("MODEL_VERSION ="), "the knob left §1"
 
