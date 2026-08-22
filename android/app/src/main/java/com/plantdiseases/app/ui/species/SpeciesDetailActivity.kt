@@ -38,6 +38,7 @@ import com.plantdiseases.app.ui.common.bulletRow
 import com.plantdiseases.app.ui.common.cardColumn
 import com.plantdiseases.app.ui.common.cardHeading
 import com.plantdiseases.app.ui.common.factRow
+import com.plantdiseases.app.ui.common.rowDivider
 import com.plantdiseases.app.ui.common.sectionCard
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -217,11 +218,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private var sections: List<Section> = emptyList()
 
     /**
-     * Builds the section list and wires each header. Defaults: About and Care
-     * open, everything else closed — the screen should still answer "what is
-     * this plant and how do I keep it alive?" without a single tap, while the
-     * long tail (fertiliser, problems, flowering, range, lunar) stays folded
-     * so the page is scannable.
+     * Builds the section list and wires each header. About opens by default and
+     * the long tail (fertiliser, problems, flowering, range, lunar) stays folded
+     * so the page is scannable. Care is not in this list at all — it is a plain
+     * always-open card, because the care plan is the answer to "how do I keep
+     * this alive?" and hiding it behind a chevron hid the whole point.
      */
     private fun setupExpandableProfileSections(savedInstanceState: Bundle?) {
         fun restored(key: String, default: Boolean) =
@@ -233,12 +234,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.ivAboutChevron, binding.aboutBody,
                 R.string.section_about_title, R.string.section_expand, R.string.section_collapse,
                 restored(STATE_ABOUT_EXPANDED, default = true),
-            ),
-            Section(
-                STATE_CARE_EXPANDED, binding.cardCare, binding.careHeader,
-                binding.ivCareChevron, binding.careBody,
-                R.string.section_care_title, R.string.section_expand, R.string.section_collapse,
-                restored(STATE_CARE_EXPANDED, default = true),
             ),
             Section(
                 STATE_FERTILISER_EXPANDED, binding.cardFertiliser, binding.fertiliserHeader,
@@ -326,31 +321,44 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val column = cardColumn()
         card.addView(column)
 
-        column.addView(
-            factRow(R.drawable.ic_garden, getString(R.string.about_fact_scientific), scientificName),
-        )
-        column.addView(
-            factRow(
-                R.drawable.ic_guide,
-                getString(R.string.about_fact_group),
-                getString(categoryLabelRes(category)),
-            ),
-        )
-        nativeRangeSummary?.let { range ->
-            column.addView(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
-        }
         val difficultyRes = when (PlantFacts.difficulty(carePlanSnapshot, category)) {
             1 -> R.string.about_difficulty_easy
             2 -> R.string.about_difficulty_moderate
             else -> R.string.about_difficulty_demanding
         }
-        column.addView(
-            factRow(
-                R.drawable.ic_shield_check,
-                getString(R.string.about_fact_difficulty),
-                getString(difficultyRes),
-            ),
-        )
+        val rows = buildList {
+            add(
+                factRow(
+                    R.drawable.ic_garden,
+                    getString(R.string.about_fact_scientific),
+                    scientificName,
+                ),
+            )
+            add(
+                factRow(
+                    R.drawable.ic_guide,
+                    getString(R.string.about_fact_group),
+                    getString(categoryLabelRes(category)),
+                ),
+            )
+            nativeRangeSummary?.let { range ->
+                add(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
+            }
+            add(
+                factRow(
+                    R.drawable.ic_shield_check,
+                    getString(R.string.about_fact_difficulty),
+                    getString(difficultyRes),
+                ),
+            )
+        }
+        // Ruled between rows: the native-range row is a wrapped paragraph while
+        // its neighbours are one-liners, and without a rule the block read as
+        // one collapsed run of text rather than four separate facts.
+        rows.forEachIndexed { index, row ->
+            if (index > 0) column.addView(rowDivider())
+            column.addView(row)
+        }
         host.addView(card)
     }
 
@@ -655,12 +663,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            // Unlike Result and garden detail, this screen already folds the
-            // card under its own "Care" section header. Leaving the card's
-            // accordion on stacked a second chevron directly under the first
-            // and shipped it closed, so an open Care section still showed
-            // nothing but a title. Details keep their own toggle.
+            // Nothing on this screen folds the plan away: the Care section is
+            // a plain card, so the card's own accordion would be a chevron over
+            // already-visible content, and "Show details" would leave the
+            // richest half of the plan (red flags, setup, checkpoints) behind a
+            // second tap. Both off — the whole plan is simply on screen.
             accordionEnabled = false
+            detailsCollapsible = false
         }
         binding.careSlot.removeAllViews()
         binding.careSlot.addView(careCard)
@@ -958,11 +967,16 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.listDiseases.removeAllViews()
         if (aiItems.isNotEmpty()) {
             aiItems.forEach { item ->
-                // Match by class key first, then by display name, so the row
-                // picks up the same icon as the disease guide/book instead of
-                // the generic placeholder.
-                val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
-                    ?: DiseaseCatalog.guideItemForName(item.name)
+                // Display name FIRST, then the class key. The key is the
+                // model's pick from a fixed list, so when the list has no
+                // entry for the condition it picks the nearest one it was
+                // given — "Root rot" came back tagged nutrient_deficiency and
+                // this row deep-linked (and iconed) the wrong article. An
+                // exact guide-title match is the same words, so it cannot be
+                // a near miss; the key stays as the fallback for names the
+                // guide words differently, and for other languages.
+                val guide = DiseaseCatalog.guideItemForName(item.name)
+                    ?: item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                 addDiseaseRow(
                     name = item.name.orEmpty(),
                     note = item.note,
@@ -1055,7 +1069,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
         const val EXTRA_COMMON_NAME = "extra_common_name"
         private const val STATE_ABOUT_EXPANDED = "state_about_expanded"
-        private const val STATE_CARE_EXPANDED = "state_care_expanded"
         private const val STATE_FERTILISER_EXPANDED = "state_fertiliser_expanded"
         private const val STATE_TIPS_EXPANDED = "state_tips_expanded"
         private const val STATE_DISEASES_EXPANDED = "state_diseases_expanded"

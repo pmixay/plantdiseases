@@ -6,7 +6,7 @@
     stack of collapsible sections:
 
         About       encyclopedia blurb + Wikipedia link   (open by default)
-        Care        CarePlanCardView from /api/care-plan  (open by default)
+        Care        CarePlanCardView from /api/care-plan  (always shown, not collapsible)
         Fertiliser  feeding/NPK/soil off that same plan
         Diseases    AI common problems, else the bundled guide
         Flowering   /api/species-profile
@@ -17,6 +17,9 @@
     stays visible while its body expands — and they are all driven by
     SpeciesDetailActivity.Section over ExpandableSectionAnimator. Adding one
     means copying a card here and adding a row to that list, nothing else.
+    Care is the deliberate exception: same card shape, but no chevron and no
+    Section row, because folding the care plan away is folding away the
+    reason the screen exists.
     Pet toxicity and the community-scans strip stay uncollapsed: both are
     short, and toxicity is a safety note that should not be behind a tap.
 
@@ -321,9 +324,6 @@
                             android:id="@+id/care_header"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:background="?attr/selectableItemBackground"
-                            android:clickable="true"
-                            android:focusable="true"
                             android:gravity="center_vertical"
                             android:minHeight="@dimen/species_info_touch_target"
                             android:orientation="horizontal">
@@ -358,23 +358,15 @@
                                     android:textColor="@color/on_surface_secondary"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
-
-                            <ImageView
-                                android:id="@+id/iv_care_chevron"
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
-                                android:layout_marginStart="@dimen/space_sm"
-                                android:contentDescription="@null"
-                                android:importantForAccessibility="no"
-                                android:src="@drawable/ic_chevron_down"
-                                app:tint="@color/primary" />
                         </LinearLayout>
 
+                        <!-- Always visible: Care is not a collapsible section.
+                             The plan is the point of this screen, so it is a
+                             plain card with nothing to unfold. -->
                         <FrameLayout
                             android:id="@+id/care_body"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:visibility="gone">
+                            android:layout_height="wrap_content">
 
                             <FrameLayout
                                 android:id="@+id/care_slot"
