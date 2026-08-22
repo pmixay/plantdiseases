@@ -1,7 +1,5 @@
 <div align="center">
 
-[English](README.md) | [Русский](README.ru.md)
-
 # 🌿 PlantDiseases
 
 **AI-powered plant disease detection for houseplants and garden ornamentals — on-device camera, cloud inference, bilingual care plans.**
@@ -268,7 +266,7 @@ plantdiseases/
 
 [Unlicense](https://unlicense.org) — public domain, free for any use.
 
-The Unlicense covers first-party code. Third-party model weights (DINOv2,
-Ultralytics YOLOv8), datasets (PlantVillage, PlantDoc, iNaturalist, COCO,
-Open Images), and runtime libraries remain under their own licenses — see
-[`NOTICE`](NOTICE) and [`THIRD_PARTY.md`](THIRD_PARTY.md).
+The Unlicense covers first-party code. Third-party model weights (DINOv2 —
+Apache-2.0, Ultralytics YOLOv8 — AGPL-3.0, used at training/export time only),
+datasets (PlantVillage, PlantDoc, iNaturalist, COCO, Open Images), and runtime
+libraries remain under their own licenses.
