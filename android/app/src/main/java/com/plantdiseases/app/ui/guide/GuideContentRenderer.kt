@@ -2,6 +2,9 @@ package com.plantdiseases.app.ui.guide
 
 import android.content.Context
 import android.graphics.Typeface
+import android.text.Spannable
+import android.text.Spanned
+import android.text.style.LeadingMarginSpan
 import android.util.TypedValue
 import android.view.View
 import android.widget.ImageView
@@ -113,6 +116,7 @@ object GuideContentRenderer {
                 textSize = 15f
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 setLineSpacing(dp(ctx, 3).toFloat(), 1f)
+                applyHangingIndent(this, dp(ctx, 20))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -130,6 +134,30 @@ object GuideContentRenderer {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = dp(ctx, 12) }
             addView(col)
+        }
+    }
+
+    /** Each "• " / "1. " line in [tv]'s (already-set) text is its own
+     *  paragraph — give every paragraph a 0/[indentPx] leading margin so a
+     *  wrapped continuation line aligns under the item's own text instead
+     *  of falling back to the left edge under the bullet/number. A single
+     *  span across the whole block won't do this: LeadingMarginSpan only
+     *  treats its OWN first line as unindented, so one span per paragraph
+     *  is required for every item to get its own hanging indent. */
+    private fun applyHangingIndent(tv: TextView, indentPx: Int) {
+        val text = tv.text as? Spannable ?: return
+        var start = 0
+        while (start <= text.length) {
+            val end = text.indexOf('\n', start).let { if (it == -1) text.length else it }
+            if (end > start) {
+                text.setSpan(
+                    LeadingMarginSpan.Standard(0, indentPx),
+                    start,
+                    end,
+                    Spanned.SPAN_INCLUSIVE_EXCLUSIVE,
+                )
+            }
+            start = end + 1
         }
     }
 

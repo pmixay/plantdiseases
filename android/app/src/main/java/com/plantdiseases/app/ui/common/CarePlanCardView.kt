@@ -66,6 +66,37 @@ class CarePlanCardView @JvmOverloads constructor(
             updateAccordionAccessibility()
         }
 
+    /**
+     * Cleared by hosts that already wrap the card in an expandable section of
+     * their own (Species detail folds it under "Care"). The card's accordion
+     * would be a second chevron over the same content one row below the
+     * host's — two closed levels to open before anything is readable. With it
+     * off the header is a plain title and the summary is always visible, so
+     * "Show details" is the single level of truncation left.
+     */
+    var accordionEnabled: Boolean = true
+        set(value) {
+            field = value
+            accordionChevron.visibility = if (value) View.VISIBLE else View.GONE
+            accordionHeader.isClickable = value
+            accordionHeader.isFocusable = value
+            if (!value) setSectionExpanded(expanded = true, animate = false)
+            updateAccordionAccessibility()
+        }
+
+    /**
+     * Cleared by hosts that want the plan at a glance and nothing more
+     * (Species detail): "Show details" disappears and the verbose v2 panel —
+     * red flags, setup checklist, checkpoints, season note — is never built.
+     * Those belong on a plant you actually own, not on a species page whose
+     * job is "what does keeping this alive look like?".
+     */
+    var detailsEnabled: Boolean = true
+        set(value) {
+            field = value
+            applyDetailsState()
+        }
+
     init {
         radius = 20.dp().toFloat()
         cardElevation = 0f
@@ -258,9 +289,9 @@ class CarePlanCardView @JvmOverloads constructor(
             }
         )
         noteBody = TextView(context).apply {
-            textSize = 13f
+            textSize = 14f
             setTextColor(context.getColor(R.color.on_hero))
-            setLineSpacing(2.dp().toFloat(), 1f)
+            setLineSpacing(3.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -270,7 +301,7 @@ class CarePlanCardView @JvmOverloads constructor(
         statusContainer.addView(noteContainer)
 
         followUpView = TextView(context).apply {
-            textSize = 12f
+            textSize = 13f
             setTextColor(context.getColor(R.color.on_hero_secondary))
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
@@ -357,23 +388,38 @@ class CarePlanCardView @JvmOverloads constructor(
             animate = animate,
         ) {
             statusContainer.visibility = if (expanded) View.VISIBLE else View.GONE
-            detailsContainer.visibility = if (expanded && detailsExpanded && hasDetails) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+            applyDetailsState()
         }
         updateAccordionAccessibility()
     }
 
+    /**
+     * Single source of truth for the detail panel. The toggle only exists
+     * while details are collapsible; the panel itself additionally needs the
+     * card's own section open (it is a sibling of the gradient, not a child
+     * of the container the accordion hides).
+     */
+    private fun applyDetailsState() {
+        val available = detailsEnabled && hasDetails
+        detailsToggle.visibility = if (available) View.VISIBLE else View.GONE
+        val show = available && sectionExpanded && detailsExpanded
+        detailsContainer.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     private fun updateAccordionAccessibility() {
-        accordionHeader.contentDescription = context.getString(
-            R.string.species_info_toggle_content_description,
-            titleView.text?.toString().orEmpty(),
+        // Nothing to announce when the header no longer toggles anything —
+        // leave TalkBack to read the title and subtitle as ordinary text.
+        accordionHeader.contentDescription = if (accordionEnabled) {
             context.getString(
-                if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
-            ),
-        )
+                R.string.species_info_toggle_content_description,
+                titleView.text?.toString().orEmpty(),
+                context.getString(
+                    if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
+                ),
+            )
+        } else {
+            null
+        }
     }
 
     private fun toggleDetails() {
@@ -382,11 +428,7 @@ class CarePlanCardView @JvmOverloads constructor(
             container = verticalStack,
             expanded = detailsExpanded,
         ) {
-            detailsContainer.visibility = if (sectionExpanded && detailsExpanded && hasDetails) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+            applyDetailsState()
         }
         detailsToggle.text = context.getString(
             if (detailsExpanded) {
@@ -407,9 +449,9 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun resetDetailsExpansion() {
         detailsExpanded = false
         hasDetails = false
-        detailsContainer.visibility = View.GONE
         detailsToggle.text = context.getString(R.string.care_plan_show_details)
         detailsToggle.setIconResource(R.drawable.ic_chevron_down)
+        applyDetailsState()
     }
 
     fun showLoading(speciesHint: String?) {
@@ -550,13 +592,15 @@ class CarePlanCardView @JvmOverloads constructor(
 
         // Build v2-field details panel and toggle visibility based on
         // whether any v2 field is populated.
-        val rendered = applyV2Details(plan)
+        // Not built at all when details are off — the panel is the expensive
+        // half of a bind (a 14-row checklist and a timeline), and a host that
+        // will never reveal it should not pay for it.
+        val rendered = detailsEnabled && applyV2Details(plan)
         detailsExpanded = false
         hasDetails = rendered
         detailsToggle.text = context.getString(R.string.care_plan_show_details)
         detailsToggle.setIconResource(R.drawable.ic_chevron_down)
-        detailsToggle.visibility = if (rendered) View.VISIBLE else View.GONE
-        detailsContainer.visibility = View.GONE
+        applyDetailsState()
     }
 
     /** Render the rich v2 care-plan fields into [detailsContainer].
@@ -677,9 +721,9 @@ class CarePlanCardView @JvmOverloads constructor(
             outer.addView(
                 TextView(context).apply {
                     text = "•  $item"
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.disease_red))
-                    setLineSpacing(3.dp().toFloat(), 1f)
+                    setLineSpacing(4.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -736,7 +780,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
+            ).apply { topMargin = 18.dp() }
         }
         chips.forEach { chip ->
             outer.addView(chip)
@@ -778,7 +822,7 @@ class CarePlanCardView @JvmOverloads constructor(
         text.addView(
             TextView(context).apply {
                 this.text = label
-                textSize = 10f
+                textSize = 11f
                 letterSpacing = 0.08f
                 setTextColor(context.getColor(R.color.on_surface_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -787,7 +831,7 @@ class CarePlanCardView @JvmOverloads constructor(
         text.addView(
             TextView(context).apply {
                 this.text = value
-                textSize = 14f
+                textSize = 15f
                 setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(
@@ -813,16 +857,16 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(sectionHeader(labelRes, iconRes))
         items.forEach { item ->
             outer.addView(
                 TextView(context).apply {
                     text = "•  $item"
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(3.dp().toFloat(), 1f)
+                    setLineSpacing(4.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -910,7 +954,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(
             sectionHeader(
@@ -935,7 +979,7 @@ class CarePlanCardView @JvmOverloads constructor(
         container.addView(
             TextView(context).apply {
                 text = context.getString(row.labelRes)
-                textSize = 11f
+                textSize = 12f
                 letterSpacing = 0.06f
                 setTextColor(context.getColor(R.color.on_surface_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -944,9 +988,9 @@ class CarePlanCardView @JvmOverloads constructor(
         container.addView(
             TextView(context).apply {
                 text = row.value
-                textSize = 14f
+                textSize = 15f
                 setTextColor(context.getColor(R.color.on_surface))
-                setLineSpacing(2.dp().toFloat(), 1f)
+                setLineSpacing(3.dp().toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -964,7 +1008,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
+            ).apply { topMargin = 20.dp() }
         }
         outer.addView(
             sectionHeader(
@@ -985,7 +1029,7 @@ class CarePlanCardView @JvmOverloads constructor(
             row.addView(
                 TextView(context).apply {
                     text = context.resources.getString(R.string.care_plan_day_badge, cp.day)
-                    textSize = 12f
+                    textSize = 13f
                     setTextColor(context.getColor(R.color.on_primary))
                     typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                     gravity = Gravity.CENTER
@@ -1007,9 +1051,9 @@ class CarePlanCardView @JvmOverloads constructor(
             row.addView(
                 TextView(context).apply {
                     text = cp.check
-                    textSize = 14f
+                    textSize = 15f
                     setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(2.dp().toFloat(), 1f)
+                    setLineSpacing(3.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         0,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1107,7 +1151,7 @@ class CarePlanCardView @JvmOverloads constructor(
         labelRow.addView(
             TextView(context).apply {
                 text = label.uppercase()
-                textSize = 10f
+                textSize = 11f
                 setTextColor(context.getColor(R.color.on_hero_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 letterSpacing = 0.08f
@@ -1121,7 +1165,7 @@ class CarePlanCardView @JvmOverloads constructor(
         box.addView(
             TextView(context).apply {
                 text = value.ifBlank { "—" }
-                textSize = 15f
+                textSize = 16f
                 setTextColor(context.getColor(R.color.on_hero))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 maxLines = 2

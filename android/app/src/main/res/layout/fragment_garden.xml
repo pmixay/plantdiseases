@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Garden tab.
+    Garden tab — a single surface (no pane switcher). Room cards
+    (item_room_card rows inflated into garden_rooms_container, with an
+    Unassigned bucket at the bottom when any plant has no room) sit under
+    the do-today queue.
 
-    Previously this whole screen was assembled by hand in
-    GardenFragment.onCreateView (FrameLayout → NestedScrollView → …).
-    It now lives here as a proper layout interface:
+    The two calendars that used to live behind a segmented control here
+    are gone from this screen: the care month grid moved to its own
+    screen (ui/garden/care/CareCalendarActivity, opened by
+    garden_care_calendar_button below), and the lunar calendar is now
+    shown per plant on the plant detail screen only.
 
-      • a leaf-green gradient hero (bg_garden_hero) with the title +
-        live "N plants watched" summary,
-      • the dynamically-populated plant list (item_plant_card rows are
-        inflated into garden_plants_container),
-      • a centred empty state with a primary CTA, and
-      • an Extended FAB overlaid bottom-end.
+    Both secondary destinations (Care calendar, Add room) sit in one paired
+    row at a fixed position under the hero: Add room used to trail every room
+    card, so a long list buried the button you need when the list is long.
 
-    Spacing is on the @dimen space grid; type + colour come from the
-    shared leaf-green design system.
+    The hero card, search box and empty state keep their existing shape
+    (bg_hero_card, the same illustration) — this app's header language
+    is shared across every tab.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -24,8 +27,8 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <!-- Bottom padding clears the overlaid Add-plant FAB so the last plant
-         card is never hidden behind it (clipToPadding=false keeps the
+    <!-- Bottom padding clears the overlaid Add-plant FAB so the last card
+         is never hidden behind it (clipToPadding=false keeps the
          scrollbar full-height). -->
     <androidx.core.widget.NestedScrollView
         android:id="@+id/garden_scroll"
@@ -57,20 +60,32 @@
                 android:paddingTop="@dimen/space_2xl"
                 android:paddingBottom="@dimen/space_xl">
 
-                <FrameLayout
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="@drawable/bg_circle_semi">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                    <ImageView
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_gravity="center"
-                        android:src="@drawable/ic_garden"
-                        android:contentDescription="@null"
+                    <!-- No leading icon here — the plant/sprout glyph that
+                         used to sit on this row had no id and no listener
+                         anywhere in the codebase; it was pure decoration
+                         with no evidence of intended behaviour, so it's
+                         removed rather than wired up to something invented. -->
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <ImageButton
+                        android:id="@+id/garden_search_toggle"
+                        android:layout_width="@dimen/species_info_touch_target"
+                        android:layout_height="@dimen/species_info_touch_target"
+                        android:background="@drawable/bg_circle_semi"
+                        android:src="@android:drawable/ic_menu_search"
+                        android:contentDescription="@string/garden_search_hint"
                         app:tint="@color/on_hero" />
 
-                </FrameLayout>
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/garden_summary_title"
@@ -95,9 +110,98 @@
 
             </LinearLayout>
 
+            <!-- The garden's two secondary destinations, paired at a fixed
+                 position under the hero. "Add room" used to sit BELOW every
+                 room card, so the control you reach for once the list is long
+                 was the one the long list pushed off screen. Both hide while
+                 the garden is empty — the empty state offers its own Add room,
+                 and a month grid with nothing to schedule is a dead end. -->
+            <LinearLayout
+                android:id="@+id/garden_action_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_care_calendar_button"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/garden_care_calendar"
+                    app:icon="@drawable/ic_calendar"
+                    app:iconGravity="textStart"
+                    app:iconSize="18dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_add_room"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:layout_weight="1"
+                    android:text="@string/room_add"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart"
+                    app:iconSize="18dp" />
+
+            </LinearLayout>
+
+            <!-- The actionable queue belongs on the Garden surface itself,
+                 not behind a calendar. Rows are rendered in place with a
+                 one-tap checkbox; completion exposes Snackbar Undo. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/garden_do_today_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/surface"
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_stroke"
+                app:strokeWidth="1dp"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_lg">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/garden_do_today_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm" />
+
+                    <TextView
+                        android:id="@+id/garden_do_today_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xxs"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm"
+                        tools:text="3 tasks · 1 overdue" />
+
+                    <LinearLayout
+                        android:id="@+id/garden_do_today_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Search — only shown once the garden grows past a handful of
-                 plants (GardenFragment toggles visibility at >6). Mirrors the
-                 Guide tab's search-bar styling. -->
+                 plants/rooms, toggled by garden_search_toggle above. Filters
+                 by room name AND by any plant name inside that room. -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/garden_search_layout"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -126,15 +230,27 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Plant list — item_plant_card rows are inflated here. -->
+            <!-- ── Rooms pane ─────────────────────────────────────────── -->
             <LinearLayout
-                android:id="@+id/garden_plants_container"
+                android:id="@+id/garden_rooms_pane"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_lg"
-                android:orientation="vertical" />
+                android:orientation="vertical">
 
-            <!-- Empty state. -->
+                <!-- Room cards (item_room_card) + the Unassigned bucket are
+                     inflated here at runtime. -->
+                <LinearLayout
+                    android:id="@+id/garden_rooms_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:orientation="vertical" />
+
+            </LinearLayout>
+
+            <!-- Empty state — the garden has no plants at all. Distinct from
+                 "plants exist but no rooms yet", which renders inside the
+                 Rooms pane instead (see GardenFragment.renderRooms). -->
             <LinearLayout
                 android:id="@+id/garden_empty_state"
                 android:layout_width="match_parent"
@@ -182,14 +298,20 @@
                     app:icon="@drawable/ic_garden"
                     app:iconGravity="textStart" />
 
-                <TextView
+                <!-- The Rooms pane (and its own "+ Add room" button) is
+                     hidden entirely while the garden has no plants, which
+                     left room creation with no reachable entry point at all
+                     on a fresh install. Same string/icon/action as that
+                     button, just reachable from here too. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_empty_add_room"
+                    style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:text="@string/empty_garden_secondary_hint"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:gravity="center" />
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:text="@string/room_add"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart" />
 
             </LinearLayout>
 

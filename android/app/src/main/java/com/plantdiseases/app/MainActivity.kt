@@ -17,6 +17,7 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
+import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
@@ -161,14 +162,17 @@ class MainActivity : AppCompatActivity() {
         // Kick off the periodic second-opinion poll from a UI context (not
         // Application.onCreate, which would touch WorkManager too early), plus
         // an immediate catch-up check so a reply that arrived while the app was
-        // closed notifies now instead of at the next periodic tick.
-        if (com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this)) {
-            (application as PlantDiseasesApp).apply {
-                scheduleOpinionChecks()
-                checkOpinionsNow()
-            }
-            com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        // closed notifies now instead of at the next periodic tick. Runs
+        // regardless of the opinion-notifications preference: the poll drives
+        // the notification centre, not just the popup, and OpinionNotifier
+        // decides per-event whether to also interrupt the user. PushManager
+        // keeps its own internal gate on the same preference (registering a
+        // push token is a separate concern from recording an opinion event).
+        (application as PlantDiseasesApp).apply {
+            scheduleOpinionChecks()
+            checkOpinionsNow()
         }
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         // Warm the guide/disease example photos into Glide's disk cache so they
         // render offline (they're server-hosted, not bundled). Independent of
         // notifications — always worth doing on a connected launch.
@@ -257,12 +261,7 @@ class MainActivity : AppCompatActivity() {
                     // the default neutral handler would dismiss it and let
                     // the user bypass Agree.
                     getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                        startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                android.net.Uri.parse(getString(R.string.consent_privacy_url)),
-                            ),
-                        )
+                        startActivity(PrivacyPolicyActivity.intent(this@MainActivity))
                     }
                 }
             }

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- "Scans near you" sort & filter overlay. Opened from the toolbar filter
-     action; lets the user order the feed by date and narrow it to one
-     disease type. The type chips are populated at runtime from the feed. -->
+<!-- Community recommendation-feed filter. The server owns ordering and its
+     stable cursor; this sheet only narrows the loaded feed by disease. -->
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -32,48 +31,6 @@
             android:textColor="@color/on_surface"
             android:textSize="@dimen/text_title"
             android:fontFamily="sans-serif-medium" />
-
-        <!-- By date -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xl"
-            android:text="@string/nearby_filter_by_date"
-            android:textAllCaps="true"
-            android:textColor="@color/primary"
-            android:textSize="12sp"
-            android:letterSpacing="0.06"
-            android:fontFamily="sans-serif-medium" />
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cg_date"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            app:singleSelection="true"
-            app:selectionRequired="true"
-            app:chipSpacingHorizontal="@dimen/space_sm">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_newest"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:text="@string/nearby_filter_date_newest"
-                app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_oldest"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/nearby_filter_date_oldest"
-                app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
-
-        </com.google.android.material.chip.ChipGroup>
 
         <!-- By type -->
         <TextView

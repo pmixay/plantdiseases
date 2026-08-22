@@ -1,6 +1,5 @@
 package com.plantdiseases.app.ui.result
 
-import android.graphics.Rect
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -53,6 +52,18 @@ class CommunityController(
      */
     private var opinionRequestInFlight = false
 
+    // Remembered so onResume() can re-probe the request/reply state after
+    // the user comes back from MyScanRepliesActivity (e.g. having tapped
+    // Stop) — that screen is a separate Activity now, not a bottom sheet
+    // over this one, so there's no Fragment Result callback to catch.
+    private var lastScan: ScanEntity? = null
+    private var lastIsRu: Boolean = false
+
+    fun onResume() {
+        val scan = lastScan ?: return
+        refreshSecondOpinion(scan, lastIsRu)
+    }
+
     /**
      * The one writer of this button's enabled state.
      *
@@ -73,7 +84,9 @@ class CommunityController(
      *  viewer + ignores owner self-views, so this is safe to call on any tap. */
     private fun recordView(scanId: String, viewerPseudoId: String) {
         if (scanId.isBlank() || viewerPseudoId.isBlank()) return
-        activity.lifecycleScope.launch { repository.recordCommunityView(scanId, viewerPseudoId) }
+        activity.lifecycleScope.launch {
+            repository.recordCommunityView(scanId, viewerPseudoId, activity)
+        }
     }
 
     /**
@@ -84,77 +97,46 @@ class CommunityController(
      * - **Ask**: no live request → "Get a second opinion" (community-gated).
      * - **Open request**: dynamic label with the reply count and the hours
      *   left until the 72 h auto-expiry, gently pulsing while it waits.
-     *   Tapping opens the owner replies sheet, which also carries the
-     *   "Stop request" action — reachable at ANY point of the request's
-     *   life, including after replies have arrived.
+     *   Tapping opens [com.plantdiseases.app.ui.community.MyScanRepliesActivity],
+     *   which carries the "Stop request" action — reachable at ANY point of
+     *   the request's life, including after replies have arrived.
      * - **Replies, request closed** (expired/stopped): "View second
      *   opinions (N)".
      *
-     * The sheet reports request-state changes (stop) back via the Fragment
-     * Result API so this control re-renders immediately.
+     * That screen is a separate Activity, not a bottom sheet over this one,
+     * so there's no result callback on return — [onResume] re-probes instead.
      */
     fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
+        lastScan = scan
+        lastIsRu = isRu
         // This control is not in the activity's enableWhileOnline set — it
         // needs the in-flight rule too, so it observes reachability itself.
         activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
-        activity.supportFragmentManager.setFragmentResultListener(
-            CommunityOpinionSheet.REQUEST_STATE_CHANGED,
-            activity,
-        ) { _, _ -> refreshSecondOpinion(scan, isRu) }
         showAsk(scan, isRu)
-        refreshSecondOpinion(scan, isRu, handleDeepLink = true)
+        refreshSecondOpinion(scan, isRu)
     }
 
-    private fun refreshSecondOpinion(
-        scan: ScanEntity,
-        isRu: Boolean,
-        handleDeepLink: Boolean = false,
-    ) {
+    private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
+            repository.getCommunityOpinions(
+                scan.clientScanId,
+                userPseudoId = TelemetryIds.userPseudoId(activity),
+                context = activity,
+            ).onSuccess { resp ->
                 val n = resp.opinions.size
-                // Opening the scan's result counts as viewing its replies:
-                // advance the viewed baseline so the Gallery clears its
-                // "+N new opinions" badge for this scan.
-                OpinionPrefs.markViewedOpinions(activity, scan.clientScanId, n)
                 when {
                     resp.wantsOpinion ->
-                        showOpenRequest(scan, isRu, n, resp.opinionRequestedAt)
-                    n > 0 -> showViewReplies(scan, isRu, n)
+                        showOpenRequest(scan, n, resp.opinionRequestedAt)
+                    n > 0 -> showViewReplies(scan, n)
                     else -> showAsk(scan, isRu)
-                }
-                // Arrived from a notification / a Gallery row with new
-                // opinions → jump straight to them.
-                if (handleDeepLink &&
-                    n > 0 &&
-                    activity.intent.getBooleanExtra(ResultActivity.EXTRA_OPEN_OPINIONS, false)
-                ) {
-                    activity.intent.removeExtra(ResultActivity.EXTRA_OPEN_OPINIONS)
-                    binding.scrollView.post {
-                        binding.btnSecondOpinion.requestRectangleOnScreen(
-                            Rect(
-                                0,
-                                0,
-                                binding.btnSecondOpinion.width,
-                                binding.btnSecondOpinion.height,
-                            ),
-                            false,
-                        )
-                        openReplies(scan, isRu)
-                    }
                 }
             }
         }
     }
 
-    private fun opinionButtonName(scan: ScanEntity, isRu: Boolean): String =
-        displayName(repository.verdictClassKey(scan) ?: "", isRu)
-
-    private fun openReplies(scan: ScanEntity, isRu: Boolean) {
-        CommunityOpinionSheet.showForOwner(
-            activity.supportFragmentManager,
-            scan.clientScanId,
-            opinionButtonName(scan, isRu),
+    private fun openReplies(scan: ScanEntity) {
+        activity.startActivity(
+            com.plantdiseases.app.ui.community.MyScanRepliesActivity.intentFor(activity, scan.clientScanId),
         )
     }
 
@@ -173,7 +155,6 @@ class CommunityController(
      *  sheet (which carries the Stop action). */
     private fun showOpenRequest(
         scan: ScanEntity,
-        isRu: Boolean,
         replyCount: Int,
         requestedAtSec: Long?,
     ) {
@@ -196,15 +177,15 @@ class CommunityController(
             repeatCount = android.view.animation.Animation.INFINITE
         }
         btn.startAnimation(pulse)
-        btn.setOnClickListener { openReplies(scan, isRu) }
+        btn.setOnClickListener { openReplies(scan) }
     }
 
-    private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
+    private fun showViewReplies(scan: ScanEntity, count: Int) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
         applySecondOpinionEnabled()
         btn.text = activity.getString(R.string.result_second_opinion_view, count)
-        btn.setOnClickListener { openReplies(scan, isRu) }
+        btn.setOnClickListener { openReplies(scan) }
     }
 
     private fun showAsk(scan: ScanEntity, isRu: Boolean) {
@@ -255,14 +236,32 @@ class CommunityController(
         activity.lifecycleScope.launch {
             // Ensure the scan is in the community corpus so others can
             // see the ask (force = explicit consent).
-            communityUploader.uploadFromEntity(scan, force = true)
+            val upload = communityUploader.uploadFromEntity(scan, force = true)
+            if (upload != com.plantdiseases.app.data.repository.CommunityUploader.UploadOutcome.Uploaded) {
+                opinionRequestInFlight = false
+                showAsk(scan, isRu)
+                Toast.makeText(
+                    activity,
+                    R.string.result_second_opinion_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@launch
+            }
             repository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                .onSuccess {
+                .onSuccess { flagged ->
                     opinionRequestInFlight = false
+                    if (!flagged) {
+                        showAsk(scan, isRu)
+                        Toast.makeText(
+                            activity,
+                            R.string.result_second_opinion_failed,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        return@onSuccess
+                    }
                     // Fresh request: 0 replies, full 72 h window.
                     showOpenRequest(
                         scan,
-                        isRu,
                         replyCount = 0,
                         requestedAtSec = System.currentTimeMillis() / 1000L,
                     )
@@ -303,15 +302,37 @@ class CommunityController(
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
             onClick = { item ->
-                // Read-only browse only — the strip itself is gated behind the
-                // community opt-in (handled below), and leaving a second opinion
-                // never happens from here.
+                // Community v2: commenting is unlocked here too — the server
+                // already excludes the caller's own scans from this carousel
+                // (userPseudoId doubles as exclude_user_pseudo_id below), so
+                // the strip itself is gated behind the community opt-in
+                // (handled below), not behind "is this someone else's scan".
+                // The localClientScanIds() check is belt-and-braces for a
+                // reinstalled app whose new pseudo-id doesn't match an old
+                // scan still cached in the feed — same guard NearbyScansActivity
+                // already applies to its own list.
                 recordView(item.scanId, pseudoId)
-                CommunityOpinionSheet.showReadOnly(
-                    activity.supportFragmentManager,
-                    item,
-                    displayName(item.disease, isRu),
-                )
+                activity.lifecycleScope.launch {
+                    val mine = repository.localClientScanIds()
+                    if (item.scanId in mine) {
+                        activity.startActivity(
+                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
+                                .intentFor(activity, item.scanId),
+                        )
+                    } else {
+                        // localClientScanIds() suspends on Dispatchers.IO, so we
+                        // always resume a main-loop turn later. lifecycleScope
+                        // only cancels at DESTROYED, so a Home press mid-read
+                        // would land here after onSaveInstanceState and blow up
+                        // inside show()'s commit().
+                        if (activity.supportFragmentManager.isStateSaved) return@launch
+                        CommunityOpinionSheet.show(
+                            activity.supportFragmentManager,
+                            item,
+                            displayName(item.disease, isRu),
+                        )
+                    }
+                }
             },
         )
         rv.adapter = adapter
@@ -377,6 +398,7 @@ class CommunityController(
                 species = speciesScientific,
                 userPseudoId = TelemetryIds.userPseudoId(activity),
                 limit = 12,
+                context = activity,
             ).onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = if (isRu) {

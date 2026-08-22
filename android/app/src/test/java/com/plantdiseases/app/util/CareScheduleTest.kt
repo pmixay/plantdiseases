@@ -3,6 +3,7 @@ package com.plantdiseases.app.util
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import java.util.Calendar
+import java.util.TimeZone
 
 /**
  * Verifies the pure reminder-schedule math in [CareSchedule]: next-due
@@ -111,5 +112,33 @@ class CareScheduleTest {
         val delay = CareSchedule.delayAfterCareMs(9, 0, 0, now)
         assertThat(delay).isGreaterThan(0L)
         assertThat(delay).isAtMost(2 * CareSchedule.DAY_MS)
+    }
+
+    @Test
+    fun scheduledDueAtKeepsWallClockTimeAcrossDaylightSaving() {
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+            val anchor = Calendar.getInstance().apply {
+                set(2026, Calendar.MARCH, 7, 10, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            val dueAt = CareSchedule.scheduledDueAt(
+                anchorMs = anchor.timeInMillis,
+                intervalDays = 2,
+                hour = 9,
+                minute = 30,
+            )
+            val due = Calendar.getInstance().apply { timeInMillis = dueAt }
+
+            assertThat(due.get(Calendar.DAY_OF_MONTH)).isEqualTo(9)
+            assertThat(due.get(Calendar.HOUR_OF_DAY)).isEqualTo(9)
+            assertThat(due.get(Calendar.MINUTE)).isEqualTo(30)
+            assertThat(CareSchedule.delayAfterCareMs(9, 30, 2, anchor))
+                .isEqualTo(dueAt - anchor.timeInMillis)
+        } finally {
+            TimeZone.setDefault(original)
+        }
     }
 }

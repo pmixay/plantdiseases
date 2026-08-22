@@ -6,9 +6,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 import com.facebook.shimmer.ShimmerFrameLayout
-import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.Avatars
@@ -17,27 +18,46 @@ import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
 /**
- * Vertical, social-feed adapter for the "Scans near you" screen. Each
- * post renders the scan photo full-width with the author's nickname, the
- * place, a distance·time line and a "Second opinion" action. The model's
- * diagnosis is intentionally NOT on the card — it would anchor voters
- * before they look at the photo; it appears inside the opinion sheet.
- * Both the photo and the action open the community opinion sheet
- * (vote graph + opinions + your own vote) for that scan.
+ * Single-column, scrolling-forum adapter for the community feed (Community
+ * v2 — replaced the staggered photo grid). Each post renders the scan photo
+ * full-width under the author's nickname/place/time header, then a like +
+ * comments + views action row. The model's diagnosis is intentionally NOT on
+ * the card — it would anchor voters before they look at the photo; it
+ * appears inside the opinion sheet, which the photo and the comments/views
+ * rows all open. Liking is handled here directly, optimistically, via
+ * [onLike] + [updateLike] rather than round-tripping through the sheet.
  *
  * Thumbnails load via Glide from /api/community/thumb/<filename>; posts
  * without a thumb_path fall back to a tinted leaf icon so the card stays
  * usable when the server didn't persist a thumbnail.
  */
 class NearbyScansAdapter(
-    private val onSecondOpinion: (CommunityScanItem) -> Unit,
+    private val onOpen: (CommunityScanItem) -> Unit,
+    private val onLike: (CommunityScanItem) -> Unit,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
 
-    private var items: List<CommunityScanItem> = emptyList()
+    private var items: MutableList<CommunityScanItem> = mutableListOf()
 
     fun submit(newItems: List<CommunityScanItem>) {
-        items = newItems
-        notifyDataSetChanged()
+        val old = items
+        val added = newItems.size - old.size
+        // Cursor paging appends: the new list is the old one plus a tail, so
+        // only the tail is actually new — rebinding (and re-Glide-ing) every
+        // visible photo mid-fling is pure waste. Anything else (the filter /
+        // sort overlay genuinely reordering the feed) still needs a full
+        // invalidation.
+        val isAppend = added > 0 && old.indices.all { old[it] == newItems[it] }
+        items = newItems.toMutableList()
+        if (isAppend) notifyItemRangeInserted(old.size, added) else notifyDataSetChanged()
+    }
+
+    /** Patch one row's like state in place (optimistic update + the eventual
+     *  server-confirmed value) without reloading the whole list. */
+    fun updateLike(scanId: String, likeCount: Int, likedByMe: Boolean) {
+        val index = items.indexOfFirst { it.scanId == scanId }
+        if (index < 0) return
+        items[index] = items[index].copy(likeCount = likeCount, likedByMe = likedByMe)
+        notifyItemChanged(index, PAYLOAD_LIKE)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -48,7 +68,28 @@ class NearbyScansAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
 
+    /** A like tap only moves a 20dp heart and a count. Without a payload the
+     *  default item animator refuses to reuse the holder, so RecyclerView binds
+     *  a SECOND one and re-issues the 260dp photo load — twice per tap
+     *  (optimistic + server confirmation). */
+    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains(PAYLOAD_LIKE)) {
+            holder.bindLike(items[position])
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
+
+    /** Release the pooled holder's bitmap instead of pinning a 260dp photo
+     *  in every off-screen holder. */
+    override fun onViewRecycled(holder: VH) {
+        super.onViewRecycled(holder)
+        holder.clearPhoto()
+    }
+
     override fun getItemCount(): Int = items.size
+
+    fun itemAt(position: Int): CommunityScanItem? = items.getOrNull(position)
 
     inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val shimmer: ShimmerFrameLayout = itemView.findViewById(R.id.shimmer_nearby_photo)
@@ -56,11 +97,14 @@ class NearbyScansAdapter(
         private val label: TextView = itemView.findViewById(R.id.tv_nearby_label)
         private val meta: TextView = itemView.findViewById(R.id.tv_nearby_meta)
         private val whenLine: TextView = itemView.findViewById(R.id.tv_nearby_when)
-        private val countsPill: View = itemView.findViewById(R.id.ll_nearby_counts)
+        private val likeRow: View = itemView.findViewById(R.id.ll_nearby_like)
+        private val likeIcon: ImageView = itemView.findViewById(R.id.iv_nearby_like)
+        private val likes: TextView = itemView.findViewById(R.id.tv_nearby_likes)
+        private val commentsRow: View = itemView.findViewById(R.id.ll_nearby_comments)
+        private val commentsIcon: ImageView = itemView.findViewById(R.id.iv_nearby_comments)
         private val views: TextView = itemView.findViewById(R.id.tv_nearby_views)
         private val comments: TextView = itemView.findViewById(R.id.tv_nearby_comments)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
-        private val opinionBtn: MaterialButton = itemView.findViewById(R.id.btn_nearby_opinion)
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
@@ -83,18 +127,32 @@ class NearbyScansAdapter(
                 android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
-            // Views + comments(opinions) overlay on the photo. Each part shows
-            // only when its count is non-zero; the pill hides when both are 0.
+            // Always show all three counts, zero included — hiding a count at
+            // zero was why the same action row looked different from post to
+            // post ("chaotic"): a like/comment landing on a post made a pill
+            // pop into existence that wasn't there a moment before.
             views.text = item.viewCount.toString()
-            views.visibility = if (item.viewCount > 0) View.VISIBLE else View.GONE
-            comments.text = item.opinionCount.toString()
-            comments.visibility = if (item.opinionCount > 0) View.VISIBLE else View.GONE
-            countsPill.visibility =
-                if (item.viewCount > 0 || item.opinionCount > 0) View.VISIBLE else View.GONE
+            if (item.wantsOpinion) {
+                comments.text = item.opinionCount.toString()
+                commentsIcon.setImageResource(R.drawable.ic_comment)
+                commentsRow.alpha = 1f
+                commentsRow.contentDescription = itemView.context.getString(
+                    R.string.community_open_replies,
+                    item.opinionCount,
+                )
+            } else {
+                comments.text = itemView.context.getString(R.string.community_replies_locked_short)
+                commentsIcon.setImageResource(R.drawable.ic_lock)
+                commentsRow.alpha = 0.55f
+                commentsRow.contentDescription = itemView.context.getString(
+                    R.string.community_replies_locked_readable,
+                )
+            }
+            bindLike(item)
 
-            val click = View.OnClickListener { onSecondOpinion(item) }
-            opinionBtn.setOnClickListener(click)
-            photo.setOnClickListener(click)
+            val open = View.OnClickListener { onOpen(item) }
+            photo.setOnClickListener(open)
+            commentsRow.setOnClickListener(open)
 
             // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
@@ -104,6 +162,28 @@ class NearbyScansAdapter(
                 "${ServerConfig.baseUrl}api/community/thumb/$thumb"
             }
             ThumbLoader.load(shimmer, photo, url)
+        }
+
+        /** The heart + count + its click target — the only thing a like tap
+         *  changes, so it is also the whole [PAYLOAD_LIKE] rebind. The listener
+         *  is re-set because [onLike] needs the CURRENT counts as the value to
+         *  roll back to when the request fails. */
+        fun bindLike(item: CommunityScanItem) {
+            likes.text = item.likeCount.toString()
+            likeIcon.setImageResource(
+                if (item.likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart,
+            )
+            likeIcon.imageTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(
+                    itemView.context,
+                    if (item.likedByMe) R.color.primary else R.color.on_surface_secondary,
+                ),
+            )
+            likeRow.setOnClickListener { onLike(item) }
+        }
+
+        fun clearPhoto() {
+            Glide.with(photo).clear(photo)
         }
 
         /** "Warsaw, Poland" — just the place. Distance + time live in
@@ -167,5 +247,11 @@ class NearbyScansAdapter(
                 DateUtils.FORMAT_ABBREV_RELATIVE,
             ).toString()
         }
+    }
+
+    private companion object {
+        /** Partial-rebind marker for a like toggle — see the payload overload
+         *  of [onBindViewHolder]. */
+        const val PAYLOAD_LIKE = "like"
     }
 }

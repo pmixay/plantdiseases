@@ -19,6 +19,23 @@ object CareSchedule {
     fun nextDueAt(anchorMs: Long, intervalDays: Int): Long =
         anchorMs + intervalDays.coerceAtLeast(0) * DAY_MS
 
+    /** Wall-clock due time [intervalDays] after [anchorMs]. Unlike fixed
+     * millisecond addition, Calendar day arithmetic keeps [hour]:[minute]
+     * stable across daylight-saving transitions. */
+    fun scheduledDueAt(
+        anchorMs: Long,
+        intervalDays: Int,
+        hour: Int,
+        minute: Int,
+    ): Long = Calendar.getInstance().apply {
+        timeInMillis = anchorMs
+        add(Calendar.DAY_OF_MONTH, intervalDays.coerceAtLeast(1))
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
     /** True when [dueAt] has genuinely passed. Integer-day truncation
      *  must NOT be used for this — anything due within the next 24 h
      *  would otherwise read as overdue before it arrived. */
@@ -58,16 +75,7 @@ object CareSchedule {
         intervalDays: Int,
         now: Calendar = Calendar.getInstance(),
     ): Long {
-        val target = (now.clone() as Calendar).apply {
-            add(Calendar.DAY_OF_MONTH, intervalDays.coerceAtLeast(1))
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        if (!target.after(now)) {
-            target.add(Calendar.DAY_OF_MONTH, 1)
-        }
-        return (target.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
+        val targetMs = scheduledDueAt(now.timeInMillis, intervalDays, hour, minute)
+        return (targetMs - now.timeInMillis).coerceAtLeast(0L)
     }
 }

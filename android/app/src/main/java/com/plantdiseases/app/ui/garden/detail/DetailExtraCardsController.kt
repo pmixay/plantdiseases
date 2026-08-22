@@ -15,7 +15,9 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.common.CarePlanCardView
@@ -27,8 +29,12 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PlantHealth
 import com.plantdiseases.app.util.localizedSpeciesName
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The "extra cards" stacked between the header and the tabs (care plan,
@@ -41,6 +47,7 @@ class DetailExtraCardsController(
     private val activity: AppCompatActivity,
     private val plantRepository: PlantRepository,
     private val scanRepository: ScanRepository,
+    private val careRepository: CareRepository,
     private val content: LinearLayout,
     private val onReload: () -> Unit,
     private val onClearWateringSuggestion: () -> Unit,
@@ -112,8 +119,9 @@ class DetailExtraCardsController(
             )
             val result = scanRepository.fetchCarePlan(request)
             result.onSuccess { plan ->
+                val materializablePlan = plan.withStoredTreatmentFallback(latestScan, isRu)
                 card.bind(
-                    plan = plan,
+                    plan = materializablePlan,
                     speciesDisplay = speciesDisplay,
                     showApplyToReminders = true,
                     onApplyToReminders = { applied ->
@@ -124,29 +132,112 @@ class DetailExtraCardsController(
                         )
                     },
                 )
+                maybeStartTreatmentPlan(plant, latestScan, classKey, materializablePlan)
             }.onFailure {
-                card.showError(onRetry = {
-                    val replacement = buildCarePlanSlot(plant, scans)
-                    val idx = content.indexOfChild(card)
-                    if (idx >= 0) {
-                        content.removeViewAt(idx)
-                        content.addView(replacement, idx)
-                    }
-                })
+                val fallback = storedTreatmentPlan(latestScan, classKey, isRu)
+                if (fallback != null) {
+                    card.bind(
+                        plan = fallback,
+                        speciesDisplay = speciesDisplay,
+                        showApplyToReminders = true,
+                        onApplyToReminders = { applied ->
+                            ReminderScheduleSheet.showWithCarePlanDefaults(
+                                activity.supportFragmentManager,
+                                plant,
+                                applied,
+                            )
+                        },
+                        offlineBasic = true,
+                    )
+                    maybeStartTreatmentPlan(plant, latestScan, classKey, fallback)
+                } else {
+                    card.showError(onRetry = {
+                        val replacement = buildCarePlanSlot(plant, scans)
+                        val idx = content.indexOfChild(card)
+                        if (idx >= 0) {
+                            content.removeViewAt(idx)
+                            content.addView(replacement, idx)
+                        }
+                    })
+                }
             }
         }
         return card
     }
 
-    /**
-     * Best-effort: read the disease class key from the scan's stored top
-     * probability (canonical model class name like "powdery_mildew"); fall
-     * back to a normalised lowercase of the human-readable name.
-     */
+    /** Prefer the exact class key used for the displayed diagnosis after all
+     * server reroutes; only legacy scans need the human-name fallback. */
     private fun resolveClassKey(scan: ScanEntity): String =
-        scanRepository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
+        scanRepository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
+
+    private fun CarePlanResponse.withStoredTreatmentFallback(
+        scan: ScanEntity,
+        isRu: Boolean,
+    ): CarePlanResponse {
+        if (!treatment.isNullOrEmpty()) return this
+        val stored = storedTreatment(scan, isRu)
+        return if (stored.isEmpty()) this else copy(treatment = stored)
+    }
+
+    private fun storedTreatmentPlan(
+        scan: ScanEntity,
+        classKey: String,
+        isRu: Boolean,
+    ): CarePlanResponse? {
+        val stored = storedTreatment(scan, isRu)
+        if (stored.isEmpty()) return null
+        return CarePlanResponse(
+            disease = classKey,
+            keyAction = stored.first(),
+            followUpDays = 14,
+            treatment = stored,
+        )
+    }
+
+    private fun storedTreatment(scan: ScanEntity, isRu: Boolean): List<String> {
+        val preferred = scanRepository
+            .parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
+            .filter { it.isNotBlank() }
+        if (preferred.isNotEmpty()) return preferred
+        return scanRepository
+            .parseStringList(if (isRu) scan.treatment else scan.treatmentRu)
+            .filter { it.isNotBlank() }
+    }
+
+    /** Materialises a treatment plan from a disease-diagnosing scan, once
+     *  the care plan it's built from has actually loaded (Garden refactor
+     *  §Scan-driven care checklists). This fires on every render — including
+     *  onRestart, off a cached care plan — so it needs three guards: [scan]
+     *  must be the plant's newest, the active plan's disease key must differ
+     *  (protects an in-progress plan against a newer same-disease scan), and
+     *  no plan of ANY status may already exist for this scan. The last one
+     *  matters because the active-plan lookup filters `status = 'active'` and
+     *  therefore goes blind once the user ticks the final step; without it,
+     *  the next visit re-creates the finished plan with progress reset. */
+    private fun maybeStartTreatmentPlan(
+        plant: PlantEntity,
+        scan: ScanEntity,
+        classKey: String,
+        carePlan: CarePlanResponse,
+    ) {
+        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isNotAPlantScan(scan)) return
+
+        activity.lifecycleScope.launch {
+            val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
+            if (newestScanId != scan.id) return@launch // a newer scan landed while this card was loading
+
+            val createdPlanId = careRepository.ensureTreatmentPlanForScan(
+                plantId = plant.id,
+                scanId = scan.id,
+                carePlan = carePlan,
+                diseaseKey = classKey,
+                diseaseLabelEn = scan.diseaseName,
+                diseaseLabelRu = scan.diseaseNameRu,
+            )
+            if (createdPlanId != null) onReload()
+        }
+    }
 
     /** One-line "Last watered N days ago" strip directly under the
      *  action row. Reads from the plant_reminder_events log filled
@@ -243,36 +334,46 @@ class DetailExtraCardsController(
                 cornerRadius = 12.dp()
                 setOnClickListener {
                     Haptics.tick(activity)
-                    activity.lifecycleScope.launch {
-                        val existing = plantRepository.getReminders(plant.id)
-                            .firstOrNull { it.type == s.type }
-                        val updated = (
-                            existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
-                                plantId = plant.id,
-                                type = s.type,
+                    val appContext = activity.applicationContext
+                    activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        withContext(NonCancellable) {
+                            val existing = plantRepository.getReminders(plant.id)
+                                .firstOrNull { it.type == s.type }
+                            val updated = (
+                                existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
+                                    plantId = plant.id,
+                                    type = s.type,
+                                )
+                                ).copy(
+                                intervalDays = s.proposedIntervalDays,
+                                enabled = true,
+                                createdAt = System.currentTimeMillis(),
                             )
-                            ).copy(
-                            intervalDays = s.proposedIntervalDays,
-                            enabled = true,
-                        )
-                        val rid = plantRepository.saveReminder(updated)
-                        com.plantdiseases.app.util.ReminderManager.schedule(
-                            context = activity,
-                            plantId = plant.id,
-                            plantName = plant.name,
-                            type = updated.type,
-                            intervalDays = updated.intervalDays,
-                            hour = updated.hour,
-                            minute = updated.minute,
-                            reminderId = rid,
-                        )
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        onClearWateringSuggestion()
-                        onReload()
+                            val rid = if (existing == null) {
+                                plantRepository.saveReminder(updated)
+                            } else {
+                                plantRepository.saveReminderRow(updated)
+                            }
+                            com.plantdiseases.app.util.ReminderManager.schedule(
+                                context = appContext,
+                                plantId = plant.id,
+                                plantName = plant.name,
+                                type = updated.type,
+                                intervalDays = updated.intervalDays,
+                                hour = updated.hour,
+                                minute = updated.minute,
+                                reminderId = rid,
+                            )
+                        }
+                        if (!activity.isFinishing && !activity.isDestroyed) {
+                            Toast.makeText(
+                                activity,
+                                activity.getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            onClearWateringSuggestion()
+                            onReload()
+                        }
                     }
                 }
             },
@@ -840,16 +941,13 @@ class DetailExtraCardsController(
 
     /** Notify the user that the plant's severity series is worsening
      *  twice in a row. Reuses the existing plant-reminders
-     *  notification channel + intent into the plant detail. */
-    private fun fireProgressionAlert(plantName: String) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                activity,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+     *  notification channel + intent into the plant detail.
+     *
+     *  The POST_NOTIFICATIONS check gates only `notify()`, never
+     *  [NotificationCenter.record][com.plantdiseases.app.util.NotificationCenter.record]:
+     *  a user who denied the permission is exactly the user the in-app
+     *  notification centre exists for. */
+    private suspend fun fireProgressionAlert(plantName: String) {
         val notificationId = (plantId * 10 + 9).toInt()
         val contentIntent = android.app.PendingIntent.getActivity(
             activity,
@@ -861,6 +959,13 @@ class DetailExtraCardsController(
         )
         val title = activity.getString(R.string.progression_alert_title, plantName)
         val body = activity.getString(R.string.progression_alert_body)
+        com.plantdiseases.app.util.NotificationCenter.record(
+            activity,
+            type = "garden",
+            title = title,
+            body = body,
+            deeplink = "plant:$plantId",
+        )
         val builder = androidx.core.app.NotificationCompat.Builder(
             activity,
             com.plantdiseases.app.PlantDiseasesApp.CHANNEL_PLANT_REMINDERS,
@@ -871,12 +976,311 @@ class DetailExtraCardsController(
             .setContentIntent(contentIntent)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                activity,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         try {
             (activity.getSystemService(android.app.NotificationManager::class.java))
                 ?.notify(notificationId, builder.build())
         } catch (_: SecurityException) {
             // permission revoked between check and notify — ignore.
         }
+    }
+
+    // ─── Health card (Garden refactor Overview tab) ─────────────────────
+
+    /** Score + weekly delta + dated sparkline, derived from
+     *  [PlantRepository.getPlantHealth] — never the network-driven
+     *  progression card's comparison, a separate, already-shipped feature
+     *  this doesn't touch. Fewer than 2 scans renders the honest "scan
+     *  twice" empty state instead of a fake flat line. */
+    fun buildHealthCard(plant: PlantEntity, scans: List<ScanEntity>): View {
+        val card = MaterialCardView(activity).apply {
+            radius = activity.resources.getDimension(R.dimen.radius_lg)
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = activity.getColor(R.color.card_stroke)
+            setCardBackgroundColor(activity.getColor(R.color.surface))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val accent = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(3.dp(), LinearLayout.LayoutParams.MATCH_PARENT)
+            setBackgroundColor(activity.getColor(R.color.on_surface_secondary))
+        }
+        val body = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(accent)
+        row.addView(body)
+        card.addView(row)
+
+        val titleRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(activity).apply {
+            text = activity.getString(R.string.plant_health_title)
+            textSize = 15f
+            setTextColor(activity.getColor(R.color.on_surface))
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val scoreText = TextView(activity).apply {
+            textSize = 24f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        }
+        titleRow.addView(title)
+        titleRow.addView(scoreText)
+        body.addView(titleRow)
+
+        val deltaChip = TextView(activity).apply {
+            textSize = 12f
+            setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
+            background = activity.getDrawable(R.drawable.bg_plant_stat_pill)
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 6.dp() }
+        }
+        body.addView(deltaChip)
+
+        val sparkline = SparklineView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 64.dp())
+                .apply { topMargin = 10.dp() }
+        }
+        val emptyHint = TextView(activity).apply {
+            textSize = 13f
+            setTextColor(activity.getColor(R.color.on_surface_secondary))
+            setLineSpacing(3.dp().toFloat(), 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+            visibility = View.GONE
+        }
+        body.addView(sparkline)
+        body.addView(emptyHint)
+
+        activity.lifecycleScope.launch {
+            val activePlan = careRepository.activePlan(plant.id)
+            val verdict = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
+            accent.setBackgroundColor(activity.getColor(healthAccentColor(verdict.status)))
+
+            if (verdict.score == null) {
+                scoreText.visibility = View.GONE
+                sparkline.visibility = View.GONE
+                emptyHint.visibility = View.VISIBLE
+                emptyHint.text = activity.getString(R.string.plant_health_need_scans)
+                return@launch
+            }
+            scoreText.text = "${verdict.score}%"
+            scoreText.setTextColor(activity.getColor(healthAccentColor(verdict.status)))
+            sparkline.setData(
+                verdict.series.map { (it.score / 100f).coerceIn(0f, 1f) },
+                trend = when {
+                    verdict.weekDelta == null -> "baseline"
+                    verdict.weekDelta > 0 -> "improving"
+                    verdict.weekDelta < 0 -> "worsening"
+                    else -> "stable"
+                },
+            )
+            if (verdict.weekDelta != null) {
+                val sign = if (verdict.weekDelta >= 0) "+" else ""
+                deltaChip.text = activity.getString(
+                    R.string.plant_health_delta_week,
+                    "$sign${verdict.weekDelta}%",
+                )
+                val deltaColor = if (verdict.weekDelta >= 0) R.color.healthy_green else R.color.disease_red
+                deltaChip.setTextColor(activity.getColor(deltaColor))
+                deltaChip.visibility = View.VISIBLE
+            }
+        }
+        return card
+    }
+
+    private fun healthAccentColor(status: PlantHealth.Status): Int = when (status) {
+        PlantHealth.Status.HEALTHY, PlantHealth.Status.RECOVERING -> R.color.healthy_green
+        PlantHealth.Status.TREATMENT -> R.color.disease_red
+        PlantHealth.Status.WATCH -> R.color.warning_amber
+        PlantHealth.Status.UNKNOWN -> R.color.on_surface_secondary
+    }
+
+    // ─── Treatment plan card (Garden refactor Overview tab) ─────────────
+
+    /** Null (renders nothing) when the plant has no treatment plan worth
+     *  showing — never an empty card. Steps render done / current / later /
+     *  overdue; the last step completing flips this to the "finished"
+     *  single-line state, not a silent disappearance — which is why the
+     *  lookup is [CareRepository.activeOrRecentlyCompletedPlan] and not
+     *  `activePlan`, whose `status = 'active'` filter made the finished
+     *  state unreachable.
+     *
+     *  Suspend, unlike this controller's other `build*` methods: the
+     *  card's very existence depends on a DB read (is there a plan at
+     *  all), so the caller awaits this before deciding whether
+     *  to add anything to the tab, rather than adding a shell and
+     *  filling it in asynchronously the way buildHealthCard does. */
+    suspend fun buildTreatmentPlanCard(plant: PlantEntity): View? {
+        val planWithSteps = careRepository.activeOrRecentlyCompletedPlan(plant.id) ?: return null
+        val plan = planWithSteps.plan
+        val steps = planWithSteps.steps.sortedBy { it.stepIndex }
+        val isRu = LocaleHelper.isRussian(activity)
+        val diseaseLabel = if (isRu) plan.diseaseLabelRu else plan.diseaseLabelEn
+
+        val card = MaterialCardView(activity).apply {
+            radius = activity.resources.getDimension(R.dimen.radius_lg)
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = activity.getColor(R.color.card_stroke)
+            setCardBackgroundColor(activity.getColor(R.color.surface))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val body = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+        }
+        card.addView(body)
+
+        if (plan.status != "active") {
+            // Completed recently (see activeOrRecentlyCompletedPlan's window)
+            // — the finished state, not silence.
+            body.addView(
+                TextView(activity).apply {
+                    text = activity.getString(
+                        R.string.treatment_finished,
+                        steps.count { it.status == "done" },
+                        steps.size,
+                    )
+                    textSize = 13f
+                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setLineSpacing(3.dp().toFloat(), 1f)
+                }
+            )
+            return card
+        }
+
+        body.addView(
+            TextView(activity).apply {
+                text = activity.getString(R.string.treatment_plan_current)
+                textSize = 15f
+                setTextColor(activity.getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            }
+        )
+        body.addView(
+            TextView(activity).apply {
+                text = diseaseLabel
+                textSize = 13f
+                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 2.dp() }
+            }
+        )
+
+        val firstPendingIndex = steps.indexOfFirst { it.status == "pending" }
+        val currentStepNumber = (if (firstPendingIndex >= 0) firstPendingIndex else steps.lastIndex) + 1
+        body.addView(
+            TextView(activity).apply {
+                text = activity.getString(R.string.treatment_step_of, currentStepNumber, steps.size)
+                textSize = 12f
+                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 6.dp() }
+            }
+        )
+        val now = System.currentTimeMillis()
+        steps.forEachIndexed { index, step ->
+            val stepRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 10.dp() }
+                isClickable = true
+                isFocusable = true
+            }
+            val isDone = step.status == "done"
+            val isCurrent = index == firstPendingIndex
+            val isOverdue = step.status == "pending" && step.dueAt <= now
+            val glyph = ImageView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                setImageResource(if (isDone) R.drawable.ic_check else R.drawable.ic_disease)
+                setColorFilter(
+                    activity.getColor(
+                        when {
+                            isDone -> R.color.healthy_green
+                            isOverdue || isCurrent -> R.color.disease_red
+                            else -> R.color.on_surface_secondary
+                        }
+                    )
+                )
+            }
+            val textCol = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = 10.dp() }
+            }
+            textCol.addView(
+                TextView(activity).apply {
+                    text = step.title
+                    textSize = 14f
+                    setTextColor(activity.getColor(R.color.on_surface))
+                }
+            )
+            val stateLine = when {
+                isDone -> activity.getString(
+                    R.string.treatment_step_done,
+                    formatRelativeDate(activity, step.doneAt ?: step.dueAt),
+                )
+                isOverdue -> activity.getString(
+                    R.string.treatment_step_overdue,
+                    formatRelativeDate(activity, step.dueAt),
+                )
+                else -> activity.getString(R.string.treatment_step_due, formatRelativeDate(activity, step.dueAt))
+            }
+            textCol.addView(
+                TextView(activity).apply {
+                    text = stateLine
+                    textSize = 12f
+                    setTextColor(
+                        activity.getColor(if (isOverdue) R.color.disease_red else R.color.on_surface_secondary),
+                    )
+                }
+            )
+            stepRow.addView(glyph)
+            stepRow.addView(textCol)
+            stepRow.setOnClickListener {
+                Haptics.tick(activity)
+                activity.startActivity(
+                    Intent(activity, com.plantdiseases.app.ui.garden.care.CareTaskActivity::class.java).apply {
+                        putExtra(com.plantdiseases.app.ui.garden.care.CareTaskActivity.EXTRA_TASK_KIND, "step")
+                        putExtra(com.plantdiseases.app.ui.garden.care.CareTaskActivity.EXTRA_STEP_ID, step.id)
+                    }
+                )
+            }
+            body.addView(stepRow)
+        }
+        return card
     }
 
     private fun Int.dp(): Int = dp(activity)

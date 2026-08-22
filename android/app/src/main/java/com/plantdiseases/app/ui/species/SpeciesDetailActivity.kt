@@ -38,6 +38,7 @@ import com.plantdiseases.app.ui.common.bulletRow
 import com.plantdiseases.app.ui.common.cardColumn
 import com.plantdiseases.app.ui.common.cardHeading
 import com.plantdiseases.app.ui.common.factRow
+import com.plantdiseases.app.ui.common.rowDivider
 import com.plantdiseases.app.ui.common.sectionCard
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -47,6 +48,7 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.FertiliserGuide
@@ -216,11 +218,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private var sections: List<Section> = emptyList()
 
     /**
-     * Builds the section list and wires each header. Defaults: About and Care
-     * open, everything else closed — the screen should still answer "what is
-     * this plant and how do I keep it alive?" without a single tap, while the
-     * long tail (fertiliser, problems, flowering, range, lunar) stays folded
-     * so the page is scannable.
+     * Builds the section list and wires each header. About opens by default and
+     * the long tail (fertiliser, problems, flowering, range, lunar) stays folded
+     * so the page is scannable. Care is not in this list at all — it is a plain
+     * always-open card, because the care plan is the answer to "how do I keep
+     * this alive?" and hiding it behind a chevron hid the whole point.
      */
     private fun setupExpandableProfileSections(savedInstanceState: Bundle?) {
         fun restored(key: String, default: Boolean) =
@@ -232,12 +234,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.ivAboutChevron, binding.aboutBody,
                 R.string.section_about_title, R.string.section_expand, R.string.section_collapse,
                 restored(STATE_ABOUT_EXPANDED, default = true),
-            ),
-            Section(
-                STATE_CARE_EXPANDED, binding.cardCare, binding.careHeader,
-                binding.ivCareChevron, binding.careBody,
-                R.string.section_care_title, R.string.section_expand, R.string.section_collapse,
-                restored(STATE_CARE_EXPANDED, default = true),
             ),
             Section(
                 STATE_FERTILISER_EXPANDED, binding.cardFertiliser, binding.fertiliserHeader,
@@ -325,31 +321,44 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val column = cardColumn()
         card.addView(column)
 
-        column.addView(
-            factRow(R.drawable.ic_garden, getString(R.string.about_fact_scientific), scientificName),
-        )
-        column.addView(
-            factRow(
-                R.drawable.ic_guide,
-                getString(R.string.about_fact_group),
-                getString(categoryLabelRes(category)),
-            ),
-        )
-        nativeRangeSummary?.let { range ->
-            column.addView(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
-        }
         val difficultyRes = when (PlantFacts.difficulty(carePlanSnapshot, category)) {
             1 -> R.string.about_difficulty_easy
             2 -> R.string.about_difficulty_moderate
             else -> R.string.about_difficulty_demanding
         }
-        column.addView(
-            factRow(
-                R.drawable.ic_shield_check,
-                getString(R.string.about_fact_difficulty),
-                getString(difficultyRes),
-            ),
-        )
+        val rows = buildList {
+            add(
+                factRow(
+                    R.drawable.ic_garden,
+                    getString(R.string.about_fact_scientific),
+                    scientificName,
+                ),
+            )
+            add(
+                factRow(
+                    R.drawable.ic_guide,
+                    getString(R.string.about_fact_group),
+                    getString(categoryLabelRes(category)),
+                ),
+            )
+            nativeRangeSummary?.let { range ->
+                add(factRow(R.drawable.ic_moon, getString(R.string.about_fact_range), range))
+            }
+            add(
+                factRow(
+                    R.drawable.ic_shield_check,
+                    getString(R.string.about_fact_difficulty),
+                    getString(difficultyRes),
+                ),
+            )
+        }
+        // Ruled between rows: the native-range row is a wrapped paragraph while
+        // its neighbours are one-liners, and without a rule the block read as
+        // one collapsed run of text rather than four separate facts.
+        rows.forEachIndexed { index, row ->
+            if (index > 0) column.addView(rowDivider())
+            column.addView(row)
+        }
         host.addView(card)
     }
 
@@ -503,28 +512,57 @@ class SpeciesDetailActivity : AppCompatActivity() {
      * stays hidden when the community has nothing for this species.
      */
     private fun loadCommunityScans() {
+        if (!CommunityPrefs.uploadsEnabled(this)) {
+            binding.tvSpeciesCommunityLabel.visibility = View.GONE
+            binding.rvSpeciesCommunity.visibility = View.GONE
+            return
+        }
         val pseudoId = TelemetryIds.userPseudoId(this)
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
-            // Compact preview cells; tapping opens a READ-ONLY view — second
-            // opinions are left to the result screen.
+            // Compact preview cells; tapping opens the sheet — commenting is
+            // unlocked here too (Community v2), guarded below for scans that
+            // turn out to be this install's own.
             preview = true,
             onClick = { item ->
                 if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
-                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
+                    lifecycleScope.launch {
+                        scanRepository.recordCommunityView(
+                            item.scanId,
+                            pseudoId,
+                            this@SpeciesDetailActivity,
+                        )
+                    }
                 }
-                CommunityOpinionSheet.showReadOnly(
-                    supportFragmentManager,
-                    item,
-                    DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
-                )
+                val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
+                lifecycleScope.launch {
+                    val mine = scanRepository.localClientScanIds()
+                    if (item.scanId in mine) {
+                        startActivity(
+                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
+                                .intentFor(this@SpeciesDetailActivity, item.scanId),
+                        )
+                    } else {
+                        // localClientScanIds() suspends on Dispatchers.IO, so we
+                        // always resume a main-loop turn later. lifecycleScope
+                        // only cancels at DESTROYED, so a Home press mid-read
+                        // would land here after onSaveInstanceState and blow up
+                        // inside show()'s commit().
+                        if (supportFragmentManager.isStateSaved) return@launch
+                        CommunityOpinionSheet.show(supportFragmentManager, item, label)
+                    }
+                }
             },
         )
         binding.rvSpeciesCommunity.layoutManager =
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpeciesCommunity.adapter = adapter
         lifecycleScope.launch {
-            scanRepository.communityScansBySpecies(scientificName, pseudoId).onSuccess { resp ->
+            scanRepository.communityScansBySpecies(
+                scientificName,
+                pseudoId,
+                context = this@SpeciesDetailActivity,
+            ).onSuccess { resp ->
                 if (resp.items.isEmpty()) return@onSuccess
                 adapter.submit(resp.items)
                 binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
@@ -615,16 +653,24 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
-     *  Wikipedia fetch. Renders the SAME rich [CarePlanCardView] the scan
-     *  result and garden detail use (gradient header + watering/light/humidity
-     *  pills + expandable details) instead of a flat text line. Reminders are
-     *  hidden here — this is a healthy-baseline plan, not a diagnosis. */
+     *  Wikipedia fetch. Renders the SAME [CarePlanCardView] the scan result
+     *  and garden detail use — gradient header + watering/light/humidity
+     *  pills — as its own collapsible card, with no section wrapper and no
+     *  detail panel. Reminders are hidden here: this is a healthy-baseline
+     *  plan, not a diagnosis. */
     private fun loadCare() {
         val careCard = CarePlanCardView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
+            // One fold, not two. There is no Care section around this card
+            // any more, so the card's own accordion is the only chevron and
+            // it ships closed like every other section on this screen. The
+            // verbose detail panel is off entirely: unfolding gives the plan
+            // at a glance — the pills, the note, the follow-up — the same
+            // thing the scan result's cure plan shows.
+            detailsEnabled = false
         }
         binding.careSlot.removeAllViews()
         binding.careSlot.addView(careCard)
@@ -922,11 +968,16 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.listDiseases.removeAllViews()
         if (aiItems.isNotEmpty()) {
             aiItems.forEach { item ->
-                // Match by class key first, then by display name, so the row
-                // picks up the same icon as the disease guide/book instead of
-                // the generic placeholder.
-                val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
-                    ?: DiseaseCatalog.guideItemForName(item.name)
+                // Display name FIRST, then the class key. The key is the
+                // model's pick from a fixed list, so when the list has no
+                // entry for the condition it picks the nearest one it was
+                // given — "Root rot" came back tagged nutrient_deficiency and
+                // this row deep-linked (and iconed) the wrong article. An
+                // exact guide-title match is the same words, so it cannot be
+                // a near miss; the key stays as the fallback for names the
+                // guide words differently, and for other languages.
+                val guide = DiseaseCatalog.guideItemForName(item.name)
+                    ?: item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                 addDiseaseRow(
                     name = item.name.orEmpty(),
                     note = item.note,
@@ -1019,7 +1070,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
         const val EXTRA_COMMON_NAME = "extra_common_name"
         private const val STATE_ABOUT_EXPANDED = "state_about_expanded"
-        private const val STATE_CARE_EXPANDED = "state_care_expanded"
         private const val STATE_FERTILISER_EXPANDED = "state_fertiliser_expanded"
         private const val STATE_TIPS_EXPANDED = "state_tips_expanded"
         private const val STATE_DISEASES_EXPANDED = "state_diseases_expanded"

@@ -17,6 +17,18 @@
         <item quantity="one">%d scan</item>
         <item quantity="other">%d scans</item>
     </plurals>
+    <plurals name="room_count">
+        <item quantity="one">%d room</item>
+        <item quantity="other">%d rooms</item>
+    </plurals>
+    <plurals name="room_plants_count">
+        <item quantity="one">%d plant</item>
+        <item quantity="other">%d plants</item>
+    </plurals>
+    <plurals name="care_tasks_count">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
 
     <!-- Tabs -->
     <string name="tab_scan">Scan</string>
@@ -101,10 +113,9 @@
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is stored without an account, name or precise location, and photo metadata (EXIF, including GPS) is removed. An anonymous per-install identifier is attached for abuse prevention and data quality, so records sent from one device may be linkable. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent; see the privacy policy for retention and deletion details.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
-    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
     <!-- Interactive contextual guidance -->
     <string name="guidance_title_home_scan">Home &amp; Scan</string>
@@ -113,9 +124,11 @@
     <string name="guidance_title_gallery">Gallery</string>
     <string name="guidance_title_profile">Profile</string>
     <string name="guidance_title_species">Species details</string>
+    <string name="guidance_title_community">Community</string>
     <string name="guidance_home_actions">Scan checks a plant’s health; Identify names an unknown species.</string>
     <string name="guidance_home_tools">Measure light, calculate watering, check symptoms, or browse the plant guide.</string>
     <string name="guidance_home_scan_nav">Open Scan to check a plant’s health.</string>
+    <string name="guidance_home_notifications">Replies, care reminders and garden alerts collect here.</string>
     <string name="guidance_camera_permission">Allow camera access to photograph a leaf, or choose a photo from Gallery.</string>
     <string name="guidance_camera_preview">Frame one leaf in even light against a plain background.</string>
     <string name="guidance_camera_gallery">Choose a clear photo of one plant.</string>
@@ -140,6 +153,8 @@
     <string name="guidance_species_care">Expand Care Plan for watering, light, and other care advice.</string>
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
+    <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -156,6 +171,7 @@
 
     <!-- Result -->
     <string name="new_scan">New Scan</string>
+    <string name="new_scan_hint">Take a new photo or pick one from your gallery</string>
     <string name="heatmap_label">Detection Area</string>
 
     <!-- Camera -->
@@ -239,6 +255,7 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
     <!-- Community second opinion -->
+    <string name="replies_title">Replies to your scan</string>
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
     <string name="community_opinion_diagnosis_label">Diagnosis</string>
@@ -247,16 +264,18 @@
     <string name="community_opinion_send">Post opinion</string>
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
+    <string name="community_opinion_my_vote">Your opinion: %1$s</string>
+    <string name="community_opinion_more">More options</string>
+    <string name="community_opinion_change">Change opinion</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
+    <string name="community_opinion_loading">Loading community replies…</string>
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
     <string name="community_opinion_photo_desc">Shared plant scan</string>
-    <string name="gallery_community_badge">💬 %1$d</string>
-    <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
@@ -268,19 +287,47 @@
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
     <string name="second_opinion_stop">Stop request</string>
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
-    <string name="community_opinion_replies_title">Community second opinions</string>
-    <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
-    <string name="community_opinion_locked">You\'ve already shared your second opinion on this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_opinion_list_header">Replies (%1$d)</string>
-    <string name="community_wants_opinion_badge">Wants a second opinion</string>
+    <string name="community_wants_opinion_badge">Needs an opinion</string>
+    <string name="community_like_action">Like</string>
+    <string name="community_open_replies">Open %1$d replies</string>
+    <string name="community_replies_locked_short">Replies locked</string>
+    <string name="community_replies_locked_readable">Replies are read-only because the owner is not asking for opinions</string>
+    <string name="community_opinion_locked_body">Replies are read-only. The owner did not request a second opinion, or their request has ended.</string>
+    <string name="community_opinion_locked_toast">This opinion request has ended.</string>
+    <string name="community_report_action">Report</string>
+    <string name="community_block_action">Block author</string>
+    <string name="community_report_title">Why are you reporting this?</string>
+    <string name="community_report_sent">Report sent. Thank you.</string>
+    <string name="community_block_title">Block this author?</string>
+    <string name="community_block_body">Their scans and replies will be hidden from you, and your posts will be hidden from them.</string>
+    <string name="community_block_confirm">Block</string>
+    <string name="community_blocked">Author blocked.</string>
+    <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
+    <string-array name="community_report_reason_labels">
+        <item>Sexual content</item>
+        <item>Violence or threats</item>
+        <item>Hate or harassment</item>
+        <item>Illegal or dangerous advice</item>
+        <item>Spam or misleading content</item>
+        <item>Privacy or impersonation</item>
+        <item>Other rules violation</item>
+    </string-array>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Community scans</string>
+    <string name="nearby_scans_title">Community feed</string>
     <string name="nearby_scans_cd">Community scans</string>
+    <string name="notifications_cd">Notifications</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
+    <string name="notifications_mark_all_read">Mark all read</string>
+    <string name="notifications_clear_all">Clear all</string>
+    <string name="notifications_clear_confirm_title">Clear all notifications?</string>
+    <string name="notifications_clear_confirm_body">Clears the whole list. The replies, reminders and alerts themselves stay put.</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
-    <string name="nearby_scans_second_opinion">Second opinion</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
     <string name="community_filter_country">Country</string>
@@ -300,11 +347,8 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
-    <!-- Nearby scans sort & filter overlay -->
-    <string name="nearby_filter_title">Sort &amp; filter</string>
-    <string name="nearby_filter_by_date">By date</string>
-    <string name="nearby_filter_date_newest">Newest first</string>
-    <string name="nearby_filter_date_oldest">Oldest first</string>
+    <!-- Community recommendation-feed filter -->
+    <string name="nearby_filter_title">Filter by disease</string>
     <string name="nearby_filter_by_type">By type</string>
     <string name="nearby_filter_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
@@ -366,7 +410,7 @@
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
-    <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <string name="garden_subtitle">Every plant, scan and watering in one place.</string>
     <string name="profile_subtitle">Your scan stats, server health, theme, language and community settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
@@ -374,6 +418,83 @@
     <string name="plant_species">Species</string>
     <string name="plant_room">Room (optional)</string>
     <string name="plant_room_unassigned">Unassigned</string>
+
+    <!-- Garden refactor — Rooms (see docs/ROADMAP.md "Garden refactor") -->
+    <string name="garden_care_calendar">Care calendar</string>
+    <string name="garden_subtitle_combined">%1$s · %2$s</string>
+    <string name="room_add">Add room</string>
+    <string name="room_name_hint">Room name</string>
+    <string name="room_name_taken">A room with this name already exists</string>
+    <string name="room_rename">Rename room</string>
+    <string name="room_delete">Delete room</string>
+    <string name="room_delete_confirm">The room will be deleted. Its plants stay in your garden and move to Unassigned.</string>
+    <string name="room_empty_plants">No plants yet · tap to add</string>
+    <string name="room_why_hint">Light and humidity differ from room to room — grouping plants makes their care schedule smarter.</string>
+    <string name="room_plus_more">+%1$d</string>
+    <string name="room_preset_living">Living room</string>
+    <string name="room_preset_bedroom">Bedroom</string>
+    <string name="room_preset_kitchen">Kitchen</string>
+    <string name="room_preset_office">Office</string>
+    <string name="room_preset_balcony">Balcony</string>
+    <string name="room_preset_bathroom">Bathroom</string>
+    <string name="room_preset_other">Other</string>
+
+    <!-- Garden refactor — plant health status badge (PlantHealth.Status) -->
+    <string name="plant_status_healthy">Healthy</string>
+    <string name="plant_status_treatment">Treatment</string>
+    <string name="plant_status_watch">Watch</string>
+    <string name="plant_status_recovering">Recovering</string>
+    <string name="plant_status_no_scans">No scans yet</string>
+
+    <!-- Garden refactor — plant profile: Overview / Care / History / Gallery -->
+    <string name="plant_tab_overview">Overview</string>
+    <string name="plant_tab_care">Care</string>
+    <string name="plant_tab_history">History</string>
+    <string name="plant_tab_gallery">Gallery</string>
+    <string name="plant_health_title">Health</string>
+    <string name="plant_health_header_status">Health · %1$s</string>
+    <string name="plant_health_header_score">Health · %1$s · %2$d%%</string>
+    <string name="plant_health_delta_week">%1$s this week</string>
+    <string name="plant_health_need_scans">Scan this plant twice to see its health trend</string>
+    <string name="treatment_plan_current">Current treatment plan</string>
+    <string name="treatment_step_of">Step %1$d of %2$d</string>
+    <string name="treatment_step_done">Done · %1$s</string>
+    <string name="treatment_step_due">Due %1$s</string>
+    <string name="treatment_step_overdue">Overdue · was due %1$s</string>
+    <string name="treatment_finished">Treatment finished · %1$d of %2$d steps · scan again to confirm recovery</string>
+    <string name="add_observation">Add observation</string>
+
+    <!-- Garden refactor — calendar, day view, task detail -->
+    <string name="calendar_legend_pending">Has tasks</string>
+    <string name="calendar_legend_overdue">Overdue</string>
+    <string name="calendar_legend_done">Done</string>
+    <string name="calendar_today_prefix">Today, %1$s</string>
+    <string name="garden_do_today_title">Do today</string>
+    <string name="garden_do_today_summary">%1$s · %2$s</string>
+    <plurals name="garden_do_today_overdue_count">
+        <item quantity="one">%d overdue</item>
+        <item quantity="other">%d overdue</item>
+    </plurals>
+    <string name="calendar_all_caught_up">All caught up 🌿</string>
+    <string name="calendar_empty_day">Nothing scheduled for this day</string>
+    <string name="calendar_show_done">Show completed (%1$d)</string>
+    <string name="calendar_hide_done">Hide completed</string>
+    <string name="calendar_overdue_header">Overdue</string>
+    <string name="task_description">Description</string>
+    <string name="task_what_to_do">What to do</string>
+    <string name="task_recommendations">Recommendations</string>
+    <string name="task_products">Recommended products</string>
+    <string name="task_products_disclaimer">Follow the manufacturer\'s instructions and local regulations. This is guidance, not a prescription.</string>
+    <string name="task_history">Completion history</string>
+    <string name="task_last_done">Last time: %1$s</string>
+    <string name="task_mark_done">Done</string>
+    <string name="task_undo">Undo</string>
+    <string name="task_temp_range">Air temperature: %1$d–%2$d °C</string>
+    <plurals name="task_dry_hours">
+        <item quantity="one">Avoid rain for the next %1$d hour</item>
+        <item quantity="other">Avoid rain for the next %1$d hours</item>
+    </plurals>
+    <string name="task_type_treatment">Treatment</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>
@@ -381,9 +502,10 @@
     <string name="empty_garden_title">Your garden is ready</string>
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
     <string name="empty_garden_cta_add">Add your first plant</string>
-    <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
-    <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
+    <!-- Destination screens reached from a stale notification-centre row -->
+    <string name="scan_no_longer_available">This scan is no longer on this device.</string>
+    <string name="plant_no_longer_available">This plant is no longer in your garden.</string>
     <string name="scans">Scans</string>
     <string name="journal">Journal</string>
     <string name="waterings">Waterings</string>
@@ -395,16 +517,9 @@
     <string name="log_repotting">Repot</string>
     <string name="log_pruning">Prune</string>
     <string name="log_misting">Mist</string>
-    <!-- Garden card status row -->
-    <string name="garden_card_health_healthy">Healthy %1$d%%</string>
-    <string name="garden_card_health_disease">%1$s</string>
-    <string name="garden_card_action_overdue">%1$s overdue</string>
-    <string name="garden_card_action_tomorrow">%1$s tomorrow</string>
-    <string name="garden_card_action_in_days">%1$s in %2$d days</string>
-    <!-- Garden search + attention section -->
+    <!-- Garden search -->
     <string name="garden_search_hint">Search plants…</string>
     <string name="garden_search_empty">No plants match “%1$s”</string>
-    <string name="garden_section_attention">Needs attention</string>
     <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
     <plurals name="care_reminder_rescheduled">
         <item quantity="one">Logged — next reminder in %1$d day</item>
@@ -436,6 +551,7 @@
     <string name="photo_caption_hint">Optional caption for this photo</string>
     <string name="journal_text_required">Write a note first</string>
     <string name="add_to_garden">Add to garden</string>
+    <string name="add_to_garden_hint">Tap a plant to attach this scan to it</string>
     <string name="added_to_garden">In garden</string>
     <string name="create_new_plant">Create new plant</string>
     <string name="scan_added_to_garden">Scan added to garden</string>
@@ -523,8 +639,9 @@
     <string name="reminder_action_done">Done</string>
     <string name="reminder_action_snooze">Snooze 1d</string>
     <string name="reminder_streak_last_watered">Last watered %s</string>
-    <!-- Photos tab + before/after compare slider -->
-    <string name="plant_photos">Photos</string>
+    <!-- Before/after compare slider (the Photos TAB LABEL was superseded by
+         plant_tab_gallery in the Garden refactor's Overview/Care/History/
+         Gallery restructure) -->
     <string name="plant_photos_empty_title">No photos yet</string>
     <string name="plant_photos_empty_hint">Every scan + every photo entry shows up here. Long-press a tile to compare two photos side-by-side.</string>
     <string name="photo_compare_title">Before / after</string>
@@ -867,6 +984,7 @@
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
     <string name="native_range_title">Native range</string>
+    <string name="native_range_subtitle">Where it grows wild, and the climate it expects.</string>
     <string name="native_range_expand">Show native range</string>
     <string name="native_range_collapse">Hide native range</string>
     <string name="native_range_loading">Loading native range…</string>
@@ -880,6 +998,7 @@
     <string name="native_range_map_content_description">Native-range map showing: %1$s. Tap a country to check it.</string>
     <string name="native_range_map_empty">Native-range map unavailable</string>
     <string name="flowering_title">Flowering by month</string>
+    <string name="flowering_subtitle">When it blooms, and what brings buds on.</string>
     <string name="flowering_loading">Loading flowering calendar…</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
@@ -961,6 +1080,7 @@
 
     <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
     <string name="lunar_title">Lunar calendar</string>
+    <string name="lunar_subtitle">Favourable and unfavourable days by moon phase.</string>
     <string name="lunar_expand">Show lunar calendar</string>
     <string name="lunar_collapse">Hide lunar calendar</string>
     <string name="lunar_today">Today, %1$s</string>
@@ -998,6 +1118,11 @@
     <string name="lunar_task_watering">Watering</string>
     <string name="lunar_task_pruning">Pruning</string>
     <string name="lunar_category_note">Tailored for: %1$s</string>
+    <string name="lunar_breakdown_row">For %1$s — %2$s</string>
+    <string name="lunar_breakdown_heading">By plant type</string>
+    <string name="lunar_rating_good_day">favourable day</string>
+    <string name="lunar_rating_neutral_day">neutral day</string>
+    <string name="lunar_rating_bad_day">unfavourable day</string>
     <string name="lunar_cat_fruiting">fruiting plants</string>
     <string name="lunar_cat_root">root crops</string>
     <string name="lunar_cat_leafy">leafy greens</string>
@@ -1017,8 +1142,6 @@
     <!-- Collapsible sections on the species screen -->
     <string name="section_about_title">About the plant</string>
     <string name="section_about_subtitle">Description, traits and varieties.</string>
-    <string name="section_care_title">Care</string>
-    <string name="section_care_subtitle">Watering, light, temperature, humidity and pruning.</string>
     <string name="section_fertiliser_title">Fertiliser and feeding</string>
     <string name="section_fertiliser_subtitle">What to feed with, and when.</string>
     <string name="section_diseases_title">Diseases and pests</string>

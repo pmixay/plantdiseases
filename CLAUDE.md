@@ -21,9 +21,12 @@ Two deliverables, each with its own toolchain:
 | `server/` | Python 3.14, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 
-The bilingual privacy policy is a single standalone page, `privacy.html` (repo
-root) — the canonical data-disclosure surface referenced by the app's consent
-screen.
+The bilingual privacy policy is bundled with the app at
+`android/app/src/main/assets/privacy_policy.html` and shown by
+`ui/legal/PrivacyPolicyActivity` (a WebView over that one local asset). It is
+the canonical data-disclosure surface, linked from the onboarding consent
+screen and the in-app consent dialog — so it must work offline and must
+describe the build the reader is actually running.
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next
@@ -133,7 +136,16 @@ validation, metrics — and wires everything together):
 alone. Every other screen references a species through the reusable
 `ui/common/SpeciesInfoCardView` (Wikipedia photo + name + description + "more
 about this species"), which is embedded on the scan result, species identify
-and the community opinion sheet. Do not add species cards elsewhere.
+and the community opinion sheet (it was dropped from the sheet in Community
+v2 and restored in the Option-A redesign — knowing what the plant *is*
+changes what you would call the problem). Never build a second species card:
+if a screen needs one, embed this view.
+
+**Garden tab** is a single surface — the do-today queue over room cards, no
+pane switcher. The care month grid is its own screen
+(`ui/garden/care/CareCalendarActivity`, opened from the "Care calendar" button
+at the top of the tab); the lunar calendar is per-plant and lives on the plant
+detail screen only.
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`

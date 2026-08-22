@@ -47,6 +47,21 @@ class LunarCalendarView @JvmOverloads constructor(
     private var category: PlantCategory = PlantCategory.FOLIAGE
     private var hasRendered = false
 
+    /** One plant in [setAggregate]'s garden-wide view. */
+    data class AggregateEntry(val label: String, val category: PlantCategory)
+
+    /** Small host-saveable navigation snapshot. The view is normally created
+     * programmatically (without a stable view id), so Android cannot restore
+     * its browsed month/selected date automatically. */
+    data class NavigationState(
+        val shownMonth: YearMonth,
+        val selectedDate: LocalDate,
+    )
+
+    /** Non-null in aggregate mode ([setAggregate]) — null means the
+     *  single-species mode [setSpecies] already supported. */
+    private var aggregateEntries: List<AggregateEntry>? = null
+
     /** Lets the host scroll the day panel into view when a tap selects a date
      *  that is off-screen (e.g. from an upcoming-day row). */
     var onRequestScrollTo: ((View) -> Unit)? = null
@@ -63,9 +78,13 @@ class LunarCalendarView @JvmOverloads constructor(
     private val phaseName: TextView
     private val signIcon: ImageView
     private val signView: TextView
+    private val goodLabel: TextView
     private val goodTasks: LinearLayout
+    private val avoidLabel: TextView
     private val avoidTasks: LinearLayout
+    private val categoryBreakdown: LinearLayout
     private val legend: LinearLayout
+    private val upcomingCard: View
     private val upcomingList: LinearLayout
 
     init {
@@ -83,9 +102,13 @@ class LunarCalendarView @JvmOverloads constructor(
         phaseName = findViewById(R.id.lunar_phase_name)
         signIcon = findViewById(R.id.lunar_sign_icon)
         signView = findViewById(R.id.lunar_sign)
+        goodLabel = findViewById(R.id.lunar_good_label)
         goodTasks = findViewById(R.id.lunar_good_tasks)
+        avoidLabel = findViewById(R.id.lunar_avoid_label)
         avoidTasks = findViewById(R.id.lunar_avoid_tasks)
+        categoryBreakdown = findViewById(R.id.lunar_category_breakdown)
         legend = findViewById(R.id.lunar_legend)
+        upcomingCard = findViewById(R.id.lunar_upcoming_card)
         upcomingList = findViewById(R.id.lunar_upcoming_list)
 
         prevBtn.setOnClickListener {
@@ -104,13 +127,36 @@ class LunarCalendarView @JvmOverloads constructor(
 
     /** Free-text species in, category out — see [PlantCategoryClassifier]. Safe
      *  to call before or after the initial render; idempotent for the same
-     *  resolved category. */
+     *  resolved category. Switches back out of aggregate mode if it was on. */
     fun setSpecies(scientificName: String?, commonName: String?) {
         val next = PlantCategoryClassifier.classify(scientificName, commonName)
-        if (next == category && hasRendered) return
+        if (next == category && aggregateEntries == null && hasRendered) return
         category = next
+        aggregateEntries = null
         renderAll()
     }
+
+    /** Garden-wide mode: one day rating per cell (the rating shared by the
+     *  most plants — see [LunarCalendar.aggregateRating]), with the
+     *  day-detail panel breaking the nuance back out by category. An empty
+     *  list is a valid "no plants yet" state, not an error — the caller
+     *  decides whether to show this view or an empty-state message instead. */
+    fun setAggregate(entries: List<AggregateEntry>) {
+        aggregateEntries = entries
+        renderAll()
+    }
+
+    fun navigationState(): NavigationState = NavigationState(shownMonth, selected)
+
+    fun restoreNavigationState(state: NavigationState) {
+        shownMonth = LunarCalendar.clampMonth(state.shownMonth)
+        selected = LunarCalendar.clampDate(state.selectedDate)
+        renderAll()
+    }
+
+    private fun ratingFor(date: LocalDate): LunarCalendar.Rating =
+        aggregateEntries?.let { LunarCalendar.aggregateRating(date, it.map { entry -> entry.category }) }
+            ?: LunarCalendar.rating(date, category)
 
     private fun renderAll() {
         renderGrid()
@@ -164,7 +210,7 @@ class LunarCalendarView @JvmOverloads constructor(
             return cell
         }
 
-        val rating = LunarCalendar.rating(date, category)
+        val rating = ratingFor(date)
         cell.findViewById<View>(R.id.lunar_cell_fill).setBackgroundResource(dayBackgroundRes(rating))
         day.setTextColor(context.getColor(dayForegroundRes(rating)))
         cell.findViewById<View>(R.id.lunar_cell_today_dot).visibility =
@@ -218,13 +264,16 @@ class LunarCalendarView @JvmOverloads constructor(
     // ── Day panel ────────────────────────────────────────────────
 
     private fun renderPanel(date: LocalDate, animateMoon: Boolean) {
+        // dayInfo's phase/zodiac/illumination are date-only; only its
+        // rating/favourable/avoid depend on category, and those three are
+        // ignored below in aggregate mode, so a stale `category` field there
+        // is harmless.
         val info = LunarCalendar.dayInfo(date, category)
         todayTitle.text = if (date == today && todayInRange) {
             context.getString(R.string.lunar_today, formatDayMonth(date))
         } else {
             formatDayMonth(date)
         }
-        categoryNote.text = context.getString(R.string.lunar_category_note, context.getString(categoryStringRes(category)))
         rangeNote.visibility = if (todayInRange) View.GONE else View.VISIBLE
         if (!todayInRange) rangeNote.setText(R.string.lunar_out_of_range)
 
@@ -233,8 +282,88 @@ class LunarCalendarView @JvmOverloads constructor(
         signIcon.setImageResource(zodiacIconRes(info.zodiac))
         signView.text = context.getString(zodiacStringRes(info.zodiac))
 
-        fillTaskRow(goodTasks, info.favourable, textColorRes = R.color.on_surface_secondary)
-        fillTaskRow(avoidTasks, info.avoid, textColorRes = R.color.on_surface_secondary)
+        val entries = aggregateEntries
+        if (entries != null) {
+            // A single favourable/avoid task list doesn't generalise across
+            // categories that can disagree on the same day — the breakdown
+            // list below carries that nuance instead.
+            categoryNote.visibility = View.GONE
+            goodLabel.visibility = View.GONE
+            goodTasks.visibility = View.GONE
+            avoidLabel.visibility = View.GONE
+            avoidTasks.visibility = View.GONE
+            renderCategoryBreakdown(date, entries)
+        } else {
+            categoryNote.visibility = View.VISIBLE
+            categoryNote.text = context.getString(R.string.lunar_category_note, context.getString(categoryStringRes(category)))
+            goodLabel.visibility = View.VISIBLE
+            avoidLabel.visibility = View.VISIBLE
+            categoryBreakdown.visibility = View.GONE
+            fillTaskRow(goodTasks, info.favourable, textColorRes = R.color.on_surface_secondary)
+            fillTaskRow(avoidTasks, info.avoid, textColorRes = R.color.on_surface_secondary)
+        }
+    }
+
+    /** One row per category present in the garden — its own rating for
+     *  [date] plus which plants fall under it, so "good for your foliage,
+     *  bad for your fruiting" stays visible instead of averaged into the
+     *  single grid colour. Each row is two lines (category + rating word,
+     *  then the plant names) so a long plant list wraps on its own line
+     *  instead of shoving the category off the row, and a top gravity so
+     *  the dot stays beside the first line rather than drifting to the
+     *  middle of a wrapped row. */
+    private fun renderCategoryBreakdown(date: LocalDate, entries: List<AggregateEntry>) {
+        categoryBreakdown.removeAllViews()
+        categoryBreakdown.visibility = View.VISIBLE
+        categoryBreakdown.addView(
+            TextView(context).apply {
+                setText(R.string.lunar_breakdown_heading)
+                setTextColor(context.getColor(R.color.primary))
+                textSize = 13f
+            },
+        )
+        entries.groupBy { it.category }.forEach { (cat, plantsInCategory) ->
+            val rating = LunarCalendar.rating(date, cat)
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) }
+            }
+            row.addView(
+                View(context).apply { setBackgroundResource(dayBackgroundRes(rating)) },
+                LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                    marginEnd = dp(8)
+                    topMargin = dp(4)
+                },
+            )
+            val textColumn = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            textColumn.addView(
+                TextView(context).apply {
+                    text = context.getString(
+                        R.string.lunar_breakdown_row,
+                        context.getString(categoryStringRes(cat)),
+                        context.getString(ratingWordRes(rating)),
+                    )
+                    setTextColor(context.getColor(R.color.on_surface))
+                    textSize = 13f
+                },
+            )
+            textColumn.addView(
+                TextView(context).apply {
+                    text = plantsInCategory.joinToString(", ") { it.label }
+                    setTextColor(context.getColor(R.color.on_surface_secondary))
+                    textSize = 12f
+                },
+            )
+            row.addView(textColumn)
+            categoryBreakdown.addView(row)
+        }
     }
 
     private fun fillTaskRow(row: LinearLayout, tasks: List<LunarCalendar.Task>, textColorRes: Int) {
@@ -298,6 +427,11 @@ class LunarCalendarView @JvmOverloads constructor(
     }
 
     private fun renderUpcoming() {
+        if (aggregateEntries != null) {
+            upcomingCard.visibility = View.GONE
+            return
+        }
+        upcomingCard.visibility = View.VISIBLE
         upcomingList.removeAllViews()
         LunarCalendar.upcomingFavourable(anchor, 4, category).forEach { info ->
             val row = LayoutInflater.from(context)
@@ -345,6 +479,16 @@ class LunarCalendarView @JvmOverloads constructor(
         LunarCalendar.Rating.GOOD -> R.color.lunar_good_fg
         LunarCalendar.Rating.NEUTRAL -> R.color.lunar_neutral_fg
         LunarCalendar.Rating.BAD -> R.color.lunar_bad_fg
+    }
+
+    /** Singular "favourable day" wording for a sentence — distinct from
+     *  [R.string.lunar_legend_good] and its siblings, which are plural
+     *  adjectives built for the legend ("favourable" agreeing with an
+     *  implied "days"), not a standalone sentence. */
+    private fun ratingWordRes(rating: LunarCalendar.Rating): Int = when (rating) {
+        LunarCalendar.Rating.GOOD -> R.string.lunar_rating_good_day
+        LunarCalendar.Rating.NEUTRAL -> R.string.lunar_rating_neutral_day
+        LunarCalendar.Rating.BAD -> R.string.lunar_rating_bad_day
     }
 
     private fun phaseStringRes(phase: LunarCalendar.Phase): Int = when (phase) {

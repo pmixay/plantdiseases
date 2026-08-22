@@ -91,6 +91,34 @@ class ModelsTest {
     }
 
     @Test
+    fun carePlan_missingProductsFields_staysNullNotACrash() {
+        // Pre-Garden-refactor server response shape — no "products" or
+        // "treatment_conditions" keys at all. Must degrade to null, the
+        // same way every other v2-additive field already does.
+        val plan = gson.fromJson(
+            """{"species":"Ficus","disease":"leaf_spot","light_tier":"t"}""",
+            CarePlanResponse::class.java,
+        )
+        assertThat(plan.products).isNull()
+        assertThat(plan.treatmentConditions).isNull()
+    }
+
+    @Test
+    fun carePlan_parsesProductsAndTreatmentConditions() {
+        val json = """
+            {"species":"Ficus","disease":"gray_mold_botrytis","light_tier":"t",
+             "products":[{"key":"switch","kind":"fungicide","name":"Switch 62.5WG",
+               "active_ingredient":"cyprodinil + fludioxonil","note":"Alternate modes of action."}],
+             "treatment_conditions":{"best_time":"Morning.","temp_c":[15,25],"dry_hours":24}}
+        """.trimIndent()
+        val plan = gson.fromJson(json, CarePlanResponse::class.java)
+        assertThat(plan.products).hasSize(1)
+        assertThat(plan.products!![0].activeIngredient).isEqualTo("cyprodinil + fludioxonil")
+        assertThat(plan.treatmentConditions?.tempC).containsExactly(15, 25).inOrder()
+        assertThat(plan.treatmentConditions?.dryHours).isEqualTo(24)
+    }
+
+    @Test
     fun speciesMatch_displayName_prefersCommonThenScientific() {
         assertThat(SpeciesMatch("Ficus elastica", "Rubber Plant", 0.5f).displayName)
             .isEqualTo("Rubber Plant")

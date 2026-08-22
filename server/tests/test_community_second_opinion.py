@@ -51,7 +51,7 @@ def test_flag_is_owner_scoped(comm):
     comm.record_scan(scan_id="s3", user_pseudo_id="owner", country="GB",
                      region="London", disease="leaf_spot")
     # A different install can't flag someone else's scan.
-    assert comm.set_wants_opinion("s3", "attacker") is True  # intent recorded
+    assert comm.set_wants_opinion("s3", "attacker") is False
     assert _wants(comm, "s3") is False                       # but never applied
     # The real owner can.
     comm.set_wants_opinion("s3", "owner")

@@ -74,6 +74,13 @@ class CommunityUploader(
         // was taken so it can be grouped by the 30 km nearby radius.
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
+        // Register the durable forum identity here — on a real share, behind
+        // the opt-in — rather than from Application.onCreate(), which used to
+        // transmit it on every cold start before the onboarding disclosure had
+        // even rendered. Best-effort: the upload also sends the same key, but
+        // identity adoption failure must never block the share itself.
+        scanRepository.ensureCommunityAuthorAdopted(context)
+
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
@@ -88,6 +95,7 @@ class CommunityUploader(
             locale = locale,
             nickname = Nicknames.nickname(context),
             thumbnail = thumb,
+            context = context,
         )
         // The thumbnail is a transient cache file; delete it once the
         // upload either succeeded or hard-failed so we don't leak
@@ -138,6 +146,10 @@ class CommunityUploader(
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val pseudoId = TelemetryIds.userPseudoId(context)
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
+        // Same lazy, share-time registration as uploadIfEnabled. On the
+        // second-opinion path `force` bypasses the global toggle, and that tap
+        // is itself consent to share this scan — so adopt on it too.
+        scanRepository.ensureCommunityAuthorAdopted(context, force = force)
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
@@ -152,6 +164,7 @@ class CommunityUploader(
             locale = locale,
             nickname = Nicknames.nickname(context),
             thumbnail = thumb,
+            context = context,
         )
         thumb?.let { runCatching { it.delete() } }
         result.fold(

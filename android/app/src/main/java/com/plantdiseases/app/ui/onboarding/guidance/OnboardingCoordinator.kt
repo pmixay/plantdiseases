@@ -383,6 +383,7 @@ class OnboardingCoordinator(
             OnboardingContext.GALLERY -> listOf(OnboardingChapter.GALLERY)
             OnboardingContext.PROFILE -> listOf(OnboardingChapter.PROFILE)
             OnboardingContext.SPECIES_DETAILS -> listOf(OnboardingChapter.SPECIES_DETAILS)
+            OnboardingContext.COMMUNITY -> listOf(OnboardingChapter.COMMUNITY)
         }
     }
 }

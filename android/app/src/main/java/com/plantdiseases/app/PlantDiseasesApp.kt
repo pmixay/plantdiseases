@@ -4,8 +4,8 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +29,9 @@ class PlantDiseasesApp : Application() {
 
     @Inject
     lateinit var scanRepository: com.plantdiseases.app.data.repository.ScanRepository
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -155,6 +158,14 @@ class PlantDiseasesApp : Application() {
         com.plantdiseases.app.util.ResponseCache.init(this)
         setupTelemetry()
         purgeStaleRejectedScans()
+        pruneOldNotifications()
+        // NB: the community author row is deliberately NOT adopted here.
+        // Adoption mints a permanent per-device key and creates a permanent
+        // server-side row, so it must not run before the onboarding
+        // prominent-disclosure screen or for a user who never opted into the
+        // community. It happens lazily, from the first actual community write
+        // — see ScanRepository.ensureCommunityAuthorAdopted.
+        //
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -175,6 +186,19 @@ class PlantDiseasesApp : Application() {
     private fun purgeStaleRejectedScans() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
+        }
+    }
+
+    /** Sweep notification-centre rows older than 30 days on every launch.
+     *  ponytail: fixed window, no setting — add one if 30 days ever turns
+     *  out wrong for real usage. */
+    private fun pruneOldNotifications() {
+        appScope.launch {
+            runCatching {
+                notificationRepository.deleteOlderThan(
+                    System.currentTimeMillis() - NOTIFICATION_RETENTION_MS,
+                )
+            }
         }
     }
 
@@ -201,9 +225,12 @@ class PlantDiseasesApp : Application() {
      *  Without server push (FCM) this poll is the only way a reply reaches a
      *  closed app, so the interval is kept short with a flex window. UPDATE (not
      *  KEEP) so installs created under the old 6h schedule adopt the new one.
-     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
+     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker.
+     *  Scheduled regardless of the opinion-notifications preference: a user
+     *  who opted out of the popup still gets the reply recorded in the
+     *  notification centre, and this poll is the only way it's discovered on
+     *  a device without FCM configured. */
     fun scheduleOpinionChecks() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >(
@@ -251,9 +278,9 @@ class PlantDiseasesApp : Application() {
      *  the foreground (and right after the user asks for a second opinion) so a
      *  reply that landed while the app was closed surfaces promptly instead of
      *  waiting for the next periodic tick. Expedited, degrading to a normal job
-     *  if the expedited quota is spent. */
+     *  if the expedited quota is spent. Runs regardless of the
+     *  opinion-notifications preference — see scheduleOpinionChecks. */
     fun checkOpinionsNow() {
-        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >()
@@ -282,5 +309,7 @@ class PlantDiseasesApp : Application() {
         private const val KEY_CRASH_KIND = "crash_kind"
         private const val KEY_CRASH_MESSAGE = "crash_message"
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
+
+        private const val NOTIFICATION_RETENTION_MS = 30L * 24 * 3_600_000
     }
 }

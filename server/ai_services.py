@@ -48,6 +48,14 @@ try:
 except ImportError:
     from config import get_bool, get_float, get_int, get_str
 
+try:
+    from .diseases_data import (  # type: ignore[import-not-found]
+        TREATMENT_CONDITIONS,
+        TREATMENT_PRODUCTS,
+    )
+except ImportError:
+    from diseases_data import TREATMENT_CONDITIONS, TREATMENT_PRODUCTS
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration (config.json + env fallback) ──────────────────────
@@ -558,14 +566,19 @@ not given to you.
 
 ## Care-guide keys
 
-The app ships an offline care guide keyed by the identifiers above. The keys that address
-a PROBLEM, and so may be linked from your output, are exactly:
+The app ships an offline care guide that is WIDER than the classifier: it documents
+problems the model cannot diagnose from a photo as well as the nine classes above. The
+keys that address a PROBLEM, and so may be linked from your output, are exactly:
 
-gray_mold_botrytis, leaf_scorch_underwatering, leaf_spot, nutrient_deficiency, pests,
-powdery_mildew, viral_disease, edema, sunburn_or_scorch
+aphids, blight, botrytis, edema, gray_mold_botrytis, leaf_mold, leaf_scorch_underwatering,
+leaf_spot, mealybugs, nutrient_deficiency, pests, powdery_mildew, root_rot, rust,
+scale_insects, spider_mites, sunburn_or_scorch, viral_disease
 
-Never emit a key outside the list a task gives you: the client silently drops an unknown
-key, and the sentence around it loses its subject.
+Pick the key that names the SAME condition, never the nearest one that happens to be
+familiar: tagging root rot as nutrient_deficiency sends the reader to an article about a
+different problem. When no key names the condition, emit none. Never emit a key outside
+the list a task gives you: the client silently drops an unknown key, and the sentence
+around it loses its subject.
 
 ## Safety and scope
 
@@ -1367,15 +1380,25 @@ _SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CAC
 # Persistent layer behind the LRU: the species→diseases LLM answer is stable,
 # so once paid for it's reused across restarts and fresh installs instead of
 # re-running the ~10-20s OpenRouter call every time.
-_SPECIES_DISEASES_DISK = _DiskCache("species_diseases", SPECIES_DISEASES_CACHE_TTL_SECONDS)
+# v2: the key set below widened, so answers cached under v1 carry doc_keys
+# chosen from the old, too-narrow list (root rot -> nutrient_deficiency).
+_SPECIES_DISEASES_DISK = _DiskCache("species_diseases_v2", SPECIES_DISEASES_CACHE_TTL_SECONDS)
 
 # Disease-guide keys the Android client can deep-link (mirrors the app's
 # DiseaseCatalog). The model may tag an item with one of these; anything
 # else becomes null so the client shows the item as plain text.
+# These are the app's GUIDE-DOC ids, not classifier class keys — the offline
+# guide documents problems the model never predicts (root rot, blight, rust,
+# spider mites…). Restricting this to the nine classes made the model tag
+# "Root rot" with the closest key it had been given, nutrient_deficiency, and
+# the client then deep-linked the wrong article. ``gray_mold_botrytis`` stays
+# as the one class-key alias the client still maps (-> botrytis), so cached
+# answers and the other surfaces keep resolving.
 _GUIDE_DOC_KEYS = frozenset({
-    "gray_mold_botrytis", "leaf_scorch_underwatering", "leaf_spot",
-    "nutrient_deficiency", "pests", "powdery_mildew", "viral_disease",
-    "edema", "sunburn_or_scorch",
+    "aphids", "blight", "botrytis", "edema", "gray_mold_botrytis", "leaf_mold",
+    "leaf_scorch_underwatering", "leaf_spot", "mealybugs", "nutrient_deficiency",
+    "pests", "powdery_mildew", "root_rot", "rust", "scale_insects",
+    "spider_mites", "sunburn_or_scorch", "viral_disease",
 })
 
 # The response SHAPE is enforced by the JSON schema below, so the task block only
@@ -1396,7 +1419,7 @@ species is most commonly affected by when grown INDOORS, most common first.
 - "name": the condition as an owner would recognise it.
 - "note": one sentence under 20 words — how it shows up ON THIS SPECIES (the tissue and \
 the sign), then the single most useful first action.
-- "doc_key": the closest care-guide key from the list above, or null when none of them fits.
+- "doc_key": the care-guide key naming the SAME condition, or null when none names it.
 - Write "name" and "note" in the language the request asks for.
 
 Answer with the JSON object {"diseases": [{"name", "doc_key", "note"}]} and nothing else."""
@@ -2552,6 +2575,42 @@ def _localise(field: str, key: str, default, locale: str):
     return default
 
 
+def _localised_products(protocol_key: str, locale: str) -> list[dict] | None:
+    """Curated product catalogue entry for [protocol_key], localised —
+    see ``diseases_data.TREATMENT_PRODUCTS`` for why this is hand-written
+    rather than generated. ``None`` when the class has no curated entry;
+    the caller must omit the "products" key entirely in that case rather
+    than send an empty list."""
+    entries = TREATMENT_PRODUCTS.get(protocol_key)
+    if not entries:
+        return None
+    lang = "ru" if _is_russian(locale) else "en"
+    return [
+        {
+            "key": entry["key"],
+            "kind": entry["kind"],
+            "name": entry[f"name_{lang}"],
+            "active_ingredient": entry[f"active_ingredient_{lang}"],
+            "note": entry.get(f"note_{lang}"),
+        }
+        for entry in entries
+    ]
+
+
+def _localised_treatment_conditions(protocol_key: str, locale: str) -> dict | None:
+    """Application-window guidance for [protocol_key], localised. ``None``
+    when there's no curated entry (mirrors [_localised_products])."""
+    entry = TREATMENT_CONDITIONS.get(protocol_key)
+    if not entry:
+        return None
+    lang = "ru" if _is_russian(locale) else "en"
+    return {
+        "best_time": entry[f"best_time_{lang}"],
+        "temp_c": entry["temp_c"],
+        "dry_hours": entry["dry_hours"],
+    }
+
+
 def _current_growing_season(today: _dt.date | None = None) -> str:
     """Return ``"growing"`` or ``"dormant"`` for the supplied date.
 
@@ -3089,6 +3148,8 @@ def generate_care_plan(
     red_flags = _localise(
         "red_flags", protocol_key, list(protocol.get("red_flags") or []), locale,
     )
+    products = _localised_products(protocol_key, locale)
+    treatment_conditions = _localised_treatment_conditions(protocol_key, locale)
 
     plan: dict = {
         # ── v1 contract (unchanged) ────────────────────────────────
@@ -3115,6 +3176,14 @@ def generate_care_plan(
         "red_flags": list(red_flags),
         "checkpoints": checkpoints,
     }
+    # Both omitted entirely (not an empty list/dict) when the protocol has
+    # no curated entry — additive v2 fields, older clients ignore unknown
+    # keys either way, but an empty "products": [] would read as "checked,
+    # nothing found" rather than "not curated yet".
+    if products:
+        plan["products"] = products
+    if treatment_conditions:
+        plan["treatment_conditions"] = treatment_conditions
 
     season_key = season if season in ("growing", "dormant") else _current_growing_season(today)
     plan = _apply_season(plan, season_key, locale=locale)

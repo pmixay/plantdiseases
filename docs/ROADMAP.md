@@ -87,7 +87,7 @@ closed.
 - [ ] **EXIF GPS leaves the device** (`ScanRepository.kt:576,238`) — raw camera
       JPEG uploaded verbatim and forwarded to PlantNet, though
       `ImageUtils.prepareImageForUpload` exists and would strip it.
-      `privacy.html:87` says this may be published as an open dataset.
+      the bundled privacy policy says this may be published as an open dataset.
       *Smallest change, largest privacy return.*
 - [ ] **Pseudo-id in GET paths** (`ScanRepository.kt:775`) — a bearer capability
       landing in access logs.
@@ -232,7 +232,7 @@ Prep now, in parallel:
 
 None of it blocks a release.
 
-- [ ] **`privacy.html` — third-party processors undisclosed. Highest-priority
+- [ ] **Privacy policy — third-party processors undisclosed. Highest-priority
       doc item**, as the canonical disclosure surface. `/api/identify` sends
       photos to PlantNet; `/api/chat`, `/api/care-plan`, `/api/species-diseases`
       and `/api/species-profile` send text to OpenRouter. Neither is named. It
@@ -280,8 +280,14 @@ None of it blocks a release.
 - **Target store: RuStore** (RU audience; app already bilingual). No Google Play.
 - **No Compose rewrite** — keep XML Views, single-module; modernize the guts
   (Hilt, Ktor).
-- **Stay free + honest** — calibrated, OOD-aware, on-device offline, no account,
-  privacy-first.
+- **Stay free + honest** — calibrated, OOD-aware, on-device offline,
+  privacy-first. The current build has no account, login, email or password.
+  Community V2 creates a persistent anonymous per-device handle only after
+  Community opt-in or an explicit one-scan share; it deduplicates authors,
+  likes and views and enforces moderation without identifying the person.
+  Account Beta and any account linkage remain deferred and are not part of
+  this branch. The handle and same-device linkability are disclosed in
+  `privacy_policy.html`.
 - **Data loop is local** — collect/judge offline → Kaggle supplement → notebook
   pulls it.
 
