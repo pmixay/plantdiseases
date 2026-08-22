@@ -558,12 +558,24 @@ exactly the run that collapsed.
       sensitive and as safe. This independently confirms the investigation's
       refutation of the "re-fit temperature / logit bias" hypothesis (conf 0.9).
 
-      **Where that leaves 2.8.** The fix is neither the backbone (features are
-      fine, so DINOv3 / `frontier` will not address this) nor calibration. It is
-      the **head's learned decision geometry**: it ties scorch to in-domain
-      acquisition style. That points squarely at item 5 — ornamental scorch data
-      the head can learn a style-invariant direction from — or a domain-robust
-      training objective. It does **not** point at another sampler weight.
+      **Where that leaves 2.8.** Not calibration, and not another sampler
+      weight — both since falsified outright (2.7.3). It is the **head's learned
+      decision geometry**: it ties scorch to in-domain acquisition style. That
+      points at item 5 — ornamental scorch data the head can learn a
+      style-invariant direction from — or a domain-robust training objective.
+
+      > **PARTIALLY SUPERSEDED (2026-08-22).** "Features are fine, so DINOv3 /
+      > `frontier` will not address this" rested on the scorch-vs-**healthy**
+      > probe, which reaches 0.95 AUROC. The 2.7.3 close-out measured the axis
+      > that actually fails — scorch vs **leaf_spot** — and a linear probe on the
+      > same frozen features puts only **48.4%** of the benchmark's scorch
+      > clusters on the scorch side. The features separate scorch from healthy
+      > well and are near-ambivalent between scorch and leaf_spot on early-stage
+      > marginal necrosis. So a better backbone is **not** ruled out for this
+      > failure the way that sentence claimed: telling a scorched margin from
+      > discrete spots is a fine-grained dense-feature problem, which is exactly
+      > what DINOv3 claims to improve. It stays speculative and second to data —
+      > but it is no longer refuted.
 - [ ] **STOP TUNING SAMPLER WEIGHTS.** Four levers dead: `kaggle_ornamental`
       (by experiment), margin-crop/letterbox (conf 0.95), boundary
       hard-negatives, ornamental *volume* collapse. Each further guess costs an
