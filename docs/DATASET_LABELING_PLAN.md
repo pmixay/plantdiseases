@@ -593,8 +593,8 @@ Per-stratum acceptance predicates, not volume targets. Current coverage in brack
 
 | stratum | target | acceptance predicate | why |
 |---|---|---|---|
-| **scorch, plain ground** | 250 | `bg_plainness ≥ 0.636`, `subj_frac_bg ≤ 0.406`, `border_green_frac ≤ 0.030` | 4.4% coverage; −31.9 pp causal; also removes the 16× `not_a_plant` cue |
-| **scorch, early/dull** | 250 | `brown_frac < 0.05`, marginal necrosis on a **still-green** blade | 1.4% coverage; the morphology axis re-framing cannot fix |
+| **scorch, early/dull** ← **#1** | 400 | `brown_frac < 0.05`, marginal necrosis on a **still-green** blade, labelled against `leaf_spot` exemplars | 1.4% coverage. **Measured 2026-08-22: 19 of the 31 benchmark clusters are lost to this axis** (the head calls them `leaf_spot`), vs 3 to framing. Every data-free lever is exhausted below the floor, so this is the critical path |
+| **scorch, plain ground** | 150 | `bg_plainness ≥ 0.636`, `subj_frac_bg ≤ 0.406`, `border_green_frac ≤ 0.030` | 4.4% coverage; −31.9 pp in ablation, but only ~3 of 31 real clusters. Demoted from 250: supporting, not critical |
 | **scorch, low chroma** | 150 | `sat_mean ≤ 0.15`, dull ambient light | 12.2% coverage; −10.6 pp, largely subsumed by framing |
 | **healthy, plain ground** | 250 | same framing predicate, healthy subject | breaks "plain ground ⇒ not_a_plant" |
 | **healthy, ND regime** | 250 | `det_union_frac ≥ 0.40`, `sat_mean ≥ 0.38`, `achro_bright ≤ 0.05` | ND precision 0.621 is a 6.4× prior distortion, not a label problem — the fix is **negatives**, not positives |

@@ -238,6 +238,65 @@ bias ceiling on 2.7.2 was already only 0.645 with twice that budget, so
 `CLASS_LOGIT_BIAS` on 2.7.3 is a worse bet than it was on 2.7.2. **Do not spend
 the next run on it.**
 
+**CLOSE-OUT MEASUREMENTS (2026-08-22, on the live 2.7.3 instance).** Four
+hypotheses tested before the run was closed. Three falsified, one bounded.
+
+**The failure is MORPHOLOGY, not framing — 6:1.** Where the 31 hibiscus clusters
+land under the shipped head:
+
+| lands as | n |
+|---|---|
+| **leaf_spot** | **19** |
+| leaf_scorch (correct) | 4 |
+| healthy | 3 |
+| viral_disease | 3 |
+| powdery_mildew | 2 |
+
+Only 3 of 31 are the framing failure. 19 are the model calling early-stage
+marginal necrosis `leaf_spot`. This is the ablation finding from the sourcing
+workflow — "re-framing converts scorch into leaf_spot" — now measured on a real
+trained model. **It re-orders the v9 collection spec:** the plain-ground/framing
+stratum addresses ~3 clusters, the early-stage morphology stratum ~19.
+
+**`CLASS_LOGIT_BIAS` is dead.** Swept on 2.7.3 itself: best within the 0.12
+false-fire ceiling is bias 1.44 → hibiscus **0.323** (vs 0.645 on 2.7.2, which
+had twice the headroom). Reaching the floor needs bias 3.0 at FF **0.417** —
+misdiagnosing 35% of never-trained healthy plants. Do not spend a run on it.
+
+**Regime-stratified conformal: falsified.** Marginal coverage 0.967; low-chroma
+0.972 vs rest 0.965. The dull stratum is if anything *better* covered. There was
+no under-coverage to fix.
+
+**Margin-preserving preprocessing: not supported.** Probe on frozen features,
+corpus scorch-vs-healthy → benchmark: centre-crop 0.954, resize-and-pad 0.966,
+**delta +0.013**. Below the +0.03 bar set in advance, and inference-time
+letterboxing was already falsified offline (2.6.8 unchanged 31/31, 2.7.2 3/31 →
+1/31). Not worth an A100 run on this evidence.
+
+**A head change alone cannot clear the floor — this is the bound that matters.**
+A linear probe on the *same frozen features*, trained on corpus scorch vs corpus
+leaf_spot, puts **48.4% (15/31)** of the benchmark's scorch clusters on the
+scorch side. The shipped head puts **12.9% (4/31)**. So the head does discard
+real signal — 3.75× worth — but a perfect linear readout of the current features
+still lands at ~48%, **below the 0.70 floor**. Note the contrast with
+scorch-vs-*healthy*, where the same features probe at 0.95 AUROC: the features
+separate scorch from healthy fine and are near-ambivalent between scorch and
+leaf_spot on this morphology.
+
+> *Method caveat, recorded so the number is not over-read:* the close-out cell
+> also printed a "probe AUROC = 0.084" against benchmark healthy. That is a
+> category error — healthy was never in the scorch-vs-leaf_spot probe's training,
+> so the statistic does not measure feature quality. It does say benchmark scorch
+> sits further to the leaf_spot side than benchmark healthy does, which
+> corroborates the morphology reading. The 48.4% figure is the usable one.
+
+**Verdict: collection is now the critical path, and its target has changed.**
+Every data-free lever is exhausted or bounded below the floor. What is needed is
+early-stage marginal necrosis on a still-green blade, collected and labelled to
+train the **scorch ↔ leaf_spot boundary** — not scorch ↔ healthy, which already
+works. Re-prioritise the §6 spec accordingly: `scorch, early/dull` (250) first,
+`scorch, plain ground` (250) demoted to supporting.
+
 What this leaves, in rough order of evidence:
 1. **Untested and cheap: the eval transform.** `Resize(224×1.05) → CenterCrop(224)`
    trims the leaf margin, and scorch *is* a margin phenomenon. The asymmetry is
