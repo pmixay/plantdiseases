@@ -39,8 +39,9 @@ class SpeciesSectionsLayoutTest {
     )
 
     private val sections = listOf(
+        // Care is deliberately absent: it is a plain always-open card with no
+        // chevron and no Section entry — see theCareCardIsNotCollapsible.
         SectionIds("about", R.id.card_about, R.id.about_header, R.id.iv_about_chevron, R.id.about_body),
-        SectionIds("care", R.id.card_care, R.id.care_header, R.id.iv_care_chevron, R.id.care_body),
         SectionIds(
             "fertiliser",
             R.id.card_fertiliser,
@@ -134,12 +135,39 @@ class SpeciesSectionsLayoutTest {
         }
     }
 
+    /**
+     * The Care section is the one card on this screen that does NOT collapse:
+     * folding the care plan away folds away the reason the screen exists. It
+     * therefore has no chevron, an inert header, and a body that ships
+     * visible — the exact inverse of every assertion above, so it needs its
+     * own test rather than an exemption inside them.
+     */
+    @Test
+    fun theCareCardIsNotCollapsible() {
+        val root = inflate()
+        val card = root.findViewById<View>(R.id.card_care)
+        val header = root.findViewById<View>(R.id.care_header)
+        val body = root.findViewById<View>(R.id.care_body)
+
+        assertThat(card).isNotNull()
+        assertThat(header).isNotNull()
+        assertThat(body).isNotNull()
+        assertThat(header.isDescendantOf(card)).isTrue()
+        assertThat(body.isDescendantOf(card)).isTrue()
+
+        assertWithMessage("care body must ship visible — nothing toggles it")
+            .that(body.visibility).isEqualTo(View.VISIBLE)
+        assertWithMessage("care header must not look tappable when it toggles nothing")
+            .that(header.isClickable).isFalse()
+    }
+
     @Test
     fun theCareCardStillOwnsTheRuntimeCarePlanSlot() {
         val root = inflate()
         val slot = root.findViewById<View>(R.id.care_slot)
         // loadCare() addViews the CarePlanCardView into care_slot; if the slot
-        // ever escapes care_body, the card would show while collapsed.
+        // ever escapes care_body it stops inheriting the card's padding and
+        // the plan renders flush against the screen edge.
         assertThat(slot).isNotNull()
         assertThat(slot.isDescendantOf(root.findViewById<View>(R.id.care_body))).isTrue()
     }
@@ -200,5 +228,30 @@ class SpeciesSectionsLayoutTest {
             .that(value.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
         assertWithMessage("value column should carry a weight — unweighted, it starves the label")
             .that(value.weight).isGreaterThan(0f)
+    }
+
+    /** The other half of that contract. Equal weights only keep both columns
+     *  alive while both fit on one line; a full sentence (the About card's
+     *  native-range fact) still squeezed the label to zero width and left an
+     *  unlabelled paragraph against the right edge. Long values now stack
+     *  under the label instead, which is a different child structure: one
+     *  column beside the icon rather than two siblings. */
+    @Test
+    fun factRowStacksALongValueUnderItsLabel() {
+        val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
+        val longValue = "Tomato originated in western South America and was domesticated in Mexico."
+        val row = activity.factRow(R.drawable.ic_moon, "Native range", longValue) as ViewGroup
+
+        assertWithMessage("a stacked row is icon + one column, not icon + label + value")
+            .that(row.childCount).isEqualTo(2)
+        val column = row.getChildAt(1) as ViewGroup
+        assertWithMessage("the column takes the width the icon leaves, so the value can wrap")
+            .that((column.layoutParams as LinearLayout.LayoutParams).width).isEqualTo(0)
+        assertWithMessage("label then value, both full width of the column")
+            .that(column.childCount).isEqualTo(2)
+        assertThat((column.getChildAt(0) as android.widget.TextView).text.toString())
+            .isEqualTo("Native range")
+        assertThat((column.getChildAt(1) as android.widget.TextView).text.toString())
+            .isEqualTo(longValue)
     }
 }
