@@ -532,7 +532,7 @@ class PlantDetailActivity : AppCompatActivity() {
         extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { careContainer.addView(it) }
         careContainer.addView(extraCards.buildLightMeterEntry(plant))
         careContainer.addView(extraCards.buildWaterCalculatorEntry(plant))
-        val assistantAnchor = extraCards.buildDoctorEntry(plant, scans)
+        val assistantAnchor = extraCards.buildDoctorEntry(plant)
         careContainer.addView(assistantAnchor)
 
         // ── History — Timeline then Journal, both visible together ──────

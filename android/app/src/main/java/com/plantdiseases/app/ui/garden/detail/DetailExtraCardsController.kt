@@ -31,6 +31,7 @@ import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PlantHealth
 import com.plantdiseases.app.util.localizedSpeciesName
+import java.util.Locale
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -307,7 +308,7 @@ class DetailExtraCardsController(
                 text = activity.getString(
                     R.string.adaptive_watering_subtitle,
                     s.samples,
-                    String.format("%.1f", s.meanGapDays),
+                    String.format(Locale.getDefault(), "%.1f", s.meanGapDays),
                 )
                 textSize = 12f
                 setTextColor(activity.getColor(R.color.on_surface_secondary))
@@ -736,7 +737,7 @@ class DetailExtraCardsController(
             )
         }
 
-    fun buildDoctorEntry(plant: PlantEntity, scans: List<ScanEntity>): View =
+    fun buildDoctorEntry(plant: PlantEntity): View =
         MaterialCardView(activity).apply {
             radius = 18.dp().toFloat()
             cardElevation = 0f

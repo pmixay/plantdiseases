@@ -180,8 +180,8 @@ class CameraFragment : Fragment() {
         // ordinary cancel. Treat "no non-empty output file" as a benign cancel:
         // stay on the camera silently and drop the staged file. Only a genuine
         // crop with bytes on disk advances to analysis.
-        val cropped = pendingCropFile
-        if (result.isSuccessful && cropped != null && cropped.exists() && cropped.length() > 0L) {
+        val cropped = pendingCropFile?.takeIf { it.exists() && it.length() > 0L }
+        if (result.isSuccessful && cropped != null) {
             if (identifyMode) {
                 // Hand the cropped photo back to the host (SpeciesIdentify-
                 // Activity) to run species identification on it.

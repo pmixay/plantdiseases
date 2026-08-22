@@ -18,7 +18,7 @@ android {
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
-        minSdk = 29 // Android 10
+        minSdk = 31 // Android 12
         // Deliberately behind compileSdk, and stated explicitly (AGP 9
         // otherwise defaults targetSdk to compileSdk when unset). targetSdk is
         // what opts the app into a platform's *behaviour* changes; raising it
@@ -207,10 +207,12 @@ kotlin {
 
 // ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
 // Gating: ktlint (formatting/style) + detekt (static analysis) fail the build
-// on any NEW violation. The pre-existing tree is grandfathered via baselines
-// (config/ktlint/baseline.xml, config/detekt/baseline.xml) generated once with
-// `./gradlew ktlintGenerateBaseline detektBaseline` after a `./gradlew
-// ktlintFormat` cleanup, so only newly-introduced issues break CI.
+// on any violation. The baselines (config/ktlint/baseline.xml,
+// config/detekt/baseline.xml) once grandfathered a backlog; that backlog is now
+// fixed and both files are empty, so the gate is zero-tolerance. Keep them empty
+// — a violation is meant to be fixed, not baselined. They stay wired up only for
+// a rule-set bump, where `./gradlew ktlintGenerateBaseline detektBaseline`
+// regenerates them so the bump and the cleanup can land separately.
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
