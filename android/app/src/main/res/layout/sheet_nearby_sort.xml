@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Community recommendation-feed filter. The server owns ordering and its
-     stable cursor; this sheet only narrows the loaded feed by disease. -->
+<!-- Community feed ordering. Sorting is performed by the server so cursor
+     paging remains stable for both recommended and newest-first modes. -->
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -15,7 +15,6 @@
         android:paddingHorizontal="@dimen/space_xl"
         android:paddingBottom="@dimen/space_3xl">
 
-        <!-- Drag handle -->
         <View
             android:layout_width="40dp"
             android:layout_height="4dp"
@@ -27,38 +26,42 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"
-            android:text="@string/nearby_filter_title"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/nearby_sort_title"
             android:textColor="@color/on_surface"
-            android:textSize="@dimen/text_title"
-            android:fontFamily="sans-serif-medium" />
-
-        <!-- By type -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xl"
-            android:text="@string/nearby_filter_by_type"
-            android:textAllCaps="true"
-            android:textColor="@color/primary"
-            android:textSize="12sp"
-            android:letterSpacing="0.06"
-            android:fontFamily="sans-serif-medium" />
+            android:textSize="@dimen/text_title" />
 
         <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cg_type"
+            android:id="@+id/cg_sort"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            app:singleSelection="true"
+            android:layout_marginTop="@dimen/space_xl"
+            app:chipSpacingHorizontal="@dimen/space_sm"
             app:selectionRequired="true"
-            app:chipSpacingHorizontal="@dimen/space_sm" />
+            app:singleSelection="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_sort_recommended"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/nearby_sort_recommended" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_sort_newest"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/nearby_sort_newest" />
+
+        </com.google.android.material.chip.ChipGroup>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_apply"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_2xl"
-            android:text="@string/nearby_filter_apply" />
+            android:text="@string/nearby_sort_apply" />
 
     </LinearLayout>
 

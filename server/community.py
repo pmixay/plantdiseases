@@ -259,6 +259,15 @@ _RANK_VIEW_CAP = 500
 # always come back in insertion order. Bounded to under a day: exploration
 # should reshuffle within a morning, not reorder a week.
 _RANK_JITTER_MOD = 7
+# Likes, opinions, views and exploration share ONE promotion budget. The
+# per-signal caps above protect each aggregate independently, but without a
+# cap on their sum they could still buy almost 96 days of rank at once. That
+# let a heavily engaged month-old post outrank a brand-new one even though the
+# feed is meant to lead with freshness. Seven days leaves engagement meaningful
+# within the current week while giving us a simple invariant: except for an
+# actively open second-opinion request, a post at least a week newer always
+# ranks first, even against maximum engagement.
+_RANK_PROMOTION_CAP = 7 * 24
 
 # Expired requests are swept lazily from the hot read paths, throttled so the
 # sweep doesn't run on every feed request.
@@ -959,6 +968,13 @@ def record_opinion(
     """Append one community 'second opinion' (comment) on a shared scan.
     Returns the new row id.
 
+    UNGATED, and deliberately not in ``__all__``: it performs none of the
+    active-request / ownership / block checks. Nothing in the HTTP layer
+    calls it — ``/api/community/opinion`` goes through
+    :func:`record_requested_opinion`, which is the authority. This form
+    survives only as a test-seeding helper for the read paths; new callers
+    must use :func:`record_requested_opinion`.
+
     An author may post more than once on the same scan — the thread is a
     running comment list, not a single vote slot. ``opinions_for`` folds
     repeat authors down to their latest pick for the consensus tally so a
@@ -1370,32 +1386,18 @@ def wants_opinion(scan_id: str) -> bool:
     return row is not None
 
 
-def record_view(
-    scan_id: str,
-    viewer_pseudo_id: str,
-    viewer_author_id: str | None = None,
-) -> bool:
-    """Record one deduplicated view; durable identity wins when available."""
-    return record_views(
-        [scan_id],
-        viewer_pseudo_id,
-        viewer_author_id=viewer_author_id,
-    ) > 0
-
-
 def record_views(
     tokens: list[str],
     viewer_pseudo_id: str,
     viewer_author_id: str | None = None,
 ) -> int:
-    """Batch form of :func:`record_view` for feed-impression reporting.
+    """Record deduplicated views for a batch of scans (feed impressions).
 
     Takes RAW client tokens — public tokens and real scan_ids mix freely in
     one batch, exactly as :func:`resolve_scan_token` tolerates them — and
     resolves, filters and inserts the whole batch under ONE connection and
-    ONE lock acquisition instead of one of each per id. Semantics per id are
-    identical to :func:`record_view`: unknown scans and the viewer's own
-    scans never count. New clients dedupe on the server-issued durable
+    ONE lock acquisition instead of one of each per id. Unknown scans and the
+    viewer's own scans never count. New clients dedupe on the server-issued durable
     ``viewer_author_id`` even if a caller varies its body pseudo id; legacy
     clients retain the old pseudo-id fallback. Returns the number of NEW views.
     """
@@ -1498,7 +1500,7 @@ def set_like(
 ) -> bool:
     """Like or unlike a shared scan on behalf of one anonymous install.
 
-    Mirrors ``record_view``: a scan owner can't like their own scan. The
+    Mirrors ``record_views``: a scan owner can't like their own scan. The
     durable author id is authoritative for current clients, preventing a
     changed body pseudo id from minting an extra like; the legacy composite
     primary key remains the compatibility fallback.
@@ -1852,12 +1854,12 @@ def recommended_scans(
     Ranking is deterministic for a database snapshot and deliberately easy to
     explain, because every term is denominated in hours of freshness (see the
     ``_RANK_*`` weights): recency is the baseline, live second-opinion requests
-    lead while their request is open, engagement (distinct opinions, likes and
-    views) buys a bounded number of days of staleness, and a sub-day row-id
-    term keeps equally fresh, equally quiet posts from always appearing in
-    insertion order. The cursor carries the complete ``(score, created_at,
-    row_id)`` order key, so tied timestamps never repeat or disappear between
-    pages.
+    lead while their request is open, and engagement (distinct opinions, likes
+    and views) plus the deterministic exploration term share a seven-day
+    promotion cap. Thus an ordinary post at least a week newer always wins,
+    even against maximum engagement. The cursor carries the complete ``(score,
+    created_at, row_id)`` order key, so tied timestamps never repeat or
+    disappear between pages.
     """
     init_db()
     _sweep_expired_requests()
@@ -1913,13 +1915,18 @@ def recommended_scans(
         )
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
 
+    promotion_sql = (
+        "MIN("
+        f"MIN(COALESCE(oc.n, 0), {_RANK_OPINION_CAP}) * {_RANK_PER_OPINION} "
+        f"+ MIN(COALESCE(lc.n, 0), {_RANK_LIKE_CAP}) * {_RANK_PER_LIKE} "
+        f"+ MIN(COALESCE(vc.n, 0), {_RANK_VIEW_CAP}) * {_RANK_PER_VIEW} "
+        f"+ ((s.id * 37) % {_RANK_JITTER_MOD}), "
+        f"{_RANK_PROMOTION_CAP})"
+    )
     score_sql = (
         f"CAST(s.created_at / {_RANK_FRESHNESS_BUCKET_S} AS INTEGER) "
         f"+ CASE WHEN req.scan_id IS NOT NULL THEN {_RANK_LIVE_REQUEST} ELSE 0 END "
-        f"+ MIN(COALESCE(oc.n, 0), {_RANK_OPINION_CAP}) * {_RANK_PER_OPINION} "
-        f"+ MIN(COALESCE(lc.n, 0), {_RANK_LIKE_CAP}) * {_RANK_PER_LIKE} "
-        f"+ MIN(COALESCE(vc.n, 0), {_RANK_VIEW_CAP}) * {_RANK_PER_VIEW} "
-        f"+ ((s.id * 37) % {_RANK_JITTER_MOD})"
+        f"+ {promotion_sql}"
     )
     cursor_sql = ""
     cursor_params: list[int] = []
@@ -2898,10 +2905,8 @@ __all__ = [
     "public_opinion_token",
     "prune_older_than",
     "public_scan_token",
-    "record_opinion",
     "record_requested_opinion",
     "record_scan",
-    "record_view",
     "record_views",
     "region_summary",
     "recommended_scans",

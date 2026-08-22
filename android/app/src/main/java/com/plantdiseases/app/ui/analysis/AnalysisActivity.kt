@@ -342,14 +342,19 @@ class AnalysisActivity : AppCompatActivity() {
             scanRepository.deleteScan(replaceScanId)
         }
 
-        getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
-            .edit().putBoolean("new_scan_result", true).apply()
-
         // Fire-and-forget community upload — runs on the application-scoped
         // supervisor so it survives this activity finish()ing to the result
         // screen.
         val savedScan = scanRepository.getScanById(scanId)
         if (savedScan != null) {
+            // MainActivity turns this flag into Gallery's "1" badge. Only set
+            // it for a row Gallery can actually show: NAP / blur rejects keep
+            // a short-lived DB row for their result + feedback screen, but the
+            // gallery intentionally filters that row out.
+            if (!scanRepository.isNotAPlantScan(savedScan)) {
+                getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
+                    .edit().putBoolean("new_scan_result", true).apply()
+            }
             app.launchCommunityUpload(savedScan, response)
         }
 

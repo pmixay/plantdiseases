@@ -1,32 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
 <baseline version="1.0">
-    <file name="src/main/java/com/plantdiseases/app/data/local/Database.kt">
-        <error line="461" column="21" source="standard:property-naming" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt">
-        <error line="45" column="1" source="standard:no-unused-imports" />
-        <error line="46" column="1" source="standard:no-unused-imports" />
-        <error line="47" column="1" source="standard:no-unused-imports" />
-        <error line="48" column="1" source="standard:no-unused-imports" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/ui/camera/CameraFragment.kt">
-        <error line="110" column="17" source="standard:property-naming" />
-        <error line="111" column="17" source="standard:property-naming" />
-        <error line="112" column="17" source="standard:property-naming" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/ui/guide/GuideFragment.kt">
-        <error line="41" column="17" source="standard:property-naming" />
-        <error line="42" column="17" source="standard:property-naming" />
-        <error line="43" column="17" source="standard:property-naming" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/worker/OpinionCheckWorker.kt">
-        <error line="26" column="39" source="standard:class-signature" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/worker/PlantReminderWorker.kt">
-        <error line="38" column="39" source="standard:class-signature" />
-    </file>
-    <file name="src/main/java/com/plantdiseases/app/worker/ReminderActionReceiver.kt">
-        <error line="25" column="32" source="standard:class-signature" />
-        <error line="25" column="53" source="standard:class-signature" />
-    </file>
 </baseline>

@@ -175,9 +175,10 @@ class ModelsTest {
         assertThat(r.scope).isEqualTo("country")
         assertThat(r.country).isEqualTo("US")
         assertThat(r.countryNameEn).isEqualTo("United States")
-        assertThat(r.summary!!.scope).isEqualTo("country")
-        assertThat(r.summary!!.countryNameEn).isEqualTo("United States")
-        assertThat(r.summary!!.total).isEqualTo(3)
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.scope).isEqualTo("country")
+        assertThat(summary.countryNameEn).isEqualTo("United States")
+        assertThat(summary.total).isEqualTo(3)
         // Absent flag defaults to false (no location prompt).
         assertThat(r.locationRequired).isFalse()
     }
@@ -215,8 +216,9 @@ class ModelsTest {
         """.trimIndent()
         val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
         assertThat(r.scope).isEqualTo("worldwide")
-        assertThat(r.summary!!.country).isNull()
-        assertThat(r.summary!!.countryNameEn).isEqualTo("Worldwide")
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.country).isNull()
+        assertThat(summary.countryNameEn).isEqualTo("Worldwide")
     }
 
     @Test
@@ -229,7 +231,8 @@ class ModelsTest {
              "summary":{"country":null,"total":null,"scope":null}}
         """.trimIndent()
         val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
-        assertThat(r.summary!!.total).isEqualTo(0)
-        assertThat(r.summary!!.scope).isNull()
+        val summary = requireNotNull(r.summary)
+        assertThat(summary.total).isEqualTo(0)
+        assertThat(summary.scope).isNull()
     }
 }

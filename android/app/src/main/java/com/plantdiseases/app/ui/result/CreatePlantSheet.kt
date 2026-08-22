@@ -8,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.os.bundleOf
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.setFragmentResult
@@ -222,15 +221,17 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             tilName.error = null
             setFragmentResult(
                 REQUEST_KEY,
-                bundleOf(
-                    RESULT_SCAN_ID to scanId,
-                    RESULT_NAME to name,
-                    RESULT_SPECIES to etSpecies.text?.toString()?.trim()
-                        .orEmpty().ifBlank { null },
-                    RESULT_SCIENTIFIC to pickedScientific,
-                    RESULT_COMMON to pickedCommon,
-                    RESULT_ROOM_ID to (selectedRoomId ?: RESULT_ROOM_ID_UNASSIGNED),
-                ),
+                Bundle().apply {
+                    putLong(RESULT_SCAN_ID, scanId)
+                    putString(RESULT_NAME, name)
+                    putString(
+                        RESULT_SPECIES,
+                        etSpecies.text?.toString()?.trim().orEmpty().ifBlank { null },
+                    )
+                    putString(RESULT_SCIENTIFIC, pickedScientific)
+                    putString(RESULT_COMMON, pickedCommon)
+                    putLong(RESULT_ROOM_ID, selectedRoomId ?: RESULT_ROOM_ID_UNASSIGNED)
+                },
             )
             dismiss()
         }
@@ -383,12 +384,11 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             // species fields so the user doesn't have to tap Identify a
             // second time. Each is nullable on ScanEntity; the empty case
             // falls back to the manual identify flow.
-            sheet.arguments = bundleOf(
-                ARG_SCAN_ID to scan.id,
-                ARG_INITIAL_NAME to initialName,
-                ARG_PREFILL_SCIENTIFIC to scan.speciesScientific?.takeIf { it.isNotBlank() },
-                ARG_PREFILL_COMMON to scan.speciesCommon?.takeIf { it.isNotBlank() },
-            ).apply {
+            sheet.arguments = Bundle().apply {
+                putLong(ARG_SCAN_ID, scan.id)
+                putString(ARG_INITIAL_NAME, initialName)
+                putString(ARG_PREFILL_SCIENTIFIC, scan.speciesScientific?.takeIf { it.isNotBlank() })
+                putString(ARG_PREFILL_COMMON, scan.speciesCommon?.takeIf { it.isNotBlank() })
                 scan.speciesScore?.let { putFloat(ARG_PREFILL_SCORE, it) }
             }
             sheet.show(fm, TAG)

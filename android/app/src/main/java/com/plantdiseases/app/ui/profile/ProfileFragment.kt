@@ -20,6 +20,7 @@ import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
@@ -91,6 +92,9 @@ class ProfileFragment : Fragment() {
         setupAutosaveToggle()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
+        }
+        binding.privacyPolicyRow.setOnClickListener {
+            startActivity(PrivacyPolicyActivity.intent(requireContext()))
         }
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue

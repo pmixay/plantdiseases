@@ -92,7 +92,6 @@
 
     <!-- Result actions -->
     <string name="share">Share</string>
-    <string name="low_confidence_warning">Low confidence result. Try taking a clearer photo with better lighting for more accurate diagnosis.</string>
 
     <!-- Profile -->
     <string name="tab_profile">Profile</string>
@@ -154,7 +153,7 @@
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
     <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
-    <string name="guidance_community_feed">Your feed starts with recommended posts. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -239,8 +238,6 @@
 
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
-    <string name="species_source_wikipedia">Source: Wikipedia</string>
-    <string name="species_source_wikipedia_translated">Source: Wikipedia (auto-translated)</string>
     <string name="species_community_others">Other scans of this species</string>
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
@@ -321,6 +318,7 @@
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
     <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_policy_subtitle">See how scan photos and other app data are handled.</string>
     <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>
@@ -347,10 +345,11 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
-    <!-- Community recommendation-feed filter -->
-    <string name="nearby_filter_title">Filter by disease</string>
-    <string name="nearby_filter_by_type">By type</string>
-    <string name="nearby_filter_apply">Apply</string>
+    <!-- Community feed ordering -->
+    <string name="nearby_sort_title">Sort by</string>
+    <string name="nearby_sort_recommended">Recommended</string>
+    <string name="nearby_sort_newest">Newest</string>
+    <string name="nearby_sort_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>
 
@@ -375,23 +374,18 @@
     <string name="blurry_photo_message">This photo appears blurry. Results may be less accurate. Continue anyway?</string>
 
     <!-- Retry analysis -->
-    <string name="retry_analysis">Retry Analysis</string>
     <!-- One sentence per line: the advisory is scanned, not read. -->
     <string name="inline_confidence_retake">The photo might be blurry.\nRetake it with the leaf filling most of the frame.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>
-    <string name="warning_very_low_confidence">The model isn\'t confident in this verdict — please retake the photo with the leaf filling most of the frame, in good even light, and on a plain background.</string>
     <string name="warning_uncertain_healthy_title">Could be disease</string>
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_viral_variegation_title">Could be natural variegation</string>
     <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal — compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
-    <string name="warning_weak_healthy_rerouted_title">Looks unhealthy</string>
-    <string name="warning_weak_healthy_rerouted">The plant scored as healthy only narrowly, so we\'re showing the most likely problem instead. Treat this as a lead, not a firm diagnosis — re-scan in better light to confirm.</string>
     <string name="warning_low_confidence_title">Low confidence</string>
-    <string name="warning_low_confidence">The model isn\'t very sure about this verdict. Check the alternative diagnoses below and consider re-scanning from a closer, better-lit angle.</string>
     <string name="warning_nap_ood_gated_title">Doesn\'t look like a leaf</string>
     <string name="warning_nap_ood_gated">This image didn\'t look like a plant leaf to the detector, so the result may be unreliable. Frame a single leaf filling most of the photo and try again.</string>
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
@@ -967,20 +961,12 @@
 
     <!-- Identify species -->
     <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
+    <string name="identify_not_a_plant">No plant was detected in this photo. Retake it closer, with one sharp, well-lit leaf or flower filling most of the frame.</string>
     <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
     <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
     <string name="identify_loading">Loading…</string>
     <string name="identify_no_info">No encyclopedia entry found for this species.</string>
     <string name="identify_wikipedia">Read on Wikipedia</string>
-    <string name="identify_care_title">Care at a glance</string>
-    <string name="identify_light_tier">Light: %1$s</string>
-    <string name="identify_light_low">low light</string>
-    <string name="identify_light_medium">medium light</string>
-    <string name="identify_light_bright_indirect">bright indirect light</string>
-    <string name="identify_light_direct">direct sun</string>
-    <string name="identify_water_days">Water about every %1$d days</string>
-    <string name="identify_water_as_needed">Water when the top soil is dry</string>
-    <string name="identify_humidity">Humidity: %1$s</string>
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
     <string name="native_range_title">Native range</string>
@@ -1019,7 +1005,6 @@
     <string name="species_info_toggle_content_description">%1$s. %2$s</string>
     <string name="list_show_all">Show all %1$d</string>
     <string name="list_show_fewer">Show fewer</string>
-    <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
     <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
     <string name="flowering_chart_content_description">%1$s. The chart labels each month none, occasional or peak. The dot marks this month. %2$s</string>
     <string-array name="flowering_month_initials">
@@ -1152,9 +1137,6 @@
         <item quantity="one">Feed weekly during active growth.</item>
         <item quantity="other">Feed every %1$d weeks during active growth.</item>
     </plurals>
-    <string name="fertiliser_interval_none">No regular feeding needed for this plant.</string>
-    <string name="fertiliser_npk">Fertiliser: %1$s</string>
-    <string name="fertiliser_soil">Soil mix: %1$s</string>
 
     <!-- Fertiliser guide: substrate per group -->
 <string name="feed_soil_fruiting">Rich loam with compost, pH 6.0–6.8, free-draining</string>

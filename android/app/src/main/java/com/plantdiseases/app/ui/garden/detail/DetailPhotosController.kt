@@ -40,7 +40,11 @@ class DetailPhotosController(
         val items = mutableListOf<PhotoItem>()
         scans.forEach { items.add(PhotoItem(it.imagePath, it.timestamp)) }
         journal.filter { it.type == PlantRepository.JournalType.PHOTO.value }
-            .forEach { e -> e.photoUri?.let { items.add(PhotoItem(it, e.timestamp)) } }
+            .forEach { e ->
+                e.photoUri?.takeIf { it.isNotBlank() }?.let {
+                    items.add(PhotoItem(it, e.timestamp))
+                }
+            }
         val ordered = items.sortedBy { it.timestamp }.distinctBy { it.uri }
         if (ordered.isEmpty()) {
             photosContainer.addView(

@@ -6,10 +6,10 @@ import java.util.Calendar
 import java.util.TimeZone
 
 /**
- * Verifies the pure reminder-schedule math in [CareSchedule]: next-due
- * computation off a care anchor, overdue / days-until bucketing for the
- * garden chips, and the WorkManager initial-delay calculations (first
- * schedule + the "user just watered, push the next fire out" path).
+ * Verifies the pure reminder-schedule math in [CareSchedule]: wall-clock
+ * next-due computation off a care anchor, overdue checks for the garden
+ * chips, and the WorkManager initial-delay calculations (first schedule +
+ * the "user just watered, push the next fire out" path).
  */
 class CareScheduleTest {
 
@@ -19,31 +19,13 @@ class CareScheduleTest {
             set(Calendar.MILLISECOND, 0)
         }
 
-    // ── nextDueAt ────────────────────────────────────────────────────
-
-    @Test
-    fun nextDueAtAddsWholeDays() {
-        val anchor = 1_000_000L
-        assertThat(CareSchedule.nextDueAt(anchor, 7))
-            .isEqualTo(anchor + 7 * CareSchedule.DAY_MS)
-    }
-
-    @Test
-    fun nextDueAtClampsNegativeInterval() {
-        val anchor = 5_000L
-        assertThat(CareSchedule.nextDueAt(anchor, -3)).isEqualTo(anchor)
-    }
-
-    // ── isOverdue / daysUntil ────────────────────────────────────────
+    // ── isOverdue ────────────────────────────────────────────────────
 
     @Test
     fun dueWithinNext24HoursIsNotOverdue() {
         val now = 100L * CareSchedule.DAY_MS
         val dueIn12h = now + CareSchedule.DAY_MS / 2
         assertThat(CareSchedule.isOverdue(dueIn12h, now)).isFalse()
-        // Truncates to 0 days — the UI renders this as "tomorrow", never
-        // as overdue.
-        assertThat(CareSchedule.daysUntil(dueIn12h, now)).isEqualTo(0)
     }
 
     @Test
@@ -52,14 +34,6 @@ class CareScheduleTest {
         assertThat(CareSchedule.isOverdue(now - 1, now)).isTrue()
         assertThat(CareSchedule.isOverdue(now, now)).isTrue()
         assertThat(CareSchedule.isOverdue(now + 1, now)).isFalse()
-    }
-
-    @Test
-    fun daysUntilCountsWholeDays() {
-        val now = 50L * CareSchedule.DAY_MS
-        assertThat(CareSchedule.daysUntil(now + 3 * CareSchedule.DAY_MS, now)).isEqualTo(3)
-        assertThat(CareSchedule.daysUntil(now + 3 * CareSchedule.DAY_MS + 1, now)).isEqualTo(3)
-        assertThat(CareSchedule.daysUntil(now - 2 * CareSchedule.DAY_MS, now)).isEqualTo(-2)
     }
 
     // ── initialDelayMs ───────────────────────────────────────────────

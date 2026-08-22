@@ -258,8 +258,8 @@ class CarePlanCardView @JvmOverloads constructor(
             ).apply { topMargin = 10.dp() }
             setOnClickListener { onRetryClick?.invoke() }
         }
-        (errorView as LinearLayout).addView(errorBody)
-        (errorView as LinearLayout).addView(retryButton)
+        errorView.addView(errorBody)
+        errorView.addView(retryButton)
         statusContainer.addView(errorView)
 
         // ── Filled state: pills + note + follow-up ──

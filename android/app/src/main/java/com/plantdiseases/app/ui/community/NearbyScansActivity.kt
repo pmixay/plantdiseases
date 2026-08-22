@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -14,13 +13,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
-import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
+import com.plantdiseases.app.databinding.SheetNearbySortBinding
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
@@ -48,7 +46,8 @@ import javax.inject.Inject
  * graph + comment thread + the user's own vote; its like control toggles
  * in place via [toggleLike], never opening the sheet.
  *
- * A toolbar filter action narrows the loaded, server-ranked posts by disease.
+ * A toolbar sort action switches between the server's freshness-led
+ * recommendation order and strict newest-first order.
  */
 @AndroidEntryPoint
 class NearbyScansActivity : AppCompatActivity() {
@@ -67,11 +66,11 @@ class NearbyScansActivity : AppCompatActivity() {
     private lateinit var onboardingCoordinator: OnboardingCoordinator
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
-    // Full recommendation feed as ranked by the server; only disease filtering
-    // is local so cursor order stays coherent across infinite-scroll pages.
+    // Full feed in the order returned by the server. Every sort change starts
+    // a new cursor session so recommendation and recent cursors never mix.
     private var allItems: List<CommunityScanItem> = emptyList()
-    private var typeFilter: String? = null
-    private var filterMenuItem: MenuItem? = null
+    private var ranking = RANKING_RECOMMENDED
+    private var sortMenuItem: MenuItem? = null
     private var disableMenuItem: MenuItem? = null
     private var mapMenuItem: MenuItem? = null
 
@@ -79,7 +78,7 @@ class NearbyScansActivity : AppCompatActivity() {
     // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
 
-    // Stable composite cursor returned by the recommendation endpoint.
+    // Stable composite cursor returned by the selected ranking endpoint.
     private var nextCursor: String? = null
     private var hasMorePages = true
     private var isLoadingPage = false
@@ -145,7 +144,7 @@ class NearbyScansActivity : AppCompatActivity() {
         // it can't be done offline. The feed itself is guarded inside load().
         enableWhileOnline(connectivity.isOnline, binding.btnEnableCommunity)
         onReconnected(connectivity.isOnline) { load(isRefresh = false) }
-        setupFilterMenu()
+        setupToolbarMenu()
 
         // Nearby (~30 km) / Country / Worldwide scope — reload on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
@@ -251,13 +250,13 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupFilterMenu() {
+    private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.nearby_scans_menu)
-        filterMenuItem = binding.toolbar.menu.findItem(R.id.action_filter)
+        sortMenuItem = binding.toolbar.menu.findItem(R.id.action_sort)
         disableMenuItem = binding.toolbar.menu.findItem(R.id.action_disable_community)
         mapMenuItem = binding.toolbar.menu.findItem(R.id.action_map)
-        // Hidden until a feed loads — filtering an empty screen is a no-op.
-        filterMenuItem?.isVisible = false
+        // Hidden until a feed loads — sorting an empty screen is a no-op.
+        sortMenuItem?.isVisible = false
         // "Leave community" only makes sense once the user is in it.
         disableMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
         mapMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
@@ -269,8 +268,8 @@ class NearbyScansActivity : AppCompatActivity() {
                     )
                     true
                 }
-                R.id.action_filter -> {
-                    showFilterSheet()
+                R.id.action_sort -> {
+                    showSortSheet()
                     true
                 }
                 R.id.action_disable_community -> {
@@ -396,7 +395,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 val incoming = excludeOwnScans(response.items)
                 val known = allItems.asSequence().map { it.scanId }.toHashSet()
                 allItems = allItems + incoming.filter { known.add(it.scanId) }
-                applyFilter()
+                renderFeed()
             }
         }
     }
@@ -412,7 +411,7 @@ class NearbyScansActivity : AppCompatActivity() {
             userPseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity),
             limit = FEED_PAGE_SIZE,
             scope = scope,
-            ranking = "recommended",
+            ranking = ranking,
             cursor = cursor,
             context = this@NearbyScansActivity,
         )
@@ -436,7 +435,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = getString(R.string.community_enable_blurb)
         binding.btnEnableCommunity.visibility = View.VISIBLE
         binding.cgScope.visibility = View.GONE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         disableMenuItem?.isVisible = false
         mapMenuItem?.isVisible = false
         onboardingCoordinator.setContext(null)
@@ -454,7 +453,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = getString(R.string.nearby_location_needed)
         binding.btnEnableCommunity.visibility = View.VISIBLE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
         onboardingCoordinator.setContext(OnboardingContext.COMMUNITY)
     }
@@ -467,7 +466,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = getString(R.string.nearby_scans_loading)
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
@@ -478,7 +477,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.tvState.text = message
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = false
+        sortMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
         onboardingCoordinator.setContext(
             OnboardingContext.COMMUNITY.takeIf { enableOnboarding },
@@ -487,22 +486,18 @@ class NearbyScansActivity : AppCompatActivity() {
 
     private fun showFeed(items: List<CommunityScanItem>) {
         allItems = items
-        if (typeFilter != null && items.none { it.disease == typeFilter }) {
-            typeFilter = null
-        }
         binding.btnEnableCommunity.visibility = View.GONE
         binding.cgScope.visibility = View.VISIBLE
-        filterMenuItem?.isVisible = true
-        applyFilter()
+        sortMenuItem?.isVisible = true
+        renderFeed()
         onboardingCoordinator.setContext(OnboardingContext.COMMUNITY)
     }
 
-    /** Apply the active disease filter without disturbing server rank. */
-    private fun applyFilter() {
-        val filtered = typeFilter?.let { t -> allItems.filter { it.disease == t } } ?: allItems
+    /** Render the server-ordered feed without client-side reordering. */
+    private fun renderFeed() {
         binding.stateLayout.visibility = View.GONE
         binding.rvNearby.visibility = View.VISIBLE
-        adapter.submit(filtered)
+        adapter.submit(allItems)
         binding.rvNearby.post {
             (binding.rvNearby.layoutManager as? LinearLayoutManager)
                 ?.let(::reportVisibleImpressions)
@@ -510,56 +505,43 @@ class NearbyScansActivity : AppCompatActivity() {
     }
 
     /**
-     * Overlay to filter by disease type. The type chips are
-     * built from the diseases actually present in the loaded feed, so every
-     * option yields results; the current selections are pre-checked.
+     * Choose the server-side feed order. Applying a new choice reloads page
+     * one because each ranking has its own opaque cursor contract.
      */
-    private fun showFilterSheet() {
+    private fun showSortSheet() {
         if (allItems.isEmpty()) return
-        val sheet = SheetNearbyFilterBinding.inflate(layoutInflater)
+        val sheet = SheetNearbySortBinding.inflate(layoutInflater)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(sheet.root)
 
-        // "All" + each distinct disease present, ordered by localized label.
-        val allChip = buildTypeChip(sheet.cgType, getString(R.string.filter_all), null)
-        sheet.cgType.addView(allChip)
-        var checkedTypeId = allChip.id
-        allItems.map { it.disease }.distinct()
-            .sortedBy { diseaseLabel(it) }
-            .forEach { key ->
-                val chip = buildTypeChip(
-                    sheet.cgType,
-                    DiseaseLabels.displayName(key, isRu) ?: key,
-                    key,
-                )
-                sheet.cgType.addView(chip)
-                if (key == typeFilter) checkedTypeId = chip.id
-            }
-        sheet.cgType.check(checkedTypeId)
+        sheet.cgSort.check(
+            if (ranking == RANKING_RECENT) {
+                R.id.chip_sort_newest
+            } else {
+                R.id.chip_sort_recommended
+            },
+        )
 
         sheet.btnApply.setOnClickListener {
-            typeFilter = sheet.cgType.findViewById<Chip>(sheet.cgType.checkedChipId)
-                ?.tag as? String
+            val nextRanking = if (sheet.cgSort.checkedChipId == R.id.chip_sort_newest) {
+                RANKING_RECENT
+            } else {
+                RANKING_RECOMMENDED
+            }
             dialog.dismiss()
-            applyFilter()
+            if (nextRanking != ranking) {
+                ranking = nextRanking
+                load(isRefresh = false)
+            }
         }
         dialog.show()
     }
-
-    private fun buildTypeChip(parent: ViewGroup, label: String, key: String?): Chip {
-        val chip = layoutInflater.inflate(R.layout.item_filter_chip, parent, false) as Chip
-        chip.id = View.generateViewId()
-        chip.text = label
-        chip.tag = key
-        return chip
-    }
-
-    private fun diseaseLabel(key: String): String =
-        (DiseaseLabels.displayName(key, isRu) ?: key).lowercase()
 
     private companion object {
         // First page + every subsequent page. Small enough that a scroll-
         // triggered fetch feels instant; the server clamps to 50 regardless.
         const val FEED_PAGE_SIZE = 20
+        const val RANKING_RECOMMENDED = "recommended"
+        const val RANKING_RECENT = "recent"
     }
 }

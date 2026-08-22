@@ -7,17 +7,12 @@ import java.util.Calendar
  * [PlantRepository][com.plantdiseases.app.data.repository.PlantRepository]
  * (next-due computation for the garden "care due" chips),
  * [ReminderManager] (WorkManager initial delays) and the Garden UI
- * (overdue / due-in-N-days bucketing). No Android dependencies so it
- * is directly unit-testable.
+ * (overdue checks — day bucketing itself lives in [CareQueue], which is
+ * DST-aware). No Android dependencies so it is directly unit-testable.
  */
 object CareSchedule {
 
     const val DAY_MS: Long = 24L * 60L * 60L * 1000L
-
-    /** Absolute epoch-ms when a reminder next falls due, given the last
-     *  matching care event (or the plant's creation) at [anchorMs]. */
-    fun nextDueAt(anchorMs: Long, intervalDays: Int): Long =
-        anchorMs + intervalDays.coerceAtLeast(0) * DAY_MS
 
     /** Wall-clock due time [intervalDays] after [anchorMs]. Unlike fixed
      * millisecond addition, Calendar day arithmetic keeps [hour]:[minute]
@@ -40,10 +35,6 @@ object CareSchedule {
      *  must NOT be used for this — anything due within the next 24 h
      *  would otherwise read as overdue before it arrived. */
     fun isOverdue(dueAt: Long, nowMs: Long): Boolean = dueAt <= nowMs
-
-    /** Whole days (truncated) until [dueAt]; 0 when due within the next
-     *  24 h, negative when overdue. */
-    fun daysUntil(dueAt: Long, nowMs: Long): Int = ((dueAt - nowMs) / DAY_MS).toInt()
 
     /**
      * Milliseconds until the next wall-clock occurrence of [hour]:[minute].

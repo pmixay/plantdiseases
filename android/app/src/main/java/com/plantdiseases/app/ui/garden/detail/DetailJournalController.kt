@@ -137,7 +137,7 @@ class DetailJournalController(
                 },
             )
         }
-        entry.photoUri?.let { uri ->
+        entry.photoUri?.takeIf { it.isNotBlank() }?.let { uri ->
             text.addView(
                 ImageView(activity).apply {
                     layoutParams = LinearLayout.LayoutParams(
@@ -263,12 +263,9 @@ class DetailJournalController(
      *  this plant so the user can swipe between them. */
     private fun openJournalPhotoViewer(tappedUri: String) {
         activity.lifecycleScope.launch {
-            val photos = plantRepository.getJournalEntries(plantId)
-                .filter { it.type == PlantRepository.JournalType.PHOTO.value }
-                .mapNotNull { it.photoUri }
-                .sorted() // approximates chrono order; the journal-render
-            // function already returns newest-first
-            val ordered = photos.distinct()
+            val ordered = chronologicalJournalPhotoUris(
+                plantRepository.getJournalEntries(plantId),
+            )
             val start = ordered.indexOf(tappedUri).coerceAtLeast(0)
             PhotoViewerActivity.open(activity, ordered, start)
         }
@@ -280,3 +277,18 @@ class DetailJournalController(
         private const val TEXT_FIELD_MAX_LENGTH = 1024
     }
 }
+
+/**
+ * PhotoViewerActivity's gallery contract is chronological. Room returns the
+ * journal newest-first, and sorting the URI strings (the old implementation)
+ * only happened to look stable for timestamp-based filenames; content-provider
+ * URIs were effectively random. Keep the timestamp attached until ordering is
+ * complete, then drop blank/duplicate legacy rows without changing chronology.
+ */
+internal fun chronologicalJournalPhotoUris(entries: List<PlantJournalEntity>): List<String> =
+    entries.asSequence()
+        .filter { it.type == PlantRepository.JournalType.PHOTO.value }
+        .sortedWith(compareBy<PlantJournalEntity> { it.timestamp }.thenBy { it.id })
+        .mapNotNull { it.photoUri?.takeIf { uri -> uri.isNotBlank() } }
+        .distinct()
+        .toList()

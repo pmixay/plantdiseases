@@ -155,7 +155,7 @@
     "/api/identify": {
       "post": {
         "summary": "Identify Endpoint",
-        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").",
+        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").\n\nThe same local NAP gate used by ``/api/analyze`` runs before PlantNet.\nA ``not_a_plant`` verdict returns a graceful ``available: false``\npayload and does not spend a PlantNet identification request.",
         "operationId": "identify_endpoint_api_identify_post",
         "parameters": [
           {

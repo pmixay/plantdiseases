@@ -47,12 +47,12 @@ class InAppUpdateManager(
 
     // An object (not a SAM lambda) so register/unregister see one identity.
     private val installListener = object : InstallStateUpdateListener {
-        override fun onStateUpdated(installState: InstallState) {
-            when (installState.installStatus) {
+        override fun onStateUpdated(state: InstallState) {
+            when (state.installStatus) {
                 InstallStatus.DOWNLOADED -> showInstallSnackbar()
                 InstallStatus.FAILED -> Log.w(
                     TAG,
-                    "Update download failed (code ${installState.installErrorCode})",
+                    "Update download failed (code ${state.installErrorCode})",
                 )
                 else -> Unit
             }

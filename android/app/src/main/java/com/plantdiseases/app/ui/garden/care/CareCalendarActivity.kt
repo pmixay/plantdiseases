@@ -21,6 +21,7 @@ import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -40,6 +41,8 @@ class CareCalendarActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCareCalendarBinding
     private var calendarView: CareCalendarView? = null
     private var monthCursor: Calendar = Calendar.getInstance()
+    private var monthLoadJob: Job? = null
+    private var todayLoadJob: Job? = null
 
     @Inject
     lateinit var careRepository: CareRepository
@@ -75,7 +78,8 @@ class CareCalendarActivity : AppCompatActivity() {
      *  states the grid paints. */
     override fun onResume() {
         super.onResume()
-        load()
+        loadMonth(monthCursor)
+        loadToday()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -97,32 +101,11 @@ class CareCalendarActivity : AppCompatActivity() {
         buildLegend()
     }
 
-    private fun load() {
-        lifecycleScope.launch {
-            val monthStart = monthStartOf(monthCursor)
-            val monthStartMs = monthStart.timeInMillis
-            val monthEndMs = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis
-            val nowMs = System.currentTimeMillis()
-            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
-            // One projection feeds both the grid and the Today card whenever
-            // the cursor month contains today — which is every initial open
-            // and every onResume. A chevron tap can leave the two windows
-            // disjoint, and deriving the card from the month queue there
-            // would silently blank it, so that case keeps its own read.
-            val monthTasks = careRepository.queue(monthStartMs, monthEndMs).map { it.task }
-            val summary = CareQueue.monthSummary(monthTasks, monthStartMs, monthEndMs, nowMs)
-            // The summary mirrors the home-screen queue: pending tasks due
-            // today plus overdue work, with no arbitrary look-back cutoff.
-            val todayTasks = careRepository.today(nowMs).map { it.task }
-            if (isFinishing || isDestroyed) return@launch
-            calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
-            renderTodayCard(todayStart, todayTasks)
-        }
-    }
-
     private fun loadMonth(cursor: Calendar) {
-        lifecycleScope.launch {
-            val monthStart = monthStartOf(cursor)
+        val requestedMonth = monthStartOf(cursor)
+        monthLoadJob?.cancel()
+        monthLoadJob = lifecycleScope.launch {
+            val monthStart = requestedMonth
             val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
             val summary = careRepository.month(
                 monthStart.timeInMillis,
@@ -130,7 +113,25 @@ class CareCalendarActivity : AppCompatActivity() {
                 System.currentTimeMillis(),
             )
             if (isFinishing || isDestroyed) return@launch
+            // Room queries are cancellable, but this explicit identity check
+            // also protects the final UI write if an old result and a newer
+            // chevron tap cross on the main-thread boundary.
+            if (!sameMonth(monthStart, monthCursor)) return@launch
             calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
+        }
+    }
+
+    private fun loadToday() {
+        todayLoadJob?.cancel()
+        todayLoadJob = lifecycleScope.launch {
+            val nowMs = System.currentTimeMillis()
+            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
+            // This is independent from the visible month. Keeping it in a
+            // separate job means a fast month swipe cannot cancel the initial
+            // Today-card load and leave that card blank.
+            val todayTasks = careRepository.today(nowMs).map { it.task }
+            if (isFinishing || isDestroyed) return@launch
+            renderTodayCard(todayStart, todayTasks)
         }
     }
 
@@ -142,6 +143,10 @@ class CareCalendarActivity : AppCompatActivity() {
             set(Calendar.DAY_OF_MONTH, 1)
             timeInMillis = CareQueue.dayStartMs(CareQueue.epochDayOf(timeInMillis))
         }
+
+    private fun sameMonth(first: Calendar, second: Calendar): Boolean =
+        first.get(Calendar.YEAR) == second.get(Calendar.YEAR) &&
+            first.get(Calendar.MONTH) == second.get(Calendar.MONTH)
 
     private fun renderTodayCard(todayStart: Long, tasks: List<CareQueue.CareTask>) {
         val pendingCount = tasks.count { it.status == CareQueue.CareTask.Status.PENDING }

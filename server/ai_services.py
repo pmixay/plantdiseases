@@ -367,7 +367,8 @@ def _probe_ai_cache_writable() -> bool:
 
 
 # Probe once at import so a misconfigured cache dir is visible in the logs.
-_AI_CACHE_WRITABLE = _probe_ai_cache_writable()
+# The verdict is only ever logged, never read back — hence no binding.
+_probe_ai_cache_writable()
 
 
 _PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE, PLANTNET_CACHE_TTL_SECONDS)

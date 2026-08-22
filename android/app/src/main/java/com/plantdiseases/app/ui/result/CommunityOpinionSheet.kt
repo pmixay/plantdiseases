@@ -12,7 +12,6 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -242,6 +241,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         behavior.peekHeight = maxHeight
         behavior.skipCollapsed = true
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        // Deprecated in API 30 with no like-for-like constant: the documented
+        // replacement is edge-to-edge plus IME inset handling, which this app
+        // deliberately has not adopted (targetSdk is held at 35 for exactly
+        // that reason). The sheet has a text field, so losing the resize would
+        // put the keyboard over the input — keep the working behaviour.
+        @Suppress("DEPRECATION")
         dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
@@ -758,15 +763,15 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             currentDisplayName: String?,
         ) {
             CommunityOpinionSheet().apply {
-                arguments = bundleOf(
-                    ARG_SCAN_ID to item.scanId,
-                    ARG_CURRENT_NAME to currentDisplayName,
-                    ARG_DISEASE_KEY to item.disease,
-                    ARG_CONFIDENCE to (item.confidence ?: -1f),
-                    ARG_THUMB to item.thumbPath,
-                    ARG_SPECIES to item.species,
-                    ARG_WRITABLE to item.wantsOpinion,
-                )
+                arguments = Bundle().apply {
+                    putString(ARG_SCAN_ID, item.scanId)
+                    putString(ARG_CURRENT_NAME, currentDisplayName)
+                    putString(ARG_DISEASE_KEY, item.disease)
+                    putFloat(ARG_CONFIDENCE, item.confidence ?: -1f)
+                    putString(ARG_THUMB, item.thumbPath)
+                    putString(ARG_SPECIES, item.species)
+                    putBoolean(ARG_WRITABLE, item.wantsOpinion)
+                }
             }.show(fm, TAG)
         }
     }

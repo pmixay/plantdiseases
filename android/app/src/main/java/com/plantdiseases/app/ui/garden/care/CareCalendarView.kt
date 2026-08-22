@@ -218,7 +218,11 @@ class CareCalendarView @JvmOverloads constructor(
 
     private fun shiftMonth(delta: Int) {
         val next = (monthCursor.clone() as Calendar).apply { add(Calendar.MONTH, delta) }
-        onMonthChanged?.invoke(next)
+        // Advance the local cursor immediately. Waiting for the host's async
+        // repository load to call showMonth() meant two quick chevron taps
+        // both cloned the same month and only moved one month in total.
+        monthCursor = next
+        onMonthChanged?.invoke(next.clone() as Calendar)
     }
 
     private fun isSameDay(a: Calendar, b: Calendar): Boolean =

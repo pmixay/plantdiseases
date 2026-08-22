@@ -15,9 +15,9 @@ import org.robolectric.annotation.Config
 /**
  * Pins the query invariant the treatment-plan duplication fix rests on.
  *
- * CareRepository.hasPlanForScan answers "was a plan ever derived from this
- * scan" by scanning [TreatmentPlanDao.getAllForPlant], so that query MUST keep
- * returning plans of every status. [TreatmentPlanDao.getActiveForPlant] cannot
+ * CareRepository.ensureTreatmentPlanForScan answers "was a plan ever derived
+ * from this scan" by scanning [TreatmentPlanDao.getAllForPlant], so that query
+ * MUST keep returning plans of every status. [TreatmentPlanDao.getActiveForPlant] cannot
  * answer it: `status = 'active'` stops matching the moment the user ticks the
  * final step, which is exactly when DetailExtraCardsController would otherwise
  * re-create the finished plan with its progress reset on the next visit.

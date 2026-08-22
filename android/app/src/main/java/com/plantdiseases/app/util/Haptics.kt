@@ -1,16 +1,14 @@
 package com.plantdiseases.app.util
 
 import android.content.Context
-import android.os.Build
 import android.os.VibrationEffect
-import android.os.Vibrator
 import android.os.VibratorManager
 
 /**
  * Short haptic feedback helpers, named by intensity ([tick] < [light] <
- * [medium]) plus a two-pulse [success] pattern. Picks the right vibrator API
- * for the OS version and swallows any failure, so callers can fire these
- * fire-and-forget without guarding for devices that lack a vibrator.
+ * [medium]) plus a two-pulse [success] pattern. Swallows any failure, so
+ * callers can fire these fire-and-forget without guarding for devices that
+ * lack a vibrator.
  */
 object Haptics {
 
@@ -32,14 +30,8 @@ object Haptics {
 
     private fun playEffect(context: Context, effect: VibrationEffect) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                manager.defaultVibrator.vibrate(effect)
-            } else {
-                @Suppress("DEPRECATION")
-                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                vibrator.vibrate(effect)
-            }
+            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            manager.defaultVibrator.vibrate(effect)
         } catch (_: Exception) {
         }
     }

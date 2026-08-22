@@ -1101,24 +1101,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = time.monotonic()
         self._warned_about_xff = False
 
-    # ── backwards-compat shim used by tests that tune the limiter ────
-    @property
-    def min_interval(self) -> float:
-        return 1.0 / self.rate if self.rate > 0 else 0.0
-
-    @min_interval.setter
-    def min_interval(self, value: float) -> None:
-        # Tests poke ``mw.min_interval = 0.0`` to disable the limiter
-        # for an entire fixture; preserve that contract by rebuilding
-        # the rate from the value they hand us.
-        self.rate = (1.0 / value) if value > 0 else float("inf")
-
-    @property
-    def _last_request(self) -> dict[str, tuple[float, float]]:
-        """Legacy alias used by the rate-limited test fixture to
-        ``.clear()`` the bucket between cases."""
-        return self._buckets
-
     def _cleanup_stale(self, now: float) -> None:
         # A bucket whose tokens never dropped below capacity in the
         # last 60 s is effectively inactive — drop it. Holding every
@@ -2951,6 +2933,10 @@ async def identify_endpoint(
     ``locale`` is forwarded to PlantNet's ``lang`` query param so the
     common names come back localised (e.g. "Каучуковое дерево" on
     ru-RU instead of "Rubber tree").
+
+    The same local NAP gate used by ``/api/analyze`` runs before PlantNet.
+    A ``not_a_plant`` verdict returns a graceful ``available: false``
+    payload and does not spend a PlantNet identification request.
     """
     if pipeline is None:
         _record_error()
@@ -2977,6 +2963,62 @@ async def identify_endpoint(
         organ = "auto"
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
+
+    # Decode and validate the pixels before sending anything to PlantNet. The
+    # NAP filter is the same detector + classifier pipeline as /api/analyze,
+    # so it must see the same EXIF-normalised RGB image and run on the same
+    # bounded inference executor (never on the event loop or network pool).
+    try:
+        img = await loop.run_in_executor(None, _open_image, contents)
+    except HTTPException:
+        _record_error()
+        raise
+    except Exception as exc:
+        _record_error()
+        logger.exception("Unexpected error while decoding /api/identify upload: %s", exc)
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
+
+    img_w, img_h = img.size
+    if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
+        _record_error()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too large ({img_w}x{img_h}). "
+                   f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+        )
+    if min(img_w, img_h) < MIN_IMAGE_DIMENSION:
+        _record_error()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too small ({img_w}x{img_h}). "
+                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
+        )
+
+    try:
+        nap_result = await asyncio.wait_for(
+            loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
+            timeout=INFERENCE_TIMEOUT,
+        )
+    except TimeoutError as exc:
+        _record_error()
+        logger.error("NAP filter timed out after %.0fs for /api/identify", INFERENCE_TIMEOUT)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
+        ) from exc
+    except Exception as exc:
+        _record_error()
+        logger.exception("NAP filter crashed for /api/identify: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal inference error") from exc
+
+    if nap_result.get("class_name") == "not_a_plant":
+        return JSONResponse(content={
+            "available": False,
+            "results": [],
+            "source": "skipped_nap",
+            "organ": organ,
+        })
+
     result = await loop.run_in_executor(
         _get_net_executor(),
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),

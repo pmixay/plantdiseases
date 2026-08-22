@@ -498,6 +498,25 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
+    fun identify_napRejection_preservesServerMarker() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"available":false,"results":[],"source":"skipped_nap","organ":"auto"}""",
+                ),
+        )
+
+        val result = runBlocking { repo.identifySpecies(imageFile, organ = "auto") }
+
+        assertThat(result.isSuccess).isTrue()
+        val response = result.getOrThrow()
+        assertThat(response.available).isFalse()
+        assertThat(response.results).isEmpty()
+        assertThat(response.wasRejectedAsNotAPlant).isTrue()
+    }
+
+    @Test
     fun identify_400_mapsToUnsupportedImage() {
         server.enqueue(MockResponse().setResponseCode(400))
         val result = runBlocking { repo.identifySpecies(imageFile) }
@@ -622,6 +641,26 @@ class ScanRepositoryNetworkTest {
         val path = server.takeRequest().path.orEmpty()
         assertThat(path).contains("ranking=recommended")
         assertThat(path).contains("cursor=r1.previous.signature")
+    }
+
+    @Test
+    fun communityNearby_recentRequestsNewestFirstRanking() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[],"ranking":"recent"}"""),
+        )
+
+        val result = runBlocking {
+            repo.communityNearby(
+                disease = null,
+                userPseudoId = "reader",
+                ranking = "recent",
+            )
+        }
+
+        assertThat(result.getOrThrow().ranking).isEqualTo("recent")
+        assertThat(server.takeRequest().path.orEmpty()).contains("ranking=recent")
     }
 
     @Test

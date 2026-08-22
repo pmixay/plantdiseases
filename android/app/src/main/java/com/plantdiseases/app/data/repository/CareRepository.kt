@@ -630,15 +630,6 @@ class CareRepository(
         PlanWithSteps(plan, treatmentStepDao.getForPlan(plan.id))
     }
 
-    /** Any plan — active, completed or abandoned — already derived from this
-     *  scan. [activePlan] filters `status = 'active'` in SQL, so it goes blind
-     *  the moment the user ticks the last step; callers that decide whether to
-     *  materialise a plan need this second guard or they silently re-create a
-     *  finished plan with its progress reset. */
-    suspend fun hasPlanForScan(plantId: Long, scanId: Long): Boolean = withContext(Dispatchers.IO) {
-        treatmentPlanDao.getAllForPlant(plantId).any { it.scanId == scanId }
-    }
-
     /** The active plan, or — when there is none — the most recently completed
      *  one within [windowMs] (never an abandoned one), with its steps loaded.
      *  The plant-detail card renders a "treatment finished" line off this, so
@@ -661,12 +652,20 @@ class CareRepository(
 
     // ─── Single-row lookups (CareTaskActivity resolving one task by id) ───
 
-    data class StepWithPlan(val step: TreatmentStepEntity, val plan: TreatmentPlanEntity)
+    data class StepWithPlan(
+        val step: TreatmentStepEntity,
+        val plan: TreatmentPlanEntity,
+        val stepCount: Int,
+    )
 
     suspend fun getStep(stepId: Long): StepWithPlan? = withContext(Dispatchers.IO) {
         val step = treatmentStepDao.getById(stepId) ?: return@withContext null
         val plan = treatmentPlanDao.getById(step.planId) ?: return@withContext null
-        StepWithPlan(step, plan)
+        // Do not derive this through activePlan(): completed-plan rows are
+        // still browsable from the calendar history, but activePlan() quite
+        // correctly excludes them. Falling back to stepIndex + 1 made an old
+        // "Step 1 of 3" render as "Step 1 of 1" after plan completion.
+        StepWithPlan(step, plan, treatmentStepDao.getForPlan(plan.id).size)
     }
 
     suspend fun getReminder(reminderId: Long) = withContext(Dispatchers.IO) {

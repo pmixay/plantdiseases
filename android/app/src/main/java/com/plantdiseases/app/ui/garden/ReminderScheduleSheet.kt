@@ -15,7 +15,6 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -537,7 +536,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
                 // Stash the id so the sheet self-heals after recreation.
-                arguments = bundleOf(ARG_PLANT_ID to plant.id)
+                arguments = Bundle().apply { putLong(ARG_PLANT_ID, plant.id) }
             }
             sheet.show(fm, TAG)
         }
@@ -556,7 +555,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
                 this.carePlanDefaults = plan
-                arguments = bundleOf(ARG_PLANT_ID to plant.id)
+                arguments = Bundle().apply { putLong(ARG_PLANT_ID, plant.id) }
             }
             sheet.show(fm, TAG)
         }

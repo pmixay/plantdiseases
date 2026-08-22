@@ -69,6 +69,7 @@ class CareTaskActivity : AppCompatActivity() {
         }
         binding.careTaskToolbar.setNavigationOnClickListener { finish() }
         binding.careTaskDoneButton.setOnClickListener { onDoneClicked() }
+        binding.careTaskDoneButton.isEnabled = false
 
         loadTask()
     }
@@ -105,7 +106,7 @@ class CareTaskActivity : AppCompatActivity() {
         binding.careTaskPlantStep.text = getString(
             R.string.treatment_step_of,
             step.stepIndex + 1,
-            careRepository.activePlan(plant.id)?.steps?.size ?: (step.stepIndex + 1),
+            stepWithPlan.stepCount,
         ) + " · " + (if (isRu) plan.diseaseLabelRu else plan.diseaseLabelEn)
 
         bindTextSection(binding.careTaskDescriptionSection, binding.careTaskDescription, step.detail)
@@ -114,7 +115,7 @@ class CareTaskActivity : AppCompatActivity() {
         bindProducts(step.productsJson)
         bindHistory(step)
 
-        binding.careTaskDoneButton.isEnabled = step.status != "done"
+        binding.careTaskDoneButton.isEnabled = step.status == "pending" && plan.status == "active"
 
         pendingComplete = {
             careRepository.complete(
@@ -369,6 +370,11 @@ class CareTaskActivity : AppCompatActivity() {
 
     private fun onDoneClicked() {
         val action = pendingComplete ?: return
+        if (!binding.careTaskDoneButton.isEnabled) return
+        // Repository completion is idempotent, but two rapid taps used to
+        // launch two coroutines and close the screen twice. Disable at the UI
+        // boundary as soon as the accepted tap starts.
+        binding.careTaskDoneButton.isEnabled = false
         Haptics.medium(this)
         lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable) { action() }
