@@ -212,11 +212,36 @@ Watch for the predicted cost: upweighting a quarter of scorch trades in-class
 diversity, so a drop in in-domain scorch recall is the expected failure mode and
 the in-domain gate is what catches it.
 
-**Serve-time bias, measured and rejected.** On 2.6.8, a +1.88 `leaf_scorch`
-logit bias recovers 10 benchmark scorch clusters (36→46) for 5 new healthy false
-alarms (4→9), and goes net-negative past +2.2. Every recovered cluster was on
-the arm since retired as mislabelled. Not shipped; recorded so it is not
-re-proposed.
+**Serve-time bias, measured and rejected as a standalone fix.** On 2.6.8, a
++1.88 `leaf_scorch` logit bias recovers 10 benchmark scorch clusters (36→46) for
+5 new healthy false alarms (4→9), and goes net-negative past +2.2. Every
+recovered cluster was on the arm since retired as mislabelled, and 2.6.8's
+hibiscus arm is already 1.000, so there is nothing to buy.
+
+**`CLASS_LOGIT_BIAS` cannot rescue a collapsed model on its own — measured.**
+Swept on 2.7.2 against benchmark v2 under the gate's own constraint (hibiscus
+≥ 0.70, healthy false-fire ≤ 0.12 on the same 151 never-trained clusters):
+
+| bias | hibiscus | healthy FF | |
+|---|---|---|---|
+| 0.0 | 0.097 | 0.040 | under floor |
+| 2.0 | 0.419 | 0.060 | under floor |
+| 2.5 | 0.548 | 0.093 | under floor |
+| **2.76** | **0.645** | **0.119** | **best within ceiling — still short** |
+| 3.0 | 0.677 | 0.172 | over ceiling |
+| 4.0 | 0.839 | 0.536 | over ceiling |
+
+It closes 55 of the 60 missing points and then runs out of false-fire budget.
+So bias is **a top-up, not a rescue**: it is worth applying only if 2.7.3's
+sampling change lands hibiscus materially above 0.10 *and* leaves headroom under
+the 0.12 ceiling — a partly-recovered model starts from a better ranking, so the
+same budget buys more. If 2.7.3 leaves hibiscus near 0.10, the table above says
+bias tops out around 0.645 and the next move is structural (head architecture,
+or the collection round), not another threshold.
+
+Read it as what it is: a bias shifts a decision boundary, it does not make the
+model separate anything better, and the false-fire it spends is real user-facing
+cost under this project's safety asymmetry.
 
 Closed history: **2.6.9** gate-passed but lost a paired A/B vs 2.6.8 (kept
 2.6.8). **2.6.10** recovered leaf_scorch but silently lost a 2.26k-image source
