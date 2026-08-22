@@ -252,7 +252,16 @@ def build(src: Path, out: Path, per_class_cap: int) -> None:
             # whenever a mapped condition dir yields no usable images.
             start = len(rows)
             for f in take:
-                dst = out / cls / f"{species}__{f.stem}{f.suffix.lower()}"
+                # The split is part of the name because build() POOLS every
+                # split dir into pool[cls][species] before copying. Without it,
+                # train/hibiscus/scorch/1.jpg and test/hibiscus/scorch/1.jpg —
+                # different photographs, both kept by dedup — write to the same
+                # destination and one silently overwrites the other, leaving two
+                # manifest rows and one file. The cluster counts and the
+                # thin-class check read the manifest, so an under-sized
+                # benchmark would pass and advertise a size it does not have.
+                _split = f.parent.parent.parent.name or "x"
+                dst = out / cls / f"{_split}__{species}__{f.stem}{f.suffix.lower()}"
                 shutil.copy(f, dst)
                 bf = brown_fraction(dst)
                 if bf is not None:

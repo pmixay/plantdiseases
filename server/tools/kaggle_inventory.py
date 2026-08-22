@@ -152,8 +152,25 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
     if not names:
         return {"ref": ref, "folder": folder, "verdict": "EMPTY", "files": 0}
     names.sort()
-    step = max(1, len(names) // sample)
-    spread = names[::step][:sample]
+    # Endpoint-inclusive stride. `names[::len//sample]` looks like it spreads
+    # across the folder and does not: integer floor makes step==1 for any folder
+    # with sample <= len < 2*sample (60-119 files at the default), so "strided"
+    # degenerates into "the first 60" and the tail is never fetched, never
+    # hashed, never gated. More generally the last sampled index is
+    # (sample-1)*step, leaving ~1/(step+1) of the folder unsampled — 26% at
+    # len=239. A folder whose contaminated half sits in that tail reports
+    # "clean of the benchmark", which is the exact failure this module exists
+    # to prevent. Interpolating to len-1 guarantees the last file is in range.
+    k = min(sample, len(names))
+    if k <= 1:
+        spread = names[:k]
+    else:
+        seen, spread = set(), []
+        for j in range(k):
+            i = round(j * (len(names) - 1) / (k - 1))
+            if i not in seen:
+                seen.add(i)
+                spread.append(names[i])
     # A contiguous window, taken from the middle so it is not the folder's
     # (often unrepresentative) first or last block.
     blk = min(sample, len(names))
@@ -180,6 +197,10 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
     block_hashes = [h for h in (_phash(p) for p in _fetch(ref, block, workdir))
                     if h is not None]
     block_distinct = _distinct(block_hashes)
+    if not block_hashes:
+        print(f"  note: folder has {len(names)} files <= sample={sample}, so the strided "
+              f"sample already covers it and there is no separate block to measure "
+              f"augmentation from. Read distinct_in_spread_sample, not augmentation_ratio.")
 
     n = len(dists)
     verdict = ("CONTAMINATED — IS the benchmark, deny-list it" if n and hits / n > 0.5

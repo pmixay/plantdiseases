@@ -15,6 +15,7 @@ species to attribute.
 
 from __future__ import annotations
 
+import collections
 import csv
 
 import numpy as np
@@ -81,9 +82,32 @@ def test_manifest_and_disk_agree_exactly(src, tmp_path):
     either side silently attributes an image to the wrong arm, or to none."""
     out = tmp_path / "bench"
     b.build(src, out, per_class_cap=100)
-    listed = {r["filename"] for r in _manifest(out)}
-    on_disk = {f"{p.parent.name}/{p.name}" for p in out.rglob("*.jpg")}
-    assert listed == on_disk
+    listed = [r["filename"] for r in _manifest(out)]
+    on_disk = [f"{p.parent.name}/{p.name}" for p in out.rglob("*.jpg")]
+    # COUNTS, not sets. build() pools every split dir before copying, so two
+    # photographs sharing a stem across splits used to write to one destination:
+    # two manifest rows, one file. A set comparison collapses that on both sides
+    # and passes.
+    dupes = [k for k, v in collections.Counter(listed).items() if v > 1]
+    assert not dupes, f"duplicate manifest filenames — images overwrote each other: {dupes[:5]}"
+    assert len(listed) == len(on_disk), f"{len(listed)} rows vs {len(on_disk)} files"
+    assert set(listed) == set(on_disk)
+
+
+def test_same_stem_in_two_splits_does_not_overwrite(tmp_path):
+    """Upstream numbers files per split, so `1.jpg` exists in train AND test."""
+    root = tmp_path / "src"
+    n = 0
+    for split in ("train", "test"):
+        for cond in ("healthy", "scorch"):
+            for i in range(6):
+                n += 1
+                _img(root / split / "hibiscus" / cond / f"{i}.jpg", seed=n)
+    out = tmp_path / "bench"
+    b.build(root, out, per_class_cap=100)
+    rows = _manifest(out)
+    assert len(rows) == len(list(out.rglob("*.jpg"))), \
+        "cross-split stem collision: manifest rows outnumber files on disk"
 
 
 def test_arm_is_blank_for_healthy_and_named_for_disease(src, tmp_path):

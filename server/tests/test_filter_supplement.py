@@ -232,3 +232,26 @@ def test_leak_is_a_non_zero_exit(bundle):
     assert proc.returncode != 0
     assert "STOP" in proc.stdout + proc.stderr
     assert (root.parent / "rep.json").exists(), "the report is written before the exit"
+
+
+@pytest.mark.parametrize("junk", ["0x123456789abcde", "1_23456789abcdef",
+                                  "-123456789abcdef", "zzzzzzzzzzzzzzzz"])
+def test_malformed_digest_never_crashes_the_run(tmp_path, junk):
+    """A junk manifest digest is a MANIFEST defect and must be absorbed.
+
+    The guard used to be int(recorded, 16), which accepts '0x' prefixes, '_'
+    separators and a leading '-' — none of which _to_bits can parse. Those
+    digests passed the guard and then took the whole run down, after the full
+    corpus decode, on exactly the input the guard exists to catch.
+    """
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h.jpg", seed=11)
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "split_hint", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
+                    "split_hint": "eval_ok", "phash": junk})
+
+    rows, report = fs.filter_bundle(root, None, workers=2)
+    assert _verdicts(rows) == {"healthy/h.jpg": "keep"}
+    assert report["totals"]["unreadable_manifest_digests"] == 1

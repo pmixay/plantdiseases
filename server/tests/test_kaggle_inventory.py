@@ -105,3 +105,35 @@ def test_clean_folder_is_not_reported_as_contaminated(augmented_folder):
 def test_empty_folder_is_explicit(augmented_folder):
     bench, work = augmented_folder
     assert ki.gate(REF, "no_such_folder", bench, sample=10, workdir=work)["verdict"] == "EMPTY"
+
+
+def test_strided_sample_reaches_the_end_of_the_folder(tmp_path, monkeypatch):
+    """A contaminated TAIL must not report clean.
+
+    `names[::len//sample]` looks like it spreads across a folder and does not:
+    integer floor makes step==1 for any folder with sample <= len < 2*sample, so
+    it degenerates into "the first `sample` files". A 119-file folder whose last
+    59 files ARE the benchmark then reports "clean of the benchmark" — the exact
+    failure this module exists to prevent.
+    """
+    src, bench = tmp_path / "src", tmp_path / "bench"
+    _write(bench / "b.jpg", seed=7)
+    names = []
+    for i in range(119):
+        n = f"F/{i:03d}.jpg"
+        if i >= 60:                       # the tail IS the benchmark
+            (src / n).parent.mkdir(parents=True, exist_ok=True)
+            (src / n).write_bytes((bench / "b.jpg").read_bytes())
+        else:
+            _write(src / n, seed=1000 + i)
+        names.append(n)
+
+    monkeypatch.setattr(ki, "listing", lambda ref, hard_cap=2000: list(names))
+    monkeypatch.setattr(ki, "download_file",
+                        lambda ref, name, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                 dest.write_bytes((src / name).read_bytes()),
+                                                 True)[-1])
+    monkeypatch.setattr(ki.time, "sleep", lambda *_: None)
+
+    r = ki.gate(REF, "F", bench, sample=60, workdir=tmp_path / "w")
+    assert r["benchmark_hits_at_hamming6"] > 0, f"contaminated tail went unsampled: {r}"

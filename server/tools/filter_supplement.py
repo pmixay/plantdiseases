@@ -8,7 +8,11 @@ is the one that matters. What matters is how many **distinct photographs** it
 holds, whether any of them are the OOD benchmark we grade with, and whether the
 serving pipeline would even accept them as input. This tool answers all three on
 the actual bytes, and writes a filtered manifest that carries its verdict per
-row so §2 of the notebook can honour it.
+row.
+
+Note: nothing in `train_notebook.ipynb` reads `filter_verdict` yet. This is a
+standalone pre-flight gate you run against a downloaded corpus, not a step §2
+honours — an earlier version of this docstring claimed otherwise.
 
 The gates, and why each one is a gate
 -------------------------------------
@@ -144,11 +148,13 @@ def _digest_drift(recorded: str, recomputed: str) -> int | None:
     separately instead of condemning the row.
     """
     recorded = (recorded or "").strip().lower()
-    if len(recorded) != 16:
-        return None
-    try:
-        int(recorded, 16)
-    except ValueError:
+    # Validate with hexdigits, NOT int(x, 16). int() accepts '0x' prefixes, '_'
+    # separators and a leading '-'; _to_bits parses byte pairs with
+    # int(h[i:i+2], 16) and accepts none of them, so a digest like
+    # '0x123456789abcde' passed this guard and then crashed the whole run —
+    # after the full-corpus decode — on a manifest defect this function exists
+    # to absorb.
+    if len(recorded) != 16 or any(c not in "0123456789abcdef" for c in recorded):
         return None
     return int(_hamming(_to_bits([recorded]), _to_bits([recomputed]))[0, 0])
 
