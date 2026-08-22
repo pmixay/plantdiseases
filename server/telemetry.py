@@ -146,19 +146,6 @@ def daily_writes(ip_hash: str | None) -> int:
     return int(row["n"])
 
 
-def error_counts(*, days: int = 7) -> list[dict]:
-    """Grouped (stage, kind, fatal) counts over the window — for triage."""
-    init_db()
-    cutoff = int(time.time()) - days * 86400
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT stage, kind, fatal, COUNT(*) AS n FROM error_reports "
-            "WHERE created_at >= ? GROUP BY stage, kind, fatal ORDER BY n DESC",
-            (cutoff,),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
 def prune_older_than(days: int) -> int:
     """Drop reports older than ``days``. Returns the row count pruned."""
     init_db()

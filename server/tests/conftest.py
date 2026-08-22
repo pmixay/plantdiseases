@@ -184,9 +184,9 @@ def client():
     with TestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.min_interval = 0.0
+            mw.rate = float("inf")
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()
         # The same-photo dedup cache leaks state across tests because
         # the test PNG bytes hash to a stable SHA-256 — without this
         # reset, a confident-pipeline test gets the unconfident response
@@ -202,9 +202,9 @@ def client():
 def rate_limited_client():
     """Variant of ``client`` that keeps a 1 req/s rate limit active.
 
-    Capacity is pinned to 1.0 so the token-bucket reduces to the
-    strict "min_interval between requests" behaviour the rate-limit
-    test asserts. Production keeps the larger default burst.
+    Capacity is pinned to 1.0 so the token-bucket reduces to the strict
+    "one request per second, no burst" behaviour the rate-limit test
+    asserts. Production keeps the larger default burst.
     """
     from fastapi.testclient import TestClient
 
@@ -213,11 +213,11 @@ def rate_limited_client():
     with TestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.min_interval = 1.0
+            mw.rate = 1.0
             mw.capacity = 1.0
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()
         yield c
         if mw is not None:
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()

@@ -1101,24 +1101,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = time.monotonic()
         self._warned_about_xff = False
 
-    # ── backwards-compat shim used by tests that tune the limiter ────
-    @property
-    def min_interval(self) -> float:
-        return 1.0 / self.rate if self.rate > 0 else 0.0
-
-    @min_interval.setter
-    def min_interval(self, value: float) -> None:
-        # Tests poke ``mw.min_interval = 0.0`` to disable the limiter
-        # for an entire fixture; preserve that contract by rebuilding
-        # the rate from the value they hand us.
-        self.rate = (1.0 / value) if value > 0 else float("inf")
-
-    @property
-    def _last_request(self) -> dict[str, tuple[float, float]]:
-        """Legacy alias used by the rate-limited test fixture to
-        ``.clear()`` the bucket between cases."""
-        return self._buckets
-
     def _cleanup_stale(self, now: float) -> None:
         # A bucket whose tokens never dropped below capacity in the
         # last 60 s is effectively inactive — drop it. Holding every

@@ -959,6 +959,13 @@ def record_opinion(
     """Append one community 'second opinion' (comment) on a shared scan.
     Returns the new row id.
 
+    UNGATED, and deliberately not in ``__all__``: it performs none of the
+    active-request / ownership / block checks. Nothing in the HTTP layer
+    calls it — ``/api/community/opinion`` goes through
+    :func:`record_requested_opinion`, which is the authority. This form
+    survives only as a test-seeding helper for the read paths; new callers
+    must use :func:`record_requested_opinion`.
+
     An author may post more than once on the same scan — the thread is a
     running comment list, not a single vote slot. ``opinions_for`` folds
     repeat authors down to their latest pick for the consensus tally so a
@@ -1370,32 +1377,18 @@ def wants_opinion(scan_id: str) -> bool:
     return row is not None
 
 
-def record_view(
-    scan_id: str,
-    viewer_pseudo_id: str,
-    viewer_author_id: str | None = None,
-) -> bool:
-    """Record one deduplicated view; durable identity wins when available."""
-    return record_views(
-        [scan_id],
-        viewer_pseudo_id,
-        viewer_author_id=viewer_author_id,
-    ) > 0
-
-
 def record_views(
     tokens: list[str],
     viewer_pseudo_id: str,
     viewer_author_id: str | None = None,
 ) -> int:
-    """Batch form of :func:`record_view` for feed-impression reporting.
+    """Record deduplicated views for a batch of scans (feed impressions).
 
     Takes RAW client tokens — public tokens and real scan_ids mix freely in
     one batch, exactly as :func:`resolve_scan_token` tolerates them — and
     resolves, filters and inserts the whole batch under ONE connection and
-    ONE lock acquisition instead of one of each per id. Semantics per id are
-    identical to :func:`record_view`: unknown scans and the viewer's own
-    scans never count. New clients dedupe on the server-issued durable
+    ONE lock acquisition instead of one of each per id. Unknown scans and the
+    viewer's own scans never count. New clients dedupe on the server-issued durable
     ``viewer_author_id`` even if a caller varies its body pseudo id; legacy
     clients retain the old pseudo-id fallback. Returns the number of NEW views.
     """
@@ -1498,7 +1491,7 @@ def set_like(
 ) -> bool:
     """Like or unlike a shared scan on behalf of one anonymous install.
 
-    Mirrors ``record_view``: a scan owner can't like their own scan. The
+    Mirrors ``record_views``: a scan owner can't like their own scan. The
     durable author id is authoritative for current clients, preventing a
     changed body pseudo id from minting an extra like; the legacy composite
     primary key remains the compatibility fallback.
@@ -2898,10 +2891,8 @@ __all__ = [
     "public_opinion_token",
     "prune_older_than",
     "public_scan_token",
-    "record_opinion",
     "record_requested_opinion",
     "record_scan",
-    "record_view",
     "record_views",
     "region_summary",
     "recommended_scans",

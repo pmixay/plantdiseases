@@ -8,7 +8,7 @@ at n≈450 val_realworld samples the macro-F1 sampling error is wide
 almost certainly noise, not a real ordering. Point estimates alone are
 not a trustworthy ship/no-ship gate; CIs and a *paired* A/B test are.
 
-Three estimators are provided:
+The estimators:
 
 * :func:`bootstrap_macro_f1_ci` — percentile bootstrap CI for a single
   model's disease macro-F1 (resample the test set with replacement,
@@ -27,6 +27,10 @@ Three estimators are provided:
   ``gray_mold_*``) are tracked by recall: a class with ~30–50 samples has
   a recall CI of ±0.10 or more, so a per-class recall delta is only real
   when its paired CI excludes zero.
+* :func:`bootstrap_per_class_precision_ci` — the per-class **precision**
+  counterpart of the recall CI, over :func:`per_class_precision`. Recall
+  alone cannot tell a genuinely better class from one the model simply
+  predicts more often; the precision CI is what separates them.
 
 The disease-macro-F1 definition mirrors the training notebook exactly
 (``sklearn.f1_score`` over the disease labels only — ``healthy`` and
