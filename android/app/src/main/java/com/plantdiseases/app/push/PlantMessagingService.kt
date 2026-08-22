@@ -26,6 +26,12 @@ class PlantMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var scanRepository: ScanRepository
 
+    // Firebase deprecated onNewToken/getToken in firebase-messaging 25.1.0 in
+    // favour of Firebase Installation IDs. Tokens still work and Google has
+    // published no FID migration guide; moving would also mean changing
+    // server/push.py (its push_tokens table is keyed by token) and the wire
+    // format between them, so it is a coordinated change, not a lint fix.
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onNewToken(token: String) {
         val ctx = applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return

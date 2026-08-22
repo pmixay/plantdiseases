@@ -17,7 +17,6 @@ import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
-import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.NestedScrollView
@@ -654,7 +653,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             val sheet = DoctorChatSheet().apply {
                 this.plant = plant
                 // Stash the id so the sheet can self-heal after process death.
-                arguments = bundleOf(ARG_PLANT_ID to plant.id)
+                arguments = Bundle().apply { putLong(ARG_PLANT_ID, plant.id) }
             }
             sheet.show(fm, TAG)
         }
@@ -664,7 +663,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         fun show(fm: FragmentManager, scan: ScanEntity) {
             val sheet = DoctorChatSheet().apply {
                 this.scan = scan
-                arguments = bundleOf(ARG_SCAN_ID to scan.id)
+                arguments = Bundle().apply { putLong(ARG_SCAN_ID, scan.id) }
             }
             sheet.show(fm, TAG)
         }

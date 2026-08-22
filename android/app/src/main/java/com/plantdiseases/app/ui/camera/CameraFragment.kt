@@ -23,7 +23,6 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -774,7 +773,7 @@ class CameraFragment : Fragment() {
     private fun deliverIdentifyCapture(imagePath: String) {
         parentFragmentManager.setFragmentResult(
             RESULT_IDENTIFY_CAPTURE,
-            bundleOf(RESULT_PATH to imagePath),
+            Bundle().apply { putString(RESULT_PATH, imagePath) },
         )
     }
 
