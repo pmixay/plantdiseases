@@ -141,6 +141,12 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     import main as server_main
     import pipeline as pipeline_module
 
+    # Keep a handle on the real class before it is shadowed. Swapping in the
+    # fake makes the genuine pipeline unreachable for the whole session, so a
+    # test that wants to exercise real gate plumbing (rather than the HTTP
+    # layer) has nothing to instantiate. Tests use
+    # ``pipeline._RealPipelineForTests``; nothing in production reads it.
+    pipeline_module._RealPipelineForTests = pipeline_module.PlantDiseasePipeline
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
 

@@ -40,7 +40,7 @@ tier's bundle.
   `nutrient_deficiency`) go dark.
 - `CropAnnotation` (dataclass) — the sidecar JSON schema written next to every
   crop (`plant_id`, `species`, `diagnosis`, `severity`, `source`, `bbox`, …).
-  `plant_id` is what makes the §2 group split leakage-safe.
+  `plant_id`, paired with `source`, is what makes the §2 group split leakage-safe.
 
 ## §2 — group-aware splits (the integrity step)
 
@@ -49,11 +49,19 @@ must land in the same split**. Random per-image splits leak — two photos of th
 same leaf in train and val inflate every metric. The split groups by
 `plant_id` (from the sidecar) so a plant is wholly train or wholly val.
 
-The optional Kaggle supplement is **fail-soft**: provide credentials and it
-pulls real indoor-houseplant disease sets; omit them and it skips cleanly. It
-is **train-only**, drops folders it can't confidently label-map, and prints
-every discovered folder so you can refine the map. Never let a supplement bleed
-into a val slice.
+The optional Kaggle supplements are **fail-soft**: provide credentials and they
+pull real indoor-houseplant disease sets; omit them and they skip cleanly. Each
+drops folders it can't confidently label-map and prints every discovered folder
+so you can refine the map.
+
+**The project's own eval supplement is deliberately NOT train-only** — it is
+supply *and* eval, published once with no separate carve. §2 routes each row by
+its own `split_hint` (`eval_ok` / `train_only`) written by the offline labelling
+pipeline, and only `hn_kind=boundary` rows are forced train-only, via the
+`supplement_boundary` source that appears in no split's `allowed_sources`.
+Third-party Kaggle sources *are* train-only. A permanent holdout is carved by a
+stable sha1 bucket over `(source, plant_id)`, so membership is a property of the
+row rather than of the draw.
 
 *Portable principle:* group leakage is the most common silent inflator in
 plant-disease ML (same-plant, same-background, same-session). Decide the
@@ -110,7 +118,9 @@ gate**. Details in `references/export-and-quantization.md` and
 
 **Add a data source:** wire it in §2, map its folders to canonical class names,
 keep it **train-only** unless you deliberately curated a val slice, and let the
-leakage guard group by `plant_id`. Re-run §2→§7.
+leakage guard group by **`(source, plant_id)`**. pHash it against the OOD
+benchmark *and* against the datasets that benchmark was built from before wiring
+it — see golden rule 7. Re-run §2→§7.
 
 **Switch families:** set `MODEL_FAMILY` in §1; for `aqua` confirm §5's TF
 toolchain installs. Each family writes its own `plantvision_<family>_v<ver>.tar`.

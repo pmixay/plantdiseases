@@ -133,7 +133,8 @@ _CLASS_NAMES = [
 
 def _route(*, det_conf, ood_score=None, ood_threshold=None,
            ml_floor=0.0, max_logit=0.0, class_name="leaf_spot",
-           require_classifier_signal=False):
+           require_classifier_signal=False,
+           head_nap=None, head_mass_floor=0.0):
     from pipeline import _decide_nap_route
 
     triggered, _ = _decide_nap_route(
@@ -141,6 +142,7 @@ def _route(*, det_conf, ood_score=None, ood_threshold=None,
         ood_score=ood_score, ood_threshold=ood_threshold,
         ml_floor=ml_floor, max_logit=max_logit,
         require_classifier_signal=require_classifier_signal,
+        head_nap=head_nap, head_mass_floor=head_mass_floor,
     )
     return triggered
 
@@ -178,6 +180,105 @@ def test_gate_degrades_to_detector_only_with_no_classifier_signal():
     # No embedding bank and MaxLogit floor off → detector confidence alone.
     assert _route(det_conf=0.20, ood_score=None, ml_floor=0.0) is True
     assert _route(det_conf=0.80, ood_score=None, ml_floor=0.0) is False
+
+
+# ── Head veto (third condition) ──────────────────────────────────────
+# Measured on the deployed 2.6.8 bundle: every one of the 13 never-trained
+# ornamental leaf_scorch clusters the gate re-routed had P(not_a_plant) <= 0.03
+# (median 0.0018), while real not_a_plant images sit at p05=0.815. The veto
+# turns that separation into a refusal to fire.
+
+def test_head_veto_blocks_gate_when_classifier_is_sure_it_is_a_plant():
+    # Detector unsure + embedding says OOD → the two-of-two gate would fire…
+    assert _route(det_conf=0.20, ood_score=0.9, ood_threshold=0.5) is True
+    # …but a near-zero not_a_plant head vetoes it.
+    assert _route(
+        det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
+        head_nap=0.002, head_mass_floor=0.05,
+    ) is False
+    # A real not_a_plant frame clears the floor and still routes.
+    assert _route(
+        det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
+        head_nap=0.98, head_mass_floor=0.05,
+    ) is True
+
+
+def test_head_veto_needs_both_a_probability_and_a_positive_floor():
+    # NB: the veto is ON by default for a bundle (see the resolver test below);
+    # what is optional is the *pure function's* arguments. Callers that pass
+    # neither get the historical two-of-two behaviour unchanged.
+    assert _route(det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
+                  head_mass_floor=0.05) is True
+    # Floor explicitly disabled (bundle sets ood.nap_head_mass_floor: null).
+    assert _route(det_conf=0.20, ood_score=0.9, ood_threshold=0.5,
+                  head_nap=0.0, head_mass_floor=0.0) is True
+
+
+def test_pipeline_passes_the_head_probability_into_the_gate():
+    """The plumbing, not the decision. Every other test here calls
+    ``_decide_nap_route`` directly, so dropping ``head_nap=`` from
+    ``_should_route_to_nap`` would leave the veto permanently inert and the
+    whole suite green — a silent revert of the one measured improvement."""
+    from unittest.mock import patch
+
+    import pipeline as P
+
+    # conftest swaps ``pipeline.PlantDiseasePipeline`` for FakePipeline before
+    # the FastAPI lifespan runs and stashes the real class here.
+    Real = P._RealPipelineForTests
+
+    class _Stub:
+        CLASS_NAMES = _CLASS_NAMES
+
+    pipe = Real.__new__(Real)
+    pipe.classifier = _Stub()
+    pipe.embedding_ood = None
+    pipe.nap_max_logit_floor = 4.0
+    pipe.nap_max_logit_scope = "plant_only"
+    pipe._max_logit_key = "plant_max_logit"
+    pipe.nap_head_mass_floor = 0.05
+
+    classification = {
+        "class_name": "leaf_scorch_underwatering",
+        "all_probs": {c: 0.0 for c in _CLASS_NAMES} | {
+            "leaf_scorch_underwatering": 0.988, "not_a_plant": 0.0018},
+        "max_logit": 1.0, "plant_max_logit": 1.0,
+    }
+    with patch.object(P, "_decide_nap_route", wraps=P._decide_nap_route) as spy:
+        fired = pipe._should_route_to_nap(classification, det_conf=0.0,
+                                          require_classifier_signal=True)
+    kwargs = spy.call_args.kwargs
+    assert kwargs["head_nap"] == 0.0018, "the head's own NAP mass never reached the gate"
+    assert kwargs["head_mass_floor"] == 0.05
+    # And end-to-end through the real decision: detector says 0, MaxLogit says
+    # OOD, but the head is 98.8% sure it is scorch — so the gate must not fire.
+    assert fired is False
+
+
+def test_head_veto_also_applies_on_the_no_detection_path():
+    # The no-detection path is where the veto matters most: det_conf is a
+    # synthetic 0, so the whole decision rests on the classifier side.
+    assert _route(
+        det_conf=0.0, ood_score=0.9, ood_threshold=0.5,
+        require_classifier_signal=True, head_nap=0.002, head_mass_floor=0.05,
+    ) is False
+
+
+def test_head_mass_floor_resolver_contract():
+    from pipeline import NAP_HEAD_MASS_FLOOR_DEFAULT, _resolve_head_mass_floor
+
+    # Default is ON — bundles exported before the key existed still get it.
+    assert _resolve_head_mass_floor({}) == NAP_HEAD_MASS_FLOOR_DEFAULT
+    assert _resolve_head_mass_floor({"ood": {}}) == NAP_HEAD_MASS_FLOOR_DEFAULT
+    # Explicit null restores the historical two-of-two gate.
+    assert _resolve_head_mass_floor({"ood": {"nap_head_mass_floor": None}}) == 0.0
+    assert _resolve_head_mass_floor({"ood": {"nap_head_mass_floor": 0.2}}) == 0.2
+    # Garbage falls back rather than taking the boot down; range is clamped.
+    assert _resolve_head_mass_floor(
+        {"ood": {"nap_head_mass_floor": "x"}}
+    ) == NAP_HEAD_MASS_FLOOR_DEFAULT
+    assert _resolve_head_mass_floor({"ood": {"nap_head_mass_floor": 5}}) == 1.0
+    assert _resolve_head_mass_floor({"ood": {"nap_head_mass_floor": -1}}) == 0.0
 
 
 def test_gate_never_reroutes_non_disease_classes():

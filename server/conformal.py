@@ -70,6 +70,22 @@ class ConformalConfig:
 
     @property
     def coverage_target(self) -> float:
+        """The coverage we actually deliver — surfaced in the API payload.
+
+        Prefers the MEASURED out-of-sample coverage recorded at calibration
+        over the nominal ``1 - alpha``. The two diverged once the notebook
+        began grid-searching alpha for the smallest prediction set that still
+        clears the product coverage target: alpha became the knob that
+        produced ``q_hat``, not a promise about coverage. The 2.7.0 run
+        calibrated ``alpha=0.35`` with a realised coverage of 0.967, so the
+        nominal number would have advertised **65%** for sets that cover
+        ~97% — understating the model to the user, and getting worse with
+        every widening of the search grid.
+
+        Falls back to ``1 - alpha`` for bundles predating the field.
+        """
+        if self.empirical_coverage is not None:
+            return self.empirical_coverage
         return 1.0 - self.alpha
 
 

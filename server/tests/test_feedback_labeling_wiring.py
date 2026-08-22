@@ -24,9 +24,22 @@ def _jpeg(seed=0, size=(640, 480)) -> bytes:
 @pytest.fixture
 def labdb(tmp_path, monkeypatch):
     """Fresh labeling DB + an isolated feedback DB (module-global patch, no
-    reload needed — every feedback fn resolves the path at call time)."""
-    if labeling.LABELING_DB_PATH.exists():
-        labeling.LABELING_DB_PATH.unlink()
+    reload needed — every fn resolves its path at call time).
+
+    The labeling DB is redirected to this test's own ``tmp_path``, like every
+    other labeling test file does. It used to reuse the SESSION-scoped path from
+    ``conftest`` and just unlink the ``.db`` between tests, which left the
+    ``-wal`` and ``-shm`` sidecars behind, pointed the next connection at a new
+    inode under an old shared-memory name, and made the fixture depend on
+    whatever the rest of the session had already done to that one file. It
+    passed locally and errored on CI with ``sqlite3.OperationalError: disk I/O
+    error`` at ``PRAGMA journal_mode=WAL`` — same 650 tests, same order, so the
+    trigger was environmental and the fixture was merely the thing thin enough
+    to break. A per-test directory removes the shared state rather than timing
+    the symptom.
+    """
+    monkeypatch.setattr(labeling, "LABELING_DB_PATH", tmp_path / "labeling.db")
+    monkeypatch.setattr(labeling, "LABELING_IMG_DIR", tmp_path / "labeling_images")
     labeling._initialised = False
     labeling.init_db()
     monkeypatch.setattr(feedback_mod, "FEEDBACK_DB_PATH", tmp_path / "feedback.db")

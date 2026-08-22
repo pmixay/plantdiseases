@@ -60,7 +60,11 @@ Why two stages — letting YOLOv8n find the leaf first means the
 classifier sees a tight crop instead of a whole room. The OOD AND-gate
 ([`pipeline.py`](server/pipeline.py)) catches the residual case where
 Stage 1 fires weakly on a non-leaf texture: it fires only when detector
-confidence **and** a classifier-side OOD signal both agree. The OOD
+confidence **and** a classifier-side OOD signal both agree **and** the
+classifier's own `not_a_plant` head does not veto it (a near-zero
+`P(not_a_plant)` means the model is sure this *is* a plant, and an
+OOD score that fires anyway is measuring *unfamiliar*, not *not a
+plant*). The OOD
 signal is an embedding-space k-NN distance on the DINOv2 CLS vector
 ([`ood.py`](server/ood.py)) when the bundle ships a memory bank, falling
 back to the legacy MaxLogit floor otherwise. The blur gate

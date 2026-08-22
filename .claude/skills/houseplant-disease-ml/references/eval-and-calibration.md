@@ -15,7 +15,8 @@ discipline — apply them even when a task doesn't mention them:
 
 ## The evaluation contract (§7)
 
-Three independent validation slices, **one ship gate**:
+Three independent validation slices, and **two ship gates** — one in-domain,
+one out-of-domain. The second is not optional garnish; see below.
 
 | Slice | Role | Pass criterion |
 |---|---|---|
@@ -32,9 +33,29 @@ MIN_HEALTHY_RECALL = 0.70, 1.50, 0.70`):
 - **healthy-bias < 1.5** (model isn't just predicting "healthy" everywhere)
 - **healthy recall ≥ 0.70** (controls false-positive disease alarms)
 
-Nothing writes to `models/` until this passes. *Portable principle:* separate
+**Out-of-domain ship gate** (§6, blocking since 2026-08-18) on the never-trained
+OOD benchmark, pulled from a private Kaggle dataset:
+- `hibiscus` leaf_scorch recall **≥ 0.70** (2.6.8 = 1.000, 2.7.2 = 0.097)
+- healthy false-fire **≤ 0.12** on the same 151 never-trained clusters
+- **per arm, never pooled**; a missing benchmark is a hard failure
+
+This exists because the in-domain gate above is satisfiable by a collapsed
+model. **2.7.0, 2.7.1 and 2.7.2 each passed it** while scoring ~0 out-of-domain,
+because in-domain scorch recall rose (0.784 → 0.941) across those same releases.
+A `val_realworld` split drawn from the same supplement is the same photographic
+regime however carefully it is grouped — group-aware splitting prevents
+same-plant leakage, not same-*regime* overfitting.
+
+The healthy ceiling shares the never-trained population with the recall floor on
+purpose: a recall floor alone is satisfiable by firing `leaf_scorch` more often
+(measured on 2.6.8 — a +1.88 logit bias moves scorch 36→46 of 62 *and* healthy
+false-fire 4→9 of 151, together).
+
+Nothing writes to `models/` until both pass. *Portable principle:* separate
 the metric that **stops training** (in-domain) from the metric that **gates
-shipping** (real-world), and make the gate a small set of floors, not a single mean.
+shipping**, make each gate a small set of floors rather than a single mean, and
+put at least one floor on data drawn from outside the training distribution —
+otherwise the gate only measures the regime you already fit.
 
 ### No cross-version benchmark — judge by per-class P/R + safety (2026-06)
 
