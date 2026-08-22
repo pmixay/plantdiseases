@@ -630,15 +630,6 @@ class CareRepository(
         PlanWithSteps(plan, treatmentStepDao.getForPlan(plan.id))
     }
 
-    /** Any plan — active, completed or abandoned — already derived from this
-     *  scan. [activePlan] filters `status = 'active'` in SQL, so it goes blind
-     *  the moment the user ticks the last step; callers that decide whether to
-     *  materialise a plan need this second guard or they silently re-create a
-     *  finished plan with its progress reset. */
-    suspend fun hasPlanForScan(plantId: Long, scanId: Long): Boolean = withContext(Dispatchers.IO) {
-        treatmentPlanDao.getAllForPlant(plantId).any { it.scanId == scanId }
-    }
-
     /** The active plan, or — when there is none — the most recently completed
      *  one within [windowMs] (never an abandoned one), with its steps loaded.
      *  The plant-detail card renders a "treatment finished" line off this, so

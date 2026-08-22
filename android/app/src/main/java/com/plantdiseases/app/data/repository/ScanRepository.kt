@@ -1267,16 +1267,6 @@ class ScanRepository(
         }
     }
 
-    /** Parse the JSON-encoded toxic-species list (cats/dogs/horses/...). */
-    fun parseToxicSpeciesList(json: String?): List<String> {
-        if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
     /** Parse pipeline warnings JSON array (flags like "uncertain_healthy"). */
     fun parseWarnings(json: String?): List<String> {
         if (json.isNullOrEmpty()) return emptyList()

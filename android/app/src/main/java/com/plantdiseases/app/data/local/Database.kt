@@ -760,9 +760,6 @@ interface TreatmentStepDao {
     @Query("DELETE FROM treatment_steps WHERE plan_id = :planId")
     suspend fun deleteForPlan(planId: Long)
 
-    @Query("SELECT * FROM treatment_steps WHERE status = 'pending' AND due_at < :cutoff")
-    suspend fun pendingDueBefore(cutoff: Long): List<TreatmentStepEntity>
-
     /** Steps carry no `plant_id` of their own (only `plan_id`) — CareRepository's
      *  cross-garden queue needs the owning plant, hence the join. */
     @Query(

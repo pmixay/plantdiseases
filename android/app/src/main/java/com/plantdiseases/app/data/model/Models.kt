@@ -616,14 +616,7 @@ enum class GuideCategory {
     HELP
 }
 
-/** Popular species/diseases row entries (shared by /api/popular). */
-@Serializable
-data class TrendingSpecies(
-    @SerializedName("species") @SerialName("species") val species: String = "",
-    @SerializedName("count") @SerialName("count") val count: Int = 0,
-    @SerializedName("percent") @SerialName("percent") val percent: Int = 0,
-)
-
+/** Popular-disease row entries (PopularResponse.topDiseases, /api/popular). */
 @Serializable
 data class TrendingDisease(
     @SerializedName("disease") @SerialName("disease") val disease: String = "",

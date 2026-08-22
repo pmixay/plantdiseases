@@ -77,13 +77,10 @@ class ScanRepositoryTest {
     }
 
     @Test
-    fun parseWarnings_and_toxicList() {
+    fun parseWarnings_validAndNull() {
         assertThat(repo.parseWarnings("""["low_confidence","blurry_image"]"""))
             .containsExactly("low_confidence", "blurry_image")
         assertThat(repo.parseWarnings(null)).isEmpty()
-        assertThat(repo.parseToxicSpeciesList("""["cats","dogs"]"""))
-            .containsExactly("cats", "dogs")
-        assertThat(repo.parseToxicSpeciesList(null)).isEmpty()
     }
 
     @Test
