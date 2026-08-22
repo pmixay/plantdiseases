@@ -135,9 +135,17 @@ validation, metrics — and wires everything together):
 **One species surface:** species information lives on `SpeciesDetailActivity`
 alone. Every other screen references a species through the reusable
 `ui/common/SpeciesInfoCardView` (Wikipedia photo + name + description + "more
-about this species"), which is embedded on the scan result and species
-identify. The community opinion sheet dropped it in Community v2 — the photo
-is the subject there, not the species. Do not add species cards elsewhere.
+about this species"), which is embedded on the scan result, species identify
+and the community opinion sheet (it was dropped from the sheet in Community
+v2 and restored in the Option-A redesign — knowing what the plant *is*
+changes what you would call the problem). Never build a second species card:
+if a screen needs one, embed this view.
+
+**Garden tab** is a single surface — the do-today queue over room cards, no
+pane switcher. The care month grid is its own screen
+(`ui/garden/care/CareCalendarActivity`, opened from the "Care calendar" button
+at the top of the tab); the lunar calendar is per-plant and lives on the plant
+detail screen only.
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`

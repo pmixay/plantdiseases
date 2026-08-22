@@ -263,6 +263,7 @@
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_my_vote">Ваше мнение: %1$s</string>
+    <string name="community_opinion_more">Ещё</string>
     <string name="community_opinion_change">Изменить мнение</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
