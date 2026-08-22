@@ -205,12 +205,56 @@ sizes and the MaxLogit scale. Any plan to "recalibrate temperature to fix the
 scorch arm" is wrong on the arithmetic. The knobs that move an argmax are the
 sampler, the loss prior, and `CLASS_LOGIT_BIAS`.
 
-**Falsifier.** If the OOD gate's `hibiscus` recall does not clear 0.70 with
-in-domain disease macro-F1 held, regime-aware sampling is not the lever and the
-next move is `CLASS_LOGIT_BIAS` or a head-architecture change — not more data.
-Watch for the predicted cost: upweighting a quarter of scorch trades in-class
-diversity, so a drop in in-domain scorch recall is the expected failure mode and
-the in-domain gate is what catches it.
+**RESULT (2026-08-22): falsified. Regime-aware sampling is not the lever.**
+
+| | 2.6.8 | 2.7.2 | **2.7.3** |
+|---|---|---|---|
+| OOD hibiscus recall (n=31) | 1.000 (31/31) | 0.097 (3/31) | **0.129 (4/31)** |
+| OOD healthy false-fire (n=151) | 0.026 (4) | 0.040 (6) | **0.079 (12)** |
+| val_realworld disease macro-F1 | — | — | 0.864 |
+| val_realworld leaf_scorch recall | — | — | 0.733 [0.640, 0.824] |
+| holdout leaf_scorch recall | — | — | 0.828 |
+
+**One cluster.** 3/31 → 4/31, Fisher exact p=1.000. The sampler did exactly what
+it was told — 297 of 1,188 scorch rows boosted, stratum draw share 25% → 50% —
+and the benchmark did not move.
+
+The predicted cost did not appear either: in-domain scorch recall held (0.733
+val_realworld, 0.828 holdout) and disease macro-F1 was 0.864. So this is not a
+trade that went too far. **The lever simply does nothing.**
+
+Why the probe result did not translate: the evidence was a linear probe trained
+*exclusively* on the low-chroma quartile reaching 0.677. Upweighting that
+stratum to half the class's draws inside a full head trained on everything is a
+much weaker intervention — the head has the capacity to fit both strata and no
+pressure to rely on the transferring one. Worth noting too that the boosted cut
+was `sat ≤ 0.179` against a benchmark median of ~0.09: even the dullest quarter
+of the corpus is roughly twice the target chroma.
+
+**And the bias fallback got worse, not better.** Healthy false-fire rose 0.040 →
+0.079 (6 → 12 of 151; p=0.223, not significant but directionally wrong), which
+halves the headroom under the 0.12 ceiling from 0.080 to 0.041. The measured
+bias ceiling on 2.7.2 was already only 0.645 with twice that budget, so
+`CLASS_LOGIT_BIAS` on 2.7.3 is a worse bet than it was on 2.7.2. **Do not spend
+the next run on it.**
+
+What this leaves, in rough order of evidence:
+1. **Untested and cheap: the eval transform.** `Resize(224×1.05) → CenterCrop(224)`
+   trims the leaf margin, and scorch *is* a margin phenomenon. The asymmetry is
+   the point: the benchmark's leaves are small in frame (subject fraction 0.19)
+   so the crop spares them, while the corpus's are frame-filling (0.54) so it
+   cuts exactly the signal being learned. Test resize-and-pad, or a larger `IMG`,
+   before anything else — `DATASET_LABELING_PLAN.md` has flagged this since v8
+   and it has still never been run.
+2. **Head/objective change** — a regime-invariance or fine-tune-on-stratum stage,
+   i.e. an intervention strong enough to match the probe that motivated this one.
+3. **First-party collection** (§6 spec). Still the only thing that addresses the
+   morphology axis, and still slow.
+
+**The gate worked.** This is the first release in four where the collapse was
+caught before anything shipped: §6 raised, and `classes.json` / `temperature.json`
+/ `conformal.json` / `model_card.json` were never written, so `models/` is not a
+loadable bundle. 2.7.0, 2.7.1 and 2.7.2 all reached a downloadable artefact.
 
 **Serve-time bias, measured and rejected as a standalone fix.** On 2.6.8, a
 +1.88 `leaf_scorch` logit bias recovers 10 benchmark scorch clusters (36→46) for
