@@ -355,6 +355,9 @@ class AnalysisActivity : AppCompatActivity() {
 
         val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
             putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
+            // This is the one path where a scan actually just happened, so
+            // this is the one path that buzzes on arrival.
+            putExtra(ResultActivity.EXTRA_FRESH_SCAN, true)
         }
         startActivity(intent)
         finish()

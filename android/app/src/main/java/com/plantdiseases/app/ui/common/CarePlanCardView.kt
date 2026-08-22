@@ -84,6 +84,19 @@ class CarePlanCardView @JvmOverloads constructor(
             updateAccordionAccessibility()
         }
 
+    /**
+     * Cleared by hosts that want the plan at a glance and nothing more
+     * (Species detail): "Show details" disappears and the verbose v2 panel —
+     * red flags, setup checklist, checkpoints, season note — is never built.
+     * Those belong on a plant you actually own, not on a species page whose
+     * job is "what does keeping this alive look like?".
+     */
+    var detailsEnabled: Boolean = true
+        set(value) {
+            field = value
+            applyDetailsState()
+        }
+
     init {
         radius = 20.dp().toFloat()
         cardElevation = 0f
@@ -375,13 +388,22 @@ class CarePlanCardView @JvmOverloads constructor(
             animate = animate,
         ) {
             statusContainer.visibility = if (expanded) View.VISIBLE else View.GONE
-            detailsContainer.visibility = if (expanded && detailsExpanded && hasDetails) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+            applyDetailsState()
         }
         updateAccordionAccessibility()
+    }
+
+    /**
+     * Single source of truth for the detail panel. The toggle only exists
+     * while details are collapsible; the panel itself additionally needs the
+     * card's own section open (it is a sibling of the gradient, not a child
+     * of the container the accordion hides).
+     */
+    private fun applyDetailsState() {
+        val available = detailsEnabled && hasDetails
+        detailsToggle.visibility = if (available) View.VISIBLE else View.GONE
+        val show = available && sectionExpanded && detailsExpanded
+        detailsContainer.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun updateAccordionAccessibility() {
@@ -406,11 +428,7 @@ class CarePlanCardView @JvmOverloads constructor(
             container = verticalStack,
             expanded = detailsExpanded,
         ) {
-            detailsContainer.visibility = if (sectionExpanded && detailsExpanded && hasDetails) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+            applyDetailsState()
         }
         detailsToggle.text = context.getString(
             if (detailsExpanded) {
@@ -431,9 +449,9 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun resetDetailsExpansion() {
         detailsExpanded = false
         hasDetails = false
-        detailsContainer.visibility = View.GONE
         detailsToggle.text = context.getString(R.string.care_plan_show_details)
         detailsToggle.setIconResource(R.drawable.ic_chevron_down)
+        applyDetailsState()
     }
 
     fun showLoading(speciesHint: String?) {
@@ -574,13 +592,15 @@ class CarePlanCardView @JvmOverloads constructor(
 
         // Build v2-field details panel and toggle visibility based on
         // whether any v2 field is populated.
-        val rendered = applyV2Details(plan)
+        // Not built at all when details are off — the panel is the expensive
+        // half of a bind (a 14-row checklist and a timeline), and a host that
+        // will never reveal it should not pay for it.
+        val rendered = detailsEnabled && applyV2Details(plan)
         detailsExpanded = false
         hasDetails = rendered
         detailsToggle.text = context.getString(R.string.care_plan_show_details)
         detailsToggle.setIconResource(R.drawable.ic_chevron_down)
-        detailsToggle.visibility = if (rendered) View.VISIBLE else View.GONE
-        detailsContainer.visibility = View.GONE
+        applyDetailsState()
     }
 
     /** Render the rich v2 care-plan fields into [detailsContainer].

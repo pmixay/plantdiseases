@@ -93,6 +93,10 @@ class ResultActivity : AppCompatActivity() {
 
     private var pendingScanForToolbar: ScanEntity? = null
 
+    /** True for the one render that follows a just-completed analysis; see
+     *  [EXTRA_FRESH_SCAN]. Cleared as soon as it is spent. */
+    private var freshScan = false
+
     // RuStore in-app review prompt, shared by every "the user just had a good
     // moment" controller below — one cooldown across all of them (see
     // InAppReviewManager), not one per call site.
@@ -192,6 +196,13 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only a scan that JUST finished analysing earns the success buzz.
+        // Opening a saved scan from the gallery or a plant's timeline was
+        // buzzing too, which read as "we scanned something" when nothing had
+        // happened. `savedInstanceState == null` keeps a rotation from
+        // re-firing it on the same scan.
+        freshScan = savedInstanceState == null &&
+            intent.getBooleanExtra(EXTRA_FRESH_SCAN, false)
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
@@ -343,7 +354,10 @@ class ResultActivity : AppCompatActivity() {
             binding.bottomActionBar.visibility = View.VISIBLE
 
             displayResult(scan, scanRepository)
-            Haptics.success(this@ResultActivity)
+            if (freshScan) {
+                freshScan = false
+                Haptics.success(this@ResultActivity)
+            }
             onboardingCoordinator.registerAnchor(
                 OnboardingAnchorKey.RESULT_DIAGNOSIS,
                 binding.cardStatus,
@@ -775,6 +789,11 @@ class ResultActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+
+        /** Set by [com.plantdiseases.app.ui.analysis.AnalysisActivity] only.
+         *  Every other entry point (gallery, plant timeline, notifications)
+         *  is opening history, and history does not buzz. */
+        const val EXTRA_FRESH_SCAN = "extra_fresh_scan"
 
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f

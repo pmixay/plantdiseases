@@ -21,7 +21,6 @@ import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.RoomEntity
@@ -31,14 +30,11 @@ import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemCareTaskBinding
 import com.plantdiseases.app.databinding.ItemRoomCardBinding
-import com.plantdiseases.app.ui.garden.care.CareCalendarView
-import com.plantdiseases.app.ui.garden.care.CareDayActivity
+import com.plantdiseases.app.ui.garden.care.CareCalendarActivity
 import com.plantdiseases.app.ui.garden.care.CareTaskActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
-import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import com.plantdiseases.app.util.RoomPresets
@@ -50,19 +46,17 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.time.LocalDate
-import java.time.YearMonth
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
 /**
- * Garden tab. Two panes behind a segmented control — Rooms (room cards,
- * each holding a plant collection) and Care calendar (month grid + a
- * "Today" summary card) — replacing the old flat plant list. The screen
- * scaffold lives in ``fragment_garden.xml``; room rows come from
- * ``item_room_card.xml``. See docs/ROADMAP.md "Garden refactor".
+ * Garden tab. A single surface — the do-today queue over room cards, each
+ * holding a plant collection — with no pane switcher. The care month grid
+ * is its own screen ([CareCalendarActivity], opened from the button at the
+ * top of this one); the lunar calendar is per-plant and lives on the plant
+ * detail screen only. The scaffold is ``fragment_garden.xml``; room rows
+ * come from ``item_room_card.xml``. See docs/ROADMAP.md "Garden refactor".
  */
 @AndroidEntryPoint
 class GardenFragment : Fragment() {
@@ -80,9 +74,6 @@ class GardenFragment : Fragment() {
     private var isFirstLoad = true
 
     private var searchVisible = false
-    private var selectedPane = PANE_ROOMS
-    private var selectedCalendarSubPane = SUBPANE_CARE
-    private var lunarNavigationState: LunarCalendarView.NavigationState? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -105,9 +96,6 @@ class GardenFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.gardenScroll.applyStatusBarTopInset()
-        selectedPane = savedInstanceState?.getInt(KEY_PANE, PANE_ROOMS) ?: PANE_ROOMS
-        selectedCalendarSubPane = savedInstanceState?.getInt(KEY_CALENDAR_SUBPANE, SUBPANE_CARE) ?: SUBPANE_CARE
-        lunarNavigationState = savedInstanceState?.let(::readLunarNavigationState)
 
         binding.gardenAddFab.setOnClickListener {
             Haptics.medium(requireContext())
@@ -131,15 +119,10 @@ class GardenFragment : Fragment() {
             renderGarden(animate = false)
             if (searchVisible) binding.gardenSearch.requestFocus()
         }
-        binding.gardenDoTodayCalendar.setOnClickListener {
+        binding.gardenCareCalendarButton.setOnClickListener {
             Haptics.tick(requireContext())
-            selectedCalendarSubPane = SUBPANE_CARE
-            binding.gardenSegment.getTabAt(PANE_CALENDAR)?.select()
-            binding.gardenCalendarSegment.check(binding.gardenCalendarToggleCare.id)
+            openCareCalendar()
         }
-
-        setupSegmentedControl()
-        setupCalendarSegmentedControl()
 
         binding.gardenSearch.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -169,17 +152,6 @@ class GardenFragment : Fragment() {
         if (_binding != null && !isFirstLoad) loadGarden(animate = false)
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putInt(KEY_PANE, selectedPane)
-        outState.putInt(KEY_CALENDAR_SUBPANE, selectedCalendarSubPane)
-        (lunarView?.navigationState() ?: lunarNavigationState)?.let { state ->
-            outState.putInt(KEY_LUNAR_YEAR, state.shownMonth.year)
-            outState.putInt(KEY_LUNAR_MONTH, state.shownMonth.monthValue)
-            outState.putLong(KEY_LUNAR_SELECTED_DAY, state.selectedDate.toEpochDay())
-        }
-    }
-
     override fun onDestroyView() {
         (activity as? MainActivity)?.apply {
             unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO)
@@ -188,90 +160,22 @@ class GardenFragment : Fragment() {
         }
         super.onDestroyView()
         _binding = null
-        // gardenCalendarContainer/gardenLunarContainer (and these views)
-        // belong to the view we just tore down. Without this reset,
-        // ensureCalendarViewAttached()/ensureLunarViewAttached() early-return
-        // on the next onCreateView and that pane renders empty until the
-        // Fragment instance itself is recreated.
-        calendarView = null
-        lunarNavigationState = lunarView?.navigationState() ?: lunarNavigationState
-        lunarView = null
     }
 
-    private fun setupSegmentedControl() {
-        val tabs = binding.gardenSegment
-        tabs.removeAllTabs()
-        tabs.addTab(tabs.newTab().setText(R.string.garden_tab_rooms))
-        tabs.addTab(tabs.newTab().setText(R.string.garden_tab_calendar))
-        tabs.getTabAt(selectedPane)?.select()
-        applyPaneVisibility()
-        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) {
-                selectedPane = tab.position
-                applyPaneVisibility()
-                if (selectedPane == PANE_CALENDAR) loadCalendarPane()
-            }
-
-            override fun onTabUnselected(tab: TabLayout.Tab) {}
-            override fun onTabReselected(tab: TabLayout.Tab) {}
-        })
-    }
-
-    /** Care/Lunar inner toggle inside the Calendars pane — a segmented
-     *  button group, deliberately lighter than [setupSegmentedControl]'s
-     *  outer TabLayout so the two don't read as peer-level navigation. */
-    private fun setupCalendarSegmentedControl() {
-        val group = binding.gardenCalendarSegment
-        val idForSubpane = mapOf(
-            SUBPANE_CARE to binding.gardenCalendarToggleCare.id,
-            SUBPANE_LUNAR to binding.gardenCalendarToggleLunar.id,
-        )
-        group.check(idForSubpane.getValue(selectedCalendarSubPane))
-        applyCalendarSubPaneVisibility()
-        group.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            selectedCalendarSubPane = idForSubpane.entries.first { it.value == checkedId }.key
-            applyCalendarSubPaneVisibility()
-        }
-    }
-
-    private fun applyCalendarSubPaneVisibility() {
-        binding.gardenCareSubpane.visibility = if (selectedCalendarSubPane == SUBPANE_CARE) View.VISIBLE else View.GONE
-        val onLunar = selectedCalendarSubPane == SUBPANE_LUNAR
-        binding.gardenLunarContainer.visibility = if (onLunar && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
-        binding.gardenLunarEmpty.visibility = if (onLunar && allSummaries.isEmpty()) View.VISIBLE else View.GONE
-        if (onLunar && allSummaries.isNotEmpty()) refreshLunarAggregate()
-    }
-
-    /** Emptiness is a first-class input here, not just `selectedPane`: the
-     *  rooms pane is VISIBLE by default in XML and nothing else ever hides
-     *  it, so deleting the last plant used to leave the previous render's
-     *  room cards (and "+ Add room") stacked on top of the empty state. */
-    private fun applyPaneVisibility(animate: Boolean = false) {
+    /** Emptiness is a first-class input here: the rooms section is VISIBLE
+     *  by default in XML and nothing else ever hides it, so deleting the
+     *  last plant used to leave the previous render's room cards (and
+     *  "+ Add room") stacked on top of the empty state. */
+    private fun applyContentVisibility(animate: Boolean = false) {
         val hasGardenContent = allSummaries.isNotEmpty() || allRooms.isNotEmpty()
-        binding.gardenRoomsPane.visibility =
-            if (selectedPane == PANE_ROOMS && hasGardenContent) View.VISIBLE else View.GONE
-        binding.gardenCalendarPane.visibility = if (selectedPane == PANE_CALENDAR) View.VISIBLE else View.GONE
-        binding.gardenDoTodayCard.visibility =
-            if (selectedPane == PANE_ROOMS && allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
-        // Searching a month grid means nothing — the toggle and box only
-        // apply to the Rooms pane.
-        binding.gardenSearchToggle.visibility = if (selectedPane == PANE_ROOMS) View.VISIBLE else View.INVISIBLE
-        if (selectedPane == PANE_CALENDAR) {
-            binding.gardenSearchLayout.visibility = View.GONE
-        } else {
-            renderRoomsPane(animate)
-        }
+        binding.gardenRoomsPane.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
+        binding.gardenDoTodayCard.visibility = if (allSummaries.isNotEmpty()) View.VISIBLE else View.GONE
+        renderRoomsPane(animate)
         updateFabVisibility()
     }
 
-    /** The FAB only makes sense on the Rooms pane. The Calendars pane is a
-     *  grid of tappable day cells, and a floating button over them covers
-     *  one — it used to stay visible (and extended) across the pane switch
-     *  because only [renderGarden]'s "does the garden have any plants" check
-     *  drove it, with no awareness of which pane was actually showing. */
     private fun updateFabVisibility() {
-        val show = (allSummaries.isNotEmpty() || allRooms.isNotEmpty()) && selectedPane == PANE_ROOMS
+        val show = allSummaries.isNotEmpty() || allRooms.isNotEmpty()
         binding.gardenAddFab.visibility = if (show) View.VISIBLE else View.GONE
         if (show) binding.gardenAddFab.extend()
     }
@@ -290,7 +194,6 @@ class GardenFragment : Fragment() {
                 todayTasks = currentTasks
                 renderGarden(animate = animate && isFirstLoad)
                 isFirstLoad = false
-                if (selectedPane == PANE_CALENDAR) loadCalendarPane()
             }
         }
     }
@@ -301,7 +204,7 @@ class GardenFragment : Fragment() {
         val hasAnyPlant = allSummaries.isNotEmpty()
         val hasGardenContent = hasAnyPlant || allRooms.isNotEmpty()
         binding.gardenEmptyState.visibility = if (hasGardenContent) View.GONE else View.VISIBLE
-        binding.gardenSegment.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
+        binding.gardenActionRow.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
         updateFabVisibility()
 
         val scanTotal = allSummaries.sumOf { it.scanCount }
@@ -320,15 +223,11 @@ class GardenFragment : Fragment() {
             getString(R.string.garden_subtitle)
         }
 
-        binding.gardenSearchLayout.visibility = if (searchVisible && selectedPane == PANE_ROOMS) {
-            View.VISIBLE
-        } else {
-            View.GONE
-        }
+        binding.gardenSearchLayout.visibility = if (searchVisible) View.VISIBLE else View.GONE
 
-        // Re-evaluated on every load, not only on a tab change — the pane's
-        // own visibility depends on whether any plant is left.
-        applyPaneVisibility(animate)
+        // Re-evaluated on every load — the rooms section's own visibility
+        // depends on whether any plant is left.
+        applyContentVisibility(animate)
         renderDoToday()
         registerOnboardingAnchors(!hasGardenContent)
     }
@@ -532,10 +431,8 @@ class GardenFragment : Fragment() {
                     setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
                 }
             )
-            binding.gardenAddRoom.visibility = View.GONE
             return
         }
-        binding.gardenAddRoom.visibility = View.VISIBLE
 
         var animIndex = 0
         val emit: (View) -> Unit = { view ->
@@ -704,179 +601,11 @@ class GardenFragment : Fragment() {
         requireActivity().showRoomNameDialog(roomRepository, existing = null) { loadGarden(animate = true) }
     }
 
-    // ─── Care-calendar pane ───────────────────────────────────────────────
+    // ─── Care calendar ────────────────────────────────────────────────
 
-    private var calendarView: CareCalendarView? = null
-    private var calendarMonthCursor: Calendar = Calendar.getInstance()
-
-    private fun loadCalendarPane() {
-        ensureCalendarViewAttached()
-        lifecycleScope.launch {
-            val monthStart = monthStartOf(calendarMonthCursor)
-            val monthStartMs = monthStart.timeInMillis
-            val monthEndMs = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis
-            val nowMs = System.currentTimeMillis()
-            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
-            // One projection feeds both the grid and the Today card whenever
-            // the cursor month contains today — which is every initial open
-            // and every onResume. A chevron tap can leave the two windows
-            // disjoint, and deriving the card from the month queue there
-            // would silently blank it, so that case keeps its own read.
-            val monthTasks = careRepository.queue(monthStartMs, monthEndMs).map { it.task }
-            val summary = CareQueue.monthSummary(monthTasks, monthStartMs, monthEndMs, nowMs)
-            // The summary mirrors the home-screen queue: pending tasks due
-            // today plus overdue work, with no arbitrary look-back cutoff.
-            val todayTasks = careRepository.today(nowMs).map { it.task }
-            if (_binding == null) return@launch
-            calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
-            renderTodayCard(todayStart, todayTasks)
-        }
-        // Also refreshes the Lunar sub-pane if it's the one currently
-        // selected — allSummaries may have changed (a plant added/removed)
-        // since the last time this pane was shown.
-        applyCalendarSubPaneVisibility()
-    }
-
-    private fun ensureCalendarViewAttached() {
-        if (calendarView != null) return
-        val view = CareCalendarView(requireContext()).apply {
-            onDaySelected = { epochDay -> openDay(CareQueue.dayStartMs(epochDay)) }
-            onMonthChanged = { next ->
-                calendarMonthCursor = next
-                loadMonth(next)
-            }
-        }
-        binding.gardenCalendarContainer.addView(view)
-        calendarView = view
-        buildCalendarLegend()
-    }
-
-    // ─── Lunar sub-pane ─────────────────────────────────────────────────
-
-    private var lunarView: LunarCalendarView? = null
-
-    private fun ensureLunarViewAttached() {
-        if (lunarView != null) return
-        val view = LunarCalendarView(requireContext()).apply {
-            lunarNavigationState?.let { state -> restoreNavigationState(state) }
-        }
-        binding.gardenLunarContainer.addView(view)
-        lunarView = view
-    }
-
-    private fun readLunarNavigationState(bundle: Bundle): LunarCalendarView.NavigationState? {
-        if (!bundle.containsKey(KEY_LUNAR_YEAR) || !bundle.containsKey(KEY_LUNAR_SELECTED_DAY)) return null
-        return runCatching {
-            LunarCalendarView.NavigationState(
-                shownMonth = YearMonth.of(
-                    bundle.getInt(KEY_LUNAR_YEAR),
-                    bundle.getInt(KEY_LUNAR_MONTH),
-                ),
-                selectedDate = LocalDate.ofEpochDay(bundle.getLong(KEY_LUNAR_SELECTED_DAY)),
-            )
-        }.getOrNull()
-    }
-
-    /** Feeds every plant the user owns into the aggregate view — cheap
-     *  enough to just recompute on every reveal: allSummaries is already
-     *  in memory (loaded by loadGarden()), classify() is pure, and a
-     *  garden's plant count is never large enough for this to matter. */
-    private fun refreshLunarAggregate() {
-        ensureLunarViewAttached()
-        lunarView?.setAggregate(
-            allSummaries.map { summary ->
-                LunarCalendarView.AggregateEntry(
-                    label = summary.plant.name,
-                    category = PlantCategoryClassifier.classify(
-                        summary.plant.scientificName,
-                        summary.plant.commonName ?: summary.plant.species,
-                    ),
-                )
-            },
-        )
-    }
-
-    private fun buildCalendarLegend() {
-        binding.gardenCalendarLegend.removeAllViews()
-        // Same soft-tint swatches the Lunar Calendar's own legend uses
-        // (bg_lunar_day_bad/neutral/good) — the day cells below now fill
-        // with these same drawables, so the key should show what's on the
-        // grid instead of the old strong disease_red/warning_amber/healthy_green dots.
-        listOf(
-            R.drawable.bg_lunar_day_bad to R.string.calendar_legend_overdue,
-            R.drawable.bg_lunar_day_neutral to R.string.calendar_legend_pending,
-            R.drawable.bg_lunar_day_good to R.string.calendar_legend_done,
-        ).forEach { (drawableRes, labelRes) ->
-            binding.gardenCalendarLegend.addView(
-                LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply {
-                        marginStart = 10.dp()
-                        marginEnd = 10.dp()
-                    }
-                    addView(
-                        View(requireContext()).apply {
-                            layoutParams = LinearLayout.LayoutParams(12.dp(), 12.dp())
-                            setBackgroundResource(drawableRes)
-                        }
-                    )
-                    addView(
-                        TextView(requireContext()).apply {
-                            text = getString(labelRes)
-                            textSize = 11f
-                            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-                            setPadding(4.dp(), 0, 0, 0)
-                        }
-                    )
-                }
-            )
-        }
-    }
-
-    /** First day of [monthCursor]'s month at LOCAL midnight, taken through
-     *  [CareQueue.dayStartMs] so the query window and the epoch-day buckets
-     *  the grid keys on are built by the same code. */
-    private fun monthStartOf(monthCursor: Calendar): Calendar =
-        (monthCursor.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            timeInMillis = CareQueue.dayStartMs(CareQueue.epochDayOf(timeInMillis))
-        }
-
-    private fun loadMonth(monthCursor: Calendar) {
-        lifecycleScope.launch {
-            val monthStart = monthStartOf(monthCursor)
-            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-            val summary = careRepository.month(monthStart.timeInMillis, monthEnd.timeInMillis, System.currentTimeMillis())
-            if (_binding != null) {
-                calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
-            }
-        }
-    }
-
-    private fun renderTodayCard(todayStart: Long, tasks: List<CareQueue.CareTask>) {
-        val pendingCount = tasks.count { it.status == CareQueue.CareTask.Status.PENDING }
-        val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(Date(todayStart))
-        binding.gardenTodayTitle.text = getString(R.string.calendar_today_prefix, dateLabel)
-        binding.gardenTodaySubtitle.text = if (pendingCount == 0) {
-            getString(R.string.calendar_all_caught_up)
-        } else {
-            resources.getQuantityString(R.plurals.care_tasks_count, pendingCount, pendingCount)
-        }
-        binding.gardenTodayCard.setOnClickListener {
-            Haptics.tick(requireContext())
-            openDay(todayStart)
-        }
-    }
-
-    private fun openDay(dayStartMs: Long) {
-        startActivity(
-            Intent(requireContext(), CareDayActivity::class.java)
-                .putExtra(CareDayActivity.EXTRA_DAY_START_MS, dayStartMs)
-        )
+    /** The month grid is its own screen now, not a pane of this one. */
+    private fun openCareCalendar() {
+        startActivity(CareCalendarActivity.intent(requireContext()))
     }
 
     // ─── Add plant (FAB / empty-state CTA) ───────────────────────────────
@@ -897,15 +626,6 @@ class GardenFragment : Fragment() {
     }
 
     private companion object {
-        const val PANE_ROOMS = 0
-        const val PANE_CALENDAR = 1
-        const val KEY_PANE = "garden_selected_pane"
-        const val SUBPANE_CARE = 0
-        const val SUBPANE_LUNAR = 1
-        const val KEY_CALENDAR_SUBPANE = "garden_selected_calendar_subpane"
-        const val KEY_LUNAR_YEAR = "garden_lunar_year"
-        const val KEY_LUNAR_MONTH = "garden_lunar_month"
-        const val KEY_LUNAR_SELECTED_DAY = "garden_lunar_selected_day"
         const val UNASSIGNED_ROOM_ID = -1L
     }
 

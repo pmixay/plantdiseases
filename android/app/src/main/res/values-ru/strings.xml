@@ -263,6 +263,7 @@
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_my_vote">Ваше мнение: %1$s</string>
+    <string name="community_opinion_more">Ещё</string>
     <string name="community_opinion_change">Изменить мнение</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
@@ -403,7 +404,7 @@
     <!-- My Garden -->
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
-    <string name="garden_subtitle">Все растения, история сканов, заметки, фото и полив в одном зелёном месте.</string>
+    <string name="garden_subtitle">Все растения, сканы и полив в одном месте.</string>
     <string name="profile_subtitle">Статистика сканов, состояние сервера, тема, язык и настройки сообщества.</string>
     <string name="add_plant">Добавить</string>
     <string name="edit_plant">Редактировать</string>
@@ -413,12 +414,7 @@
     <string name="plant_room_unassigned">Без комнаты</string>
 
     <!-- Garden refactor — Rooms -->
-    <string name="garden_tab_rooms">Комнаты</string>
-    <string name="garden_tab_calendar">Календари</string>
-    <string name="garden_calendar_tab_care">Уход</string>
-    <string name="garden_calendar_tab_lunar">Луна</string>
-    <string name="garden_lunar_empty_title">Пока нет растений</string>
-    <string name="garden_lunar_empty_body">Добавьте растение, чтобы увидеть, как фазы луны соотносятся с уходом за ним.</string>
+    <string name="garden_care_calendar">Календарь ухода</string>
     <string name="garden_subtitle_combined">%1$s · %2$s</string>
     <string name="room_add">Добавить комнату</string>
     <string name="room_name_hint">Название комнаты</string>
@@ -475,7 +471,6 @@
         <item quantity="many">%d просрочено</item>
         <item quantity="other">%d просрочено</item>
     </plurals>
-    <string name="garden_do_today_open_calendar">Открыть календарь</string>
     <string name="calendar_all_caught_up">Всё сделано 🌿</string>
     <string name="calendar_empty_day">На этот день задач нет</string>
     <string name="calendar_show_done">Показать выполненные (%1$d)</string>
@@ -505,7 +500,6 @@
     <string name="empty_garden_title">Ваш сад готов</string>
     <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
     <string name="empty_garden_cta_add">Добавить первое растение</string>
-    <string name="empty_garden_secondary_hint">Уже сканировали растение? Нажмите «Добавить в сад» на результате.</string>
     <string name="plant_detail_title">Растение</string>
     <!-- Экраны, открытые по устаревшей записи из центра уведомлений -->
     <string name="scan_no_longer_available">Этот скан больше не хранится на устройстве.</string>
@@ -985,6 +979,7 @@
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
     <string name="native_range_title">Природный ареал</string>
+    <string name="native_range_subtitle">Где растёт в природе и к какому климату привык.</string>
     <string name="native_range_expand">Показать природный ареал</string>
     <string name="native_range_collapse">Скрыть природный ареал</string>
     <string name="native_range_loading">Загружаем природный ареал…</string>
@@ -998,6 +993,7 @@
     <string name="native_range_map_content_description">Карта природного ареала: %1$s. Нажмите на страну, чтобы проверить её.</string>
     <string name="native_range_map_empty">Карта природного ареала недоступна</string>
     <string name="flowering_title">Цветение по месяцам</string>
+    <string name="flowering_subtitle">Когда цветёт и что помогает заложить бутоны.</string>
     <string name="flowering_loading">Загружаем календарь цветения…</string>
     <string name="flowering_blooms_now">Цветёт сейчас</string>
     <string name="flowering_next_bloom">Следующее цветение — в %1$s</string>
@@ -1078,6 +1074,7 @@
 
     <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
     <string name="lunar_title">Лунный календарь</string>
+    <string name="lunar_subtitle">Благоприятные и неблагоприятные дни по фазам луны.</string>
     <string name="lunar_expand">Показать лунный календарь</string>
     <string name="lunar_collapse">Скрыть лунный календарь</string>
     <string name="lunar_today">Сегодня, %1$s</string>
@@ -1139,8 +1136,6 @@
     <!-- Collapsible sections on the species screen -->
     <string name="section_about_title">О растении</string>
     <string name="section_about_subtitle">Описание, особенности и виды.</string>
-    <string name="section_care_title">Уход</string>
-    <string name="section_care_subtitle">Полив, свет, температура, влажность и обрезка.</string>
     <string name="section_fertiliser_title">Удобрения и подкормка</string>
     <string name="section_fertiliser_subtitle">Чем и когда подкармливать.</string>
     <string name="section_diseases_title">Болезни и вредители</string>

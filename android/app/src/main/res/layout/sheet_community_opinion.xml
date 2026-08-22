@@ -1,270 +1,404 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Community "second opinion" sheet. Opened from a low-confidence result
-    (ask) or from a "near you" carousel cell (answer). Shows the running
-    consensus + existing opinions, then a class picker + optional note to
-    add your own. The host activity owns nothing — the sheet talks to the
-    repository directly and reloads itself after a successful post.
+    (ask) or from a "near you" carousel cell (answer).
+
+    Layout is "photo does the work" (Option A of the redesign): the scan photo
+    is the hero and carries the secondary controls, so nothing floats between
+    blocks. Like is a glass pill on the photo's bottom-left, Report/Block
+    collapse into a ⋯ menu on its bottom-right, and the vote lives in a dock
+    pinned under the scroll area — reachable at any scroll position, so the
+    consensus and the replies can be read BEFORE voting.
+
+    The dock has three mutually exclusive faces, driven by
+    CommunityOpinionSheet.applyDockState(): Agree/Disagree, "your opinion +
+    change", or the composer (class chips + note + Post opinion). There is no
+    Cancel button: a bottom sheet already dismisses on swipe, scrim tap and
+    Back, and the composer has its own close affordance.
+
+    The host activity owns nothing — the sheet talks to the repository
+    directly and reloads itself after a successful post.
 -->
-<androidx.core.widget.NestedScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:background="?android:colorBackground"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <!-- Weighted, so the dock below always keeps its height and this pane
+         takes the rest. The sheet itself is pinned to 90% of the screen by
+         CommunityOpinionSheet.expandSheet, so match_parent here is a real,
+         bounded height rather than an unbounded one. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scroll_opinion"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_lg"
-        android:paddingTop="@dimen/space_md"
-        android:paddingBottom="@dimen/space_2xl">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false">
 
-        <View
-            android:layout_width="40dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="@dimen/space_lg"
-            android:background="@drawable/bg_handle" />
-
-        <!-- The shared scan photo, full sheet width and the tallest element on
-             the sheet — it's the subject, not an aside. The CARD is shown/hidden
-             programmatically; hidden when this scan has no thumbnail. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_opinion_photo"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:visibility="gone"
-            app:cardCornerRadius="@dimen/radius_lg"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_stroke"
-            app:strokeWidth="@dimen/glass_stroke_width"
-            tools:visibility="visible">
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingTop="@dimen/space_md"
+            android:paddingBottom="@dimen/space_lg">
 
-            <ImageView
-                android:id="@+id/iv_opinion_photo"
+            <View
+                android:layout_width="40dp"
+                android:layout_height="4dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="@dimen/space_lg"
+                android:background="@drawable/bg_handle" />
+
+            <!-- Photo + its overlaid controls. The photo CARD is shown/hidden
+                 programmatically (hidden when this scan has no thumbnail); the
+                 actions bar stays either way and renderPhoto swaps its glass
+                 backgrounds for solid ones when there's no photo behind it. -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="280dp"
-                android:contentDescription="@string/community_opinion_photo_desc"
-                android:scaleType="centerCrop" />
-        </com.google.android.material.card.MaterialCardView>
+                android:layout_height="wrap_content">
 
-        <TextView
-            android:id="@+id/tv_opinion_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:text="@string/community_opinion_title"
-            android:textAppearance="@style/TextAppearance.App.Headline" />
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_opinion_photo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone"
+                    app:cardCornerRadius="@dimen/radius_lg"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_stroke"
+                    app:strokeWidth="@dimen/glass_stroke_width"
+                    tools:visibility="visible">
 
-        <TextView
-            android:id="@+id/tv_opinion_subtitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xs"
-            android:text="@string/community_opinion_subtitle"
-            android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary" />
+                    <ImageView
+                        android:id="@+id/iv_opinion_photo"
+                        android:layout_width="match_parent"
+                        android:layout_height="260dp"
+                        android:contentDescription="@string/community_opinion_photo_desc"
+                        android:scaleType="centerCrop" />
+                </com.google.android.material.card.MaterialCardView>
 
-        <!-- Current diagnosis block — styled like the scan-result status card
-             (icon + ALLCAPS label + verdict + confidence/species line) so the
-             sheet mirrors a real result. Set programmatically; hidden if
-             unknown. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_opinion_current"
-            style="@style/App.GlassCard.Strong"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md">
+                <!-- Like on one edge, safety on the other. Overlaying the photo
+                     is what finally gives these two an edge to align to: as a
+                     free-standing row they were indented to match a card's
+                     inner padding and so lined up with nothing visible. -->
+                <LinearLayout
+                    android:id="@+id/ll_opinion_actions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:layout_margin="@dimen/space_sm"
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-            <LinearLayout
+                    <LinearLayout
+                        android:id="@+id/ll_opinion_like"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:background="@drawable/bg_glass_dark_pill"
+                        android:clickable="true"
+                        android:clipToOutline="true"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:minWidth="40dp"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="@dimen/space_md">
+
+                        <ImageView
+                            android:id="@+id/iv_opinion_like"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/community_like_action"
+                            android:src="@drawable/ic_heart"
+                            app:tint="@color/on_hero" />
+
+                        <TextView
+                            android:id="@+id/tv_opinion_like_count"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_xs"
+                            android:fontFamily="sans-serif-medium"
+                            android:textColor="@color/on_hero"
+                            android:textSize="@dimen/text_body_sm"
+                            tools:text="14" />
+
+                    </LinearLayout>
+
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <!-- Report and Block used to be two full-strength accent
+                         text buttons sitting at the same weight as the action
+                         the user actually came for. Behind one ⋯ they stay one
+                         tap away without competing. -->
+                    <ImageView
+                        android:id="@+id/btn_opinion_more"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@drawable/bg_glass_dark_pill"
+                        android:clickable="true"
+                        android:clipToOutline="true"
+                        android:contentDescription="@string/community_opinion_more"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_more_horiz"
+                        app:tint="@color/on_hero" />
+
+                </LinearLayout>
+
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/tv_opinion_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:text="@string/community_opinion_title"
+                android:textAppearance="@style/TextAppearance.App.Headline" />
+
+            <TextView
+                android:id="@+id/tv_opinion_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/community_opinion_subtitle"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm" />
 
-                <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_disease"
-                    app:tint="@color/on_surface_secondary" />
+            <!-- Current diagnosis. Confidence reads as a number AND a meter,
+                 the way the scan-result screen already shows it, instead of a
+                 sentence under a large decorative icon. Set programmatically;
+                 hidden if unknown. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_opinion_current"
+                style="@style/App.GlassCard.Strong"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/space_md"
                     android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="0.05"
                         android:text="@string/community_opinion_diagnosis_label"
                         android:textAllCaps="true"
-                        android:letterSpacing="0.05"
-                        android:fontFamily="sans-serif-medium"
-                        android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
-
-                    <TextView
-                        android:id="@+id/tv_opinion_current"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:textSize="20sp"
-                        android:fontFamily="sans-serif-medium"
-                        android:textColor="@color/on_surface"
-                        android:maxLines="2"
-                        android:ellipsize="end"
-                        tools:text="Leaf Spot" />
-
-                    <!-- Model's read: confidence only. The species belongs to
-                         the species card below, not to this line. -->
-                    <TextView
-                        android:id="@+id/tv_opinion_meta"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:baselineAligned="false"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tv_opinion_current"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:ellipsize="end"
+                            android:fontFamily="sans-serif-medium"
+                            android:maxLines="2"
+                            android:textColor="@color/on_surface"
+                            android:textSize="20sp"
+                            tools:text="Leaf Spot" />
+
+                        <!-- Model's read: confidence only. The species belongs
+                             to the species card, not to this line. -->
+                        <TextView
+                            android:id="@+id/tv_opinion_meta"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm"
+                            android:visibility="gone"
+                            tools:text="Confidence 87%"
+                            tools:visibility="visible" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progress_opinion_confidence"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
                         android:visibility="gone"
-                        tools:text="Confidence 87%"
+                        app:indicatorColor="@color/primary"
+                        app:trackColor="@color/primary_light"
+                        app:trackCornerRadius="2dp"
+                        app:trackThickness="4dp"
+                        tools:progress="87"
                         tools:visibility="visible" />
+
                 </LinearLayout>
 
-            </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Like control, next to the vote counts it sits above. A tonal pill
-             (not a bare icon+text floating with no container) so it reads as
-             a control rather than leftover markup, sized to the 48dp minimum
-             touch target, and left-aligned to space_lg — the diagnosis
-             card's own contentPadding — so its icon lines up with the card's
-             icon column above rather than the screen edge. Icon swaps
-             outline/filled programmatically; the count hides at zero instead
-             of showing a bare "0" (see renderLike). -->
-        <LinearLayout
-            android:id="@+id/ll_opinion_like"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginTop="@dimen/space_md"
-            android:layout_marginStart="@dimen/space_lg"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/bg_opinion_like_pill"
-            android:foreground="?attr/selectableItemBackground"
-            android:clipToOutline="true"
-            android:paddingHorizontal="@dimen/space_md"
-            android:clickable="true"
-            android:focusable="true">
-
-            <ImageView
-                android:id="@+id/iv_opinion_like"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:contentDescription="@string/community_like_action"
-                android:src="@drawable/ic_heart"
-                app:tint="@color/on_surface_secondary" />
-
-            <TextView
-                android:id="@+id/tv_opinion_like_count"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_xs"
-                android:textSize="@dimen/text_body_sm"
-                android:fontFamily="sans-serif-medium"
-                android:textColor="@color/on_surface_secondary"
-                tools:text="14" />
-
-        </LinearLayout>
-
-        <!-- Read-only state for scans whose owner did not request an opinion,
-             or whose request expired/was cancelled. Existing replies stay
-             readable; all mutation controls are hidden in code. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_opinion_locked"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/surface_variant"
-            app:cardCornerRadius="@dimen/radius_md"
-            app:cardElevation="0dp"
-            tools:visibility="visible">
-
-            <LinearLayout
+            <!-- The one shared species card (ui/common/SpeciesInfoCardView).
+                 Hides itself when the feed item carried no species, so no
+                 pre-check is needed here. -->
+            <com.plantdiseases.app.ui.common.SpeciesInfoCardView
+                android:id="@+id/card_opinion_species"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="@dimen/space_md">
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_lock"
-                    app:tint="@color/on_surface_secondary" />
+            <!-- Read-only state for scans whose owner did not request an
+                 opinion, or whose request expired/was cancelled. Existing
+                 replies stay readable; the dock is hidden in code. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_opinion_locked"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/surface_variant"
+                app:cardCornerRadius="@dimen/radius_md"
+                app:cardElevation="0dp"
+                tools:visibility="visible">
 
-                <TextView
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/space_sm"
-                    android:text="@string/community_opinion_locked_body"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/space_md">
 
-        <!-- Reachable account-free safety controls for the scan itself.
-             Individual replies expose the same controls beside each row. -->
-        <LinearLayout
-            android:id="@+id/ll_opinion_safety"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="end|center_vertical">
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_lock"
+                        app:tint="@color/on_surface_secondary" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_opinion_report"
-                style="@style/Widget.Material3.Button.TextButton"
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/space_sm"
+                        android:layout_weight="1"
+                        android:text="@string/community_opinion_locked_body"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Running consensus vote graph (header + bars set programmatically). -->
+            <TextView
+                android:id="@+id/tv_opinion_votes_header"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/community_report_action"
-                android:textAllCaps="false" />
+                android:layout_marginTop="@dimen/space_lg"
+                android:text="@string/community_votes_header"
+                android:textAppearance="@style/TextAppearance.App.Title"
+                android:visibility="gone" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_opinion_block"
-                style="@style/Widget.Material3.Button.TextButton"
+            <LinearLayout
+                android:id="@+id/ll_opinion_graph"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+            <!-- Existing opinions, forum-style: one comment row per opinion
+                 (avatar + nickname + time + suggested class + optional note),
+                 added programmatically under a "Replies (N)" header. -->
+            <TextView
+                android:id="@+id/tv_opinion_list_header"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/community_block_action"
-                android:textAllCaps="false" />
+                android:layout_marginTop="@dimen/space_lg"
+                android:textAppearance="@style/TextAppearance.App.Title"
+                android:visibility="gone"
+                tools:text="Replies (3)" />
+
+            <LinearLayout
+                android:id="@+id/ll_opinion_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:orientation="vertical" />
+
+            <!-- Designed empty state, not a stray sentence: the icon gives the
+                 line something to belong to. Doubles as the load-error state
+                 (tappable to retry) — see loadOpinions. -->
+            <TextView
+                android:id="@+id/tv_opinion_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:drawablePadding="@dimen/space_sm"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:paddingVertical="@dimen/space_xl"
+                android:text="@string/community_opinion_empty"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                android:visibility="gone"
+                app:drawableTopCompat="@drawable/ic_comment"
+                app:drawableTint="@color/on_surface_secondary"
+                tools:visibility="visible" />
+
         </LinearLayout>
 
-        <!-- Agree / Disagree vote. Both open the same picker + note; Agree
-             pre-selects the model's own class. -->
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- ── Dock ──────────────────────────────────────────────────────────
+         Pinned under the scroll area so the vote is reachable from any
+         scroll position — you can read every reply first and still act
+         without scrolling back up. Exactly one child is visible at a time.
+    -->
+    <LinearLayout
+        android:id="@+id/ll_opinion_dock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_md">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginBottom="@dimen/space_md"
+            android:background="@color/divider" />
+
+        <!-- Agree / Disagree. Both open the composer; Agree pre-selects the
+             model's own class, so agreeing with a note is still two taps. -->
         <LinearLayout
             android:id="@+id/ll_opinion_vote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:orientation="horizontal"
-            android:baselineAligned="false">
+            android:baselineAligned="false"
+            android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_opinion_agree"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
-                android:layout_weight="1"
                 android:layout_height="wrap_content"
-                android:textAllCaps="false"
+                android:layout_weight="1"
                 android:text="@string/community_opinion_agree"
+                android:textAllCaps="false"
                 app:icon="@drawable/ic_check"
                 app:iconGravity="textStart" />
 
@@ -272,28 +406,28 @@
                 android:id="@+id/btn_opinion_disagree"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="0dp"
-                android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_sm"
-                android:textAllCaps="false"
-                android:text="@string/community_opinion_disagree" />
+                android:layout_weight="1"
+                android:text="@string/community_opinion_disagree"
+                android:textAllCaps="false" />
 
         </LinearLayout>
 
-        <!-- Shown instead of ll_opinion_vote once the server confirms this
-             viewer already has a pick on this scan (my_opinion in the
-             response) — a second vote silently REPLACES the first server-side
-             (opinions_for dedupes per author), so presenting Agree/Disagree
-             again as if it were a fresh, additive vote was misleading. -->
+        <!-- Shown instead of the vote row once the server confirms this viewer
+             already has a pick on this scan (my_opinion in the response) — a
+             second vote silently REPLACES the first server-side (opinions_for
+             dedupes per author), so offering Agree/Disagree again as if it
+             were a fresh, additive vote was misleading. -->
         <LinearLayout
             android:id="@+id/ll_opinion_current_vote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:orientation="horizontal"
+            android:baselineAligned="false"
             android:gravity="center_vertical"
+            android:orientation="horizontal"
             android:visibility="gone"
-            tools:visibility="visible">
+            tools:visibility="gone">
 
             <TextView
                 android:id="@+id/tv_opinion_current_vote"
@@ -309,129 +443,107 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textAllCaps="false"
-                android:text="@string/community_opinion_change" />
+                android:text="@string/community_opinion_change"
+                android:textAllCaps="false" />
 
         </LinearLayout>
 
-        <!-- Running consensus vote graph (header + bars set programmatically). -->
-        <TextView
-            android:id="@+id/tv_opinion_votes_header"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:text="@string/community_votes_header"
-            android:textAppearance="@style/TextAppearance.App.Title"
-            android:visibility="gone" />
-
+        <!-- Composer. Replaces the vote row in place rather than pushing the
+             replies off screen, and closes back to it via the ✕ — which is
+             why the sheet needs no Cancel button. -->
         <LinearLayout
-            android:id="@+id/ll_opinion_graph"
+            android:id="@+id/ll_opinion_composer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="@dimen/space_sm"
-            android:visibility="gone" />
-
-        <!-- Existing opinions, forum-style: one comment row per opinion
-             (avatar + nickname + time + suggested class + optional note),
-             added programmatically under a "Replies (N)" header. -->
-        <TextView
-            android:id="@+id/tv_opinion_list_header"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:textAppearance="@style/TextAppearance.App.Title"
             android:visibility="gone"
-            tools:text="Replies (3)" />
+            tools:visibility="gone">
 
-        <LinearLayout
-            android:id="@+id/ll_opinion_list"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="@dimen/space_sm" />
-
-        <TextView
-            android:id="@+id/tv_opinion_empty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:text="@string/community_opinion_empty"
-            android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary"
-            android:visibility="gone" />
-
-        <!-- Class picker -->
-        <TextView
-            android:id="@+id/tv_opinion_pick_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:text="@string/community_opinion_pick_label"
-            android:textAppearance="@style/TextAppearance.App.Title" />
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/chip_group_opinion"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            app:singleSelection="true"
-            app:selectionRequired="false"
-            app:chipSpacingHorizontal="@dimen/space_xs"
-            app:chipSpacingVertical="@dimen/space_xs" />
-
-        <!-- Optional note -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_opinion_note"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:hint="@string/community_opinion_note_hint"
-            app:boxCornerRadiusTopStart="@dimen/radius_md"
-            app:boxCornerRadiusTopEnd="@dimen/radius_md"
-            app:boxCornerRadiusBottomStart="@dimen/radius_md"
-            app:boxCornerRadiusBottomEnd="@dimen/radius_md"
-            app:counterEnabled="true"
-            app:counterMaxLength="500">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_opinion_note"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="top|start"
-                android:inputType="textMultiLine|textCapSentences"
-                android:maxLength="500"
-                android:minLines="2"
-                android:maxLines="5" />
+                android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-        </com.google.android.material.textfield.TextInputLayout>
+                <TextView
+                    android:id="@+id/tv_opinion_pick_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/community_opinion_pick_label"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
 
-        <!-- Action row -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:orientation="horizontal">
+                <ImageView
+                    android:id="@+id/btn_opinion_composer_close"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_circle_surface_variant"
+                    android:clickable="true"
+                    android:clipToOutline="true"
+                    android:contentDescription="@string/close"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_close"
+                    app:tint="@color/on_surface_secondary" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_opinion_cancel"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
+            </LinearLayout>
+
+            <!-- One scrolling row, not a wrapping block: the dock has to stay
+                 short enough that the replies behind it are still readable. -->
+            <HorizontalScrollView
+                android:id="@+id/scroll_opinion_chips"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/cancel" />
+                android:layout_marginTop="@dimen/space_sm"
+                android:clipToPadding="false"
+                android:scrollbars="none">
 
-            <Space
-                android:layout_width="0dp"
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chip_group_opinion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipSpacingHorizontal="@dimen/space_xs"
+                    app:selectionRequired="false"
+                    app:singleLine="true"
+                    app:singleSelection="true" />
+
+            </HorizontalScrollView>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_opinion_note"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1" />
+                android:layout_marginTop="@dimen/space_md"
+                android:hint="@string/community_opinion_note_hint"
+                app:boxCornerRadiusBottomEnd="@dimen/radius_md"
+                app:boxCornerRadiusBottomStart="@dimen/radius_md"
+                app:boxCornerRadiusTopEnd="@dimen/radius_md"
+                app:boxCornerRadiusTopStart="@dimen/radius_md"
+                app:counterEnabled="true"
+                app:counterMaxLength="500">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_opinion_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="top|start"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLength="500"
+                    android:maxLines="3"
+                    android:minLines="1" />
+
+            </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_opinion_send"
-                style="@style/Widget.Material3.Button"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/community_opinion_send"
+                android:textAllCaps="false"
                 app:icon="@drawable/ic_share"
                 app:iconGravity="textStart" />
 
@@ -439,4 +551,4 @@
 
     </LinearLayout>
 
-</androidx.core.widget.NestedScrollView>
+</LinearLayout>

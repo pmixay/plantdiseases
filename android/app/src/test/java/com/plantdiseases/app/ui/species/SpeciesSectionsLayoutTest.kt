@@ -39,8 +39,9 @@ class SpeciesSectionsLayoutTest {
     )
 
     private val sections = listOf(
+        // Care is deliberately absent: it has no section card at all — see
+        // theCarePlanSlotIsNotWrappedInASection.
         SectionIds("about", R.id.card_about, R.id.about_header, R.id.iv_about_chevron, R.id.about_body),
-        SectionIds("care", R.id.card_care, R.id.care_header, R.id.iv_care_chevron, R.id.care_body),
         SectionIds(
             "fertiliser",
             R.id.card_fertiliser,
@@ -134,14 +135,21 @@ class SpeciesSectionsLayoutTest {
         }
     }
 
+    /**
+     * Care has no section card at all. CarePlanCardView is already a
+     * collapsible card with its own header and chevron, so wrapping it in one
+     * stacked two chevrons over a single body and shipped both closed —
+     * loadCare() drops it straight into this slot instead.
+     */
     @Test
-    fun theCareCardStillOwnsTheRuntimeCarePlanSlot() {
+    fun theCarePlanSlotIsNotWrappedInASection() {
         val root = inflate()
         val slot = root.findViewById<View>(R.id.care_slot)
-        // loadCare() addViews the CarePlanCardView into care_slot; if the slot
-        // ever escapes care_body, the card would show while collapsed.
         assertThat(slot).isNotNull()
-        assertThat(slot.isDescendantOf(root.findViewById<View>(R.id.care_body))).isTrue()
+        for (s in sections) {
+            assertWithMessage("care_slot must not live inside the ${s.name} section")
+                .that(slot.isDescendantOf(root.findViewById<View>(s.body))).isFalse()
+        }
     }
 
     @Test
@@ -200,5 +208,30 @@ class SpeciesSectionsLayoutTest {
             .that(value.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
         assertWithMessage("value column should carry a weight — unweighted, it starves the label")
             .that(value.weight).isGreaterThan(0f)
+    }
+
+    /** The other half of that contract. Equal weights only keep both columns
+     *  alive while both fit on one line; a full sentence (the About card's
+     *  native-range fact) still squeezed the label to zero width and left an
+     *  unlabelled paragraph against the right edge. Long values now stack
+     *  under the label instead, which is a different child structure: one
+     *  column beside the icon rather than two siblings. */
+    @Test
+    fun factRowStacksALongValueUnderItsLabel() {
+        val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
+        val longValue = "Tomato originated in western South America and was domesticated in Mexico."
+        val row = activity.factRow(R.drawable.ic_moon, "Native range", longValue) as ViewGroup
+
+        assertWithMessage("a stacked row is icon + one column, not icon + label + value")
+            .that(row.childCount).isEqualTo(2)
+        val column = row.getChildAt(1) as ViewGroup
+        assertWithMessage("the column takes the width the icon leaves, so the value can wrap")
+            .that((column.layoutParams as LinearLayout.LayoutParams).width).isEqualTo(0)
+        assertWithMessage("label then value, both full width of the column")
+            .that(column.childCount).isEqualTo(2)
+        assertThat((column.getChildAt(0) as android.widget.TextView).text.toString())
+            .isEqualTo("Native range")
+        assertThat((column.getChildAt(1) as android.widget.TextView).text.toString())
+            .isEqualTo(longValue)
     }
 }
