@@ -273,7 +273,7 @@ that followed recommended the rest of the slug — **`Hibiscus_Necrosis` explici
 "genuine candidate supply, clean of the benchmark on a 0/101 sample". That reading was
 wrong, and it was wrong in a way worth understanding rather than just patching.
 
-`Hibiscus_Necrosis` really does read 0/30 against our 213 benchmark clusters. It is also
+`Hibiscus_Necrosis` really does read 0/30 against the then-213-cluster benchmark (v1). It is also
 `flower_data/*/hibiscus/death_leaf` from the deny-listed `shuvokumarbasak4004` dataset,
 re-uploaded: an independent fresh sample of 12 files, drawn under a different seed and
 downloaded from Kaggle rather than reused from any cache, matches that folder at pHash
@@ -282,7 +282,7 @@ four hibiscus subclasses (`blight / death_leaf / healthy / scorch`).
 
 It passed because **the gate can only detect the frames we happened to sample into the
 benchmark.** We built the benchmark from that source's `healthy` and `scorch` folders and
-left `death_leaf` out, so `death_leaf` is invisible to a 213-cluster comparison while
+left `death_leaf` out, so `death_leaf` was invisible to that cluster-level comparison while
 carrying the same leaves, the same session, the same sheet and the same lighting. Those
 are exactly the properties that make the eval set independent. Wiring it in would have
 been the `aditisalvi04` incident a second time, through a gate built to prevent it.
@@ -317,7 +317,7 @@ aqua healthy (float32). The 2.6.9 *recall* regression is undone and 2.6.10 ≈ 2
 Still open: weak-class **precision** (nutrient P **0.67**, leaf_scorch P 0.76) — the boundary
 fix recovers recall, not precision → that's the v8 job.
 
-## v8 — next version (model 2.6.11)
+## v8 — the data round (shipped into 2.7.0; historical)
 
 The 2.6.10 fix recovered *recall* but not *precision*, and the eval is still untrustworthy
 (71% recycled, ag-leak, sub-0.80 noise). v8 fixes the data; **2.6.11 retrains** on it (the
@@ -434,14 +434,17 @@ purpose.
 was written when that source was still supplying 2,264 train images. Three of its
 assumptions no longer hold.
 
-8. **NEW — an ornamental slice that is EVAL-ELIGIBLE (highest-value new item).** Every
-   ornamental source we have — the dead `pappu54` and both 2.6.13 replacements — is
-   **train-only**. So the `val_realworld` ship gate contains **zero** garden ornamentals
-   and *cannot measure the v2.6.12 pivot at all*. That is also the precise reason a 2.26k
-   image loss passed the gate unnoticed. Collect garden-ornamental positives into the
-   **supplement** (`source=supplement`, which every `make_*_split` allows) so a held-out
-   fraction seeds the gate. Until this exists, no number in this repo says whether the
-   pivot worked.
+8. **DONE as of v8 — an ornamental slice that is EVAL-ELIGIBLE.** *Was:* every
+   ornamental source — the dead `pappu54` and both 2.6.13 replacements — was
+   train-only, so `val_realworld` held **zero** garden ornamentals and could not
+   measure the v2.6.12 pivot at all; that is also why a 2.26k image loss passed the
+   gate unnoticed. **v8 ships 585 `garden_ornamental` rows, 353 of them
+   eval-eligible on `source=supplement`**, which every `make_*_split` allows. For
+   the first time `val_realworld` contains garden ornamentals, so the pivot is
+   measurable rather than assumed.
+
+   **Still open is the train-side gap**, which is a different ask: there is no
+   ornamental `leaf_scorch` and no ornamental `viral_disease` in the corpus at all.
 9. **NEW — `viral_disease` and `powdery_mildew` lost TRAIN supply, not eval supply.**
    The dead source carried 600 viral + 600 powdery; the replacements restore powdery to
    133 and viral to **0**. This is a different ask from items 2/4 (which target *eval*
@@ -463,10 +466,16 @@ probe recalls scorch at only 0.39–0.52 across all four runs on record, by far 
 of any class. That says the **frozen features** barely separate it, not that positives are
 scarce. Scorch is a leaf-**margin** phenomenon and the eval transform is
 `Resize(224×1.05) → CenterCrop(224)`, which trims exactly the margin carrying the signal.
-Test resize-and-pad (or a larger `IMG`) *before* funding a large scorch collection round.
+**RESOLVED — no longer a gate on collection.** The transform probe was run on frozen
+features (corpus scorch-vs-healthy → benchmark): centre-crop 0.954, resize-and-pad 0.966,
+**delta +0.013** against a +0.03 bar set in advance. Letterboxing at *inference* was
+separately falsified (2.6.8 unchanged 31/31; 2.7.2 got **worse**, 3/31 → 1/31). If a
+variant is retried it is a **training**-transform change, not an eval-transform one, and
+it does not block the collection round — collection *is* the critical path.
 Same reasoning is why `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`
-(1,400 `scorch` images, MIT) is **not** wired in: judge a sample against the reference
-exemplars first — 1,400 unverified positives into our most boundary-sensitive class is
+(1,400 `scorch` images, MIT) is **permanently deny-listed** — it *is* the OOD
+benchmark's source, so training on it is contamination rather than a judgement call
+(see the deny-list above) — 1,400 unverified positives into our most boundary-sensitive class is
 the bet that produced the 2.6.9 regression.
 
 **2.6.11 verify (paired, not aggregate):** paired bootstrap 2.6.11 vs 2.6.8 (and vs 2.6.10)
@@ -485,14 +494,15 @@ the reasons are more useful than a source list would have been.
 
 ### 1. The scorch collapse is a decision-layer failure, not a data shortage
 
-Measured on the shipped ONNX graphs (384-d DINOv2 CLS, `output[1]`), both bundles:
+Measured on the shipped ONNX graphs (384-d DINOv2 CLS, `output[1]`), both bundles.
+**Benchmark v1 (pooled, 62 scorch clusters) — superseded by v2's 31 hibiscus:**
 
 | | 2.6.8 | 2.7.2 |
 |---|---|---|
 | within-benchmark 5-fold CV probe AUROC | 0.997 ± 0.002 | **0.993 ± 0.004** |
 | corpus-trained probe, transferred to benchmark | 0.924 | 0.824 |
 | shipped head, P(leaf_scorch) AUROC on benchmark | 0.935 | 0.744 |
-| shipped head, argmax recall on 62 scorch clusters | 36/62 | **5/62** |
+| shipped head, argmax recall on the scorch arm | 36/62 | **5/62** |
 | served (full pipeline) | 0.565 | 0.000 |
 | **in-domain** supplement scorch recall | 0.784 | **0.941** |
 
@@ -517,7 +527,9 @@ marginality 0.581, lesion count 0.492, tan-necrosis 0.529); the largest separati
 an exposure difference. No release has ever exceeded 4/31 there.
 
 > Sizing a collection round against "restore 0.565" is really "restore hibiscus", and
-> sizing against 62 clusters systematically over-promises. Report the arms separately
+> sizing against 62 clusters systematically over-promises. **Superseded:** the arm
+> was retired outright in benchmark v2 (see "Build rules answered this round"),
+> rather than merely reported separately
 > and enforce that in the ship gate.
 
 ### 3. Framing: two probes disagreed, and the disagreement is the finding
@@ -568,7 +580,11 @@ scorch median.**
 > the benchmark shows it early, dull and achromatic, edge-concentrated on a green
 > blade — which is the model's `leaf_spot` prototype.
 
-Roughly 22 of 62 clusters are lost to framing and 24 to morphology — different fixes.
+Measured on the live 2.7.3 head (2026-08-22): of the **31** hibiscus clusters,
+**19 are lost to morphology** (called `leaf_spot`), **3 to framing** (called `healthy`),
+4 are correct, 3 → viral, 2 → powdery. **Morphology outweighs framing 6:1** — the earlier
+"22 of 62 framing / 24 morphology" estimate was pooled over the since-retired arm and is
+superseded.
 
 ### 5. Public supply does not exist. This needs first-party collection.
 
@@ -609,10 +625,11 @@ Per-stratum acceptance predicates, not volume targets. Current coverage in brack
 | **scorch, low chroma** | 150 | `sat_mean ≤ 0.15`, dull ambient light | 12.2% coverage; −10.6 pp, largely subsumed by framing |
 | **healthy, plain ground** | 250 | same framing predicate, healthy subject | breaks "plain ground ⇒ not_a_plant" |
 | **healthy, ND regime** | 250 | `det_union_frac ≥ 0.40`, `sat_mean ≥ 0.38`, `achro_bright ≤ 0.05` | ND precision 0.621 is a 6.4× prior distortion, not a label problem — the fix is **negatives**, not positives |
-| **leaf_spot, houseplant** | 200 | one soft-lit glossy leaf indoors, confluent lesions | 98 rows / ~10 genera; recall 0.311 vs 0.744 garden |
+| **leaf_spot, houseplant** | 200 | one soft-lit glossy leaf indoors, confluent lesions | 98 of the 184 `leaf_spot` rows are houseplant-domain, over ~10 genera; recall 0.311 vs 0.744 garden |
 | **pests + gray_mold, with boxes** | 200 | must carry bounding boxes | Stage 1 returns no box on 44.9% / 43.5%; `pests` is 21 rows and 19% under the 384 px floor |
 
-~1,550 clusters. The first two strata have no substitute; the rest are supporting.
+~1,600 clusters. Only **`scorch, early/dull` has no substitute** — it is the 19-of-31
+axis. Everything else, `scorch, plain ground` included, is supporting.
 
 **A words-and-thresholds spec cannot capture all of it.** A cross-validated oracle split
 of the existing scorch shows a real 0.33-AUROC transfer axis — 4–8× larger than any
@@ -625,7 +642,7 @@ done in embedding space against an anchor set, not from a photographic checklist
 
 ### 6b. The out-of-domain ship gate — published and validated (2026-08-18)
 
-The benchmark now lives at `maxayyt5/plantvision-ood-benchmark` (**private**, 213
+The benchmark now lives at `maxayyt5/plantvision-ood-benchmark` (**private**, **182**
 images + both manifests, 1.6 MB) and §6 pulls it through the same
 `_kaggle_download` choke point as every other source, then **blocks**. A missing
 benchmark is a hard failure unless `REQUIRE_OOD_BENCHMARK` is turned off as a
@@ -633,43 +650,67 @@ deliberate edit — absence is how a check like this quietly stops existing.
 
 Validated against both bundles on the published data, through the real
 kagglehub download path, with the gate's own preprocessing (resize ×1.05,
-centre-crop 224, hflip TTA):
+centre-crop 224, hflip TTA).
 
-| | hibiscus (31) | banana_bush (31) | healthy false-fire (151) | verdict |
-|---|---|---|---|---|
-| **2.6.8** (deployed) | 1.000 | 0.129 | 0.026 | **PASSED** |
-| **2.7.2** (rejected) | 0.097 | 0.097 | 0.040 | **FAILED** — hibiscus 0.097 < 0.70 |
+**Mind which instrument each number comes from.** The shipped gate records
+`eval_mode: classifier_only` — Stage-2 ONNX argmax, no detector, no OOD AND-gate,
+no NAP veto. The 2.6.8 = 1.000 figure below is the **served** number
+(`paired_eval --served`, i.e. 2.6.8 + the veto), and `build_ood_benchmark.py`
+warns that the OOD AND-gate alone can move ornamental recall ~20pp. The two agree
+today; do not assume they always will, and set floors from served numbers.
 
-The gate accepts the model we kept and rejects the model we rejected. Both
-in-domain gates passed 2.7.2.
+| | hibiscus (31) | healthy false-fire (151) | verdict |
+|---|---|---|---|
+| **2.6.8** (deployed) | 1.000 | 0.026 | **PASSED** |
+| **2.7.2** (rejected) | 0.097 | 0.040 | **FAILED** — 0.097 < 0.70 |
+| **2.7.3** (rejected) | 0.129 | 0.079 | **FAILED** — 0.129 < 0.70 |
 
-`banana_bush` is reported but deliberately **unfloored**: no release has exceeded
-0.16 and on this benchmark its clusters are statistically indistinguishable from
-the healthy ones, so a floor there would block every run for a reason no data can
-fix. The healthy ceiling sits on the same never-trained clusters so cost and
+The gate accepts the model we kept and rejects both we rejected. Every one of them
+passed in-domain.
+
+**One species, 31 clusters, one photographic session.** That is the whole scorch
+side after `banana_bush` was retired in v2 (turgor loss, not our class — it does
+not exist in the artefact, so it is not "reported but unfloored"; see
+`RETIRED_DISEASE_ARMS` in `build_ood_benchmark.py`). The floor is worth blocking
+on — it separates the deployed and rejected bundles by 10× — but read a pass as
+*"did not regress on the one arm we can measure"*, not as *"scorch works"*. A
+second arm (8–12 species) is the outstanding eval work.
+
+The healthy ceiling sits on the same never-trained clusters so cost and
 benefit share one population — a recall floor alone is satisfiable by firing
-`leaf_scorch` more often, which the bias sweep in §7 shows explicitly.
+`leaf_scorch` more often, which the bias sweep in `docs/ROADMAP.md` (Model track,
+"Settled — do not retry") shows explicitly.
 
 **Keep the dataset private.** Its whole value is being outside every training
 corpus; a public copy gets scraped into someone's "houseplant disease dataset"
 and then into ours, which is exactly how the `aditisalvi04` contamination
 happened.
 
-### 7. Two cheap levers to measure before the next A100 run
+### 7. Both "cheap levers" were RUN on 2.7.3 — and both FAILED
 
-Both testable on existing data, neither replacing the collection round:
+They were the whole content of the 2.7.3 release. Recorded here so neither is
+re-proposed as a cheap next step.
 
-1. **Re-weight the in-regime slice we already own.** The low-saturation quartile
-   (n=166) transfers at 0.677 benchmark recall versus 0.161 for the other three
-   quartiles — currently diluted 1:3.
-2. **Fit the decision threshold on a regime-stratified calibration set.** Across seven
-   stratifications probe AUC barely moves (0.921–0.965) while recall moves 7× (0.097 →
-   0.677). The ranking is fine; the operating point is not.
+1. **Re-weight the in-regime slice** → `REGIME_*` / `regime_multipliers` in §1/§4.
+   297 of 1,188 scorch rows boosted, stratum draw share 25% → 50%, class draw share
+   held. Benchmark hibiscus moved **3/31 → 4/31, Fisher exact p=1.000.** One cluster.
+2. **Regime-stratified calibration** → the §6 conformal audit. Marginal coverage
+   0.967; **low_chroma 0.972 vs rest 0.965** — the dull stratum was already the
+   *better* covered one. There was no under-coverage to fix.
 
-Also: Stage 1 misses **14/62** benchmark scorch clusters versus 5/151 healthy (Fisher
-OR 8.5, p=3.2e-05). A shrivelled, curled leaf is not leaf-shaped to a PlantDoc-trained
-detector — the same structural cause as pests and gray_mold. New plain-ground scorch
-should ship with boxes.
+Why the probe did not translate: the 0.677 figure came from a probe trained
+**exclusively** on the low-chroma quartile. Upweighting that stratum to half a class's
+draws inside a head trained on everything is a far weaker intervention — the head can
+fit both strata and has no pressure to rely on the transferring one. The boosted cut
+was also `sat ≤ 0.179` against a benchmark median of ~0.09: even the dullest quarter of
+the corpus is roughly twice the target chroma.
+
+Also: Stage 1 misses benchmark scorch clusters at **8.5× the healthy rate** (Fisher
+p=3.2e-05) — measured on the old pooled 62-cluster arm as 14/62 vs 5/151; re-measure on
+the 31 hibiscus clusters before quoting a rate. A shrivelled, curled leaf is not
+leaf-shaped to a PlantDoc-trained detector, the same structural cause as pests and
+gray_mold. **New `scorch, early/dull` data should ship with boxes** — that is the
+stratum carrying 19 of 31 clusters, not the plain-ground one.
 
 ### 8. Method corrections found while searching
 
@@ -688,10 +729,16 @@ should ship with boxes.
 
 - Whether the 0.33-AUROC latent transfer axis is *collectable* by instruction at all,
   or only selectable in embedding space after the fact.
-- Whether the banana_bush/turgor arm is learnable from any imagery, or should be
-  retired from the benchmark as degenerate.
-- Whether fixing the head/operating point alone recovers hibiscus without new data —
-  untested, and the cheapest experiment available.
+**Answered since:**
+
+- *banana_bush* — **retired** in benchmark v2 (turgor loss, not our class).
+- *Can the head/operating point alone recover hibiscus?* **No, and it is bounded.**
+  A linear probe on 2.7.3's own frozen features, trained corpus-scorch vs
+  corpus-`leaf_spot`, puts **48.4% (15/31)** on the scorch side where the shipped
+  head puts 12.9% (4/31) — the head discards 3.75× real signal, but a *perfect*
+  linear readout still lands below the 0.70 floor. `CLASS_LOGIT_BIAS` swept on
+  2.7.3 tops out at **0.323** within the 0.12 false-fire ceiling; reaching the
+  floor needs bias 3.0 at FF 0.417.
 
 ## Build rules answered this round (2026-08-18)
 
@@ -746,7 +793,10 @@ classes. Read `supported_disease_macro_f1` (over present classes, ≈0.99), not 
 all-class number (≈0.43 from absent-class zeros). Don't backfill with agricultural studio.
 
 **Eval-integrity (mandatory).** The model never grades/calibrates on its own confident
-calls: every `auto_yes` row is **train-only**; held-out splits draw only from
+calls — **the fold-in contract for when production volume exists, not something the
+notebook implements today** (`auto_yes` appears nowhere in `train_notebook.ipynb`;
+the only sha-based carve is `HOLDOUT_PERMILLE = 300` over the `(source, plant_id)`
+group key): every `auto_yes` row is **train-only**; held-out splits draw only from
 vision-agent-judged rows (deterministic ~20% by sha → calibration, rest eval). Near-dup
 sweep on fold-in (pHash ≤ 6; provenance `agent_vision` > `model+user` > `model`).
 
