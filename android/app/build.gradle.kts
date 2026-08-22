@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // No org.jetbrains.kotlin.android — AGP 9's built-in Kotlin compiles this
+    // module. The serialization compiler plugin still applies on top of it.
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
@@ -198,7 +199,10 @@ android {
 }
 
 kotlin {
-    // Replaces the deprecated android.kotlinOptions block (Kotlin 2.x DSL).
+    // Still the right home for compiler options under built-in Kotlin — it is
+    // `android.kotlinOptions` that AGP 9 dropped, not this block. jvmTarget
+    // would default to compileOptions.targetCompatibility; stated explicitly
+    // so the two can't drift apart silently.
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
@@ -226,7 +230,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 }
 
 ktlint {
-    version.set("1.3.1")
+    version.set("1.5.0")
     android.set(true)
     ignoreFailures.set(false)
     baseline.set(file("config/ktlint/baseline.xml"))
