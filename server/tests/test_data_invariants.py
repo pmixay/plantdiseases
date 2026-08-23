@@ -3,15 +3,12 @@ Defensive invariants for the training pipeline (audit followups).
 
 These tests don't execute the notebook — they validate the parts of the
 pipeline we can statically check (label maps, keyword lists, helper
-existence) and the data-on-disk invariants we can verify when an actual
-training run has produced output. Notebook execution itself is gated on
-GPU availability and would be too slow for CI.
+existence) by grepping the notebook source. Notebook execution itself is
+gated on GPU availability and would be too slow for CI, and nothing here
+looks at data on disk.
 
 Run with:
     pytest server/tests/test_data_invariants.py -q
-
-The notebook's data-on-disk tests will skip cleanly if `data_v2/` doesn't
-exist yet (i.e., before §2 has been run for the first time).
 """
 
 from __future__ import annotations

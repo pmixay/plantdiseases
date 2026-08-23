@@ -156,3 +156,95 @@ def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
     for i in range(5):
         r = client.post("/api/feedback", json=body)
         assert r.status_code in (200, 422), f"burst[{i}] got {r.status_code}: {r.text}"
+
+
+# ── Unhandled exceptions ──────────────────────────────────────────────
+# Before `_unhandled_exception_handler` existed, an exception escaping a
+# handler was answered by Starlette's ServerErrorMiddleware: plain-text
+# "Internal Server Error", no X-Trace-ID, no access-log line and no error
+# metric — the one request an operator most needs to find had nothing to
+# grep for. These pin the replacement.
+
+def _client_swallowing_server_errors():
+    """A TestClient that returns the 500 instead of re-raising it.
+
+    Starlette re-raises after the handler produces its response, which is
+    what makes the traceback reach uvicorn in production; the default
+    TestClient turns that into a test error, so we opt out here.
+    """
+    from fastapi.testclient import TestClient
+
+    import main as server_main
+
+    return TestClient(server_main.app, raise_server_exceptions=False)
+
+
+def test_unhandled_exception_returns_json_500_with_trace_id(monkeypatch):
+    import main as server_main
+
+    def _boom():
+        raise RuntimeError("store exploded")
+
+    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
+
+    with _client_swallowing_server_errors() as c:
+        r = c.get("/api/metrics", headers={"X-Trace-ID": "trace-abc_123"})
+
+    assert r.status_code == 500
+    # The same JSON {"detail": ...} shape every other error on this API uses.
+    assert r.json() == {"detail": "Internal server error"}
+    # The trace id the client sent is echoed, so the log line and the
+    # response share a join key.
+    assert r.headers["X-Trace-ID"] == "trace-abc_123"
+    # The exception message must not leak to the client.
+    assert "store exploded" not in r.text
+
+
+def test_unhandled_exception_mints_a_trace_id_when_client_sent_none(monkeypatch):
+    import main as server_main
+
+    def _boom():
+        raise RuntimeError("store exploded")
+
+    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
+
+    with _client_swallowing_server_errors() as c:
+        r = c.get("/api/metrics")
+
+    assert r.status_code == 500
+    assert r.headers.get("X-Trace-ID")
+
+
+def test_unhandled_exception_increments_the_error_counter(monkeypatch):
+    import main as server_main
+
+    def _boom():
+        raise RuntimeError("store exploded")
+
+    before = server_main._snapshot_metrics()["total_errors"]
+    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
+
+    with _client_swallowing_server_errors() as c:
+        assert c.get("/api/metrics").status_code == 500
+
+    assert server_main._snapshot_metrics()["total_errors"] == before + 1
+
+
+def test_unhandled_exception_is_written_to_the_access_log(monkeypatch, caplog):
+    import logging
+
+    import main as server_main
+
+    def _boom():
+        raise RuntimeError("store exploded")
+
+    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
+
+    with caplog.at_level(logging.INFO, logger="plantdiseases"):
+        with _client_swallowing_server_errors() as c:
+            assert c.get("/api/metrics").status_code == 500
+
+    assert any(
+        "REQUEST GET /api/metrics -> 500" in rec.getMessage()
+        for rec in caplog.records
+    ), "the failing request produced no access-log line"

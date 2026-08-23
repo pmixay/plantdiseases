@@ -101,13 +101,12 @@ BY_REGION: dict[str, list[PopularPlant]] = {
 }
 
 
-def popular_for(country: str | None, region: str | None = None) -> list[PopularPlant]:
+def popular_for(country: str | None) -> list[PopularPlant]:
     """Curated popular plants for a country, else the global default.
 
     ``country`` may be an ISO alpha-2 code or a country name / "City, Country"
     composite — only the leading 2 letters of an ISO code are matched, so a
-    full name simply misses the map and falls through to global. ``region`` is
-    accepted for signature stability but unused (country granularity suffices).
+    full name simply misses the map and falls through to global.
     """
     code = (country or "").strip().upper()
     if len(code) == 2 and code in BY_REGION:

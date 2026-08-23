@@ -619,7 +619,7 @@ AQUA_STATIC_DIR = Path(get_str(
 
 # Model weights + calibration artefacts are NOT committed to the repo and
 # are NOT auto-downloaded. Provision them out of band: drop the trained
-# files (detector.{pt,onnx}, classifier.onnx, classes.json, ...) into
+# files (detector.onnx, classifier.onnx, classes.json, ...) into
 # MODELS_DIR before starting the server. Boot is fail-fast — the pipeline
 # refuses to start if a required artefact is missing.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
@@ -1388,7 +1388,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             request.headers.get("x-trace-id") or request.headers.get("x-request-id"),
         )
         token = request_id_var.set(trace_id)
-        
+        # Also stash it on the request scope. The ContextVar is reset by the
+        # `finally` below before Starlette's outermost ServerErrorMiddleware
+        # gets to run `_unhandled_exception_handler`, but `request.state` is
+        # backed by the scope dict and survives — so that handler can stamp
+        # the SAME trace id on the 500 that this log line carries.
+        request.state.trace_id = trace_id
         _record_request()
         start = time.time()
         try:
@@ -1404,6 +1409,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 _client_ip(request),
             )
             return response
+        except Exception:
+            # An unhandled handler exception never reaches the success path
+            # above, so without this arm the access log simply has no line for
+            # the request that failed. Log it as the 500 the client will get
+            # (`_unhandled_exception_handler` produces the response), then
+            # re-raise so that handler still runs.
+            elapsed = time.time() - start
+            logger.info(
+                "REQUEST %s %s -> %d (%.3fs) IP=%s",
+                request.method,
+                request.url.path,
+                500,
+                elapsed,
+                _client_ip(request),
+            )
+            raise
         finally:
             request_id_var.reset(token)
 
@@ -1548,6 +1569,51 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Own the unhandled-exception path so a crash is still observable.
+
+    Without this, an exception escaping a handler is turned into a response by
+    Starlette's ServerErrorMiddleware: a bare text/plain "Internal Server
+    Error" with NO ``X-Trace-ID`` header (that is only set on the success path
+    in :class:`RequestLoggingMiddleware`) and no metrics increment — so the one
+    request the operator most needs to find is the one with nothing to grep
+    for. Here we count it, log it with a traceback under the request's trace
+    id, and hand back the same JSON ``{"detail": ...}`` shape every other error
+    on this API uses, carrying the trace id the access log line also shows.
+
+    The handler runs OUTSIDE every middleware added below, so ``request_id_var``
+    has already been reset by the time we get here; the id comes off
+    ``request.state`` (stamped by the logging middleware, and backed by the
+    scope dict so it survives). The fallback covers an exception raised in a
+    middleware layer outside the logging one, which never got stamped.
+
+    The detail string is deliberately generic — an exception message can carry
+    a path, a query fragment or a key, and this is the one error the client did
+    not ask a question specific enough to deserve an answer to. The trace id is
+    the operator's join key into the log.
+
+    Starlette re-raises after this returns, so uvicorn still logs the traceback
+    and ``TestClient(raise_server_exceptions=True)`` still surfaces it in tests.
+    """
+    _record_error()
+    trace_id = getattr(request.state, "trace_id", "") or _clean_trace_id(
+        request.headers.get("x-trace-id") or request.headers.get("x-request-id"),
+    )
+    logger.exception(
+        "UNHANDLED %s %s trace=%s: %s",
+        request.method,
+        request.url.path,
+        trace_id,
+        exc.__class__.__name__,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={"X-Trace-ID": trace_id},
+    )
 
 # ── CORS ─────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = get_list(
@@ -1910,6 +1976,12 @@ async def metrics():
     """Operational metrics (JSON). Useful for dashboards and jury demos."""
     snap = _snapshot_metrics()
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
+    # The two store snapshots are blocking sqlite3 and each runs several
+    # full-table COUNT(*) scans, so they hop to a worker thread; the
+    # in-process counters above are just dict reads.
+    loop = asyncio.get_running_loop()
+    feedback_snapshot = await loop.run_in_executor(None, feedback_counts)
+    community_snapshot = await loop.run_in_executor(None, community_stats_snapshot)
     return {
         "uptime_seconds": round(uptime, 1),
         **snap,
@@ -1918,8 +1990,8 @@ async def metrics():
         # answers "is prompt caching engaging at all" after a model switch.
         "prompt_cache": prompt_cache_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
-        "feedback": feedback_counts(),
-        "community": community_stats_snapshot(),
+        "feedback": feedback_snapshot,
+        "community": community_snapshot,
     }
 
 
@@ -4243,30 +4315,40 @@ async def community_scan_nearby(
     location_required = not worldwide and not (bool(country_norm) or has_coords)
     effective_limit = max(1, min(int(limit), 50))
     viewer_author_id = await _lookup_community_author_id(x_community_author_key)
+    # Every community_* call below is blocking sqlite3. This is the feed the
+    # gallery polls and the queries are the heaviest reads in the server, so
+    # each one hops to a worker thread rather than stalling the event loop.
+    loop = asyncio.get_running_loop()
     if ranking_norm == "recommended":
-        rows = community_recommended_scans(
-            country=country_norm,
-            lat=geo["lat"] if nearby else None,
-            lon=geo["lon"] if nearby else None,
-            limit=effective_limit,
-            exclude_user_pseudo_id=user_pseudo_id,
-            viewer_author_id=viewer_author_id,
-            scope=scope_norm,
-            cursor=recommendation_cursor,
+        rows = await loop.run_in_executor(
+            None,
+            lambda: community_recommended_scans(
+                country=country_norm,
+                lat=geo["lat"] if nearby else None,
+                lon=geo["lon"] if nearby else None,
+                limit=effective_limit,
+                exclude_user_pseudo_id=user_pseudo_id,
+                viewer_author_id=viewer_author_id,
+                scope=scope_norm,
+                cursor=recommendation_cursor,
+            ),
         )
     else:
-        rows = community_nearby_scans(
-            country=country_norm,
-            lat=geo["lat"] if nearby else None,
-            lon=geo["lon"] if nearby else None,
-            disease=(disease or None),
-            species=(species or None),
-            limit=effective_limit,
-            exclude_user_pseudo_id=user_pseudo_id,
-            viewer_author_id=viewer_author_id,
-            scope=scope_norm,
-            cursor=(recommendation_cursor[1], recommendation_cursor[2])
-            if recommendation_cursor is not None else None,
+        rows = await loop.run_in_executor(
+            None,
+            lambda: community_nearby_scans(
+                country=country_norm,
+                lat=geo["lat"] if nearby else None,
+                lon=geo["lon"] if nearby else None,
+                disease=(disease or None),
+                species=(species or None),
+                limit=effective_limit,
+                exclude_user_pseudo_id=user_pseudo_id,
+                viewer_author_id=viewer_author_id,
+                scope=scope_norm,
+                cursor=(recommendation_cursor[1], recommendation_cursor[2])
+                if recommendation_cursor is not None else None,
+            ),
         )
     # A short page means the scope is exhausted; a full page might have more
     # (the very last page just happens to also be full-sized, and the client
@@ -4283,19 +4365,29 @@ async def community_scan_nearby(
     # radius-scoped; the summary stays country-wide for a stable "what's
     # around" readout). Excludes the requester's own rows so the row doesn't
     # surface the scan they just uploaded.
-    summary = community_region_summary(
-        country_norm or "",
+    summary = await loop.run_in_executor(
         None,
-        exclude_user_pseudo_id=user_pseudo_id,
-        viewer_author_id=viewer_author_id,
+        lambda: community_region_summary(
+            country_norm or "",
+            None,
+            exclude_user_pseudo_id=user_pseudo_id,
+            viewer_author_id=viewer_author_id,
+        ),
     )
     # Annotate each cell with how many second opinions it has so the carousel
     # can show a badge, then swap the real scan_id for the public token —
     # the real id authorises /api/feedback writes and must never reach
     # other users (see community.public_scan_token).
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = community_opinion_counts(scan_ids) if ranking_norm == "recent" else {}
-    views = community_view_counts(scan_ids) if ranking_norm == "recent" else {}
+    counts: dict = {}
+    views: dict = {}
+    if ranking_norm == "recent":
+        counts = await loop.run_in_executor(
+            None, lambda: community_opinion_counts(scan_ids),
+        )
+        views = await loop.run_in_executor(
+            None, lambda: community_view_counts(scan_ids),
+        )
     for r in rows:
         sid = str(r.get("scan_id"))
         r.setdefault("opinion_count", counts.get(sid, 0))
@@ -4372,7 +4464,8 @@ async def community_map(
         raise HTTPException(status_code=422, detail="Invalid bbox")
     lo_lat, lo_lon, hi_lat, hi_lon = box
     viewer_author_id = await _lookup_community_author_id(x_community_author_key)
-    data = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(
         None,
         lambda: community_map_scans(
             lo_lat, hi_lat, lo_lon, hi_lon,
@@ -4386,7 +4479,10 @@ async def community_map(
     rows = data["items"]
     # Same opinion-count annotation + public-token swap + country localization as
     # the nearby feed; here we KEEP lat/lon for the markers.
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    map_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
+    counts = await loop.run_in_executor(
+        None, lambda: community_opinion_counts(map_scan_ids),
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
@@ -4432,7 +4528,8 @@ async def community_by_species(
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
     viewer_author_id = await _lookup_community_author_id(x_community_author_key)
-    rows = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    rows = await loop.run_in_executor(
         None,
         lambda: community_scans_by_species(
             sci,
@@ -4441,7 +4538,10 @@ async def community_by_species(
             viewer_author_id=viewer_author_id,
         ),
     )
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
+    counts = await loop.run_in_executor(
+        None, lambda: community_opinion_counts(species_scan_ids),
+    )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         # Public token only — never the feedback-authorising real id.

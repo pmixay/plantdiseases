@@ -34,23 +34,11 @@ import numpy as np
 from PIL import Image
 
 try:
-    from .config import get_int
+    from .config import onnx_intra_op_threads
 except ImportError:  # pragma: no cover — flat layout (run from server/)
-    from config import get_int
+    from config import onnx_intra_op_threads
 
 logger = logging.getLogger(__name__)
-
-
-def _onnx_intra_op_threads() -> int:
-    """Intra-op thread count for ORT sessions.
-
-    Returns ``ONNX_INTRA_OP_THREADS`` (config/env), defaulting to ``0``
-    which tells ONNX Runtime to use its own default — the host's physical
-    core count. The DINOv2 ViT backbone is dominated by intra-op
-    parallelism, so giving a single inference all cores is the biggest
-    CPU-latency lever. Operators on a shared host can pin this lower.
-    """
-    return get_int("ONNX_INTRA_OP_THREADS", 0)
 
 
 DEFAULT_IMG_SIZE = 224
@@ -241,7 +229,7 @@ class DiseaseClassifier:
         # paired with `INFER_WORKERS=1` on the FastAPI side (one inference
         # at a time, each using the full CPU) — see main.py. Both are
         # config-overridable for shared hosts.
-        opts.intra_op_num_threads = _onnx_intra_op_threads()
+        opts.intra_op_num_threads = onnx_intra_op_threads()
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
@@ -331,8 +319,6 @@ class DiseaseClassifier:
         """
         w, h = img.size
         target_short = max(side, int(side * self.eval_resize_ratio))
-        if w == h == target_short == side:
-            return img
         scale = target_short / float(min(w, h))
         new_w = max(side, round(w * scale))
         new_h = max(side, round(h * scale))

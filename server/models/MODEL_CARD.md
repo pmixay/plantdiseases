@@ -66,7 +66,7 @@ Evaluation order, with the constants that govern each step (all in
 | # | Step | Governed by |
 |---|---|---|
 | 1 | blur gate — short-circuits to a synthetic `not_a_plant`, classifier never runs | `BLUR_LAPLACIAN_FLOOR = 50.0`, `BLUR_DOWNSCALE = 320` |
-| 2 | detect → crop; whole frame folded in as an extra vote | `FOLD_WHOLE_FRAME_VOTE = True` |
+| 2 | detect → crop; whole frame folded in as an extra vote | `FOLD_WHOLE_FRAME_VOTE` (default on; `limits.fold_whole_frame_vote`) |
 | 3 | batched classify, temperature applied per crop | `temperature.json` |
 | 4 | mean vote over crops + whole frame | `_fold_votes` |
 | 5 | OOD gate (three-of-three, below) → `not_a_plant` reroute | `classes.json → ood` |

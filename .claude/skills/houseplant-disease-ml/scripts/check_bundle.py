@@ -17,6 +17,12 @@ Usage
     python check_bundle.py path/to/models/
     python check_bundle.py path/to/models/ --json     # machine-readable
 
+A FAIL means "do not ship this bundle". Most FAILs are literal boot
+blockers, but a couple are deliberately stricter than the runtime: the
+server boots on code defaults when `classes.json` is missing, this script
+refuses the bundle anyway. WARNs are gate-quality problems the server logs
+and boots through.
+
 Exit code is 0 only when there are no FAILs (WARNs are allowed).
 """
 from __future__ import annotations
@@ -46,7 +52,10 @@ class Report:
             print(f"  {icon[lvl]} [{lvl:4}] {msg}")
         n_fail = sum(lvl == FAIL for lvl, _ in self.rows)
         n_warn = sum(lvl == WARN for lvl, _ in self.rows)
-        verdict = "BUNDLE WILL NOT BOOT" if self.failed else "bundle satisfies the boot contract"
+        verdict = (
+            "BUNDLE REJECTED — fix the FAILs above before shipping"
+            if self.failed else "bundle satisfies the shipping contract"
+        )
         print(f"\n  → {verdict}  ({n_fail} fail, {n_warn} warn)")
 
 
@@ -70,9 +79,11 @@ def check(models_dir: Path) -> Report:
     if has("detector.onnx"):
         r.add(OK, "detector.onnx present (Stage 1)")
     elif has("detector.pt"):
-        r.add(WARN, "only detector.pt present — production should ship detector.onnx")
+        r.add(FAIL, "only detector.pt present — serving is ONNX-only "
+                    "(detector._resolve_detector_path never returns a .pt), so boot raises "
+                    "DetectorLoadError. Export detector.onnx (train_notebook §6).")
     else:
-        r.add(FAIL, "no detector artefact (detector.onnx / detector.pt) — Stage 1 cannot load")
+        r.add(FAIL, "no detector.onnx — Stage 1 cannot load (DetectorLoadError aborts boot)")
 
     # ── Stage 2 classifier (required: at least one ONNX) ─────────
     has_int8, has_fp32 = has("classifier_int8.onnx"), has("classifier.onnx")
@@ -130,9 +141,21 @@ def check(models_dir: Path) -> Report:
         if has(bank):
             r.add(OK, f"OOD embedding bank present ({bank}, k={ood.get('k')}, threshold={ood.get('threshold')})")
         else:
-            r.add(FAIL, f"classes.json declares ood.embedding but bank file '{bank}' is missing")
+            r.add(WARN, f"classes.json declares ood.embedding but bank file '{bank}' is missing — "
+                        "the server logs this and boots with embedding OOD DISABLED")
     else:
         r.add(INFO, "no embedding OOD bank declared — OOD falls back to classes.json ood.max_logit_floor")
+
+    # ood.score is provenance only — the server never reads it and infers the
+    # signal from what actually ships. Flag a declaration that lies.
+    declared_score = (classes.get("ood") or {}).get("score")
+    if declared_score:
+        actual = "embedding_knn" if (ood and has(ood.get("bank_file", "ood_embedding.npz"))) \
+            else "max_logit"
+        if declared_score != actual:
+            r.add(WARN, f"classes.json declares ood.score={declared_score!r} but the shipped "
+                        f"artefacts give {actual!r} — the server ignores the declaration and "
+                        "infers the signal, so the bundle documents the wrong gate")
 
     # MaxLogit fallback: scope + whether the floor actually survived calibration.
     ood_root = classes.get("ood") or {}
@@ -144,8 +167,9 @@ def check(models_dir: Path) -> Report:
                     "all-class max cannot separate NAP from plants and the floor will auto-disable. "
                     "Re-export with 'plant_only' (train_notebook §6, MAXLOGIT_SCOPE).")
     if "max_logit_floor" in ood_root and ood_root.get("max_logit_floor") is None and not ood:
-        r.add(FAIL, "MaxLogit floor is null AND no embedding bank is shipped — the NAP AND-gate has "
-                    "NO classifier-side signal and degrades to detector confidence alone")
+        r.add(WARN, "MaxLogit floor is null AND no embedding bank is shipped — the server boots "
+                    "with a logged warning, but the NAP gate has NO classifier-side signal and "
+                    "degrades to detector confidence alone")
 
     # ── Analysis artefacts (non-blocking) ────────────────────────
     for name, note in (("model_card.json", "provenance + benchmarks + CIs"),

@@ -74,7 +74,7 @@ class EmbeddingOODConfig:
     """Persisted ``classes.json -> ood.embedding`` configuration."""
 
     method: str          # only "knn" supported today
-    metric: str          # "cosine"
+    metric: str          # declarative only — scoring is ALWAYS cosine
     k: int               # neighbours averaged for the score
     threshold: float     # score strictly above this ⇒ OOD
     embed_dim: int
@@ -165,6 +165,15 @@ def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
     if cfg.method != "knn":
         logger.warning("Unsupported ood.embedding method %r — ignoring", cfg.method)
         return None
+    if cfg.metric != "cosine":
+        # `metric` is provenance, not a knob: EmbeddingOODScorer hard-codes
+        # cosine. Say so loudly rather than scoring cosine against a
+        # threshold that was calibrated for something else.
+        logger.warning(
+            "ood.embedding declares metric=%r but scoring is always cosine — "
+            "the threshold must be calibrated as a cosine distance",
+            cfg.metric,
+        )
     return cfg
 
 

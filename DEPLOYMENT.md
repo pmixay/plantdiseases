@@ -24,11 +24,12 @@ Android release build. Architecture and API surface live in
 ## 1. Prerequisites
 
 - **Python 3.14.** That is what CI runs (`.github/workflows/ci.yml`) and the
-  only version tested. `server/start.sh` accepts anything ≥ 3.9 and will
-  happily launch on an older interpreter — pin the venv interpreter explicitly.
+  only version tested. `server/start.sh` requires ≥ 3.10 (the syntax floor),
+  so it will still launch on an untested interpreter — pin the venv to 3.14
+  explicitly.
 - `pip install -r server/requirements.txt`. Serving is ONNX Runtime only; no
   `torch` import exists anywhere in `server/`, so torch is **not** a runtime
-  dependency (`start.sh` installs CPU torch anyway on every start — legacy).
+  dependency.
 - CPU-only is fine for the `gamma` (DINOv2 ViT-S/14) default. A GPU host is
   only worth it for `frontier_enabled=true` (ViT-B/14).
 - The model bundle (§2) must be on disk before first boot.
@@ -218,9 +219,8 @@ Blank, or an init failure, disables push rather than crashing.
 ## 5. Running in production
 
 `server/start.sh` is a **first-run convenience only**: it always binds
-`0.0.0.0`, honours only a `PORT` env var, and reinstalls CPU torch on every
-start. Its artefact pre-flight also accepts a bare `detector.pt`, which then
-fails at boot (§2). Use the unit below for anything long-lived.
+`0.0.0.0` and honours only a `PORT` env var. Use the unit below for anything
+long-lived.
 
 The API speaks plain HTTP and TLS terminates in nginx (§6), so uvicorn binds
 loopback. `0.0.0.0` is only correct when the TLS terminator is on another host
@@ -500,7 +500,7 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Process exits at boot, `DetectorLoadError` | Only `detector.pt` in `models/`; `start.sh`'s pre-flight accepts it but nothing loads a `.pt` at serve time | Export `detector.onnx` (notebook §6) |
+| Process exits at boot, `DetectorLoadError` | Only `detector.pt` in `models/`; nothing loads a `.pt` at serve time (`start.sh`'s pre-flight now refuses it too) | Export `detector.onnx` (notebook §6) |
 | Process exits at boot, `ClassifierLoadError` naming a class count | `classes.json -> class_names` length ≠ ONNX head width | Ship the `classes.json` that matches the trained head, in training order. There is no migration shim; deleting the file falls back to the 9 built-in defaults |
 | `/api/health` 503 `Pipeline not ready` | Models still loading, or the lifespan never completed | Wait out the cold load; if it persists, check the journal for the load error |
 | Every client shares one rate-limit bucket; mass 429/403 | `trusted_proxies` does not contain the actual peer address, or a CDN sits in front | §6.1 — verify with the `IP=` log walk, add `real_ip_header` for a CDN |

@@ -122,9 +122,9 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
     return payload
 
 
-def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> str | None:
+def _localized_title(name: str, target_lang: str) -> str | None:
     """Resolve the ``target_lang`` Wikipedia title for ``name`` via the
-    ``source_lang`` wiki's interwiki langlinks.
+    English wiki's interwiki langlinks.
 
     A direct title lookup on the localized wiki misses articles that exist
     under a synonym or a localized common name (very common for plants whose
@@ -138,7 +138,7 @@ def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> st
     except Exception:  # pragma: no cover
         return None
 
-    url = f"https://{source_lang}.wikipedia.org/w/api.php"
+    url = "https://en.wikipedia.org/w/api.php"
     params = {
         "action": "query",
         "titles": name,
@@ -171,13 +171,13 @@ def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> st
     return None
 
 
-def _translate(text: str, target_lang: str, source_lang: str = "en") -> str | None:
+def _translate(text: str, target_lang: str) -> str | None:
     """Machine-translate ``text`` into ``target_lang`` via Google Translate's
     free (keyless) ``gtx`` endpoint.
 
-    Best-effort and last-resort only — used when we could find a Wikipedia
-    summary in the source language but not the user's language, so the card
-    isn't English-only. Returns ``None`` on any failure (the caller then keeps
+    Best-effort and last-resort only — used when we could find an English
+    Wikipedia summary but not one in the user's language, so the card isn't
+    English-only. Returns ``None`` on any failure (the caller then keeps
     the original-language text). The endpoint is unofficial; we keep the
     request tiny and time-boxed and never let a failure surface to the user.
     """
@@ -197,7 +197,7 @@ def _translate(text: str, target_lang: str, source_lang: str = "en") -> str | No
     url = "https://translate.googleapis.com/translate_a/single"
     params = {
         "client": "gtx",
-        "sl": source_lang,
+        "sl": "en",
         "tl": target_lang,
         "dt": "t",
         "q": text,

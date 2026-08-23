@@ -632,7 +632,11 @@ def lookup_pet_toxicity(species: str | None) -> dict:
 # no entry. ``edema``/``sunburn_or_scorch`` are deferred-feedback-only
 # classes the classifier head doesn't yet predict (see module docstring
 # above) so a scan can't diagnose them today either — no entry until
-# that changes.
+# that changes. ``pests`` IS a shipped head class with a real protocol,
+# but has no entry here yet: naming a specific insecticide brand needs
+# the same market/registration check the fungicides above went through,
+# so its plan names the chemistry (insecticidal soap, neem, horticultural
+# oil) in the treatment steps and shows no products card.
 TREATMENT_PRODUCTS: dict[str, list[dict]] = {
     "powdery_mildew": [
         {

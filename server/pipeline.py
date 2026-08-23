@@ -61,11 +61,13 @@ from PIL import Image
 
 try:
     from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
+    from .config import get_bool
     from .conformal import ConformalConfig, load_conformal_config, prediction_set
     from .detector import LeafDetector
     from .ood import EmbeddingOODScorer, load_embedding_ood
 except ImportError:
     from classifier import DiseaseClassifier
+    from config import get_bool
     from conformal import ConformalConfig, load_conformal_config, prediction_set
     from detector import LeafDetector
     from ood import EmbeddingOODScorer, load_embedding_ood
@@ -243,8 +245,14 @@ TOP_K_ALTERNATIVES = 3
 # shot the single (mostly-background) full-frame vote is outweighed by
 # the leaf crops, so that case does not regress. Averaging probabilities
 # keeps temperature / conformal / OOD operating on the same quantity they
-# were calibrated on. Toggleable so the notebook can ablate the recovery.
-FOLD_WHOLE_FRAME_VOTE = True
+# were calibrated on.
+#
+# Config-toggleable (``limits.fold_whole_frame_vote``) so the notebook can
+# ablate the recovery and so an operator can drop it as a latency lever
+# without editing source — turning it off removes one full ViT forward per
+# scan. Read once at import like every other constant here, so a change
+# needs a restart.
+FOLD_WHOLE_FRAME_VOTE = get_bool("FOLD_WHOLE_FRAME_VOTE", True)
 
 # ── Blur gate ─────────────────────────────────────────────────────────
 # Variance-of-Laplacian score below this number means the photo is too

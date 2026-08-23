@@ -114,7 +114,7 @@ data class ScanEntity(
     // Per-class probabilities from the classifier (JSON map).
     @ColumnInfo(name = "all_probs") val allProbs: String? = null,
     // Diagnostic flags from the pipeline post-processing rules
-    // (e.g. "uncertain_healthy", "detector_classifier_mismatch"),
+    // (e.g. "uncertain_healthy", "nap_ood_gated"),
     // serialised as a JSON array of strings.
     @ColumnInfo(name = "warnings") val warnings: String? = null,
     // Optional foreign key into `plants`. Null until the user assigns the

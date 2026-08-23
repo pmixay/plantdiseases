@@ -424,7 +424,7 @@ def identify_species(
 
     try:
         # Lazy import — only the identify path needs requests.
-        import requests  # noqa: WPS433
+        import requests
 
         # Pass the API key via the query *params* argument rather than
         # interpolating it into the URL string: a raised requests
@@ -940,7 +940,7 @@ def _call_openrouter(
     subsets of ``prompt_tokens``, not extra tokens, so they are reported
     alongside the totals rather than added to them.
     """
-    import requests  # noqa: WPS433
+    import requests
 
     messages: list[dict] = []
     if system_text:
@@ -2252,6 +2252,28 @@ _DISEASE_PROTOCOL: dict[str, dict] = {
         "follow_up_days": 14,
         "fertilise_weeks": 0,
     },
+    "pests": {
+        "key_action": "Isolate the plant, wipe the colonies off with 70% isopropyl, then smother survivors with a weekly oil or soap spray.",
+        "treatment": [
+            "Isolate the plant immediately — mealybugs and scale crawl to neighbours.",
+            "Dab visible clusters with a cotton swab dipped in 70% isopropyl; scrape scale shells off with a soft toothbrush.",
+            "Spray the whole plant — leaf undersides, axils and stems — with insecticidal soap, neem or horticultural oil; repeat every 7 days for 3–4 weeks.",
+            "Prune badly encrusted stems and bin them in a sealed bag.",
+            "For a heavy or persistent infestation use a systemic insecticide per label, and check the root ball — root mealybugs hide in the substrate.",
+        ],
+        "sanitation": [
+            "Wipe the pot, saucer and nearby shelf with soapy water — crawlers and egg sacs sit off the plant too.",
+            "Wash hands and sanitise pruners with 70% isopropyl before touching another plant.",
+        ],
+        "isolation": True,
+        "red_flags": [
+            "New white tufts or brown bumps within 7 days of a treatment round.",
+            "Sticky honeydew or black sooty mould keeps coming back.",
+            "A neighbouring plant develops the same bumps despite isolation.",
+        ],
+        "follow_up_days": 7,
+        "fertilise_weeks": 6,
+    },
     "edema": {
         "key_action": "Reduce watering frequency, raise light and airflow.",
         "watering_days": "as_needed",
@@ -2414,6 +2436,25 @@ _DISEASE_PROTOCOL_RU: dict[str, dict] = {
         "red_flags": [
             "Угнетённый рост или мозаичные узоры на новых листьях.",
             "Симптомы появились у соседнего растения в течение 30 дней.",
+        ],
+    },
+    "pests": {
+        "key_action": "Изолируйте растение, снимите колонии 70%-м изопропиловым спиртом, затем еженедельно опрыскивайте маслом или инсектицидным мылом.",
+        "treatment": [
+            "Сразу изолируйте растение — червецы и щитовки переползают на соседние.",
+            "Обработайте видимые скопления ватной палочкой с 70%-м изопропиловым спиртом; щитки соскоблите мягкой зубной щёткой.",
+            "Опрыскайте всё растение — низ листьев, пазухи и стебли — инсектицидным мылом, маслом нима или садовым маслом; повторяйте каждые 7 дней в течение 3–4 недель.",
+            "Сильно облепленные стебли срежьте и выбросьте в закрытом пакете.",
+            "При сильном или упорном заражении примените системный инсектицид по инструкции и проверьте корневой ком — корневые червецы прячутся в субстрате.",
+        ],
+        "sanitation": [
+            "Промойте горшок, поддон и полку рядом мыльной водой — личинки и яйцекладки прячутся и вне растения.",
+            "Мойте руки и стерилизуйте секатор 70%-м изопропиловым спиртом, прежде чем трогать другое растение.",
+        ],
+        "red_flags": [
+            "Новые белые комочки или коричневые щитки в течение 7 дней после обработки.",
+            "Липкая медвяная роса или чёрный сажистый налёт возвращаются снова.",
+            "У соседнего растения появились такие же щитки, несмотря на изоляцию.",
         ],
     },
     "edema": {
