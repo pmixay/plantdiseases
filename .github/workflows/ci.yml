@@ -40,12 +40,27 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
-      # fetch-depth: 0 is load-bearing, not a nicety. On a `push` event
-      # paths-filter diffs against `github.event.before`, and with the default
-      # depth-1 checkout that commit is not in the clone — so paths-filter
-      # shells out to `git fetch` to get it. That fetch has no credentials
-      # (persist-credentials: false, correctly, keeps the token out of
-      # .git/config) and dies with:
+      # WHAT THIS GATES ON, because it is not what you would guess and the
+      # comment here used to say otherwise. With no `base` input, paths-filter
+      # compares the WHOLE BRANCH against the default branch, not the push:
+      #   git merge-base origin/main origin/<branch>
+      #   git diff --name-status origin/main...origin/<branch>
+      # So gating is per-BRANCH. Once any commit on a branch touches
+      # `android/**`, every later push on that branch runs the android job,
+      # including a docs-only one. On `main` it behaves differently — the
+      # branch being compared is the one that was pushed, so the action falls
+      # back to `github.event.before` and gates per-push there.
+      # That is a safety property, not a bug: a branch's head is always
+      # verified against the tree it will actually merge with. The cost is
+      # small because Gradle's build cache serves an unchanged variant in
+      # about 90 seconds.
+      #
+      # fetch-depth: 0 is load-bearing either way, and this is the failure it
+      # prevents. paths-filter needs the base object (the merge-base here,
+      # `github.event.before` on main) present in the clone; with the default
+      # depth-1 checkout it is not, so paths-filter shells out to `git fetch`
+      # to get it. That fetch has no credentials (persist-credentials: false,
+      # correctly, keeps the token out of .git/config) and dies with:
       #   fatal: could not read Username for 'https://github.com'
       # which failed the `changes` job and, through `needs:`, SKIPPED the
       # android and server jobs entirely. Every push to main since #158 was

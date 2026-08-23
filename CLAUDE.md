@@ -84,7 +84,12 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 Push-only on `main`, `claude/**`, `work/**`, `codex/**`; there is deliberately no
 `pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
 the **android** job on `android/**` and the **server** job on `server/**`, each plus
-the workflow file — so a push touching only root files or `docs/**` runs **neither**.
+the workflow file. It gates **per branch, not per push**: with no `base` input
+paths-filter diffs `origin/main...origin/<branch>`, so once any commit on a branch
+touches `android/**`, every later push on that branch runs the android job — a
+docs-only one included. Only a branch whose *entire* diff against main is root files
+or `docs/**` runs neither job. (On `main` the compared branch is the one pushed, so
+there it falls back to `github.event.before` and does gate per push.)
 Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
 of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
 verification step.
