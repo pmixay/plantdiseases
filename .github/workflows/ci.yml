@@ -216,7 +216,7 @@ jobs:
         # properties — so that key cannot live in the workflow. Kept because
         # Gradle 10 makes the config cache mandatory and this is what catches
         # an incompatible change on the commit that introduces it.
-        run: ./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --no-build-cache --configuration-cache --stacktrace --profile
+        run: ./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 
       # Prove the published APK is signed with the release key (when one is
       # configured) instead of silently falling back to the debug key, and
@@ -264,7 +264,7 @@ jobs:
       # JUnit XML and the packaging logs live outside build/reports, so those
       # are the two extra paths.
       - name: Upload build reports on failure
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: android-build-reports
@@ -272,7 +272,6 @@ jobs:
             android/app/build/reports/**
             android/app/build/test-results/**
             android/app/build/outputs/logs/**
-            android/build/reports/profile/**
           if-no-files-found: ignore
           retention-days: 7
 
