@@ -187,6 +187,19 @@ android {
             // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
             // report it points at lives on the runner, not in the log.
             all {
+                // Fan the test classes out over the machine's cores. This is
+                // the single biggest lever on CI wall-clock: the suite is
+                // ~58 Robolectric classes and each one is CPU-bound (every
+                // fork instruments android-all into its own sandbox
+                // classloader), yet one fork means one core. With a
+                // single-module build Gradle has no other task to run
+                // alongside it either, so the rest of the runner sat idle for
+                // four minutes. Forks are separate JVMs, so this makes tests
+                // MORE isolated than the shared-JVM default, not less.
+                // Capped at 4: the fork count multiplies peak heap, and the
+                // GitHub runner this has to fit in is 2 cores / 7 GB.
+                it.maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
+
                 it.testLogging {
                     events("failed")
                     exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

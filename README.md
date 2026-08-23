@@ -244,8 +244,9 @@ plantdiseases/
 │   ├── train_notebook.ipynb End-to-end training recipe
 │   └── models/             MODEL_CARD.md + .gitkeep (weights provisioned out of band)
 ├── docs/                   ROADMAP.md (live model status), DATASET_LABELING_PLAN.md
-├── .github/workflows/      ci.yml — push-only CI (ruff + pytest; ktlint + detekt
-│                           + unit tests + assembleRelease)
+├── .github/                ci.yml — push-only CI (ruff + pytest; ktlint + detekt
+│                           + unit tests ‖ assembleRelease), plus the composite
+│                           actions/setup-android-build the two Android jobs share
 ├── DEPLOYMENT.md           Production deployment guide
 ├── CLAUDE.md               Working notes for agents in this repo
 └── README.md               You are here

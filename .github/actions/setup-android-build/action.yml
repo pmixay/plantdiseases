@@ -1,0 +1,58 @@
+name: Set up Android build
+description: >
+  JDK + Android SDK + Gradle, shared by the two Android jobs (lint/test and
+  release APK) so their toolchains cannot drift apart. Checkout is NOT part of
+  this action — a local composite action can only be resolved once the repo is
+  already on disk, so each caller runs actions/checkout first.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "17"
+
+    # The runner image already ships the Android SDK: cmdline-tools/latest,
+    # build-tools (apksigner) and the platforms this build compiles against.
+    # So this step exists for ONE reason — accepting the SDK licences, which
+    # is what lets AGP fetch a platform itself if the image ever drifts behind
+    # compileSdk.
+    #
+    #   packages: ''            — the default is `tools platform-tools`, and
+    #     `tools` is SDK Tools 26.0.0: monkeyrunner, hierarchyviewer, jython,
+    #     SWT, the old `android` script. Deprecated for years, ~15s to download
+    #     and unzip every run, and untouched by an AGP build or by apksigner.
+    #     platform-tools (adb) is only for on-device work, which CI never does
+    #     (connectedDebugAndroidTest is deliberately not run here).
+    #   log-accepted-android-sdk-licenses: false — the licences are still
+    #     accepted, just not echoed. The default dumped ~1,000 lines of Google
+    #     TV / Android XR licence text into the log, burying the build output.
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        cmdline-tools-version: latest
+        packages: ''
+        log-accepted-android-sdk-licenses: false
+
+    # gradle-wrapper.jar is committed executable code that runs before the
+    # build — and, in the release job, alongside the signing secrets. Validate
+    # it against Gradle's published known-good checksums so a swapped-in
+    # wrapper cannot silently exfiltrate them. The action scans the whole
+    # checkout, so it finds android/gradle/ on its own.
+    - name: Validate Gradle wrapper
+      uses: gradle/actions/wrapper-validation@v6
+
+    # Restores the Gradle home (dependencies, transforms, wrapper dist, local
+    # build cache) and reuses it across runs, so unchanged tasks aren't re-run.
+    # Only the default branch writes the cache; branch builds read it.
+    # Pinned to v6 (latest): v5+ runs on Node 24, clearing the Node 20 runtime
+    # deprecation warning that v4 emitted.
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant gradlew execute permission
+      shell: bash
+      working-directory: android
+      run: chmod +x gradlew

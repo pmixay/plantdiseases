@@ -68,7 +68,7 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 
 ### Android (`cd android`)
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest    # the three cheap CI tasks (CI also appends assembleRelease)
+./gradlew ktlintCheck detekt testDebugUnitTest    # exactly what CI's android-check job runs
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew assembleRelease                # R8/minified release APK (the shipping artefact)
 ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/   # point at a local server
@@ -83,11 +83,16 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 ### CI (`.github/workflows/ci.yml`)
 Push-only on `main`, `claude/**`, `work/**`, `codex/**`; there is deliberately no
 `pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
-the **android** job on `android/**` and the **server** job on `server/**`, each plus
-the workflow file — so a push touching only root files or `docs/**` runs **neither**.
-Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
-of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
-verification step.
+the two **android** jobs on `android/**` and the **server** job on `server/**`, each
+plus the workflow file — so a push touching only root files or `docs/**` runs
+**none** of them.
+Server job: `ruff check .` then `pytest tests -q`. The Android work is **two parallel
+jobs**, because a single-module Gradle build runs its tasks serially and the release
+APK should not queue behind the test task: `android-check` runs
+`ktlintCheck detekt testDebugUnitTest`, `android-release` runs `assembleRelease` plus
+the APK signing/FCM verification step. Only `android-release` gets the signing and FCM
+secrets. Their shared JDK/SDK/Gradle setup lives in the composite action
+`.github/actions/setup-android-build/`, so the two toolchains cannot drift.
 
 ## ML work — use the bundled skill
 
