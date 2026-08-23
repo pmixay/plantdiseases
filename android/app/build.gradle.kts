@@ -187,17 +187,24 @@ android {
             // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
             // report it points at lives on the runner, not in the log.
             all {
-                // Fan the test classes out over the machine's cores. This is
-                // the single biggest lever on CI wall-clock: the suite is
-                // ~58 Robolectric classes and each one is CPU-bound (every
-                // fork instruments android-all into its own sandbox
-                // classloader), yet one fork means one core. With a
-                // single-module build Gradle has no other task to run
-                // alongside it either, so the rest of the runner sat idle for
-                // four minutes. Forks are separate JVMs, so this makes tests
-                // MORE isolated than the shared-JVM default, not less.
-                // Capped at 4: the fork count multiplies peak heap, and the
-                // GitHub runner this has to fit in is 2 cores / 7 GB.
+                // Fan the test classes out over the machine's cores: ~58
+                // Robolectric classes, each CPU-bound instrumenting
+                // android-all into its own sandbox classloader, and one fork
+                // means one core. Forks are separate JVMs, so this makes the
+                // tests MORE isolated than the shared-JVM default, not less.
+                // Capped at 4 because the fork count multiplies peak heap and
+                // the GitHub runner this has to fit in is 2 cores / 7 GB.
+                //
+                // What this is and is not worth, measured on a --profile run:
+                // in a full CI invocation the test task overlaps
+                // minifyReleaseWithR8 (Gradle runs both as async workers —
+                // task time summed to 15m44 against a 9m33 build), and R8 at
+                // 5m08 is the longer of the two, so forking buys little wall
+                // clock there and does compete with R8 for the two cores.
+                // It pays when the test task IS the critical path: a run whose
+                // release variant comes from the build cache, and
+                // `./gradlew testDebugUnitTest` on its own, where the suite
+                // goes from minutes to ~20-30s.
                 it.maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 
                 it.testLogging {

@@ -183,10 +183,23 @@ jobs:
         run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
       # One Gradle invocation runs lint + unit tests + the R8 release package,
-      # sharing a single configuration phase and warm daemon (much faster than
-      # separate `--no-daemon` calls, and this is a single-module build, so a
-      # second job would only buy a second cold daemon plus a second cache
-      # restore). Only the release variant is packaged — it's the shipping
+      # sharing a single configuration phase and warm daemon. Gradle overlaps
+      # these more than the serial-looking log suggests — a --profile run of a
+      # cold build summed 15m44 of task time into 9m33 of wall clock, because
+      # AGP submits work as async workers. The shape of that cold build, worth
+      # knowing before trying to speed this up again:
+      #
+      #   minifyReleaseWithR8        5m08   <- the critical path
+      #   testDebugUnitTest          2m34   (runs alongside R8)
+      #   compileDebugKotlin         1m58
+      #   compileReleaseKotlin       1m58
+      #   kspDebugKotlin / Release   0m43 / 0m37
+      #
+      # So R8 is the tail, it already overlaps the tests, and on a two-core
+      # runner everything else is competing with it for CPU. The remaining
+      # levers are giving R8 its own runner (a second job) or not packaging
+      # the release APK on every branch push — both trade away something this
+      # workflow deliberately keeps. Only the release variant is packaged — it's the shipping
       # artefact and the only build R8 can break (e.g. a stripped Gson /
       # kotlinx.serialization reflection class); lint/test already compile the
       # debug sources. With RELEASE_STORE_FILE set the APK is signed with your
