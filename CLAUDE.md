@@ -68,7 +68,7 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 
 ### Android (`cd android`)
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest    # the three cheap CI tasks (CI also appends assembleRelease)
+./gradlew ktlintCheck detekt testDebugUnitTest    # exactly what CI's android-check job runs
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew assembleRelease                # R8/minified release APK (the shipping artefact)
 ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/   # point at a local server
@@ -84,10 +84,32 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 Push-only on `main`, `claude/**`, `work/**`, `codex/**`; there is deliberately no
 `pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
 the **android** job on `android/**` and the **server** job on `server/**`, each plus
-the workflow file — so a push touching only root files or `docs/**` runs **neither**.
+the workflow file. It gates **per branch, not per push**: with no `base` input
+paths-filter diffs `origin/main...origin/<branch>`, so once any commit on a branch
+touches `android/**`, every later push on that branch runs the android job — a
+docs-only one included. Only a branch whose *entire* diff against main is root files
+or `docs/**` runs neither job. (On `main` the compared branch is the one pushed, so
+there it falls back to `github.event.before` and does gate per push.)
 Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
 of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
 verification step.
+
+**Where the Android minutes go**, from a `--profile` run of a cold build — worth reading
+before trying to speed it up, because the plain-console task headers mislead. Gradle
+overlaps this work as async workers (task time summed to 15m44 against a 9m33 build),
+so R8 and the tests run *concurrently* and R8 is the tail: `minifyReleaseWithR8` 5m08,
+`testDebugUnitTest` 2m34, `compileDebugKotlin` and `compileReleaseKotlin` 1m58 each,
+KSP 43s/37s. Two support pieces are easy to undo by accident: `maxParallelForks` in
+`app/build.gradle.kts` (little wall clock in a full invocation, where it competes with
+R8 for the runner's two cores, but a large win whenever the test task *is* the critical
+path — a cache-served release variant, or `./gradlew testDebugUnitTest` alone) and the
+`~/.m2/repository/org/robolectric` cache step (Robolectric fetches 338 MB of
+`android-all` jars at test runtime through its own Maven resolver, which the
+Gradle-home cache does not cover).
+
+Expect ~1.5 min when a push changes no Android source (main's build cache serves
+almost every task) and ~8-10 min when it does. `gradle/actions/setup-gradle` only
+*writes* that cache on `main`; branches read it.
 
 ## ML work — use the bundled skill
 

@@ -40,12 +40,27 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       server: ${{ steps.filter.outputs.server }}
     steps:
-      # fetch-depth: 0 is load-bearing, not a nicety. On a `push` event
-      # paths-filter diffs against `github.event.before`, and with the default
-      # depth-1 checkout that commit is not in the clone — so paths-filter
-      # shells out to `git fetch` to get it. That fetch has no credentials
-      # (persist-credentials: false, correctly, keeps the token out of
-      # .git/config) and dies with:
+      # WHAT THIS GATES ON, because it is not what you would guess and the
+      # comment here used to say otherwise. With no `base` input, paths-filter
+      # compares the WHOLE BRANCH against the default branch, not the push:
+      #   git merge-base origin/main origin/<branch>
+      #   git diff --name-status origin/main...origin/<branch>
+      # So gating is per-BRANCH. Once any commit on a branch touches
+      # `android/**`, every later push on that branch runs the android job,
+      # including a docs-only one. On `main` it behaves differently — the
+      # branch being compared is the one that was pushed, so the action falls
+      # back to `github.event.before` and gates per-push there.
+      # That is a safety property, not a bug: a branch's head is always
+      # verified against the tree it will actually merge with. The cost is
+      # small because Gradle's build cache serves an unchanged variant in
+      # about 90 seconds.
+      #
+      # fetch-depth: 0 is load-bearing either way, and this is the failure it
+      # prevents. paths-filter needs the base object (the merge-base here,
+      # `github.event.before` on main) present in the clone; with the default
+      # depth-1 checkout it is not, so paths-filter shells out to `git fetch`
+      # to get it. That fetch has no credentials (persist-credentials: false,
+      # correctly, keeps the token out of .git/config) and dies with:
       #   fatal: could not read Username for 'https://github.com'
       # which failed the `changes` job and, through `needs:`, SKIPPED the
       # android and server jobs entirely. Every push to main since #158 was
@@ -55,7 +70,9 @@ jobs:
       # paths-filter never fetches and never needs a credential. The
       # alternative — re-enabling persist-credentials here — would put the
       # token back in .git/config to work around a missing object; this keeps
-      # the hardening and fixes the actual cause.
+      # the hardening and fixes the actual cause. A partial clone (filter:
+      # blob:none) would shave a few seconds but reintroduces lazy fetches
+      # against that same credential-less remote, so it stays a full clone.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -99,10 +116,29 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # The runner image already ships the Android SDK: cmdline-tools/latest,
+      # build-tools (apksigner) and the platforms this build compiles against.
+      # So this step exists for ONE reason — accepting the SDK licences, which
+      # is what lets AGP fetch a platform itself if the image ever drifts
+      # behind compileSdk. Both inputs below are non-default and deliberate:
+      #
+      #   packages: ''  — the default is `tools platform-tools`, and `tools` is
+      #     SDK Tools 26.0.0: monkeyrunner, hierarchyviewer, jython, SWT, the
+      #     old `android` script. Deprecated for years, ~15s to download and
+      #     unzip every run, and touched by neither an AGP build nor apksigner.
+      #     platform-tools (adb) is only for on-device work, which CI never
+      #     does — connectedDebugAndroidTest is deliberately not run here.
+      #   log-accepted-android-sdk-licenses: false — the licences are still
+      #     accepted, just not echoed. The default dumped ~1,000 lines of
+      #     Google TV and Android XR licence text over the build output.
+      #
+      # Together these took the step from 21s to 7s.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: latest
+          packages: ''
+          log-accepted-android-sdk-licenses: false
 
       # Presence check only. The secret is scoped to this step and never
       # leaves it; later steps branch on the boolean output instead, so the
@@ -135,6 +171,22 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      # Robolectric resolves its `android-all-instrumented` jars at TEST
+      # RUNTIME through its own Maven resolver, into ~/.m2/repository — not
+      # through Gradle, so setup-gradle's Gradle-home cache never covered them
+      # and every run re-downloaded the lot. Measured at 338 MB on the first
+      # run that saved this entry. Scoped to org/robolectric so it cannot
+      # collide with the settings.xml/toolchains.xml setup-java writes beside
+      # it. Keyed on build.gradle.kts (where the Robolectric version lives) so
+      # a version bump refreshes it, with a prefix restore-key so an unrelated
+      # edit to that file still restores the jars.
+      - name: Cache Robolectric android-all jars
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('android/app/build.gradle.kts') }}
+          restore-keys: robolectric-${{ runner.os }}-
+
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
@@ -146,13 +198,27 @@ jobs:
         run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
       # One Gradle invocation runs lint + unit tests + the R8 release package,
-      # sharing a single configuration phase and warm daemon (much faster than
-      # three separate `--no-daemon` calls). Only the release variant is
-      # packaged — it's the shipping artefact and the only build R8 can break
-      # (e.g. a stripped Gson / kotlinx.serialization reflection class);
-      # lint/test already compile the debug sources. With RELEASE_STORE_FILE
-      # set the APK is signed with your key, otherwise it falls back to the
-      # debug key.
+      # sharing a single configuration phase and warm daemon. Gradle overlaps
+      # these more than the serial-looking log suggests — a --profile run of a
+      # cold build summed 15m44 of task time into 9m33 of wall clock, because
+      # AGP submits work as async workers. The shape of that cold build, worth
+      # knowing before trying to speed this up again:
+      #
+      #   minifyReleaseWithR8        5m08   <- the critical path
+      #   testDebugUnitTest          2m34   (runs alongside R8)
+      #   compileDebugKotlin         1m58
+      #   compileReleaseKotlin       1m58
+      #   kspDebugKotlin / Release   0m43 / 0m37
+      #
+      # So R8 is the tail, it already overlaps the tests, and on a two-core
+      # runner everything else is competing with it for CPU. The remaining
+      # levers are giving R8 its own runner (a second job) or not packaging
+      # the release APK on every branch push — both trade away something this
+      # workflow deliberately keeps. Only the release variant is packaged — it's the shipping
+      # artefact and the only build R8 can break (e.g. a stripped Gson /
+      # kotlinx.serialization reflection class); lint/test already compile the
+      # debug sources. With RELEASE_STORE_FILE set the APK is signed with your
+      # key, otherwise it falls back to the debug key.
       - name: ktlint, detekt, test & assemble release APK (R8)
         env:
           RELEASE_STORE_FILE: ${{ steps.signing.outputs.configured == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
@@ -168,9 +234,16 @@ jobs:
           FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
           FCM_SENDER_ID: ${{ secrets.FCM_SENDER_ID }}
         # ktlint + detekt replace Android Lint as the code-quality gate.
-        # --configuration-cache reuses the resolved task graph across runs (the
-        # cache itself is restored by gradle/actions/setup-gradle), skipping the
-        # configuration phase when nothing structural changed.
+        # --configuration-cache is a compatibility gate here rather than a
+        # speed win: the entry lives in the project's own .gradle/ directory,
+        # which setup-gradle does not cache, so CI stores one every run and
+        # restores none ("Calculating task graph as no cached configuration is
+        # available" on every build). Caching it would mean handing
+        # gradle/actions a `cache-encryption-key`, and a config-cache entry can
+        # capture values read during configuration — including the signing
+        # properties — so that key cannot live in the workflow. Kept because
+        # Gradle 10 makes the config cache mandatory and this is what catches
+        # an incompatible change on the commit that introduces it.
         run: ./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 
       # Prove the published APK is signed with the release key (when one is
@@ -213,41 +286,24 @@ jobs:
             echo "No release keystore secret set; debug-signed fallback is expected."
           fi
 
-      - name: Upload ktlint + detekt reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: lint-report
-          path: |
-            android/app/build/reports/ktlint/**
-            android/app/build/reports/detekt/**
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload unit test report on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: unit-test-report
-          path: |
-            android/app/build/reports/tests/testDebugUnitTest/**
-            android/app/build/test-results/testDebugUnitTest/**
-          if-no-files-found: ignore
-          retention-days: 7
-
+      # One artifact, not three. This used to be an upload of the ktlint +
+      # detekt reports, then one of the test reports, then one of
+      # `app/build/reports/**` — which is a superset of the first two. Only the
+      # JUnit XML and the packaging logs live outside build/reports, so those
+      # are the two extra paths.
       - name: Upload build reports on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: build-reports
+          name: android-build-reports
           path: |
             android/app/build/reports/**
+            android/app/build/test-results/**
             android/app/build/outputs/logs/**
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Upload release APK (R8, signed with release or debug key)
-        if: success()
         uses: actions/upload-artifact@v7
         with:
           name: app-release-apk
@@ -289,10 +345,10 @@ jobs:
             server/requirements.txt
             server/requirements-dev.txt
 
+      # No `pip install --upgrade pip` first: setup-python ships a current pip
+      # and the upgrade only bought a wheel download and a version check.
       - name: Install server + dev dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install --disable-pip-version-check -r requirements-dev.txt
 
       - name: Lint (ruff)
         run: ruff check .

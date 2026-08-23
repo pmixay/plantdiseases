@@ -470,9 +470,10 @@ every merge.
 
 **CI** (`.github/workflows/ci.yml`) is push-only, on `main`, `claude/**`,
 `work/**` and `codex/**`, with a `paths-filter` running the **android** and
-**server** jobs only when their trees change. Android: `ktlintCheck` +
-`detekt` + `testDebugUnitTest` + R8 `assembleRelease`. Server: `ruff` +
-`pytest`, on Python 3.14. Dependency updates are made by hand.
+**server** jobs only when their trees change. Android: one Gradle invocation of
+`ktlintCheck` + `detekt` + `testDebugUnitTest` + R8 `assembleRelease`, then APK
+signing verification. Server: `ruff` + `pytest`, on Python 3.14. Dependency
+updates are made by hand.
 
 No `pull_request` trigger, deliberately: every branch that reaches a PR was
 pushed here first, so a PR trigger only duplicates runs (they land under a
