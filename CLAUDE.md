@@ -120,9 +120,9 @@ bundle, the feedback→retraining loop) goes through the project skill at
 `scripts/`). Lean on its discipline (group-aware splits, paired-bootstrap ship gates,
 calibration + conformal, honest-uncertainty refusal) instead of ad-hoc ML reasoning.
 Two helpers: `scripts/nbtool.py list|section N|grep PATTERN` navigates the huge
-notebook without reading it whole; `scripts/check_bundle.py server/models/` grades a
-bundle against the boot contract — deliberately stricter than the runtime on
-`classes.json`, so it fails a bundle the server would boot on code defaults.
+notebook without reading it whole; `server/tools/verify_bundle.py models/` grades a
+notebook-produced `bundle_manifest.json` without loading graphs. The older skill
+script `scripts/check_bundle.py` is not the production boot contract.
 
 ## Architecture — the invariants
 
@@ -137,14 +137,16 @@ bundle against the boot contract — deliberately stricter than the runtime on
 
 Two safety gates wrap this — they are the reason for the architecture. The **blur
 gate** (variance-of-Laplacian) runs *before* Stage 1 and short-circuits an unfocused
-shot to `not_a_plant`. The **OOD AND-gate** fires `not_a_plant` only when detector
-confidence *and* a classifier-side OOD signal agree *and* the classifier's own
-`not_a_plant` head does not veto; the head-mass floor is checked first and is
-per-bundle configurable via `classes.json -> ood.nap_head_mass_floor`, where `null`
-restores the two-signal behaviour. The OOD signal is an embedding-space k-NN distance
-on the CLS vector (`ood.py`) with a MaxLogit-floor fallback. Calibration adds
-temperature scaling + RAPS conformal prediction sets (`conformal.py`) so the server can
-say "I'm not sure" honestly.
+shot to an `image_quality` abstention (empty classifier diagnostics). The **OOD AND-gate**
+abstains (`nap_ood_gated`) only when detector confidence *and* a classifier-side OOD
+signal agree *and* the classifier's own `not_a_plant` head does not veto; a natural
+trained-head `not_a_plant` argmax is already a rejection and skips the overlay. The
+head-mass floor is checked first and is per-bundle configurable via
+`classes.json -> ood.nap_head_mass_floor`, where `null` restores the two-signal
+behaviour. The OOD signal is an embedding-space k-NN distance on the CLS vector
+(`ood.py`) with a MaxLogit-floor fallback. Calibration adds temperature scaling +
+RAPS conformal prediction sets (`conformal.py`) so the server can say "I'm not sure"
+honestly.
 
 **Model families.** Each bundle declares its tier in `classes.json -> model_family`;
 `/api/capabilities` reports the tiers to the app's scan-screen picker. `aqua` runs
@@ -156,7 +158,7 @@ falls back to the default instead of erroring, and an unavailable family answers
 
 **Server module map** (`main.py` is the HTTP layer — the `/api` router, middleware
 stack, request validation, metrics — and wires everything together):
-- `pipeline.py` / `detector.py` / `classifier.py` / `ood.py` / `conformal.py` — inference + calibration
+- `bundle.py` / `pipeline.py` / `detector.py` / `classifier.py` / `ood.py` / `conformal.py` — fail-closed artefact contract + inference + calibration
 - `ai_services.py` — PlantNet species ID, OpenRouter chat doctor, care plans, progression (all **optional**, graceful without keys)
 - `diseases_data.py` / `symptoms.py` / `species_info.py` — bilingual (EN/RU) content databases + no-photo symptom triage
 - `feedback.py` (append-only training-signal store + per-class accuracy) / `labeling.py` / `labeling_auto.py` — the data loop; `tools/` has offline eval + data export
@@ -188,16 +190,17 @@ detail screen only.
 ## Conventions & gotchas
 
 - **Model artefacts are never committed and never auto-downloaded**; there is no demo
-  fallback. The server is **fail-fast**, by these resolution rules: boot needs
-  `models/detector.onnx` (an `.onnx` only — a `.pt` never loads, whatever
-  `DETECTOR_PATH` points at) plus one of `classifier_int8.onnx` / `classifier.onnx`
-  (int8 wins). `classes.json`, `temperature.json`, `conformal.json`, the OOD embedding
-  bank and `model_card.json` are **optional** — the runtime falls back to code
-  defaults, `T=1.0`, no prediction set, MaxLogit-floor OOD. But the class list in force
-  (`classes.json` if present, else `classifier.DEFAULT_CLASS_NAMES`) must match the
-  ONNX head width exactly or boot raises `ClassifierLoadError`; there is no
-  pad/truncate shim. Build artefacts with `train_notebook.ipynb` (§6/§6b); the Aqua
-  TFLite model and disease-guide photos are provisioned out of band in `server/static/`.
+  fallback. The server is **fail-fast**: boot requires a notebook-produced
+  `models/bundle_manifest.json`. `server/bundle.py` / `tools/verify_bundle.py`
+  bind every listed artefact by path, byte size and SHA-256, reject mixed or
+  legacy trees, and select exactly one classifier graph (`fallback_allowed=false`).
+  `classes.json`, `temperature.json` and `conformal.json` are required by that
+  manifest. `ood.embedding: null` is the MaxLogit-only path; a declared embedding
+  object requires the matching bank. A class list that does not match the ONNX
+  head width still raises `ClassifierLoadError` with no pad/truncate shim.
+  Preflight: `python tools/verify_bundle.py models/`. Build artefacts with
+  `train_notebook.ipynb` (§6/§6b); the Aqua TFLite model and disease-guide
+  photos are provisioned out of band in `server/static/`.
 - **Config precedence** (`config.py`): `server/config.json` (gitignored; copy from
   `config.example.json`) **wins over** the same-named env var **wins over** the
   default. Blank handling is asymmetric — a blank value in `config.json` counts as

@@ -87,6 +87,23 @@ class MyScanRepliesActivity : AppCompatActivity() {
                 return@launch
             }
             renderScan(scan)
+            if (scanRepository.isAbstainedScan(scan)) {
+                // A request persisted before abstention-aware uploads may still
+                // point at a rejected raw argmax. Keep the photo/correction
+                // context, but do not query or render disease-scoped opinions.
+                binding.llRepliesStatus.visibility = View.GONE
+                binding.tvRepliesVotesHeader.visibility = View.GONE
+                binding.llRepliesGraph.visibility = View.GONE
+                binding.tvRepliesListHeader.visibility = View.GONE
+                binding.llRepliesList.removeAllViews()
+                binding.tvRepliesEmpty.apply {
+                    visibility = View.VISIBLE
+                    text = getString(R.string.inconclusive_result_body)
+                    isClickable = false
+                    setOnClickListener(null)
+                }
+                return@launch
+            }
             scanRepository.getCommunityOpinions(
                 scanId,
                 TelemetryIds.userPseudoId(this@MyScanRepliesActivity),
@@ -122,6 +139,12 @@ class MyScanRepliesActivity : AppCompatActivity() {
             .load(File(scan.imagePath))
             .transform(CenterCrop(), RoundedCorners(24))
             .into(binding.ivRepliesPhoto)
+
+        if (scanRepository.isAbstainedScan(scan)) {
+            binding.tvRepliesDiagnosis.text = getString(R.string.inconclusive_diagnosis_name)
+            binding.tvRepliesConfidence.visibility = View.GONE
+            return
+        }
 
         val diseaseKey = scanRepository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')

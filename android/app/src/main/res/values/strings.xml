@@ -70,9 +70,9 @@
     <string name="status_not_a_plant">Not a Plant</string>
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
-    <string name="status_blurry_or_not_a_plant">Couldn\'t analyze</string>
-    <string name="blurry_or_not_a_plant_diagnosis_name">Blurry photo or not a plant</string>
-    <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
+    <string name="status_inconclusive">Scan inconclusive</string>
+    <string name="inconclusive_diagnosis_name">Inconclusive scan</string>
+    <string name="inconclusive_result_body">The image could not be accepted for diagnosis. Retake a sharp, well-lit photo with one leaf filling most of the frame.</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
 
@@ -914,6 +914,10 @@
     <string name="model_family_frontier">Frontier</string>
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
+    <string name="model_unavailable_title">Model unavailable</string>
+    <string name="model_unavailable_detail">This model tier became unavailable. Choose Gamma and try again.</string>
+    <string name="analysis_contract_error_title">Couldn\'t trust this result</string>
+    <string name="analysis_contract_error_detail">The diagnosis came back incomplete or inconsistent. Retake a sharp, well-lit photo of a single leaf.</string>
     <string name="model_family_offline_badge">Offline</string>
     <string name="model_family_needs_connection">Needs a connection</string>
     <string name="model_family_cd">Choose diagnosis model</string>

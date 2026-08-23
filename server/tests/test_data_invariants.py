@@ -17,6 +17,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NB_PATH = REPO_ROOT / "server" / "train_notebook.ipynb"
 
@@ -211,6 +213,78 @@ def test_holdout_leakage_is_resolved_on_the_train_side():
     ), "the dropping audit is still pointed at SPLIT_ROOTS, which includes HOLDOUT"
 
 
+def _augmentation_helpers():
+    """Execute only the pure-Pillow augmentation helpers, never notebook work."""
+    import math
+    import random
+
+    from PIL import Image as PILImage
+    from PIL import ImageDraw, ImageFilter
+
+    src = _notebook_source()
+    start = src.index("class PadToSquare:")
+    end = src.index("class JpegRecompress:", start)
+    namespace = {
+        "math": math, "random": random, "PILImage": PILImage,
+        "ImageDraw": ImageDraw, "ImageFilter": ImageFilter,
+    }
+    exec(src[start:end], namespace)  # noqa: S102 - audited isolated definitions
+    return namespace
+
+
+def test_augmentation_profile_preserves_label_bearing_margins():
+    """The complete frame survives preprocessing; no RRC/erasing may return."""
+    src = _notebook_source()
+    assert "'version': 'margin_preserving_v1_unablated'" in src
+    assert "RandomResizedCrop(" not in src
+    assert "RandomErasing(" not in src
+    assert "_geo_aug = indoor_train_pil_tx" in src, (
+        "Aqua and Gamma must not train on different augmentation distributions"
+    )
+
+    helpers = _augmentation_helpers()
+    pad = helpers["PadToSquare"]()
+    image = helpers["PILImage"].new("RGB", (20, 10), "red")
+    out = pad(image)
+    assert out.size == (20, 20)
+    assert out.crop((0, 5, 20, 15)).tobytes() == image.tobytes(), (
+        "letterboxing cropped or changed a source pixel"
+    )
+
+
+def _notebook_markdown() -> str:
+    nb = json.loads(NB_PATH.read_text(encoding="utf-8"))
+    return "\n\n".join(
+        "".join(c.get("source", []))
+        for c in nb["cells"]
+        if c["cell_type"] == "markdown"
+    )
+
+def test_motion_blur_is_directional_and_glare_is_local():
+    """Guard against the old BoxBlur/global-brightness implementations."""
+    import random
+
+    import numpy as np
+    from PIL import Image as PILImage
+
+    helpers = _augmentation_helpers()
+    horizontal = helpers["_directional_motion_kernel"](angle_degrees=0)
+    vertical = helpers["_directional_motion_kernel"](angle_degrees=90)
+    assert horizontal != vertical
+    assert sum(horizontal) == pytest.approx(5.0)
+    assert {i // 5 for i, value in enumerate(horizontal) if value} == {2}
+    assert {i % 5 for i, value in enumerate(vertical) if value} == {2}
+
+    random.seed(7)
+    glare = helpers["LocalSpecularGlare"](p=1.0)
+    before = PILImage.new("RGB", (100, 100), "black")
+    after = np.asarray(glare(before))
+    changed_fraction = float((after.max(axis=2) > 0).mean())
+    assert 0.0 < changed_fraction < 0.65, (
+        "glare should be a local soft highlight, not global brightness"
+    )
+
+
 def test_head_training_early_stops_and_restores_best():
     """Report Stage 1: the production model is a frozen DINOv2 + trained
     head. The head loop must early-stop on a plateau and restore the best
@@ -235,8 +309,11 @@ def test_backbone_base_frozen_head_and_optional_lora_trained():
     src = _notebook_source()
     assert "DINOv2Classifier" in src, "frozen-DINOv2 model class missing"
     assert "p.requires_grad_(False)" in src, "backbone base params are not frozen"
-    assert "model.backbone.eval()" in src, (
-        "backbone must stay in eval() during head/LoRA training"
+    assert "def _set_backbone_train_mode" in src and "backbone.eval()" in src, (
+        "backbone base must stay in eval() during head/LoRA training"
+    )
+    assert "'lora_dropout' in name" in src and "module.train()" in src, (
+        "PEFT LoRA dropout must be re-enabled after the frozen base enters eval mode"
     )
     assert "torch.optim.AdamW(model.head.parameters()" in src, (
         "the head must always be optimised"
@@ -311,7 +388,7 @@ def test_knowledge_distillation_scoped_to_aqua_only():
     """Design invariant: the SERVER-served gamma/frontier model is the frozen
     DINOv2 + MLP head — no distillation in that path. KD was deliberately
     re-introduced ONLY to produce the **Aqua** on-device student
-    (MobileNetV3-Small, §5), gated behind the aqua family so it never touches
+    (MobileNetV3-Small, §5), gated behind combined mode's distill flag so it never touches
     the gamma/frontier pipeline. The earlier EfficientNetV2-S→MobileNetV3
     multi-candidate teacher-snapshot machinery (the genuinely wrong tool) must
     stay gone."""
@@ -323,9 +400,9 @@ def test_knowledge_distillation_scoped_to_aqua_only():
             f"legacy distillation machinery {gone!r} is back — only the scoped "
             f"Aqua MobileNetV3 student KD should exist"
         )
-    # KD is gated behind the aqua family's distill flag, not run unconditionally.
+    # KD is gated behind combined mode's distill flag, not run unconditionally.
     assert "FAMILY_CONFIG.get('distill')" in src, (
-        "Aqua KD must be gated behind the aqua family's distill flag"
+        "Aqua KD must be gated behind combined mode's distill flag"
     )
     # The Aqua student is a MobileNetV3-Small distilled from the gamma teacher.
     assert "mobilenet_v3_small" in src, (
@@ -735,19 +812,14 @@ def test_deploy_bundle_includes_ood_npz_and_excludes_torch_checkpoints():
     embedding OOD gate at serve time in v2.3.1. The ONNX-only runtime cannot load
     the torch checkpoints (.pt/.pth), so those must NOT bloat the deploy bundle."""
     src = _notebook_source()
-    m = re.search(r"_BUNDLE_SUFFIXES\s*=\s*\{([^}]*)\}", src)
-    assert m, "_BUNDLE_SUFFIXES not found"
-    suffixes = m.group(1)
-    assert "'.npz'" in suffixes, "deploy bundle MUST include .npz (the embedding-OOD bank)"
-    assert "'.onnx'" in suffixes and "'.json'" in suffixes
-    assert "'.pth'" not in suffixes and "'.pt'" not in suffixes, (
-        "torch checkpoints (.pt/.pth) are not loadable by the ONNX-only server "
-        "and must not bloat the deploy bundle"
-    )
-    # And a guard that fails loud if a declared OOD bank isn't bundled.
-    assert "references ood bank" in src and "embedding OOD will be DISABLED" in src, (
-        "§6b must warn when classes.json declares an OOD bank absent from the archive"
-    )
+    assert "_bound['ood_embedding'] = 'ood_embedding.npz'" in src
+    assert "for _role, _spec in sorted(_ship_artifacts.items())" in src
+    assert "_verified_manifest_artifact(_role, _spec)" in src
+    assert "_tar.add(_p, arcname=_arc)" in src
+    assert "_tar.add(Path('models/detector.pt')" not in src
+    assert "_tar.add(Path('models/classifier.pth')" not in src
+    # A declared bank is a hard integrity failure, never a warning/fallback.
+    assert "references OOD bank" in src and "not bound by manifest" in src
 
 
 def test_nutrient_deficiency_supplied_without_field_crop_sources():
@@ -858,11 +930,15 @@ def test_required_source_floors_gate_missing_upstream_corpora():
     # The sources whose loss is invisible to the ship gate (train-only) or that
     # carry a whole class are the ones this gate exists for.
     for must_guard in ("kaggle_ornamental", "plantdoc", "plantvillage", "inat",
-                       "doctorp", "kaggle_houseplant", "inat_pest"):
+                       "kaggle_houseplant", "inat_pest"):
         assert floors.get(must_guard, 0) > 0, (
             f"'{must_guard}' has no positive floor — a silent upstream loss "
             f"would train a model that is not comparable to any other version"
         )
+    assert "if ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" in src
+    assert "REQUIRED_SOURCE_FLOORS.update({'doctorp': 1000" in src, (
+        "DoctorP floors may exist only behind the explicit research-only NC opt-in"
+    )
     # It must actually raise, not just warn, by default.
     assert re.search(r"STRICT_SOURCE_FLOORS\s*=\s*True", src), (
         "STRICT_SOURCE_FLOORS must default to True (fail-fast over fail-soft)"
@@ -911,3 +987,214 @@ def test_eval_bootstrap_exposes_per_class_precision():
     from tools import eval_bootstrap as eb
     assert hasattr(eb, "per_class_precision")
     assert hasattr(eb, "bootstrap_per_class_precision_ci")
+
+
+def test_class_logit_bias_validation_runs_after_mode_definition():
+    src = _notebook_source()
+    mode = src.index("TRAIN_MODES = {")
+    family = src.index("FAMILY_CONFIG = TRAIN_MODES[TRAIN_MODE]")
+    guard = src.index("if CLASS_LOGIT_BIAS and FAMILY_CONFIG.get('distill')")
+    assert mode < family < guard, (
+        "a non-empty CLASS_LOGIT_BIAS must not reference TRAIN_MODES before definition"
+    )
+
+
+def test_kaggle_folder_identity_uses_full_relative_parent_paths():
+    src = _notebook_source()
+    assert "def _images_by_relative_parent" in src
+    assert "p.parent.relative_to(root).as_posix()" in src
+    assert "by_folder.setdefault(p.parent.name" not in src, (
+        "same-named leaf folders from different branches must never be merged"
+    )
+    orn = re.search(r"def fetch_kaggle_ornamental_disease.*?(?=\ndef )", src, re.DOTALL)
+    assert orn and "_orn_map_folder(norm, slug, rel_norm=norm)" in orn.group(0)
+
+
+def test_supplement_joins_and_saves_by_complete_path():
+    src = _notebook_source()
+    body = re.search(r"def fetch_kaggle_supplement.*?(?=\n# 'pests')", src, re.DOTALL)
+    assert body
+    text = body.group(0)
+    assert "Path(r['filename']).name" not in text
+    assert "PurePosixPath(_raw)" in text and "duplicate path key" in text
+    assert "STRICT_SUPPLEMENT_FILTER_VERDICT = True" in src
+    assert "STRICT_SUPPLEMENT_LICENSE_PROVENANCE = True" in src
+    assert "output_stem=_row['_disk_stem']" in text
+
+
+def test_holdout_checks_same_and_cross_class_near_duplicates():
+    src = _notebook_source()
+    same = src.index("resolve_phash_split_leakage(HOLDOUT, (TRAIN_ROOT,), threshold=6)")
+    cross = src.index("audit_cross_class_phash_leakage(HOLDOUT, (TRAIN_ROOT,), threshold=6")
+    assert same < cross
+
+
+def test_zero_support_holdout_classes_are_reported():
+    src = _notebook_source()
+    assert "by_class.get(c, 0) for c in CLASSES" in src
+
+
+def test_public_image_sources_fail_closed_on_per_image_rights():
+    src = _notebook_source()
+    assert "'photo_license': _INAT_PHOTO_LICENSE_FILTER" in src
+    assert "_inat_photo_provenance" in src and "license_code" in src
+    assert "COCO_ALLOWED_LICENSE_IDS = {4, 5, 6, 7, 8}" in src
+    assert "validation-images-with-rotation.csv" in src
+    assert "OriginalLandingURL" in src and "license_id='cc-by-2.0'" in src
+    assert "_RIGHTS_REQUIRED_SOURCES" in src and "RIGHTS PROVENANCE MISSING" in src
+
+
+def test_noncommercial_doctorp_is_research_only_and_cannot_bundle():
+    src = _notebook_source()
+    assert re.search(r"ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES\s*=\s*False", src)
+    assert "DOCTORP_LICENSE_ID = 'cc-by-nc-sa-4.0'" in src
+    assert "RESEARCH-ONLY RUN: non-commercial data" in src
+
+
+def test_recipe_uses_deterministic_torch_settings():
+    src = _notebook_source()
+    assert "CUBLAS_WORKSPACE_CONFIG" in src
+    assert "torch.backends.cudnn.benchmark = False" in src
+    assert "torch.backends.cudnn.deterministic = True" in src
+    assert "torch.use_deterministic_algorithms(True)" in src
+
+
+def test_supplement_eval_is_model_era_and_capture_family_aware():
+    src = _notebook_source()
+    assert "STRICT_SUPPLEMENT_MODEL_PROVENANCE = True" in src
+    assert "SUPPLEMENT_EVAL_THROUGH_MODEL_VERSION = MODEL_VERSION" in src
+    assert "first_seen_model_version" in src and "immutable_source_id" in src
+    assert "capture_family_id" in src
+    assert "elif r.get('_seen_by_eval_model')" in src
+    assert "SUPPLEMENT_REQUIRED_INDEPENDENCE_METHOD = 'capture_family_id+phash_v1'" in src
+    assert "independent-family violation" in src
+
+
+def test_private_v2_unseen_domain_set_is_diagnostic_not_ship_gate():
+    src = _notebook_source()
+    assert re.search(r"REQUIRE_OOD_BENCHMARK\s*=\s*False", src)
+    assert "'diagnostic_only': True, 'release_blocking': False" in src
+    assert "independent_family_count_verified" in src
+    assert "OOD SHIP GATE PASSED" not in src
+
+
+def test_aqua_sidecar_declares_preprocessing_and_logit_semantics():
+    src = _notebook_source()
+    aqua = re.search(
+        r"\(AQUA_DIR / 'classes\.json'\).*?(?=print\(f'Aqua TFLite written)",
+        src, re.DOTALL)
+    assert aqua
+    assert "'eval_resize_ratio': EVAL_RESIZE_RATIO" in aqua.group(0)
+    assert "'output_semantics': 'logits'" in aqua.group(0)
+
+
+def test_aqua_export_requires_one_float32_graph_and_never_substitutes_quantized():
+    src = _notebook_source()
+    assert "_float32_emitted = [p for p in _emitted if 'float32' in p.name.lower()]" in src
+    assert "if len(_float32_emitted) != 1:" in src
+    assert "_chosen = _float32_emitted[0]" in src
+    assert "Aqua serving contract requires FLOAT32 I/O" in src
+    assert "Aqua FLOAT32 TFLite parity OK" in src
+    assert "_tflite_rank" not in src
+    assert "combined run aborted: Aqua exact served-artifact validation failed" in src
+
+
+def test_export_emits_checksummed_single_graph_serving_manifest():
+    src = _notebook_source()
+    assert "Path('models/bundle_manifest.json').write_text" in src
+    assert "'fallback_allowed': False" in src
+    assert "_selected_classifier = ('classifier_int8.onnx' if int8_shipped" in src
+    assert "'calibration_source': _expected_fit_source" in src
+    for bound in ("'classifier'", "'detector'", "'classes'", "'temperature'",
+                  "'conformal'"):
+        assert bound in src
+    for contract in ("'padding_ratio'", "'max_crops'", "'min_confidence'",
+                     "'nms_iou'", "'max_detections'",
+                     "'fold_whole_frame_vote'", "'output_semantics'",
+                     "'variance_laplacian_floor'", "'detector_confidence_floor'"):
+        assert contract in src
+
+
+def test_notebook_run_boundary_is_fresh_gpu_only_and_manifest_owned():
+    src = _notebook_source()
+    assert "if not torch.cuda.is_available():" in src
+    assert "CUDA GPU required for training" in src
+    assert "RUN_LOG.write_text('', encoding='utf-8')" in src
+    assert "exist_ok=False" in src and "DETECTOR_RUN_DIR" in src
+    assert "next(Path('runs/detect').rglob('best.pt'))" not in src
+    assert "AQUA_EXPORT_SUCCEEDED = True" in src
+    assert "combined run aborted" in src
+    assert "for _p in sorted(Path('models').iterdir())" not in src
+    assert "for _role, _spec in sorted(_ship_artifacts.items())" in src
+
+
+def test_notebook_binds_data_run_and_backbone_revision():
+    src = _notebook_source()
+    assert "DINOV2_REPO_REF = 'facebookresearch/dinov2:" in src
+    assert "torch.hub.load(DINOV2_REPO_REF" in src
+    assert "classification_sha256" in src
+    assert "Path('models/data_manifest.json').write_text" in src
+    assert "Path('models/run_manifest.json').write_text" in src
+    assert "'data_manifest': 'data_manifest.json'" in src
+    assert "'run_manifest': 'run_manifest.json'" in src
+
+
+def test_notebook_binds_mutable_sources_weights_and_colab_environment():
+    src = _notebook_source()
+    assert "PACKAGE_RESOLUTION_POLICY = 'colab_cuda_abi_runtime_resolved_manifest_bound_v1'" in src
+    assert "_importlib_metadata.distributions()" in src
+    assert "'recipe_environment_sha256': _recipe_environment_sha256" in src
+    assert "_hf_resolve_dataset_revision(name)" in src
+    assert "revision=revision, token=_HF_AUTH" in src
+    assert "'huggingface_revisions'" in src
+    assert "YOLO_BASE_WEIGHT_IDENTITY = {" in src
+    assert "'sha256': sha256_file(_base_path)" in src
+    assert "'detector_base_weights': YOLO_BASE_WEIGHT_IDENTITY" in src
+
+
+def test_kaggle_latest_revision_is_recorded_after_download():
+    """Mutable latest is deliberate, but completed runs remain auditable."""
+    src = _notebook_source()
+    assert "KAGGLE_REVISION_SELECTION_POLICY = 'latest_at_download_time'" in src
+    assert "kagglehub.dataset_download(slug)" in src
+    assert "KAGGLE_EXPECTED_REVISIONS" not in src
+    assert "'selection_policy': KAGGLE_REVISION_SELECTION_POLICY" in src
+    assert "'kaggle_version': _resolved_version" in src
+    assert "'kaggle': dict(sorted(_KAGGLE_RESOLVED_REVISIONS.items()))" in src
+
+
+def test_notebook_documents_kaggle_fail_soft_but_production_required():
+    raw = NB_PATH.read_text(encoding="utf-8")
+    assert "Kaggle credentials (required by the default production recipe)" in raw
+    assert "Individual Kaggle fetchers fail soft" in raw
+    assert "REQUIRE_SUPPLEMENT=True" in raw
+
+
+def test_historical_archive_narrative_is_explicitly_superseded():
+    src = _notebook_source()
+    assert "SUPERSEDED 2.7.3 ARCHIVE NARRATIVE (DO NOT USE AS EVIDENCE)" in src
+    assert "archive-derived counts such as 3/31 -> 4/31" in src
+    assert "Those historical point estimates, p-values and" in src
+    assert "pseudoreplicates" in src
+
+
+def test_evaluation_contract_documents_manifest_only_deploy_and_advisory_ood():
+    markdown = _notebook_markdown()
+    section = markdown.split("## §7 — Evaluation contract", 1)[1]
+    assert "`fallback_allowed=false`" in section
+    assert "exactly the graph that passed drift/calibration; never both" in section
+    assert "`classifier.pth`, `detector.pt`, `classifier_fp32.onnx`" in section
+    assert "are **not deploy artefacts**" in section
+    assert "`REQUIRE_OOD_BENCHMARK=False`" in section
+    assert "`served_gate_enabled=false`" in section
+    assert "resample independent capture families" in section
+
+
+def test_server_sidecar_declares_complete_classifier_preprocessing():
+    src = _notebook_source()
+    block = re.search(r"classes_payload = \{.*?# ── Inference benchmark", src, re.DOTALL)
+    assert block
+    for declaration in ("'layout': 'NCHW'", "'normalize_mean'", "'normalize_std'",
+                        "'eval_resize_ratio': EVAL_RESIZE_RATIO",
+                        "'output_semantics': 'logits'"):
+        assert declaration in block.group(0)

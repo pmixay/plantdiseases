@@ -10,10 +10,10 @@
 #     ./start.sh              # start server (default port 8000)
 #     ./start.sh --port 9000  # custom port
 #
-# Model weights + calibration artefacts are NOT committed and NOT
-# auto-downloaded. Drop detector.onnx, classifier.onnx (+ optional
-# classifier_int8.onnx) and classes.json into server/models/ before
-# starting. The server is fail-fast if a required artefact is missing.
+# Model artefacts are NOT committed or auto-downloaded. Extract one complete
+# notebook-produced bundle into server/models/ (including bundle_manifest.json
+# and its nested directories). Do not mix files from different runs. Startup
+# verifies every manifest-bound artefact before loading a model.
 #
 set -euo pipefail
 
@@ -31,8 +31,8 @@ Usage: $0 [--port PORT]
 
   --port PORT   Server port (default: 8000)
 
-Model artefacts are not auto-downloaded: drop detector.onnx,
-classifier.onnx and classes.json into server/models/ before starting.
+Model artefacts are not auto-downloaded. Extract one complete bundle produced
+by train_notebook.ipynb into server/models/, including bundle_manifest.json.
 USAGE
             exit 0
             ;;
@@ -80,21 +80,23 @@ pip install --quiet -r requirements.txt
 
 mkdir -p models logs
 
-# Model artefacts (weights + calibration JSON) are NOT committed and are
-# NOT auto-downloaded — drop them into server/models/ before starting.
-# Fail early here with a clear message; the lifespan handler is the
-# authoritative fail-fast if a required artefact is still missing.
+# Model artefacts are NOT committed or auto-downloaded. This shallow check gives
+# a clear error before uvicorn starts; the lifespan verifier is authoritative
+# and validates the complete manifest, hashes, serving contract, and exact graph.
 detector_present=0
-classifier_present=0
+bundle_manifest_present=0
 [[ -f models/detector.onnx ]]                                             && detector_present=1
-[[ -f models/classifier.onnx || -f models/classifier_int8.onnx ]]         && classifier_present=1
-if [[ $detector_present -eq 0 || $classifier_present -eq 0 ]]; then
-    echo "[!] Model artefacts missing under server/models/." >&2
-    echo "    Drop detector.onnx + classifier.onnx (+ optional" >&2
-    echo "    classifier_int8.onnx) + classes.json into server/models/." >&2
-    echo "    Build them with train_notebook.ipynb (§6/§6b)." >&2
+[[ -f models/bundle_manifest.json ]]                                      && bundle_manifest_present=1
+if [[ $detector_present -eq 0 || $bundle_manifest_present -eq 0 ]]; then
+    echo "[!] Complete model bundle missing under server/models/." >&2
+    echo "    Extract one full archive produced by train_notebook.ipynb," >&2
+    echo "    preserving bundle_manifest.json and all nested paths." >&2
+    echo "    Do not copy loose artefacts or combine different runs." >&2
     exit 1
 fi
+
+echo "[+] Verifying immutable model bundle..."
+python tools/verify_bundle.py models
 
 echo
 echo "[+] Starting server on http://0.0.0.0:${PORT}"

@@ -83,14 +83,22 @@ class ScanRepositoryNetworkTest {
             .contains("\"legacy_pseudo_id\":\"${TelemetryIds.userPseudoId(appContext)}\"")
     }
 
+    private fun validAnalysisBody(): String =
+        """
+        {"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.9,
+         "all_probs":{"gray_mold_botrytis":0,"healthy":0.1,"leaf_scorch_underwatering":0,
+          "leaf_spot":0.9,"not_a_plant":0,"nutrient_deficiency":0,"pests":0,
+          "powdery_mildew":0,"viral_disease":0},
+         "top_k":[{"class":"leaf_spot","confidence":0.9},{"class":"healthy","confidence":0.1}],
+         "abstained":false,"verdict_status":"accepted"}
+        """.trimIndent()
+
     @Test
     fun analyze_success_parsesBodyAndBuildsMultipartPost() {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.9}""",
-                ),
+                .setBody(validAnalysisBody()),
         )
 
         val result = runBlocking { repo.analyzeImage(imageFile, locale = "en") }
@@ -110,12 +118,107 @@ class ScanRepositoryNetworkTest {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"disease_name":"Leaf Spot"}"""),
+                .setBody(validAnalysisBody()),
         )
         runBlocking { repo.analyzeImage(imageFile, speciesHint = "Ficus elastica", locale = "ru") }
         val request = server.takeRequest()
         assertThat(request.path).contains("species=Ficus")
         assertThat(request.path).contains("locale=ru")
+    }
+
+    @Test
+    fun analyze_200Unavailable_isFailureInsteadOfBlankDiagnosis() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"available":false,"family":"frontier","reason":"frontier_disabled","message":"Pick Gamma"}""",
+                ),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile, family = "frontier") }
+
+        assertThat(result.isFailure).isTrue()
+        val error = result.exceptionOrNull()
+        assertThat(error).isInstanceOf(ScanRepository.ModelUnavailableException::class.java)
+        error as ScanRepository.ModelUnavailableException
+        assertThat(error.family).isEqualTo("frontier")
+        assertThat(error.reason).isEqualTo("frontier_disabled")
+        assertThat(error.serverMessage).isEqualTo("Pick Gamma")
+        assertThat(server.takeRequest().path).contains("family=frontier")
+    }
+
+    @Test
+    fun analyze_empty200_isRejectedInsteadOfBecomingBlankDiagnosis() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("{}"),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.InvalidAnalysisResponseException::class.java)
+    }
+
+    @Test
+    fun analyze_contradictoryProbabilityPayloads_areRejected() {
+        val bodies = listOf(
+            // Declared class is not the probability argmax.
+            """
+                {"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.1,
+                 "all_probs":{"gray_mold_botrytis":0,"healthy":0.9,
+                  "leaf_scorch_underwatering":0,"leaf_spot":0.1,"not_a_plant":0,
+                  "nutrient_deficiency":0,"pests":0,"powdery_mildew":0,"viral_disease":0},
+                 "top_k":[{"class":"healthy","confidence":0.9},{"class":"leaf_spot","confidence":0.1}]}
+            """.trimIndent(),
+            // Declared confidence disagrees with the class probability.
+            """
+                {"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.6,
+                 "all_probs":{"gray_mold_botrytis":0,"healthy":0.1,
+                  "leaf_scorch_underwatering":0,"leaf_spot":0.9,"not_a_plant":0,
+                  "nutrient_deficiency":0,"pests":0,"powdery_mildew":0,"viral_disease":0},
+                 "top_k":[{"class":"leaf_spot","confidence":0.9},{"class":"healthy","confidence":0.1}]}
+            """.trimIndent(),
+            // A normalised one-class map is still a partial nine-class head.
+            """
+                {"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":1,
+                 "all_probs":{"leaf_spot":1},
+                 "top_k":[{"class":"leaf_spot","confidence":1}]}
+            """.trimIndent(),
+        )
+        bodies.forEach { body ->
+            server.enqueue(
+                MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(body),
+            )
+            val result = runBlocking { repo.analyzeImage(imageFile) }
+            assertThat(result.exceptionOrNull())
+                .isInstanceOf(ScanRepository.InvalidAnalysisResponseException::class.java)
+        }
+    }
+
+    @Test
+    fun analyze_imageQualityAbstention_allowsHonestEmptyDiagnostics() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {"class_name":"unknown","confidence":0,"all_probs":{},"top_k":[],
+                     "warnings":["blurry_image"],"abstained":true,
+                     "abstention_reason":"image_quality","verdict_status":"abstained"}
+                    """.trimIndent(),
+                ),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.abstentionReason).isEqualTo("image_quality")
     }
 
     @Test

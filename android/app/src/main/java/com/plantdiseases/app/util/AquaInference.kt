@@ -1,6 +1,7 @@
 package com.plantdiseases.app.util
 
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
 import com.plantdiseases.app.data.model.TopKEntry
 
 /**
@@ -8,8 +9,8 @@ import com.plantdiseases.app.data.model.TopKEntry
  * so the rest of the app (saveScan, ResultActivity) renders an Aqua scan
  * unchanged.
  *
- * Offline we have the verdict, confidence, bilingual display name and a
- * severity heuristic; description / treatment / prevention come from the
+ * Offline we have the verdict, confidence and bilingual display name;
+ * description / treatment / prevention come from the
  * local bilingual fallback table ([OfflineScanContent]) instead of the
  * server's richer copy. Detection/regions and species are server-only and
  * stay null. The `offline_aqua` warning flags the result so the UI can
@@ -18,10 +19,41 @@ import com.plantdiseases.app.data.model.TopKEntry
 object AquaInference {
 
     private const val HEALTHY = "healthy"
-    private val VIRAL = setOf("viral_disease")
+
+    /** Honest pre-inference result when the existing local blur QA fails. */
+    fun buildImageQualityAbstention(): AnalysisResponse = AnalysisResponse(
+        classKey = "unknown",
+        family = ModelFamily.AQUA.id,
+        diseaseName = "Unidentified condition",
+        diseaseNameRu = "Не удалось определить",
+        confidence = 0f,
+        isHealthy = false,
+        severity = "low",
+        allProbs = emptyMap(),
+        topK = emptyList(),
+        warnings = listOf("offline_aqua", "blurry_image"),
+        abstained = true,
+        abstentionReason = AnalysisAbstentionReasons.IMAGE_QUALITY,
+        verdictStatus = "abstained",
+    )
 
     fun buildResponse(probs: Map<String, Float>): AnalysisResponse {
-        val ranked = probs.entries.sortedByDescending { it.value }
+        require(probs.isNotEmpty()) { "Aqua probability map is empty" }
+        require(probs.keys.all { it.isNotBlank() }) { "Aqua probability map has a blank class key" }
+        require(probs.values.all { it.isFinite() && it >= 0f }) {
+            "Aqua probabilities must be finite and non-negative"
+        }
+        val sum = probs.values.sum()
+        require(sum.isFinite() && sum > 0f) { "Aqua probability mass must be positive" }
+        // AquaClassifier already returns a normalised softmax. Renormalise only
+        // when a caller supplies meaningfully off-scale values, preserving the
+        // exact map on the normal inference path.
+        val safeProbs = if (kotlin.math.abs(sum - 1f) <= 1e-4f) {
+            probs
+        } else {
+            probs.mapValues { (_, value) -> value / sum }
+        }
+        val ranked = safeProbs.entries.sortedByDescending { it.value }
         val top = ranked.firstOrNull()
         val topKey = top?.key ?: "unknown"
         val topConf = top?.value ?: 0f
@@ -40,6 +72,7 @@ object AquaInference {
         // Local bilingual fallback content — the server isn't around to
         // supply description / treatment / prevention for an offline scan.
         val card = OfflineScanContent.careCard(topKey)
+        val naturalNap = topKey == "not_a_plant"
 
         return AnalysisResponse(
             classKey = topKey,
@@ -54,24 +87,20 @@ object AquaInference {
             preventionRu = card?.preventionRu ?: emptyList(),
             confidence = topConf,
             isHealthy = isHealthy,
-            severity = severityFor(topKey, topConf, isHealthy),
-            allProbs = probs,
+            // Aqua predicts a condition class, not lesion extent. Confidence
+            // is certainty about that class, not disease severity, so keep the
+            // API's conservative placeholder until severity-labelled data (or
+            // a lesion model) exists. This matches the server contract.
+            severity = "low",
+            allProbs = safeProbs,
             topK = topK,
             // Flag so the result screen can hint that offline advice is thinner
             // and the cloud model can give fuller guidance.
             warnings = listOf("offline_aqua"),
+            abstained = naturalNap,
+            abstentionReason = if (naturalNap) AnalysisAbstentionReasons.NOT_A_PLANT else null,
+            verdictStatus = if (naturalNap) "abstained" else "accepted",
         )
-    }
-
-    /** Server severity comes from bbox area × confidence margin. Offline we
-     *  approximate from class + top-1 confidence; viral is always escalated
-     *  (matches the server's always-escalate-viral rule). */
-    private fun severityFor(key: String, conf: Float, isHealthy: Boolean): String = when {
-        isHealthy -> "low"
-        key in VIRAL -> "high"
-        conf >= 0.80f -> "high"
-        conf >= 0.55f -> "medium"
-        else -> "low"
     }
 
     private fun prettify(key: String): String =

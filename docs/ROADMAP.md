@@ -139,9 +139,23 @@ Still open:
 
 ## Model track
 
-`MODEL_VERSION` is **2.7.3** (notebook §1). `server/models/` holds only
-`.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed**, and 2.6.8
-runs behind the NAP head veto, a serving change needing no new weights.
+> **2026-08-23 audit correction.** The historical experiment narrative below is
+> retained as a research trail, not as verified release evidence. The archive's
+> raw predictions contradict several headline scores (including 2.7.2's stated
+> 3/31), the 31/31 v2.6.8 number includes a runtime veto rather than raw model
+> capability, a probe mixed populations/denominators, and the 182-image private
+> set is neither OOD nor independent enough to gate a release. Do not tune or
+> ship from those numbers. Evidence-backed status and v9 requirements follow
+> in this file.
+
+`MODEL_VERSION` is now **2.8.0** (notebook §1). No discovered historical archive
+has the new notebook-bound manifest, complete lineage, and serving contract, so
+none is deployable by the strict current API. `plantvision_combined_v2.7.1.tar`
+is only the newest structurally complete **legacy diagnostic candidate**;
+v2.7.3 failed its own recorded gate and lacks Aqua. The next production
+candidate must be a fresh GPU run on approved v9 data.
+
+### Superseded historical interpretation (do not use as a release gate)
 
 **The OOD AND-gate has been three-of-three since 2.7.2.** It fires
 `not_a_plant` only when the detector confidence is below

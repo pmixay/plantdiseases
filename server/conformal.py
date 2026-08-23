@@ -23,9 +23,10 @@ We support two scoring schemes:
   size penalty ``lambda * max(0, k - k_reg)`` that discourages
   pathologically large sets on hard examples.
 
-The calibration scheme is **inductive**: a held-out calibration split
-(typically 1–2 k user photos) yields one ``q_hat`` per ``alpha``. Online
-inference is then an O(C log C) sort + a comparison; no re-training.
+The calibration scheme is **inductive**: the Colab training notebook uses a
+held-out calibration split to produce one ``q_hat`` per ``alpha``. This server
+module deliberately contains only artifact loading and O(C log C) inference;
+it cannot fit or rewrite calibration artifacts.
 
 Calibration artefact format (``models/conformal.json``)::
 
@@ -39,15 +40,17 @@ Calibration artefact format (``models/conformal.json``)::
       "empirical_coverage": 0.91
     }
 
-The file is optional. When missing, the pipeline simply omits the
-``prediction_set`` field — clients should treat it as a hint, never
-gate UX on its presence.
+The file is optional for isolated loader tests. Production API boot requires
+it via ``bundle_manifest.json``; when the loader is called without a file,
+the pipeline simply omits the ``prediction_set`` field — clients should
+treat it as a hint, never gate UX on its presence.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,23 +73,18 @@ class ConformalConfig:
 
     @property
     def coverage_target(self) -> float:
-        """The coverage we actually deliver — surfaced in the API payload.
+        """Return the configured *nominal* marginal coverage target.
 
-        Prefers the MEASURED out-of-sample coverage recorded at calibration
-        over the nominal ``1 - alpha``. The two diverged once the notebook
-        began grid-searching alpha for the smallest prediction set that still
-        clears the product coverage target: alpha became the knob that
-        produced ``q_hat``, not a promise about coverage. The 2.7.0 run
-        calibrated ``alpha=0.35`` with a realised coverage of 0.967, so the
-        nominal number would have advertised **65%** for sets that cover
-        ~97% — understating the model to the user, and getting worse with
-        every widening of the search grid.
-
-        Falls back to ``1 - alpha`` for bundles predating the field.
+        Historical exporters wrote ``empirical_coverage`` from the same rows
+        used to choose ``q_hat``. That is an in-sample calibration diagnostic,
+        not an independent coverage estimate, so it must not replace the
+        client-facing target. Current API prediction sets remain advisory.
         """
-        if self.empirical_coverage is not None:
-            return self.empirical_coverage
         return 1.0 - self.alpha
+
+
+class ConformalLoadError(RuntimeError):
+    """A conformal sidecar exists but cannot be applied safely."""
 
 
 def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
@@ -95,7 +93,8 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
     Resolution is strictly bundle-relative: a per-family bundle (e.g.
     ``models/frontier/``) must never silently inherit another family's
     q_hat. Returns ``None`` (with a single info-level log line) when the file
-    is missing or malformed; the pipeline must keep working uncalibrated.
+    is missing. Once the sidecar is present, malformed calibration fails
+    readiness instead of silently changing the served uncertainty policy.
     """
     if model_dir is None:
         return None
@@ -104,25 +103,65 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        method = str(data.get("method", "raps")).lower()
+        if not isinstance(data, dict):
+            raise TypeError("conformal.json must contain a JSON object")
+        method_raw = data.get("method", "raps")
+        if not isinstance(method_raw, str):
+            raise TypeError("method must be a string")
+        method = method_raw.lower()
         if method not in ("aps", "raps"):
-            logger.warning("Unknown conformal method %r in %s", method, path)
-            return None
+            raise ValueError(f"unknown conformal method {method!r}")
+        numeric_fields = {
+            "alpha": data["alpha"],
+            "q_hat": data["q_hat"],
+            "lambda_reg": data.get("lambda_reg", 0.0),
+        }
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in numeric_fields.values()
+        ):
+            raise TypeError("alpha, q_hat and lambda_reg must be numeric")
+        alpha = float(numeric_fields["alpha"])
+        q_hat = float(numeric_fields["q_hat"])
+        lambda_reg = float(numeric_fields["lambda_reg"])
+        if not math.isfinite(alpha) or not 0.0 < alpha < 1.0:
+            raise ValueError("alpha must be finite and strictly between 0 and 1")
+        if not math.isfinite(q_hat) or q_hat < 0.0:
+            raise ValueError("q_hat must be finite and non-negative")
+        if not math.isfinite(lambda_reg) or lambda_reg < 0.0:
+            raise ValueError("lambda_reg must be finite and non-negative")
+        k_reg = data.get("k_reg", 1)
+        calibration_n = data.get("calibration_n", 0)
+        if isinstance(k_reg, bool) or not isinstance(k_reg, int) or k_reg < 0:
+            raise TypeError("k_reg must be a non-negative integer")
+        if (
+            isinstance(calibration_n, bool)
+            or not isinstance(calibration_n, int)
+            or calibration_n < 0
+        ):
+            raise TypeError("calibration_n must be a non-negative integer")
+        empirical = None
+        if "empirical_coverage" in data:
+            empirical_raw = data["empirical_coverage"]
+            if (
+                isinstance(empirical_raw, bool)
+                or not isinstance(empirical_raw, (int, float))
+            ):
+                raise TypeError("empirical_coverage must be numeric")
+            empirical = float(empirical_raw)
+            if not math.isfinite(empirical) or not 0.0 <= empirical <= 1.0:
+                raise ValueError("empirical_coverage must be finite and in [0, 1]")
         cfg = ConformalConfig(
             method=method,
-            alpha=float(data["alpha"]),
-            q_hat=float(data["q_hat"]),
-            lambda_reg=float(data.get("lambda_reg", 0.0)),
-            k_reg=int(data.get("k_reg", 1)),
-            calibration_n=int(data.get("calibration_n", 0)),
-            empirical_coverage=(
-                float(data["empirical_coverage"])
-                if "empirical_coverage" in data else None
-            ),
+            alpha=alpha,
+            q_hat=q_hat,
+            lambda_reg=lambda_reg,
+            k_reg=k_reg,
+            calibration_n=calibration_n,
+            empirical_coverage=empirical,
         )
     except (KeyError, ValueError, TypeError, json.JSONDecodeError) as e:
-        logger.warning("Could not parse %s: %s", path, e)
-        return None
+        raise ConformalLoadError(f"Could not parse declared {path}: {e}") from e
     logger.info(
         "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f)",
         path, cfg.method, cfg.alpha, cfg.q_hat,
@@ -169,6 +208,14 @@ def prediction_set(
 
     names = list(probs.keys())
     p = np.asarray([probs[n] for n in names], dtype=np.float64)
+    if not np.isfinite(p).all() or np.any(p < 0.0):
+        raise ValueError("prediction probabilities must be finite and non-negative")
+    total = float(p.sum())
+    if total <= 0.0:
+        raise ValueError("prediction probabilities must have positive mass")
+    if not np.isclose(total, 1.0, rtol=1e-5, atol=1e-6):
+        raise ValueError(f"prediction probabilities sum to {total:.6g}, expected 1")
+    p = p / total
     order = np.argsort(-p)                  # descending
     p_sorted = p[order]
 
@@ -184,91 +231,3 @@ def prediction_set(
 
     chosen = order[:set_size]
     return [names[i] for i in chosen]
-
-
-def calibrate_q_hat(
-    cal_probs: np.ndarray,
-    cal_labels: np.ndarray,
-    *,
-    method: str = "raps",
-    alpha: float = 0.1,
-    lambda_reg: float = 0.01,
-    k_reg: int = 1,
-) -> ConformalConfig:
-    """Compute the conformal quantile from a held-out calibration set.
-
-    Parameters
-    ----------
-    cal_probs : (N, C) float — calibrated softmax probabilities.
-    cal_labels : (N,) int — true class indices in ``[0, C)``.
-    alpha : 1 - desired coverage. ``alpha=0.1`` ⇒ 90 % coverage.
-
-    Returns
-    -------
-    A ``ConformalConfig`` with the empirical ``q_hat`` and the
-    calibration-set coverage as a sanity check.
-
-    Notes
-    -----
-    The marginal coverage guarantee is **finite-sample** with the
-    standard ``ceil((n+1)(1-alpha)) / n`` correction; we use the
-    correction here so the resulting set sizes don't under-cover on
-    small calibration splits.
-    """
-    n = cal_probs.shape[0]
-    if n == 0:
-        raise ValueError("Empty calibration set")
-    if not (0.0 < alpha < 1.0):
-        raise ValueError(f"alpha must be in (0,1), got {alpha}")
-    if method not in ("aps", "raps"):
-        raise ValueError(f"method must be 'aps' or 'raps', got {method!r}")
-
-    # For each calibration sample, find the score at the rank of the
-    # true label (the smallest threshold that would have included it).
-    nonconf = np.empty(n, dtype=np.float64)
-    for i in range(n):
-        order = np.argsort(-cal_probs[i])
-        p_sorted = cal_probs[i, order]
-        scores = (
-            aps_score(p_sorted) if method == "aps"
-            else raps_score(p_sorted, lambda_reg, k_reg)
-        )
-        rank_of_true = int(np.where(order == cal_labels[i])[0][0])
-        nonconf[i] = scores[rank_of_true]
-
-    # Finite-sample-corrected (1 - alpha) quantile.
-    q_level = min(1.0, np.ceil((n + 1) * (1.0 - alpha)) / n)
-    q_hat = float(np.quantile(nonconf, q_level, method="higher"))
-
-    cfg = ConformalConfig(
-        method=method,
-        alpha=alpha,
-        q_hat=q_hat,
-        lambda_reg=lambda_reg,
-        k_reg=k_reg,
-        calibration_n=n,
-    )
-    # Sanity-check empirical coverage on the calibration set itself
-    # (should match 1-alpha within Monte-Carlo noise).
-    covered = 0
-    for i in range(n):
-        order = np.argsort(-cal_probs[i])
-        p_sorted = cal_probs[i, order]
-        scores = (
-            aps_score(p_sorted) if method == "aps"
-            else raps_score(p_sorted, lambda_reg, k_reg)
-        )
-        above = np.where(scores >= q_hat)[0]
-        size = int(above[0]) + 1 if above.size else len(p_sorted)
-        size = max(size, 1)
-        if cal_labels[i] in order[:size]:
-            covered += 1
-    return ConformalConfig(
-        method=cfg.method,
-        alpha=cfg.alpha,
-        q_hat=cfg.q_hat,
-        lambda_reg=cfg.lambda_reg,
-        k_reg=cfg.k_reg,
-        calibration_n=cfg.calibration_n,
-        empirical_coverage=covered / n,
-    )

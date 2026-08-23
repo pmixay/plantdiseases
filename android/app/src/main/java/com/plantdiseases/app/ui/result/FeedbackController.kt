@@ -94,10 +94,10 @@ class FeedbackController(
     }
 
     /**
-     * NAP / blur-reject variant: a single "This is a plant" action (+ an
-     * optional note) instead of the yes/no pair. A wrongly-rejected plant
-     * photo is exactly the training signal the rejection head needs, and
-     * negative feedback also uploads the image bytes (see [submit]).
+     * Natural NAP / OOD / quality-abstention variant: a single "This is a
+     * plant" correction (+ an optional note) instead of confirming the raw
+     * diagnostic argmax. A wrongly rejected plant photo is high-value gate and
+     * quality-policy evidence; negative feedback also uploads the image bytes.
      */
     fun bindNotAPlant(scan: ScanEntity) {
         val card = binding.cardFeedback
@@ -226,12 +226,10 @@ class FeedbackController(
         reason: String?,
         note: String?,
     ): FeedbackRequest {
-        // Prefer the server-issued displayedClassKey — the verdict the user
-        // actually saw (post-weak-healthy-reroute). Fall back to
-        // argmax(all_probs) only when the column is empty (legacy scans, or a
-        // server old enough that the field wasn't returned); without this we'd
-        // echo the pre-reroute argmax as predicted_class and rot the per-class
-        // accuracy metrics server-side.
+        // Prefer the server-issued probability-backed class key; fall back to
+        // argmax(all_probs) for legacy scans. Rejection state is sent through
+        // the dedicated correction UI, while this key remains useful diagnostic
+        // evidence for server-side error analysis.
         val displayedKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
         val argmaxKey = repository.topClassKey(scan)
         val predictedKey = displayedKey ?: argmaxKey

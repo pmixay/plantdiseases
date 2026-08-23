@@ -36,29 +36,36 @@ Android release build. Architecture and API surface live in
 
 ## 2. Model bundle (`server/models/`)
 
-Model artefacts are **never committed and never auto-downloaded**. Build them
-with [`server/train_notebook.ipynb`](server/train_notebook.ipynb) (§6/§6b) and
-copy them in. There is no demo fallback.
+Model artefacts are **never committed and never auto-downloaded**. Training,
+calibration, conversion, and bundle export exist only in
+[`server/train_notebook.ipynb`](server/train_notebook.ipynb). Extract one whole
+notebook-produced archive into a **fresh** `server/models/` directory, preserving
+nested paths. Never assemble a deployment from loose files or different runs.
+There is no demo or filename fallback in the API startup path.
 
-| Artefact | Status | If absent |
+| Manifest-bound artefact | Status | Enforcement |
 |---|---|---|
-| `detector.onnx` | **required** | `DetectorLoadError`, boot aborts. A `.pt` is *never* loaded at serve time — `_resolve_detector_path` resolves to `detector.onnx` in every branch. |
-| `classifier_int8.onnx` **or** `classifier.onnx` | **required** (int8 wins when both exist) | `ClassifierLoadError`, boot aborts |
-| `classes.json` | contract-bearing | Server boots on the 9 built-in `DEFAULT_CLASS_NAMES`, `img_size=224`, `model_family=gamma`. **If present**, `class_names` must equal the ONNX head width exactly — a mismatch raises `ClassifierLoadError` and the process dies. There is no pad/truncate migration shim. |
-| `temperature.json` | optional | temperature = 1.0 (uncalibrated) |
-| `conformal.json` | optional | no prediction sets |
-| `ood_embedding.npz` | optional | k-NN OOD falls back to the MaxLogit floor |
-| `model_card.json` | optional | `/api/capabilities` reports `int8_shipped: false` |
-| `models/frontier/*` | only when `frontier_enabled=true` | logged, `pipeline_frontier=None`, frontier reports unavailable — gamma still boots |
+| `bundle_manifest.json` | **required** | Canonical bundle identity, run/data lineage, exact classifier choice, serving contract, sizes, and SHA-256 digests are verified before any graph loads. Legacy unbound bundles cannot start the API. |
+| `detector.onnx` | **required** | Must be the checksummed detector role. A `.pt` is never loaded at serve time. |
+| exactly one selected `classifier_int8.onnx` **or** `classifier.onnx` | **required** | The manifest selects it with `fallback_allowed=false`; an unbound sibling is rejected. A broken selected graph cannot silently fall back to another graph. |
+| `classes.json`, `temperature.json`, `conformal.json` | **required** | Taxonomy, preprocessing, model identity, calibration source, and conformal fit must agree with the selected graph and manifest. Missing/malformed files abort startup. |
+| `data_manifest.json`, `run_manifest.json` | **required** | Dataset digest/count and run/version/mode/family identity must match the sealed manifest. |
+| `ood_embedding.npz` | conditional | Required exactly when `classes.json` declares an embedding bank; a declared-invalid or unbound bank aborts startup. The served OOD overlay remains off unless a matching full-pipeline gate is declared. |
+| `aqua/*` | required for `combined` | TFLite classifier, Aqua classes, and retained ONNX student must all be bound together. Publish the TFLite + Aqua classes additionally to `server/static/aqua/`; their endpoint validates both file digests and the combined bundle identity. |
+| `analysis/*` | informational | Run logs/cards/metrics may travel in the archive but cannot influence serving. |
 
-Out of band and not in this table: `server/static/aqua/` (the on-device TFLite
-model + its `classes.json`) and `server/static/guide/` (disease example photos).
+`server/static/guide/` contains disease example photos and is not a model
+artefact. A `frontier` deployment uses the same complete bundle contract under
+`frontier_models_dir`; when it is invalid, gamma remains available and frontier
+is reported unavailable.
 
 Validate a bundle before shipping it:
 
 ```bash
-python .claude/skills/houseplant-disease-ml/scripts/check_bundle.py server/models/
+python server/tools/verify_bundle.py server/models/
 ```
+
+The verifier checks bytes and metadata only; it does not load or run a model.
 
 ## 3. Configuration
 
@@ -151,9 +158,9 @@ the hardened unit in §5. Point every one of these at the state directory.
 
 | Key | Default | Notes |
 |---|---|---|
-| `models_dir` | `models` | The gamma bundle (§2). |
+| `models_dir` | `models` | A complete manifest-bound gamma/combined bundle (§2). |
 | `frontier_enabled` | `false` | Off because it expects a GPU host. When off (or its bundle fails to load), `/api/analyze?family=frontier` returns HTTP 200 with `available:false` and `/api/capabilities` greys it out. |
-| `frontier_models_dir` | `models/frontier` | `classifier.onnx` + `classes.json` + calibration. The detector is shared with gamma. |
+| `frontier_models_dir` | `models/frontier` | A complete manifest-bound frontier bundle, including its own bound detector bytes. |
 | `guide_static_dir` | `server/static/guide` | Served by `GET /api/guide/photo/{key}`, disk-cached by the client. |
 | `aqua_static_dir` | `server/static/aqua` | `aqua_classifier.tflite` + `classes.json`, served by `/api/aqua/manifest` and `/api/aqua/model`. Provisioned out of band. |
 
@@ -477,7 +484,7 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 - [ ] `feedback_ip_pepper` and `community_author_key_pepper` set explicitly.
 - [ ] nginx `client_max_body_size` > `max_request_bytes`; `proxy_read_timeout`
       > `inference_timeout`.
-- [ ] Model bundle present and validated (§2, `check_bundle.py`).
+- [ ] A single complete model bundle is present and passes `server/tools/verify_bundle.py` (§2).
 - [ ] All storage paths point into the state directory; it is backed up.
 - [ ] `scan_recording_enabled` matches what your privacy policy discloses.
 - [ ] Service runs as a non-root user; deployed from a tagged commit.
@@ -500,8 +507,9 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Process exits at boot, `DetectorLoadError` | Only `detector.pt` in `models/`; nothing loads a `.pt` at serve time (`start.sh`'s pre-flight now refuses it too) | Export `detector.onnx` (notebook §6) |
-| Process exits at boot, `ClassifierLoadError` naming a class count | `classes.json -> class_names` length ≠ ONNX head width | Ship the `classes.json` that matches the trained head, in training order. There is no migration shim; deleting the file falls back to the 9 built-in defaults |
+| Process exits at boot, `BundleLoadError` | Missing manifest/file, mixed runs, changed bytes, unbound classifier sibling, or a serving-contract mismatch | Re-extract one complete notebook archive into a fresh models directory; run the verifier in §2. Never repair or synthesize a production manifest after training. |
+| Process exits at boot, `DetectorLoadError` | The manifest-verified `detector.onnx` cannot be opened or violates its tensor contract | Produce a new notebook bundle; a `.pt` detector is never accepted by serving. |
+| Process exits at boot, `ClassifierLoadError` naming a class count | Bound `classes.json -> class_names` length differs from the selected ONNX head width | Produce a corrected notebook bundle. There is no pad/truncate or default-taxonomy migration shim in strict startup. |
 | `/api/health` 503 `Pipeline not ready` | Models still loading, or the lifespan never completed | Wait out the cold load; if it persists, check the journal for the load error |
 | Every client shares one rate-limit bucket; mass 429/403 | `trusted_proxies` does not contain the actual peer address, or a CDN sits in front | §6.1 — verify with the `IP=` log walk, add `real_ip_header` for a CDN |
 | Species/care-plan screens are slow for everyone, every time | `AI_CACHE_DIR` unwritable under `ProtectSystem=strict` — writes are best-effort and swallowed | Point `AI_CACHE_DIR` into `StateDirectory`; the server logs a warning at startup when the probe write fails |

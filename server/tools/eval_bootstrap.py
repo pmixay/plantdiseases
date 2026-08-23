@@ -150,6 +150,51 @@ def _percentile_ci(samples: np.ndarray, ci: float) -> tuple[float, float]:
     return float(np.percentile(samples, lo_q)), float(np.percentile(samples, hi_q))
 
 
+def _validate_bootstrap_config(n_boot: int, ci: float) -> None:
+    if isinstance(n_boot, bool) or int(n_boot) != n_boot or n_boot <= 0:
+        raise ValueError("n_boot must be a positive integer")
+    if not 0.0 < float(ci) < 1.0:
+        raise ValueError("ci must be strictly between 0 and 1")
+
+
+def _prepare_groups(group_ids, n: int) -> list[np.ndarray] | None:
+    """Validate group IDs and return row indices per independent family."""
+    if group_ids is None:
+        return None
+    values = np.asarray(group_ids, dtype=object)
+    if values.ndim != 1 or len(values) != n:
+        raise ValueError("group_ids must be a 1-D vector matching the labels")
+    groups: dict[str, list[int]] = {}
+    for i, raw in enumerate(values):
+        key = str(raw).strip()
+        if not key:
+            raise ValueError(f"group_ids contains a blank value at row {i}")
+        groups.setdefault(key, []).append(i)
+    return [np.asarray(indices, dtype=np.int64) for indices in groups.values()]
+
+
+def _resample_indices(rng, n: int, groups: list[np.ndarray] | None) -> np.ndarray:
+    if groups is None:
+        return rng.integers(0, n, size=n)
+    chosen = rng.integers(0, len(groups), size=len(groups))
+    return np.concatenate([groups[i] for i in chosen])
+
+
+def _sampling_meta(groups: list[np.ndarray] | None, n: int) -> dict:
+    if groups is None:
+        return {
+            "resampling_unit": "row",
+            "n_groups": None,
+            "independence_advisory": (
+                "capture-family IDs absent; CI does not control pseudo-replication"),
+        }
+    return {
+        "resampling_unit": "capture_family",
+        "n_groups": len(groups),
+        "independence_advisory": None,
+    }
+
+
 def bootstrap_macro_f1_ci(
     y_true,
     y_pred,
@@ -158,8 +203,10 @@ def bootstrap_macro_f1_ci(
     n_boot: int = 5000,
     ci: float = 0.95,
     seed: int = 0,
+    group_ids=None,
 ) -> dict:
     """Percentile-bootstrap CI for disease macro-F1 of a single model."""
+    _validate_bootstrap_config(n_boot, ci)
     y_true = _as_int_array(y_true)
     y_pred = _as_int_array(y_pred)
     if y_true.shape != y_pred.shape:
@@ -167,12 +214,13 @@ def bootstrap_macro_f1_ci(
     n = y_true.shape[0]
     if n == 0:
         raise ValueError("empty prediction set")
+    groups = _prepare_groups(group_ids, n)
 
     point = disease_macro_f1(y_true, y_pred, class_names)
     rng = np.random.default_rng(seed)
     boot = np.empty(n_boot, dtype=np.float64)
     for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
+        idx = _resample_indices(rng, n, groups)
         boot[b] = disease_macro_f1(y_true[idx], y_pred[idx], class_names)
     lo, hi = _percentile_ci(boot, ci)
     return {
@@ -184,6 +232,7 @@ def bootstrap_macro_f1_ci(
         "n": int(n),
         "n_boot": int(n_boot),
         "ci_half_width": (hi - lo) / 2.0,
+        **_sampling_meta(groups, n),
     }
 
 
@@ -196,6 +245,7 @@ def paired_bootstrap(
     n_boot: int = 5000,
     ci: float = 0.95,
     seed: int = 0,
+    group_ids=None,
 ) -> dict:
     """Paired bootstrap for ``A − B`` disease macro-F1 on a shared test set.
 
@@ -206,6 +256,7 @@ def paired_bootstrap(
     excludes zero (the Stage 0 gate: "you can measure a 0.03 difference
     with a CI that excludes zero").
     """
+    _validate_bootstrap_config(n_boot, ci)
     y_true = _as_int_array(y_true)
     y_pred_a = _as_int_array(y_pred_a)
     y_pred_b = _as_int_array(y_pred_b)
@@ -215,12 +266,13 @@ def paired_bootstrap(
     if n == 0:
         raise ValueError("empty prediction set")
 
+    groups = _prepare_groups(group_ids, n)
     f1_a = disease_macro_f1(y_true, y_pred_a, class_names)
     f1_b = disease_macro_f1(y_true, y_pred_b, class_names)
     rng = np.random.default_rng(seed)
     diffs = np.empty(n_boot, dtype=np.float64)
     for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
+        idx = _resample_indices(rng, n, groups)
         yt = y_true[idx]
         diffs[b] = (
             disease_macro_f1(yt, y_pred_a[idx], class_names)
@@ -239,6 +291,7 @@ def paired_bootstrap(
         "significant": bool(lo > 0.0 or hi < 0.0),
         "n": int(n),
         "n_boot": int(n_boot),
+        **_sampling_meta(groups, n),
     }
 
 
@@ -250,6 +303,7 @@ def bootstrap_per_class_recall_ci(
     n_boot: int = 5000,
     ci: float = 0.95,
     seed: int = 0,
+    group_ids=None,
 ) -> dict[str, dict]:
     """Percentile-bootstrap recall CI for every class (Stage 0).
 
@@ -259,6 +313,7 @@ def bootstrap_per_class_recall_ci(
     from that class's percentile computation (``np.nanpercentile``), so a
     rare class still gets a CI from the replicates where it was present.
     """
+    _validate_bootstrap_config(n_boot, ci)
     y_true = _as_int_array(y_true)
     y_pred = _as_int_array(y_pred)
     if y_true.shape != y_pred.shape:
@@ -267,12 +322,13 @@ def bootstrap_per_class_recall_ci(
     if n == 0:
         raise ValueError("empty prediction set")
 
+    groups = _prepare_groups(group_ids, n)
     point = per_class_recall(y_true, y_pred, class_names)
     support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
     rng = np.random.default_rng(seed)
     boot = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
     for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
+        idx = _resample_indices(rng, n, groups)
         rec = per_class_recall(y_true[idx], y_pred[idx], class_names)
         boot[b] = [rec[c] for c in class_names]
 
@@ -302,6 +358,7 @@ def bootstrap_per_class_recall_ci(
         "n": int(n),
         "n_boot": int(n_boot),
         "classes": out,
+        **_sampling_meta(groups, n),
     }
 
 
@@ -313,6 +370,7 @@ def bootstrap_per_class_precision_ci(
     n_boot: int = 5000,
     ci: float = 0.95,
     seed: int = 0,
+    group_ids=None,
 ) -> dict[str, dict]:
     """Percentile-bootstrap precision CI for every class.
 
@@ -324,6 +382,7 @@ def bootstrap_per_class_precision_ci(
     percentile computation, so a rarely-predicted class still gets a CI
     from the replicates where it was predicted.
     """
+    _validate_bootstrap_config(n_boot, ci)
     y_true = _as_int_array(y_true)
     y_pred = _as_int_array(y_pred)
     if y_true.shape != y_pred.shape:
@@ -332,13 +391,14 @@ def bootstrap_per_class_precision_ci(
     if n == 0:
         raise ValueError("empty prediction set")
 
+    groups = _prepare_groups(group_ids, n)
     point = per_class_precision(y_true, y_pred, class_names)
     support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
     n_predicted = {c: int(np.sum(y_pred == i)) for i, c in enumerate(class_names)}
     rng = np.random.default_rng(seed)
     boot = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
     for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
+        idx = _resample_indices(rng, n, groups)
         prec = per_class_precision(y_true[idx], y_pred[idx], class_names)
         boot[b] = [prec[c] for c in class_names]
 
@@ -370,6 +430,7 @@ def bootstrap_per_class_precision_ci(
         "n": int(n),
         "n_boot": int(n_boot),
         "classes": out,
+        **_sampling_meta(groups, n),
     }
 
 
@@ -382,6 +443,7 @@ def paired_per_class_recall(
     n_boot: int = 5000,
     ci: float = 0.95,
     seed: int = 0,
+    group_ids=None,
 ) -> dict[str, dict]:
     """Paired bootstrap for ``A − B`` per-class recall on a shared test set.
 
@@ -391,6 +453,7 @@ def paired_per_class_recall(
     zero. One resampled index vector per iteration is applied to BOTH
     models so the difference reflects only the model gap.
     """
+    _validate_bootstrap_config(n_boot, ci)
     y_true = _as_int_array(y_true)
     y_pred_a = _as_int_array(y_pred_a)
     y_pred_b = _as_int_array(y_pred_b)
@@ -400,13 +463,14 @@ def paired_per_class_recall(
     if n == 0:
         raise ValueError("empty prediction set")
 
+    groups = _prepare_groups(group_ids, n)
     rec_a = per_class_recall(y_true, y_pred_a, class_names)
     rec_b = per_class_recall(y_true, y_pred_b, class_names)
     support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
     rng = np.random.default_rng(seed)
     diffs = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
     for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
+        idx = _resample_indices(rng, n, groups)
         yt = y_true[idx]
         ra = per_class_recall(yt, y_pred_a[idx], class_names)
         rb = per_class_recall(yt, y_pred_b[idx], class_names)
@@ -443,6 +507,82 @@ def paired_per_class_recall(
         "n": int(n),
         "n_boot": int(n_boot),
         "classes": out,
+        **_sampling_meta(groups, n),
+    }
+
+
+def paired_per_class_precision(
+    y_true,
+    y_pred_a,
+    y_pred_b,
+    class_names: list[str],
+    *,
+    n_boot: int = 5000,
+    ci: float = 0.95,
+    seed: int = 0,
+    group_ids=None,
+) -> dict[str, dict]:
+    """Paired bootstrap for ``A − B`` per-class precision.
+
+    The same sampled indices are applied to both models. Replicates where
+    either model makes no prediction for a class are undefined and excluded
+    for that class rather than being silently scored as zero.
+    """
+    _validate_bootstrap_config(n_boot, ci)
+    y_true = _as_int_array(y_true)
+    y_pred_a = _as_int_array(y_pred_a)
+    y_pred_b = _as_int_array(y_pred_b)
+    if not (y_true.shape == y_pred_a.shape == y_pred_b.shape):
+        raise ValueError("y_true, y_pred_a and y_pred_b must have equal length")
+    n = y_true.shape[0]
+    if n == 0:
+        raise ValueError("empty prediction set")
+
+    groups = _prepare_groups(group_ids, n)
+    prec_a = per_class_precision(y_true, y_pred_a, class_names)
+    prec_b = per_class_precision(y_true, y_pred_b, class_names)
+    n_pred_a = {c: int(np.sum(y_pred_a == i)) for i, c in enumerate(class_names)}
+    n_pred_b = {c: int(np.sum(y_pred_b == i)) for i, c in enumerate(class_names)}
+    rng = np.random.default_rng(seed)
+    diffs = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
+    for b in range(n_boot):
+        idx = _resample_indices(rng, n, groups)
+        yt = y_true[idx]
+        pa = per_class_precision(yt, y_pred_a[idx], class_names)
+        pb = per_class_precision(yt, y_pred_b[idx], class_names)
+        diffs[b] = [pa[c] - pb[c] for c in class_names]
+
+    out: dict[str, dict] = {}
+    for i, c in enumerate(class_names):
+        valid = diffs[:, i]
+        valid = valid[~np.isnan(valid)]
+        base = {"precision_a": prec_a[c], "precision_b": prec_b[c],
+                "n_predicted_a": n_pred_a[c], "n_predicted_b": n_pred_b[c]}
+        if valid.size == 0:
+            out[c] = {
+                **base, "diff_point": float("nan"), "diff_ci_low": float("nan"),
+                "diff_ci_high": float("nan"), "p_a_gt_b": float("nan"),
+                "significant": False, "n_boot_valid": 0,
+            }
+            continue
+        lo, hi = _percentile_ci(valid, ci)
+        out[c] = {
+            **base,
+            "diff_point": prec_a[c] - prec_b[c],
+            "diff_ci_low": lo,
+            "diff_ci_high": hi,
+            "p_a_gt_b": float(np.mean(valid > 0.0)),
+            "significant": bool(lo > 0.0 or hi < 0.0),
+            "n_boot_valid": int(valid.size),
+        }
+    return {
+        "metric": "per_class_precision_diff",
+        "compared": "a_minus_b",
+        "ci_level": ci,
+        "n": int(n),
+        "n_boot": int(n_boot),
+        "classes": out,
+        **_sampling_meta(groups, n),
     }
 
 
@@ -464,17 +604,22 @@ def main() -> None:
     y_true = data["y_true"]
     y_pred_a = data["y_pred_a"]
     label_a = data.get("label_a", "model_a")
+    group_ids = data.get("group_ids")
 
     report: dict = {
         "class_names": class_names,
         label_a: {
             "disease_macro_f1": bootstrap_macro_f1_ci(
                 y_true, y_pred_a, class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
             "per_class_recall": bootstrap_per_class_recall_ci(
                 y_true, y_pred_a, class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
+            ),
+            "per_class_precision": bootstrap_per_class_precision_ci(
+                y_true, y_pred_a, class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
         },
     }
@@ -483,21 +628,29 @@ def main() -> None:
         report[label_b] = {
             "disease_macro_f1": bootstrap_macro_f1_ci(
                 y_true, data["y_pred_b"], class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
             "per_class_recall": bootstrap_per_class_recall_ci(
                 y_true, data["y_pred_b"], class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
+            ),
+            "per_class_precision": bootstrap_per_class_precision_ci(
+                y_true, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
         }
         report[f"{label_a}_vs_{label_b}"] = {
             "disease_macro_f1": paired_bootstrap(
                 y_true, y_pred_a, data["y_pred_b"], class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
             "per_class_recall": paired_per_class_recall(
                 y_true, y_pred_a, data["y_pred_b"], class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
+            ),
+            "per_class_precision": paired_per_class_precision(
+                y_true, y_pred_a, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed, group_ids=group_ids,
             ),
         }
 

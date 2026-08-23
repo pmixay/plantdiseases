@@ -69,6 +69,12 @@ def bundle(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
 
     # The benchmark: one photograph we must never find inside the corpus.
     _noise(bench / "leaf_scorch_underwatering" / "b0.jpg", seed=900)
+    with (bench / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "capture_family_id"])
+        w.writeheader()
+        w.writerow({"filename": "leaf_scorch_underwatering/b0.jpg",
+                    "class": "leaf_scorch_underwatering",
+                    "capture_family_id": "benchmark-family-0"})
 
     expected = {}
 
@@ -110,7 +116,10 @@ def bundle(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     _noise(root / (swapped := row("healthy/swapped.jpg", "phash_mismatch")), seed=4)
 
     with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["filename", "class", "split_hint", "phash"])
+        w = csv.DictWriter(
+            fh, fieldnames=["filename", "class", "split_hint", "phash",
+                            "immutable_source_id", "capture_family_id",
+                            "first_seen_model_version"])
         w.writeheader()
         for name in expected:
             src = root / name
@@ -121,7 +130,12 @@ def bundle(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
             else:
                 digest = _phash_of(src) if src.exists() and src.stat().st_size > 100 else ""
             w.writerow({"filename": name, "class": name.split("/")[0],
-                        "split_hint": "eval_ok", "phash": digest})
+                        "split_hint": "eval_ok", "phash": digest,
+                        "immutable_source_id": "supp:" + name,
+                        "capture_family_id": (
+                            "benchmark-family-0" if name.endswith("/leak.jpg")
+                            else "supp-family:" + name),
+                        "first_seen_model_version": "never"})
 
     return root, bench, expected
 
@@ -170,7 +184,8 @@ def test_reencode_drift_is_not_a_mismatch(tmp_path):
                     "split_hint": "eval_ok",
                     "phash": _flip_bits(_phash_of(root / "healthy/far.jpg"), 20)})
 
-    got = _verdicts(fs.filter_bundle(root, None, workers=2)[0])
+    got = _verdicts(fs.filter_bundle(
+        root, None, workers=2, require_provenance=False)[0])
     assert got["healthy/near.jpg"] == "keep", "4 bits of re-encode drift is the same image"
     assert got["healthy/far.jpg"] == "phash_mismatch", "20 bits is a different image"
 
@@ -185,7 +200,8 @@ def test_unreadable_digest_is_a_manifest_defect_not_a_row_defect(tmp_path):
         w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
                     "split_hint": "eval_ok", "phash": "zzz"})
 
-    rows, report = fs.filter_bundle(root, None, workers=2)
+    rows, report = fs.filter_bundle(
+        root, None, workers=2, require_provenance=False)
     assert _verdicts(rows) == {"healthy/h.jpg": "keep"}
     assert report["totals"]["unreadable_manifest_digests"] == 1
 
@@ -216,7 +232,8 @@ def test_clean_bundle_keeps_everything(tmp_path):
             w.writerow({"filename": name, "class": "healthy", "split_hint": "eval_ok",
                         "phash": _phash_of(root / name)})
 
-    rows, report = fs.filter_bundle(root, None, workers=4)
+    rows, report = fs.filter_bundle(
+        root, None, workers=4, require_provenance=False)
     assert set(_verdicts(rows).values()) == {"keep"}
     assert report["per_class"]["healthy"]["distinct_clusters"] == 5
     assert report["totals"]["benchmark_leaks"] == 0
@@ -252,6 +269,98 @@ def test_malformed_digest_never_crashes_the_run(tmp_path, junk):
         w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
                     "split_hint": "eval_ok", "phash": junk})
 
-    rows, report = fs.filter_bundle(root, None, workers=2)
+    rows, report = fs.filter_bundle(
+        root, None, workers=2, require_provenance=False)
     assert _verdicts(rows) == {"healthy/h.jpg": "keep"}
     assert report["totals"]["unreadable_manifest_digests"] == 1
+
+
+def test_scan_keys_are_posix_relative_on_every_platform(tmp_path):
+    _noise(tmp_path / "healthy" / "h.jpg", seed=20)
+    assert set(fs._scan(tmp_path, workers=1)) == {"healthy/h.jpg"}
+
+
+def test_manifest_duplicate_filename_is_rejected(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h.jpg", seed=21)
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "healthy"})
+        w.writerow({"filename": "healthy\\h.jpg", "class": "healthy"})
+    with pytest.raises(SystemExit, match="duplicate filename"):
+        fs.filter_bundle(root, None, workers=1, require_provenance=False)
+
+
+def test_manifest_class_must_match_path(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h.jpg", seed=22)
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "leaf_spot"})
+    with pytest.raises(SystemExit, match="disagrees"):
+        fs.filter_bundle(root, None, workers=1, require_provenance=False)
+
+
+def test_empty_benchmark_refuses_to_certify_clean(tmp_path):
+    root, bench = tmp_path / "supp", tmp_path / "empty_bench"
+    _noise(root / "healthy/h.jpg", seed=23)
+    bench.mkdir()
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
+                    "phash": _phash_of(root / "healthy/h.jpg")})
+    with pytest.raises(RuntimeError, match="no decodable images"):
+        fs.filter_bundle(root, bench, workers=1, require_provenance=False)
+
+
+def test_benchmark_leak_overrides_blur_quality_verdict(tmp_path):
+    root, bench = tmp_path / "supp", tmp_path / "bench"
+    _gradient(root / "leaf_spot/leak.jpg")
+    _copy(root / "leaf_spot/leak.jpg", bench / "leaf_spot/leak.jpg")
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "leaf_spot/leak.jpg", "class": "leaf_spot",
+                    "phash": _phash_of(root / "leaf_spot/leak.jpg")})
+    rows, report = fs.filter_bundle(
+        root, bench, workers=1, require_provenance=False)
+    assert _verdicts(rows)["leaf_spot/leak.jpg"] == "bench_leak"
+    assert report["totals"]["benchmark_leaks"] == 1
+
+
+def test_production_filter_requires_stable_capture_provenance(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h.jpg", seed=30)
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "phash"])
+        w.writeheader()
+        w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
+                    "phash": _phash_of(root / "healthy/h.jpg")})
+    with pytest.raises(SystemExit, match="capture_family_id"):
+        fs.filter_bundle(root, None, workers=1)
+
+
+def test_capture_family_merges_phash_distinct_siblings(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/a.jpg", seed=31)
+    _noise(root / "healthy/b.jpg", seed=32)
+    fields = ["filename", "class", "phash", "immutable_source_id",
+              "capture_family_id", "first_seen_model_version"]
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        for name in ("healthy/a.jpg", "healthy/b.jpg"):
+            w.writerow({"filename": name, "class": "healthy",
+                        "phash": _phash_of(root / name),
+                        "immutable_source_id": "source:" + name,
+                        "capture_family_id": "one-underlying-capture",
+                        "first_seen_model_version": "never"})
+    rows, report = fs.filter_bundle(root, None, workers=1)
+    assert sorted(_verdicts(rows).values()) == ["dup_intra", "keep"]
+    assert report["thresholds"]["independence_method"].startswith(
+        "curator_capture_family_id")
+    assert {row["filter_independence_method"] for row in rows} == {
+        "capture_family_id+phash_v1"}

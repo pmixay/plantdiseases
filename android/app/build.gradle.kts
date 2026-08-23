@@ -429,6 +429,10 @@ dependencies {
     // not worth one minor version. Revisit when litert-api gets its own
     // namespace.
     implementation("com.google.ai.edge.litert:litert:2.1.5")
+    // Pure-Java FlatBuffer metadata reader used to validate a downloaded
+    // Aqua graph's tensor contract before its bundle pointer is activated.
+    // This inspects shapes/dtypes only; it does not execute the model.
+    implementation("org.tensorflow:tensorflow-lite-metadata:0.2.0")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM

@@ -257,7 +257,7 @@ def test_whole_group_moves_together(tmp_path):
     assert not list(ns["_iter_images"](train_root))
 
 
-# ── 2.7.3: regime-aware sampling + the calibration arithmetic ──────────────
+# ── Superseded 2.7.3 research narrative ────────────────────────────────────
 
 def _section_source(marker: str) -> str:
     """Source of the notebook cell containing ``marker``.
@@ -275,24 +275,17 @@ def _section_source(marker: str) -> str:
             return src
     pytest.fail(f"no notebook cell contains {marker!r} — was it renamed?")
 
-def test_falsified_levers_stay_removed():
-    """2.7.3 ran regime-aware sampling and regime-stratified conformal, and both
-    failed. The code is gone; this pins the DECISION so it is not rebuilt.
+def test_untrusted_historical_levers_are_not_release_evidence():
+    """Do not encode decisions from the audit-invalid private instrument.
 
-    Regime sampling moved the benchmark 3/31 -> 4/31 (Fisher p=1.000) while
-    in-domain held, so it is not a trade that went too far — it does nothing.
-    Regime conformal found the dull stratum already better covered (0.972 vs
-    0.965), so there was no under-coverage to fix. Rebuilding either costs an
-    A100 run and returns nothing.
+    A future independent v9 experiment may revisit a sampler or calibration
+    design. This regression test pins only the evidence warning, never a claim
+    that a lever is permanently falsified by the old 31-row artifact.
     """
-    setup, sampler = _section_source("MODEL_VERSION ="), _section_source("make_source_weighted_sampler")
-    for gone in ("REGIME_UPWEIGHT_CLASSES = ", "REGIME_BOOST = ", "REGIME_SAT_QUANTILE = "):
-        assert gone not in setup, f"{gone.strip()} is back — see the falsification record in §1"
-    for gone in ("def regime_multipliers", "def _mean_saturation", "regime_mult"):
-        assert gone not in sampler, f"{gone} is back in §4 — the lever was falsified"
-    # the record itself must survive, or the next session re-derives the idea
-    assert "falsified" in setup.lower() and "3/31" in setup, \
-        "the 2.7.3 falsification record was deleted along with the code"
+    setup = _section_source("MODEL_VERSION =")
+    assert "SUPERSEDED 2.7.3 ARCHIVE NARRATIVE" in setup
+    assert "DO NOT USE AS EVIDENCE" in setup
+    assert "docs/ROADMAP.md" in setup
 
 
 def test_temperature_is_not_claimed_to_move_predictions():

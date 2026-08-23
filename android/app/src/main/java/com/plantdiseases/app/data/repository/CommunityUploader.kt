@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
+import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.Nicknames
@@ -44,6 +46,13 @@ class CommunityUploader(
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (!CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
+        }
+        when (analysis.effectiveAbstentionReason()) {
+            AnalysisAbstentionReasons.NOT_A_PLANT -> {
+                return@withContext UploadOutcome.HiddenDisease
+            }
+            null -> Unit
+            else -> return@withContext UploadOutcome.Abstained
         }
         // On-device (Aqua) scans never hit /api/analyze, so they carry no
         // server-issued scan_id. Those stay private by default — we don't
@@ -116,11 +125,10 @@ class CommunityUploader(
      *
      * Used when the scanner explicitly asks for a second opinion: that
      * tap is consent to share THIS scan, so [force] bypasses the global
-     * uploads-enabled toggle. The disease key is the displayed verdict
-     * ([ScanEntity.displayedClassKey]) — the same reroute-aware key the
-     * normal upload path uses — so the shared row matches what the user
-     * saw. The server dedups by scan_id, so calling this for a scan that
-     * already uploaded is a harmless no-op.
+     * uploads-enabled toggle. Abstained rows return before the persisted
+     * probability argmax can be uploaded as an accepted diagnosis. The server
+     * dedups by scan_id, so calling this for an accepted scan that already
+     * uploaded is a harmless no-op.
      */
     suspend fun uploadFromEntity(
         scan: ScanEntity,
@@ -128,6 +136,13 @@ class CommunityUploader(
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (!force && !CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
+        }
+        when (scanRepository.abstentionReason(scan)) {
+            AnalysisAbstentionReasons.NOT_A_PLANT -> {
+                return@withContext UploadOutcome.HiddenDisease
+            }
+            null -> Unit
+            else -> return@withContext UploadOutcome.Abstained
         }
         // On-device (Aqua) scans are private by default — an offline scan has
         // no server-issued scan_id, so sharing it would only send the image
@@ -184,6 +199,7 @@ class CommunityUploader(
         MissingScanId,
         Failed,
         HiddenDisease,
+        Abstained,
 
         // On-device (Aqua/offline) scan with no server-issued scan_id — kept
         // private, never shared to the community.
@@ -196,15 +212,9 @@ class CommunityUploader(
      * main.py). The scan's stored ``diseaseName`` is a localised
      * display string; we want the canonical key.
      *
-     * Prefer the server's DISPLAYED verdict key (``classKey`` /
-     * ``class_name``) — it already reflects the weak-healthy reroute /
-     * healthy-fallback / OOD gate, so the community row carries the same
-     * disease the user actually saw. Using ``argmax(all_probs)`` here
-     * instead would store the RAW top class (e.g. "healthy") for a scan
-     * the user was shown as a disease, so "same disease" matching could
-     * never match it. Fall back to the raw argmax, then to a normalised
-     * display name, only when the verdict key is absent (legacy/partial
-     * responses).
+     * Prefer the server's probability-backed ``classKey``. Callers reject an
+     * abstained response before reaching this helper, so a diagnostic OOD
+     * argmax can never be uploaded as an accepted disease.
      */
     private fun canonicalDiseaseKey(analysis: AnalysisResponse): String? {
         analysis.classKey?.takeIf { it.isNotBlank() }?.let { return it }

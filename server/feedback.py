@@ -23,7 +23,8 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 try:
@@ -149,12 +150,12 @@ _init_lock = threading.Lock()
 _initialised = False
 
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
     """Open a short-lived SQLite connection.
 
-    ``check_same_thread=False`` is safe here because every call site
-    closes the connection synchronously; the connection never leaves
-    the calling thread's scope.
+    ``sqlite3.Connection.__exit__`` commits/rolls back but does not close the
+    handle, so closure is explicit for Windows and long-running workers.
     """
     conn = sqlite3.connect(
         str(FEEDBACK_DB_PATH),
@@ -163,7 +164,14 @@ def _connect() -> sqlite3.Connection:
     )
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db() -> None:

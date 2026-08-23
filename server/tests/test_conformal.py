@@ -1,10 +1,4 @@
-"""Inductive conformal prediction (RAPS / APS) sanity tests.
-
-The sets are non-empty by construction, monotonic in ``q_hat``, and
-empirical coverage on the calibration set itself must match the
-nominal target within Monte-Carlo noise. We seed everything so the
-tests stay deterministic on CI.
-"""
+"""Runtime-only conformal artifact loading and prediction-set tests."""
 
 from __future__ import annotations
 
@@ -15,8 +9,8 @@ import pytest
 
 from conformal import (
     ConformalConfig,
+    ConformalLoadError,
     aps_score,
-    calibrate_q_hat,
     load_conformal_config,
     prediction_set,
     raps_score,
@@ -70,69 +64,6 @@ def test_aps_set_matches_hand_computed_threshold():
     assert set(out) == {"a", "b"}
 
 
-def test_calibrate_q_hat_meets_marginal_coverage_guarantee():
-    """The conformal coverage guarantee is *marginal*: empirical
-    coverage on a held-out test split must be at least ``1 - alpha``
-    (within MC noise) under exchangeability.
-
-    We deliberately split into cal/test so the cal-set isn't double-
-    used; on the cal-set itself coverage trivially upper-bounds
-    1-alpha and isn't a useful sanity check."""
-    rng = np.random.RandomState(0)
-    n_classes, n = 6, 3000
-    labels = rng.randint(0, n_classes, size=n)
-    logits = rng.randn(n, n_classes) * 0.4
-    logits[np.arange(n), labels] += 1.5
-    probs = np.exp(logits - logits.max(axis=1, keepdims=True))
-    probs /= probs.sum(axis=1, keepdims=True)
-
-    cal_p, test_p = probs[:1500], probs[1500:]
-    cal_y, test_y = labels[:1500], labels[1500:]
-
-    cfg = calibrate_q_hat(cal_p, cal_y, method="raps", alpha=0.1)
-    assert cfg.calibration_n == 1500
-    assert 0.0 < cfg.q_hat < 1.0 + 5 * cfg.lambda_reg
-
-    classes = list(map(str, range(n_classes)))
-    covered = 0
-    for i in range(test_p.shape[0]):
-        ps = prediction_set({classes[k]: float(test_p[i, k]) for k in range(n_classes)}, cfg)
-        if classes[test_y[i]] in ps:
-            covered += 1
-    coverage = covered / test_p.shape[0]
-    # Marginal guarantee: ≥ 1 - alpha within MC noise.
-    assert coverage >= 0.88, f"coverage={coverage:.3f}"
-
-
-def test_calibrate_q_hat_aps_mode_also_works():
-    rng = np.random.RandomState(1)
-    n_classes, n_cal = 4, 500
-    labels = rng.randint(0, n_classes, size=n_cal)
-    logits = rng.randn(n_cal, n_classes)
-    logits[np.arange(n_cal), labels] += 2.0
-    probs = np.exp(logits - logits.max(axis=1, keepdims=True))
-    probs /= probs.sum(axis=1, keepdims=True)
-
-    cfg = calibrate_q_hat(probs, labels, method="aps", alpha=0.05)
-    assert cfg.method == "aps"
-    assert cfg.empirical_coverage is not None
-    # On-cal-set coverage upper-bounds 1-alpha; this is just a smoke
-    # check that calibration ran and produced a usable threshold.
-    assert cfg.empirical_coverage >= 0.94
-
-
-def test_calibrate_rejects_bad_inputs():
-    rng = np.random.RandomState(2)
-    probs = rng.dirichlet(np.ones(3), size=10)
-    labels = rng.randint(0, 3, size=10)
-    with pytest.raises(ValueError):
-        calibrate_q_hat(probs, labels, method="aps", alpha=0.0)
-    with pytest.raises(ValueError):
-        calibrate_q_hat(probs, labels, method="bogus", alpha=0.1)
-    with pytest.raises(ValueError):
-        calibrate_q_hat(np.empty((0, 3)), np.empty(0, dtype=int), alpha=0.1)
-
-
 def test_load_conformal_config_round_trip(tmp_path):
     payload = {
         "method": "raps",
@@ -148,9 +79,8 @@ def test_load_conformal_config_round_trip(tmp_path):
     assert cfg is not None
     assert cfg.method == "raps"
     assert cfg.q_hat == pytest.approx(0.84)
-    # Measured coverage wins over the nominal 1 - alpha (0.90): alpha is the
-    # grid-search knob that produced q_hat, not the coverage promise.
-    assert cfg.coverage_target == pytest.approx(0.91)
+    # Same-calibration-row coverage is diagnostic, not independent evidence.
+    assert cfg.coverage_target == pytest.approx(0.90)
 
 
 def test_coverage_target_falls_back_to_nominal_without_measurement(tmp_path):
@@ -164,12 +94,8 @@ def test_coverage_target_falls_back_to_nominal_without_measurement(tmp_path):
     assert cfg.coverage_target == pytest.approx(0.9)
 
 
-def test_coverage_target_reports_measured_not_nominal_after_grid_search(tmp_path):
-    """The 2.7.0 shape: alpha searched to 0.35, sets actually cover 0.967.
-
-    Reporting 1 - alpha here would advertise 65% coverage for sets that cover
-    ~97%, which understates the model to the user.
-    """
+def test_calibration_coverage_does_not_override_nominal_target(tmp_path):
+    """The 2.7.0 value was measured on calibration rows, not a locked test."""
     (tmp_path / "conformal.json").write_text(json.dumps({
         "method": "raps", "alpha": 0.35, "q_hat": 0.987,
         "lambda_reg": 0.75, "k_reg": 1, "calibration_n": 982,
@@ -177,8 +103,40 @@ def test_coverage_target_reports_measured_not_nominal_after_grid_search(tmp_path
     }))
     cfg = load_conformal_config(tmp_path)
     assert cfg is not None
-    assert cfg.coverage_target == pytest.approx(0.9675)
-    assert cfg.coverage_target > 1.0 - cfg.alpha
+    assert cfg.empirical_coverage == pytest.approx(0.9675)
+    assert cfg.coverage_target == pytest.approx(0.65)
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"alpha": float("nan")},
+        {"alpha": True},
+        {"q_hat": float("inf")},
+        {"q_hat": -0.1},
+        {"lambda_reg": -0.01},
+        {"k_reg": 1.5},
+        {"calibration_n": -1},
+        {"empirical_coverage": 1.1},
+    ],
+)
+def test_load_conformal_config_rejects_invalid_numeric_contract(tmp_path, patch):
+    payload = {
+        "method": "raps", "alpha": 0.1, "q_hat": 0.84,
+        "lambda_reg": 0.01, "k_reg": 1, "calibration_n": 100,
+    }
+    payload.update(patch)
+    (tmp_path / "conformal.json").write_text(json.dumps(payload))
+    with pytest.raises(ConformalLoadError):
+        load_conformal_config(tmp_path)
+
+
+def test_prediction_set_rejects_non_probability_vectors():
+    cfg = ConformalConfig(method="aps", alpha=0.1, q_hat=0.8)
+    with pytest.raises(ValueError, match="finite"):
+        prediction_set({"a": float("nan"), "b": 1.0}, cfg)
+    with pytest.raises(ValueError, match="sum"):
+        prediction_set({"a": 0.7, "b": 0.7}, cfg)
 
 
 def test_load_conformal_config_returns_none_when_missing(tmp_path, monkeypatch):
@@ -193,14 +151,16 @@ def test_load_conformal_config_returns_none_when_missing(tmp_path, monkeypatch):
 
 def test_load_conformal_config_handles_malformed_json(tmp_path):
     (tmp_path / "conformal.json").write_text("{not valid json")
-    assert load_conformal_config(tmp_path) is None
+    with pytest.raises(ConformalLoadError):
+        load_conformal_config(tmp_path)
 
 
 def test_load_conformal_config_rejects_unknown_method(tmp_path):
     (tmp_path / "conformal.json").write_text(json.dumps({
         "method": "fancy", "alpha": 0.1, "q_hat": 0.5,
     }))
-    assert load_conformal_config(tmp_path) is None
+    with pytest.raises(ConformalLoadError):
+        load_conformal_config(tmp_path)
 
 
 def test_load_conformal_config_searches_classifier_dir(tmp_path):

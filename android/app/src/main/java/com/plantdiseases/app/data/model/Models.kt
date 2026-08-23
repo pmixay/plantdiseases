@@ -82,9 +82,9 @@ data class PredictionSetItem(
 )
 
 /**
- * Conformal prediction set — the classes the model can't rule out at
- * the configured coverage level (e.g. 90 %). Surfaced honestly when
- * calibration data is loaded server-side; the field is null otherwise.
+ * Conformal prediction set — classes the model cannot rule out at the nominal
+ * `1-alpha` target. The server currently marks sets advisory; the number is not
+ * delivered coverage until a locked independent evaluation exists.
  */
 @Serializable
 data class PredictionSet(
@@ -108,22 +108,23 @@ data class PredictionSet(
 /** Response from the server after analyzing an image */
 @Serializable
 data class AnalysisResponse(
-    // Canonical class key (e.g. ``leaf_spot``) the pipeline
-    // landed on AFTER post-processing — this is what
-    // ``diseaseName`` is derived from. Echo this back as
-    // ``predictedClass`` on feedback. ``argmax(allProbs)`` may
-    // disagree because the weak-healthy reroute rewrites
-    // ``className`` / ``diseaseName`` but leaves ``allProbs``
-    // un-mutated; using argmax would poison server-side per-class
-    // accuracy metrics.
+    // The server uses HTTP 200 + available=false for a configured model tier
+    // that is currently unavailable. Missing on normal/legacy diagnoses, so
+    // true is the backward-compatible default.
+    @SerializedName("available") @SerialName("available") val available: Boolean = true,
+    @SerializedName("reason") @SerialName("reason") val unavailableReason: String? = null,
+    @SerializedName("message") @SerialName("message") val availabilityMessage: String? = null,
+    // Probability-backed classifier argmax (e.g. ``leaf_spot``). Rejection
+    // gates deliberately preserve this diagnostic; [abstained] says whether
+    // it may be presented to the user as an accepted diagnosis.
     @SerializedName("class_name") @SerialName("class_name") val classKey: String? = null,
     // Gson does not honour Kotlin non-null types, so missing/partial
     // server responses would otherwise inject 0f / null silently (and
     // NPE on first access for reference types). Give every
-    // always-expected field a safe default so an older / partial
-    // response degrades gracefully instead of crashing or showing 0%.
-    // (kotlinx.serialization likewise falls back to the default for a
-    // missing key, so the two paths degrade identically.)
+    // always-expected field a safe default so older persisted JSON can be
+    // inspected without crashing. The network repository separately applies
+    // [diagnosticContractViolation] and rejects a partial HTTP response before
+    // it can be shown or saved as a diagnosis.
     @SerializedName("disease_name") @SerialName("disease_name") val diseaseName: String = "",
     @SerializedName("disease_name_ru") @SerialName("disease_name_ru") val diseaseNameRu: String = "",
     @SerializedName("confidence") @SerialName("confidence") val confidence: Float = 0f,
@@ -134,15 +135,17 @@ data class AnalysisResponse(
     @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
     @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
     @SerializedName("is_healthy") @SerialName("is_healthy") val isHealthy: Boolean = false,
-    // Server-computed severity (low|medium|high). Authoritative — the
-    // client must persist and forward this rather than re-deriving it
-    // from a confidence heuristic (which can disagree with what the
-    // pipeline actually scored).
+    // Compatibility field. Current bundles have no lesion/severity target, so
+    // the server conservatively returns ``low`` rather than deriving extent
+    // from leaf-box area or class confidence.
     @SerializedName("severity") @SerialName("severity") val severity: String? = null,
     @SerializedName("detection") @SerialName("detection") val detection: Detection? = null,
     @SerializedName("all_probs") @SerialName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") @SerialName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") @SerialName("warnings") val warnings: List<String>? = null,
+    @SerializedName("abstained") @SerialName("abstained") val abstained: Boolean = false,
+    @SerializedName("abstention_reason") @SerialName("abstention_reason") val abstentionReason: String? = null,
+    @SerializedName("verdict_status") @SerialName("verdict_status") val verdictStatus: String? = null,
     @SerializedName("prediction_set") @SerialName("prediction_set") val predictionSet: PredictionSet? = null,
     /**
      * Toxic-to-pets surface. `toxicitySource` is `"db"` when the
@@ -177,6 +180,155 @@ data class AnalysisResponse(
     // answered (and detect a server-side downgrade). On-device Aqua
     // results set this locally. Defaults to gamma for older responses.
     @SerializedName("family") @SerialName("family") val family: String = "gamma",
+    @SerializedName("requested_family") @SerialName("requested_family") val requestedFamily: String? = null,
+    @SerializedName("family_fallback_reason") @SerialName("family_fallback_reason") val familyFallbackReason: String? = null,
+)
+
+/** Stable rejection reasons shared by API, persistence and UI policy. */
+object AnalysisAbstentionReasons {
+    const val OOD = "ood"
+    const val IMAGE_QUALITY = "image_quality"
+    const val NOT_A_PLANT = "not_a_plant"
+    const val UNKNOWN = "unknown"
+}
+
+/**
+ * Effective rejection reason with backward-compatible warning derivation.
+ *
+ * Old cached responses and Room rows only carry ``nap_ood_gated`` /
+ * ``blurry_image`` warnings. Those markers deliberately fail closed even when
+ * a deserialiser defaulted the newer ``abstained`` field to false.
+ */
+fun AnalysisResponse.effectiveAbstentionReason(): String? {
+    val warningSet = warnings.orEmpty().map { it.trim().lowercase() }.toSet()
+    if ("nap_ood_gated" in warningSet) return AnalysisAbstentionReasons.OOD
+    if ("blurry_image" in warningSet) return AnalysisAbstentionReasons.IMAGE_QUALITY
+    abstentionReason?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { return it }
+    if (classKey == AnalysisAbstentionReasons.NOT_A_PLANT) {
+        return AnalysisAbstentionReasons.NOT_A_PLANT
+    }
+    if (abstained || verdictStatus.equals("abstained", ignoreCase = true)) {
+        return AnalysisAbstentionReasons.UNKNOWN
+    }
+    return null
+}
+
+fun AnalysisResponse.isEffectivelyAbstained(): Boolean =
+    effectiveAbstentionReason() != null
+
+/**
+ * Return the first wire-contract violation in an otherwise available analysis.
+ *
+ * Defaults keep old persisted JSON readable, but they must not turn a partial
+ * HTTP 200 (for example ``{}``) into an accepted diagnosis. Every accepted
+ * verdict, natural not-a-plant verdict, and OOD abstention therefore carries
+ * one internally consistent probability-backed diagnostic. Image-quality
+ * rejection is the deliberate exception: it happens before inference and must
+ * carry no invented classifier distribution.
+ */
+fun AnalysisResponse.diagnosticContractViolation(): String? {
+    if (!available) return null // Availability has its own typed repository error.
+
+    if (effectiveAbstentionReason() == AnalysisAbstentionReasons.IMAGE_QUALITY) {
+        val qualityClass = classKey?.trim().orEmpty()
+        if (qualityClass.isNotEmpty() && qualityClass != AnalysisAbstentionReasons.UNKNOWN) {
+            return "image-quality rejection carries a classifier class"
+        }
+        if (!confidence.isFinite() || confidence != 0f) {
+            return "image-quality rejection confidence must be zero"
+        }
+        if (!allProbs.isNullOrEmpty() || !topK.isNullOrEmpty()) {
+            return "image-quality rejection carries classifier probabilities"
+        }
+        return null
+    }
+
+    val key = classKey ?: return "class_name is missing"
+    if (key.isBlank() || key != key.trim() || key !in CANONICAL_ANALYSIS_CLASS_KEYS) {
+        return "class_name is not a known class key"
+    }
+    if (diseaseName.isBlank()) return "disease_name is missing"
+    if (!confidence.isFinite() || confidence !in 0f..1f) {
+        return "confidence is outside [0,1]"
+    }
+
+    val probs = allProbs ?: return "all_probs is missing"
+    if (probs.isEmpty()) return "all_probs is empty"
+    if (probs.keys != CANONICAL_ANALYSIS_CLASS_KEYS) {
+        return "all_probs keys do not match the canonical taxonomy"
+    }
+    if (probs.any { (name, probability) ->
+            name.isBlank() ||
+                name != name.trim() ||
+                !probability.isFinite() ||
+                probability !in 0f..1f
+        }
+    ) {
+        return "all_probs contains an invalid class or probability"
+    }
+    val probabilitySum = probs.values.sum()
+    if (!probabilitySum.isFinite() || kotlin.math.abs(probabilitySum - 1f) > 0.005f) {
+        return "all_probs is not a probability distribution"
+    }
+    val classProbability = probs[key] ?: return "class_name is absent from all_probs"
+    val maximumProbability = probs.values.maxOrNull()
+        ?: return "all_probs is empty"
+    if (kotlin.math.abs(classProbability - maximumProbability) > PROBABILITY_WIRE_TOLERANCE) {
+        return "class_name is not the all_probs argmax"
+    }
+    if (kotlin.math.abs(confidence - classProbability) > PROBABILITY_WIRE_TOLERANCE) {
+        return "confidence disagrees with all_probs"
+    }
+
+    val candidates = topK ?: return "top_k is missing"
+    if (candidates.isEmpty()) return "top_k is empty"
+    val seen = HashSet<String>()
+    var previous = Float.POSITIVE_INFINITY
+    for (candidate in candidates) {
+        val candidateKey = candidate.className
+        val candidateConfidence = candidate.confidence
+        val probability = probs[candidateKey]
+            ?: return "top_k contains a class absent from all_probs"
+        if (
+            candidateKey.isBlank() ||
+            candidateKey != candidateKey.trim() ||
+            !seen.add(candidateKey) ||
+            !candidateConfidence.isFinite() ||
+            candidateConfidence !in 0f..1f
+        ) {
+            return "top_k contains an invalid candidate"
+        }
+        if (candidateConfidence > previous + PROBABILITY_WIRE_TOLERANCE) {
+            return "top_k is not probability ordered"
+        }
+        if (kotlin.math.abs(candidateConfidence - probability) > PROBABILITY_WIRE_TOLERANCE) {
+            return "top_k disagrees with all_probs"
+        }
+        previous = candidateConfidence
+    }
+    if (candidates.first().className != key) return "top_k does not start with class_name"
+    return null
+}
+
+// The server rounds confidence to 3 decimals and all_probs/top_k to 4. This
+// tolerance permits only that documented wire-format loss, not a different
+// probability or class.
+private const val PROBABILITY_WIRE_TOLERANCE = 0.0011f
+
+// Strict wire taxonomy for the currently shipped nine-class head. A taxonomy
+// migration must update this set and the UI label/care catalog in the same app
+// release; accepting a novel probability key with no presentation semantics
+// would recreate the blank/misleading diagnosis failure this boundary prevents.
+internal val CANONICAL_ANALYSIS_CLASS_KEYS = setOf(
+    "gray_mold_botrytis",
+    "healthy",
+    "leaf_scorch_underwatering",
+    "leaf_spot",
+    "not_a_plant",
+    "nutrient_deficiency",
+    "pests",
+    "powdery_mildew",
+    "viral_disease",
 )
 
 /** Per-family availability advertised by GET /api/capabilities. The
@@ -226,6 +378,9 @@ data class AquaManifestResponse(
     @SerializedName("available") @SerialName("available") val available: Boolean = false,
     @SerializedName("version") @SerialName("version") val version: String? = null,
     @SerializedName("sha256") @SerialName("sha256") val sha256: String? = null,
+    @SerializedName("classes_sha256") @SerialName("classes_sha256") val classesSha256: String? = null,
+    @SerializedName("bundle_sha256") @SerialName("bundle_sha256") val bundleSha256: String? = null,
+    @SerializedName("bundle_schema_version") @SerialName("bundle_schema_version") val bundleSchemaVersion: Int = 0,
     @SerializedName("size_bytes") @SerialName("size_bytes") val sizeBytes: Long = 0,
     // The classes.json sidecar passed through verbatim — persisted next to the
     // downloaded .tflite so AquaClassifier reads the same metadata the server
@@ -1196,10 +1351,8 @@ data class FeedbackRequest(
     @SerializedName("primary_region_index") @SerialName("primary_region_index") val primaryRegionIndex: Int? = null,
     @SerializedName("feedback_latency_ms") @SerialName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
     @SerializedName("image_hash") @SerialName("image_hash") val imageHash: String? = null,
-    // Conformal prediction set from the analyse response that
-    // produced this scan. Echoed back so the server can answer
-    // "was the right answer in the 90 % set?" without joining
-    // against the original analyse log.
+    // Advisory conformal set from the analyse response. Echoed back for
+    // membership/error analysis; it is not labelled as delivered 90% coverage.
     @SerializedName("prediction_set") @SerialName("prediction_set") val predictionSet: List<String>? = null,
 )
 

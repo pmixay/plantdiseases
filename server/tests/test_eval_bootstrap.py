@@ -10,6 +10,7 @@ significant.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from tools import eval_bootstrap as eb
 
@@ -186,3 +187,63 @@ def test_per_class_precision_handles_never_predicted_class_without_crashing():
     assert nap["n_predicted"] == 0
     assert nap["n_boot_valid"] == 0
     assert np.isnan(nap["point"])
+
+
+def test_paired_per_class_precision_flags_only_polluted_class():
+    rng = np.random.default_rng(19)
+    n = 800
+    y_true = rng.integers(0, 4, size=n)
+    y_a = y_true.copy()
+    y_b = y_true.copy()
+    # Add many false positives for disease_a in model B without changing the
+    # rows whose truth is disease_a.  This is a precision-only regression.
+    pollute = (rng.random(n) < 0.65) & (y_true == 2)
+    y_b[pollute] = 0
+
+    out = eb.paired_per_class_precision(
+        y_true, y_a, y_b, CLASS_NAMES, n_boot=400, seed=20)
+    da = out["classes"]["disease_a"]
+    assert da["diff_point"] > 0.0
+    assert da["diff_ci_low"] > 0.0
+    assert da["significant"] is True
+    assert out["classes"]["disease_b"]["significant"] is False
+
+
+@pytest.mark.parametrize("n_boot", [0, -1, 1.5, True])
+def test_bootstrap_rejects_invalid_iteration_count(n_boot):
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="n_boot"):
+        eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=n_boot)
+
+
+@pytest.mark.parametrize("ci", [0.0, 1.0, -0.1, 1.1])
+def test_bootstrap_rejects_invalid_ci(ci):
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="ci"):
+        eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=10, ci=ci)
+
+
+def test_capture_family_bootstrap_resamples_groups_and_marks_row_fallback():
+    y_true = np.array([0, 0, 1, 1, 2, 3])
+    y_pred = y_true.copy()
+    groups = ["capture-a", "capture-a", "capture-b", "capture-b", "c", "d"]
+    out = eb.bootstrap_macro_f1_ci(
+        y_true, y_pred, CLASS_NAMES, n_boot=30, seed=9, group_ids=groups)
+    assert out["resampling_unit"] == "capture_family"
+    assert out["n_groups"] == 4
+    assert out["independence_advisory"] is None
+
+    advisory = eb.paired_bootstrap(
+        y_true, y_pred, y_pred, CLASS_NAMES, n_boot=20, seed=10)
+    assert advisory["resampling_unit"] == "row"
+    assert "pseudo-replication" in advisory["independence_advisory"]
+
+
+def test_capture_family_ids_must_be_complete_and_aligned():
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="matching"):
+        eb.bootstrap_macro_f1_ci(
+            y, y, CLASS_NAMES, n_boot=5, group_ids=["a"])
+    with pytest.raises(ValueError, match="blank"):
+        eb.bootstrap_macro_f1_ci(
+            y, y, CLASS_NAMES, n_boot=5, group_ids=["a", "b", "", "d"])

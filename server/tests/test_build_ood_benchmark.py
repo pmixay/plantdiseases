@@ -1,8 +1,9 @@
 """Tests for the OOD-benchmark builder (``tools/build_ood_benchmark.py``).
 
-This tool had no coverage until 2026-08-18, and it is the one that decides what
-the release-blocking gate grades against — a silent mistake here is invisible
-until a model is judged by it.
+This tool had no coverage until 2026-08-18.  The v2 artifact is now explicitly
+diagnostic: rotated/noised pseudo-replicates make its nominal scorch count
+unfit for a release gate.  A silent builder mistake is still invisible until a
+model is judged by it, so the integrity checks remain fail-closed.
 
 The rule under test is the retirement of `banana_bush`. Its "scorch" folder is
 turgor loss (wilting, foliage still green), not the marginal necrosis our
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import collections
 import csv
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -54,7 +56,8 @@ def _manifest(out):
 
 def test_retired_arm_never_reaches_disk(src, tmp_path):
     out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100)
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
     rows = _manifest(out)
 
     diseased = {(r["species"], r["class"]) for r in rows
@@ -72,7 +75,8 @@ def test_healthy_side_of_a_retired_species_is_kept(src, tmp_path):
     """Retirement is about the CONDITION, not the species — banana_bush is an
     in-domain ornamental and its healthy frames are valid negatives."""
     out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100)
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
     healthy = {r["species"] for r in _manifest(out) if r["class"] == "healthy"}
     assert "banana_bush" in healthy
 
@@ -81,7 +85,8 @@ def test_manifest_and_disk_agree_exactly(src, tmp_path):
     """The ship gate joins images to the manifest by filename; any drift on
     either side silently attributes an image to the wrong arm, or to none."""
     out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100)
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
     listed = [r["filename"] for r in _manifest(out)]
     on_disk = [f"{p.parent.name}/{p.name}" for p in out.rglob("*.jpg")]
     # COUNTS, not sets. build() pools every split dir before copying, so two
@@ -104,7 +109,8 @@ def test_same_stem_in_two_splits_does_not_overwrite(tmp_path):
                 n += 1
                 _img(root / split / "hibiscus" / cond / f"{i}.jpg", seed=n)
     out = tmp_path / "bench"
-    b.build(root, out, per_class_cap=100)
+    b.build(root, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
     rows = _manifest(out)
     assert len(rows) == len(list(out.rglob("*.jpg"))), \
         "cross-split stem collision: manifest rows outnumber files on disk"
@@ -112,7 +118,8 @@ def test_same_stem_in_two_splits_does_not_overwrite(tmp_path):
 
 def test_arm_is_blank_for_healthy_and_named_for_disease(src, tmp_path):
     out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100)
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
     for r in _manifest(out):
         if r["class"] == "healthy":
             assert r["arm"] == "", "a healthy leaf has no condition arm"
@@ -124,6 +131,111 @@ def test_unknown_species_is_flagged_not_guessed(src, tmp_path, capsys):
     """An unlisted species must warn, never silently inherit an arm."""
     for i in range(6):
         _img(src / "train" / "mystery_plant" / "scorch" / f"{i}.jpg", seed=900 + i)
-    b.build(src, tmp_path / "bench", per_class_cap=100)
+    b.build(src, tmp_path / "bench", per_class_cap=100,
+            min_clusters_per_class=1, robust_dedup=False)
     out = capsys.readouterr().out
     assert "mystery_plant" in out and "SPECIES_ARMS" in out
+
+
+def test_manifest_provenance_is_stable_not_local_tmp_path(src, tmp_path):
+    out = tmp_path / "bench"
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
+    for row in _manifest(out):
+        assert row["source"] == b.SOURCE_DATASET_SLUG
+        assert row["source_slug"] == b.SOURCE_DATASET_SLUG
+        assert row["source_version"] == b.SOURCE_DATASET_VERSION
+        assert row["license_id"] == b.SOURCE_LICENSE_ID
+        assert row["source_url"] == b.SOURCE_URL
+        assert row["rights_status"] == b.SOURCE_RIGHTS_STATUS
+        assert row["release_eligible"] == "false"
+        assert row["source_relative_path"]
+        assert len(row["capture_family_id"]) == 16
+        assert int(row["source_family_size"]) >= 1
+        assert str(tmp_path) not in row["source"]
+
+
+def test_default_robust_dedup_merges_geometric_augmentation_family(
+        src, tmp_path, monkeypatch):
+    """pHash-unique rotations/noisy edits must count as one capture family."""
+    def fake_inliers(left, right, _cache=None):
+        same_source_folder = left.parent == right.parent
+        return 40 if same_source_folder and {left.stem, right.stem} == {"0", "1"} else 0
+
+    monkeypatch.setattr(b, "_sift_homography_inliers", fake_inliers)
+    out = tmp_path / "bench"
+    b.build(src, out, per_class_cap=100, min_clusters_per_class=1)
+    rows = _manifest(out)
+    grouped = [r for r in rows if int(r["source_family_size"]) == 2]
+    assert grouped, "geometrically matched pseudo-replicates were counted separately"
+    assert not any(r["source_relative_path"].endswith("/1.jpg") for r in grouped)
+
+
+def test_cross_class_geometric_duplicate_is_integrity_error(src, tmp_path, monkeypatch):
+    def fake_inliers(left, right, _cache=None):
+        if left.parent.name != right.parent.name and left.stem == right.stem == "0":
+            return b.SIFT_MIN_HOMOGRAPHY_INLIERS
+        return 0
+
+    monkeypatch.setattr(b, "_sift_homography_inliers", fake_inliers)
+    with pytest.raises(RuntimeError, match="cross-class duplicate-family"):
+        b.build(src, tmp_path / "bench", per_class_cap=100,
+                min_clusters_per_class=1)
+
+
+def test_large_robust_cluster_refuses_infeasible_all_pairs(monkeypatch):
+    class FarHash:
+        def __sub__(self, _other):
+            return 64
+
+    paths = [Path(f"{i}.jpg") for i in range(4)]
+    monkeypatch.setattr(b, "_phash", lambda _path: FarHash())
+    monkeypatch.setattr(b, "MAX_EXHAUSTIVE_SIFT_IMAGES", 3)
+    with pytest.raises(RuntimeError, match="family-manifest.*pHash-only fallback is unsafe"):
+        b.cluster_paths(paths, robust=True)
+
+
+def test_precomputed_family_map_scales_without_silent_phash_fallback(monkeypatch):
+    class FarHash:
+        def __sub__(self, _other):
+            return 64
+
+    paths = [Path(f"{i}.jpg") for i in range(4)]
+    family_ids = {p: ("same" if p.name in {"0.jpg", "1.jpg"} else p.stem)
+                  for p in paths}
+    monkeypatch.setattr(b, "_phash", lambda _path: FarHash())
+    monkeypatch.setattr(b, "MAX_EXHAUSTIVE_SIFT_IMAGES", 3)
+    monkeypatch.setattr(
+        b, "_sift_homography_inliers",
+        lambda *_args, **_kwargs: pytest.fail("precomputed workflow ran all-pairs SIFT"))
+    groups = b.cluster_paths(paths, robust=True, family_ids=family_ids)
+    assert [p.name for p in groups[0]] == ["0.jpg", "1.jpg"]
+    assert len(groups) == 3
+
+
+def test_class_cap_is_a_real_cap_even_with_many_species(tmp_path):
+    root = tmp_path / "src"
+    for i in range(8):
+        _img(root / "train" / f"species_{i}" / "healthy" / "x.jpg", seed=1000 + i)
+    for i in range(3):
+        _img(root / "train" / "hibiscus" / "scorch" / f"{i}.jpg", seed=1100 + i)
+    out = tmp_path / "bench"
+    b.build(root, out, per_class_cap=3, min_clusters_per_class=1,
+            robust_dedup=False)
+    counts = collections.Counter(r["class"] for r in _manifest(out))
+    assert counts["healthy"] == 3
+    assert all(n <= 3 for n in counts.values())
+
+
+def test_thin_gate_counts_zero_and_raises_before_writing(src, tmp_path):
+    out = tmp_path / "bench"
+    with pytest.raises(RuntimeError, match="under 999 independent capture families"):
+        b.build(src, out, per_class_cap=100, min_clusters_per_class=999,
+                robust_dedup=False)
+    assert not out.exists()
+
+
+def test_refuses_nested_output_that_could_delete_source(src):
+    with pytest.raises(ValueError, match="non-nested"):
+        b.build(src, src / "bench", per_class_cap=10,
+                min_clusters_per_class=1, robust_dedup=False)

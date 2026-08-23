@@ -1,5 +1,16 @@
 # Dataset & labeling plan — local collection + offline export
 
+> **2026-08-23 audit correction.** The v8 supplement and private benchmark do
+> not satisfy the independence, rights, identity, or label-verification claims
+> assumed by older sections of this research log. In particular, the supplement
+> is mostly unlicensed/agent-labelled, and the 182-image “OOD” artifact contains
+> only healthy/scorch images from one studio source with augmentation families.
+> Authenticated Kaggle metadata confirms the configured supplement is still
+> revision 8 (not v9) and the OOD artifact is revision 2 as of this date.
+> Historical scores and “falsified lever” conclusions below are exploratory, not
+> release evidence. The verified counts and replacement v9 contract are in
+> [`docs/ROADMAP.md`](ROADMAP.md).
+
 The data loop is **local and offline**: the maintainer scrapes + vision-judges
 images into a Kaggle supplement (`maxayyt5/houseplant-disease-eval-supplement`)
 that `train_notebook.ipynb` pulls directly. The server only *records* anonymized
@@ -18,21 +29,24 @@ version-agnostic and carries no run-specific numbers by design.
        │ pulled by train_notebook.ipynb → model bundle
 ```
 
-## Supplement = supply + eval (one publish, no separate carve)
+## Supplement routing — version-aware and fail-closed
 
-- **Supply (train):** every class folder (incl. the `healthy/` + `not_a_plant/`
-  hard-negative folders) is train data.
-- **Eval (held-out):** §2 first carves a stable `holdout` (`HOLDOUT_PERMILLE = 300`,
-  i.e. 30% of eval-eligible supplement, by sha1 bucket of the group key), then draws
-  `val_realworld` / `val_indomain` / `temperature_cal` / `conformal_cal` by ratio.
-  Every split is group-aware on **`(source, plant_id)`**, so all crops of one photo
-  land on one side. The splits are **group-disjoint, not source-disjoint**: `supplement`
-  is in the `allowed_sources` of all four *and* in train. Source-disjointness is a
-  separate claim — it is about the supplement versus the external training-corpus
-  sources (see Acceptance criteria).
+- **Supply (train):** only rows with compatible rights, immutable source item
+  identity, capture-family identity, a passed filter verdict, and adequate human
+  verification are eligible. Unknown fields mean reject, not “best effort.”
+- **Candidate evaluation:** a row/family is eligible only when its
+  `first_seen_model_version` is later than the candidate model's complete
+  training lineage and no capture/augmentation sibling was seen. An `eval_ok`
+  bit is not permanent evidence. Evaluation/calibration families never re-enter
+  training for that candidate.
+- **Locked release evidence:** must be a separately versioned, never-trained,
+  deployment-representative v9 test plus a true OOD set containing non-plants
+  and difficult plant negatives. The current private artifacts are diagnostic
+  regression sentinels only.
 
-Rows are agent-judged (`verified_by=agent_vision`), so the gate is a **proxy**
-until verified production volume exists.
+Grouping is by stable capture/plant/session family first, with robust geometric
+matching as a backstop. pHash uniqueness and `(source, plant_id)` alone do not
+establish independence.
 
 ## Acceptance criteria (every version)
 

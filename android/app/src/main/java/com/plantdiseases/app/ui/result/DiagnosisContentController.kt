@@ -36,14 +36,16 @@ class DiagnosisContentController(
         DiseaseLabels.displayName(key, isRu)
 
     fun bindPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
+        if (repository.isAbstainedScan(scan)) {
+            binding.cardPipelineWarning.visibility = View.GONE
+            return
+        }
         // Confidence is part of the status card (and owns its Retry action).
-        // The weak-healthy reroute is also already expressed by the displayed
-        // disease verdict. Keep only pipeline messages that add distinct,
-        // actionable context so the result does not become a warning stack.
+        // Keep only messages that add distinct, actionable context so the
+        // result does not become a warning stack.
         val warnings = repository.parseWarnings(scan.warnings).filterNot {
             it == "very_low_confidence" ||
-                it == "low_confidence" ||
-                it == "weak_healthy_rerouted"
+                it == "low_confidence"
         }
         if (warnings.isEmpty()) {
             binding.cardPipelineWarning.visibility = View.GONE
@@ -99,6 +101,10 @@ class DiagnosisContentController(
     }
 
     fun bindAlternatives(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        if (repository.isAbstainedScan(scan)) {
+            binding.cardAlternatives.visibility = View.GONE
+            return
+        }
         val allProbs = repository.parseAllProbs(scan.allProbs)
         val top3 = allProbs.entries.sortedByDescending { it.value }.take(3)
         if (top3.isEmpty()) {
@@ -168,7 +174,11 @@ class DiagnosisContentController(
     }
 
     /** Wires the doctor action independently of the removed tabs card. */
-    fun setupAskDoctor(scan: ScanEntity) {
+    fun setupAskDoctor(scan: ScanEntity, repository: ScanRepository) {
+        if (repository.isAbstainedScan(scan)) {
+            binding.btnAskDoctor.visibility = View.GONE
+            return
+        }
         // AI Plant Doctor follow-up — the same assistant as the Garden plant
         // detail. If this scan is already attached to a garden plant we open a
         // persistent plant session; otherwise an ephemeral scan session that

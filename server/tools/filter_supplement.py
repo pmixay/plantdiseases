@@ -10,14 +10,18 @@ serving pipeline would even accept them as input. This tool answers all three on
 the actual bytes, and writes a filtered manifest that carries its verdict per
 row.
 
-Note: nothing in `train_notebook.ipynb` reads `filter_verdict` yet. This is a
-standalone pre-flight gate you run against a downloaded corpus, not a step §2
-honours — an earlier version of this docstring claimed otherwise.
+The training notebook now requires and honours ``filter_verdict``. It also
+requires ``immutable_source_id``, curator-assigned ``capture_family_id`` and
+``first_seen_model_version``: pHash alone demonstrably misses rotated/noised
+siblings, so this tool refuses to certify a production supplement without that
+stable provenance contract.
 
 The gates, and why each one is a gate
 -------------------------------------
 ``bench_leak``
-    pHash Hamming <= 6 against the OOD benchmark. This is the expensive lesson
+    Shared curator capture-family ID or pHash Hamming <= 6 against the benchmark.
+    Stable family IDs are the rotation/noise-safe contract; pHash is an
+    additional byte/content signal, not the claimed proof of independence. This is the expensive lesson
     of ``aditisalvi04``: a source that is genuinely never-trained-on is still
     poison if it is the eval set. A leaked row does not merely inflate a
     metric, it removes our ability to detect that the metric is inflated.
@@ -73,7 +77,7 @@ import csv
 import json
 import sys
 from collections import Counter, defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import numpy as np
 
@@ -182,10 +186,90 @@ def _scan(root: Path, workers: int) -> dict[str, dict]:
     """Probe every image under ``root``, keyed by path relative to it."""
     from multiprocessing.pool import ThreadPool
 
+    if workers <= 0:
+        raise ValueError("workers must be positive")
     files = sorted(p for p in root.rglob("*") if p.suffix.lower() in IMG_EXTS)
     with ThreadPool(workers) as pool:
         probed = pool.map(_probe, files)
-    return {str(p.relative_to(root)): m for p, m in zip(files, probed, strict=True)}
+    # Manifest paths are portable POSIX-relative paths. ``str(relative_path)``
+    # emits backslashes on Windows, which made every valid manifest row look
+    # missing and every on-disk image look orphaned on the user's machine.
+    return {p.relative_to(root).as_posix(): m
+            for p, m in zip(files, probed, strict=True)}
+
+
+def _normalise_manifest_rows(rows: list[dict], *, require_provenance: bool = True) -> None:
+    """Validate and canonicalise manifest identity fields in place.
+
+    A row is joined to decoded bytes by ``filename``. Duplicate, absolute,
+    traversing or class-disagreeing keys make that join ambiguous; accepting
+    them would let one file inherit another row's label/verdict.
+    """
+    required = {"filename", "class"}
+    if require_provenance:
+        required |= {"immutable_source_id", "capture_family_id", "first_seen_model_version"}
+    missing = required - set(rows[0])
+    if missing:
+        raise SystemExit(f"manifest missing required columns: {sorted(missing)}")
+    seen: set[str] = set()
+    source_ids: set[str] = set()
+    family_contract: dict[str, tuple[str, str]] = {}
+    for line_no, row in enumerate(rows, start=2):
+        raw = (row.get("filename") or "").strip().replace("\\", "/")
+        cls = (row.get("class") or "").strip()
+        rel = PurePosixPath(raw)
+        parts = rel.parts
+        if (not raw or not cls or rel.is_absolute() or ".." in parts
+                or raw.startswith("//") or (parts and ":" in parts[0])):
+            raise SystemExit(f"manifest line {line_no}: unsafe/empty filename or class: {raw!r}")
+        key = rel.as_posix().lstrip("./")
+        if not key or key in seen:
+            raise SystemExit(f"manifest line {line_no}: duplicate filename key {key!r}")
+        if not parts or parts[0] != cls:
+            raise SystemExit(
+                f"manifest line {line_no}: class={cls!r} disagrees with filename={key!r}")
+        seen.add(key)
+        row["filename"] = key
+        row["class"] = cls
+        if require_provenance:
+            source_id = (row.get("immutable_source_id") or "").strip()
+            family_id = (row.get("capture_family_id") or "").strip()
+            first_seen = (row.get("first_seen_model_version") or "").strip().lower()
+            if not source_id or not family_id or not first_seen:
+                raise SystemExit(
+                    f"manifest line {line_no}: blank immutable source/capture/model provenance")
+            if source_id in source_ids:
+                raise SystemExit(
+                    f"manifest line {line_no}: duplicate immutable_source_id {source_id!r}")
+            if first_seen != "never":
+                import re
+                if re.fullmatch(r"v?\d+\.\d+\.\d+", first_seen) is None:
+                    raise SystemExit(
+                        f"manifest line {line_no}: invalid first_seen_model_version {first_seen!r}")
+            contract = (cls, first_seen)
+            if family_id in family_contract and family_contract[family_id] != contract:
+                raise SystemExit(
+                    f"manifest line {line_no}: capture_family_id {family_id!r} crosses "
+                    "class/first-seen contracts")
+            source_ids.add(source_id)
+            family_contract[family_id] = contract
+
+
+def _benchmark_family_ids(bench: Path) -> set[str]:
+    """Load stable capture-family IDs; never claim rotation-safe audit without them."""
+    manifests = [bench / "manifest.csv", bench / "manifest_arms.csv"]
+    path = next((p for p in manifests if p.exists()), None)
+    if path is None:
+        raise RuntimeError(
+            f"benchmark {bench} has no manifest with capture_family_id; "
+            "independence cannot be certified")
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    ids = [(row.get("capture_family_id") or "").strip() for row in rows]
+    if not ids or not all(ids):
+        raise RuntimeError(
+            f"benchmark manifest {path} lacks capture_family_id on every row")
+    return set(ids)
 
 
 # ── clustering ───────────────────────────────────────────────────────
@@ -251,7 +335,8 @@ def _resolution_stats(sides: list[int]) -> dict:
 # ── main ─────────────────────────────────────────────────────────────
 
 
-def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[dict], dict]:
+def filter_bundle(root: Path, bench: Path | None, workers: int, *,
+                  require_provenance: bool = True) -> tuple[list[dict], dict]:
     manifest_path = root / "manifest.csv"
     if not manifest_path.exists():
         sys.exit(f"no manifest at {manifest_path}")
@@ -259,6 +344,7 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
         rows = list(csv.DictReader(fh))
     if not rows:
         sys.exit("manifest is empty")
+    _normalise_manifest_rows(rows, require_provenance=require_provenance)
 
     print(f"manifest: {len(rows)} rows", flush=True)
     probes = _scan(root, workers)
@@ -299,26 +385,66 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
         else:
             verdict.append("keep")
 
-    live = [i for i, v in enumerate(verdict) if v == "keep"]
-    bits = _to_bits([hashes[i] for i in live])
-
     # Benchmark leakage — the stop-the-line gate.
     leaks = 0
     if bench is not None:
+        bench_family_ids = _benchmark_family_ids(bench) if require_provenance else set()
         bench_probes = _scan(bench, workers)
         bhex = [m["phash"] for m in bench_probes.values() if m["ok"]]
+        if not bhex:
+            raise RuntimeError(
+                f"benchmark {bench} has no decodable images; leakage cannot be gated")
         bbits = _to_bits(bhex)
         print(f"benchmark: {len(bhex)} hashable images", flush=True)
-        if bbits.size and bits.size:
-            nearest = _hamming(bits, bbits).min(axis=1)
-            for k, i in enumerate(live):
-                if nearest[k] <= PHASH_MAX_HAMMING:
+        # Check every decodable manifest row, not only rows that survived the
+        # earlier quality gates.  A blurry/tiny benchmark copy is still eval
+        # contamination and must make the command exit non-zero.
+        hashable = [i for i, h in enumerate(hashes) if h]
+        hbits = _to_bits([hashes[i] for i in hashable])
+        if bbits.size and hbits.size:
+            nearest = _hamming(hbits, bbits).min(axis=1)
+            for k, i in enumerate(hashable):
+                same_family = ((rows[i].get("capture_family_id") or "").strip()
+                               in bench_family_ids)
+                if nearest[k] <= PHASH_MAX_HAMMING or same_family:
                     verdict[i] = "bench_leak"
                     leaks += 1
 
     live = [i for i, v in enumerate(verdict) if v == "keep"]
     bits = _to_bits([hashes[i] for i in live])
     cluster_of = _cluster(bits)
+
+    # Merge the pHash graph with curator capture families.  The latter is what
+    # catches arbitrary rotations/noise; pHash remains a useful independent
+    # signal.  Single-link union is required when the two signals form a chain.
+    parent = list(range(len(live)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        a, b = find(i), find(j)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
+    first_by_phash: dict[int, int] = {}
+    first_by_family: dict[str, int] = {}
+    for pos, row_idx in enumerate(live):
+        phash_group = cluster_of[pos]
+        if phash_group in first_by_phash:
+            union(pos, first_by_phash[phash_group])
+        else:
+            first_by_phash[phash_group] = pos
+        family = (rows[row_idx].get("capture_family_id") or rows[row_idx]["filename"]).strip()
+        if family in first_by_family:
+            union(pos, first_by_family[family])
+        else:
+            first_by_family[family] = pos
+    roots: dict[int, int] = {}
+    cluster_of = [roots.setdefault(find(i), len(roots)) for i in range(len(live))]
 
     # A cluster spanning two classes is a label contradiction; within one class
     # it is redundancy. Order in the manifest decides which copy survives.
@@ -364,6 +490,9 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
             "min_side_px": MIN_SIDE,
             "collection_min_side_px": COLLECTION_MIN_SIDE,
             "blur_exempt_classes": sorted(BLUR_EXEMPT),
+            "independence_method": (
+                "curator_capture_family_id+phash_hamming<=6"
+                if require_provenance else "legacy_phash_only_NOT_CERTIFIED"),
         },
         "totals": {
             "manifest_rows": len(rows),
@@ -383,6 +512,9 @@ def filter_bundle(root: Path, bench: Path | None, workers: int) -> tuple[list[di
     for i, r in enumerate(rows):
         r["filter_verdict"] = verdict[i]
         r["cluster_id"] = cluster_id[i]
+        r["filter_independence_method"] = (
+            "capture_family_id+phash_v1" if require_provenance
+            else "legacy_phash_only_NOT_CERTIFIED")
     return rows, report
 
 

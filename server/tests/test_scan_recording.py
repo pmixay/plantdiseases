@@ -56,6 +56,25 @@ class NapPipeline(FakePipeline):
         return r
 
 
+class OodRejectedPipeline(FakePipeline):
+    """Raw disease argmax rejected by the secondary OOD verdict."""
+
+    def analyze(self, img):
+        r = super().analyze(img)
+        probs = {name: 0.0 for name in self.classifier.CLASS_NAMES}
+        probs.update({"leaf_spot": 0.7, "healthy": 0.2, "not_a_plant": 0.1})
+        r.update({
+            "class_name": "leaf_spot",
+            "confidence": 0.7,
+            "all_probs": probs,
+            "top_k": [{"class": "leaf_spot", "confidence": 0.7}],
+            "warnings": ["nap_ood_gated"],
+            "abstained": True,
+            "abstention_reason": "ood",
+        })
+        return r
+
+
 @pytest.fixture
 def recdb(monkeypatch):
     """Fresh labeling DB + recording enabled with test-friendly caps."""
@@ -73,6 +92,22 @@ def _rows():
     with labeling._connect() as conn:
         return [dict(r) for r in conn.execute(
             "SELECT * FROM candidates ORDER BY id").fetchall()]
+
+
+def test_labeling_connection_releases_database_file(tmp_path, monkeypatch):
+    """The feedback-to-training DB must not stay locked after a context exits.
+
+    Windows refuses to unlink an open SQLite database, so this catches a leak
+    that Linux permits and verifies the store's short-lived-connection promise.
+    """
+    db = tmp_path / "replaceable.db"
+    monkeypatch.setattr(labeling, "LABELING_DB_PATH", db)
+    labeling._initialised = False
+    labeling.init_db()
+    with labeling._connect() as conn:
+        conn.execute("SELECT 1").fetchone()
+    db.unlink()
+    assert not db.exists()
 
 
 def _analyze(client, body):
@@ -104,6 +139,17 @@ def test_confident_singleton_set_routes_auto_yes(client, recdb, monkeypatch):
 def test_nap_and_blur_not_recorded(client, recdb, monkeypatch):
     monkeypatch.setattr(server_main, "pipeline", NapPipeline())
     _analyze(client, _jpeg())
+    assert _rows() == []
+
+
+def test_ood_abstained_argmax_is_not_ingested_as_training_label(
+    client, recdb, monkeypatch,
+):
+    monkeypatch.setattr(server_main, "pipeline", OodRejectedPipeline())
+    body = _analyze(client, _jpeg())
+    assert body["class_name"] == "leaf_spot"  # diagnostic remains available
+    assert body["abstained"] is True
+    assert body["abstention_reason"] == "ood"
     assert _rows() == []
 
 

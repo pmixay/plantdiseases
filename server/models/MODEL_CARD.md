@@ -21,24 +21,24 @@
 
 ## Bundle
 
-Artefacts are **never committed and never auto-downloaded**. Boot is
-fail-fast: `server/models/` must hold `detector.onnx` (the configured
-`detector.pt` path is an anchor — serving resolves the ONNX sibling,
-`server/detector.py:_resolve_detector_path`) and `classifier_int8.onnx` or
-`classifier.onnx`. `classes.json`, `temperature.json`, `conformal.json` and
-`ood_embedding.npz` are each optional in the sense that the server still
-boots without them — and each one absent silently downgrades behaviour, so
-treat the full set as required. Validate a bundle with
-`.claude/skills/houseplant-disease-ml/scripts/check_bundle.py`.
+Artefacts are **never committed and never auto-downloaded**. Strict API startup
+accepts only one complete notebook-produced tree with `bundle_manifest.json`.
+Before a graph loads, `server/bundle.py` verifies its canonical bundle identity,
+the exact selected classifier (`fallback_allowed=false`), every bound file's
+size and SHA-256, data/run lineage, calibration source, and the full serving
+contract. `detector.onnx`, the selected classifier, `classes.json`,
+`temperature.json`, `conformal.json`, `data_manifest.json`, and
+`run_manifest.json` are mandatory; the OOD bank is mandatory when declared.
+Loose legacy artefacts are diagnostic-only. Validate bytes without inference
+using `python server/tools/verify_bundle.py server/models/`.
 
 Notebook §6b packs one archive per **training mode**,
 `models/plantvision_<train_mode>_v<version>.tar` (`…_gamma_…`,
-`…_combined_…`, `…_frontier_…`). Server drop-in artefacts sit at the archive
-**root** so a flatten drops them straight into `models/`; analysis artefacts
-(`model_card.json`, `training_metrics.json`, `run_log.jsonl`) ride along; the
-on-device `aqua/` subdir (`aqua_classifier.tflite` + its own `classes.json`)
-is included when the run produced one. Torch checkpoints are excluded — the
-runtime is ONNX/TFLite only.
+`…_combined_…`, `…_frontier_…`). Extract the **complete tree** into a fresh
+`models/` directory; do not flatten it or copy individual files. Server
+artefacts and the manifest sit at the archive root, run evidence sits under
+`analysis/`, and a combined run includes the bound on-device `aqua/` subtree.
+Torch checkpoints are excluded — the runtime is ONNX/TFLite only.
 
 `model_card.json` also carries a `benchmark` block: batch-1 latency
 (p50/p95/mean ms) + on-disk size for the shipped classifier ONNX and, on a
@@ -65,27 +65,27 @@ Evaluation order, with the constants that govern each step (all in
 
 | # | Step | Governed by |
 |---|---|---|
-| 1 | blur gate — short-circuits to a synthetic `not_a_plant`, classifier never runs | `BLUR_LAPLACIAN_FLOOR = 50.0`, `BLUR_DOWNSCALE = 320` |
+| 1 | blur gate — explicit `image_quality` abstention with empty classifier diagnostics; classifier never runs | `BLUR_LAPLACIAN_FLOOR = 50.0`, `BLUR_DOWNSCALE = 320` |
 | 2 | detect → crop; whole frame folded in as an extra vote | `FOLD_WHOLE_FRAME_VOTE` (default on; `limits.fold_whole_frame_vote`) |
 | 3 | batched classify, temperature applied per crop | `temperature.json` |
 | 4 | mean vote over crops + whole frame | `_fold_votes` |
-| 5 | OOD gate (three-of-three, below) → `not_a_plant` reroute | `classes.json → ood` |
-| 6 | postprocessing: weak-healthy reroute, viral caveat, confidence warnings | `HEALTHY_*`, `VIRAL_MIN_CONFIDENCE = 0.65` |
-| 7 | severity, escalated one level on a high-confidence `viral_disease` | `_DEGENERATIVE_DISEASES` |
-| 8 | RAPS prediction set — **omitted on a `not_a_plant` verdict** | `conformal.json` |
+| 5 | OOD gate (three-of-three, below) → explicit abstention warning; probabilities unchanged | `classes.json → ood` |
+| 6 | probability-preserving postprocessing: healthy suspicion, viral caveat, confidence warnings | `HEALTHY_*`, `VIRAL_MIN_CONFIDENCE = 0.65` |
+| 7 | conservative `severity="low"` compatibility value until lesion/severity labels exist | `compute_severity` |
+| 8 | RAPS prediction set — **omitted on every abstention** | `conformal.json` |
 
-**Weak-healthy reroute** fires only when top-1 `healthy` is below
-`HEALTHY_REROUTE_FLOOR` (0.50) — a confident-plurality healthy is never
-force-converted — and then on either of two triggers: *absolute*, strongest
-disease ≥ `HEALTHY_REROUTE_DISEASE_FLOOR` (0.25); or *gap*, strongest disease
-≥ `HEALTHY_GAP_DISEASE_FLOOR` (0.10) trailing healthy by less than
-`HEALTHY_GAP_MARGIN` (0.30). Either hit swaps the verdict and emits
-`weak_healthy_rerouted`.
+**No post-hoc class substitution.** `class_name` and `confidence` are always the
+argmax and its probability from the calibrated `all_probs` distribution.  A
+weak `healthy` result can emit `uncertain_healthy` and
+`disease_suspected:<class>` and keeps the competing disease in `top_k`, but a
+lower-probability class never replaces the measured winner.  The old
+weak-healthy reroute was removed because it broke probability/calibration
+semantics and encoded screenshot-driven preference rather than a fitted model.
 
 ## The OOD gate — three-of-three
 
-`_decide_nap_route` rejects a frame as `not_a_plant` only when **all three**
-agree. Any one of them abstaining keeps the classifier's verdict.
+`_decide_nap_route` emits the `nap_ood_gated` abstention only when **all three**
+agree. Any one of them abstaining keeps an accepted classifier verdict.
 
 1. **Head veto, checked first.** If the classifier's own `not_a_plant`
    probability is *below* `ood.nap_head_mass_floor` (default 0.05), the head
@@ -96,8 +96,31 @@ agree. Any one of them abstaining keeps the classifier's verdict.
    distance on the DINOv2 CLS vector (Sun et al. 2022) when the bundle ships
    a bank (`ood_embedding.npz` + `classes.json → ood.embedding`, scorer in
    `server/ood.py`); else the MaxLogit floor (Hendrycks 2019). With neither,
-   the gate degrades to detector-confidence-only and the server logs a
-   warning at boot — and on the no-detection path it refuses to fire at all.
+   the secondary gate stays off on **every** path. Detector confidence is
+   localisation evidence and never rejects an image by itself.
+
+There is an additional calibration precondition: `ood.served_gate` must declare
+schema v1, `calibration_mode="full_served_pipeline"`, the served embedding and
+MaxLogit aggregations, the exact detector-confidence floor, and the current
+whole-frame-vote mode. Historical thresholds were fitted one image at a time,
+whereas serving takes minimum member distance / maximum member logit across
+crops plus the whole frame. Those are different statistics; absent or
+mismatched metadata leaves the secondary overlay advisory/off. A declared
+embedding artifact that is missing or invalid fails bundle readiness rather
+than silently falling through to a weaker gate.
+
+The gate is a rejection verdict, not another softmax class.  Detector
+confidence, embedding distance and MaxLogit are not calibrated
+`P(not_a_plant)`, so a gate hit does **not** move probability mass or fabricate
+a NAP confidence. `class_name`, `confidence`, `all_probs` and `top_k` preserve
+the calibrated classifier output for diagnostics; explicit `abstained=true`,
+`abstention_reason="ood"` plus the legacy `nap_ood_gated` warning tell clients
+to reject it, `detection.is_diseased` is false, and the conformal set is
+suppressed. `class_name="not_a_plant"` is used only when the trained NAP head
+itself is the probability argmax. The pre-classifier blur gate instead reports
+`class_name="unknown"`, confidence 0 and empty probability diagnostics because
+no classifier evidence exists. Healthy top-1 frames still pass through eligible
+OOD checks; only an already-natural NAP top-1 bypasses them.
 
 **MaxLogit scope.** The fallback floor is scored over the **plant logits
 only** (`classes.json → ood.max_logit_scope: "plant_only"`). The all-class
@@ -127,9 +150,22 @@ one training/eval/export recipe.
 Aqua ships **float32**, not INT8: the dynamic-range INT8 sibling collapses
 MobileNetV3-Small to near-constant output, and the float16 build needs a
 float16 delegate (XNNPACK/GPU) that both the export box and the app's LiteRT
-lack. Notebook §5 ranks the emitted builds float32 ▸ float16 ▸ INT8 and ships
-the first that runs on the plain CPU interpreter with no delegate; §6 then
-re-evaluates the *shipped* TFLite and warns on a degenerate one.
+lack. Notebook §5 emits exactly one FLOAT32 TFLite candidate and combined mode
+fails if its dtype/shape, torch parity, or real-world evaluation fails; it never
+substitutes a FLOAT16/INT8 sibling.
+
+Aqua retains the trained `not_a_plant` head and the app applies its existing
+blur QA as a hard pre-inference `image_quality` abstention. It does **not**
+carry the server's detector + embedding/MaxLogit OOD calibration contract.
+Low confidence must not be relabelled as OOD, and the app does not invent an
+Aqua OOD gate from server thresholds fitted to a different served pipeline.
+
+The client verifies the staged TFLite tensor metadata before activation: one
+FLOAT32 `[1, img_size, img_size, 3]` input and one FLOAT32
+`[1, len(class_names)]` logits output. It performs no inference during install.
+A successful `available:false` manifest authoritatively deactivates the bundle
+pointer while retaining immutable rollback bytes; transient network/non-2xx
+manifest failures preserve the last-known-good active generation.
 
 **The selection knob is `TRAIN_MODE`** (notebook §1), not `MODEL_FAMILY`:
 `gamma` (server bundle alone, skips §5's TensorFlow toolchain), **`combined`**
@@ -151,9 +187,10 @@ embedding, exported as **one graph with two outputs**: `logits` and the CLS
 Linears at export (`merge_and_unload`), so serving stays a single graph and
 the declared architecture string reads `…+mlp_head+lora`.
 
-`DEFAULT_ARCHITECTURE` / `DEFAULT_CLASS_NAMES` in `classifier.py` are only the
-fallback for a bundle with no `classes.json` — not a statement about what the
-current model is.
+`DEFAULT_ARCHITECTURE` / `DEFAULT_CLASS_NAMES` in `classifier.py` support
+isolated tests and explicitly non-strict construction only. Production API
+startup requires the manifest-bound `classes.json`; it never silently uses
+these defaults.
 
 ## Classes — the contract
 
@@ -165,10 +202,9 @@ rather than a list:
   and differs from `len(class_names)`, boot raises `ClassifierLoadError`.
   There is no pad/truncate migration shim — a taxonomy change means a new
   bundle, never a patched server.
-- **Absent `classes.json`, the server boots on `DEFAULT_CLASS_NAMES`** (9
-  classes, `img_size` 224, family `gamma`) — which is almost certainly not
-  what your bundle trained. A *present but mismatched* file is what aborts
-  boot; a missing one fails quietly. Ship it.
+- **Absent `classes.json`, strict API startup aborts.** A present but mismatched
+  taxonomy also aborts. Defaults exist only for tests/non-strict library use and
+  are not a deployment recovery path.
 
 The taxonomy the current head carries is nine classes: seven diseases /
 disorders, `healthy`, and a real **`not_a_plant` rejection head** — it is a
@@ -188,6 +224,12 @@ never inference.
 Full recipe, dataset provenance and audited citations:
 [`train_notebook.ipynb`](../train_notebook.ipynb) §1–§7. The shape of it:
 
+This notebook is the **only training/export boundary**. Server and Android code
+load verified artefacts and perform inference only; they contain no optimizer,
+fit, calibration-fit, conversion, or model-export entry point. A regression
+test enforces that boundary. The notebook hard-fails on CPU and is intended to
+run as a self-contained Colab upload.
+
 - **§2 — data + splits.** Group-aware, class-aware splits over a mix of
   PlantDoc, PlantVillage, iNaturalist, DoctorP and a Kaggle eval supplement,
   with pHash leakage resolution and a per-source inventory persisted so a
@@ -204,8 +246,9 @@ Full recipe, dataset provenance and audited citations:
   from the §4 teacher, then TFLite export and build selection.
 - **§6 — export + calibration + gates:** ONNX FP32 → dynamic INT8 (shipped
   only when the drift gate passes *and* a paired bootstrap does not find INT8
-  significantly worse), temperature, conformal, OOD calibration, both ship
-  gates, then — and only then — the writes to `models/`.
+  significantly worse), temperature, conformal, and classifier-side OOD
+  diagnostics. The current private unseen-domain set is diagnostic-only and
+  cannot enable a served OOD overlay.
 - **§6b** bundles the run; **§7** states the evaluation contract.
 
 ## Validation contract
@@ -214,24 +257,24 @@ Full recipe, dataset provenance and audited citations:
 |---|---|---|
 | `val_indomain` | training-loop metric, early stopping | best head checkpoint restored |
 | `val_realworld` | **in-domain ship/no-ship gate, blocking** | absolute floors: disease macro-F1 ≥ 0.70; no disease class with recall 0; healthy-bias < 1.50; healthy recall ≥ 0.70 |
-| never-trained OOD benchmark | **out-of-domain ship/no-ship gate, blocking** | **per arm, never pooled** — arm recall floors (`OOD_ARM_FLOORS`) and a healthy false-fire ceiling (`OOD_MAX_HEALTHY_FALSE_FIRE`) on the same never-trained healthy clusters; a missing benchmark fails the run (`REQUIRE_OOD_BENCHMARK = True`) |
+| private unseen-domain regression set v2 | **diagnostic only** | not a valid OOD/release gate: no non-plant arm, one source/studio regime, augmentation families, repeated tuning; `REQUIRE_OOD_BENCHMARK = False` until an independent v3 replaces it |
 | `val_studio` (PlantVillage) | transfer / background-bias monitor | tracked, never blocking |
 | `temperature_cal` | temperature scaling | held out |
 | `conformal_cal` | RAPS calibration | held out; 80/20 fit/audit when n ≥ 200 |
 
-Both gates must pass before **anything** is written to `models/`. The
-in-domain gate is an **absolute floor**, not a comparison against the
-incumbent — a paired bootstrap against the live bundle is a manual check, run
-with `server/tools/eval_bootstrap.py` or `paired_eval.py`, not a gate.
+The in-domain gate must pass before deploy artefacts are sealed. It is an
+**absolute floor**, not a comparison against an incumbent. A manifest-bound
+paired comparison can be run with `server/tools/eval_bootstrap.py` or
+`paired_eval.py`, but the present private supplement and regression set are not
+independent enough to promote that comparison to a release claim.
 
-The out-of-domain gate is not garnish. An in-domain split drawn from the same
-supplement is the same photographic regime however carefully it is grouped,
-so the in-domain gate is satisfiable by a model that has collapsed
-out of domain — releases have passed it while scoring near zero on a
-never-trained arm. Per-arm scoring matters for the same reason pooling hid an
-earlier failure: two arms measuring different phenomena average into a number
-that describes neither. Benchmark builder: `server/tools/build_ood_benchmark.py`;
-arm history and current numbers: `docs/ROADMAP.md` → Model track.
+This means 2.8.0 is deliberately conservative: `classes.json` exports no
+full-served-pipeline OOD threshold and the secondary server overlay remains
+off. Natural `not_a_plant` predictions and image-quality rejection still work.
+Dataset v9 must provide an independent non-plant/difficult-negative OOD set and
+a separately locked deployment-representative test, grouped by capture family;
+only served-path calibration on those data may enable the overlay or a new
+release gate. See `docs/ROADMAP.md`.
 
 PlantVillage is **excluded** from the real-world gate and from both
 calibration splits — its studio backgrounds violate exchangeability with the
@@ -247,6 +290,14 @@ hflip TTA is on, the fit runs through the same flip-averaging and
 **logits**, not probabilities, precisely so temperature, MaxLogit and RAPS
 stay calibrated.
 
+A missing `temperature.json` explicitly means no scaling (`T=1`). A present
+sidecar is integrity-critical: it must be an object with a finite numeric
+temperature in the notebook's fitted range `[0.05, 10]`, and any declared TTA
+must match serving; malformed, boolean, infinite, out-of-range or mismatched
+values fail readiness instead of silently reverting to 1. Sidecars without a
+model/preprocess serving-contract or digest binding are logged as calibration
+advisory until that binding is exported.
+
 The conformal hyper-parameters (`alpha`, `lambda_reg`, `k_reg`) are
 grid-searched on a held-out audit split for the **smallest mean set size**
 whose audit coverage clears the product target **plus a 2-SE margin**.
@@ -254,25 +305,30 @@ The margin is the point: the guard is measured on a few hundred audit rows,
 so selecting exactly at the target ships sets whose true coverage falls short
 about half the time.
 
-**`alpha` is a search knob, not a promise.** On a classifier this sharp, RAPS
-over-covers at every alpha the grid contains, so the value that gets selected
-says nothing about realised coverage. The number the API advertises is the
-measured out-of-sample `empirical_coverage` recorded in `conformal.json`
-(`server/conformal.py:coverage_target` prefers it over `1 - alpha`). Do not
-read `1 - alpha` as the guarantee.
+The API's `coverage` field is the nominal target `1 - alpha`, not a measured
+delivery guarantee. Historical `empirical_coverage` values in
+`conformal.json` were computed on a same-calibration-row diagnostic and are not
+out-of-sample evidence; the runtime validates them as metadata but does not
+advertise them as achieved coverage. Prediction sets remain explicitly
+`advisory` until a locked, independent coverage evaluation is shipped.
 
-The pipeline **omits the prediction set entirely on a `not_a_plant`
-verdict** — that verdict comes from the detector + OOD gate, not from RAPS,
-so attaching a coverage-guaranteed set would over-claim.
+The pipeline **omits the prediction set entirely on every abstention** (natural
+`not_a_plant`, OOD gate, or image-quality rejection). The plant calibration
+population does not cover those cases—and a pre-classifier blur rejection has
+no probability vector—so attaching its coverage statement would over-claim.
 
 ## Intended use
 
 A **triage aid** for houseplant and garden-ornamental foliage photographed by
-a phone: narrow "something is wrong with this leaf" to a likely cause, a
-severity, a care action, and an honest set of alternatives. It is designed to
-be wrong out loud — refusing (`not_a_plant`, `blurry_image`), demoting
+a phone: narrow "something is wrong with this leaf" to a likely cause, a care
+action, and an honest set of alternatives. It is designed to be wrong out loud
+— refusing (`not_a_plant`, `blurry_image`, `nap_ood_gated`), demoting
 (`low_confidence`, `very_low_confidence`), caveating (`viral_variegation_caveat`)
 and offering a prediction set rather than asserting a single label.
+
+The compatibility `severity` field is currently always `low`. The detector
+localises the leaf rather than the lesion, and class confidence is not lesion
+extent; medium/high severity claims require a future severity-labelled target.
 
 ## Out of scope
 
@@ -290,22 +346,15 @@ and offering a prediction set rather than asserting a single label.
 
 ## Known limitations
 
-- **`leaf_scorch_underwatering` does not generalise out of domain.** The
-  training corpus defines scorch as end-stage whole-leaf browning; on
-  never-trained photos showing it early — dull, edge-confined necrosis on a
-  still-green blade — the model's `leaf_spot` prototype ("green leaf +
-  discrete dark regions") wins. This is exactly what the out-of-domain ship
-  gate measures, and it is the standing blocker on releases. The fix is data:
-  early-stage marginal necrosis judged against `leaf_spot` exemplars. A
-  bigger backbone and a class logit bias were both tried and falsified — see
-  `docs/ROADMAP.md` → Model track and
-  [`docs/DATASET_LABELING_PLAN.md`](../../docs/DATASET_LABELING_PLAN.md) §6.
-- **The out-of-domain gate itself is one arm.** Its scorch arm is a single
-  species from a single photographic session. It separates good from
-  collapsed bundles by an order of magnitude, so it is worth blocking on, but
-  read a pass as "did not regress on the one arm we can measure", not as
-  evidence of cross-species generalisation. A second, multi-species arm is
-  outstanding eval work.
+- **Scorch-versus-leaf-spot generalisation is unproven.** Historical runs
+  suggest early marginal necrosis is a weak boundary, but the supporting
+  private set has one source/species, augmentation families, repeated tuning,
+  and contradictory archived scoring. It identifies a v9 collection target,
+  not a quantified ceiling or a permanently falsified architecture lever.
+- **There is no valid deployment OOD gate yet.** The existing private artifact
+  contains healthy/scorch plants and no non-plants, so it cannot measure OOD.
+  Its robustly deduplicated form remains diagnostic only. v9 needs independent
+  multi-species disease tests plus a separate non-plant/difficult-negative set.
 - **Thin classes** (`gray_mold_botrytis`, `leaf_scorch_underwatering`,
   `nutrient_deficiency`) are supply-bound, with small eval slices and
   correspondingly wide per-class recall CIs (shipped in `model_card.json`).
@@ -333,10 +382,10 @@ and offering a prediction set rather than asserting a single label.
 - **The asymmetry is deliberate.** A false disease verdict costs a user a
   treatment they did not need; the gates encode that — a healthy-bias
   ceiling, a healthy-recall floor, a healthy false-fire ceiling on the
-  out-of-domain benchmark, and a weak-healthy reroute that surfaces a
-  suspicion instead of asserting it. Any lever that buys disease recall by
-  spending healthy precision (a class logit bias, for instance) is judged
-  against that ceiling, not against recall alone.
+  out-of-domain benchmark, and soft healthy-suspicion warnings that surface a
+  competing disease without replacing the probability argmax. Any lever that
+  buys disease recall by spending healthy precision (a class logit bias, for
+  instance) is judged against that ceiling, not against recall alone.
 - **Refusal is a feature, and it is measured.** `not_a_plant` is a trained
   class with its own gate rather than a confidence threshold, so "I don't
   know" is a first-class output rather than a low number the UI has to
@@ -359,8 +408,8 @@ and offering a prediction set rather than asserting a single label.
 |---|---|
 | Training recipe, dataset provenance, audited citations | [`server/train_notebook.ipynb`](../train_notebook.ipynb) (§1–§7) |
 | Runtime | `server/pipeline.py`, `server/classifier.py`, `server/detector.py`, `server/ood.py`, `server/conformal.py` |
-| Current model status, deployed version, failed runs, next move | [`docs/ROADMAP.md`](../../docs/ROADMAP.md) → Model track |
+| Audited current status and v9 blockers | [`docs/ROADMAP.md`](../../docs/ROADMAP.md) |
 | Data loop, acceptance criteria, source deny-list | [`docs/DATASET_LABELING_PLAN.md`](../../docs/DATASET_LABELING_PLAN.md) |
 | Out-of-domain benchmark builder | `server/tools/build_ood_benchmark.py` |
 | Paired-bootstrap A/B | `server/tools/eval_bootstrap.py`, `server/tools/paired_eval.py` |
-| Bundle validator, notebook navigator | `.claude/skills/houseplant-disease-ml/scripts/check_bundle.py`, `scripts/nbtool.py` |
+| Bundle validator | `server/tools/verify_bundle.py` |
