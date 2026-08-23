@@ -8,7 +8,7 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

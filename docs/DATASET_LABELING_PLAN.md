@@ -4,7 +4,9 @@ The data loop is **local and offline**: the maintainer scrapes + vision-judges
 images into a Kaggle supplement (`maxayyt5/houseplant-disease-eval-supplement`)
 that `train_notebook.ipynb` pulls directly. The server only *records* anonymized
 production scans + feedback for offline export — no server review queue, no
-ingestion. Roadmap: `docs/ROADMAP.md`; per-run metrics: `server/models/MODEL_CARD.md`.
+ingestion. Roadmap: `docs/ROADMAP.md`; per-run metrics: the run's own
+`model_card.json`, shipped inside the bundle — `server/models/MODEL_CARD.md` is
+version-agnostic and carries no run-specific numbers by design.
 
 ```
   LOCAL (maintainer, offline)                 SERVER (production)
@@ -74,8 +76,9 @@ matching disk exactly. **The published build is current and complete.**
 | viral_disease | 29 | 29 | 1.00 | 652 | 0 | — |
 | pests | 21 | 21 | 1.00 | 320 | 4 | — |
 
-**Benchmark leakage: zero.** Every row pHashed against the OOD benchmark at Hamming ≤ 6
-(the check ran against v1's 213 clusters; v2's 182 are a subset, so it still holds). Nothing matches. The eval set is outside the training corpus, now
+**Benchmark leakage: zero.** Every row pHashed against the OOD benchmark at Hamming ≤ 6;
+nothing matches. (The check ran against v1's 213 clusters; v2's 182 are a subset, so it
+still holds.) The eval set is outside the training corpus, now
 measured rather than assumed — and the tool exits non-zero if that ever stops being
 true, because a leak does not merely inflate a metric, it removes our ability to
 notice the metric is inflated (see the `aditisalvi04` deny-list entry).
@@ -142,8 +145,9 @@ argues against the deployment distribution. Still open, but low priority.
 > down-weighting 1.0 → 0.35 moved never-trained ornamental scorch recall by *exactly nothing*
 > (0.065 argmax / 0.000 served, identical to 2.7.0 to three decimals) and cost healthy
 > (served healthy recall 0.947 → 0.861, false-disease-fire 0.046 → 0.119, McNemar p=0.0074).
-> Reverted to 1.0. **Sampler weights as a class are a falsified lever** — 2.7.3's
-> regime-aware within-class reweighting then failed the same way (below).
+> Reverted to 1.0. What happened to the source itself is "Source loss" below.
+> **Sampler weights as a class are a falsified lever** — 2.7.3's regime-aware
+> within-class reweighting then failed the same way (§7).
 
 ### Original v2.6.12 pivot (kept for the record)
 
@@ -164,7 +168,8 @@ OOD bank on the broader in-distribution is what accepts ornamentals and still re
 - **v6 / 2.6.8** (06-29): +boundary negatives; mixed — nutrient precision 0.679→0.747
   (still <0.80), recall slipped; healthy→disease false-fire 8.4% on hard boundary.
 - **v7 / 2.6.9** (07-03): +boundary negatives + first powdery; the notebook
-  aqua-collapse fix — §5 now ships the faithful **float32** TFLite (~6.1 MB): INT8
+  aqua-collapse fix — §5 now ships the faithful **float32** TFLite (~5.8 MB per
+  notebook §5, downloaded not bundled): INT8
   collapsed MobileNetV3 to ≈0.01, float16 won't prepare on LiteRT (`CONV_2D`); aqua
   realworld 0.76. **A paired A/B says the v7 changes net-hurt gamma — keep 2.6.8 (below).**
 
@@ -303,11 +308,11 @@ before wiring any of it: judge a sample against the reference exemplars, count
 intend to use — and now also check the folder's provenance against every dataset the
 benchmark was built from.
 
-**Fix the lister before trusting any "nothing here".** The inventory tooling caps
-pagination and returns silently: a full listing of the dataset above is 49,878 files
-where the inventory recorded ~24,000 and a follow-up "uncapped" re-run still stopped
-short. A negative result from a capped lister is not evidence of absence — make it
-raise when `nextPageToken` is still live at exit, then re-run the band.
+**Fixed — the lister now raises rather than truncating** (`server/tools/kaggle_inventory.py:90-93`;
+the rationale is in its module docstring). It used to cap pagination and return silently:
+a full listing of the dataset above is 49,878 files where the inventory recorded ~24,000,
+and a follow-up "uncapped" re-run still stopped short. Kept here as the standing rule —
+**a negative result from a capped lister is not evidence of absence.**
 
 ## 2.6.10 — the boundary fix on v7: recovered (07-20) — see the caveat above
 
@@ -454,8 +459,9 @@ assumptions no longer hold.
    mosaic-virus imagery is the specific gap; no live public set was found.
 10. **NEW — re-weight the effort between `gray_mold` and `nutrient`.** They are failing
     for *different* reasons and the v8b round treats them as one job:
-    - `nutrient_deficiency` has a **real precision defect** — P **0.670**, 109 predicted
-      vs 87 actual (1.25× over-fire). This is the genuine model problem. Prioritise.
+    - `nutrient_deficiency` has a **real precision defect** — P **0.670** on the 2.6.10
+      run (07-20), 109 predicted vs 87 actual (1.25× over-fire). This is the genuine
+      model problem. Prioritise.
     - `gray_mold_botrytis` **measures fine** (R 0.846 / P 0.856) — but its eval slice is
       ~39% agricultural leak, so that number is partly *untrustworthy rather than good*.
       Its job is item 1 (purge + re-judge for a believable benchmark), **not** volume.
@@ -472,11 +478,8 @@ features (corpus scorch-vs-healthy → benchmark): centre-crop 0.954, resize-and
 separately falsified (2.6.8 unchanged 31/31; 2.7.2 got **worse**, 3/31 → 1/31). If a
 variant is retried it is a **training**-transform change, not an eval-transform one, and
 it does not block the collection round — collection *is* the critical path.
-Same reasoning is why `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`
-(1,400 `scorch` images, MIT) is **permanently deny-listed** — it *is* the OOD
-benchmark's source, so training on it is contamination rather than a judgement call
-(see the deny-list above) — 1,400 unverified positives into our most boundary-sensitive class is
-the bet that produced the 2.6.9 regression.
+And the obvious volume shortcut is closed: `shuvokumarbasak4004`'s 1,400 `scorch`
+images are **permanently deny-listed** (see the deny-list above).
 
 **2.6.11 verify (paired, not aggregate):** paired bootstrap 2.6.11 vs 2.6.8 (and vs 2.6.10)
 on the *new* (non-recycled) v8 eval rows — nutrient/scorch **precision** up with recall
@@ -529,8 +532,8 @@ an exposure difference. No release has ever exceeded 4/31 there.
 > Sizing a collection round against "restore 0.565" is really "restore hibiscus", and
 > sizing against 62 clusters systematically over-promises. **Superseded:** the arm
 > was retired outright in benchmark v2 (see "Build rules answered this round"),
-> rather than merely reported separately
-> and enforce that in the ship gate.
+> rather than merely reported separately. The ship gate now floors only the
+> hibiscus arm (`OOD_ARM_FLOORS = {'hibiscus': 0.70}`, notebook §6).
 
 ### 3. Framing: two probes disagreed, and the disagreement is the finding
 
@@ -624,7 +627,7 @@ Per-stratum acceptance predicates, not volume targets. Current coverage in brack
 | **scorch, plain ground** | 150 | `bg_plainness ≥ 0.636`, `subj_frac_bg ≤ 0.406`, `border_green_frac ≤ 0.030` | 4.4% coverage; −31.9 pp in ablation, but only ~3 of 31 real clusters. Demoted from 250: supporting, not critical |
 | **scorch, low chroma** | 150 | `sat_mean ≤ 0.15`, dull ambient light | 12.2% coverage; −10.6 pp, largely subsumed by framing |
 | **healthy, plain ground** | 250 | same framing predicate, healthy subject | breaks "plain ground ⇒ not_a_plant" |
-| **healthy, ND regime** | 250 | `det_union_frac ≥ 0.40`, `sat_mean ≥ 0.38`, `achro_bright ≤ 0.05` | ND precision 0.621 is a 6.4× prior distortion, not a label problem — the fix is **negatives**, not positives |
+| **healthy, ND regime** | 250 | `det_union_frac ≥ 0.40`, `sat_mean ≥ 0.38`, `achro_bright ≤ 0.05` | ND precision 0.621 (v9 characterisation, 2026-08) is a 6.4× prior distortion, not a label problem — the fix is **negatives**, not positives |
 | **leaf_spot, houseplant** | 200 | one soft-lit glossy leaf indoors, confluent lesions | 98 of the 184 `leaf_spot` rows are houseplant-domain, over ~10 genera; recall 0.311 vs 0.744 garden |
 | **pests + gray_mold, with boxes** | 200 | must carry bounding boxes | Stage 1 returns no box on 44.9% / 43.5%; `pests` is 21 rows and 19% under the 384 px floor |
 
@@ -691,12 +694,18 @@ happened.
 They were the whole content of the 2.7.3 release. Recorded here so neither is
 re-proposed as a cheap next step.
 
-1. **Re-weight the in-regime slice** → `REGIME_*` / `regime_multipliers` in §1/§4.
+1. **Re-weight the in-regime slice** — *code removed after falsification*; it was
+   `REGIME_UPWEIGHT_CLASSES` / `REGIME_BOOST` in §1 and `regime_multipliers()` in §4.
    297 of 1,188 scorch rows boosted, stratum draw share 25% → 50%, class draw share
    held. Benchmark hibiscus moved **3/31 → 4/31, Fisher exact p=1.000.** One cluster.
-2. **Regime-stratified calibration** → the §6 conformal audit. Marginal coverage
-   0.967; **low_chroma 0.972 vs rest 0.965** — the dull stratum was already the
-   *better* covered one. There was no under-coverage to fix.
+2. **Regime-stratified calibration** — *code removed after falsification*; it was the
+   §6 conformal audit. Marginal coverage 0.967; **low_chroma 0.972 vs rest 0.965** —
+   the dull stratum was already the *better* covered one. There was no under-coverage
+   to fix.
+
+The removal is recorded in the notebook itself (§1, "2.7.3 RESULT: both levers
+falsified, code removed"), which points back here and at `docs/ROADMAP.md`
+("Settled — do not retry"). A grep for either constant now returns only that comment.
 
 Why the probe did not translate: the 0.677 figure came from a probe trained
 **exclusively** on the low-chroma quartile. Upweighting that stratum to half a class's

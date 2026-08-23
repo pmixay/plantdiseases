@@ -441,7 +441,12 @@ class CareRepository(
     /** At most one active plan per plant — any existing active plan for
      *  this plant is abandoned first. Returns null when the care plan
      *  carries no treatment steps (TreatmentPlanFactory.build returned
-     *  null), in which case no row is written at all. */
+     *  null), in which case no row is written at all.
+     *
+     *  Kept as a standalone entry point / test seam: this wrapper is where
+     *  the mutex + `withTransaction` envelope lives. Production reaches the
+     *  same work through [ensureTreatmentPlanForScan], which calls
+     *  `startTreatmentPlanLocked` directly because it already holds both. */
     suspend fun startTreatmentPlan(
         plantId: Long,
         scanId: Long?,

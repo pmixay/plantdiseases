@@ -1311,3 +1311,33 @@ def test_enforce_canonical_dosages_rejects_npk_swap():
     plan = {"watering_days": 7, "fertilise_weeks": 2, "fertiliser_npk": "10-15-10"}
     text = "Use a 20-20-20 fertiliser blend."
     assert ai._enforce_canonical_dosages(text, plan) is False
+
+
+# ── Care-protocol coverage ────────────────────────────────────────────
+# Regression guard for the bug where ``pests`` — a shipped head class —
+# had no entry in either protocol table, so a pests care plan silently
+# fell through to the *healthy* protocol ("keep your current routine;
+# monitor weekly") instead of an isolate-and-treat one. The head is the
+# contract: every class the classifier can return (bar ``not_a_plant``,
+# which never reaches a care plan) needs a protocol, in both languages.
+
+def test_every_head_class_has_a_care_protocol():
+    import ai_services as ai
+    try:
+        from classifier import DEFAULT_CLASS_NAMES
+    except ImportError:  # pragma: no cover — package layout
+        from server.classifier import DEFAULT_CLASS_NAMES
+
+    expected = set(DEFAULT_CLASS_NAMES) - {"not_a_plant"}
+    missing = expected - set(ai._DISEASE_PROTOCOL)
+    assert not missing, f"head classes with no care protocol: {sorted(missing)}"
+
+
+def test_care_protocol_tables_agree_across_languages():
+    import ai_services as ai
+
+    assert set(ai._DISEASE_PROTOCOL) == set(ai._DISEASE_PROTOCOL_RU), (
+        "EN/RU care protocols must cover the same classes: "
+        f"EN-only={sorted(set(ai._DISEASE_PROTOCOL) - set(ai._DISEASE_PROTOCOL_RU))}, "
+        f"RU-only={sorted(set(ai._DISEASE_PROTOCOL_RU) - set(ai._DISEASE_PROTOCOL))}"
+    )

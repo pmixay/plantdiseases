@@ -26,19 +26,14 @@ import time
 from pathlib import Path
 
 try:
-    from .config import get_int, get_str  # type: ignore[import-not-found]
+    from .config import get_str  # type: ignore[import-not-found]
 except ImportError:
-    from config import get_int, get_str
+    from config import get_str
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = Path(__file__).resolve().parent / "telemetry.db"
 TELEMETRY_DB_PATH = Path(get_str("TELEMETRY_DB_PATH", str(_DEFAULT_DB_PATH)))
-
-# Retention + a per-IP daily cap so a misbehaving client (or a crash loop)
-# can't flood the store.
-TELEMETRY_RETENTION_DAYS = get_int("TELEMETRY_RETENTION_DAYS", 30)
-TELEMETRY_DAILY_CAP_PER_IP = get_int("TELEMETRY_DAILY_CAP_PER_IP", 200)
 
 # Field length caps — a report is diagnostic context, never a payload.
 MAX_MESSAGE_LEN = 2000

@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS feedback (
     correct               INTEGER NOT NULL,
     corrected_class       TEXT,
     note                  TEXT,
+    -- Raw IP: no write path sets it any more (only client_ip_hash is
+    -- persisted); retained for existing databases and their historical rows.
     client_ip             TEXT,
     created_at            INTEGER NOT NULL,
     predicted_class       TEXT,
@@ -298,14 +300,16 @@ def record_feedback(
         out_of_head_int = 1 if out_of_head else 0
     with _write_lock, _connect() as conn:
         cur = conn.execute(
+            # The legacy raw-IP column is deliberately left out of the column
+            # list: new rows leave it NULL and only client_ip_hash is stored.
             "INSERT INTO feedback ("
-            "  scan_id, correct, corrected_class, note, client_ip, created_at, "
+            "  scan_id, correct, corrected_class, note, created_at, "
             "  predicted_class, predicted_confidence, top3_json, model_version, "
             "  app_version, locale, platform, user_pseudo_id, region_count, "
             "  primary_region_index, feedback_latency_ms, reason, image_hash, "
             "  client_ip_hash, out_of_head, prediction_set_json"
             ") VALUES ("
-            "  ?, ?, ?, ?, ?, ?,"
+            "  ?, ?, ?, ?, ?,"
             "  ?, ?, ?, ?,"
             "  ?, ?, ?, ?, ?,"
             "  ?, ?, ?, ?,"
@@ -316,10 +320,6 @@ def record_feedback(
                 1 if correct else 0,
                 corrected_class,
                 note,
-                # Keep the raw IP column NULL going forward — only the
-                # hashed value is persisted. Existing rows with the
-                # raw IP stay untouched.
-                None,
                 now,
                 predicted_class,
                 predicted_confidence,

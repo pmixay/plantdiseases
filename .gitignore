@@ -35,7 +35,6 @@ keystore.properties
 server/venv/
 server/__pycache__/
 server/*.pyc
-server/data/
 # Model weights + calibration artefacts are NOT committed and are never
 # auto-downloaded: the server is fail-fast and refuses to boot without them
 # (see DEPLOYMENT.md). Keep only the dir placeholder and the human-authored
@@ -93,7 +92,11 @@ server/static/aqua/classes.json
 # Data-labeling tool runtime artifacts (created at runtime, never committed)
 server/labeling.db*
 server/labeling_images/
-server/labeling_exports/
+# tools/export_data.py writes plantvision_export_<UTC>.tar.gz — the labeling,
+# feedback and community DBs plus scan images — into --out, which defaults to
+# ./exports relative to the working directory, so ignore both places it lands.
+/exports/
+server/exports/
 
 # Python bytecode from android/tools helper scripts
 android/tools/__pycache__/

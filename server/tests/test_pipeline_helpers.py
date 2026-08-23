@@ -401,11 +401,8 @@ def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
         "weak disease must not be downgraded to healthy"
     )
     assert "low_confidence" in out["warnings"]
-    # The contradictory-warnings bug: neither of these strings may
-    # appear, even though both diseases sit in the distribution.
-    assert not any(w.startswith("disease_uncertain:") for w in out["warnings"])
     # The post-fallback "uncertain_healthy" branch must not fire on a
-    # disease verdict either.
+    # disease verdict, even though healthy sits in the distribution.
     assert "uncertain_healthy" not in out["warnings"]
 
 

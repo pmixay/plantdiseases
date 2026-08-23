@@ -1127,12 +1127,6 @@
     <string name="section_diseases_subtitle">Распространённые проблемы и способы лечения.</string>
     <string name="section_expand">Развернуть раздел</string>
     <string name="section_collapse">Свернуть раздел</string>
-    <plurals name="fertiliser_interval">
-        <item quantity="one">Подкармливать каждую неделю в период активного роста.</item>
-        <item quantity="few">Подкармливать каждые %1$d недели в период активного роста.</item>
-        <item quantity="many">Подкармливать каждые %1$d недель в период активного роста.</item>
-        <item quantity="other">Подкармливать каждые %1$d недели в период активного роста.</item>
-    </plurals>
 
     <!-- Fertiliser guide: substrate per group -->
 <string name="feed_soil_fruiting">Питательный суглинок с компостом, pH 6,0–6,8, без застоя воды</string>

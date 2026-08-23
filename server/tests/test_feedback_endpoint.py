@@ -27,20 +27,20 @@ def isolated_feedback_db(tmp_path, monkeypatch):
     (``test_feedback_endpoint_rejects_unissued_scan_id`` and friends)
     undo this patch.
     """
-    db_path = tmp_path / "feedback.db"
-    monkeypatch.setenv("FEEDBACK_DB_PATH", str(db_path))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import importlib
-
     import feedback as fb
-    importlib.reload(fb)
-    # Re-bind the symbols main.py imported at module-load time so the
-    # endpoint hits the freshly-reloaded module (which sees the temp DB).
     import main as server_main
-    server_main.record_feedback = fb.record_feedback
-    server_main.init_feedback_db = fb.init_db
-    server_main.feedback_counts = fb.feedback_counts
-    server_main.record_issued_scan_id = fb.record_issued_scan_id
+
+    db_path = tmp_path / "feedback.db"
+    # Every feedback function resolves these at call time, so patching the
+    # module globals is enough — the symbols main.py imported at module load
+    # share this module's namespace and follow along. The env vars keep a
+    # reload (if a test ever adds one) pointing at the same temp files.
+    monkeypatch.setenv("FEEDBACK_DB_PATH", str(db_path))
+    monkeypatch.setenv("FEEDBACK_IMG_DIR", str(tmp_path / "feedback_images"))
+    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
+    monkeypatch.setattr(fb, "FEEDBACK_DB_PATH", db_path)
+    monkeypatch.setattr(fb, "FEEDBACK_IMG_DIR", tmp_path / "feedback_images")
+    monkeypatch.setattr(fb, "_initialised", False)
     monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: True)
     yield db_path
 
@@ -197,15 +197,11 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
         filename
       * backfill ``image_path`` on the most recent matching feedback row
     """
+    import feedback as fb
+
     img_dir = tmp_path / "feedback_imgs"
     monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
-    import importlib
-
-    import feedback as fb
-    importlib.reload(fb)
-    import main as server_main
-    server_main.save_feedback_image = fb.save_feedback_image
-    server_main.feedback_attach_image_path = fb.attach_image_path
+    monkeypatch.setattr(fb, "FEEDBACK_IMG_DIR", img_dir)
 
     # Drop the feedback row first so attach_image_path has something
     # to update.
@@ -248,15 +244,11 @@ def test_feedback_image_rejects_non_image_bytes(
     fallback, and nothing decoded the upload — so a valid scan_id was enough
     to write arbitrary bytes into the retraining corpus.
     """
+    import feedback as fb
+
     img_dir = tmp_path / "feedback_imgs_reject"
     monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
-    import importlib
-
-    import feedback as fb
-    importlib.reload(fb)
-    import main as server_main
-    server_main.save_feedback_image = fb.save_feedback_image
-    server_main.feedback_attach_image_path = fb.attach_image_path
+    monkeypatch.setattr(fb, "FEEDBACK_IMG_DIR", img_dir)
 
     client.post(
         "/api/feedback",
@@ -286,15 +278,11 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
     distinct images. Re-uploading the SAME bytes must still succeed, because
     clients retry after a timeout and the artefact is content-addressed.
     """
+    import feedback as fb
+
     img_dir = tmp_path / "feedback_imgs_once"
     monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
-    import importlib
-
-    import feedback as fb
-    importlib.reload(fb)
-    import main as server_main
-    server_main.save_feedback_image = fb.save_feedback_image
-    server_main.feedback_attach_image_path = fb.attach_image_path
+    monkeypatch.setattr(fb, "FEEDBACK_IMG_DIR", img_dir)
 
     client.post(
         "/api/feedback",

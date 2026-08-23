@@ -69,13 +69,14 @@ CREATE TABLE IF NOT EXISTS candidates (
     sha                TEXT    NOT NULL,
     phash              TEXT,
     status             TEXT    NOT NULL DEFAULT 'pending',
+    -- Lease columns of the removed admin queue: nothing writes them any more;
+    -- retained so existing labeling.db files keep their shape.
     claimed_by_session TEXT,
     claimed_at         INTEGER,
     created_at         INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_candidates_sha ON candidates(sha);
 CREATE INDEX IF NOT EXISTS ix_candidates_class_status ON candidates(class, status);
-CREATE INDEX IF NOT EXISTS ix_candidates_claim ON candidates(status, claimed_at);
 """
 
 
@@ -116,9 +117,9 @@ def init_db() -> None:
             _add_column_if_missing(conn, "candidates", "scan_id", "TEXT")
             _add_column_if_missing(conn, "candidates", "feedback_note", "TEXT")
             _add_column_if_missing(conn, "candidates", "user_correct", "INTEGER")
-            # Vestigial audit flag — kept for schema back-compat with existing
-            # DBs; the dataset audit-sampling that populated it was removed, so
-            # new rows leave it NULL.
+            # Vestigial audit flag — retained for existing databases; the
+            # dataset audit-sampling that populated it was removed and no write
+            # path sets it any more, so it is always NULL.
             _add_column_if_missing(conn, "candidates", "audit", "INTEGER")
             # Partial unique index: one candidate per scan, and a race-safe
             # anchor for the feedback→candidate linkage.
@@ -148,7 +149,6 @@ def insert_candidate(
     status: str = "pending", model_pred: str | None = None,
     model_conf: float | None = None, model_set: list[str] | None = None,
     scan_id: str | None = None, feedback_note: str | None = None,
-    audit: bool = False,
 ) -> int | None:
     """Append a candidate at the given status (model auto-label or 'pending' for
     the human queue). ``INSERT OR IGNORE`` on the unique sha (and the partial
@@ -162,11 +162,11 @@ def insert_candidate(
             "INSERT OR IGNORE INTO candidates "
             "(class, image_path, source, source_url, subject_plant, sha, phash, "
             " status, model_pred, model_conf, model_set, scan_id, feedback_note, "
-            " audit, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (cls, image_path, source, source_url, subject_plant, sha, phash,
              status, model_pred, model_conf, set_json, scan_id, feedback_note,
-             1 if audit else None, now),
+             now),
         )
         return int(cur.lastrowid) if cur.rowcount else None
 
@@ -216,7 +216,7 @@ def mark_feedback(
         else:
             conn.execute(
                 "UPDATE candidates SET user_correct=0, source='user_feedback', "
-                "status='pending', claimed_by_session=NULL, claimed_at=NULL, "
+                "status='pending', "
                 "class=COALESCE(?, class), feedback_note=COALESCE(?, feedback_note) "
                 "WHERE scan_id=? AND status NOT IN ('yes','no','not_sure')",
                 (corrected_class, note, scan_id),

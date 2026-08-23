@@ -1133,10 +1133,6 @@
     <string name="section_diseases_subtitle">Common problems and how to treat them.</string>
     <string name="section_expand">Expand section</string>
     <string name="section_collapse">Collapse section</string>
-    <plurals name="fertiliser_interval">
-        <item quantity="one">Feed weekly during active growth.</item>
-        <item quantity="other">Feed every %1$d weeks during active growth.</item>
-    </plurals>
 
     <!-- Fertiliser guide: substrate per group -->
 <string name="feed_soil_fruiting">Rich loam with compost, pH 6.0–6.8, free-draining</string>

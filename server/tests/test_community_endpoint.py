@@ -1341,52 +1341,6 @@ def test_opinions_list_returns_the_callers_current_pick(client, isolated_communi
     assert anonymous["my_opinion"] is None
 
 
-def test_nearby_before_cursor_pages_without_overlap(client, isolated_community):
-    """Keyset pagination: page 1 (limit=2) then page 2 (before=next_before)
-    together cover all 3 rows with no repeats, and the short second page
-    reports next_before=null."""
-    db_path, _ = isolated_community
-    for sid in ("pagescan0001", "pagescan0002", "pagescan0003"):
-        client.post(
-            "/api/community/scan",
-            data=_form(
-                scan_id=sid, user_pseudo_id="pseudo-pager-1",
-                region="Lyon", country="FR", disease="leaf_spot",
-            ),
-        )
-    # Give each row a distinct, ordered created_at — same-second inserts in a
-    # tight loop would otherwise tie and make DESC order undefined.
-    with sqlite3.connect(str(db_path)) as conn:
-        base = 1_700_000_000
-        for i, sid in enumerate(("pagescan0001", "pagescan0002", "pagescan0003")):
-            conn.execute(
-                "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
-                (base + i, sid),
-            )
-
-    page1 = client.get(
-        "/api/community/nearby",
-        params={"country": "FR", "scope": "country", "limit": 2, "user_pseudo_id": "x"},
-    ).json()
-    assert len(page1["items"]) == 2
-    assert page1["next_before"] is not None
-
-    page2 = client.get(
-        "/api/community/nearby",
-        params={
-            "country": "FR", "scope": "country", "limit": 2,
-            "user_pseudo_id": "x", "before": page1["next_before"],
-        },
-    ).json()
-    assert len(page2["items"]) == 1
-    assert page2["next_before"] is None
-
-    ids1 = {i["scan_id"] for i in page1["items"]}
-    ids2 = {i["scan_id"] for i in page2["items"]}
-    assert not (ids1 & ids2)
-    assert len(ids1) + len(ids2) == 3
-
-
 def _share(client, scan_id: str, species: str):
     """Share one FR scan, identified in the feed by its species.
 
@@ -1574,7 +1528,6 @@ def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
     assert first.status_code == 200, first.text
     page1 = first.json()
     assert page1["ranking"] == "recommended"
-    assert page1["next_before"] is None
     assert page1["next_cursor"].startswith("r1.")
     assert page1["items"][0]["recommendation_reason"] == "needs_opinion"
 
@@ -1608,10 +1561,6 @@ def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
     assert client.get(
         "/api/community/nearby",
         params={**params, "cursor": tampered},
-    ).status_code == 422
-    assert client.get(
-        "/api/community/nearby",
-        params={**params, "before": 1_800_000_000},
     ).status_code == 422
 
 
@@ -2292,26 +2241,18 @@ def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkey
     assert not (tmp_path / "thumbs" / "legacyscan01_abc.jpg").exists()
 
 
-def test_nearby_before_rejected_with_disease_or_species(client, isolated_community):
-    """``before`` is a single-pass cursor. A disease/species-scoped call is
-    several concatenated passes with no global created_at order, so the
-    combination is refused rather than paged wrongly (duplicated rows on the
-    next page, and a whole pass silently dropped)."""
+def test_nearby_cursor_rejected_with_disease_or_species(client, isolated_community):
+    """A disease/species-scoped call is several concatenated passes with no
+    global created_at order, so a keyset cursor is refused rather than paging
+    wrongly (duplicated rows on the next page, and a whole pass silently
+    dropped)."""
     base = {
-        "country": "FR", "scope": "country", "limit": 2,
-        "user_pseudo_id": "x", "before": 1_700_000_000,
+        "country": "FR", "scope": "country", "limit": 2, "user_pseudo_id": "x",
     }
     for extra in ({"disease": "leaf_spot"}, {"species": "Ficus elastica"}):
-        r = client.get("/api/community/nearby", params={**base, **extra})
-        assert r.status_code == 422, r.text
-
         keyed = client.get(
             "/api/community/nearby",
-            params={
-                **{k: v for k, v in base.items() if k != "before"},
-                "cursor": "r1.opaque.signature",
-                **extra,
-            },
+            params={**base, "cursor": "r1.opaque.signature", **extra},
         )
         assert keyed.status_code == 422, keyed.text
         assert keyed.json()["detail"] == "cursor cannot be combined with disease or species."
@@ -2319,10 +2260,7 @@ def test_nearby_before_rejected_with_disease_or_species(client, isolated_communi
     # The filters are still fine on their own — only the cursor is refused.
     r = client.get(
         "/api/community/nearby",
-        params={
-            "country": "FR", "scope": "country", "limit": 2,
-            "user_pseudo_id": "x", "disease": "leaf_spot",
-        },
+        params={**base, "disease": "leaf_spot"},
     )
     assert r.status_code == 200, r.text
 

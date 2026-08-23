@@ -27,7 +27,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

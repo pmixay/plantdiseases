@@ -23,9 +23,6 @@ class FakeScanDao : ScanDao {
     override suspend fun getAllScans(): List<ScanEntity> =
         items.sortedByDescending { it.timestamp }
 
-    override suspend fun getRecentScans(limit: Int): List<ScanEntity> =
-        getAllScans().take(limit)
-
     override suspend fun getScanById(id: Long): ScanEntity? =
         items.firstOrNull { it.id == id }
 

@@ -1,11 +1,7 @@
-package com.plantdiseases.app.util
+package com.plantdiseases.app.ui.onboarding.guidance
 
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCatalog
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapterStatus
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import org.junit.Before
 import org.junit.Test
 

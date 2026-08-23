@@ -10,7 +10,7 @@
   },
   "models": {
     "models_dir": "models",
-    "_models_note": "Weights + calibration artefacts are NOT committed and NOT auto-downloaded. Drop the trained files (detector.{pt,onnx}, classifier.onnx, classes.json, temperature.json, conformal.json, model_card.json) into this directory before starting the server. Boot is fail-fast if a required artefact is missing.",
+    "_models_note": "Weights + calibration artefacts are NOT committed and NOT auto-downloaded. Drop the trained files (detector.onnx, classifier.onnx, classes.json, temperature.json, conformal.json, model_card.json) into this directory before starting the server. Boot is fail-fast if a required artefact is missing.",
     "frontier_enabled": false,
     "frontier_models_dir": "models/frontier",
     "_frontier_note": "The frontier (ViT-B/14, ~86M param) tier is OFF by default — it expects a GPU host we don't have. Set frontier_enabled=true AND provision its own bundle (classifier.onnx, classes.json, temperature.json, conformal.json) under frontier_models_dir. The YOLOv8n detector is shared with gamma. When disabled OR if the bundle fails to load, /api/analyze?family=frontier returns a graceful available:false payload and /api/capabilities reports it unavailable so the app greys it out. A bad frontier bundle never blocks gamma boot (fail-soft)."
@@ -22,7 +22,9 @@
     "rate_limit_rps": 1.0,
     "infer_workers": 1,
     "net_workers": 16,
-    "onnx_intra_op_threads": 0
+    "onnx_intra_op_threads": 0,
+    "fold_whole_frame_vote": true,
+    "_fold_note": "Classify the whole frame alongside the detected crops and fold it into the mean vote as one extra member (see MODEL_CARD.md). On by default — it is what recovers an over-cropped leaf shot. Turning it off saves one full ViT forward per scan and is the first latency lever to reach for, at the cost of that recovery."
   },
   "ai": {
     "openrouter_api_key": "",

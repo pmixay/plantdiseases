@@ -10,7 +10,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.ConnectivityObserver
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.ReachabilityReporter
 import dagger.Module
 import dagger.Provides

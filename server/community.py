@@ -326,15 +326,15 @@ def scan_exists(scan_id: str) -> bool:
         ).fetchone() is not None
 
 
-def opinion_open(scan_id: str, max_age_days: int = IDENTITY_ROTATION_DAYS) -> bool:
+def opinion_open(scan_id: str) -> bool:
     """True when a shared scan still accepts opinions — it exists AND is newer
-    than ``max_age_days``. Old scans go read-only (their public handle has
-    rotated), so the community can't keep weighing in on stale photos."""
+    than ``IDENTITY_ROTATION_DAYS``. Old scans go read-only (their public handle
+    has rotated), so the community can't keep weighing in on stale photos."""
     sid = (scan_id or "").strip()
     if not sid:
         return False
     init_db()
-    cutoff = int(time.time()) - max_age_days * 86_400
+    cutoff = int(time.time()) - IDENTITY_ROTATION_DAYS * 86_400
     with _connect() as conn:
         return conn.execute(
             "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? LIMIT 1",
@@ -441,15 +441,16 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
-def _hidden_clause(table_alias: str = "") -> str:
+def _hidden_clause() -> str:
     """SQL fragment + placeholders for the hidden-disease filter.
 
     Returns a string starting with " AND " so callers can append
-    directly to existing WHERE conditions.
+    directly to existing WHERE conditions. Every caller filters an
+    unaliased ``disease`` column; the aliased joins build their own
+    disease filters instead.
     """
-    prefix = f"{table_alias}." if table_alias else ""
     placeholders = ", ".join(["?"] * len(_HIDDEN_COMMUNITY_DISEASES))
-    return f" AND {prefix}disease NOT IN ({placeholders})"
+    return f" AND disease NOT IN ({placeholders})"
 
 
 def _connect() -> sqlite3.Connection:
@@ -968,9 +969,9 @@ def record_opinion(
     """Append one community 'second opinion' (comment) on a shared scan.
     Returns the new row id.
 
-    UNGATED, and deliberately not in ``__all__``: it performs none of the
-    active-request / ownership / block checks. Nothing in the HTTP layer
-    calls it — ``/api/community/opinion`` goes through
+    UNGATED: it performs none of the active-request / ownership / block
+    checks. Nothing in the HTTP layer calls it —
+    ``/api/community/opinion`` goes through
     :func:`record_requested_opinion`, which is the authority. This form
     survives only as a test-seeding helper for the read paths; new callers
     must use :func:`record_requested_opinion`.
@@ -1767,9 +1768,14 @@ def daily_like_count_for_ip_hash(ip_hash: str | None) -> int:
 
 
 def scan_counts(scan_ids: list[str]) -> dict[str, dict]:
-    """Batched per-scan ``{opinions, views}`` map for a set of scan_ids — the
-    Gallery surfaces these badges on the caller's own rows. Scans with neither
-    are omitted so the client can default them to zero."""
+    """Batched per-scan ``{opinions, views}`` map for a set of scan_ids. Scans
+    with neither are omitted so a caller can default them to zero.
+
+    No HTTP route exposes this any more: the POST /api/community/scan-counts
+    endpoint was removed and the Gallery gets its badge counts from
+    /api/community/my-scan-opinions/{pseudo_id}. Kept as a thin composition of
+    ``opinion_counts`` + ``view_counts`` (both live) for batch callers and the
+    tests that cover it."""
     op = opinion_counts(scan_ids)
     vw = view_counts(scan_ids)
     return {
@@ -2036,7 +2042,6 @@ def nearby_scans(
     exclude_user_pseudo_id: str | None = None,
     viewer_author_id: str | None = None,
     scope: str = "nearby",
-    before: int | None = None,
     cursor: tuple[int, int] | None = None,
 ) -> list[dict]:
     """Most recent shared scans for one scope.
@@ -2051,13 +2056,12 @@ def nearby_scans(
     in its scope so the Nearby/Country/Worldwide toggle actually changes what's
     shown.
 
-    ``before`` is a keyset-pagination cursor: an earlier ``created_at`` epoch
-    second, past which only OLDER rows are returned. Pass the previous page's
-    last row's ``created_at`` to fetch the next page. ``None`` (default)
-    fetches the newest page.
+    ``cursor`` is a keyset-pagination cursor — the previous page's last
+    ``(created_at, id)`` pair, past which only OLDER rows are returned.
+    ``None`` (default) fetches the newest page.
 
-    ``before`` is SINGLE-PASS ONLY — it must not be combined with ``disease``
-    or ``species``. Those widen the query into several independently ordered
+    A cursor is SINGLE-PASS ONLY — it must not be combined with ``disease`` or
+    ``species``. Those widen the query into several independently ordered
     passes concatenated together, so the last row of a page is not the page's
     global minimum: paging it would repeat rows across pages and drop a later
     pass's rows entirely. The caller (``/api/community/nearby``) rejects the
@@ -2109,9 +2113,6 @@ def nearby_scans(
             cursor_created, cursor_row_id = cursor
             common += " AND (created_at < ? OR (created_at = ? AND id < ?))"
             cparams.extend((int(cursor_created), int(cursor_created), int(cursor_row_id)))
-        elif before:
-            common += " AND created_at < ?"
-            cparams.append(int(before))
 
         # Geo scopes, most specific first. A disease-scoped carousel widens
         # nearby→country; the plain feed stays in a single scope.
@@ -2879,44 +2880,3 @@ def stats_snapshot() -> dict:
         "regions": int(region_count),
     }
 
-
-__all__ = [
-    "COMMUNITY_DB_PATH",
-    "COMMUNITY_THUMB_DIR",
-    "OpinionLockedError",
-    "OpinionOwnerError",
-    "OPINION_REQUEST_TTL_HOURS",
-    "clear_wants_opinion",
-    "daily_safety_count_for_ip_hash",
-    "daily_write_count_for_ip_hash",
-    "expire_stale_opinion_requests",
-    "density_grid",
-    "decode_recommendation_cursor",
-    "encode_recommendation_cursor",
-    "init_db",
-    "map_scans",
-    "nearby_scans",
-    "opinion_counts",
-    "opinion_counts_for_user",
-    "opinion_open",
-    "opinions_for",
-    "owner_of",
-    "popular_snapshot",
-    "public_opinion_token",
-    "prune_older_than",
-    "public_scan_token",
-    "record_requested_opinion",
-    "record_scan",
-    "record_views",
-    "region_summary",
-    "recommended_scans",
-    "report_content",
-    "block_content_author",
-    "resolve_scan_token",
-    "scan_counts",
-    "scan_exists",
-    "scans_by_species",
-    "set_wants_opinion",
-    "stats_snapshot",
-    "wants_opinion",
-]

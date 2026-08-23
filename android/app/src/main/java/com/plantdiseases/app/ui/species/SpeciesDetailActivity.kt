@@ -53,7 +53,7 @@ import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.FertiliserGuide
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.PlantCategory
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.PlantFacts
@@ -383,10 +383,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun bindFertiliser(plan: CarePlanResponse) {
         binding.cardFertiliser.visibility = View.VISIBLE
         val host = binding.fertiliserBody
-        // Keep the legacy TextView in the tree but stop using it, so no id disappears.
-        binding.tvFertiliserBody.visibility = View.GONE
-        // Remove any card added by a previous bind (index 0 is the legacy TextView).
-        while (host.childCount > 1) host.removeViewAt(1)
+        // Remove any card added by a previous bind.
+        host.removeAllViews()
 
         val guide = FertiliserGuide.forCategory(plantCategory)
 

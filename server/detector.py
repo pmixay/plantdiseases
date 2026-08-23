@@ -34,16 +34,19 @@ import numpy as np
 from PIL import Image
 
 try:
-    from .config import get_int
+    from .config import onnx_intra_op_threads
 except ImportError:  # pragma: no cover — flat layout (run from server/)
-    from config import get_int
+    from config import onnx_intra_op_threads
 
 logger = logging.getLogger(__name__)
 
 DETECTOR_IMG_SIZE = 640
 # Indoor-trained detector — recall-biased so that wide-frame indoor
-# compositions don't drop the only leaf bbox. The OOD gate downstream
-# (detector confidence + classifier MaxLogit) cleans up false positives.
+# compositions don't drop the only leaf bbox. The three-of-three OOD gate
+# downstream (low detector confidence AND a firing classifier-side signal —
+# an embedding-space k-NN distance, or the MaxLogit floor when the bundle
+# ships no bank — AND no veto from the not_a_plant head) cleans up false
+# positives.
 MIN_CONFIDENCE = 0.15
 MAX_DETECTIONS = 10
 
@@ -53,19 +56,19 @@ class DetectorLoadError(RuntimeError):
 
 
 def _resolve_detector_path(model_path: Path | None) -> Path | None:
-    """Prefer detector.onnx (production) over detector.pt when both exist."""
+    """Resolve ``detector.onnx`` in the bundle ``model_path`` points into.
+
+    Serving is ONNX-only: a ``.pt`` is NEVER loaded, whatever ``model_path``
+    names (``main.DETECTOR_PATH`` is ``models/detector.pt`` and still resolves
+    here to ``models/detector.onnx``). Only the bundle directory is taken from
+    ``model_path``; the filename is fixed. Returns ``None`` when the bundle
+    ships no ``detector.onnx``, which ``LeafDetector.__init__`` turns into a
+    boot-aborting :class:`DetectorLoadError`.
+    """
     if model_path is None:
         return None
-    parent = model_path.parent
-    onnx = parent / "detector.onnx"
-    if onnx.exists():
-        return onnx
-    if model_path.suffix.lower() == ".onnx" and model_path.exists():
-        return model_path
-    alternative = model_path.with_suffix(".onnx")
-    if alternative.exists():
-        return alternative
-    return None
+    onnx = model_path.parent / "detector.onnx"
+    return onnx if onnx.exists() else None
 
 
 def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int]:
@@ -140,11 +143,9 @@ class LeafDetector:
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
-        # Intra-op threads default to ORT's pick (= physical cores); see
-        # the matching note in classifier.py. ``ONNX_INTRA_OP_THREADS``
-        # overrides both sessions. Paired with INFER_WORKERS=1 so a single
-        # scan gets the whole CPU without oversubscribing.
-        opts.intra_op_num_threads = get_int("ONNX_INTRA_OP_THREADS", 0)
+        # Both ORT sessions (this one and the classifier's) read the same
+        # key and default through ``config.onnx_intra_op_threads``.
+        opts.intra_op_num_threads = onnx_intra_op_threads()
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 

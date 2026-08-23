@@ -149,9 +149,10 @@ jobs:
       # sharing a single configuration phase and warm daemon (much faster than
       # three separate `--no-daemon` calls). Only the release variant is
       # packaged — it's the shipping artefact and the only build R8 can break
-      # (e.g. a stripped Gson/Retrofit reflection class); lint/test already
-      # compile the debug sources. With RELEASE_STORE_FILE set the APK is signed
-      # with your key, otherwise it falls back to the debug key.
+      # (e.g. a stripped Gson / kotlinx.serialization reflection class);
+      # lint/test already compile the debug sources. With RELEASE_STORE_FILE
+      # set the APK is signed with your key, otherwise it falls back to the
+      # debug key.
       - name: ktlint, detekt, test & assemble release APK (R8)
         env:
           RELEASE_STORE_FILE: ${{ steps.signing.outputs.configured == 'true' && format('{0}/release.keystore', runner.temp) || '' }}

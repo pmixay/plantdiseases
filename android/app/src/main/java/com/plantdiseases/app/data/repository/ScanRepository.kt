@@ -775,12 +775,6 @@ class ScanRepository(
         }
     }
 
-    /** Get recent scan history */
-    suspend fun getRecentScans(limit: Int = 20): List<ScanHistoryItem> =
-        withContext(Dispatchers.IO) {
-            scanDao.getRecentScans(limit).map { it.toHistoryItem() }
-        }
-
     /** Get all scans */
     suspend fun getAllScans(): List<ScanHistoryItem> =
         withContext(Dispatchers.IO) {
@@ -1285,7 +1279,7 @@ class ScanRepository(
      * failed upload must not block the user's normal scan flow.
      *
      * The caller decides whether to send a thumbnail; see
-     * [CommunityRepository.uploadIfEnabled] which handles the
+     * [CommunityUploader.uploadIfEnabled] which handles the
      * opt-out pref + thumbnail downscale before reaching this hop.
      */
     suspend fun uploadCommunityScan(
@@ -1373,7 +1367,6 @@ class ScanRepository(
         userPseudoId: String?,
         limit: Int = 12,
         scope: String? = null,
-        before: Long? = null,
         ranking: String? = null,
         cursor: String? = null,
         context: Context? = null,
@@ -1393,7 +1386,6 @@ class ScanRepository(
                         parameter("user_pseudo_id", it)
                     }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
-                    before?.let { parameter("before", it) }
                     ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
                     cursor?.takeIf { it.isNotBlank() }?.let { parameter("cursor", it) }
                     parameter("limit", limit)

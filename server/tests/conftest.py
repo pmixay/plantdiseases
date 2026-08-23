@@ -62,12 +62,6 @@ def png_bytes() -> bytes:
     return _encode_image(img, "PNG")
 
 
-@pytest.fixture
-def jpeg_bytes() -> bytes:
-    img = Image.new("RGB", (64, 64), color=(160, 80, 40))
-    return _encode_image(img, "JPEG")
-
-
 # ── Fake pipeline (no weights required) ─────────────────────────────
 
 
@@ -75,9 +69,10 @@ class _FakeClassifier:
     backend = "fake"
     img_size = 224
     # Mirror the real classifier's metadata-driven ``architecture`` attr
-    # (classes.json -> architecture) that the /version endpoint surfaces.
+    # (classes.json -> architecture) that /api/capabilities surfaces.
     architecture = "dinov2_vits14+mlp_head"
-    # Capacity tier (classes.json -> model_family), surfaced by /version.
+    # Capacity tier (classes.json -> model_family), also surfaced by
+    # /api/capabilities.
     model_family = "gamma"
 
     def __init__(self):
@@ -88,7 +83,11 @@ class _FakeClassifier:
 
 
 class _FakeDetector:
-    is_loaded = True
+    """Stand-in for ``LeafDetector``. The real one carries a loaded ONNX
+    session; nothing above the pipeline reads either attribute."""
+
+    model = None
+    input_name = ""
 
 
 class FakePipeline:
@@ -135,8 +134,17 @@ class FakePipeline:
 @pytest.fixture(autouse=True, scope="session")
 def _stub_pipeline_for_lifespan(tmp_path_factory):
     """Replace ``PlantDiseasePipeline`` with the fake before lifespan runs, and
-    keep the labeling tool hermetic: point its DB/dirs at a session tmp dir so
-    tests never write into ``server/``."""
+    keep every on-disk store hermetic: point the labeling, feedback, community,
+    photo-cache and telemetry DBs/dirs at session tmp dirs so tests never write
+    into ``server/``.
+
+    Redirection is done twice on purpose. The module globals are what the
+    ``_connect()`` helpers read at call time, and the matching env vars are what
+    a per-test ``importlib.reload`` re-reads — without them a reloaded module
+    would snap back to ``server/feedback.db`` mid-suite.
+    """
+    import community
+    import feedback
     import labeling
     import main as server_main
     import pipeline as pipeline_module
@@ -154,6 +162,33 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     labeling.LABELING_DB_PATH = lab_dir / "labeling.db"
     labeling.LABELING_IMG_DIR = lab_dir / "images"
     labeling._initialised = False
+
+    # /api/analyze records every issued scan_id, which also mints
+    # ``.ip_hash_pepper`` beside the feedback DB — both landed in the working
+    # tree before this redirect.
+    fb_dir = tmp_path_factory.mktemp("feedback")
+    feedback.FEEDBACK_DB_PATH = fb_dir / "feedback.db"
+    feedback.FEEDBACK_IMG_DIR = fb_dir / "images"
+    feedback._initialised = False
+    os.environ["FEEDBACK_DB_PATH"] = str(feedback.FEEDBACK_DB_PATH)
+    os.environ["FEEDBACK_IMG_DIR"] = str(feedback.FEEDBACK_IMG_DIR)
+
+    comm_dir = tmp_path_factory.mktemp("community")
+    community.COMMUNITY_DB_PATH = comm_dir / "community.db"
+    community.COMMUNITY_THUMB_DIR = comm_dir / "thumbs"
+    community._initialised = False
+    os.environ["COMMUNITY_DB_PATH"] = str(community.COMMUNITY_DB_PATH)
+    os.environ["COMMUNITY_THUMB_DIR"] = str(community.COMMUNITY_THUMB_DIR)
+    # main.py imported the thumb dir by value at module load, so the /api route
+    # that serves thumbnails needs its own copy re-pointed too.
+    server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
+
+    # Same story for the proxied-photo cache: a route that fetches one creates
+    # ``server/plant_photo_cache/`` in the working tree.
+    import plant_photos
+    photo_dir = tmp_path_factory.mktemp("plant-photos")
+    plant_photos.PHOTO_CACHE_DIR = photo_dir
+    os.environ["PLANT_PHOTO_CACHE_DIR"] = str(photo_dir)
 
     import telemetry
     telemetry.TELEMETRY_DB_PATH = tmp_path_factory.mktemp("telemetry") / "telemetry.db"
