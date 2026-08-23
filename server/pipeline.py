@@ -36,10 +36,14 @@ Behaviour summary:
   an honest low-confidence flag — see the comment in ``_pick_primary``.)
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
-* **OOD gating** — combines detector confidence with a **MaxLogit**
-  (Hendrycks 2019) score from the classifier. Plain MSP becomes
-  unreliable under temperature scaling and label smoothing; MaxLogit
-  is robust to both because it operates on the raw logits.
+* **OOD gating** — a three-of-three gate: low detector confidence AND a
+  firing classifier-side OOD signal AND no veto from the trained
+  ``not_a_plant`` head. The classifier-side signal is an **embedding-space
+  k-NN distance** on the DINOv2 CLS vector (``ood.py``) when the bundle
+  ships a bank, and falls back to a **MaxLogit** (Hendrycks 2019) floor
+  when it does not. Plain MSP is unusable for either role: it collapses
+  under temperature scaling and label smoothing. See
+  ``_should_route_to_nap`` for the full contract.
 
 Stage 1 owns localisation only. The disease decision remains 100 % on
 the classifier side.
@@ -245,8 +249,9 @@ FOLD_WHOLE_FRAME_VOTE = True
 # ── Blur gate ─────────────────────────────────────────────────────────
 # Variance-of-Laplacian score below this number means the photo is too
 # unfocused to trust the classifier head on. Plant-coloured blur passes
-# the YOLO recall floor and the OOD AND-gate (MaxLogit + det_conf both
-# need to be low), so without a hard blur check the pipeline cheerfully
+# the YOLO recall floor and the OOD AND-gate (the detector and the
+# classifier-side signal both have to fire, and the not_a_plant head must
+# not veto), so without a hard blur check the pipeline cheerfully
 # returns "healthy" for a soft-focus brown smear. The 50.0 floor was
 # picked from a calibration set of real handheld phone shots: in-focus
 # leaves score 200..1500, an obviously-blurry shot scores 5..30. The
@@ -263,26 +268,23 @@ BLUR_DOWNSCALE = 320
 def _load_temperature(classifier_path: Path | None) -> float:
     """Look for ``temperature.json`` next to the classifier weights.
 
-    The training notebook writes it automatically. Returns 1.0 (no-op)
+    The training notebook writes it automatically. Resolution is strictly
+    bundle-relative: a per-family bundle (e.g. ``models/frontier/``) must
+    never silently inherit another family's calibration. Returns 1.0 (no-op)
     when the file is missing or malformed.
     """
-    candidates: list[Path] = []
-    if classifier_path is not None:
-        candidates.append(Path(classifier_path).parent / "temperature.json")
-    candidates.extend([
-        Path("server/models/temperature.json"),
-        Path("models/temperature.json"),
-    ])
-    for p in candidates:
-        try:
-            if p.exists():
-                data = json.loads(p.read_text(encoding="utf-8"))
-                T = float(data.get("temperature", 1.0))
-                if T > 0:
-                    logger.info("Loaded temperature T=%.3f from %s", T, p)
-                    return T
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Could not load temperature from %s: %s", p, e)
+    if classifier_path is None:
+        return 1.0
+    p = Path(classifier_path).parent / "temperature.json"
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            T = float(data.get("temperature", 1.0))
+            if T > 0:
+                logger.info("Loaded temperature T=%.3f from %s", T, p)
+                return T
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not load temperature from %s: %s", p, e)
     return 1.0
 
 
@@ -504,8 +506,8 @@ class PlantDiseasePipeline:
 
         # Blur gate. The classifier was trained on in-focus phone shots
         # and silently hallucinates a plant verdict on soft-focus brown
-        # smears — neither the YOLO recall floor nor the
-        # detector/MaxLogit OOD AND-gate catches that case. Short-circuit
+        # smears — neither the YOLO recall floor nor the three-of-three
+        # OOD gate catches that case. Short-circuit
         # early so the user gets actionable "retake the photo" feedback
         # instead of a confident wrong diagnosis.
         focus_score = _variance_of_laplacian(img)
@@ -514,7 +516,7 @@ class PlantDiseasePipeline:
                 "Blur gate triggered: var-of-Laplacian=%.1f < %.1f → not_a_plant",
                 focus_score, BLUR_LAPLACIAN_FLOOR,
             )
-            return self._too_blurry_response(img, focus_score, t0)
+            return self._too_blurry_response(img, t0)
 
         stage1 = self.detector.detect(img)
         detections = stage1["detections"]
@@ -536,10 +538,12 @@ class PlantDiseasePipeline:
         primary, classification = self._pick_primary(img, detections)
 
         # Secondary NAP gate. Even if Stage 1 returned a bbox, a low
-        # detector confidence combined with a low classifier MaxLogit
-        # is the classic OOD signature: the detector glommed onto a
-        # plant-coloured texture and the classifier had no clean answer
-        # to give. Route to NAP rather than emitting a guessed disease.
+        # detector confidence combined with a firing classifier-side OOD
+        # signal (embedding k-NN distance, or the MaxLogit floor when no
+        # bank ships) is the classic OOD signature: the detector glommed
+        # onto a plant-coloured texture and the classifier had no clean
+        # answer to give. Route to NAP — unless the not_a_plant head
+        # vetoes — rather than emitting a guessed disease.
         det_conf = float(stage1.get("confidence", 0.0))
         if self._should_route_to_nap(classification, det_conf):
             classification = self._reroute_to_nap(classification)
@@ -581,7 +585,6 @@ class PlantDiseasePipeline:
     def _too_blurry_response(
         self,
         img: Image.Image,
-        focus_score: float,
         t0: float,
     ) -> dict:
         """Build a synthetic ``not_a_plant`` verdict for unfocused input.
@@ -621,7 +624,7 @@ class PlantDiseasePipeline:
             image_size=img.size,
             is_diseased=False,
         )
-        response = self._build_response(
+        return self._build_response(
             final=final,
             severity=severity,
             is_diseased=False,
@@ -631,10 +634,6 @@ class PlantDiseasePipeline:
             image_size=img.size,
             t0=t0,
         )
-        # Annotate the response for ops dashboards without breaking the
-        # public contract; clients ignore unknown keys.
-        response["focus_score"] = round(focus_score, 1)
-        return response
 
     def _analyze_no_detection(self, img: Image.Image, t0: float) -> dict:
         cls_full = self.classifier.classify(img)
@@ -653,7 +652,6 @@ class PlantDiseasePipeline:
             "all_probs": calibrated,
             "ood_score": ood_score,
             "_voted_over": 0,
-            "_no_detection": True,
         }
         # Secondary NAP gate on the no-detection path. det_conf is 0 here (Stage
         # 1 found nothing leaf-like), so we require a real classifier-side OOD
@@ -889,21 +887,11 @@ class PlantDiseasePipeline:
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
 
-        # The legacy ``_maybe_apply_healthy_fallback`` used to flip a
-        # weak disease verdict to healthy by transferring the rejected
-        # disease's softmax mass onto healthy. That synthesised a fake
-        # "healthy ~0.51" distribution out of a real disease
-        # prediction, gated off the weak-healthy reroute via the
-        # ``_suspected_disease`` flag, and surfaced two contradictory
-        # disease names in the warnings (the killed-by-fallback class
-        # and the worst-after-fallback class). It was the dominant
-        # source of "user-sees-healthy-but-photo-is-clearly-sick"
-        # errors in the feedback corpus. Removed entirely — weak
-        # disease verdicts now stay disease verdicts and carry
-        # ``low_confidence`` for the UI to demote honestly. The
-        # symmetric "weak healthy with a disease alternative" case is
-        # still caught by the gap reroute in
-        # ``_apply_postprocessing_rules``.
+        # Invariant: do NOT reintroduce a "weak disease → healthy" fallback.
+        # It manufactured fake-healthy distributions out of real disease
+        # predictions — see the module docstring and the
+        # ``DISEASE_MIN_CONFIDENCE`` comment for why it was removed, and
+        # tests/test_pipeline_helpers.py for the guard.
 
         primary_box = self._select_primary_box(
             results=results,
@@ -1047,10 +1035,6 @@ class PlantDiseasePipeline:
             "class_name": "not_a_plant",
             "confidence": nap_conf,
             "all_probs": probs,
-            "max_logit": float(classification.get("max_logit", 0.0)),
-            "plant_max_logit": self._scoped_max_logit(
-                classification, key="plant_max_logit"
-            ),
             "low_confidence": False,
             "_voted_over": classification.get("_voted_over", 1),
             "_ood_gated": True,
@@ -1319,8 +1303,11 @@ def _apply_postprocessing_rules(
             ordered = sorted(
                 ordered, key=lambda kv: (kv[0] != worst_disease[0], -kv[1]),
             )
-            top1_name, top1_prob = ordered[0]
-            top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
+            # Only ``top1_name`` is read past this point — it is what makes
+            # the healthy gate below false. ``top1_prob``/``top2_prob`` are
+            # deliberately NOT refreshed: nothing reads them after a reroute
+            # (the healthy block is unreachable once top-1 is a disease).
+            top1_name = ordered[0][0]
 
     top_k = [
         {"class": name, "confidence": round(float(conf), 4)}

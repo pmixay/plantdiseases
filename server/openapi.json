@@ -1067,47 +1067,10 @@
         }
       }
     },
-    "/api/community/scan-counts": {
-      "post": {
-        "summary": "Community Scan Counts Endpoint",
-        "description": "Batched ``{opinions, views}`` per scan_id so the Gallery can badge the\ncaller's own rows in one round-trip. Unknown/zero scans are omitted.",
-        "operationId": "community_scan_counts_endpoint_api_community_scan_counts_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityScanCountsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``cursor`` pages both recommendation and recent order with a signed,\nopaque composite key; tied upload timestamps therefore cannot lose rows.\n``before`` remains a legacy recent-only epoch cursor for older clients.\nThe response cursor is null once a page comes back short. Paging is\nsingle-pass only:\ncombining it with ``disease`` or ``species`` is rejected with 422,\nbecause those widen the query into several concatenated passes whose\nconcatenation has no single global ``created_at`` order to page on.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``cursor`` pages both recommendation and recent order with a signed,\nopaque composite key; tied upload timestamps therefore cannot lose rows.\nThe response cursor is null once a page comes back short. Paging is\nsingle-pass only:\ncombining it with ``disease`` or ``species`` is rejected with 422,\nbecause those widen the query into several concatenated passes whose\nconcatenation has no single global ``created_at`` order to page on.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -1246,22 +1209,6 @@
                 }
               ],
               "title": "Scope"
-            }
-          },
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Before"
             }
           },
           {
@@ -2566,23 +2513,6 @@
           "user_pseudo_id"
         ],
         "title": "CommunityRequestOpinionRequest"
-      },
-      "CommunityScanCountsRequest": {
-        "properties": {
-          "scan_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 500,
-            "title": "Scan Ids"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_ids"
-        ],
-        "title": "CommunityScanCountsRequest"
       },
       "CommunityViewRequest": {
         "properties": {

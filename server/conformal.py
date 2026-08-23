@@ -92,46 +92,42 @@ class ConformalConfig:
 def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
     """Look for ``conformal.json`` next to the classifier weights.
 
-    Returns ``None`` (with a single info-level log line) when the file
+    Resolution is strictly bundle-relative: a per-family bundle (e.g.
+    ``models/frontier/``) must never silently inherit another family's
+    q_hat. Returns ``None`` (with a single info-level log line) when the file
     is missing or malformed; the pipeline must keep working uncalibrated.
     """
     if model_dir is None:
         return None
-    candidates = [
-        Path(model_dir) / "conformal.json",
-        Path("server/models/conformal.json"),
-        Path("models/conformal.json"),
-    ]
-    for path in candidates:
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            method = str(data.get("method", "raps")).lower()
-            if method not in ("aps", "raps"):
-                logger.warning("Unknown conformal method %r in %s", method, path)
-                return None
-            cfg = ConformalConfig(
-                method=method,
-                alpha=float(data["alpha"]),
-                q_hat=float(data["q_hat"]),
-                lambda_reg=float(data.get("lambda_reg", 0.0)),
-                k_reg=int(data.get("k_reg", 1)),
-                calibration_n=int(data.get("calibration_n", 0)),
-                empirical_coverage=(
-                    float(data["empirical_coverage"])
-                    if "empirical_coverage" in data else None
-                ),
-            )
-            logger.info(
-                "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f)",
-                path, cfg.method, cfg.alpha, cfg.q_hat,
-            )
-            return cfg
-        except (KeyError, ValueError, TypeError, json.JSONDecodeError) as e:
-            logger.warning("Could not parse %s: %s", path, e)
+    path = Path(model_dir) / "conformal.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        method = str(data.get("method", "raps")).lower()
+        if method not in ("aps", "raps"):
+            logger.warning("Unknown conformal method %r in %s", method, path)
             return None
-    return None
+        cfg = ConformalConfig(
+            method=method,
+            alpha=float(data["alpha"]),
+            q_hat=float(data["q_hat"]),
+            lambda_reg=float(data.get("lambda_reg", 0.0)),
+            k_reg=int(data.get("k_reg", 1)),
+            calibration_n=int(data.get("calibration_n", 0)),
+            empirical_coverage=(
+                float(data["empirical_coverage"])
+                if "empirical_coverage" in data else None
+            ),
+        )
+    except (KeyError, ValueError, TypeError, json.JSONDecodeError) as e:
+        logger.warning("Could not parse %s: %s", path, e)
+        return None
+    logger.info(
+        "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f)",
+        path, cfg.method, cfg.alpha, cfg.q_hat,
+    )
+    return cfg
 
 
 def aps_score(probs_sorted_desc: np.ndarray) -> np.ndarray:

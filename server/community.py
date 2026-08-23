@@ -2036,7 +2036,6 @@ def nearby_scans(
     exclude_user_pseudo_id: str | None = None,
     viewer_author_id: str | None = None,
     scope: str = "nearby",
-    before: int | None = None,
     cursor: tuple[int, int] | None = None,
 ) -> list[dict]:
     """Most recent shared scans for one scope.
@@ -2051,13 +2050,12 @@ def nearby_scans(
     in its scope so the Nearby/Country/Worldwide toggle actually changes what's
     shown.
 
-    ``before`` is a keyset-pagination cursor: an earlier ``created_at`` epoch
-    second, past which only OLDER rows are returned. Pass the previous page's
-    last row's ``created_at`` to fetch the next page. ``None`` (default)
-    fetches the newest page.
+    ``cursor`` is a keyset-pagination cursor — the previous page's last
+    ``(created_at, id)`` pair, past which only OLDER rows are returned.
+    ``None`` (default) fetches the newest page.
 
-    ``before`` is SINGLE-PASS ONLY — it must not be combined with ``disease``
-    or ``species``. Those widen the query into several independently ordered
+    A cursor is SINGLE-PASS ONLY — it must not be combined with ``disease`` or
+    ``species``. Those widen the query into several independently ordered
     passes concatenated together, so the last row of a page is not the page's
     global minimum: paging it would repeat rows across pages and drop a later
     pass's rows entirely. The caller (``/api/community/nearby``) rejects the
@@ -2109,9 +2107,6 @@ def nearby_scans(
             cursor_created, cursor_row_id = cursor
             common += " AND (created_at < ? OR (created_at = ? AND id < ?))"
             cparams.extend((int(cursor_created), int(cursor_created), int(cursor_row_id)))
-        elif before:
-            common += " AND created_at < ?"
-            cparams.append(int(before))
 
         # Geo scopes, most specific first. A disease-scoped carousel widens
         # nearby→country; the plain feed stays in a single scope.
