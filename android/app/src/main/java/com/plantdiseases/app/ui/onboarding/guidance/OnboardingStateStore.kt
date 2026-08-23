@@ -1,12 +1,7 @@
-package com.plantdiseases.app.util
+package com.plantdiseases.app.ui.onboarding.guidance
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCatalog
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapterProgress
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapterStatus
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 
 /** Versioned, app-wide persistence for the independent contextual chapters. */
 class OnboardingStateStore internal constructor(

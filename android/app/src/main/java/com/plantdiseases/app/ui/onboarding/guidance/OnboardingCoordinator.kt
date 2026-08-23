@@ -11,7 +11,6 @@ import androidx.lifecycle.LifecycleOwner
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.common.SpotlightOverlay
-import com.plantdiseases.app.util.OnboardingStateStore
 
 /** Coordinates persistence, registered screen anchors, scrolling, and overlay controls. */
 class OnboardingCoordinator(

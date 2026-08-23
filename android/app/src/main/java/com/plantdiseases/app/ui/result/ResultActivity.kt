@@ -42,7 +42,7 @@ import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.enableWhileOnline
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch

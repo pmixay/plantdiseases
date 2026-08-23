@@ -53,7 +53,7 @@ import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.FertiliserGuide
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.PlantCategory
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.PlantFacts

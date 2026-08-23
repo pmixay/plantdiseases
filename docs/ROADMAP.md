@@ -293,15 +293,6 @@ compatible with the collection round.
 
 None of it blocks a release.
 
-- [ ] **Privacy policy — third-party processors undisclosed. Highest-priority
-      doc item**, as the canonical disclosure surface
-      (`android/app/src/main/assets/privacy_policy.html`). `/api/identify` sends
-      photos to PlantNet; `/api/chat`, `/api/care-plan`, `/api/species-diseases`
-      and `/api/species-profile` send text to OpenRouter. Neither is named
-      anywhere in the file. It also omits the FCM token stored server-side
-      (`push.py` `push_tokens`) and that error reports carry a peppered client-IP
-      hash (`telemetry.py:64`, `client_ip_hash`) — the Error-reports clause says
-      only "no personal data".
 - [ ] **README license section under-lists runtime deps.** `NOTICE` and
       `THIRD_PARTY.md` were deleted in `73b6ef0` on the grounds that attribution
       is now summarised inline in the README, but that section names DINOv2,
@@ -315,6 +306,100 @@ None of it blocks a release.
       `AquaModelManager` stores the downloaded `.tflite` under
       `filesDir/aqua/`, and `app/src/main/assets/` contains no model.
       `build.gradle.kts:78-79` already states it correctly.
+
+---
+
+## Architecture — reviewed 2026-08, follow-ups
+
+A full review of both trees ran during the 2026-08 cleanup. The verdict: the
+server's domain layer and the app's layering are genuinely sound; the debt is
+concentrated in a handful of god-modules and in HTTP-layer idiom. What was safe
+to do without a dedicated PR is done — the event-loop fix, the shared feed
+serialiser, the global exception handler, test-store isolation, and the detekt
+complexity gates. What is left needs its own PR each, and must not be folded
+into another change.
+
+**Server**
+
+- [ ] **Split `main.py` (5k lines) into routers.** It holds the app, five
+      middlewares, the limiter/ban/quota state, the metrics counters, two thread
+      pools, image validation, 16 Pydantic models, 39 handlers and the lifespan.
+      Order: extract `deps.py` (the nine hand-copied quota preambles become one
+      `Depends`) → switch the ~400-line duplicated alias-import block to module
+      imports → then one router group per PR, smallest first, community last.
+      Gated by one hard constraint: 24 test sites `monkeypatch.setattr` names on
+      `main`, and 11 modules `importlib.reload`, so a router doing
+      `from main import pipeline` binds `None` forever. `openapi.json` plus
+      `test_openapi_contract.py` catch a dropped route, which is what makes the
+      split safer than it looks.
+- [ ] **`analyze_image` is 376 lines**, of which ~150 are pure response
+      assembly. Extracting `build_analyze_payload()` makes the entropy guard,
+      the dual-care split and the `not_a_plant` species suppression unit-testable
+      without a TestClient. Best value-for-effort item on this list.
+- [ ] **Group the 16 inline Pydantic models** into `schemas.py` with shared
+      `Annotated` field types. The same `scan_id` is `8..64` in two models and
+      `1..128` in four others, and the charset check is written longhand four
+      times. Standardise on the looser bound; tightening is its own decision,
+      because the Android client mints these.
+- [ ] **`ai_services.py` (3.4k lines) is three modules** — transport, five
+      features, and ~700 lines of bilingual product content that belongs with
+      `diseases_data.py`. `community.py` (2.9k lines, 64 functions) is nine
+      responsibilities behind one namespace and wants to become a package.
+- [ ] **Five hand-rolled SQLite stores** repeat the same connect/init/prune
+      boilerplate, and six near-identical `daily_*_count_for_ip_hash` functions
+      have silently diverged (rolling 24h vs calendar day). Schema evolution
+      replays every migration on every boot with no `PRAGMA user_version`.
+- [ ] **No `response_model` on any route**, so `openapi.json` describes request
+      bodies only and the contract test compares paths and methods alone. The
+      30-key `/api/analyze` payload can change without failing CI while a frozen
+      APK parses it. Cheapest first step: assert the response keys in the
+      contract test.
+- [ ] **Nothing type-checks the annotations.** Coverage is high (92-100% outside
+      `main.py`) but neither mypy nor pyright is configured or in CI.
+
+**Android**
+
+- [ ] **`AnalysisActivity` loses a scan on rotation.** The server round-trip
+      runs in `lifecycleScope` and the Room write is a suspend call in the same
+      scope; there is no `configChanges` and no ViewModel. Rotating mid-analysis
+      burns a second paid inference, and rotating between the response and
+      `saveScan` loses the scan after the server has already issued its
+      `scan_id`. The only outright correctness bug found.
+- [ ] **`ScanRepository` is a 1654-line god object** spanning seven bounded
+      contexts, injected wholesale into six consumers. Split by context.
+- [ ] **XML vs imperative-Kotlin view construction.**
+      `DetailExtraCardsController` and `CarePlanCardView` build whole hierarchies
+      in code with hardcoded dp and colors — 113 of the ~166 programmatic View
+      constructions app-wide, and the entire reason for their size. A shared kit
+      already exists (`DetailUiKit.baseCard()`, "single source of truth for every
+      detail-screen panel") with two call sites, and the two styles disagree on
+      screen today.
+- [ ] **Gson is still a live dependency** for Room field JSON, `ResponseCache`
+      and intent payloads, so all 76 DTOs carry 401 hand-mirrored
+      `@SerializedName` annotations beside their `@SerialName`, plus a
+      `KSerializer<JsonObject>` bridge and six ProGuard rules. Retiring it is
+      M/L but deletes all of that.
+- [ ] **`GuideDataProvider` (1638 lines) is a second localization system** —
+      78 EN/RU pairs as Kotlin strings, outside the resource framework, driving
+      41 hand-written `LocaleHelper.isRussian(...)` branches. Nothing enforces
+      RU parity there the way `strings.xml` gets it for free.
+- [ ] **Navigation Component manages a two-destination graph** while 22
+      Activities navigate by explicit Intent, and the integration has been
+      unwound by hand (no `setupWithNavController`, a re-entrancy flag, tabs
+      living in a ViewPager2 instead of as destinations). Its cost now exceeds
+      its contribution.
+- [ ] **No DAO returns a `Flow`**, so every screen re-reads on resume and
+      cross-screen edits are invisible until a foreground transition. That is
+      the root cause of the ~20 `lifecycleScope.launch(start = UNDISPATCHED) {
+      withContext(NonCancellable) { … } }` sites. Migrate one screen per PR,
+      additively — and only after the `AnalysisActivity` and `ScanRepository`
+      items land, which give it seams to attach to.
+- [ ] **Ratchet the detekt thresholds down.** They are set just above today's
+      worst case (LongMethod 210 vs a measured 195; LargeClass 1300 vs 1165);
+      lower each by ~20% as the splits above land. `GuideDataProvider.kt` is
+      excluded from the two size rules until it stops being a content blob.
+- [ ] **Single `:app` module is still right** — do not modularize. The one edge
+      that blocked a clean `:core:data` extraction (util → ui) is now fixed.
 
 ---
 
