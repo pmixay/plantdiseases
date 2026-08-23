@@ -87,12 +87,24 @@ the **android** job on `android/**` and the **server** job on `server/**`, each 
 the workflow file — so a push touching only root files or `docs/**` runs **neither**.
 Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
 of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
-verification step. Two things keep that one invocation from crawling, and both are
-easy to undo by accident: `maxParallelForks` in `app/build.gradle.kts` (a single-module
-build runs its tasks serially, so without it the four-minute Robolectric suite used one
-of the runner's two cores) and the `~/.m2/repository/org/robolectric` cache step
-(Robolectric fetches 338 MB of `android-all` jars at test runtime through its own Maven
-resolver, which the Gradle-home cache does not cover).
+verification step.
+
+**Where the Android minutes go**, from a `--profile` run of a cold build — worth reading
+before trying to speed it up, because the plain-console task headers mislead. Gradle
+overlaps this work as async workers (task time summed to 15m44 against a 9m33 build),
+so R8 and the tests run *concurrently* and R8 is the tail: `minifyReleaseWithR8` 5m08,
+`testDebugUnitTest` 2m34, `compileDebugKotlin` and `compileReleaseKotlin` 1m58 each,
+KSP 43s/37s. Two support pieces are easy to undo by accident: `maxParallelForks` in
+`app/build.gradle.kts` (little wall clock in a full invocation, where it competes with
+R8 for the runner's two cores, but a large win whenever the test task *is* the critical
+path — a cache-served release variant, or `./gradlew testDebugUnitTest` alone) and the
+`~/.m2/repository/org/robolectric` cache step (Robolectric fetches 338 MB of
+`android-all` jars at test runtime through its own Maven resolver, which the
+Gradle-home cache does not cover).
+
+Expect ~1.5 min when a push changes no Android source (main's build cache serves
+almost every task) and ~8-10 min when it does. `gradle/actions/setup-gradle` only
+*writes* that cache on `main`; branches read it.
 
 ## ML work — use the bundled skill
 
