@@ -83,16 +83,16 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 ### CI (`.github/workflows/ci.yml`)
 Push-only on `main`, `claude/**`, `work/**`, `codex/**`; there is deliberately no
 `pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
-the two **android** jobs on `android/**` and the **server** job on `server/**`, each
-plus the workflow file — so a push touching only root files or `docs/**` runs
-**none** of them.
-Server job: `ruff check .` then `pytest tests -q`. The Android work is **two parallel
-jobs**, because a single-module Gradle build runs its tasks serially and the release
-APK should not queue behind the test task: `android-check` runs
-`ktlintCheck detekt testDebugUnitTest`, `android-release` runs `assembleRelease` plus
-the APK signing/FCM verification step. Only `android-release` gets the signing and FCM
-secrets. Their shared JDK/SDK/Gradle setup lives in the composite action
-`.github/actions/setup-android-build/`, so the two toolchains cannot drift.
+the **android** job on `android/**` and the **server** job on `server/**`, each plus
+the workflow file — so a push touching only root files or `docs/**` runs **neither**.
+Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
+of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
+verification step. Two things keep that one invocation from crawling, and both are
+easy to undo by accident: `maxParallelForks` in `app/build.gradle.kts` (a single-module
+build runs its tasks serially, so without it the four-minute Robolectric suite used one
+of the runner's two cores) and the `~/.m2/repository/org/robolectric` cache step
+(Robolectric fetches 338 MB of `android-all` jars at test runtime through its own Maven
+resolver, which the Gradle-home cache does not cover).
 
 ## ML work — use the bundled skill
 
