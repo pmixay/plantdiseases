@@ -111,14 +111,17 @@ jobs:
 
       - uses: ./.github/actions/setup-android-build
 
-      # Robolectric resolves its `android-all-instrumented` jar (~130 MB for
-      # the SDK 33 the tests pin) at TEST RUNTIME through its own Maven
-      # resolver, into ~/.m2/repository — not through Gradle, so
-      # setup-gradle's Gradle-home cache never covers it and every run
-      # re-downloaded it. Scoped to org/robolectric so it cannot collide with
-      # the settings.xml/toolchains.xml setup-java writes next to it.
+      # Robolectric resolves its `android-all-instrumented` jars at TEST
+      # RUNTIME through its own Maven resolver, into ~/.m2/repository — not
+      # through Gradle, so setup-gradle's Gradle-home cache never covered them
+      # and every run re-downloaded the lot. Measured at 338 MB on the first
+      # run that saved this entry. Scoped to org/robolectric so it cannot
+      # collide with the settings.xml/toolchains.xml setup-java writes beside
+      # it. Keyed on build.gradle.kts (where the Robolectric version lives) so
+      # a version bump refreshes it, with a prefix restore-key so an unrelated
+      # edit to that file still restores the jars.
       - name: Cache Robolectric android-all jars
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ runner.os }}-${{ hashFiles('android/app/build.gradle.kts') }}
