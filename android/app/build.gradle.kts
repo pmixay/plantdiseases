@@ -329,9 +329,12 @@ dependencies {
 
     // Glide for images. On 5.x — the app only uses the plain
     // Glide.with(...).load(...) surface (no @GlideModule / generated GlideApp),
-    // which is the part Glide 5 kept source-compatible.
+    // which is the part Glide 5 kept source-compatible. The Glide KSP
+    // annotation processor is deliberately NOT declared: with no
+    // @GlideModule/@AppGlideModule/@GlideExtension anywhere it generates
+    // nothing. Re-add `ksp("com.github.bumptech.glide:ksp:5.0.9")` (and the
+    // matching keeps in proguard-rules.pro) the day one is introduced.
     implementation("com.github.bumptech.glide:glide:5.0.9")
-    ksp("com.github.bumptech.glide:ksp:5.0.9")
 
     // Hilt (Dagger) dependency injection. Replaces the hand-rolled `by lazy`
     // singletons on PlantDiseasesApp with a Hilt graph (di/AppModule.kt).
@@ -414,26 +417,19 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:core:1.7.0")
-    testImplementation("androidx.test:core-ktx:1.7.0")
-    testImplementation("androidx.test.ext:junit:1.3.0")
-    testImplementation("androidx.test.ext:junit-ktx:1.3.0")
     testImplementation("com.google.truth:truth:1.4.5")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
-    testImplementation("androidx.room:room-testing:2.8.4")
 
     // ─── Instrumented / Espresso UI tests (./gradlew connectedDebugAndroidTest,
     //     device or emulator required) ──────────────────────────────────────
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:core:1.7.0")
-    androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.fragment:fragment-testing:1.9.0")
-    androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
-    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
     debugImplementation("androidx.fragment:fragment-testing-manifest:1.9.0")

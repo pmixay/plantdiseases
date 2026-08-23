@@ -10,9 +10,10 @@ build:
   excludeCorrectable: false
 
 config:
-  # Don't fail the run if a rule/property name drifts between detekt versions —
-  # we adopt in reporting mode (ignoreFailures) and don't want a config-schema
-  # mismatch to break CI.
+  # Don't fail the run if a rule/property name drifts between detekt versions.
+  # The gate itself is zero-tolerance (build.maxIssues: 0 above, detekt and
+  # ktlint both ignoreFailures = false, both baselines empty) — this only stops
+  # a config-schema mismatch on a rule-set bump from breaking CI.
   validation: false
   warningsAsErrors: false
 
@@ -20,20 +21,55 @@ comments:
   active: false
 
 complexity:
+  # These were all `active: false`, which is how 1500-line files grew while the
+  # empty baselines advertised zero tolerance. They are back on, each threshold
+  # pinned just ABOVE the worst case measured on this tree (detekt 1.23.8 over
+  # src/main/java + src/test/java), so the gate is green today and only a
+  # REGRESSION fails it (each threshold carries ~10% headroom over the
+  # measured maximum, quoted per rule below). The numbers are a high-water
+  # mark, not a target: ratchet each one down as the oversized files split.
   LongMethod:
-    active: false
+    # Worst today: ui/result/ResultActivity.displayResult, 195 lines.
+    active: true
+    threshold: 210
+    # data/GuideDataProvider.buildItems is 1520 lines of bilingual content
+    # data, not logic; excluded so one content blob can't set the bar for
+    # every real method. Drop the exclude when the guide text moves to
+    # resources.
+    excludes: ['**/GuideDataProvider.kt']
   LongParameterList:
-    active: false
+    # Worst today: ScanRepository.uploadCommunityScan 14 params;
+    # CareRepository's constructor 10.
+    active: true
+    functionThreshold: 16
+    constructorThreshold: 12
   LargeClass:
-    active: false
+    # Worst today: data/repository/ScanRepository, 1165 lines of class body
+    # (GuideDataProvider's 1558 is excluded for the reason given above).
+    active: true
+    threshold: 1300
+    excludes: ['**/GuideDataProvider.kt']
   TooManyFunctions:
-    active: false
+    # Worst today: ScanRepository with 58 functions; 9 top-level functions in
+    # ui/common/SectionUiKit.kt.
+    active: true
+    thresholdInFiles: 12
+    thresholdInClasses: 65
+    thresholdInObjects: 65
+    thresholdInInterfaces: 65
+    thresholdInEnums: 65
   CyclomaticComplexMethod:
-    active: false
+    # Worst today: ResultActivity.displayResult, 41.
+    active: true
+    threshold: 50
   CognitiveComplexMethod:
-    active: false
+    # Worst today: ResultActivity.displayResult, 56.
+    active: true
+    threshold: 65
   NestedBlockDepth:
-    active: false
+    # Worst today: 5 (AquaModelManager.install, DoctorChatSheet.applyMarkdown).
+    active: true
+    threshold: 7
 
 exceptions:
   TooGenericExceptionCaught:
@@ -50,9 +86,9 @@ empty-blocks:
 
 naming:
   FunctionNaming:
-    # Compose-style and Robolectric test names trip the default pattern.
+    # Robolectric/JUnit test names trip the default pattern.
     active: true
-    ignoreAnnotated: ['Composable', 'Test']
+    ignoreAnnotated: ['Test']
 
 style:
   MagicNumber:

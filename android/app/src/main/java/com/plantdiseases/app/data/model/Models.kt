@@ -26,12 +26,14 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 
-// NOTE (Ktor + kotlinx.serialization migration, step 2): the response models
-// reachable from /api/analyze are dual-annotated — @SerializedName keeps Gson
-// working for the endpoints still on Retrofit and for local persistence
-// (ScanRepository's Gson cache, ResultActivity intent payloads), while
-// @Serializable + @SerialName let the same classes deserialize through the new
-// Ktor client. The two annotations mirror each other 1:1.
+// NOTE: kotlinx.serialization is the wire format — every HTTP endpoint runs
+// through the Ktor client and no Retrofit remains anywhere in the app. The
+// models stay dual-annotated because Gson is still live *off* the network:
+// @SerializedName is what keeps the Room field JSON (ScanEntity's
+// `prediction_set` / `regions`), util/ResponseCache and the ResultActivity
+// intent payloads readable — including rows and cache files already on disk.
+// @Serializable + @SerialName drive the Ktor decode. The two annotations
+// mirror each other 1:1; dropping either breaks something silently under R8.
 
 /** Single bounding box returned by the YOLOv8 detector (Stage 1). */
 @Serializable
@@ -80,28 +82,6 @@ data class PredictionSetItem(
 )
 
 /**
- * A full bilingual care card for one class of a *dual-care* prediction set.
- *
- * Emitted only when the conformal set can't separate the two
- * physiological-stress classes — under-watering (`leaf_scorch_underwatering`)
- * vs `nutrient_deficiency` — whose advice genuinely diverges ("water me" vs
- * "feed me"). The result screen can then show both cards instead of forcing
- * the user to guess which one to act on. Empty for every other set.
- */
-@Serializable
-data class PredictionSetCareCard(
-    @SerializedName("class") @SerialName("class") val className: String = "",
-    @SerializedName("name_en") @SerialName("name_en") val nameEn: String? = null,
-    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String? = null,
-    @SerializedName("description") @SerialName("description") val description: String = "",
-    @SerializedName("description_ru") @SerialName("description_ru") val descriptionRu: String = "",
-    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String> = emptyList(),
-    @SerializedName("treatment_ru") @SerialName("treatment_ru") val treatmentRu: List<String> = emptyList(),
-    @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
-    @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
-)
-
-/**
  * Conformal prediction set — the classes the model can't rule out at
  * the configured coverage level (e.g. 90 %). Surfaced honestly when
  * calibration data is loaded server-side; the field is null otherwise.
@@ -119,14 +99,10 @@ data class PredictionSet(
      * consider" rather than claiming "<coverage>% guaranteed coverage".
      */
     @SerializedName("advisory") @SerialName("advisory") val advisory: Boolean = true,
-    /**
-     * True when the set is the ambiguous physiological-stress pair
-     * (under-watering vs nutrient deficiency) and `careCards` carries both
-     * full care cards so the UI can show "water me" AND "feed me" side by
-     * side instead of only the top-1's advice.
-     */
-    @SerializedName("dual_care") @SerialName("dual_care") val dualCare: Boolean = false,
-    @SerializedName("care_cards") @SerialName("care_cards") val careCards: List<PredictionSetCareCard> = emptyList(),
+    // The server also emits `dual_care` / `care_cards` for the ambiguous
+    // under-watering vs nutrient-deficiency pair. No screen renders them, so
+    // they are not modelled here; ignoreUnknownKeys drops them harmlessly.
+    // Re-add both fields alongside the UI that would show the two cards.
 )
 
 /** Response from the server after analyzing an image */
@@ -303,8 +279,9 @@ data class CommunityScansResponse(
     // showing a misleading "no scans near you" empty state.
     @SerializedName("location_required") @SerialName("location_required")
     val locationRequired: Boolean = false,
-    // Cursor for the next (older) page — pass back as the `before` param.
-    // Null once a page comes back short, meaning the scope is exhausted.
+    // Legacy timestamp cursor from the pre-`next_cursor` feed. The current
+    // server no longer sends it and no client code reads it; kept only so an
+    // older deployment's `next_before` still lands somewhere typed.
     @SerializedName("next_before") @SerialName("next_before") val nextBefore: Long? = null,
     // Recommended pages use an opaque composite cursor because their order is
     // score + time + id, not time alone. Clients must return it unchanged.
@@ -397,18 +374,13 @@ data class CommunityRegionSummary(
     @SerializedName("total") @SerialName("total") val total: Int = 0,
     @SerializedName("last_7d") @SerialName("last_7d") val last7d: Int = 0,
     @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
-    @SerializedName("top_regions") @SerialName("top_regions") val topRegions: List<CommunityTopRegion> = emptyList(),
+    // `top_regions` is also emitted but no card renders it (unlike
+    // `top_diseases`, which HomeFragment shows), so it is not modelled.
 )
 
 @Serializable
 data class CommunityTopDisease(
     @SerializedName("disease") @SerialName("disease") val disease: String = "",
-    @SerializedName("count") @SerialName("count") val count: Int = 0,
-)
-
-@Serializable
-data class CommunityTopRegion(
-    @SerializedName("region") @SerialName("region") val region: String = "",
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
@@ -680,23 +652,10 @@ data class ChatResponse(
     @SerializedName("fallback") @SerialName("fallback") val fallback: String? = null,
     @SerializedName("model") @SerialName("model") val model: String? = null,
     @SerializedName("provider") @SerialName("provider") val provider: String? = null,
-    @SerializedName("usage") @SerialName("usage") val usage: ChatUsage? = null,
-    @SerializedName("session") @SerialName("session") val session: ChatSession? = null,
-)
-
-@Serializable
-data class ChatUsage(
-    @SerializedName("input_tokens") @SerialName("input_tokens") val inputTokens: Int? = null,
-    @SerializedName("output_tokens") @SerialName("output_tokens") val outputTokens: Int? = null,
-)
-
-@Serializable
-data class ChatSession(
-    @SerializedName("session_id") @SerialName("session_id") val sessionId: String,
-    @SerializedName("turns_used") @SerialName("turns_used") val turnsUsed: Int = 0,
-    @SerializedName("turns_remaining") @SerialName("turns_remaining") val turnsRemaining: Int = 0,
-    @SerializedName("tokens_used") @SerialName("tokens_used") val tokensUsed: Int = 0,
-    @SerializedName("tokens_remaining") @SerialName("tokens_remaining") val tokensRemaining: Int = 0,
+    // The server also sends `usage` (token counts) and `session` (turns/tokens
+    // used + remaining). Nothing in the app renders either, so they are not
+    // modelled — ignoreUnknownKeys drops them. Re-add them together with the
+    // quota indicator that would display them.
 )
 
 /** PlantNet species candidate from /api/identify. */

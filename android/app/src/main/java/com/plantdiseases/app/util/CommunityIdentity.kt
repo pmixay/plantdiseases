@@ -5,8 +5,11 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * The forum's durable per-device identity (COMMUNITY_FORUM_PLAN.docx §3.1 /
- * §4). Distinct from [TelemetryIds.userPseudoId]: that one is documented as
+ * The forum's durable per-device identity — the handle every community write
+ * is attributed to, stable for the life of the install unless the user
+ * explicitly leaves the community ([clear]).
+ *
+ * Distinct from [TelemetryIds.userPseudoId]: that one is documented as
  * telemetry-only and travels in a URL path today, so it must never also
  * authorise anything. This is a separate 32-byte secret, generated once and
  * persisted the same way TelemetryIds already is — plain SharedPreferences,

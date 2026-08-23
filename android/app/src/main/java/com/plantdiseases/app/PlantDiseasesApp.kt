@@ -190,8 +190,8 @@ class PlantDiseasesApp : Application() {
     }
 
     /** Sweep notification-centre rows older than 30 days on every launch.
-     *  ponytail: fixed window, no setting — add one if 30 days ever turns
-     *  out wrong for real usage. */
+     *  Fixed window, no setting — add one if 30 days ever turns out wrong
+     *  for real usage. */
     private fun pruneOldNotifications() {
         appScope.launch {
             runCatching {

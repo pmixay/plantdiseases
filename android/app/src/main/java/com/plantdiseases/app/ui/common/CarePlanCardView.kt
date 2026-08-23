@@ -67,24 +67,6 @@ class CarePlanCardView @JvmOverloads constructor(
         }
 
     /**
-     * Cleared by hosts that already wrap the card in an expandable section of
-     * their own (Species detail folds it under "Care"). The card's accordion
-     * would be a second chevron over the same content one row below the
-     * host's — two closed levels to open before anything is readable. With it
-     * off the header is a plain title and the summary is always visible, so
-     * "Show details" is the single level of truncation left.
-     */
-    var accordionEnabled: Boolean = true
-        set(value) {
-            field = value
-            accordionChevron.visibility = if (value) View.VISIBLE else View.GONE
-            accordionHeader.isClickable = value
-            accordionHeader.isFocusable = value
-            if (!value) setSectionExpanded(expanded = true, animate = false)
-            updateAccordionAccessibility()
-        }
-
-    /**
      * Cleared by hosts that want the plan at a glance and nothing more
      * (Species detail): "Show details" disappears and the verbose v2 panel —
      * red flags, setup checklist, checkpoints, season note — is never built.
@@ -407,19 +389,13 @@ class CarePlanCardView @JvmOverloads constructor(
     }
 
     private fun updateAccordionAccessibility() {
-        // Nothing to announce when the header no longer toggles anything —
-        // leave TalkBack to read the title and subtitle as ordinary text.
-        accordionHeader.contentDescription = if (accordionEnabled) {
+        accordionHeader.contentDescription = context.getString(
+            R.string.species_info_toggle_content_description,
+            titleView.text?.toString().orEmpty(),
             context.getString(
-                R.string.species_info_toggle_content_description,
-                titleView.text?.toString().orEmpty(),
-                context.getString(
-                    if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
-                ),
-            )
-        } else {
-            null
-        }
+                if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
+            ),
+        )
     }
 
     private fun toggleDetails() {

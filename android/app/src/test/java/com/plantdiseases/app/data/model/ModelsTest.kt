@@ -8,8 +8,14 @@ import org.junit.Test
 /**
  * Pure-JVM tests for the wire models. The most important contract here is
  * that a partial / older server response degrades gracefully into safe
- * defaults rather than NPE-ing or showing 0% — Gson ignores Kotlin
- * non-null types, so every always-expected field carries a default.
+ * defaults rather than NPE-ing or showing 0%, so every always-expected
+ * field carries a default.
+ *
+ * Two decoders are exercised on purpose. [ktxJson] mirrors the app's Ktor
+ * config and is the production HTTP path. [gson] is the *persistence* path:
+ * the types it decodes here (care plans, popular bundles, community feeds)
+ * are the ones written to util/ResponseCache and to Room field JSON, so
+ * their @SerializedName mapping stays load-bearing for data already on disk.
  */
 class ModelsTest {
 
@@ -17,7 +23,14 @@ class ModelsTest {
 
     @Test
     fun analysisResponse_missingFields_useSafeDefaults() {
-        val r = gson.fromJson("""{"disease_name":"Leaf Spot"}""", AnalysisResponse::class.java)
+        // AnalysisResponse never goes through Gson in production — it is
+        // decoded by Ktor + kotlinx.serialization (and built directly by
+        // AquaInference on-device), so assert the missing-field tolerance
+        // against the decoder the app actually uses.
+        val r = ktxJson.decodeFromString(
+            AnalysisResponse.serializer(),
+            """{"disease_name":"Leaf Spot"}""",
+        )
         assertThat(r.diseaseName).isEqualTo("Leaf Spot")
         assertThat(r.diseaseNameRu).isEqualTo("")
         assertThat(r.confidence).isEqualTo(0f)
@@ -39,7 +52,7 @@ class ModelsTest {
              "species":{"available":true,
                "best":{"scientific_name":"Ficus elastica","common_name":"Rubber Plant","score":0.7}}}
         """.trimIndent()
-        val r = gson.fromJson(json, AnalysisResponse::class.java)
+        val r = ktxJson.decodeFromString(AnalysisResponse.serializer(), json)
         assertThat(r.classKey).isEqualTo("leaf_spot")
         assertThat(r.confidence).isWithin(1e-5f).of(0.83f)
         assertThat(r.severity).isEqualTo("high")

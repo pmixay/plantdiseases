@@ -391,18 +391,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
-                            android:visibility="gone">
-
-                            <TextView
-                                android:id="@+id/tv_fertiliser_body"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm"
-                                android:lineSpacingExtra="3dp"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body"
-                                android:visibility="gone" />
-                        </LinearLayout>
+                            android:visibility="gone" />
 
                     </LinearLayout>
 

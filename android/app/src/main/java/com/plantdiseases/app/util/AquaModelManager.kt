@@ -21,12 +21,12 @@ import java.security.MessageDigest
 object AquaModelManager {
     private const val TAG = "AquaModelManager"
     private const val DIR = "aqua"
-    const val MODEL_FILE = "aqua_classifier.tflite"
-    const val CLASSES_FILE = "aqua_classes.json"
+    private const val MODEL_FILE = "aqua_classifier.tflite"
+    private const val CLASSES_FILE = "aqua_classes.json"
     private const val PREFS = "plantdiseases_aqua"
     private const val KEY_SHA = "model_sha256"
 
-    fun modelDir(context: Context): File =
+    private fun modelDir(context: Context): File =
         File(context.filesDir, DIR).apply { if (!exists()) mkdirs() }
 
     fun modelFile(context: Context): File = File(modelDir(context), MODEL_FILE)
@@ -36,7 +36,7 @@ object AquaModelManager {
     fun isInstalled(context: Context): Boolean =
         modelFile(context).isFile && classesFile(context).isFile
 
-    fun installedSha(context: Context): String? =
+    private fun installedSha(context: Context): String? =
         prefs(context).getString(KEY_SHA, null)
 
     /** True when the installed bytes already match the server's sha. */

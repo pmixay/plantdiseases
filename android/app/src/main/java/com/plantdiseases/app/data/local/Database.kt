@@ -479,9 +479,6 @@ interface ScanDao {
     @Query("SELECT * FROM scans ORDER BY timestamp DESC")
     suspend fun getAllScans(): List<ScanEntity>
 
-    @Query("SELECT * FROM scans ORDER BY timestamp DESC LIMIT :limit")
-    suspend fun getRecentScans(limit: Int): List<ScanEntity>
-
     @Query("SELECT * FROM scans WHERE id = :id")
     suspend fun getScanById(id: Long): ScanEntity?
 

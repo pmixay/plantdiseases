@@ -383,10 +383,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun bindFertiliser(plan: CarePlanResponse) {
         binding.cardFertiliser.visibility = View.VISIBLE
         val host = binding.fertiliserBody
-        // Keep the legacy TextView in the tree but stop using it, so no id disappears.
-        binding.tvFertiliserBody.visibility = View.GONE
-        // Remove any card added by a previous bind (index 0 is the legacy TextView).
-        while (host.childCount > 1) host.removeViewAt(1)
+        // Remove any card added by a previous bind.
+        host.removeAllViews()
 
         val guide = FertiliserGuide.forCategory(plantCategory)
 

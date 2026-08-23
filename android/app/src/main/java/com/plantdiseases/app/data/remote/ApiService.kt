@@ -1,8 +1,6 @@
 package com.plantdiseases.app.data.remote
 
 import com.plantdiseases.app.BuildConfig
-import com.plantdiseases.app.data.model.CarePlanRequest
-import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
@@ -16,11 +14,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.request.url
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
@@ -270,17 +264,9 @@ class PlantApiClient(
         return if (response.status.isSuccess()) response.body() else null
     }
 
-    /** Care plan for a (disease, species, light, locale). Best-effort
-     *  body-or-null, no caching (the repository's fetchCarePlan owns the
-     *  ResponseCache + status→exception mapping; this is the UI's direct,
-     *  uncached lookup on the species screen). */
-    suspend fun carePlan(request: CarePlanRequest): CarePlanResponse? {
-        val response = httpClient.post("api/care-plan") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        return if (response.status.isSuccess()) response.body() else null
-    }
+    // `POST api/care-plan` has no wrapper here on purpose: every care-plan
+    // caller goes through ScanRepository.fetchCarePlan, which owns the
+    // ResponseCache lookup and the status→typed-exception mapping.
 
     /** Personalized popular-plants bundle with images pre-resolved
      *  (graceful: null on any failure, caller falls back to the bundled list). */

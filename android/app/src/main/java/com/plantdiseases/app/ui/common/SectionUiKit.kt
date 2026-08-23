@@ -13,7 +13,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.R
 
@@ -282,85 +281,3 @@ internal fun Context.sectionRow(
         )
     }
 }
-
-/**
- * The designed empty state for a section body. Never a bare sentence: an icon, a
- * headline and, when there is something the user can actually do about it, a button.
- */
-internal fun Context.sectionEmpty(
-    iconRes: Int,
-    title: String,
-    body: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-): View = LinearLayout(this).apply {
-    orientation = LinearLayout.VERTICAL
-    gravity = Gravity.CENTER_HORIZONTAL
-    setPadding(dpx(16), dpx(18), dpx(16), dpx(18))
-    addView(
-        ImageView(this@sectionEmpty).apply {
-            setImageResource(iconRes)
-            alpha = 0.35f
-            imageTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(this@sectionEmpty, R.color.on_surface_secondary),
-            )
-        },
-        LinearLayout.LayoutParams(dpx(40), dpx(40)),
-    )
-    addView(
-        TextView(this@sectionEmpty).apply {
-            text = title
-            textSize = 15f
-            gravity = Gravity.CENTER
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(ContextCompat.getColor(this@sectionEmpty, R.color.on_surface))
-            setPadding(0, dpx(10), 0, 0)
-        },
-    )
-    addView(
-        TextView(this@sectionEmpty).apply {
-            text = body
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(ContextCompat.getColor(this@sectionEmpty, R.color.on_surface_secondary))
-            setPadding(0, dpx(4), 0, 0)
-        },
-    )
-    if (actionLabel != null && onAction != null) {
-        addView(
-            // Manually styled outline (rather than a named Material style attr) to
-            // match how this codebase already builds one-off buttons — see
-            // DetailUiKit.actionTile's stroked MaterialCardView.
-            MaterialButton(this@sectionEmpty).apply {
-                text = actionLabel
-                setTextColor(ContextCompat.getColor(this@sectionEmpty, R.color.primary))
-                strokeColor = ColorStateList.valueOf(
-                    ContextCompat.getColor(this@sectionEmpty, R.color.card_stroke),
-                )
-                strokeWidth = dpx(1)
-                backgroundTintList = ColorStateList.valueOf(
-                    ContextCompat.getColor(this@sectionEmpty, R.color.surface),
-                )
-                setOnClickListener { onAction() }
-            },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dpx(12) },
-        )
-    }
-}
-
-/** The centred text link that closes a section body, e.g. "See all". */
-internal fun Context.sectionFooter(label: String, onClick: () -> Unit): View =
-    TextView(this).apply {
-        text = label
-        textSize = 13f
-        gravity = Gravity.CENTER
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        setTextColor(ContextCompat.getColor(this@sectionFooter, R.color.primary))
-        setPadding(0, dpx(12), 0, dpx(4))
-        isClickable = true
-        foreground = selectableForeground()
-        setOnClickListener { onClick() }
-    }
