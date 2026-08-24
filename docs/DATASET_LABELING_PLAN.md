@@ -3,7 +3,8 @@
 > **2026-08-23 audit correction.** The v8 supplement and private benchmark do
 > not satisfy the independence, rights, identity, or label-verification claims
 > assumed by older sections of this research log. In particular, the supplement
-> is mostly unlicensed/agent-labelled, and the 182-image “OOD” artifact contains
+> is mostly missing auditable acquisition/consent records and human label
+> verification, and the 182-image “OOD” artifact contains
 > only healthy/scorch images from one studio source with augmentation families.
 > Authenticated Kaggle metadata confirms the configured supplement is still
 > revision 8 (not v9) and the OOD artifact is revision 2 as of this date.
@@ -47,6 +48,35 @@ version-agnostic and carries no run-specific numbers by design.
 Grouping is by stable capture/plant/session family first, with robust geometric
 matching as a backstop. pHash uniqueness and `(source, plant_id)` alone do not
 establish independence.
+
+### v9 collection handoff (2026-08-25)
+
+No v9 corpus has been assembled or published. The existing local material is a
+candidate inventory, not a release:
+
+- `houseplant-disease-eval-supplement/` is v8: 3,389 images.
+- `staging/` has 24,275 images (23,821 unique exact pHashes); 20,747 rows are not
+  in v8, but most are rejected or unreviewed legacy candidates.
+- `user_data/plantvision_export_20260806T102212Z/` has 2,727 image files. Only
+  80 new, head-class images have explicit positive/corrected user feedback and
+  are absent from v8. They remain quarantine material until label adjudication
+  and the export batch's consent/acquisition record are attached.
+- The 11 new user-positive scorch conflicts (`ls_2580`, `ls_2616`, `ls_2617`,
+  `ls_2624`, `ls_2626`, `ls_2646`, `ls_2682`, `ls_2793`, `ls_2825`, `ls_2830`,
+  `ls_2863`) are out-of-domain, ambiguous, poorly framed, or show a different
+  failure mode. None is an accepted early/dull marginal-scorch example.
+
+On the collection machine, start with the approximately 400 independent
+early/dull scorch captures in §6, then fill the supporting strata. Do not
+auto-promote staging rows based on folder name, model verdict, pHash uniqueness,
+or user confirmation alone. Promotion requires a canonical class adjudication,
+stable capture-family identity, the 384 px floor, duplicate/benchmark exclusion,
+and a recorded acquisition basis.
+
+For project-owned or user-consented scans, do not invent per-image public-license
+strings: retain one batch acquisition/consent record plus opaque row-to-record
+references. For externally collected internet images, retain the landing URL and
+reuse evidence. Private storage changes access, not provenance requirements.
 
 ## Acceptance criteria (every version)
 

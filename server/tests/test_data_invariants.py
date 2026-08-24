@@ -1022,6 +1022,13 @@ def test_supplement_joins_and_saves_by_complete_path():
     assert "output_stem=_row['_disk_stem']" in text
 
 
+def test_archive_import_sidecar_sets_required_source_field():
+    src = _notebook_source()
+    body = re.search(r"def _save_archive_member.*?(?=\n# )", src, re.DOTALL)
+    assert body
+    assert "source=source," in body.group(0)
+
+
 def test_holdout_checks_same_and_cross_class_near_duplicates():
     src = _notebook_source()
     same = src.index("resolve_phash_split_leakage(HOLDOUT, (TRAIN_ROOT,), threshold=6)")
