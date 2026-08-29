@@ -207,6 +207,9 @@ reviewer grants access to the permanent signing key:
 | `STAGING_ACCOUNT_API_BASE_URL` | Exact reviewed German staging account URL: `https://pdis.arbuz.lol/plantdisease-test/id/` |
 | `PRODUCTION_APP_API_BASE_URL` | Reviewed production application HTTPS base URL |
 | `PRODUCTION_ACCOUNT_API_BASE_URL` | Reviewed production account HTTPS base URL |
+| `STAGING_RUSTORE_CONSOLE_APP_ID` / `PRODUCTION_RUSTORE_CONSOLE_APP_ID` | Positive, non-zero decimal RuStore Console application ID for the corresponding environment |
+| `STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID` | Exact value `plantdiseases_pro_monthly` |
+| `STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID` | Exact value `plantdiseases_pro_yearly` |
 
 Set each repository production URL to exactly the corresponding protected
 `APPROVED_PRODUCTION_*` environment value. The unsigned build uses the
@@ -235,6 +238,15 @@ When VK is configured in both environments, the workflow requires distinct
 staging and production VK pairs. Yandex intentionally uses the one registered
 RuStore native client embedded in version 1.9; the server still validates its
 audience and provider response before creating an account session.
+
+Staging and production are PRO-enabled distribution channels. Their protected
+workflow refuses to build unless all three public RuStore values are present,
+both product IDs match the account-server allowlist, and the generated
+`BuildConfig` proves Pay is enabled with those exact values. The two recovery
+channels intentionally inject no Pay values and prove
+`RUSTORE_PAY_CONFIGURED=false`; they remain account-disabled rollback APKs.
+These identifiers are extractable mobile configuration, not the server RSA
+private key or notification AES key.
 
 The manual workflow first runs Gradle in an unprotected job with
 `ANDROID_UNSIGNED_DISTRIBUTION=true`. That job receives no `RELEASE_*` value,
@@ -294,12 +306,31 @@ The account server needs the public ID for each provider enabled in the APK.
 For the current Yandex-only release:
 
 ```properties
-YANDEX_CLIENT_ID=cfefdff8ae4d4dd8a7426308751ef95a
+YANDEX_CLIENT_ID=2b439944bb4c4e33b85e20290aca6c7f
 ```
 
 Put them in the protected VDS environment file, not the committed example.
 `VKID_CLIENT_SECRET` and the Android signing keystore do not belong on the
 account server.
+
+Before enabling PRO, create the monthly and yearly subscriptions in the
+matching RuStore Console application and keep the identifiers exactly aligned
+between the Android Actions variables and the account server:
+
+```properties
+RUSTORE_LIFECYCLE_ENABLED=true
+RUSTORE_CHECKOUT_ENABLED=true
+RUSTORE_APPLICATION_ID=<same decimal RuStore application ID>
+RUSTORE_SUBSCRIPTION_PRODUCTS=plantdiseases_pro_monthly,plantdiseases_pro_yearly
+```
+
+The private Public API RSA key and callback AES key are deployed only through
+the account-server secret files described in
+`docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`; they must never become Android
+Gradle properties or Actions variables. The app will not load products, buy,
+or restore until a fresh authenticated account response says
+`billing_available=true`, so enable the backend verifier before distributing a
+Pay-enabled APK.
 
 Before building the RuStore candidate, the production checks must return
 through the exact public origins compiled into the release APK:
@@ -347,8 +378,12 @@ restrict that file to the user. Example production values:
 
 ```properties
 ACCOUNT_REAL_OAUTH=true
+ANDROID_DISTRIBUTION_CHANNEL=production
 APP_API_BASE_URL=https://pdis.arbuz.lol/
 ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/id/
+RUSTORE_CONSOLE_APP_ID=<non-zero decimal production RuStore application ID>
+RUSTORE_PRO_MONTHLY_PRODUCT_ID=plantdiseases_pro_monthly
+RUSTORE_PRO_YEARLY_PRODUCT_ID=plantdiseases_pro_yearly
 RELEASE_STORE_FILE=/absolute/path/to/plantdiseases-app-signing.p12
 RELEASE_STORE_PASSWORD=<store password>
 RELEASE_KEY_ALIAS=plantdiseases
@@ -409,6 +444,9 @@ After registration, provide only:
   matching `VKID_CLIENT_SECRET` was placed in repository Actions variables;
 - confirmation that the reviewed staging and production endpoint pairs were
   placed in repository Actions variables;
+- confirmation that both environments' RuStore Console app ID and exact
+  monthly/yearly product IDs were placed in repository Actions variables and
+  match the account-server allowlist;
 - confirmation that all four `RELEASE_*` secrets plus `RELEASE_CERT_SHA256`,
   `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and both `APPROVED_PRODUCTION_*` URL
   variables were placed only in the protected `android-signing` environment;
@@ -434,4 +472,6 @@ can be run from the signed PlantDiseases 1.9 APK.
 - [Yandex authorization-app registration](https://yandex.ru/dev/id/doc/ru/register-auth)
 - [Yandex ID Android LoginSDK](https://yandex.ru/dev/id/doc/ru/mobileauthsdk/about)
 - [VK ID Android SDK](https://github.com/VKCOM/vkid-android-sdk)
+- [RuStore Pay SDK for Kotlin/Java](https://www.rustore.ru/help/en/sdk/pay/kotlin-java)
+- [RuStore subscription creation](https://www.rustore.ru/help/en/developers/monetization/create-app-subscription)
 - [GitHub Actions secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)

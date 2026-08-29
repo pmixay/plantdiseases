@@ -67,11 +67,14 @@ out inline rather than closed.
       `INFER_WORKERS=1` a client within the rate limit pins RAM and starves
       everyone. Wants a semaphore before decode → 503; there is no `Semaphore`
       anywhere in `main.py` today.
-- [ ] **Cost caps** (`ai_services.py`, species-diseases endpoint in `main.py`) —
-      the cache keys on client-chosen strings, so every distinct `name` is a
-      guaranteed miss and a billable call. *OpenRouter has a monthly dollar
-      cap, so bounded; stricter per-endpoint limits planned.* PlantNet has no
-      server-side budget.
+- [ ] **Cost caps** — signed-in, API-key and guest traffic now has versioned
+      per-feature daily admission, and every uncached Pl@ntNet attempt
+      (retries included) requires a serialized deployment-wide attempt and
+      marginal-cost reservation. Cache hits and explicit pre-provider denials
+      spend neither allowance. OpenRouter calls are per-feature limited and
+      still have the provider account cap, but a reviewed model/route-specific
+      aggregate price ceiling and live alert evidence remain a release gate;
+      the client-chosen cache-cardinality cleanup also remains open.
 - [x] **`/api/metrics`** — the rate-limit exemption is removed, so the most
       expensive unauthenticated request is no longer the only unmetered one.
       The store snapshots now hop to a worker thread instead of running
@@ -309,6 +312,14 @@ compatible with the collection round.
 
 None of it blocks a release.
 
+- [x] **Privacy policy — external processing and identifiers disclosed.** Both
+      the hosted and in-app copies name the private inference worker,
+      Pl@ntNet/CIRAD, OpenRouter plus its selected model provider, and optional
+      Google FCM delivery; they state the payload categories, forbidden
+      identifiers, and transfer/retention behaviour. Error telemetry stores no
+      raw or hashed client IP — the source address is used only in process
+      memory for rate limiting, and that transient processing is stated.
+      Operator legal/region approval remains a deployment gate.
 - [ ] **README license section under-lists runtime deps.** `NOTICE` and
       `THIRD_PARTY.md` were deleted in `73b6ef0` on the grounds that attribution
       is now summarised inline in the README, but that section names DINOv2,

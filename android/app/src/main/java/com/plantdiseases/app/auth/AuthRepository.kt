@@ -316,8 +316,35 @@ class AuthRepository(
         firstFailure?.let { throw it }
     }
 
+    suspend fun signIn(provider: AuthProvider, providerAccessToken: String) =
+        beginAuthentication { currentInstallationId ->
+            api.exchange(
+                provider,
+                providerAccessToken,
+                currentInstallationId,
+            )
+        }
+
+    suspend fun signInWithEmail(email: String, password: String) =
+        beginAuthentication { currentInstallationId ->
+            api.loginEmail(email, password, currentInstallationId)
+        }
+
+    suspend fun registerWithEmail(email: String, password: String) =
+        beginAuthentication { currentInstallationId ->
+            api.registerEmail(email, password, currentInstallationId)
+        }
+
+    /**
+     * OAuth and private-password entry points deliberately converge before
+     * touching any local credential. This keeps account switching, remote
+     * revocation and crash-safe two-phase profile completion identical for
+     * every sign-in method without ever persisting an email password.
+     */
     @Suppress("ThrowsCount") // fail closed at each persistence/network boundary
-    suspend fun signIn(provider: AuthProvider, providerAccessToken: String) {
+    private suspend fun beginAuthentication(
+        request: suspend (installationId: String) -> ExchangeResult,
+    ) {
         pushMutationMutex.withLock {
             sessionMutex.withLock {
                 // Treat an existing refresh credential as an account switch, even
@@ -336,13 +363,7 @@ class AuthRepository(
                     throw SignupCompletionInProgressException()
                 }
                 val currentInstallationId = installationId.get()
-                when (
-                    val result = api.exchange(
-                        provider,
-                        providerAccessToken,
-                        currentInstallationId,
-                    )
-                ) {
+                when (val result = request(currentInstallationId)) {
                     is ExchangeResult.Authenticated -> acceptAuthenticated(result)
                     is ExchangeResult.ProfileRequired -> {
                         val operation = PendingSignupOperation(
@@ -590,6 +611,13 @@ class AuthRepository(
         scope: String,
     ): Result<ReauthResponse> = authenticatedCall { token ->
         api.reauthenticate(token, provider, providerAccessToken, scope)
+    }
+
+    suspend fun reauthenticateWithEmail(
+        password: String,
+        scope: String,
+    ): Result<ReauthResponse> = authenticatedCall { token ->
+        api.reauthenticateEmail(token, password, scope)
     }
 
     suspend fun linkProvider(

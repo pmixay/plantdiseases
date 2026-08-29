@@ -22,6 +22,7 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.AquaInference
@@ -240,6 +241,15 @@ class AnalysisActivity : AppCompatActivity() {
                     is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
                         TelemetryReporter.report("analyze", "rate_limited", family = family.id)
                         showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ProRequiredException,
+                    is com.plantdiseases.app.data.repository.ScanRepository.QuotaExhaustedException -> {
+                        TelemetryReporter.report("analyze", "quota_denied", family = family.id)
+                        showError(
+                            getString(MeteredAccessUi.title(error)),
+                            getString(MeteredAccessUi.message(error)),
+                        )
+                        MeteredAccessUi.showDialog(this@AnalysisActivity, error)
                     }
                     is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException -> {
                         TelemetryReporter.report("analyze", "server_starting", family = family.id)

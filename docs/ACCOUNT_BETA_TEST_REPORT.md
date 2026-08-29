@@ -2,10 +2,10 @@
 
 Report date: 2026-08-07 UTC
 
-> Historical staging snapshot. For the current Yandex-only RuStore release,
-> VK is independently disabled, branch CI has no signing secrets or staging
-> artifact, and [ACCOUNT_RELEASE_SECURITY_RECHECK.md](ACCOUNT_RELEASE_SECURITY_RECHECK.md)
-> is authoritative.
+> Historical staging snapshot. It predates email/password beta and
+> PlantDiseases PRO. Current implementation and release gates are in
+> [ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md](ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md)
+> and [ACCOUNT_BETA_HANDOFF.md](ACCOUNT_BETA_HANDOFF.md).
 
 Runtime checkpoint: `ea5cf0d` (`feat(beta): run real SDK staging beside main`)
 

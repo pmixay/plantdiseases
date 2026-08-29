@@ -16,8 +16,13 @@ GERMAN_COMPOSE = DEPLOY / "compose.german-vds.yml"
 GERMAN_BUILD_COMPOSE = DEPLOY / "compose.german-vds.build.yml"
 GERMAN_ENV = DEPLOY / "env.german.example"
 NGINX = DEPLOY / "nginx.location.conf"
+NGINX_TESTER_ALLOWLIST = DEPLOY / "nginx.testers.allow.example"
+DEPLOY_README = DEPLOY / "README.md"
+SECRETS_INVENTORY = DEPLOY / "SECRETS.md"
+EMAIL_AUTH_HOLD = REPOSITORY_ROOT / "docs" / "EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md"
 BACKUP = DEPLOY / "backup-test.sh"
 HANDOFF = DEPLOY / "handoff"
+RU_NGINX = HANDOFF / "nginx.russia.location.conf"
 RU_COMPOSE = HANDOFF / "compose.russia-template.yml"
 DE_COMPOSE = HANDOFF / "compose.germany-worker-template.yml"
 SERVICE_MANIFEST = HANDOFF / "ru-de-service-manifest.yml"
@@ -34,7 +39,7 @@ GERMAN_ROLE_INIT = DEPLOY / "postgres-init" / "10-account-roles.sh"
 RU_ROLE_INIT = HANDOFF / "postgres-init" / "10-account-roles.sh"
 GRANT_CONVERGENCE = DEPLOY / "converge-runtime-grants.py"
 
-ACCOUNT_SCHEMA_HEAD = "0006_signup_completion_idempotency"
+ACCOUNT_SCHEMA_HEAD = "0010_billing_lifecycle_quota_policy"
 ACCOUNT_TABLES = {
     "account_consents",
     "account_deletion_jobs",
@@ -44,12 +49,23 @@ ACCOUNT_TABLES = {
     "account_security_events",
     "accounts",
     "alembic_version",
+    "billing_customers",
+    "billing_purchase_fetches",
+    "billing_notification_receipts",
+    "feature_usage",
+    "feature_usage_receipts",
+    "password_credentials",
+    "pending_password_credentials",
     "pending_signups",
     "push_devices",
     "reauth_challenges",
     "refresh_tokens",
     "sessions",
     "signup_completions",
+    "subscriptions",
+    "vendor_budget_authorities",
+    "vendor_budget_daily",
+    "vendor_budget_receipts",
 }
 
 
@@ -176,9 +192,28 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     assert account["AUTH_PROVIDER_MODE"] == "remote"
     assert account["YANDEX_CLIENT_ID"] == "${YANDEX_CLIENT_ID:-}"
     assert account["VKID_CLIENT_ID"] == "${VKID_CLIENT_ID:-}"
+    assert account["EMAIL_PASSWORD_AUTH_ENABLED"] == (
+        "${EMAIL_PASSWORD_AUTH_ENABLED:-false}"
+    )
     assert account["ACCOUNT_ROOT_PATH"] == "/plantdisease-test/id"
     assert account["ACCOUNT_ISSUER"] == (
         "https://pdis.arbuz.lol/plantdisease-test/id"
+    )
+    assert account["RUSTORE_LIFECYCLE_ENABLED"] == (
+        "${RUSTORE_LIFECYCLE_ENABLED:-false}"
+    )
+    assert account["RUSTORE_CHECKOUT_ENABLED"] == (
+        "${RUSTORE_CHECKOUT_ENABLED:-false}"
+    )
+    assert account["RUSTORE_APPLICATION_ID"] == "${RUSTORE_APPLICATION_ID:-}"
+    assert account["RUSTORE_KEY_ID"] == "${RUSTORE_KEY_ID:-}"
+    assert account["RUSTORE_PRIVATE_KEY_FILE"] == "/run/rustore-secrets/private-key.b64"
+    assert account["RUSTORE_NOTIFICATION_KEY_FILE"] == (
+        "/run/rustore-secrets/notification-key.b64"
+    )
+    assert account["RUSTORE_ALLOW_SANDBOX"] == "${RUSTORE_ALLOW_SANDBOX:-false}"
+    assert account["ENTITLEMENT_QUOTA_POLICY_VERSION"] == (
+        "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-08-v1}"
     )
     assert "beta_account_runtime" in account["ACCOUNT_DATABASE_URL"]
     assert "beta_account_migrator" in services["beta-account-migrate"]["environment"][
@@ -214,7 +249,21 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     for service in services.values():
         for mount in service.get("volumes", []):
             if isinstance(mount, dict):
-                if service is services["beta-app-api"]:
+                if mount.get("target") == "/run/rustore-secrets":
+                    assert (
+                        service is services["beta-account-migrate"]
+                        or service is services["beta-account-api"]
+                    )
+                    assert mount == {
+                        "type": "bind",
+                        "source": (
+                            "${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned "
+                            "RuStore beta secret directory}"
+                        ),
+                        "target": "/run/rustore-secrets",
+                        "read_only": True,
+                    }
+                elif service is services["beta-app-api"]:
                     assert mount == {
                         "type": "bind",
                         "source": (
@@ -274,8 +323,9 @@ def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():
     assert environment["BETA_TRUSTED_PROXIES"] != "*"
     assert environment["BETA_FORWARDED_ALLOW_IPS"] == environment["BETA_EDGE_GATEWAY"]
     assert environment["BETA_TRUSTED_PROXIES"] == environment["BETA_EDGE_GATEWAY"]
-    assert environment["YANDEX_CLIENT_ID"] == "cfefdff8ae4d4dd8a7426308751ef95a"
+    assert environment["YANDEX_CLIENT_ID"] == "2b439944bb4c4e33b85e20290aca6c7f"
     assert environment["VKID_CLIENT_ID"] == ""
+    assert environment["EMAIL_PASSWORD_AUTH_ENABLED"] == "false"
     assert environment["BETA_MODELS_DIR"].startswith("/absolute/")
     for name in (
         "BETA_POSTGRES_ADMIN_PASSWORD",
@@ -295,6 +345,35 @@ def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():
         assert ports[0]["host_ip"] == "127.0.0.1"
         assert ports[0]["target"] == 8000
     assert "ports" not in compose["services"]["beta-postgres"]
+
+
+def test_german_email_password_beta_is_opt_in_and_edge_restricted():
+    compose = _yaml(GERMAN_COMPOSE)
+    environment = _environment(GERMAN_ENV)
+    account = compose["x-account-environment"]
+    assert account["EMAIL_PASSWORD_AUTH_ENABLED"] == (
+        "${EMAIL_PASSWORD_AUTH_ENABLED:-false}"
+    )
+    assert environment["EMAIL_PASSWORD_AUTH_ENABLED"] == "false"
+
+    nginx = NGINX.read_text(encoding="utf-8")
+    assert nginx.count("include /etc/nginx/plantdisease-beta-testers.allow;") == 2
+    tester_allowlist = NGINX_TESTER_ALLOWLIST.read_text(encoding="utf-8")
+    assert "allow 192.0.2.1/32;" in tester_allowlist
+    assert "allow 2001:db8::1/128;" in tester_allowlist
+    assert "\nallow all;" not in tester_allowlist
+    assert tester_allowlist.rstrip().endswith("deny all;")
+
+    operator_contract = DEPLOY_README.read_text(encoding="utf-8")
+    hold_contract = EMAIL_AUTH_HOLD.read_text(encoding="utf-8")
+    normalized_hold_contract = " ".join(hold_contract.split())
+    assert "EMAIL_PASSWORD_AUTH_ENABLED=true" in operator_contract
+    assert "named tester" in operator_contract
+    assert "Disposable addresses are required" in normalized_hold_contract
+    assert (
+        "pending bearer cannot resume after a later re-enable"
+        in normalized_hold_contract
+    )
 
 
 def test_german_build_overlay_builds_only_branch_application_images():
@@ -332,19 +411,58 @@ def test_nginx_prefixes_strip_to_distinct_upstreams_without_fallback():
     assert account_index < app_index
     assert "proxy_pass http://127.0.0.1:18101/;" in text
     assert "proxy_pass http://127.0.0.1:18100/;" in text
-    assert text.count("proxy_next_upstream off;") == 2
-    assert text.count("access_log off;") == 2
-    assert text.count("proxy_set_header X-Forwarded-For $remote_addr;") == 2
-    assert text.count('proxy_set_header X-Request-ID "";') == 2
-    assert text.count('proxy_set_header X-Internal-Service-Token "";') == 2
+    assert text.count("proxy_next_upstream off;") == 3
+    assert text.count("access_log off;") == 3
+    assert text.count("proxy_set_header X-Forwarded-For $remote_addr;") == 3
+    assert text.count('proxy_set_header X-Request-ID "";') == 3
+    assert text.count('proxy_set_header X-Internal-Service-Token "";') == 3
+    assert (
+        text.count("include /etc/nginx/plantdisease-beta-testers.allow;") == 2
+    )
     assert "location ^~ /plantdisease-test/id/v1/internal/" in text
     assert "location ^~ /plantdisease-test/api/internal/" in text
-    assert text.count("limit_req_status 429;") == 2
+    assert text.count("limit_req_status 429;") == 3
     assert "return 429 '{\"detail\":\"rate_limited\"}';" in text
     assert "X-Forwarded-Prefix /plantdisease-test/id" in text
     assert "X-Forwarded-Prefix /plantdisease-test;" in text
     assert "proxy_pass http://127.0.0.1:18000" not in text
     assert "proxy_pass http://127.0.0.1:18001" not in text
+
+    tester_allowlist = NGINX_TESTER_ALLOWLIST.read_text(encoding="utf-8")
+    assert "allow 192.0.2.1/32;" in tester_allowlist
+    assert "allow 2001:db8::1/128;" in tester_allowlist
+    assert "\nallow all;" not in tester_allowlist
+    assert tester_allowlist.rstrip().endswith("deny all;")
+
+
+def test_rustore_callbacks_have_exact_paths_source_cidrs_and_sufficient_body_cap():
+    expected_ranges = {
+        "allow 95.163.133.0/30;",
+        "allow 85.198.107.0/24;",
+        "allow 79.137.140.128/26;",
+    }
+    for path, public_path, upstream in (
+        (
+            NGINX,
+            "/plantdisease-test/id/v1/billing/rustore/notifications",
+            "http://127.0.0.1:18101/v1/billing/rustore/notifications",
+        ),
+        (
+            RU_NGINX,
+            "/id/v1/billing/rustore/notifications",
+            "http://ru-account-api:8000/v1/billing/rustore/notifications",
+        ),
+    ):
+        text = path.read_text(encoding="utf-8")
+        marker = f"location = {public_path} {{"
+        assert text.count(marker) == 1
+        block = text.split(marker, maxsplit=1)[1].split("\n}", maxsplit=1)[0]
+        assert expected_ranges.issubset(set(line.strip() for line in block.splitlines()))
+        assert "deny all;" in block
+        assert "client_max_body_size 96k;" in block
+        assert f"proxy_pass {upstream};" in block
+        assert "proxy_next_upstream off;" in block
+        assert "proxy_read_timeout 5s;" in block
 
 
 def test_backup_check_is_scoped_to_generated_restore_database():
@@ -413,6 +531,10 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "retained for model improvement only if you separately consent" in privacy
     assert "сохраняется для улучшения моделей только если вы отдельно дали" in privacy
     assert "account-service endpoint scope, including its base path" in privacy
+    assert "register with an email address and password" in privacy
+    assert "non-reversible keyed lookup fingerprint" in privacy
+    assert "RuStore processes checkout and payment details" in privacy
+    assert "Deleting a PlantDiseases account does not cancel the RuStore subscription" in privacy
     assert "Publishing a scan or submitting an opinion requires sign-in" in privacy
     assert "It currently has no automatic expiry" in privacy
     assert "Do not post identifiers, tokens or account details in a public issue" in privacy
@@ -449,7 +571,7 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "Require successful CI for this exact commit" in workflow
     assert "APPLICATION_ID = \"com.plantdiseases.app\"" in workflow
     assert "versionCode='$expected_version_code'" in workflow
-    assert "expected_yandex_client_id=cfefdff8ae4d4dd8a7426308751ef95a" in workflow
+    assert "expected_yandex_client_id=2b439944bb4c4e33b85e20290aca6c7f" in workflow
     assert "STAGING_YANDEX_CLIENT_ID" not in workflow
     assert "PRODUCTION_YANDEX_CLIENT_ID" not in workflow
     assert "YANDEX_CLIENT_SECRET" not in workflow
@@ -564,6 +686,8 @@ def test_protected_android_signing_has_checkout_free_key_boundary():
     assert "RELEASE_STORE_PASSWORD" not in build_text
     assert "RELEASE_KEY_PASSWORD" not in build_text
     assert "ANDROID_UNSIGNED_DISTRIBUTION" in build_text
+    assert "EMAIL_PASSWORD_AUTH_ENABLED = true" in build_text
+    assert "EMAIL_PASSWORD_AUTH_ENABLED = false" in build_text
     assert "Gradle output is already signed" in build_text
     assert "Require successful CI for this exact commit" in build_text
     branch_gate = next(
@@ -612,6 +736,9 @@ def test_protected_android_signing_has_checkout_free_key_boundary():
     assert 'buildConfigField("String", "YANDEX_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_SECRET_SHA256"' in gradle
+    assert 'configuredValue("EMAIL_PASSWORD_AUTH_ENABLED")' in gradle
+    assert 'distributionChannel == "production" && emailPasswordAuthOverride == true' in gradle
+    assert '"production", "recovery-production", "recovery-staging" -> false' in gradle
 
 
 def test_fresh_android_checkout_defaults_to_live_real_oauth_beta():
@@ -689,7 +816,7 @@ def test_database_role_provisioning_is_idempotent_and_url_safe():
 
 def test_post_migration_grant_convergence_is_owner_scoped_and_fail_closed():
     text = GRANT_CONVERGENCE.read_text(encoding="utf-8")
-    assert "SCHEMA_HEAD = \"0006_signup_completion_idempotency\"" in text
+    assert f'SCHEMA_HEAD = "{ACCOUNT_SCHEMA_HEAD}"' in text
     assert "current_user != contract.migrator" in text
     assert "is_superuser is not False" in text
     assert "database table inventory differs from the reviewed schema" in text
@@ -742,9 +869,40 @@ def test_final_service_manifest_keeps_every_user_state_store_in_russia():
         "two_phase_signup_completion",
         "bounded_signup_completion_idempotency",
         "explicit_signup_confirmation_or_cancellation",
+        "email_password_backend_beta",
+        "keyed_email_lookup_and_argon2id",
         "runtime_read_only_migration_metadata",
         "nickname_claim_registry",
         "durable_nickname_propagation",
+        "server_verified_rustore_subscription_v5",
+        "dedicated_billing_external_account_binding",
+        "encrypted_billing_notification_deduplication",
+        "purchase_scoped_canonical_fetch_generation",
+        "bounded_billing_dead_letter_and_manual_replay",
+        "atomic_retry_safe_daily_feature_quotas",
+        "versioned_feature_quota_policy_and_exact_once_release",
+        "atomic_global_plantnet_attempt_and_cost_budget",
+    }
+    assert {
+        "email_address",
+        "password",
+        "billing_external_id",
+        "rustore_purchase_id",
+        "subscription_state",
+        "feature_usage",
+    } <= set(services["ru-ingress"]["must_not_send_to_de"])
+    assert account["release_holds"] == {
+        "email_password": [
+            "inbox_ownership_verification",
+            "password_recovery",
+            "shared_multi_replica_abuse_controls",
+        ],
+        "rustore_pro": [
+            "console_product_and_legal_approval",
+            "production_rsa_and_aes_secret_provisioning",
+            "live_v5_callback_and_reconciliation_evidence",
+            "quota_cost_and_rollback_evidence",
+        ],
     }
     assert set(worker["forbidden_import_domains"]) == {
         "account",
@@ -757,6 +915,32 @@ def test_final_service_manifest_keeps_every_user_state_store_in_russia():
     for name, service in services.items():
         if name.startswith("ru-"):
             assert service["country"] == "RU"
+    openrouter = services["ru-app-api"]["optional_external_processors"]["openrouter"]
+    assert openrouter["retention_requirement"] == "zero"
+    assert openrouter["data_collection_requirement"] == "deny"
+    assert openrouter["release_gate"] == (
+        "disabled_until_privacy_region_legal_and_budget_approval"
+    )
+    assert {"authorization", "account_id", "billing_identifier"} <= set(
+        openrouter["forbidden"]
+    )
+    plantnet = services["ru-app-api"]["optional_external_processors"]["plantnet"]
+    assert plantnet["endpoint"] == "my-api.plantnet.org"
+    assert plantnet["provider_image_retention"] == "volatile_memory_only"
+    assert plantnet["release_gate"] == (
+        "disabled_until_global_budget_contract_attribution_and_legal_approval"
+    )
+    assert {"account_id", "installation_id", "billing_identifier"} <= set(
+        plantnet["forbidden"]
+    )
+    fcm = account["optional_external_processors"]["firebase_cloud_messaging"]
+    assert fcm["location"] == "global Google infrastructure"
+    assert fcm["release_gate"] == (
+        "disabled_until_operator_privacy_transfer_and_delivery_sink_approval"
+    )
+    assert {"oauth_token", "email_address", "billing_identifier", "image"} <= set(
+        fcm["forbidden"]
+    )
     flow = manifest["flows"]["ru_to_de_inference"]
     assert flow["transport"] == "mTLS"
     assert flow["direct_android_access"] == "forbidden"
@@ -810,10 +994,15 @@ def test_final_compose_templates_encode_the_ru_de_boundary():
     assert ru_app["ML_WORKER_ALLOWED_FIELDS"] == (
         "image,request_id,model_family,language,result_options"
     )
+    assert ru_app["OPENROUTER_API_KEY_FILE"] == "${OPENROUTER_API_KEY_FILE:-}"
+    assert "OPENROUTER_API_KEY" not in ru_app
+    assert ru_app["OPENROUTER_BASE_URL"] == "https://openrouter.ai/api/v1"
     assert ru_app["COMMUNITY_DB_PATH"].startswith("/data/")
     assert ru_app["TRAINING_DB_PATH"].startswith("/data/")
     assert ru_app["TELEMETRY_DB_PATH"].startswith("/data/")
     assert ru_app["HTTPS_PROXY"] == "http://ru-egress-proxy:3128"
+    assert "PLANTNET_API_KEY" not in ru_app
+    assert ru_app["PLANTNET_API_KEY_FILE"] == "${PLANTNET_API_KEY_FILE:-}"
 
     egress = ru["services"]["ru-egress-proxy"]
     assert set(egress["networks"]) == {"ru-egress-clients", "ru-egress"}
@@ -835,6 +1024,12 @@ def test_final_compose_templates_encode_the_ru_de_boundary():
     ):
         assert exact_content_host in egress_policy
     assert "http_access allow CONNECT TLS_port content_hosts" in egress_policy
+    assert "acl billing_hosts dstdomain public-api.rustore.ru" in egress_policy
+    assert "http_access allow CONNECT TLS_port billing_hosts" in egress_policy
+    assert "acl plantnet_hosts dstdomain my-api.plantnet.org" in egress_policy
+    assert "http_access allow CONNECT TLS_port plantnet_hosts" in egress_policy
+    assert "acl llm_router_host dstdomain openrouter.ai" in egress_policy
+    assert "http_access allow CONNECT TLS_port llm_router_host" in egress_policy
     assert ru["services"]["ru-account-migrate"]["depends_on"][
         "ru-account-role-provision"
     ]["condition"] == "service_completed_successfully"
@@ -843,6 +1038,22 @@ def test_final_compose_templates_encode_the_ru_de_boundary():
     }
 
     account_environment = ru["services"]["ru-account-api"]["environment"]
+    assert account_environment["EMAIL_PASSWORD_AUTH_ENABLED"] == "false"
+    assert account_environment["PLANTNET_BUDGET_ENABLED"] == (
+        "${PLANTNET_BUDGET_ENABLED:-false}"
+    )
+    assert account_environment["PLANTNET_BUDGET_POLICY_VERSION"] == (
+        "${PLANTNET_BUDGET_POLICY_VERSION:-}"
+    )
+    assert account_environment["PLANTNET_DAILY_ATTEMPT_LIMIT"] == (
+        "${PLANTNET_DAILY_ATTEMPT_LIMIT:-0}"
+    )
+    assert account_environment["PLANTNET_ATTEMPT_COST_MICROS"] == (
+        "${PLANTNET_ATTEMPT_COST_MICROS:-0}"
+    )
+    assert account_environment["PLANTNET_DAILY_COST_LIMIT_MICROS"] == (
+        "${PLANTNET_DAILY_COST_LIMIT_MICROS:-0}"
+    )
     assert account_environment["COMMUNITY_DELETION_URL"] == (
         "http://ru-app-api:8000/api/internal/account-deletions"
     )
@@ -877,6 +1088,19 @@ def test_final_compose_templates_encode_the_ru_de_boundary():
     assert all(image.startswith("registry.invalid/") for image in image_values)
     assert all(image.endswith("0" * 64) for image in image_values)
     assert environment["RU_PUBLIC_HOST"].endswith(".invalid")
+    assert environment["PLANTNET_API_KEY_FILE"] == ""
+    assert environment["PLANTNET_BUDGET_ENABLED"] == "false"
+    assert int(environment["PLANTNET_ATTEMPT_COST_MICROS"]) > 0
+    assert int(environment["PLANTNET_DAILY_ATTEMPT_LIMIT"]) > 0
+    assert int(environment["PLANTNET_DAILY_COST_LIMIT_MICROS"]) > 0
+    secrets_inventory = SECRETS_INVENTORY.read_text(encoding="utf-8")
+    assert "Optional `plantnet-api.key`" in secrets_inventory
+    assert "${RU_APP_SECRETS_DIR}/plantnet-api.key" in secrets_inventory
+    assert (
+        "`PLANTNET_API_KEY_FILE=/run/app-secrets/plantnet-api.key`"
+        in secrets_inventory
+    )
+    assert "first restore\n`PLANTNET_BUDGET_ENABLED=false`" in secrets_inventory
     assert environment["DE_ML_WORKER_URL"].split(":", maxsplit=1)[1].startswith(
         "//de-ml.private.invalid"
     )

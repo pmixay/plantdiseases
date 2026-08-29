@@ -15,10 +15,20 @@ from sqlalchemy import delete, event, select, text
 
 from app.config import Settings
 from app.db.database import Database
-from app.db.models import Account, PendingSignup, RefreshToken, SignupCompletion
+from app.db.models import (
+    Account,
+    PendingSignup,
+    RefreshToken,
+    SignupCompletion,
+    VendorBudgetAuthority,
+    VendorBudgetDaily,
+    VendorBudgetReceipt,
+)
+from app.db.repository import AccountRepository
 from app.generate_test_keys import ensure_test_keys
 from app.main import create_app
 from app.security.tokens import hash_opaque_token
+from app.services.vendor_budgets import PlantNetBudgetPolicy, VendorBudgetService
 
 POSTGRES_INTEGRATION_URL = os.environ.get("ACCOUNT_POSTGRES_INTEGRATION_URL", "")
 
@@ -26,6 +36,113 @@ pytestmark = pytest.mark.skipif(
     not POSTGRES_INTEGRATION_URL,
     reason="set ACCOUNT_POSTGRES_INTEGRATION_URL for the isolated beta PostgreSQL test",
 )
+
+
+def test_postgres_plantnet_budget_is_atomic_across_concurrent_services(
+    tmp_path: Path,
+):
+    key_directory = tmp_path / "keys"
+    ensure_test_keys(key_directory, environment="test")
+    database = Database(_settings(key_directory).database_url)
+    first_day = datetime(2098, 12, 30, 12, tzinfo=UTC)
+    second_day = first_day + timedelta(days=1)
+    policy = PlantNetBudgetPolicy(
+        version="postgres-concurrency-v1",
+        daily_attempt_limit=7,
+        attempt_cost_micros=5_000,
+        daily_cost_limit_micros=35_000,
+    )
+
+    def service(day: datetime) -> VendorBudgetService:
+        return VendorBudgetService(
+            repository=AccountRepository(database.session_factory),
+            policy=policy,
+            clock=lambda: day,
+        )
+
+    try:
+        with database.session_factory.begin() as setup:
+            authority = setup.scalar(
+                select(VendorBudgetAuthority).where(
+                    VendorBudgetAuthority.provider == "plantnet"
+                )
+            )
+            assert authority is not None
+            setup.execute(
+                delete(VendorBudgetReceipt).where(
+                    VendorBudgetReceipt.authority_id == authority.id,
+                    VendorBudgetReceipt.usage_date.in_(
+                        (first_day.date(), second_day.date())
+                    ),
+                )
+            )
+            setup.execute(
+                delete(VendorBudgetDaily).where(
+                    VendorBudgetDaily.authority_id == authority.id,
+                    VendorBudgetDaily.usage_date.in_(
+                        (first_day.date(), second_day.date())
+                    ),
+                )
+            )
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            decisions = list(
+                executor.map(
+                    lambda operation: service(first_day).reserve_plantnet_attempt(
+                        request_id=operation
+                    ),
+                    [uuid.uuid4() for _ in range(20)],
+                )
+            )
+        assert sum(bool(item["allowed"]) for item in decisions) == 7
+
+        duplicate_id = uuid.uuid4()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            duplicates = list(
+                executor.map(
+                    lambda _index: service(second_day).reserve_plantnet_attempt(
+                        request_id=duplicate_id
+                    ),
+                    range(8),
+                )
+            )
+        assert all(item["allowed"] for item in duplicates)
+        assert sum(not bool(item["replayed"]) for item in duplicates) == 1
+
+        with database.session_factory() as verification:
+            first_ledger = verification.scalar(
+                select(VendorBudgetDaily).where(
+                    VendorBudgetDaily.usage_date == first_day.date()
+                )
+            )
+            second_ledger = verification.scalar(
+                select(VendorBudgetDaily).where(
+                    VendorBudgetDaily.usage_date == second_day.date()
+                )
+            )
+            assert first_ledger is not None
+            assert first_ledger.attempts_used == 7
+            assert first_ledger.cost_exposure_micros == 35_000
+            assert second_ledger is not None
+            assert second_ledger.attempts_used == 1
+            assert second_ledger.cost_exposure_micros == 5_000
+    finally:
+        with database.session_factory.begin() as cleanup:
+            cleanup.execute(
+                delete(VendorBudgetReceipt).where(
+                    VendorBudgetReceipt.usage_date.in_(
+                        (first_day.date(), second_day.date())
+                    )
+                )
+            )
+            cleanup.execute(
+                delete(VendorBudgetDaily).where(
+                    VendorBudgetDaily.usage_date.in_(
+                        (first_day.date(), second_day.date())
+                    )
+                )
+            )
+        database.close()
 
 
 def _settings(key_directory: Path) -> Settings:

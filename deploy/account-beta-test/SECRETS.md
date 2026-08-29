@@ -17,10 +17,15 @@ cannot silently omit LoginSDK; the Yandex client secret is never used.
 | `BETA_POSTGRES_RUNTIME_PASSWORD` | Staging application-DML secret | Mode-0600 operator env file | Account API; SELECT-only on `alembic_version`, no sequence access | Recreate with disposable stack |
 | `BETA_POSTGRES_BACKUP_PASSWORD` | Staging read-only secret | Mode-0600 operator env file | Encrypted backup check | Recreate with disposable stack |
 | `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Yandex: tracked Android release config plus mode-0600 server env; VK: protected build config plus server env | Account API/Android | Change only with provider registration |
+| `EMAIL_PASSWORD_AUTH_ENABLED` | Non-secret production-HOLD control | Mode-0600 operator env plus protected Android build configuration; tracked German Compose default is `false` | Account API/Android | Explicit `true` only for a scheduled non-production exercise after the named-tester edge allowlist is active; return to `false`; production rejects it |
+| `/etc/nginx/plantdisease-beta-testers.allow` | Restricted tester/VPN egress addresses; do not place names, emails, or roster metadata in this file | Root-owned host nginx configuration, least-readable mode accepted by `nginx -t`; roster/approval stays in the protected operator record | German host nginx | Replace exact `/32`/`/128` entries for each scheduled exercise and remove access immediately when a tester leaves |
 | Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Protected Android/CI build config, never server env | VK ID SDK | Change only with provider registration |
+| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Mode-0600 operator env plus protected Android build variables where applicable | Account API/Android | Change only with reviewed Console configuration; advance the epoch atomically with every AES-key rotation |
+| `private-key.b64` | Staging-only Base64 PKCS#8 RSA private key | `BETA_RUSTORE_SECRETS_DIR`, account-owned mode 0400 | Account API RuStore Public API authorization | Destroy with the disposable sandbox integration |
+| `notification-key.b64` | Staging-only Base64 AES-256 callback key | `BETA_RUSTORE_SECRETS_DIR`, account-owned mode 0400 | Account API callback decryption | Destroy with the disposable sandbox integration |
 | `BETA_MODELS_DIR` | Non-secret absolute model path | Host-only operator env | App API read-only mount | Verify at each model release |
 | `signing.json` | Beta Ed25519 private key ring | Dedicated `*_account_keys` volume, mode 0600 | Account API | Exercise before handoff; never promote |
-| `encryption.key` | Beta AES-256 account encryption/derivation key | Same beta-only key volume, mode 0600 | Account API refresh rotation (and future push-token protection) | Recreate only with the disposable stack; existing sessions must reauthenticate |
+| `encryption.key` | Beta AES-256 account encryption/derivation key | Same beta-only key volume, mode 0600 | Account API refresh rotation, email fingerprints, and future push-token protection | Recreate only with the disposable stack; existing sessions must reauthenticate and password lookup identities change |
 | `internal.token` | Beta service credential | Dedicated `*_internal_token` volume, mode 0640; read-only in app | Account and app APIs | Recreate with disposable stack |
 | `BETA_FORWARDED_ALLOW_IPS`, `BETA_TRUSTED_PROXIES` | Security configuration, not secret | Mode-0600 operator env file | Uvicorn/application API | Verify whenever Docker networking changes |
 
@@ -92,9 +97,14 @@ push worker is implemented and reviewed.
 | `YANDEX_CLIENT_ID` | Public application ID | Tracked Android release config plus protected host configuration | Account API and Android build | Change only with provider registration |
 | `VKID_CLIENT_ID` | Optional public application ID | Protected host configuration; absent for the current release | Account API and Android build | Change only with provider registration |
 | Android `VKID_CLIENT_SECRET` | Optional extractable public mobile config | CI/build configuration; absent for the current release | Android VK ID SDK | Never use as server authentication |
+| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Protected host/Android build configuration as applicable | Account API and Android Pay SDK | Change only with a reviewed Console migration; never reuse an epoch after AES-key rotation |
+| `rustore-private-key.b64` | Critical Base64 PKCS#8 RSA private key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore Public API authorization | Overlap keys, validate, then revoke the retired Console key |
+| `rustore-notification-key.b64` | Critical Base64 AES-256 callback decryption key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore notifications | Follow the callback disable/rotate/reconcile sequence in the PRO runbook |
 | `signing.json` | Critical private Ed25519 key ring | Russia, account UID-readable mode 0400 | Account API | Keep active plus reviewed retired public keys; perform overlap exercise |
-| `encryption.key` | Critical AES-256 account encryption/derivation key | Russia, account-owned mode 0400 | Account API refresh rotation; future push-token protection remains disabled | Do not replace in place; use a reviewed overlap migration or planned session revocation and reauthentication |
+| `encryption.key` | Critical AES-256 account encryption/derivation key | Russia, account-owned mode 0400 | Account API refresh rotation and email fingerprints; future push-token protection remains disabled | Do not replace in place; use a reviewed overlap migration or planned session revocation/credential migration |
 | `internal.token` | Critical service credential | Separate account/app-owned mode-0400 copies in Russia | Private account/app calls | Rotate atomically across both services |
+| Optional `plantnet-api.key` | External species-identification credential; absent while PlantNet is off | `RU_APP_SECRETS_DIR`, app UID-readable mode 0400 | Russian app API only after the processor/legal gate and both shared daily ceilings are approved | Disable the file path and shared budget first, rotate at PlantNet, then provision a fresh file without logging it |
+| Optional `openrouter-api.key` | External AI credential; absent while feature gates are open | `RU_APP_SECRETS_DIR`, app UID-readable mode 0400 | Russian app API only after privacy, region, ZDR, legal, and aggregate-cost approval | Disable the file path first, rotate at OpenRouter, then provision a fresh file without logging it |
 | `RU_POSTGRES_ADMIN_PASSWORD` | Bootstrap-only database secret | Root-managed mode-0600 host environment/secret manager in Russia | PostgreSQL initialization/idempotent role provision only | Never mount into migrator, API, app, or backup |
 | `RU_POSTGRES_MIGRATOR_PASSWORD` | DDL/ownership secret | Root-managed mode-0600 host environment/secret manager in Russia | One-shot Alembic migration and post-migration grant convergence | Rotate after reviewed migrations when practical |
 | `RU_POSTGRES_RUNTIME_PASSWORD` | Restricted application-DML secret | Root-managed mode-0600 host environment/secret manager in Russia | Account API; SELECT-only on `alembic_version`, no sequence access | Rotate and test reconnect/rollback |
@@ -112,21 +122,44 @@ world-accessible, because it lives alone in a dedicated volume mounted
 read-only into the differently-UID app container. The final Russian template
 instead expects owner-specific mode-0400 copies whose byte values match; never
 print them for comparison.
+The app API applies the same absolute, regular, non-symlink, owner-only and
+bounded-file contract to optional vendor API keys. Production rejects direct
+`PLANTNET_API_KEY` / `OPENROUTER_API_KEY` environment/config values and any
+simultaneous direct and file setting. Leave each `*_API_KEY_FILE` blank to keep
+that feature off.
 Russian migrator/runtime/backup database passwords use the same validated
 64-hex format; the bootstrap password is transported through `PGPASSWORD`, not
 embedded in a URL.
 
+PlantNet is default-off in the production example. To enable it after the
+named review gates pass, keep `PLANTNET_BUDGET_ENABLED=false` while an operator
+provisions `${RU_APP_SECRETS_DIR}/plantnet-api.key` for the app UID as a regular
+mode-0400 file. Set only the in-container path
+`PLANTNET_API_KEY_FILE=/run/app-secrets/plantnet-api.key`, validate the reviewed
+policy version, attempt ceiling, marginal cost, and cost-exposure ceiling, then
+enable the account authority with `PLANTNET_BUDGET_ENABLED=true` and restart the
+account and app services. Never put the credential itself in the environment
+file. For rotation or emergency disablement, first restore
+`PLANTNET_BUDGET_ENABLED=false` and blank `PLANTNET_API_KEY_FILE`, deploy that
+disabled state and verify no new upstream-attempt metric increments; only then
+replace the host file. Re-enable through the same reviewed sequence. A missing
+file, invalid file, unavailable authority, or disabled budget must fail closed
+before PlantNet network I/O.
+
 `ACCOUNT_ENCRYPTION_KEY_FILE` is not a push-only secret. The account service
-purpose-separates it to derive the deterministic refresh-token successor that
-can be returned again after a lost refresh response; future push support would
-also use it for push-token encryption and fingerprints. A consumed refresh and
+purpose-separates it to derive both private email lookup fingerprints and the
+deterministic refresh-token successor that can be returned again after a lost
+refresh response; future push support would also use it for push-token
+encryption and fingerprints. A consumed refresh and
 its matching `rotation_id` remain eligible for that idempotent retry for seven
 days. The current service loads one key, not an old/new key ring: replacing the
 key during that window prevents reproduction of the stored successor and the
-retry is treated as token reuse, revoking the session. Production rotation must
-therefore either add and test an overlap-capable key migration first or be a
-communicated, planned session revocation with mandatory account
-reauthentication. Preserve the old key for rollback until that plan completes;
+retry is treated as token reuse, revoking the session. It also makes existing
+password credentials unreachable through their email until their fingerprints
+are migrated. Production rotation must therefore add and test an overlap-capable
+key/credential migration first, or be a communicated session revocation plus
+password-credential recovery event. Preserve the old key for rollback until
+that plan completes;
 never assume polling-only 1.9 makes this key safe to regenerate.
 
 ## Prohibited handling

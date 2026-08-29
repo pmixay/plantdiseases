@@ -302,6 +302,12 @@ def client():
         # are already isolated by ``client`` being function-scoped.
         with server_main._analyze_cache_lock:
             server_main._analyze_cache.clear()
+        with server_main._guest_feature_lock:
+            server_main._guest_feature_counts.clear()
+            server_main._guest_feature_receipts.clear()
+        with server_main._quota_lock:
+            server_main._in_memory_quotas.clear()
+            server_main._api_key_feature_receipts.clear()
         yield c
 
 
@@ -327,6 +333,12 @@ def rate_limited_client():
             mw.capacity = 1.0
             with mw._lock:
                 mw._buckets.clear()
+        with server_main._guest_feature_lock:
+            server_main._guest_feature_counts.clear()
+            server_main._guest_feature_receipts.clear()
+        with server_main._quota_lock:
+            server_main._in_memory_quotas.clear()
+            server_main._api_key_feature_receipts.clear()
         yield c
         if mw is not None:
             with mw._lock:

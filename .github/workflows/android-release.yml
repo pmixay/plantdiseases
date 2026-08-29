@@ -339,6 +339,35 @@ jobs:
             ''|*[!0-9]*) [ -z "$VKID_CLIENT_ID" ] || { echo "::error::Staging VK ID must be decimal"; exit 1; } ;;
           esac
 
+      - name: Validate staging RuStore Pay configuration
+        if: inputs.channel == 'staging'
+        env:
+          RUSTORE_CONSOLE_APP_ID: ${{ vars.STAGING_RUSTORE_CONSOLE_APP_ID }}
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
+        shell: bash
+        run: |
+          set -eu
+          for name in RUSTORE_CONSOLE_APP_ID RUSTORE_PRO_MONTHLY_PRODUCT_ID \
+            RUSTORE_PRO_YEARLY_PRODUCT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name repository variable is required for a PRO-enabled staging build"
+              exit 1
+            fi
+          done
+          case "$RUSTORE_CONSOLE_APP_ID" in
+            *[!0-9]*) echo "::error::Staging RuStore Console application ID must be decimal"; exit 1 ;;
+          esac
+          case "$RUSTORE_CONSOLE_APP_ID" in
+            *[1-9]*) ;;
+            *) echo "::error::Staging RuStore Console application ID must not be zero"; exit 1 ;;
+          esac
+          if [ "$RUSTORE_PRO_MONTHLY_PRODUCT_ID" != plantdiseases_pro_monthly ] || \
+             [ "$RUSTORE_PRO_YEARLY_PRODUCT_ID" != plantdiseases_pro_yearly ]; then
+            echo "::error::Staging RuStore PRO product IDs must match the account-server allowlist"
+            exit 1
+          fi
+
       - name: Validate reviewed German staging endpoint configuration
         if: inputs.channel == 'staging' || inputs.channel == 'recovery-staging'
         env:
@@ -466,6 +495,35 @@ jobs:
           }
           validate_reviewed_production_pair "$APP_API_BASE_URL" "$ACCOUNT_API_BASE_URL"
 
+      - name: Validate production RuStore Pay configuration
+        if: inputs.channel == 'production'
+        env:
+          RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
+        shell: bash
+        run: |
+          set -eu
+          for name in RUSTORE_CONSOLE_APP_ID RUSTORE_PRO_MONTHLY_PRODUCT_ID \
+            RUSTORE_PRO_YEARLY_PRODUCT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name repository variable is required for a PRO-enabled production build"
+              exit 1
+            fi
+          done
+          case "$RUSTORE_CONSOLE_APP_ID" in
+            *[!0-9]*) echo "::error::Production RuStore Console application ID must be decimal"; exit 1 ;;
+          esac
+          case "$RUSTORE_CONSOLE_APP_ID" in
+            *[1-9]*) ;;
+            *) echo "::error::Production RuStore Console application ID must not be zero"; exit 1 ;;
+          esac
+          if [ "$RUSTORE_PRO_MONTHLY_PRODUCT_ID" != plantdiseases_pro_monthly ] || \
+             [ "$RUSTORE_PRO_YEARLY_PRODUCT_ID" != plantdiseases_pro_yearly ]; then
+            echo "::error::Production RuStore PRO product IDs must match the account-server allowlist"
+            exit 1
+          fi
+
       - name: Validate production-recovery endpoint configuration
         if: inputs.channel == 'recovery-production'
         env:
@@ -554,6 +612,9 @@ jobs:
           ACCOUNT_REAL_OAUTH: "true"
           VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
+          RUSTORE_CONSOLE_APP_ID: ${{ vars.STAGING_RUSTORE_CONSOLE_APP_ID }}
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
           STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
           STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
           FCM_APP_ID: ""
@@ -573,6 +634,9 @@ jobs:
           ACCOUNT_REAL_OAUTH: "true"
           VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
+          RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
           APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
           ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
           FCM_APP_ID: ""
@@ -629,6 +693,12 @@ jobs:
           STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
           PRODUCTION_VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           PRODUCTION_VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
+          STAGING_RUSTORE_CONSOLE_APP_ID: ${{ vars.STAGING_RUSTORE_CONSOLE_APP_ID }}
+          STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
+          PRODUCTION_RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
+          PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
+          PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
           STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
           STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
           PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
@@ -666,16 +736,33 @@ jobs:
           grep -q 'APPLICATION_ID = "com.plantdiseases.app"' "$build_config"
           grep -q 'SYNTHETIC_AUTH_ENABLED = false' "$build_config"
           grep -q 'FCM_API_KEY = ""' "$build_config"
+          case "${{ inputs.channel }}" in
+            staging)
+              grep -q 'EMAIL_PASSWORD_AUTH_ENABLED = true' "$build_config"
+              ;;
+            production|recovery-production|recovery-staging)
+              grep -q 'EMAIL_PASSWORD_AUTH_ENABLED = false' "$build_config"
+              ;;
+          esac
 
-          expected_yandex_client_id=cfefdff8ae4d4dd8a7426308751ef95a
+          expected_yandex_client_id=2b439944bb4c4e33b85e20290aca6c7f
           expected_vkid_client_id=
           expected_vkid_client_secret=
+          expected_rustore_console_app_id=
+          expected_rustore_monthly_product_id=
+          expected_rustore_yearly_product_id=
           if [ "${{ inputs.channel }}" = staging ]; then
             expected_vkid_client_id=$STAGING_VKID_CLIENT_ID
             expected_vkid_client_secret=$STAGING_VKID_CLIENT_SECRET
+            expected_rustore_console_app_id=$STAGING_RUSTORE_CONSOLE_APP_ID
+            expected_rustore_monthly_product_id=$STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID
+            expected_rustore_yearly_product_id=$STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID
           elif [ "${{ inputs.channel }}" = production ]; then
             expected_vkid_client_id=$PRODUCTION_VKID_CLIENT_ID
             expected_vkid_client_secret=$PRODUCTION_VKID_CLIENT_SECRET
+            expected_rustore_console_app_id=$PRODUCTION_RUSTORE_CONSOLE_APP_ID
+            expected_rustore_monthly_product_id=$PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID
+            expected_rustore_yearly_product_id=$PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID
           fi
           provider_sha256() {
             printf '%s' "$1" | sha256sum | cut -d ' ' -f 1
@@ -705,6 +792,7 @@ jobs:
             grep -q 'RECOVERY_ENDPOINT_SCOPE = "production"' "$build_config"
             grep -q 'YANDEX_OAUTH_CONFIGURED = false' "$build_config"
             grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+            grep -q 'RUSTORE_PAY_CONFIGURED = false' "$build_config"
           elif [ "$variant" = recoveryStaging ]; then
             expected_version_code=20
             expected_version_name=1.9-recovery-staging
@@ -717,11 +805,16 @@ jobs:
             grep -q 'RECOVERY_ENDPOINT_SCOPE = "staging"' "$build_config"
             grep -q 'YANDEX_OAUTH_CONFIGURED = false' "$build_config"
             grep -q 'VK_OAUTH_CONFIGURED = false' "$build_config"
+            grep -q 'RUSTORE_PAY_CONFIGURED = false' "$build_config"
           else
             grep -q 'VERSION_CODE = 19' "$build_config"
             grep -q 'VERSION_NAME = "1.9"' "$build_config"
             grep -q 'ACCOUNT_UI_ENABLED = true' "$build_config"
             grep -q 'YANDEX_OAUTH_CONFIGURED = true' "$build_config"
+            grep -q 'RUSTORE_PAY_CONFIGURED = true' "$build_config"
+            grep -Fq "RUSTORE_CONSOLE_APP_ID = \"$expected_rustore_console_app_id\"" "$build_config"
+            grep -Fq "RUSTORE_PRO_MONTHLY_PRODUCT_ID = \"$expected_rustore_monthly_product_id\"" "$build_config"
+            grep -Fq "RUSTORE_PRO_YEARLY_PRODUCT_ID = \"$expected_rustore_yearly_product_id\"" "$build_config"
             if [ -n "$expected_vkid_client_id" ]; then
               grep -q 'VK_OAUTH_CONFIGURED = true' "$build_config"
             else

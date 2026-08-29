@@ -1,15 +1,16 @@
 # Account Beta Implementation Progress
 
 > Historical checkpoint log. It does not describe the current release gate.
-> Use [ACCOUNT_RELEASE_SECURITY_RECHECK.md](ACCOUNT_RELEASE_SECURITY_RECHECK.md):
-> the RuStore candidate is Yandex-only, VK is coming soon, and permanent
-> signing is isolated to the protected main release job.
+> Use
+> [ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md](ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md)
+> and [ACCOUNT_BETA_HANDOFF.md](ACCOUNT_BETA_HANDOFF.md) for the current release
+> gate. This checkpoint log predates email/password beta and PlantDiseases PRO.
 
 This log tracks implementation on `account-beta-test`. It is updated at each
 verified checkpoint. Checkpoints 0–10 used only mock/synthetic data and local
 resources; checkpoint 11 records the explicitly authorized German VDS beta.
 
-## Current status
+## Historical status at checkpoint 11
 
 - Active phase: German loopback beta is running; awaiting registered provider
   applications/stable APK signing before public prefix activation and real
@@ -19,7 +20,7 @@ resources; checkpoint 11 records the explicitly authorized German VDS beta.
 - Deployments performed: isolated Compose project
   `plantdisease_account_beta_german`, commit/image tag `ea5cf0d`, loopback ports
   `18100/18101`, real PlantVision model mounted read-only.
-- Current blocker: `YANDEX_CLIENT_ID`, numeric `VKID_CLIENT_ID`, Android
+- Blocker at that checkpoint: `YANDEX_CLIENT_ID`, numeric `VKID_CLIENT_ID`, Android
   `VKID_CLIENT_SECRET`, and the permanent provider-registered
   `com.plantdiseases.app` signing certificate. No successful real-user OAuth
   flow is claimed without them.

@@ -22,6 +22,8 @@ from app.db.models import (
     AccountNicknameClaim,
     AccountNicknameJob,
     AccountSecurityEvent,
+    PasswordCredential,
+    PendingPasswordCredential,
     PendingSignup,
     PushDevice,
     ReauthChallenge,
@@ -40,6 +42,7 @@ from app.providers.base import (
     VerifiedProviderIdentity,
 )
 from app.rate_limit import InMemoryRateLimiter
+from app.security.passwords import PasswordHashService, normalize_email
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import (
     AccessPrincipal,
@@ -113,6 +116,7 @@ class AccountService:
         push_protector: PushTokenProtector,
         limiter: InMemoryRateLimiter,
         blocked_nicknames: tuple[str, ...] = (),
+        password_hash_service: PasswordHashService | None = None,
         clock: Callable[[], datetime] = utc_now,
         notification_sink: Callable[[list[str], dict[str, str]], int] | None = None,
         deletion_dispatcher: Callable[[uuid.UUID], bool] | None = None,
@@ -124,6 +128,7 @@ class AccountService:
         self.push_protector = push_protector
         self.limiter = limiter
         self.blocked_nicknames = blocked_nicknames
+        self.password_hash_service = password_hash_service or PasswordHashService()
         self.clock = clock
         # A missing sink means push is unavailable. Silently accepting device
         # registrations made the production API claim a delivery capability it
@@ -298,6 +303,193 @@ class AccountService:
                 status="authenticated",
             )
 
+    def register_with_email(
+        self,
+        *,
+        email: str,
+        password: str,
+        installation_id: uuid.UUID,
+    ) -> dict:
+        """Begin the existing two-phase signup with a private password method."""
+
+        try:
+            normalized_email = normalize_email(email)
+        except ValueError:
+            raise AccountAPIError("invalid_registration", status_code=400) from None
+        email_fingerprint = self.push_protector.email_fingerprint(normalized_email)
+        self.limiter.check("subject:email-register", email_fingerprint.hex())
+        try:
+            password_hash = self.password_hash_service.hash_new(password)
+        except ValueError:
+            raise AccountAPIError("invalid_registration", status_code=400) from None
+
+        now = self.clock()
+        try:
+            with self.repository.transaction() as transaction:
+                self._lock_email_fingerprint(transaction, email_fingerprint)
+                pending_rows = list(
+                    transaction.scalars(
+                        select(PendingSignup)
+                        .join(
+                            PendingPasswordCredential,
+                            PendingPasswordCredential.pending_signup_id == PendingSignup.id,
+                        )
+                        .where(
+                            PendingPasswordCredential.email_fingerprint == email_fingerprint,
+                            PendingSignup.cancelled_at.is_(None),
+                        )
+                        .order_by(PendingSignup.id)
+                        .with_for_update()
+                    )
+                )
+                existing = transaction.scalar(
+                    select(PasswordCredential.id).where(
+                        PasswordCredential.email_fingerprint == email_fingerprint
+                    )
+                )
+                if existing is not None:
+                    raise AccountAPIError("registration_unavailable", status_code=409)
+                for pending in pending_rows:
+                    if pending.consumed_at is None:
+                        pending.cancelled_at = now
+                return self._new_email_pending(
+                    transaction,
+                    email_fingerprint=email_fingerprint,
+                    password_hash=password_hash,
+                    installation_id=installation_id,
+                    now=now,
+                )
+        except IntegrityError:
+            raise AccountAPIError("registration_unavailable", status_code=409) from None
+
+    def login_with_email(
+        self,
+        *,
+        email: str,
+        password: str,
+        installation_id: uuid.UUID,
+    ) -> dict:
+        """Verify one password and create a normal bounded account session."""
+
+        try:
+            normalized_email = normalize_email(email)
+            email_fingerprint = self.push_protector.email_fingerprint(normalized_email)
+        except ValueError:
+            email_fingerprint = None
+        limiter_key = email_fingerprint.hex() if email_fingerprint is not None else "invalid"
+        self.limiter.check("subject:email-login", limiter_key)
+
+        credential_snapshot = None
+        if email_fingerprint is not None:
+            with self.repository.transaction() as transaction:
+                credential_snapshot = transaction.execute(
+                    select(
+                        PasswordCredential.id,
+                        PasswordCredential.account_id,
+                        PasswordCredential.password_hash,
+                    ).where(PasswordCredential.email_fingerprint == email_fingerprint)
+                ).one_or_none()
+        encoded_hash = credential_snapshot[2] if credential_snapshot is not None else None
+        verification = self.password_hash_service.verify(password, encoded_hash)
+        if email_fingerprint is None or credential_snapshot is None or not verification.valid:
+            raise _auth_error("invalid_credentials")
+
+        credential_id, account_id, snapshot_hash = credential_snapshot
+        now = self.clock()
+        with self.repository.transaction() as transaction:
+            self._lock_email_fingerprint(transaction, email_fingerprint)
+            current_reference = transaction.execute(
+                select(
+                    PasswordCredential.id,
+                    PasswordCredential.account_id,
+                    PasswordCredential.password_hash,
+                ).where(PasswordCredential.email_fingerprint == email_fingerprint)
+            ).one_or_none()
+            if current_reference != credential_snapshot:
+                raise _auth_error("invalid_credentials")
+
+            completion_reference = transaction.execute(
+                select(SignupCompletion.id, SignupCompletion.pending_signup_id).where(
+                    SignupCompletion.account_id == account_id
+                )
+            ).one_or_none()
+            locked_pending: PendingSignup | None = None
+            locked_completion: SignupCompletion | None = None
+            if completion_reference is not None:
+                completion_id, completion_pending_id = completion_reference
+                locked_pending = transaction.scalar(
+                    select(PendingSignup)
+                    .where(PendingSignup.id == completion_pending_id)
+                    .with_for_update()
+                )
+                locked_completion = transaction.scalar(
+                    select(SignupCompletion)
+                    .where(SignupCompletion.id == completion_id)
+                    .with_for_update()
+                )
+            account = transaction.scalar(
+                select(Account).where(Account.id == account_id).with_for_update()
+            )
+            credential = transaction.scalar(
+                select(PasswordCredential)
+                .where(
+                    PasswordCredential.id == credential_id,
+                    PasswordCredential.account_id == account_id,
+                    PasswordCredential.email_fingerprint == email_fingerprint,
+                    PasswordCredential.password_hash == snapshot_hash,
+                )
+                .with_for_update()
+            )
+            if account is None or credential is None:
+                raise _auth_error("invalid_credentials")
+            if account.state == "signup_pending":
+                completion = locked_completion
+                old_pending = locked_pending
+                if (
+                    completion is None
+                    or old_pending is None
+                    or old_pending.provider != "email"
+                    or completion.account_id != account.id
+                    or completion.pending_signup_id != old_pending.id
+                    or completion.confirmed_at is not None
+                ):
+                    raise AccountAPIError("signup_confirmation_required", status_code=409)
+                replacement_hash = verification.replacement_hash or credential.password_hash
+                completion.account_id = None
+                completion.session_id = None
+                completion.cancelled_at = now
+                old_pending.cancelled_at = now
+                transaction.flush()
+                transaction.delete(account)
+                transaction.flush()
+                return self._new_email_pending(
+                    transaction,
+                    email_fingerprint=email_fingerprint,
+                    password_hash=replacement_hash,
+                    installation_id=installation_id,
+                    now=now,
+                )
+            if account.state == "deletion_pending":
+                raise AccountAPIError("deletion_pending", status_code=409)
+            if account.state != "active":
+                raise _auth_error("invalid_credentials")
+            if verification.replacement_hash is not None:
+                credential.password_hash = verification.replacement_hash
+                credential.password_changed_at = now
+            account_session, refresh_token = self._new_session(
+                transaction,
+                account=account,
+                installation_id=installation_id,
+                now=now,
+            )
+            return self._token_bundle(
+                account=account,
+                account_session=account_session,
+                refresh_token=refresh_token,
+                now=now,
+                status="authenticated",
+            )
+
     def complete_signup(
         self,
         *,
@@ -305,9 +497,18 @@ class AccountService:
         completion_id: uuid.UUID,
         nickname: str,
         installation_id: uuid.UUID,
+        email_password_auth_enabled: bool = False,
     ) -> dict:
         token_hash = hash_opaque_token(pending_token)
         now = self.clock()
+        if (
+            not email_password_auth_enabled
+            and self._invalidate_disabled_email_signup_continuation(
+                pending_token=pending_token,
+                now=now,
+            )
+        ):
+            raise AccountAPIError("email_auth_unavailable", status_code=503)
         try:
             with self.repository.transaction() as transaction:
                 pending = transaction.scalar(
@@ -339,6 +540,19 @@ class AccountService:
                     )
                 self._require_live_pending(pending, now)
                 if pending.installation_id is None or pending.installation_id != installation_id:
+                    raise AccountAPIError("signup_completion_conflict", status_code=409)
+                pending_password = transaction.scalar(
+                    select(PendingPasswordCredential)
+                    .where(PendingPasswordCredential.pending_signup_id == pending.id)
+                    .with_for_update()
+                )
+                if pending.provider == "email":
+                    if (
+                        pending_password is None
+                        or pending.provider_subject != pending_password.email_fingerprint.hex()
+                    ):
+                        raise AccountAPIError("signup_completion_conflict", status_code=409)
+                elif pending_password is not None:
                     raise AccountAPIError("signup_completion_conflict", status_code=409)
                 validated = validate_nickname(nickname, blocked=self.blocked_nicknames)
                 self.limiter.check(
@@ -376,17 +590,28 @@ class AccountService:
                         updated_at=now,
                     )
                 )
-                transaction.add(
-                    AccountIdentity(
-                        account_id=account.id,
-                        provider=pending.provider,
-                        provider_subject=pending.provider_subject,
-                        display_name=pending.provider_display_name,
-                        avatar_url=pending.provider_avatar_url,
-                        refreshed_at=now,
-                        created_at=now,
+                if pending_password is None:
+                    transaction.add(
+                        AccountIdentity(
+                            account_id=account.id,
+                            provider=pending.provider,
+                            provider_subject=pending.provider_subject,
+                            display_name=pending.provider_display_name,
+                            avatar_url=pending.provider_avatar_url,
+                            refreshed_at=now,
+                            created_at=now,
+                        )
                     )
-                )
+                else:
+                    transaction.add(
+                        PasswordCredential(
+                            account_id=account.id,
+                            email_fingerprint=pending_password.email_fingerprint,
+                            password_hash=pending_password.password_hash,
+                            password_changed_at=now,
+                            created_at=now,
+                        )
+                    )
                 pending.consumed_at = now
                 refresh_token = self.push_protector.derive_signup_refresh(
                     pending_token,
@@ -436,8 +661,17 @@ class AccountService:
         pending_token: str,
         completion_id: uuid.UUID,
         installation_id: uuid.UUID,
+        email_password_auth_enabled: bool = False,
     ) -> None:
         now = self.clock()
+        if (
+            not email_password_auth_enabled
+            and self._invalidate_disabled_email_signup_continuation(
+                pending_token=pending_token,
+                now=now,
+            )
+        ):
+            raise AccountAPIError("email_auth_unavailable", status_code=503)
         with self.repository.transaction() as transaction:
             pending, completion = self._locked_signup_completion(
                 transaction,
@@ -879,6 +1113,88 @@ class AccountService:
                 "expires_in": int(REAUTH_TTL.total_seconds()),
             }
 
+    def create_email_reauth_challenge(
+        self,
+        current: CurrentAccount,
+        *,
+        password: str,
+        scope: str,
+    ) -> dict:
+        """Prove the current account's password without exposing its identifier."""
+
+        self.limiter.check("account:email-reauth", str(current.account_id))
+        with self.repository.transaction() as transaction:
+            credential_snapshot = transaction.execute(
+                select(PasswordCredential.id, PasswordCredential.password_hash).where(
+                    PasswordCredential.account_id == current.account_id
+                )
+            ).one_or_none()
+        encoded_hash = credential_snapshot[1] if credential_snapshot is not None else None
+        verification = self.password_hash_service.verify(password, encoded_hash)
+        if credential_snapshot is None or not verification.valid:
+            raise AccountAPIError("reauth_required", status_code=401)
+
+        credential_id, snapshot_hash = credential_snapshot
+        now = self.clock()
+        with self.repository.transaction() as transaction:
+            self._require_current(
+                transaction,
+                current=current,
+                now=now,
+                for_update=True,
+            )
+            credential = transaction.scalar(
+                select(PasswordCredential)
+                .where(
+                    PasswordCredential.id == credential_id,
+                    PasswordCredential.account_id == current.account_id,
+                    PasswordCredential.password_hash == snapshot_hash,
+                )
+                .with_for_update()
+            )
+            if credential is None:
+                raise AccountAPIError("reauth_required", status_code=401)
+            target_provider = scope.removeprefix("link_") if scope.startswith("link_") else None
+            if target_provider is not None:
+                existing_target = transaction.scalar(
+                    select(AccountIdentity.id).where(
+                        AccountIdentity.account_id == current.account_id,
+                        AccountIdentity.provider == target_provider,
+                    )
+                )
+                if existing_target is not None:
+                    raise AccountAPIError("identity_already_linked", status_code=409)
+            old_challenges = transaction.scalars(
+                select(ReauthChallenge).where(
+                    ReauthChallenge.account_id == current.account_id,
+                    ReauthChallenge.session_id == current.session_id,
+                    ReauthChallenge.scope == scope,
+                    ReauthChallenge.consumed_at.is_(None),
+                )
+            )
+            for old_challenge in old_challenges:
+                old_challenge.consumed_at = now
+            if verification.replacement_hash is not None:
+                credential.password_hash = verification.replacement_hash
+                credential.password_changed_at = now
+            challenge_token = new_opaque_token()
+            transaction.add(
+                ReauthChallenge(
+                    account_id=current.account_id,
+                    session_id=current.session_id,
+                    token_hash=hash_opaque_token(challenge_token),
+                    provider="email",
+                    scope=scope,
+                    issued_at=now,
+                    expires_at=now + REAUTH_TTL,
+                )
+            )
+            return {
+                "reauth_token": challenge_token,
+                "scope": scope,
+                "expires_in": int(REAUTH_TTL.total_seconds()),
+            }
+
     async def link_identity(
         self,
         current: CurrentAccount,
@@ -980,10 +1296,35 @@ class AccountService:
                     .order_by(AccountIdentity.provider)
                 )
             )
+            password_credential = transaction.scalar(
+                select(PasswordCredential).where(
+                    PasswordCredential.account_id == current.account_id
+                )
+            )
             primary_identity = next(
                 (item for item in identities if item.provider == account.primary_provider),
                 None,
             )
+            primary_refreshed_at = (
+                _as_utc(password_credential.password_changed_at)
+                if account.primary_provider == "email" and password_credential is not None
+                else (
+                    _as_utc(primary_identity.refreshed_at)
+                    if primary_identity is not None
+                    else None
+                )
+            )
+            linked_methods = [
+                {"provider": item.provider, "refreshed_at": _as_utc(item.refreshed_at)}
+                for item in identities
+            ]
+            if password_credential is not None:
+                linked_methods.append(
+                    {
+                        "provider": "email",
+                        "refreshed_at": _as_utc(password_credential.password_changed_at),
+                    }
+                )
             return {
                 "nickname": account.nickname,
                 "community_actor_id": str(account.community_actor_id),
@@ -991,16 +1332,12 @@ class AccountService:
                     "provider": account.primary_provider,
                     "display_name": account.primary_provider_display_name,
                     "avatar_url": account.primary_provider_avatar_url,
-                    "refreshed_at": (
-                        _as_utc(primary_identity.refreshed_at)
-                        if primary_identity is not None
-                        else None
-                    ),
+                    "refreshed_at": primary_refreshed_at,
                 },
-                "linked_providers": [
-                    {"provider": item.provider, "refreshed_at": _as_utc(item.refreshed_at)}
-                    for item in identities
-                ],
+                "linked_providers": sorted(
+                    linked_methods,
+                    key=lambda item: item["provider"],
+                ),
                 "nickname_changed_at": _as_utc_optional(account.nickname_changed_at),
                 "created_at": _as_utc(account.created_at),
                 "updated_at": _as_utc(account.updated_at),
@@ -1666,6 +2003,57 @@ class AccountService:
         )
 
     @staticmethod
+    def _lock_email_fingerprint(transaction, email_fingerprint: bytes) -> None:
+        """Serialize registration/login recovery for one private login identifier."""
+
+        bind = transaction.get_bind()
+        if bind.dialect.name != "postgresql":
+            return
+        advisory_key = int.from_bytes(
+            email_fingerprint[:8],
+            byteorder="big",
+            signed=True,
+        )
+        transaction.execute(select(func.pg_advisory_xact_lock(advisory_key)))
+
+    @staticmethod
+    def _new_email_pending(
+        transaction,
+        *,
+        email_fingerprint: bytes,
+        password_hash: str,
+        installation_id: uuid.UUID,
+        now: datetime,
+    ) -> dict:
+        pending_token = new_opaque_token()
+        pending = PendingSignup(
+            token_hash=hash_opaque_token(pending_token),
+            provider="email",
+            provider_subject=email_fingerprint.hex(),
+            provider_display_name="Email",
+            provider_avatar_url=None,
+            installation_id=installation_id,
+            created_at=now,
+            expires_at=now + PENDING_SIGNUP_TTL,
+        )
+        transaction.add(pending)
+        transaction.flush()
+        transaction.add(
+            PendingPasswordCredential(
+                pending_signup_id=pending.id,
+                email_fingerprint=email_fingerprint,
+                password_hash=password_hash,
+                created_at=now,
+            )
+        )
+        return {
+            "status": "profile_required",
+            "provider": "email",
+            "pending_signup_token": pending_token,
+            "expires_in": int(PENDING_SIGNUP_TTL.total_seconds()),
+        }
+
+    @staticmethod
     def _lock_provider_subject(
         transaction,
         *,
@@ -1709,6 +2097,70 @@ class AccountService:
             raise AccountAPIError("pending_signup_expired", status_code=401)
         if pending.consumed_at is not None or pending.cancelled_at is not None:
             raise AccountAPIError("pending_signup_replayed", status_code=409)
+
+    def _invalidate_disabled_email_signup_continuation(
+        self,
+        *,
+        pending_token: str,
+        now: datetime,
+    ) -> bool:
+        """Durably stop an email signup when the rollout gate is closed.
+
+        Completion and confirmation share their URLs with OAuth. Resolve the
+        opaque pending bearer under a row lock so an operator can turn the
+        email beta off without blocking OAuth. A bearer presented while the
+        gate is closed is cancelled durably and cannot become usable after a
+        later re-enable. If completion provisioned an unconfirmed account, roll
+        it back using the same resource-clearing order as explicit cancellation.
+        """
+
+        with self.repository.transaction() as transaction:
+            pending = transaction.scalar(
+                select(PendingSignup)
+                .where(PendingSignup.token_hash == hash_opaque_token(pending_token))
+                .with_for_update()
+            )
+            if pending is None or pending.provider != "email":
+                return False
+
+            completion = transaction.scalar(
+                select(SignupCompletion)
+                .where(SignupCompletion.pending_signup_id == pending.id)
+                .with_for_update()
+            )
+            # A confirmed account is no longer a pending feature continuation.
+            # Keep it intact, but still reject this bearer while the flag is off.
+            if completion is not None and completion.confirmed_at is not None:
+                return True
+
+            pending.cancelled_at = pending.cancelled_at or now
+            pending_password = transaction.scalar(
+                select(PendingPasswordCredential)
+                .where(PendingPasswordCredential.pending_signup_id == pending.id)
+                .with_for_update()
+            )
+            if pending_password is not None:
+                transaction.delete(pending_password)
+
+            if completion is None or completion.cancelled_at is not None:
+                return True
+
+            account = (
+                transaction.scalar(
+                    select(Account)
+                    .where(Account.id == completion.account_id)
+                    .with_for_update()
+                )
+                if completion.account_id is not None
+                else None
+            )
+            completion.account_id = None
+            completion.session_id = None
+            completion.cancelled_at = now
+            transaction.flush()
+            if account is not None and account.state == "signup_pending":
+                transaction.delete(account)
+            return True
 
     def _locked_signup_completion(
         self,

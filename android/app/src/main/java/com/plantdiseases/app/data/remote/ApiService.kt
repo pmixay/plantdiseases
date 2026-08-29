@@ -33,8 +33,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Retries on transient network failures and on HTTP 429 / 503, honouring the
- * Retry-After header when present. POST requests are retried at most once to
- * avoid re-uploading large payloads on slow connections.
+ * Retry-After header when present. Ordinary POST requests are retried at most
+ * once. Metered requests carrying X-Idempotency-Key are never retried here:
+ * the quota service permits only the explicit pre-consumption 401 refresh
+ * replay, while a replay after quota consumption is rejected as already used.
  *
  * `maxDelayMs` is intentionally high (30 s) because the server's cold-start
  * path can legitimately ask for ~20 s — model artefacts deserialise on the
@@ -51,7 +53,12 @@ class RetryInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val isPost = request.method == "POST"
-        val effectiveRetries = if (isPost) minOf(maxRetries, 1) else maxRetries
+        val isMetered = !request.header("X-Idempotency-Key").isNullOrBlank()
+        val effectiveRetries = when {
+            isMetered -> 0
+            isPost -> minOf(maxRetries, 1)
+            else -> maxRetries
+        }
         var lastException: IOException? = null
 
         for (attempt in 0..effectiveRetries) {
@@ -71,9 +78,11 @@ class RetryInterceptor(
                 // server may have already received and processed the
                 // (non-idempotent) multipart body — only the response was
                 // lost — so a blind retry can create duplicate feedback /
-                // community rows or re-run analyze. POSTs still retry on an
-                // explicit 429/503, where the server signals it did NOT
-                // process the request. GETs retry freely (idempotent).
+                // community rows or re-run analyze. Ordinary POSTs still
+                // retry on an explicit 429/503. Metered POSTs have zero
+                // interceptor retries because quota may already be consumed;
+                // their sole safe replay is the AuthRepository's 401 refresh
+                // path before consumption. GETs retry freely (idempotent).
                 lastException = e
                 if (isPost || attempt >= effectiveRetries) throw e
                 sleepBackoff(attempt, null)
@@ -123,6 +132,11 @@ class PlantApiClient(
             // redirect target; every release endpoint is fixed at build time.
             .followRedirects(false)
             .followSslRedirects(false)
+            // Keep all replay policy in RetryInterceptor/AuthRepository.
+            // OkHttp's implicit route recovery otherwise sits below our
+            // interceptor and can resend a replayable metered POST even when
+            // effectiveRetries is zero.
+            .retryOnConnectionFailure(false)
             // Tell the reporter whether the server answered, for every call
             // the app makes anyway — which is what lets ConnectivityObserver
             // stop polling a health endpoint on a timer. Installed BEFORE the

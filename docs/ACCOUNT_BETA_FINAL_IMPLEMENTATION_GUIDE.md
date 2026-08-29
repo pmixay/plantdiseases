@@ -3,6 +3,8 @@
 Status: internal staging guide for the `account-beta-test` branch. It explains
 what is implemented and how to validate it without producing a publishable
 artifact. The current RuStore procedure is
+[PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md);
+Android signing and OAuth registration are covered by
 [ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
 The German environment is a restricted test deployment, not public production
 traffic or a merge to `main`.
@@ -22,6 +24,21 @@ The infrastructure transfer and day-two operations procedure is in
 - The independent `account-server` implements Yandex ID and VK ID exchange,
   nickname completion, sessions, refresh-token rotation, provider linking,
   reauthentication, push registration, and account deletion.
+- Migration `0007_email_password_auth` adds backend-only email registration,
+  login, and password reauthentication alongside OAuth. It stores only a keyed
+  email lookup fingerprint and Argon2id password hash and reuses the existing
+  two-phase nickname/session flow. This slice remains under the production HOLD
+  in
+  [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md):
+  inbox verification, password recovery, and shared abuse controls are not yet
+  implemented.
+- Migration `0008_pro_entitlements` adds server-authoritative PlantDiseases PRO:
+  a dedicated random RuStore binding, strict subscription V5 verification,
+  encrypted callback handling with a durable retrying inbox and authenticated
+  payload deduplication, canonical subscription state, and atomic/idempotent
+  UTC-day quotas. The reviewed schema
+  head is `0008_pro_entitlements`, exactly 20 application tables plus
+  `alembic_version`.
 - Android uses the official Yandex LoginSDK and VK ID SDK. Provider access
   tokens are sent once to account-api and are not persisted by the app.
 - The internal `staging` build type keeps package `com.plantdiseases.app`, app
@@ -45,6 +62,10 @@ Implementation entry points:
 - Android provider callbacks: `android/app/src/main/java/com/plantdiseases/app/ui/account/AccountActivity.kt`
 - Remote provider verification: `account-server/app/providers/remote.py`
 - Account API contract: `account-server/openapi.json`
+- Email/password release boundary:
+  `docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md`
+- PRO offer, limits, RuStore secrets, validation, and operations:
+  `docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`
 - Test/deployment stack: `deploy/account-beta-test/`
 
 ## 1. Required CI result
@@ -55,7 +76,9 @@ to pass:
 - **Android build & lint**: ktlint, detekt, production tests, staging tests and
   non-distributable release/staging compilation;
 - **Account API tests & lint**: Ruff, pytest, Compose/template rendering, and
-  shell syntax;
+  shell syntax; migration and deployment checks must assert
+  `0008_pro_entitlements` and the exact 20-application-table inventory plus
+  `alembic_version`;
 - **Server tests & lint**: Ruff and pytest.
 
 Do not distribute an APK from ordinary CI. After every applicable job passes,
@@ -125,6 +148,31 @@ Expected result: the app shows the synthetic-auth notice, both provider
 buttons create deterministic test identities, and production remains
 unmodified. Stop the test stack with ordinary `docker compose ... down`; do
 not add `--volumes` unless disposable data deletion was separately approved.
+Local/synthetic Compose must keep RuStore billing disabled and does not prove a
+real subscription lifecycle.
+
+### Backend-only 0007/0008 checks
+
+Run the focused account-server tests before any staging exercise:
+
+```sh
+cd account-server
+python -m pytest -q \
+  tests/test_password_security.py \
+  tests/test_email_account_service.py \
+  tests/test_entitlements.py \
+  tests/test_rustore_billing_client.py \
+  tests/test_rustore_notifications.py \
+  tests/test_database_schema.py \
+  tests/test_migrations.py \
+  tests/test_deployment_handoff.py
+```
+
+These tests are necessary but not production approval. Email tests do not prove
+inbox ownership, recovery, or distributed throttling. RuStore transport tests
+use controlled doubles and do not prove Console configuration, live production
+keys, callback delivery, settlement, or profitability. Keep both release gates
+open until their dedicated runbooks have real operator evidence.
 
 ## 3. Prepare real Yandex testing
 
@@ -181,6 +229,22 @@ curl -fsS https://pdis.arbuz.lol/plantdisease-test/api/capabilities
 Account health must report `provider_mode` as `remote`. Readiness must report
 `yandex`, must not report `vk`, and must show a working database. This is only
 a readiness check; the first real-token smoke test is still required.
+The migration/restore evidence must report `0010_billing_lifecycle_quota_policy`, exactly 24
+application tables plus `alembic_version`, and the least-privilege grants for
+that exact inventory. An older 0006/13-table report is a stop condition.
+
+Both `RUSTORE_LIFECYCLE_ENABLED` and `RUSTORE_CHECKOUT_ENABLED` must remain
+`false` for an ordinary German beta. An
+approved sandbox exercise additionally requires isolated sandbox RSA/AES files,
+`RUSTORE_ALLOW_SANDBOX=true`, exact product/package configuration, and all V5
+tests from the PRO runbook. Never reuse those secrets or purchase records in
+production. German staging defaults `EMAIL_PASSWORD_AUTH_ENABLED=false`. A
+named operator may explicitly set it to `true` only for a scheduled Android
+exercise after every human-facing email-capable beta location is restricted to
+exact named-tester or controlled VPN egress addresses with a final deny-all
+rule. Return it to false afterward. The Russian production template pins it to
+`false` and production Settings reject `true`; the email routes remain under
+production HOLD regardless of account readiness.
 
 Render the German branch deployment before any start or update:
 
@@ -221,6 +285,15 @@ Use a dedicated test account and execute this minimum matrix:
 | Revoke another session | Revoked session can no longer refresh |
 | Delete the dedicated test account | Sessions/push revoke and private deletion completes |
 
+Before a PRO release, separately run the runbook matrix: Free and PRO limits,
+same-request idempotency, quota reset, Frontier PRO-only behavior, current lunar
+preview versus blurred locked full calendar/recommendations, monthly and yearly
+catalog prices from Pay SDK, V5 external-account binding/replay rejection,
+trial/active/grace/hold/expiry transitions, encrypted callback duplicate and
+out-of-order delivery, reconciliation after callback/key outages, subscription
+management, and the account-deletion billing warning. A client checkout or
+blur-overlay check alone is not proof of entitlement security.
+
 Never use a valuable personal account for the destructive deletion check.
 Inspect logs after the run and confirm they contain no provider token, refresh
 token, nickname, provider profile, FCM value, or image body.
@@ -237,11 +310,20 @@ token, nickname, provider profile, FCM value, or image body.
 | OAuth succeeds but API is 404 | `ACCOUNT_API_BASE_URL` or ingress `/id/` routing/root path is wrong |
 | Account readiness is 503 | PostgreSQL, migration, key files, or provider configuration is not ready |
 | German beta rejects the token | Confirm account health says `provider_mode: remote` and both server client IDs match the APK/provider applications |
+| Migration/grant convergence reports 0006 or 13 application tables | Do not start account-api; migrate to exact head `0008_pro_entitlements` and converge the reviewed 20-table inventory plus `alembic_version` |
+| Email login works in a backend test | This does not clear the production HOLD; verification, recovery, and distributed abuse controls are still required |
+| Checkout completes but PRO stays Free | Check signed-in account, exact product/package/environment, purchase UUID, V5 response, and server-issued `billing_external_id`; never grant from the client result |
+| Quota retry consumes twice | Confirm one UUID request/idempotency key is reused for the same logical operation and the internal account decision receipt is authoritative |
+| RuStore callback cannot decrypt or is duplicated | Verify the correct environment-specific AES key and notification ID; refetch canonical V5 state rather than trusting callback status |
 
 ## Authoritative supporting documents
 
 - Detailed implementation/handoff: [ACCOUNT_BETA_HANDOFF.md](ACCOUNT_BETA_HANDOFF.md)
 - Acceptance evidence: [ACCOUNT_BETA_TEST_REPORT.md](ACCOUNT_BETA_TEST_REPORT.md)
 - Schema: [ACCOUNT_BETA_SCHEMA.md](ACCOUNT_BETA_SCHEMA.md)
+- Email/password production HOLD:
+  [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
+- PlantDiseases PRO/RuStore operations:
+  [PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md)
 - Secrets: [../deploy/account-beta-test/SECRETS.md](../deploy/account-beta-test/SECRETS.md)
 - Rollback: [../deploy/account-beta-test/ROLLBACK.md](../deploy/account-beta-test/ROLLBACK.md)

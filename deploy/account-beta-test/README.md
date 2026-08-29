@@ -125,7 +125,9 @@ APK is not an acceptable substitute.
 The local stack remains mock-only. The German `/plantdisease-test/id/` stack is
 the dedicated real-provider staging target and must use the same enabled-provider
 client IDs as the APK. Keep it limited to named testers and dedicated test accounts;
-it is not a public or production account service.
+it is not a public or production account service. German staging defaults
+`EMAIL_PASSWORD_AUTH_ENABLED` to `false`. Changing it to `true` is a scheduled
+operator action, not a general beta default.
 
 ## Build and run the parallel German real-provider beta
 
@@ -135,8 +137,13 @@ out `account-beta-test` branch. Copy `env.german.example` to a host-only
 mode-0600 file, use git-SHA-qualified local image tags, generate the three
 URL-facing PostgreSQL role passwords with `openssl rand -hex 32`, set the
 registered Yandex application ID, leave VK unset until it is independently
-enabled, and set the absolute
-PlantVision model directory, and verify the exact Docker proxy peer addresses.
+enabled, keep email/password auth off, set the absolute PlantVision model directory and an account-owned
+`BETA_RUSTORE_SECRETS_DIR`, and verify the exact Docker proxy peer addresses.
+Keep both `RUSTORE_LIFECYCLE_ENABLED=false` and
+`RUSTORE_CHECKOUT_ENABLED=false` and the secret directory empty for an
+OAuth-only run. A subscription sandbox run additionally requires separate
+mode-0400 `private-key.b64` and `notification-key.b64` files plus its reviewed
+application/key IDs; never reuse production material.
 Wildcard trusted-proxy values are forbidden.
 
 For an existing beta volume, set `BETA_POSTGRES_ADMIN_PASSWORD` to its original
@@ -145,7 +152,7 @@ Alembic; that idempotent job creates/rotates the least-privilege roles, moves
 existing schema ownership to the migrator, and removes stale grants. The
 migrator command then upgrades to the exact reviewed head and, using that same
 non-superuser owner connection, runs `converge-runtime-grants.py`. Convergence
-requires the exact 13 application tables plus `alembic_version`, rejects any
+requires the exact 24 application tables plus `alembic_version`, rejects any
 sequence or unexpected table, grants runtime DML only on application tables,
 and grants runtime SELECT-only on `alembic_version`. Account API startup waits
 for both operations. A failed role upgrade, migration, or grant convergence is
@@ -196,15 +203,31 @@ with an explicit byte limit and alert threshold; Compose cannot portably cap a
 named volume. Missing disk isolation is a stop condition on the shared VDS.
 
 The app receives only the group-readable internal service token through its
-dedicated volume. The Ed25519 signing key and AES push-encryption key stay in
-the account-only volume and are not mounted into the app container.
+dedicated volume. The Ed25519 signing key, account encryption/derivation key,
+and optional RuStore RSA/AES sandbox keys stay account-owned and are not
+mounted into the app container.
 
 Before nginx reload, add the two rate-limit zones documented at the top of
-`nginx.location.conf`, include its location blocks in a candidate TLS server,
-and run `nginx -t`. The `id/` prefix is routed first to account API; both
+`nginx.location.conf`. Copy `nginx.testers.allow.example` to
+`/etc/nginx/plantdisease-beta-testers.allow`, replace every documentation-only
+address with an exact named tester `/32`, `/128`, or controlled VPN egress
+address, retain the final `deny all`, and never use `allow all` or a broad
+mobile/ISP range. Include the location blocks in a candidate TLS server and run
+`nginx -t`; the missing allowlist file must remain a fail-closed configuration
+error. The `id/` prefix is routed first to account API; both
 prefixes strip correctly, overwrite forwarded client context, disable access
 logs, and have no production fallback. `ACCOUNT_ROOT_PATH` and `APP_ROOT_PATH`
 keep generated documentation/media paths under their external prefixes.
+
+Only after that edge restriction is active on the human-facing account and app
+locations and its denied/allowed probes are recorded may an operator explicitly
+set `EMAIL_PASSWORD_AUTH_ENABLED=true` for a scheduled exercise using disposable
+addresses. The separately source-allowlisted RuStore notification callback is
+not a human tester path and grants no access to email routes. Turn the flag back
+to `false` after the exercise. Disabling it rejects register/login/reauth; any
+email completion or confirmation presented while disabled is durably cancelled
+and cannot resume after a later re-enable. OAuth pending signups continue
+normally. The flag is not a substitute for the edge allowlist.
 
 The synthetic integration checker is only for `compose.local.yml`; it sends mock
 provider tokens and therefore must not be run against German remote-provider
@@ -220,8 +243,9 @@ the explicit absolute output directory, decrypts as a pipe into a uniquely
 named temporary restore database owned by the migrator, reapplies the canonical
 runtime/backup grants, compares the exact reviewed table set and allowlisted
 row counts through the read-only backup role, requires both source and restore
-to be at Alembic revision `0006_signup_completion_idempotency` (including the
-durable nickname outbox/claim registry and two-phase signup completion table),
+to be at Alembic revision `0010_billing_lifecycle_quota_policy` (including the durable
+nickname outbox/claim registry, two-phase signup completion, private password
+credential, PRO entitlement tables, and aggregate PlantNet budget authority),
 and actively verifies runtime DML on the restored signup table, denied runtime
 DDL, denied runtime UPDATE/DELETE of `alembic_version`, retained migrator
 ownership/write, and denied
@@ -240,6 +264,13 @@ drop only that database before rerunning the check.
   implementation, build, synthetic-test, and real-SDK test entry point.
 - `../../docs/RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md` defines source promotion,
   staged transfer, cutover, and concurrent main/Russian/German maintenance.
+- `../../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md` defines the production
+  HOLD on the controlled 0007 email/password beta. German staging defaults it
+  off and requires an explicit, edge-restricted tester exercise; the Russian
+  production template pins it off and production settings reject an attempted
+  enable.
+- `../../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md` defines the RuStore V5,
+  PlantDiseases PRO, quota, secret, reconciliation, and launch gates.
 - `SECRETS.md` inventories environment and secret ownership without values.
 - `ROLLBACK.md` defines non-destructive beta and final-split rollback evidence.
 - `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.

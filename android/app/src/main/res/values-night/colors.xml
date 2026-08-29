@@ -114,4 +114,6 @@
     <color name="moon_dark">#161B20</color>
     <color name="moon_mare">#7A766B</color>
     <color name="moon_glow">#22FFFFFF</color>
+    <color name="pro_gate_scrim_start">#B31A211D</color>
+    <color name="pro_gate_scrim_end">#F70E1511</color>
 </resources>

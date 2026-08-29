@@ -27,6 +27,9 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
+import com.plantdiseases.app.billing.EntitlementPolicy
+import com.plantdiseases.app.billing.EntitlementRepository
+import com.plantdiseases.app.billing.EntitlementState
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -34,6 +37,7 @@ import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
@@ -65,6 +69,9 @@ class ProfileFragment : Fragment() {
 
     @Inject
     lateinit var authRepository: AuthRepository
+
+    @Inject
+    lateinit var entitlementRepository: EntitlementRepository
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -112,6 +119,8 @@ class ProfileFragment : Fragment() {
 
         binding.root.applyStatusBarTopInset()
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
+        binding.proCard.visibility = if (BuildConfig.ACCOUNT_UI_ENABLED) View.VISIBLE else View.GONE
+        binding.proCard.setOnClickListener { startActivity(ProActivity.intent(requireContext())) }
         if (BuildConfig.ACCOUNT_UI_ENABLED) {
             binding.accountCard.visibility = View.VISIBLE
             binding.btnManageAccount.setOnClickListener {
@@ -127,6 +136,11 @@ class ProfileFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
                     authRepository.state.collect { state -> renderAccountState(authRepository, state) }
+                }
+            }
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                    entitlementRepository.state.collect(::renderProState)
                 }
             }
         }
@@ -214,6 +228,17 @@ class ProfileFragment : Fragment() {
                 loadProfileAvatar(auth, state.session.sessionId)
             }
         }
+    }
+
+    private fun renderProState(state: EntitlementState) {
+        binding.proStatus.setText(
+            when {
+                EntitlementPolicy.isActivePro(state) -> R.string.pro_status_active
+                state is EntitlementState.Checking -> R.string.pro_status_checking
+                state is EntitlementState.Unavailable -> R.string.pro_status_unavailable
+                else -> R.string.pro_profile_body
+            },
+        )
     }
 
     private fun loadProfileAvatar(auth: AuthRepository, expectedSessionId: String) {

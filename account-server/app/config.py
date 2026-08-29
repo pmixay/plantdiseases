@@ -29,6 +29,23 @@ _LOOPBACK_DATABASE_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _INTERNAL_SERVICE_HOST = re.compile(
     r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
 )
+_RUSTORE_PRODUCT_ID = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+_POLICY_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+_RUSTORE_PACKAGE_NAME = "com.plantdiseases.app"
+_DEFAULT_PRO_PRODUCTS = (
+    "plantdiseases_pro_monthly",
+    "plantdiseases_pro_yearly",
+)
+_ENTITLEMENT_FEATURES = (
+    "gamma_analysis",
+    "frontier_analysis",
+    "plant_identification",
+    "ai_doctor",
+    "care_plan",
+)
+_DEFAULT_FREE_DAILY_LIMITS = (5, 0, 1, 3, 5)
+_DEFAULT_PRO_DAILY_LIMITS = (30, 3, 3, 15, 20)
+_DEFAULT_QUOTA_POLICY_VERSION = "launch-2026-08-v1"
 
 
 def _is_internal_service_host(hostname: str) -> bool:
@@ -78,6 +95,42 @@ def _bounded_int(
     return value
 
 
+def _daily_limits(
+    source: Mapping[str, str],
+    name: str,
+    *,
+    defaults: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Parse one exact, operator-versioned feature-limit map.
+
+    The compact ``feature=value`` form is intentionally easier to audit in
+    Compose and systemd environments than a JSON blob.  Requiring every
+    feature prevents a typo from silently falling back to a different
+    commercial policy for just one endpoint.
+    """
+
+    raw = source.get(name, "").strip()
+    if not raw:
+        return defaults
+    parsed: dict[str, int] = {}
+    for item in raw.split(","):
+        feature, separator, value_raw = item.strip().partition("=")
+        if not separator or feature not in _ENTITLEMENT_FEATURES or feature in parsed:
+            raise SettingsError(
+                f"{name} must contain each supported feature exactly once"
+            )
+        try:
+            value = int(value_raw)
+        except ValueError as exc:
+            raise SettingsError(f"{name} limits must be integers") from exc
+        if not 0 <= value <= 10_000:
+            raise SettingsError(f"{name} limits must be between 0 and 10000")
+        parsed[feature] = value
+    if set(parsed) != set(_ENTITLEMENT_FEATURES):
+        raise SettingsError(f"{name} must contain each supported feature exactly once")
+    return tuple(parsed[feature] for feature in _ENTITLEMENT_FEATURES)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Validated account-api settings.
@@ -106,7 +159,32 @@ class Settings:
     community_deletion_url: str | None = None
     yandex_client_id: str | None = None
     vk_client_id: str | None = None
+    email_password_auth_enabled: bool = False
     provider_http_timeout_seconds: int = 5
+    # ``rustore_billing_enabled`` is a deprecated read-only compatibility
+    # mirror of checkout availability.  New deployments must use the two
+    # explicit switches below so stopping sales cannot stop lifecycle work.
+    rustore_billing_enabled: bool = False
+    rustore_lifecycle_enabled: bool = False
+    rustore_checkout_enabled: bool = False
+    rustore_application_id: str | None = None
+    rustore_key_id: str | None = None
+    rustore_private_key_file: Path | None = None
+    rustore_notification_key_file: Path | None = None
+    rustore_package_name: str = _RUSTORE_PACKAGE_NAME
+    rustore_products: tuple[str, ...] = _DEFAULT_PRO_PRODUCTS
+    rustore_allow_sandbox: bool = False
+    rustore_notification_key_epoch: str = "legacy-v1"
+    rustore_notification_max_attempts: int = 8
+    rustore_notification_max_age_hours: int = 168
+    entitlement_quota_policy_version: str = _DEFAULT_QUOTA_POLICY_VERSION
+    entitlement_free_daily_limits: tuple[int, ...] = _DEFAULT_FREE_DAILY_LIMITS
+    entitlement_pro_daily_limits: tuple[int, ...] = _DEFAULT_PRO_DAILY_LIMITS
+    plantnet_budget_enabled: bool = False
+    plantnet_budget_policy_version: str | None = None
+    plantnet_daily_attempt_limit: int = 0
+    plantnet_attempt_cost_micros: int = 0
+    plantnet_daily_cost_limit_micros: int = 0
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -118,6 +196,37 @@ class Settings:
         root_path = source.get("ACCOUNT_ROOT_PATH", "").strip()
         if root_path:
             root_path = f"/{root_path.strip('/')}"
+
+        legacy_rustore_switch_present = bool(
+            source.get("RUSTORE_BILLING_ENABLED", "").strip()
+        )
+        explicit_rustore_switches_present = any(
+            source.get(name, "").strip()
+            for name in ("RUSTORE_LIFECYCLE_ENABLED", "RUSTORE_CHECKOUT_ENABLED")
+        )
+        if legacy_rustore_switch_present and explicit_rustore_switches_present:
+            raise SettingsError(
+                "RUSTORE_BILLING_ENABLED cannot be mixed with the lifecycle/checkout switches"
+            )
+        if (
+            legacy_rustore_switch_present
+            and _required(source, "ENVIRONMENT").lower() in {"staging", "production"}
+        ):
+            raise SettingsError(
+                "RUSTORE_BILLING_ENABLED is accepted only in test/development; "
+                "staging and production require separate lifecycle/checkout switches"
+            )
+        legacy_rustore_enabled = _boolean(source, "RUSTORE_BILLING_ENABLED")
+        rustore_lifecycle_enabled = (
+            legacy_rustore_enabled
+            if legacy_rustore_switch_present
+            else _boolean(source, "RUSTORE_LIFECYCLE_ENABLED")
+        )
+        rustore_checkout_enabled = (
+            legacy_rustore_enabled
+            if legacy_rustore_switch_present
+            else _boolean(source, "RUSTORE_CHECKOUT_ENABLED")
+        )
 
         settings = cls(
             environment=_required(source, "ENVIRONMENT").lower(),
@@ -152,12 +261,93 @@ class Settings:
             ),
             yandex_client_id=source.get("YANDEX_CLIENT_ID", "").strip() or None,
             vk_client_id=source.get("VKID_CLIENT_ID", "").strip() or None,
+            email_password_auth_enabled=_boolean(
+                source,
+                "EMAIL_PASSWORD_AUTH_ENABLED",
+            ),
             provider_http_timeout_seconds=_bounded_int(
                 source,
                 "PROVIDER_HTTP_TIMEOUT_SECONDS",
                 default=5,
                 minimum=1,
                 maximum=15,
+            ),
+            rustore_billing_enabled=rustore_checkout_enabled,
+            rustore_lifecycle_enabled=rustore_lifecycle_enabled,
+            rustore_checkout_enabled=rustore_checkout_enabled,
+            rustore_application_id=(
+                source.get("RUSTORE_APPLICATION_ID", "").strip() or None
+            ),
+            rustore_key_id=source.get("RUSTORE_KEY_ID", "").strip() or None,
+            rustore_private_key_file=_optional_path(source, "RUSTORE_PRIVATE_KEY_FILE"),
+            rustore_notification_key_file=_optional_path(
+                source, "RUSTORE_NOTIFICATION_KEY_FILE"
+            ),
+            rustore_package_name=(
+                source.get("RUSTORE_PACKAGE_NAME", "").strip()
+                or _RUSTORE_PACKAGE_NAME
+            ),
+            rustore_products=(
+                _csv(source, "RUSTORE_SUBSCRIPTION_PRODUCTS")
+                or _DEFAULT_PRO_PRODUCTS
+            ),
+            rustore_allow_sandbox=_boolean(source, "RUSTORE_ALLOW_SANDBOX"),
+            rustore_notification_key_epoch=(
+                source.get("RUSTORE_NOTIFICATION_KEY_EPOCH", "").strip()
+                or "legacy-v1"
+            ),
+            rustore_notification_max_attempts=_bounded_int(
+                source,
+                "RUSTORE_NOTIFICATION_MAX_ATTEMPTS",
+                default=8,
+                minimum=1,
+                maximum=100,
+            ),
+            rustore_notification_max_age_hours=_bounded_int(
+                source,
+                "RUSTORE_NOTIFICATION_MAX_AGE_HOURS",
+                default=168,
+                minimum=1,
+                maximum=2_160,
+            ),
+            entitlement_quota_policy_version=(
+                source.get("ENTITLEMENT_QUOTA_POLICY_VERSION", "").strip()
+                or _DEFAULT_QUOTA_POLICY_VERSION
+            ),
+            entitlement_free_daily_limits=_daily_limits(
+                source,
+                "ENTITLEMENT_FREE_DAILY_LIMITS",
+                defaults=_DEFAULT_FREE_DAILY_LIMITS,
+            ),
+            entitlement_pro_daily_limits=_daily_limits(
+                source,
+                "ENTITLEMENT_PRO_DAILY_LIMITS",
+                defaults=_DEFAULT_PRO_DAILY_LIMITS,
+            ),
+            plantnet_budget_enabled=_boolean(source, "PLANTNET_BUDGET_ENABLED"),
+            plantnet_budget_policy_version=(
+                source.get("PLANTNET_BUDGET_POLICY_VERSION", "").strip() or None
+            ),
+            plantnet_daily_attempt_limit=_bounded_int(
+                source,
+                "PLANTNET_DAILY_ATTEMPT_LIMIT",
+                default=0,
+                minimum=0,
+                maximum=10_000_000,
+            ),
+            plantnet_attempt_cost_micros=_bounded_int(
+                source,
+                "PLANTNET_ATTEMPT_COST_MICROS",
+                default=0,
+                minimum=0,
+                maximum=1_000_000_000,
+            ),
+            plantnet_daily_cost_limit_micros=_bounded_int(
+                source,
+                "PLANTNET_DAILY_COST_LIMIT_MICROS",
+                default=0,
+                minimum=0,
+                maximum=1_000_000_000_000_000,
             ),
         )
         settings.validate()
@@ -179,6 +369,85 @@ class Settings:
                 )
             if self.vk_client_id is not None and not self.vk_client_id.isdecimal():
                 raise SettingsError("VKID_CLIENT_ID must be a decimal application ID")
+        if self.rustore_package_name != _RUSTORE_PACKAGE_NAME:
+            raise SettingsError(
+                f"RUSTORE_PACKAGE_NAME must be {_RUSTORE_PACKAGE_NAME}"
+            )
+        if (
+            not self.rustore_products
+            or len(set(self.rustore_products)) != len(self.rustore_products)
+            or any(_RUSTORE_PRODUCT_ID.fullmatch(item) is None for item in self.rustore_products)
+        ):
+            raise SettingsError("RUSTORE_SUBSCRIPTION_PRODUCTS is invalid")
+        if self.rustore_allow_sandbox and self.is_production:
+            raise SettingsError("RUSTORE_ALLOW_SANDBOX is forbidden in production")
+        if self.plantnet_budget_enabled:
+            if (
+                self.plantnet_budget_policy_version is None
+                or _POLICY_VERSION.fullmatch(
+                    self.plantnet_budget_policy_version
+                )
+                is None
+            ):
+                raise SettingsError(
+                    "PlantNet budget requires a valid PLANTNET_BUDGET_POLICY_VERSION"
+                )
+            if self.plantnet_daily_attempt_limit <= 0:
+                raise SettingsError(
+                    "PlantNet budget requires PLANTNET_DAILY_ATTEMPT_LIMIT > 0"
+                )
+            if self.plantnet_attempt_cost_micros <= 0:
+                raise SettingsError(
+                    "PlantNet budget requires PLANTNET_ATTEMPT_COST_MICROS > 0"
+                )
+            if self.plantnet_daily_cost_limit_micros <= 0:
+                raise SettingsError(
+                    "PlantNet budget requires PLANTNET_DAILY_COST_LIMIT_MICROS > 0"
+                )
+            if self.plantnet_attempt_cost_micros > self.plantnet_daily_cost_limit_micros:
+                raise SettingsError(
+                    "PLANTNET_ATTEMPT_COST_MICROS must not exceed the daily cost limit"
+                )
+        if self.email_password_auth_enabled and self.is_production:
+            raise SettingsError(
+                "EMAIL_PASSWORD_AUTH_ENABLED is blocked in production until "
+                "verification and recovery gates are closed"
+            )
+        if self.rustore_checkout_enabled and not self.rustore_lifecycle_enabled:
+            raise SettingsError(
+                "RUSTORE_CHECKOUT_ENABLED requires RUSTORE_LIFECYCLE_ENABLED"
+            )
+        if _POLICY_VERSION.fullmatch(self.entitlement_quota_policy_version) is None:
+            raise SettingsError("ENTITLEMENT_QUOTA_POLICY_VERSION is invalid")
+        if len(self.entitlement_free_daily_limits) != len(_ENTITLEMENT_FEATURES):
+            raise SettingsError("ENTITLEMENT_FREE_DAILY_LIMITS is incomplete")
+        if len(self.entitlement_pro_daily_limits) != len(_ENTITLEMENT_FEATURES):
+            raise SettingsError("ENTITLEMENT_PRO_DAILY_LIMITS is incomplete")
+        if self.rustore_lifecycle_enabled:
+            if _POLICY_VERSION.fullmatch(self.rustore_notification_key_epoch) is None:
+                raise SettingsError("RUSTORE_NOTIFICATION_KEY_EPOCH is invalid")
+            if (
+                self.rustore_application_id is None
+                or not self.rustore_application_id.isascii()
+                or not self.rustore_application_id.isdecimal()
+                or not 1 <= len(self.rustore_application_id) <= 19
+                or int(self.rustore_application_id) <= 0
+            ):
+                raise SettingsError(
+                    "RuStore billing requires decimal RUSTORE_APPLICATION_ID"
+                )
+            if (
+                self.rustore_key_id is None
+                or not self.rustore_key_id.isascii()
+                or not self.rustore_key_id.isdecimal()
+                or not 1 <= len(self.rustore_key_id) <= 32
+                or int(self.rustore_key_id) <= 0
+            ):
+                raise SettingsError("RuStore billing requires decimal RUSTORE_KEY_ID")
+            if self.rustore_private_key_file is None:
+                raise SettingsError("RuStore billing requires RUSTORE_PRIVATE_KEY_FILE")
+            if self.rustore_notification_key_file is None:
+                raise SettingsError("RuStore billing requires RUSTORE_NOTIFICATION_KEY_FILE")
 
         issuer = urlparse(self.issuer)
         if issuer.scheme not in {"http", "https"} or not issuer.hostname:
@@ -228,6 +497,14 @@ class Settings:
         for name, path in configured_secret_files:
             if path is not None:
                 self._validate_secret_file(name, path)
+        if self.rustore_lifecycle_enabled:
+            self._validate_secret_file(
+                "RUSTORE_PRIVATE_KEY_FILE", self.rustore_private_key_file
+            )
+            self._validate_secret_file(
+                "RUSTORE_NOTIFICATION_KEY_FILE",
+                self.rustore_notification_key_file,
+            )
 
         if not self.is_production:
             return
@@ -275,7 +552,8 @@ class Settings:
         permissions = stat.S_IMODE(path.stat().st_mode)
         # The internal service token is intentionally shared read-only with
         # the application container through a dedicated group/volume. Account
-        # signing and encryption keys remain owner-readable only.
+        # signing, encryption, and RuStore RSA/AES keys remain owner-readable
+        # only.
         forbidden_permissions = 0o027 if name == "INTERNAL_SERVICE_TOKEN_FILE" else 0o077
         if permissions & forbidden_permissions:
             raise SettingsError(f"{name} must not be group/world accessible")

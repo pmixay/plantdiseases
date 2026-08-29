@@ -59,6 +59,7 @@ import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.MessageDigest
+import java.util.UUID
 
 class ScanRepository(
     private val scanDao: ScanDao,
@@ -74,6 +75,11 @@ class ScanRepository(
     companion object {
         internal const val RETAINED_ANALYSIS_IMAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
         internal const val MAX_PENDING_ANALYSIS_IMAGES = 2
+        private const val HEADER_IDEMPOTENCY_KEY = "X-Idempotency-Key"
+        private const val HEADER_PLAN = "X-PlantDiseases-Plan"
+        private const val HEADER_QUOTA_LIMIT = "X-Quota-Limit"
+        private const val HEADER_QUOTA_REMAINING = "X-Quota-Remaining"
+        private const val HEADER_QUOTA_RESET_AT = "X-Quota-Reset-At"
     }
 
     private val gson = Gson()
@@ -108,6 +114,64 @@ class ScanRepository(
 
     private fun io.ktor.client.request.HttpRequestBuilder.bearer(token: String) {
         header(HttpHeaders.Authorization, "Bearer $token")
+    }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.metered(
+        token: String?,
+        requestId: String,
+    ) {
+        token?.let { bearer(it) }
+        header(HEADER_IDEMPOTENCY_KEY, requestId)
+    }
+
+    /**
+     * Run one metered app request as the signed-in account when possible, or as
+     * a guest otherwise. A signed-in 401 is converted to the account client's
+     * refresh signal, so [AuthRepository] retries the block exactly once with a
+     * fresh Bearer token. Callers create their idempotency UUID outside this
+     * block; the refresh retry therefore reuses the same logical operation id.
+     */
+    private suspend fun optionalMeteredCall(
+        request: suspend (accessToken: String?) -> HttpResponse,
+    ): Result<HttpResponse> {
+        if (authRepository?.state?.value is AuthState.Authenticated) {
+            return authenticatedAppCall { token ->
+                val response = request(token)
+                if (response.status.value == 401) {
+                    throw AccountApiException(401, "auth_required")
+                }
+                response
+            }
+        }
+        return try {
+            Result.success(request(null))
+        } catch (_: SocketTimeoutException) {
+            Result.failure(ServerTimeoutException())
+        } catch (_: UnknownHostException) {
+            Result.failure(NoNetworkException())
+        } catch (_: java.net.ConnectException) {
+            Result.failure(ServerTimeoutException())
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        }
+    }
+
+    /** Only quota denials carry the complete quota-header tuple. An ordinary
+     * anti-abuse 429 deliberately stays a [RateLimitException]. */
+    private fun HttpResponse.meteredDenialOrNull(): Exception? {
+        val plan = headers[HEADER_PLAN]?.trim()?.takeIf { it.isNotEmpty() }
+        val limit = headers[HEADER_QUOTA_LIMIT]?.toIntOrNull()
+        val remaining = headers[HEADER_QUOTA_REMAINING]?.toIntOrNull()
+        val resetAt = headers[HEADER_QUOTA_RESET_AT]?.trim()?.takeIf { it.isNotEmpty() }
+        return when {
+            status.value == 402 -> ProRequiredException(plan, limit, remaining, resetAt)
+            status.value == 429 &&
+                plan != null &&
+                limit != null &&
+                remaining != null &&
+                resetAt != null -> QuotaExhaustedException(plan, limit, remaining, resetAt)
+            else -> null
+        }
     }
 
     private suspend inline fun <reified T> HttpResponse.protectedBody(): T {
@@ -165,43 +229,50 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 // Ktor multipart over the shared OkHttp engine. Reading the
-                // bytes up front (rather than streaming the File) keeps the
-                // body re-writable, so the OkHttp RetryInterceptor can replay
-                // the POST once on an explicit 429/503 — the same behaviour the
-                // Retrofit File-backed body had.
+                // bytes up front keeps the body re-writable for the one safe
+                // pre-consumption replay: AuthRepository's 401 token refresh.
+                // The shared interceptor deliberately does not replay metered
+                // 429/503 responses after quota may have been consumed.
                 val image = imageSanitizer.sanitize(imageFile)
-                val response = apiClient.httpClient.post("api/analyze") {
-                    url {
-                        speciesHint?.takeIf { it.isNotBlank() }?.let {
-                            parameters.append("species", it)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/analyze") {
+                        metered(token, requestId)
+                        url {
+                            speciesHint?.takeIf { it.isNotBlank() }?.let {
+                                parameters.append("species", it)
+                            }
+                            parameters.append("locale", locale)
+                            // Model tier (aqua | gamma | frontier). Aqua normally
+                            // never reaches here (on-device); gamma is the default;
+                            // frontier only when the operator enabled it.
+                            parameters.append("family", family)
+                            parameters.append("training_consent", trainingConsent.toString())
+                            trainingConsentVersion?.takeIf { trainingConsent && it.isNotBlank() }?.let {
+                                parameters.append("training_consent_version", it)
+                            }
                         }
-                        parameters.append("locale", locale)
-                        // Model tier (aqua | gamma | frontier). Aqua normally
-                        // never reaches here (on-device); gamma is the default;
-                        // frontier only when the operator enabled it.
-                        parameters.append("family", family)
-                        parameters.append("training_consent", trainingConsent.toString())
-                        trainingConsentVersion?.takeIf { trainingConsent && it.isNotBlank() }?.let {
-                            parameters.append("training_consent_version", it)
-                        }
+                        setBody(
+                            MultiPartFormDataContent(
+                                formData {
+                                    append(
+                                        "image",
+                                        image.bytes,
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${image.filename}\"",
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                        )
                     }
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                append(
-                                    "image",
-                                    image.bytes,
-                                    Headers.build {
-                                        append(HttpHeaders.ContentType, "image/jpeg")
-                                        append(
-                                            HttpHeaders.ContentDisposition,
-                                            "filename=\"${image.filename}\"",
-                                        )
-                                    },
-                                )
-                            },
-                        ),
-                    )
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> {
@@ -340,28 +411,35 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 val image = imageSanitizer.sanitize(imageFile)
-                val response = apiClient.httpClient.post("api/identify") {
-                    url {
-                        parameters.append("organ", organ)
-                        parameters.append("locale", locale)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/identify") {
+                        metered(token, requestId)
+                        url {
+                            parameters.append("organ", organ)
+                            parameters.append("locale", locale)
+                        }
+                        setBody(
+                            MultiPartFormDataContent(
+                                formData {
+                                    append(
+                                        "image",
+                                        image.bytes,
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${image.filename}\"",
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                        )
                     }
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                append(
-                                    "image",
-                                    image.bytes,
-                                    Headers.build {
-                                        append(HttpHeaders.ContentType, "image/jpeg")
-                                        append(
-                                            HttpHeaders.ContentDisposition,
-                                            "filename=\"${image.filename}\"",
-                                        )
-                                    },
-                                )
-                            },
-                        ),
-                    )
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<IdentifyResponse>())
@@ -403,9 +481,16 @@ class ScanRepository(
                 .get(cacheKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiClient.httpClient.post("api/care-plan") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/care-plan") {
+                        metered(token, requestId)
+                        contentType(ContentType.Application.Json)
+                        setBody(request)
+                    }
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> {
@@ -635,9 +720,16 @@ class ScanRepository(
     suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiClient.httpClient.post("api/chat") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/chat") {
+                        metered(token, requestId)
+                        contentType(ContentType.Application.Json)
+                        setBody(request)
+                    }
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<ChatResponse>())
@@ -795,6 +887,20 @@ class ScanRepository(
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
     class RateLimitException : Exception("Server is busy, please wait")
+    class ProRequiredException(
+        val plan: String?,
+        val limit: Int?,
+        val remaining: Int?,
+        val resetAt: String?,
+    ) : Exception("PlantDiseases PRO is required")
+
+    class QuotaExhaustedException(
+        val plan: String,
+        val limit: Int,
+        val remaining: Int,
+        val resetAt: String,
+    ) : Exception("Daily $plan quota exhausted")
+
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
     class UnsupportedImageException : Exception("Unsupported image format")
     class CommunityOpinionsLockedException : Exception("Second opinions are locked")

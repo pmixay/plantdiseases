@@ -20,7 +20,12 @@ Operator entry points:
 - Application OpenAPI: `server/openapi.json`
 - Private schema/migrations: `account-server/migrations/` and
   `ACCOUNT_BETA_SCHEMA.md`; the reviewed head is
-  `0006_signup_completion_idempotency`
+  `0008_pro_entitlements` with exactly 20 application tables plus the
+  Alembic-owned `alembic_version` table
+- Email/password production HOLD:
+  [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
+- PlantDiseases PRO/RuStore launch and operations contract:
+  [PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md)
 - Local stack: `deploy/account-beta-test/compose.local.yml`
 - German staging candidate: `compose.german-vds.yml`, `env.german.example`,
   and `nginx.location.conf`
@@ -44,7 +49,7 @@ committed example from being a runnable production configuration.
 
 `AUTH_PROVIDER_MODE=remote` is selected by German beta and final production;
 local automated testing remains mock-only. Remote startup requires the two
-public application IDs.
+applicable public application IDs (at least one provider must be enabled).
 The account API calls only fixed HTTPS provider endpoints with a five-second
 bounded default timeout and a 64 KiB response ceiling; redirects and malformed
 or oversized responses fail closed.
@@ -66,6 +71,56 @@ Tests inject a fake transport and never contact either provider. Provider
 package/signature registration and real-token smoke tests occur first on the
 restricted German beta and must be repeated on Russian staging before release.
 
+## Email/password backend beta boundary
+
+Revision `0007_email_password_auth` adds controlled-beta registration, login,
+password reauthentication, and an Android entry point alongside Yandex/VK. It
+reuses the installation-bound
+pending-signup, two-phase nickname completion, application sessions, and scoped
+one-use reauthentication contracts. The database stores a purpose-separated
+keyed email fingerprint and Argon2id PHC password hash, never a plaintext or
+recoverable email address. It does not infer that an OAuth identity and password
+credential belong to the same person from an email value.
+
+This slice is **not production authentication**. It is off by default;
+`EMAIL_PASSWORD_AUTH_ENABLED=true` is accepted only outside production, while
+production configuration refuses to start with it enabled. German staging also
+defaults off: explicit enablement is allowed only during a scheduled exercise
+after every human-facing email-capable edge location is deny-all except for
+exact named-tester or controlled VPN egress addresses. Disabling the flag
+durably cancels unfinished email completion/confirmation state when its bearer
+is presented, without blocking OAuth continuations. Inbox ownership verification,
+password recovery, and shared multi-replica abuse controls are absent. The
+three `/v1/auth/email/*` routes must not be advertised or exposed to production
+traffic, and a production release remains on HOLD until every requirement in
+[EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
+is implemented, tested, and approved. A successful schema migration or backend
+unit test does not clear that hold.
+
+## PlantDiseases PRO and quota authority
+
+Revision `0008_pro_entitlements` adds a dedicated random billing customer
+binding, canonical RuStore subscription state, encrypted-notification receipts,
+UTC-day feature counters, and retry-safe decision receipts. The signed-in client
+can read `/v1/entitlements` and submit a checkout reference to
+`/v1/billing/rustore/verify`; only the account service may grant PRO. It validates
+the configured package, allowlisted product, purchase UUID, environment, and
+server-issued `billing_external_id` against RuStore subscription V5. Neither an
+Android checkout result nor callback status is entitlement evidence by itself.
+
+The Russian app API requests a service-token-authenticated, internal-only
+entitlement decision before a cost-bearing operation. Free and PRO daily
+limits, idempotent retry behavior,
+blurred-in-place lunar locks, grace/hold semantics, product IDs, console work,
+RSA/AES secrets, reconciliation, and deletion-versus-subscription cancellation
+are governed by
+[PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
+`RUSTORE_LIFECYCLE_ENABLED=false` and `RUSTORE_CHECKOUT_ENABLED=false` are the
+safe pre-launch defaults until every runbook gate is evidenced. Once existing
+subscriptions exist, stop new sales with checkout false while keeping lifecycle
+true. Sandbox validation and secrets must remain isolated
+from production.
+
 ## German real-provider staging operator sequence
 
 1. Check out the accepted `account-beta-test` commit and use its git SHA in the
@@ -73,6 +128,8 @@ restricted German beta and must be repeated on Russian staging before release.
 2. Copy `env.german.example` to a mode-0600 host file. Set the image tags,
    password, provider application IDs, and read-only PlantVision model path;
    retain the exact project and volume prefix. Keep FCM/external-AI disabled.
+   Keep RuStore billing disabled unless this is an explicitly approved,
+   secret-isolated sandbox exercise; never enable production billing here.
 3. Inventory current Docker projects, volumes, ports, nginx locations, and
    production paths read-only. Resolve any collision before continuing.
 4. Render `compose.german-vds.yml`. Confirm only `127.0.0.1:18100/18101` are
@@ -147,14 +204,23 @@ German URL or trust credential.
   the accepted commit; SBOM/provenance and vulnerability review are recorded.
 - [ ] Production renders with `AUTH_PROVIDER_MODE=remote`; mock/synthetic or
   ephemeral keys cause startup refusal.
-- [ ] Alembic reports exactly `0006_signup_completion_idempotency`; the account
-  table inventory includes `signup_completions`, and the backup restore probe
+- [ ] Alembic reports exactly `0008_pro_entitlements`; the database contains
+  exactly 20 reviewed application tables plus `alembic_version`, including the
+  0007 password tables and 0008 billing/quota tables. The backup restore probe
   confirms the same head, exact table set, row counts, and least-privilege
   runtime/backup grants. Runtime has application-table DML but cannot UPDATE or
-  DELETE `alembic_version`; the migrator remains its owner/writer.
+  DELETE `alembic_version`; the migrator remains its owner/writer. An older
+  0006/13-application-table inventory fails closed.
 - [ ] Account signing, encryption, internal, split database-role, mTLS, TLS, and
   backup keys follow `SECRETS.md`; secret files pass non-root ownership and
   mode-0400 checks.
+- [ ] Email/password remains outside production exposure until email ownership
+  verification, recovery, and distributed abuse controls pass the dedicated
+  release-blocker checklist. No migration result alone clears this HOLD.
+- [ ] RuStore stays disabled until the V5 package/product/external-account
+  validation, production-only RSA/AES ownership, encrypted callback,
+  reconciliation, quota idempotency, grace/hold, and rollback exercises in the
+  PRO runbook pass. Sandbox purchase state or secrets never enter production.
 - [ ] PostgreSQL/internal services have no host/public port; strict CORS and
    exact trusted proxies are configured.
 - [ ] Only the allowlisting egress proxy joins a non-internal network. Its ACL

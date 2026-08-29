@@ -9,7 +9,7 @@ Houses the supporting endpoints layered on top of the disease classifier:
   don't burn quota re-identifying the same photo within a deploy.
 
 * **AI Plant Doctor** — ``chat_reply()`` runs an OpenRouter chat
-  completion (default model: ``openai/gpt-oss-120b``). Per-session
+  completion (default model: ``openai/gpt-5.6-luna``). Per-session
   conversation buffer + per-session budget cap (token + message) so a
   rogue client can't drain the API budget.
 
@@ -39,14 +39,34 @@ import re
 import tempfile
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
 try:
-    from .config import get_bool, get_float, get_int, get_str  # type: ignore[import-not-found]
+    from .config import (  # type: ignore[import-not-found]
+        get_bool,
+        get_float,
+        get_int,
+        get_secret,
+        get_str,
+    )
 except ImportError:
-    from config import get_bool, get_float, get_int, get_str
+    from config import get_bool, get_float, get_int, get_secret, get_str
+
+try:
+    from .plantnet_budget import (  # type: ignore[import-not-found]
+        PlantNetBudgetDecision,
+        PlantNetBudgetUnavailable,
+        plantnet_budget_client,
+    )
+except ImportError:
+    from plantnet_budget import (
+        PlantNetBudgetDecision,
+        PlantNetBudgetUnavailable,
+        plantnet_budget_client,
+    )
 
 try:
     from .diseases_data import (  # type: ignore[import-not-found]
@@ -60,7 +80,7 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration (config.json + env fallback) ──────────────────────
 
-PLANTNET_API_KEY = get_str("PLANTNET_API_KEY", "").strip()
+PLANTNET_API_KEY = get_secret("PLANTNET_API_KEY")
 PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
 # Free tier is 500 / day. We expose 5/min as a soft client cap on top
 # of the existing per-IP rate limiter to keep one deploy from burning
@@ -77,7 +97,7 @@ PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
 PLANTNET_CACHE_TTL_SECONDS = get_int("PLANTNET_CACHE_TTL_SECONDS", 7 * 24 * 3600)
 
 # OpenRouter chat backend (single provider so one key gates many models).
-OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_API_KEY = get_secret("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-5.6-luna").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 # The 20 s budget was sized for gpt-oss pinned at the shortest possible trace.
@@ -242,6 +262,16 @@ def _chat_api_key_present() -> bool:
     return bool(OPENROUTER_API_KEY)
 
 
+def plantnet_configured() -> bool:
+    """Whether species identification can make a paid upstream request."""
+    return bool(PLANTNET_API_KEY and plantnet_budget_client is not None)
+
+
+def openrouter_configured() -> bool:
+    """Whether AI Doctor/care-plan polish can make a paid upstream request."""
+    return bool(OPENROUTER_API_KEY)
+
+
 # ── Generic LRU helper ──────────────────────────────────────────────
 
 
@@ -366,6 +396,40 @@ _probe_ai_cache_writable()
 
 
 _PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE, PLANTNET_CACHE_TTL_SECONDS)
+_PLANTNET_METRICS_LOCK = threading.Lock()
+_PLANTNET_METRICS = {
+    "cache_hits_total": 0,
+    "upstream_attempts_total": 0,
+    "upstream_retries_total": 0,
+    "budget_denials_total": 0,
+    "budget_unavailable_total": 0,
+    "reserved_cost_micros_total": 0,
+    "daily_cost_exposure_micros": 0,
+}
+
+
+def plantnet_metrics_snapshot() -> dict[str, int]:
+    """Return aggregate counters only; never request, image, or account data."""
+    with _PLANTNET_METRICS_LOCK:
+        return dict(_PLANTNET_METRICS)
+
+
+def _record_plantnet_metric(name: str, amount: int = 1) -> None:
+    with _PLANTNET_METRICS_LOCK:
+        _PLANTNET_METRICS[name] += amount
+
+
+def _record_plantnet_budget(decision: PlantNetBudgetDecision) -> None:
+    with _PLANTNET_METRICS_LOCK:
+        _PLANTNET_METRICS["daily_cost_exposure_micros"] = (
+            decision.cost_exposure_micros
+        )
+        if decision.allowed:
+            _PLANTNET_METRICS["reserved_cost_micros_total"] += (
+                decision.attempt_cost_micros
+            )
+        else:
+            _PLANTNET_METRICS["budget_denials_total"] += 1
 
 
 # ── PlantNet species identification ─────────────────────────────────
@@ -387,6 +451,31 @@ def _redact_key(msg: str) -> str:
     return msg
 
 
+def _plantnet_cache_key(image_bytes: bytes, *, organ: str, lang: str) -> str:
+    return f"{_image_hash(image_bytes)}:{organ}:{lang}"
+
+
+def plantnet_cache_lookup(
+    image_bytes: bytes,
+    *,
+    organ: str = "auto",
+    lang: str = "en",
+) -> dict | None:
+    """Return a safe cached copy before any user/vendor allowance is spent."""
+    normalized_lang = (lang or "en").strip().lower()[:5] or "en"
+    cached = _PLANTNET_CACHE.get(
+        _plantnet_cache_key(image_bytes, organ=organ, lang=normalized_lang)
+    )
+    if cached is None:
+        return None
+    _record_plantnet_metric("cache_hits_total")
+    return {
+        **copy.deepcopy(cached),
+        "cached": True,
+        "_upstream_attempted": False,
+    }
+
+
 def identify_species(
     image_bytes: bytes, *, organ: str = "auto", lang: str = "en",
 ) -> dict:
@@ -402,20 +491,29 @@ def identify_species(
     scientific name is unchanged.
     """
     if not PLANTNET_API_KEY:
-        return {"available": False, "results": [], "source": "no_api_key"}
+        return {
+            "available": False,
+            "results": [],
+            "source": "no_api_key",
+            "_upstream_attempted": False,
+        }
 
     # Normalise so we don't cache "en" and "EN" as separate entries.
     lang = (lang or "en").strip().lower()[:5] or "en"
 
-    cache_key = f"{_image_hash(image_bytes)}:{organ}:{lang}"
-    cached = _PLANTNET_CACHE.get(cache_key)
+    cache_key = _plantnet_cache_key(image_bytes, organ=organ, lang=lang)
+    cached = plantnet_cache_lookup(image_bytes, organ=organ, lang=lang)
     if cached is not None:
         # Deep-copy so the caller can mutate the returned ``results``
         # list / ``common_names`` sub-list without poisoning the LRU
         # entry for the next reader (``{**cached, ...}`` is a shallow
-        # copy and the nested list-of-dicts is still aliased).
-        return {**copy.deepcopy(cached), "cached": True}
+        # copy and the nested list-of-dicts is still aliased). Set the private
+        # marker here as well as in ``plantnet_cache_lookup``: an endpoint can
+        # miss its pre-allowance probe and then race with another request that
+        # fills this inner cache before the allowance-backed call begins.
+        return {**cached, "_upstream_attempted": False}
 
+    upstream_attempted = False
     try:
         # Lazy import — only the identify path needs requests.
         import requests
@@ -438,7 +536,48 @@ def identify_species(
         attempts = max(1, PLANTNET_ATTEMPTS)
         payload = None
         for attempt in range(attempts):
+            if plantnet_budget_client is None:
+                _record_plantnet_metric("budget_unavailable_total")
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "budget_unavailable",
+                    "_upstream_attempted": upstream_attempted,
+                }
             try:
+                budget = plantnet_budget_client.reserve(request_id=str(uuid.uuid4()))
+            except PlantNetBudgetUnavailable:
+                _record_plantnet_metric("budget_unavailable_total")
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "budget_unavailable",
+                    "_upstream_attempted": upstream_attempted,
+                }
+            if budget.replayed:
+                # This process never persists/resumes an upstream attempt ID,
+                # so a replay can only be a collision or broken caller. Do not
+                # let one previously reserved unit authorize a second request.
+                _record_plantnet_metric("budget_unavailable_total")
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "budget_unavailable",
+                    "_upstream_attempted": upstream_attempted,
+                }
+            _record_plantnet_budget(budget)
+            if not budget.allowed:
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "budget_exhausted",
+                    "_upstream_attempted": upstream_attempted,
+                }
+            if attempt > 0:
+                _record_plantnet_metric("upstream_retries_total")
+            _record_plantnet_metric("upstream_attempts_total")
+            try:
+                upstream_attempted = True
                 r = requests.post(
                     url, params=params, files=files, data=data,
                     timeout=PLANTNET_TIMEOUT,
@@ -453,16 +592,31 @@ def identify_species(
                 raise
             if r.status_code == 401:
                 logger.error("PlantNet auth failed — check PLANTNET_API_KEY")
-                return {"available": False, "results": [], "source": "auth_failed"}
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "auth_failed",
+                    "_upstream_attempted": True,
+                }
             if r.status_code == 429:
                 logger.warning("PlantNet rate-limited; surfacing graceful degraded result")
-                return {"available": False, "results": [], "source": "rate_limited"}
+                return {
+                    "available": False,
+                    "results": [],
+                    "source": "rate_limited",
+                    "_upstream_attempted": True,
+                }
             r.raise_for_status()
             payload = r.json()
             break
     except Exception:  # noqa: BLE001 — provider details may contain credentials
         logger.warning("PlantNet identify failed")
-        return {"available": False, "results": [], "source": "error"}
+        return {
+            "available": False,
+            "results": [],
+            "source": "error",
+            "_upstream_attempted": upstream_attempted,
+        }
 
     results: list[dict] = []
     for entry in payload.get("results", [])[:5]:
@@ -483,7 +637,7 @@ def identify_species(
         "source": "plantnet",
     }
     _PLANTNET_CACHE.put(cache_key, response)
-    return response
+    return {**response, "_upstream_attempted": True}
 
 
 # ── AI Plant Doctor (OpenRouter) ────────────────────────────────────
@@ -968,7 +1122,13 @@ def _call_openrouter(
     # reasoning and returns something that merely looks like an answer. With
     # the default pin it changes nothing (OpenAI's endpoint advertises every
     # parameter we send) — it is the safety belt for loosening the pin.
-    provider_pref: dict[str, Any] = {"require_parameters": True}
+    provider_pref: dict[str, Any] = {
+        "require_parameters": True,
+        # Plant-care messages can still contain personal text. Fail closed to
+        # endpoints that neither collect nor retain prompts/completions.
+        "data_collection": "deny",
+        "zdr": True,
+    }
     providers = _provider_only()
     if providers:
         provider_pref["only"] = providers

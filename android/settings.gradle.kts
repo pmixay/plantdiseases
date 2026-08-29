@@ -10,6 +10,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Current RuStore Pay SDK artefacts are published through the
+        // exposed repository. Keep it content-filtered so it cannot affect
+        // resolution of unrelated Android dependencies.
+        maven("https://artifactory-external.vkpartner.ru/artifactory/maven-rustore-exposed/") {
+            content { includeGroupByRegex("""ru\.rustore(\..*)?""") }
+        }
         // RuStore SDK (in-app updates) lives on VK's artifactory, not Maven
         // Central. Content-filtered so every other dependency keeps resolving
         // from google()/mavenCentral() only.

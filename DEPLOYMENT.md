@@ -161,10 +161,12 @@ the hardened unit in §5. Point every one of these at the state directory.
 
 | Key | Default | Notes |
 |---|---|---|
-| `plantnet_api_key` / `plantnet_project` | *(empty)* / `all` | |
+| `plantnet_api_key` / `plantnet_project` | *(empty)* / `all` | Direct key is local/test only. |
+| `plantnet_api_key_file` | *(empty)* | Absolute, owner-only file holding the production key. |
 | `plantnet_timeout` / `plantnet_attempts` | `10.0` / `2` | One bounded retry on a transient network fault; 401/429 are terminal. |
 | `plantnet_cache_size` / `plantnet_cache_ttl_seconds` | `256` / `604800` (7 d) | |
-| `openrouter_api_key` | *(empty)* | |
+| `openrouter_api_key` | *(empty)* | Direct key is local/test only. |
+| `openrouter_api_key_file` | *(empty)* | Absolute, owner-only file holding the production key. |
 | `openrouter_model` | `openai/gpt-5.6-luna` | Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
 | `openrouter_base_url` / `openrouter_total_timeout` | `https://openrouter.ai/api/v1` / `30.0` | Override the URL only for compatible gateways. The timeout is a per-call ceiling, retries included. |
 | `openrouter_provider_only` | `openai` | Comma-separated provider slugs; blank = OpenRouter's own routing. |
@@ -186,13 +188,28 @@ the hardened unit in §5. Point every one of these at the state directory.
 None of these block boot. Missing credentials produce an `available:false`
 payload and a specific "not configured" UX in the app.
 
+**Secrets: direct value vs file.** `openrouter_api_key` and
+`plantnet_api_key` are accepted directly only when `ENVIRONMENT` is `test` or
+`development`. Anywhere else the direct value is refused and the integration
+fails closed; provision an absolute, owner-only file and point
+`OPENROUTER_API_KEY_FILE` / `PLANTNET_API_KEY_FILE` at it. Setting both the
+direct and file forms, a symlink, a group/world-readable file, or an
+empty/oversized one disables the integration without logging the value or the
+path.
+
 **PlantNet — species identification.** Key from
 <https://my.plantnet.org/account/doc> (free tier 500 IDs/day) → `plantnet_api_key`
-→ restart. Verify: `/api/identify` returns `available: true`; without a key,
-`{"available": false, "source": "no_api_key"}`.
+(or its `_FILE` form) → restart. Verify: `/api/identify` returns
+`available: true`; without a key, `{"available": false, "source": "no_api_key"}`.
+PlantNet spend is additionally bounded by the account service's shared budget
+(`PLANTNET_BUDGET_ENABLED` and its version/attempt/exposure ceilings): every
+real request, retries included, needs a fresh atomic reservation, and an
+unavailable or disabled authority fails closed before any vendor call —
+surfacing as a `budget_unavailable` / `budget_exhausted` source.
 
 **OpenRouter — plant doctor, species content, care-plan polish.** Key from
-<https://openrouter.ai> → `openrouter_api_key` → restart. Without it
+<https://openrouter.ai> → `openrouter_api_key` (or its `_FILE` form) →
+restart. Without it
 `/api/care-plan` still returns a complete deterministic plan; only the
 `summary_md` polish is skipped.
 

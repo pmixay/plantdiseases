@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
@@ -357,7 +358,13 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                             else -> formatChatUnavailable(resp.reason)
                         }
                     },
-                    onFailure = { err -> formatChatNetworkError(err) },
+                    onFailure = { err ->
+                    if (MeteredAccessUi.showDialog(requireContext(), err)) {
+                        getString(MeteredAccessUi.message(err))
+                    } else {
+                        formatChatNetworkError(err)
+                    }
+                },
                 )
 
                 if (_binding != null) {

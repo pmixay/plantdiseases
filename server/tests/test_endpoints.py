@@ -62,8 +62,19 @@ def test_metrics_json(client):
         "avg_latency_ms",
         "class_counts",
         "ai_doctor",
+        "plantnet",
     ):
         assert key in body
+    assert set(body["plantnet"]) == {
+        "cache_hits_total",
+        "upstream_attempts_total",
+        "upstream_retries_total",
+        "budget_denials_total",
+        "budget_unavailable_total",
+        "reserved_cost_micros_total",
+        "daily_cost_exposure_micros",
+    }
+    assert all(type(value) is int for value in body["plantnet"].values())
 
 
 def test_metrics_prometheus_format(client):
@@ -79,6 +90,20 @@ def test_metrics_prometheus_format(client):
     assert "plantdiseases_requests_total" in text
     assert "plantdiseases_analyses_total" in text
     assert "plantdiseases_build_info" in text
+    assert "plantdiseases_plantnet_upstream_attempts_total" in text
+    assert "plantdiseases_plantnet_upstream_retries_total" in text
+    assert "plantdiseases_plantnet_cache_hits_total" in text
+    assert "plantdiseases_plantnet_budget_denials_total" in text
+    assert "plantdiseases_plantnet_budget_unavailable_total" in text
+    assert "plantdiseases_plantnet_reserved_cost_micros_total" in text
+    assert "plantdiseases_plantnet_daily_cost_exposure_micros" in text
+    plantnet_samples = [
+        line
+        for line in text.splitlines()
+        if line.startswith("plantdiseases_plantnet_")
+    ]
+    assert len(plantnet_samples) == 7
+    assert all("{" not in line for line in plantnet_samples)
 
 
 def test_capabilities_int8_flag_surfaced(client):
@@ -366,6 +391,108 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
         assert max(image.size) <= 1024
         assert not image.getexif()
     assert r.json()["organ"] == "flower"
+
+
+def test_identify_plantnet_cache_hit_spends_no_user_allowance(
+    client,
+    png_bytes,
+    monkeypatch,
+):
+    import main as server_main
+
+    async def unexpected_authorization(_request, *, feature):
+        raise AssertionError(f"cache hit consumed {feature}")
+
+    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(
+        server_main,
+        "plantnet_cache_lookup",
+        lambda *_args, **_kwargs: {
+            "available": True,
+            "results": [
+                {
+                    "scientific_name": "Ficus elastica",
+                    "common_names": ["Rubber tree"],
+                    "score": 0.91,
+                }
+            ],
+            "source": "plantnet",
+            "cached": True,
+            "_upstream_attempted": False,
+        },
+    )
+    monkeypatch.setattr(
+        server_main,
+        "_authorize_metered_feature",
+        unexpected_authorization,
+    )
+    monkeypatch.setattr(
+        server_main,
+        "identify_species",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache hit reached identify_species")
+        ),
+    )
+
+    response = client.post(
+        "/api/identify",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["cached"] is True
+    assert "_upstream_attempted" not in response.json()
+
+
+def test_analyze_plantnet_cache_hit_spends_only_diagnosis_allowance(
+    client,
+    png_bytes,
+    monkeypatch,
+):
+    import main as server_main
+
+    authorized = []
+
+    async def record_authorization(_request, *, feature):
+        authorized.append(feature)
+
+    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(server_main, "_authorize_metered_feature", record_authorization)
+    monkeypatch.setattr(
+        server_main,
+        "plantnet_cache_lookup",
+        lambda *_args, **_kwargs: {
+            "available": True,
+            "results": [
+                {
+                    "scientific_name": "Ficus elastica",
+                    "common_names": ["Rubber tree"],
+                    "score": 0.91,
+                }
+            ],
+            "source": "plantnet",
+            "cached": True,
+            "_upstream_attempted": False,
+        },
+    )
+    monkeypatch.setattr(
+        server_main,
+        "identify_species",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache hit reached identify_species")
+        ),
+    )
+
+    response = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+
+    assert response.status_code == 200, response.text
+    assert authorized == ["gamma_analysis"]
+    assert response.json()["species"]["best"]["scientific_name"] == (
+        "Ficus elastica"
+    )
 
 
 def test_identify_strips_exif_before_plantnet(client, monkeypatch):

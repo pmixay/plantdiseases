@@ -43,6 +43,9 @@ class PushTokenProtector:
         self._signup_refresh_key = hmac.digest(
             key, b"signup-completion-refresh-v1", "sha256"
         )
+        self._email_lookup_key = hmac.digest(
+            key, b"email-login-lookup-v1", "sha256"
+        )
 
     @classmethod
     def from_settings(cls, settings: Settings) -> PushTokenProtector:
@@ -60,6 +63,15 @@ class PushTokenProtector:
 
     def fingerprint(self, token: str) -> bytes:
         return hmac.digest(self._fingerprint_key, token.encode("utf-8"), hashlib.sha256)
+
+    def email_fingerprint(self, normalized_email: str) -> bytes:
+        """Return a purpose-separated lookup key without retaining the address."""
+
+        return hmac.digest(
+            self._email_lookup_key,
+            normalized_email.encode("ascii"),
+            hashlib.sha256,
+        )
 
     def encrypt(self, token: str) -> bytes:
         nonce = secrets.token_bytes(12)

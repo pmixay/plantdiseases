@@ -27,6 +27,17 @@ request for a provider not enabled on that deployment returns
 Provider contracts: [Yandex ID user information](https://yandex.com/dev/id/doc/en/user-information)
 and [VK ID's official SDK user-info request](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).
 
+The repository also contains a private email/password beta slice. It is off by
+default and requires `EMAIL_PASSWORD_AUTH_ENABLED=true` in a non-production
+environment; production settings reject that value. Verified email ownership,
+password recovery, and shared multi-replica abuse controls remain mandatory
+production blockers. Completion and confirmation re-check the current flag; an
+email continuation presented while it is off is durably cancelled, including
+removal of any unconfirmed provisional account/session. OAuth continuation uses
+the same endpoints and remains available. See
+[`../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md`](../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
+before deploying or exposing its endpoints.
+
 ## Contract
 
 The versioned schema is [`openapi.json`](openapi.json). Main flows are:
@@ -80,6 +91,48 @@ one-shot container. It creates signing/encryption files once in the beta-only
 volume that the app mounts read-only. It refuses non-test environments, unsafe
 permissions, or overwriting existing values. Production requires
 operator-provisioned files.
+
+## PRO subscriptions
+
+The account service is the authority for PRO state and daily server-feature
+budgets. Android purchase results never unlock access by themselves: the
+backend validates the purchase against RuStore's Public API V5, requires its
+dedicated random billing account ID to match, stores the canonical expiry, and
+then serves `/v1/entitlements`. The application API consumes signed-in quotas
+through the hidden internal entitlement route before cost-bearing work.
+Encrypted callbacks are authenticated and committed to a durable deduplicated
+inbox before the route returns the required literal `200`; a bounded maintenance
+worker performs canonical V5 fetches and bounded retries outside the callback
+deadline. Purchase-scoped fetch generations prevent older responses from
+regressing canonical state; terminal/exhausted jobs dead-letter with aggregate
+metrics and an internal-token-protected manual replay endpoint.
+
+Lifecycle and checkout are separate fail-closed switches. Existing callbacks
+and reconciliation remain active when checkout is stopped. Enabling lifecycle requires decimal
+`RUSTORE_APPLICATION_ID` and `RUSTORE_KEY_ID`, a Base64 PKCS#8 RSA private-key
+file, a separate Base64 AES-256 notification-key file, the fixed package
+`com.plantdiseases.app`, and the allowlisted monthly/yearly product IDs.
+Production rejects sandbox validation. Never place either key in Git, an APK,
+an image layer, or an environment variable.
+
+Feature quotas come from exact Free/PRO operator maps and a validated policy
+version that is frozen into every retry-safe decision receipt. The hidden
+release route refunds an allowed reservation exactly once only when the trusted
+application service proves no cost-bearing work began.
+
+The same PostgreSQL service is also the deployment-wide PlantNet cost
+authority. `PLANTNET_BUDGET_ENABLED=true` requires a versioned policy, a daily
+attempt ceiling, a marginal micro-euro cost per attempt, and a daily exposure
+ceiling. A migration-seeded provider row serializes every application replica;
+successful anonymous attempt UUIDs are idempotent and retained for 90 days,
+while denials create no attacker-amplifiable receipt rows. Missing configuration,
+authority state, or database access denies the vendor attempt before network
+I/O. The application service loads the actual PlantNet credential only through
+its owner-only `PLANTNET_API_KEY_FILE` in production.
+
+Console provisioning, callback operations, trial/grace/hold policy, pricing
+hypotheses, key rotation, live-purchase evidence, and rollback gates are in
+[`../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`](../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
 
 ## Verification
 

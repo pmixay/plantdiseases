@@ -1,9 +1,16 @@
 # PlantDiseases 1.9 Account Release Security Recheck
 
-**Checked:** 2026-08-16
-**Decision:** **HOLD — code-side release controls pass, but live account routing,
-a public moderation contact, the permanent signing identity, provider-dashboard
-proof, and a signed end-to-end RuStore artifact are not ready yet.**
+> Historical 2026-08-19 release snapshot. It predates email/password beta and
+> PlantDiseases PRO. Current implementation and release gates are defined by
+> [ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md](ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md),
+> [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md),
+> and [PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
+
+**Checked:** 2026-08-19 (revalidated after the Community V2/account merge)
+**Decision:** **HOLD FOR RUSTORE PUBLICATION — the merged code and local release
+artifact pass, but production account routing, a public moderation contact, the
+permanent signing identity, provider-dashboard proof, and a permanently signed
+end-to-end RuStore artifact are not ready yet.**
 
 This review covers the one existing Android application only. It does not
 create another package or version.

@@ -56,6 +56,98 @@ class AccountApiClientTest {
     }
 
     @Test
+    fun emailRegistrationUsesDedicatedEndpoint_andParsesOnlyEmailProfileFlow() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                    "status":"profile_required",
+                    "provider":"email",
+                    "pending_signup_token":"email-pending",
+                    "expires_in":600
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api.registerEmail(
+            "gardener@example.com",
+            "correct horse garden staple",
+            FakeAccountApi.INSTALLATION_ID,
+        )
+
+        assertThat(result.provider).isEqualTo(AuthProvider.EMAIL)
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/id/v1/auth/email/register")
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(request.body.readUtf8()).isEqualTo(
+            """{"email":"gardener@example.com","password":"correct horse garden staple","installation_id":"${FakeAccountApi.INSTALLATION_ID}"}""",
+        )
+    }
+
+    @Test
+    fun emailLoginCanReturnAuthenticatedSessionWithoutProviderBearer() = runBlocking {
+        server.enqueue(jsonResponse(authResponseBody("authenticated")))
+
+        val result = api.loginEmail(
+            "gardener@example.com",
+            "correct horse garden staple",
+            FakeAccountApi.INSTALLATION_ID,
+        )
+
+        assertThat(result).isInstanceOf(ExchangeResult.Authenticated::class.java)
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/id/v1/auth/email/login")
+        assertThat(request.getHeader("Authorization")).isNull()
+    }
+
+    @Test
+    fun emailReauthenticationCarriesAccountBearerToDedicatedEndpoint() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                    "reauth_token":"reauth-proof",
+                    "scope":"link_yandex",
+                    "expires_in":300
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api.reauthenticateEmail(
+            "account-access-token",
+            "correct horse garden staple",
+            "link_yandex",
+        )
+
+        assertThat(result.reauthToken).isEqualTo("reauth-proof")
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/id/v1/auth/email/reauth")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer account-access-token")
+        assertThat(request.body.readUtf8()).isEqualTo(
+            """{"password":"correct horse garden staple","scope":"link_yandex"}""",
+        )
+    }
+
+    @Test
+    fun emailRegistrationRejectsAnAuthenticatedResponseShape() = runBlocking {
+        server.enqueue(jsonResponse(authResponseBody("authenticated")))
+
+        val failure = runCatching {
+            api.registerEmail(
+                "gardener@example.com",
+                "correct horse garden staple",
+                FakeAccountApi.INSTALLATION_ID,
+            )
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(AccountApiException::class.java)
+        assertThat((failure as AccountApiException).errorCode)
+            .isEqualTo("invalid_email_registration_response")
+    }
+
+    @Test
     fun protectedProfileRequestCarriesBearerOnlyToAccountOrigin() = runBlocking {
         server.enqueue(
             jsonResponse(
@@ -84,6 +176,40 @@ class AccountApiClientTest {
         assertThat(profile.nickname).isEqualTo("Beta")
         val request = server.takeRequest()
         assertThat(request.path).isEqualTo("/id/v1/me")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer account-access-token")
+    }
+
+    @Test
+    fun entitlementsDecodeVersionedQuotaPolicy() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                    "plan":"free",
+                    "status":"none",
+                    "valid_until":null,
+                    "auto_renewing":false,
+                    "billing_available":false,
+                    "billing_external_id":"${FakeAccountApi.ACTOR_ID}",
+                    "products":[],
+                    "quota_policy_version":"launch-2026-08-v1",
+                    "quotas":[{
+                        "feature":"gamma_analysis",
+                        "daily_limit":5,
+                        "remaining":3,
+                        "reset_at":"2026-08-27T00:00:00Z"
+                    }]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api.entitlements("account-access-token")
+
+        assertThat(result.quotaPolicyVersion).isEqualTo("launch-2026-08-v1")
+        assertThat(result.quotas.single().dailyLimit).isEqualTo(5)
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/id/v1/entitlements")
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer account-access-token")
     }
 

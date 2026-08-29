@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Iterator
 
 import jwt
@@ -23,6 +24,8 @@ from app.db.models import (
     AccountNicknameClaim,
     AccountNicknameJob,
     AccountSecurityEvent,
+    PasswordCredential,
+    PendingPasswordCredential,
     PendingSignup,
     PushDevice,
     ReauthChallenge,
@@ -87,6 +90,7 @@ def api(db_engine: Engine) -> Iterator[ApiHarness]:
                 "postgresql+psycopg://beta:synthetic-test-only@beta-postgres/plantdisease_beta"
             ),
             "ACCOUNT_ALLOW_EPHEMERAL_KEYS": "true",
+            "EMAIL_PASSWORD_AUTH_ENABLED": "true",
             "ACCOUNT_BLOCKED_NICKNAMES": "SyntheticBlocked",
             "ACCOUNT_RATE_LIMIT_REQUESTS": "1000",
         }
@@ -184,8 +188,414 @@ def _signup(
     return complete.json()
 
 
+def _email_signup(
+    api: ApiHarness,
+    *,
+    email: str = "fern@example.com",
+    password: str = "correct horse garden staple",
+    nickname: str = "EmailLeaf",
+    installation_id: uuid.UUID | None = None,
+) -> dict:
+    installation = installation_id or uuid.uuid4()
+    registration = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": email,
+            "password": password,
+            "installation_id": str(installation),
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    pending_token = registration.json()["pending_signup_token"]
+    completion_id = uuid.uuid4()
+    complete = api.client.post(
+        "/v1/auth/signup/complete",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "nickname": nickname,
+            "installation_id": str(installation),
+        },
+    )
+    assert complete.status_code == 201, complete.text
+    confirmed = api.client.post(
+        "/v1/auth/signup/confirm",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "installation_id": str(installation),
+        },
+    )
+    assert confirmed.status_code == 204, confirmed.text
+    return complete.json()
+
+
 def _error(response) -> str:
     return response.json()["error"]["code"]
+
+
+def _set_email_password_auth(api: ApiHarness, *, enabled: bool) -> None:
+    current = api.client.app.state.settings
+    api.client.app.state.settings = replace(
+        current,
+        email_password_auth_enabled=enabled,
+    )
+
+
+def test_email_registration_login_and_storage_are_private(api: ApiHarness):
+    email = "Garden.Fern@Example.COM"
+    password = "correct horse garden staple"
+    installation_id = uuid.uuid4()
+    registration = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": email,
+            "password": password,
+            "installation_id": str(installation_id),
+        },
+    )
+    assert registration.status_code == 200
+    assert registration.json()["provider"] == "email"
+    assert email not in registration.text
+    assert password not in registration.text
+
+    pending_token = registration.json()["pending_signup_token"]
+    with api.service.repository.transaction() as transaction:
+        pending = transaction.scalar(select(PendingSignup))
+        staged = transaction.scalar(select(PendingPasswordCredential))
+        assert pending is not None and pending.provider == "email"
+        assert staged is not None and staged.pending_signup_id == pending.id
+        assert len(staged.email_fingerprint) == 32
+        assert staged.password_hash.startswith("$argon2id$")
+        assert email.encode() not in staged.email_fingerprint
+        assert password not in staged.password_hash
+
+    completion_id = uuid.uuid4()
+    completed = api.client.post(
+        "/v1/auth/signup/complete",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "nickname": "PrivateFern",
+            "installation_id": str(installation_id),
+        },
+    )
+    assert completed.status_code == 201
+    confirmed = api.client.post(
+        "/v1/auth/signup/confirm",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "installation_id": str(installation_id),
+        },
+    )
+    assert confirmed.status_code == 204
+
+    access_token = completed.json()["access_token"]
+    profile = api.client.get("/v1/me", headers=api.headers(access_token))
+    assert profile.status_code == 200
+    assert profile.json()["primary_provider"] == {
+        "provider": "email",
+        "display_name": "Email",
+        "avatar_url": None,
+        "refreshed_at": "2030-01-02T03:04:05Z",
+    }
+    assert profile.json()["linked_providers"] == [
+        {"provider": "email", "refreshed_at": "2030-01-02T03:04:05Z"}
+    ]
+    assert email not in profile.text
+
+    with api.service.repository.transaction() as transaction:
+        credential = transaction.scalar(select(PasswordCredential))
+        account = transaction.scalar(select(Account))
+        identities = list(transaction.scalars(select(AccountIdentity)))
+        assert credential is not None and account is not None
+        assert credential.account_id == account.id
+        assert identities == []
+
+    login = api.client.post(
+        "/v1/auth/email/login",
+        json={
+            "email": "garden.fern@example.com",
+            "password": password,
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    assert login.status_code == 200
+    assert login.json()["status"] == "authenticated"
+
+    wrong = api.client.post(
+        "/v1/auth/email/login",
+        json={
+            "email": email,
+            "password": "this password is definitely wrong",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    unknown = api.client.post(
+        "/v1/auth/email/login",
+        json={
+            "email": "unknown@example.com",
+            "password": "this password is definitely wrong",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    assert wrong.status_code == unknown.status_code == 401
+    assert wrong.json() == unknown.json() == {"error": {"code": "invalid_credentials"}}
+
+
+def test_disabling_email_auth_invalidates_pending_registration(api: ApiHarness):
+    installation_id = uuid.uuid4()
+    registration = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "disabled-before-complete@example.com",
+            "password": "correct horse garden staple",
+            "installation_id": str(installation_id),
+        },
+    )
+    assert registration.status_code == 200
+    pending_token = registration.json()["pending_signup_token"]
+    completion_id = uuid.uuid4()
+    completion_body = {
+        "pending_signup_token": pending_token,
+        "completion_id": str(completion_id),
+        "nickname": "DisabledPendingFern",
+        "installation_id": str(installation_id),
+    }
+
+    _set_email_password_auth(api, enabled=False)
+    blocked = api.client.post("/v1/auth/signup/complete", json=completion_body)
+    assert blocked.status_code == 503
+    assert _error(blocked) == "email_auth_unavailable"
+
+    with api.service.repository.transaction() as transaction:
+        pending = transaction.scalar(
+            select(PendingSignup).where(
+                PendingSignup.token_hash == hash_opaque_token(pending_token)
+            )
+        )
+        assert pending is not None and pending.cancelled_at is not None
+        assert transaction.scalar(select(PendingPasswordCredential)) is None
+        assert transaction.scalar(select(Account)) is None
+
+    _set_email_password_auth(api, enabled=True)
+    replayed = api.client.post("/v1/auth/signup/complete", json=completion_body)
+    assert replayed.status_code == 409
+    assert _error(replayed) == "pending_signup_replayed"
+
+
+def test_disabling_email_auth_rolls_back_unconfirmed_completion(api: ApiHarness):
+    installation_id = uuid.uuid4()
+    registration = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "disabled-before-confirm@example.com",
+            "password": "correct horse garden staple",
+            "installation_id": str(installation_id),
+        },
+    )
+    pending_token = registration.json()["pending_signup_token"]
+    completion_id = uuid.uuid4()
+    completed = api.client.post(
+        "/v1/auth/signup/complete",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "nickname": "DisabledConfirmFern",
+            "installation_id": str(installation_id),
+        },
+    )
+    assert completed.status_code == 201
+    confirmation_body = {
+        "pending_signup_token": pending_token,
+        "completion_id": str(completion_id),
+        "installation_id": str(installation_id),
+    }
+
+    _set_email_password_auth(api, enabled=False)
+    blocked = api.client.post("/v1/auth/signup/confirm", json=confirmation_body)
+    assert blocked.status_code == 503
+    assert _error(blocked) == "email_auth_unavailable"
+
+    with api.service.repository.transaction() as transaction:
+        pending = transaction.scalar(select(PendingSignup))
+        completion = transaction.scalar(select(SignupCompletion))
+        assert pending is not None and pending.cancelled_at is not None
+        assert completion is not None and completion.cancelled_at is not None
+        assert completion.account_id is None and completion.session_id is None
+        assert transaction.scalar(select(PendingPasswordCredential)) is None
+        assert transaction.scalar(select(PasswordCredential)) is None
+        assert transaction.scalar(select(Account)) is None
+
+    _set_email_password_auth(api, enabled=True)
+    replayed = api.client.post("/v1/auth/signup/confirm", json=confirmation_body)
+    assert replayed.status_code == 409
+    assert _error(replayed) == "signup_completion_cancelled"
+
+
+def test_disabling_email_auth_does_not_block_oauth_signup_continuation(api: ApiHarness):
+    installation_id = uuid.uuid4()
+    exchange = _exchange(
+        api,
+        provider="yandex",
+        provider_token=f"mock-yandex-generated-{uuid.uuid4().hex}",
+        installation_id=installation_id,
+    )
+    pending_token = exchange.json()["pending_signup_token"]
+    completion_id = uuid.uuid4()
+    _set_email_password_auth(api, enabled=False)
+
+    completed = api.client.post(
+        "/v1/auth/signup/complete",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "nickname": "OAuthGateFern",
+            "installation_id": str(installation_id),
+        },
+    )
+    confirmed = api.client.post(
+        "/v1/auth/signup/confirm",
+        json={
+            "pending_signup_token": pending_token,
+            "completion_id": str(completion_id),
+            "installation_id": str(installation_id),
+        },
+    )
+    assert completed.status_code == 201
+    assert confirmed.status_code == 204
+
+
+def test_email_registration_validation_and_duplicate_errors_do_not_name_address_state(
+    api: ApiHarness,
+):
+    invalid_email = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "not-an-address",
+            "password": "correct horse garden staple",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    short_password = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "new@example.com",
+            "password": "too-short",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    assert invalid_email.status_code == short_password.status_code == 400
+    assert _error(invalid_email) == _error(short_password) == "invalid_registration"
+
+    _email_signup(api, email="taken@example.com")
+    duplicate = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "TAKEN@example.com",
+            "password": "another correct garden passphrase",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    assert duplicate.status_code == 409
+    assert _error(duplicate) == "registration_unavailable"
+    assert "taken@example.com" not in duplicate.text.lower()
+
+
+def test_email_login_recovers_an_unconfirmed_signup_on_a_new_installation(api: ApiHarness):
+    email = "recover@example.com"
+    password = "recovery garden passphrase"
+    first_installation = uuid.uuid4()
+    registration = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": email,
+            "password": password,
+            "installation_id": str(first_installation),
+        },
+    ).json()
+    completion_id = uuid.uuid4()
+    completed = api.client.post(
+        "/v1/auth/signup/complete",
+        json={
+            "pending_signup_token": registration["pending_signup_token"],
+            "completion_id": str(completion_id),
+            "nickname": "RecoverableFern",
+            "installation_id": str(first_installation),
+        },
+    )
+    assert completed.status_code == 201
+
+    next_installation = uuid.uuid4()
+    recovered = api.client.post(
+        "/v1/auth/email/login",
+        json={
+            "email": email,
+            "password": password,
+            "installation_id": str(next_installation),
+        },
+    )
+    assert recovered.status_code == 200
+    assert recovered.json()["status"] == "profile_required"
+    assert recovered.json()["provider"] == "email"
+    with api.service.repository.transaction() as transaction:
+        assert transaction.scalar(select(Account)) is None
+        live = list(
+            transaction.scalars(
+                select(PendingSignup).where(PendingSignup.cancelled_at.is_(None))
+            )
+        )
+        assert len(live) == 1
+        assert live[0].installation_id == next_installation
+
+
+def test_email_reauth_can_link_oauth_and_delete_email_primary_account(api: ApiHarness):
+    password = "email reauth garden phrase"
+    tokens = _email_signup(api, email="reauth@example.com", password=password)
+    headers = api.headers(tokens["access_token"])
+    wrong = api.client.post(
+        "/v1/auth/email/reauth",
+        headers=headers,
+        json={"password": "wrong password for this account", "scope": "link_vk"},
+    )
+    assert wrong.status_code == 401
+    assert _error(wrong) == "reauth_required"
+
+    reauth_link = api.client.post(
+        "/v1/auth/email/reauth",
+        headers=headers,
+        json={"password": password, "scope": "link_vk"},
+    )
+    assert reauth_link.status_code == 200
+    linked = api.client.post(
+        "/v1/auth/vk/link",
+        headers=headers,
+        json={
+            "provider_access_token": "mock-vk-new",
+            "reauth_token": reauth_link.json()["reauth_token"],
+        },
+    )
+    assert linked.status_code == 200
+    profile = api.client.get("/v1/me", headers=headers)
+    assert {method["provider"] for method in profile.json()["linked_providers"]} == {
+        "email",
+        "vk",
+    }
+
+    reauth_delete = api.client.post(
+        "/v1/auth/email/reauth",
+        headers=headers,
+        json={"password": password, "scope": "deletion"},
+    )
+    deletion = api.client.request(
+        "DELETE",
+        "/v1/me",
+        headers=headers,
+        json={"reauth_token": reauth_delete.json()["reauth_token"]},
+    )
+    assert deletion.status_code == 202
+    assert deletion.json() == {"status": "deletion_pending"}
 
 
 def test_signup_tokens_profile_sessions_and_validation_are_private(api: ApiHarness):
@@ -1934,6 +2344,92 @@ def test_internal_introspection_requires_service_secret_and_live_session(api: Ap
     revoked = api.client.post("/v1/internal/auth/verify", headers=headers, json={})
     assert revoked.status_code == 401
     assert _error(revoked) == "session_revoked"
+
+
+def test_internal_dead_letter_replay_is_secret_protected_and_aggregate_only(
+    api: ApiHarness,
+):
+    calls: list[int] = []
+    original = api.client.app.state.entitlement_service
+    api.client.app.state.entitlement_service = SimpleNamespace(
+        replay_dead_letters=lambda *, limit: calls.append(limit) or 2,
+        notification_metrics=lambda: {
+            "pending_total": 2,
+            "dead_letter_total": 3,
+        },
+    )
+    path = "/v1/internal/billing/rustore/notifications/replay-dead-letters"
+    try:
+        denied = api.client.post(path, json={"limit": 7})
+        accepted = api.client.post(
+            path,
+            headers={
+                "X-Internal-Service-Token": api.client.app.state.internal_service_token
+            },
+            json={"limit": 7},
+        )
+    finally:
+        api.client.app.state.entitlement_service = original
+
+    assert denied.status_code == 401
+    assert calls == [7]
+    assert accepted.status_code == 200
+    assert accepted.json() == {
+        "replayed": 2,
+        "pending_total": 2,
+        "dead_letter_total": 3,
+    }
+    assert set(accepted.json()) == {
+        "replayed",
+        "pending_total",
+        "dead_letter_total",
+    }
+
+
+def test_internal_entitlement_release_requires_service_secret(api: ApiHarness):
+    actor_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+    calls: list[tuple[uuid.UUID, str, uuid.UUID]] = []
+    original = api.client.app.state.entitlement_service
+    api.client.app.state.entitlement_service = SimpleNamespace(
+        release=lambda *, actor_id, feature, request_id: (
+            calls.append((actor_id, feature, request_id))
+            or {
+                "allowed": True,
+                "replayed": True,
+                "released": True,
+                "plan": "free",
+                "policy_version": "launch-2026-08-v1",
+                "feature": feature,
+                "limit": 1,
+                "remaining": 0,
+                "reset_at": api.clock.now + timedelta(hours=1),
+                "reason": None,
+            }
+        )
+    )
+    body = {
+        "actor_id": str(actor_id),
+        "feature": "plant_identification",
+        "request_id": str(request_id),
+    }
+    try:
+        denied = api.client.post("/v1/internal/entitlements/release", json=body)
+        accepted = api.client.post(
+            "/v1/internal/entitlements/release",
+            headers={
+                "X-Internal-Service-Token": api.client.app.state.internal_service_token
+            },
+            json=body,
+        )
+    finally:
+        api.client.app.state.entitlement_service = original
+
+    assert denied.status_code == 401
+    assert accepted.status_code == 200
+    assert accepted.json()["released"] is True
+    assert accepted.json()["policy_version"] == "launch-2026-08-v1"
+    assert calls == [(actor_id, "plant_identification", request_id)]
 
 
 def test_internal_opinion_notification_resolves_tokens_without_returning_them(

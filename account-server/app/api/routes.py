@@ -14,7 +14,11 @@ from app.api.errors import AccountAPIError
 from app.api.schemas import (
     AuthenticatedResponse,
     DeletionResponse,
+    EntitlementsResponse,
     ErrorResponse,
+    InternalEntitlementDecision,
+    InternalNotificationReplayResponse,
+    InternalPlantNetBudgetDecision,
     JwksResponse,
     LinkResponse,
     MeResponse,
@@ -27,6 +31,8 @@ from app.api.schemas import (
 )
 from app.providers.base import ProviderName
 from app.services.accounts import AccountService, CurrentAccount
+from app.services.entitlements import EntitlementService
+from app.services.vendor_budgets import VendorBudgetService, VendorBudgetUnavailable
 
 router = APIRouter(
     responses={
@@ -49,6 +55,12 @@ class StrictRequest(BaseModel):
 
 class ExchangeRequest(StrictRequest):
     provider_access_token: SecretStr = Field(min_length=1, max_length=8192)
+    installation_id: uuid.UUID
+
+
+class EmailCredentialRequest(StrictRequest):
+    email: SecretStr = Field(min_length=3, max_length=254)
+    password: SecretStr = Field(min_length=1, max_length=128)
     installation_id: uuid.UUID
 
 
@@ -86,6 +98,11 @@ class ReauthRequest(StrictRequest):
     scope: Literal["deletion", "link_yandex", "link_vk"]
 
 
+class EmailReauthRequest(StrictRequest):
+    password: SecretStr = Field(min_length=1, max_length=128)
+    scope: Literal["deletion", "link_yandex", "link_vk"]
+
+
 class LinkRequest(StrictRequest):
     provider_access_token: SecretStr = Field(min_length=1, max_length=8192)
     reauth_token: SecretStr = Field(min_length=1, max_length=256)
@@ -104,6 +121,38 @@ class PushDeviceRequest(StrictRequest):
     platform: Literal["android"] = "android"
 
 
+class RuStoreVerificationRequest(StrictRequest):
+    product_id: str = Field(min_length=1, max_length=128)
+    purchase_id: uuid.UUID
+    sandbox: bool = False
+
+
+class RuStoreNotificationEnvelope(StrictRequest):
+    id: str = Field(min_length=1, max_length=128)
+    timestamp: str = Field(min_length=1, max_length=64)
+    payload: SecretStr = Field(min_length=1, max_length=131_072)
+
+
+class InternalEntitlementConsumeRequest(StrictRequest):
+    actor_id: uuid.UUID
+    feature: Literal[
+        "gamma_analysis",
+        "frontier_analysis",
+        "plant_identification",
+        "ai_doctor",
+        "care_plan",
+    ]
+    request_id: uuid.UUID
+
+
+class InternalPlantNetBudgetRequest(StrictRequest):
+    request_id: uuid.UUID
+
+
+class InternalNotificationReplayRequest(StrictRequest):
+    limit: int = Field(default=10, ge=1, le=100)
+
+
 class InternalOpinionNotificationRequest(StrictRequest):
     actor_id: uuid.UUID
     scan_id: str = Field(min_length=1, max_length=128)
@@ -114,6 +163,20 @@ class InternalOpinionNotificationRequest(StrictRequest):
 
 def _service(request: Request) -> AccountService:
     service = getattr(request.app.state, "account_service", None)
+    if service is None:
+        raise AccountAPIError("service_unavailable", status_code=503)
+    return service
+
+
+def _entitlements(request: Request) -> EntitlementService:
+    service = getattr(request.app.state, "entitlement_service", None)
+    if service is None:
+        raise AccountAPIError("service_unavailable", status_code=503)
+    return service
+
+
+def _vendor_budgets(request: Request) -> VendorBudgetService:
+    service = getattr(request.app.state, "vendor_budget_service", None)
     if service is None:
         raise AccountAPIError("service_unavailable", status_code=503)
     return service
@@ -139,6 +202,19 @@ def _current_account(
 def _limit_ip(request: Request, service: AccountService, operation: str) -> None:
     address = request.client.host if request.client is not None else "unknown"
     service.limit_ip(operation, address)
+
+
+def _require_email_password_auth(request: Request) -> None:
+    if not _email_password_auth_enabled(request):
+        # The implementation is intentionally available only in controlled
+        # beta environments until inbox verification, reset/recovery, and
+        # shared abuse controls close the documented production HOLD.
+        raise AccountAPIError("email_auth_unavailable", status_code=503)
+
+
+def _email_password_auth_enabled(request: Request) -> bool:
+    settings = getattr(request.app.state, "settings", None)
+    return bool(settings is not None and settings.email_password_auth_enabled)
 
 
 def _require_internal_service(request: Request) -> None:
@@ -202,6 +278,44 @@ async def exchange_vk(
 
 
 @router.post(
+    "/v1/auth/email/register",
+    response_model=PendingSignupResponse,
+    tags=["authentication"],
+)
+def register_email(
+    body: EmailCredentialRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-register")
+    return service.register_with_email(
+        email=body.email.get_secret_value(),
+        password=body.password.get_secret_value(),
+        installation_id=body.installation_id,
+    )
+
+
+@router.post(
+    "/v1/auth/email/login",
+    response_model=AuthenticatedResponse | PendingSignupResponse,
+    tags=["authentication"],
+)
+def login_email(
+    body: EmailCredentialRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-login")
+    return service.login_with_email(
+        email=body.email.get_secret_value(),
+        password=body.password.get_secret_value(),
+        installation_id=body.installation_id,
+    )
+
+
+@router.post(
     "/v1/auth/signup/complete",
     status_code=status.HTTP_201_CREATED,
     response_model=SignupCompletionResponse,
@@ -218,6 +332,7 @@ def complete_signup(
         completion_id=body.completion_id,
         nickname=body.nickname,
         installation_id=body.installation_id,
+        email_password_auth_enabled=_email_password_auth_enabled(request),
     )
 
 
@@ -236,6 +351,7 @@ def confirm_signup(
         pending_token=body.pending_signup_token.get_secret_value(),
         completion_id=body.completion_id,
         installation_id=body.installation_id,
+        email_password_auth_enabled=_email_password_auth_enabled(request),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -337,6 +453,26 @@ async def reauth(
     )
 
 
+@router.post(
+    "/v1/auth/email/reauth",
+    response_model=ReauthResponse,
+    tags=["authentication"],
+)
+def reauth_email(
+    body: EmailReauthRequest,
+    request: Request,
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-reauth")
+    return service.create_email_reauth_challenge(
+        current,
+        password=body.password.get_secret_value(),
+        scope=body.scope,
+    )
+
+
 async def _link(
     provider: ProviderName,
     body: LinkRequest,
@@ -387,6 +523,66 @@ def me(
     service: Annotated[AccountService, Depends(_service)],
 ) -> dict:
     return service.get_me(current)
+
+
+@router.get(
+    "/v1/entitlements",
+    response_model=EntitlementsResponse,
+    tags=["billing"],
+)
+def entitlements(
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> dict:
+    return service.get_entitlements(current)
+
+
+@router.post(
+    "/v1/billing/rustore/verify",
+    response_model=EntitlementsResponse,
+    tags=["billing"],
+)
+def verify_rustore_purchase(
+    body: RuStoreVerificationRequest,
+    request: Request,
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    account_service: Annotated[AccountService, Depends(_service)],
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> dict:
+    _limit_ip(request, account_service, "billing-verify")
+    return service.verify_purchase(
+        current,
+        product_id=body.product_id,
+        purchase_id=body.purchase_id,
+        sandbox=body.sandbox,
+    )
+
+
+@router.post(
+    "/v1/billing/rustore/notifications",
+    status_code=status.HTTP_200_OK,
+    tags=["billing"],
+)
+def rustore_notification(
+    body: RuStoreNotificationEnvelope,
+    request: Request,
+    account_service: Annotated[AccountService, Depends(_service)],
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> Response:
+    # Reject callback floods before AES-GCM work or a canonical Public API
+    # fetch.  RuStore retries non-2xx responses, so a brief limit is recoverable.
+    _limit_ip(request, account_service, "billing-notification")
+    service.accept_notification(
+        {
+            "id": body.id,
+            "timestamp": body.timestamp,
+            "payload": body.payload.get_secret_value(),
+        }
+    )
+    # RuStore retries unless it receives a literal 200 within three seconds.
+    # The authenticated event is committed to the durable inbox above; the
+    # canonical Public API fetch is deliberately outside this request path.
+    return Response(status_code=status.HTTP_200_OK)
 
 
 @router.patch(
@@ -483,6 +679,76 @@ def verify_internal_access(request: Request) -> dict:
         "nickname": current.nickname,
         "authorization_version": current.authorization_version,
     }
+
+
+@router.post(
+    "/v1/internal/entitlements/consume",
+    response_model=InternalEntitlementDecision,
+    include_in_schema=False,
+)
+def consume_internal_entitlement(
+    body: InternalEntitlementConsumeRequest,
+    request: Request,
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> dict:
+    _require_internal_service(request)
+    return service.consume(
+        actor_id=body.actor_id,
+        feature=body.feature,
+        request_id=body.request_id,
+    )
+
+
+@router.post(
+    "/v1/internal/entitlements/release",
+    response_model=InternalEntitlementDecision,
+    include_in_schema=False,
+)
+def release_internal_entitlement(
+    body: InternalEntitlementConsumeRequest,
+    request: Request,
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> dict:
+    _require_internal_service(request)
+    return service.release(
+        actor_id=body.actor_id,
+        feature=body.feature,
+        request_id=body.request_id,
+    )
+
+
+@router.post(
+    "/v1/internal/billing/rustore/notifications/replay-dead-letters",
+    response_model=InternalNotificationReplayResponse,
+    include_in_schema=False,
+)
+def replay_internal_rustore_dead_letters(
+    body: InternalNotificationReplayRequest,
+    request: Request,
+    service: Annotated[EntitlementService, Depends(_entitlements)],
+) -> dict:
+    _require_internal_service(request)
+    replayed = service.replay_dead_letters(limit=body.limit)
+    # Only aggregate queue gauges leave the service. Notification IDs,
+    # purchase IDs, fingerprints, payload fields, and error details do not.
+    return {"replayed": replayed, **service.notification_metrics()}
+
+
+@router.post(
+    "/v1/internal/vendor-budgets/plantnet/reserve",
+    response_model=InternalPlantNetBudgetDecision,
+    include_in_schema=False,
+)
+def reserve_internal_plantnet_budget(
+    body: InternalPlantNetBudgetRequest,
+    request: Request,
+    service: Annotated[VendorBudgetService, Depends(_vendor_budgets)],
+) -> dict:
+    _require_internal_service(request)
+    try:
+        return service.reserve_plantnet_attempt(request_id=body.request_id)
+    except VendorBudgetUnavailable:
+        raise AccountAPIError("vendor_budget_unavailable", status_code=503) from None
 
 
 @router.post(

@@ -103,12 +103,23 @@ WITH runtime_tables(tablename) AS (
         ('account_nickname_jobs'),
         ('account_security_events'),
         ('accounts'),
+        ('billing_customers'),
+        ('billing_purchase_fetches'),
+        ('billing_notification_receipts'),
+        ('feature_usage'),
+        ('feature_usage_receipts'),
+        ('password_credentials'),
+        ('pending_password_credentials'),
         ('pending_signups'),
         ('push_devices'),
         ('reauth_challenges'),
         ('refresh_tokens'),
         ('sessions'),
-        ('signup_completions')
+        ('signup_completions'),
+        ('subscriptions'),
+        ('vendor_budget_authorities'),
+        ('vendor_budget_daily'),
+        ('vendor_budget_receipts')
 )
 SELECT format(
     'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO beta_account_runtime',

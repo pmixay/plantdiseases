@@ -175,6 +175,185 @@
         "title": "DeletionResponse",
         "type": "object"
       },
+      "EmailCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "password",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string",
+            "writeOnly": true
+          },
+          "installation_id": {
+            "format": "uuid",
+            "title": "Installation Id",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "installation_id"
+        ],
+        "title": "EmailCredentialRequest",
+        "type": "object"
+      },
+      "EmailReauthRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "scope": {
+            "enum": [
+              "deletion",
+              "link_yandex",
+              "link_vk"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "scope"
+        ],
+        "title": "EmailReauthRequest",
+        "type": "object"
+      },
+      "EntitlementQuota": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_limit": {
+            "title": "Daily Limit",
+            "type": "integer"
+          },
+          "feature": {
+            "enum": [
+              "gamma_analysis",
+              "frontier_analysis",
+              "plant_identification",
+              "ai_doctor",
+              "care_plan"
+            ],
+            "title": "Feature",
+            "type": "string"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "reset_at": {
+            "format": "date-time",
+            "title": "Reset At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature",
+          "daily_limit",
+          "remaining",
+          "reset_at"
+        ],
+        "title": "EntitlementQuota",
+        "type": "object"
+      },
+      "EntitlementsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_renewing": {
+            "title": "Auto Renewing",
+            "type": "boolean"
+          },
+          "billing_available": {
+            "title": "Billing Available",
+            "type": "boolean"
+          },
+          "billing_external_id": {
+            "format": "uuid",
+            "title": "Billing External Id",
+            "type": "string"
+          },
+          "plan": {
+            "enum": [
+              "free",
+              "pro"
+            ],
+            "title": "Plan",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "quota_policy_version": {
+            "title": "Quota Policy Version",
+            "type": "string"
+          },
+          "quotas": {
+            "items": {
+              "$ref": "#/components/schemas/EntitlementQuota"
+            },
+            "title": "Quotas",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "none",
+              "pending",
+              "trial",
+              "active",
+              "grace",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "required": [
+          "plan",
+          "status",
+          "valid_until",
+          "auto_renewing",
+          "billing_available",
+          "billing_external_id",
+          "products",
+          "quota_policy_version",
+          "quotas"
+        ],
+        "title": "EntitlementsResponse",
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -343,7 +522,8 @@
           "provider": {
             "enum": [
               "yandex",
-              "vk"
+              "vk",
+              "email"
             ],
             "title": "Provider",
             "type": "string"
@@ -505,7 +685,8 @@
           "provider": {
             "enum": [
               "yandex",
-              "vk"
+              "vk",
+              "email"
             ],
             "title": "Provider",
             "type": "string"
@@ -546,7 +727,8 @@
           "provider": {
             "enum": [
               "yandex",
-              "vk"
+              "vk",
+              "email"
             ],
             "title": "Provider",
             "type": "string"
@@ -706,6 +888,65 @@
           "rotation_id"
         ],
         "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RuStoreNotificationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "format": "password",
+            "maxLength": 131072,
+            "minLength": 1,
+            "title": "Payload",
+            "type": "string",
+            "writeOnly": true
+          },
+          "timestamp": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "payload"
+        ],
+        "title": "RuStoreNotificationEnvelope",
+        "type": "object"
+      },
+      "RuStoreVerificationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Product Id",
+            "type": "string"
+          },
+          "purchase_id": {
+            "format": "uuid",
+            "title": "Purchase Id",
+            "type": "string"
+          },
+          "sandbox": {
+            "default": false,
+            "title": "Sandbox",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "product_id",
+          "purchase_id"
+        ],
+        "title": "RuStoreVerificationRequest",
         "type": "object"
       },
       "SessionListResponse": {
@@ -955,6 +1196,352 @@
           }
         },
         "summary": "Jwks",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/v1/auth/email/login": {
+      "post": {
+        "operationId": "login_email_v1_auth_email_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AuthenticatedResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PendingSignupResponse"
+                    }
+                  ],
+                  "title": "Response Login Email V1 Auth Email Login Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "summary": "Login Email",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/v1/auth/email/reauth": {
+      "post": {
+        "operationId": "reauth_email_v1_auth_email_reauth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailReauthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReauthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reauth Email",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/v1/auth/email/register": {
+      "post": {
+        "operationId": "register_email_v1_auth_email_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSignupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "summary": "Register Email",
         "tags": [
           "authentication"
         ]
@@ -2294,6 +2881,337 @@
         "summary": "Link Yandex",
         "tags": [
           "authentication"
+        ]
+      }
+    },
+    "/v1/billing/rustore/notifications": {
+      "post": {
+        "operationId": "rustore_notification_v1_billing_rustore_notifications_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuStoreNotificationEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "summary": "Rustore Notification",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/billing/rustore/verify": {
+      "post": {
+        "operationId": "verify_rustore_purchase_v1_billing_rustore_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuStoreVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Rustore Purchase",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/entitlements": {
+      "get": {
+        "operationId": "entitlements_v1_entitlements_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Entitlements",
+        "tags": [
+          "billing"
         ]
       }
     },

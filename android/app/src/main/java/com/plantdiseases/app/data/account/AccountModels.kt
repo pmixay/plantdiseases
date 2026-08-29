@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 enum class AuthProvider(val wireName: String) {
     YANDEX("yandex"),
     VK("vk"),
+    EMAIL("email"),
 }
 
 @Serializable
@@ -85,6 +86,29 @@ data class AccountProfile(
     val state: String,
 )
 
+/** Server-authoritative access state. The Android client deliberately keeps
+ * this tolerant of additive fields while the billing backend is rolled out. */
+@Serializable
+data class EntitlementsResponse(
+    val plan: String = "free",
+    val status: String = "none",
+    @SerialName("valid_until") val validUntil: String? = null,
+    @SerialName("auto_renewing") val autoRenewing: Boolean = false,
+    @SerialName("billing_available") val billingAvailable: Boolean = false,
+    @SerialName("billing_external_id") val billingExternalId: String? = null,
+    val products: List<String> = emptyList(),
+    @SerialName("quota_policy_version") val quotaPolicyVersion: String? = null,
+    val quotas: List<EntitlementQuotaResponse> = emptyList(),
+)
+
+@Serializable
+data class EntitlementQuotaResponse(
+    val feature: String,
+    @SerialName("daily_limit") val dailyLimit: Int,
+    val remaining: Int? = null,
+    @SerialName("reset_at") val resetAt: String? = null,
+)
+
 @Serializable
 data class SessionsResponse(val sessions: List<AccountSession> = emptyList())
 
@@ -112,6 +136,13 @@ data class DeletionResponse(val status: String)
 @Serializable
 internal data class ExchangeRequest(
     @SerialName("provider_access_token") val providerAccessToken: String,
+    @SerialName("installation_id") val installationId: String,
+)
+
+@Serializable
+internal data class EmailCredentialRequest(
+    val email: String,
+    val password: String,
     @SerialName("installation_id") val installationId: String,
 )
 
@@ -154,6 +185,12 @@ internal data class ReauthRequest(
 )
 
 @Serializable
+internal data class EmailReauthRequest(
+    val password: String,
+    val scope: String,
+)
+
+@Serializable
 internal data class LinkRequest(
     @SerialName("provider_access_token") val providerAccessToken: String,
     @SerialName("reauth_token") val reauthToken: String,
@@ -164,6 +201,13 @@ internal data class NicknameRequest(val nickname: String)
 
 @Serializable
 internal data class DeletionRequest(@SerialName("reauth_token") val reauthToken: String)
+
+@Serializable
+internal data class RustoreVerificationRequest(
+    @SerialName("product_id") val productId: String,
+    @SerialName("purchase_id") val purchaseId: String,
+    val sandbox: Boolean,
+)
 
 @Serializable
 internal data class PushDeviceRequest(

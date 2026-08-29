@@ -33,9 +33,21 @@ fun sha256(value: String): String =
 // Yandex LoginSDK uses a public native client ID. Pin the registered
 // com.plantdiseases.app value so every PlantDiseases 1.9 RuStore release has
 // Yandex enabled without accepting or embedding the Yandex client secret.
-val yandexClientId = "cfefdff8ae4d4dd8a7426308751ef95a"
+val yandexClientId = "2b439944bb4c4e33b85e20290aca6c7f"
 val vkClientId = configuredValue("VKID_CLIENT_ID")
 val vkClientSecret = configuredValue("VKID_CLIENT_SECRET")
+// These are public RuStore Console identifiers, not payment credentials.
+// They remain blank in ordinary builds; protected distribution automation or
+// a developer's local Gradle properties may supply them independently.
+val rustoreConsoleAppId = configuredValue("RUSTORE_CONSOLE_APP_ID")
+val rustoreProMonthlyProductId = configuredValue("RUSTORE_PRO_MONTHLY_PRODUCT_ID")
+val rustoreProYearlyProductId = configuredValue("RUSTORE_PRO_YEARLY_PRODUCT_ID")
+val rustoreConsoleAppIdValid = rustoreConsoleAppId.isNotBlank() &&
+    rustoreConsoleAppId.all { it in '0'..'9' } &&
+    rustoreConsoleAppId.any { it in '1'..'9' }
+val rustorePayConfigured = rustoreConsoleAppIdValid &&
+    (rustoreProMonthlyProductId.isNotBlank() || rustoreProYearlyProductId.isNotBlank())
+val rustorePayScheme = "plantdiseases-rustore-pay"
 val yandexOAuthConfigured = yandexClientId.isNotBlank()
 val vkOAuthConfigured = vkClientId.isNotBlank() && vkClientSecret.isNotBlank()
 val reviewedStagingAppApiBaseUrl = "https://pdis.arbuz.lol/plantdisease-test/"
@@ -79,6 +91,49 @@ if (distributionChannel.isNotBlank() && distributionChannel !in distributionChan
 }
 if (unsignedDistributionBuild && distributionChannel.isBlank()) {
     throw GradleException("ANDROID_DISTRIBUTION_CHANNEL is required for an unsigned distribution build")
+}
+if (distributionChannel == "staging" || distributionChannel == "production") {
+    val missingRuStoreValues = buildList {
+        if (rustoreConsoleAppId.isBlank()) add("RUSTORE_CONSOLE_APP_ID")
+        if (rustoreProMonthlyProductId.isBlank()) add("RUSTORE_PRO_MONTHLY_PRODUCT_ID")
+        if (rustoreProYearlyProductId.isBlank()) add("RUSTORE_PRO_YEARLY_PRODUCT_ID")
+    }
+    if (missingRuStoreValues.isNotEmpty()) {
+        throw GradleException(
+            "PRO-enabled distribution requires: ${missingRuStoreValues.joinToString()}",
+        )
+    }
+    if (!rustoreConsoleAppIdValid) {
+        throw GradleException("RUSTORE_CONSOLE_APP_ID must be a non-zero decimal RuStore application ID")
+    }
+    if (rustoreProMonthlyProductId != "plantdiseases_pro_monthly" ||
+        rustoreProYearlyProductId != "plantdiseases_pro_yearly"
+    ) {
+        throw GradleException(
+            "RuStore PRO product IDs must match the account-server allowlist",
+        )
+    }
+}
+val emailPasswordAuthOverride = when (
+    val raw = configuredValue("EMAIL_PASSWORD_AUTH_ENABLED").lowercase()
+) {
+    "" -> null
+    "true" -> true
+    "false" -> false
+    else -> throw GradleException("EMAIL_PASSWORD_AUTH_ENABLED must be true or false")
+}
+// Email/password remains a beta surface until the verification, recovery and
+// abuse-control release gates are closed. Local and staging builds opt in by
+// default. Production cannot be enabled by an environment/Gradle override;
+// closing that hold requires a reviewed code and operations-contract change.
+if (distributionChannel == "production" && emailPasswordAuthOverride == true) {
+    throw GradleException(
+        "EMAIL_PASSWORD_AUTH_ENABLED is blocked for production until release gates close",
+    )
+}
+val emailPasswordAuthEnabled = when (distributionChannel) {
+    "production", "recovery-production", "recovery-staging" -> false
+    else -> emailPasswordAuthOverride ?: true
 }
 
 fun validateHttpsEndpoint(name: String, raw: String): URI {
@@ -244,6 +299,11 @@ android {
         buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")
         buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", (!realOAuthEnabled).toString())
         buildConfigField(
+            "boolean",
+            "EMAIL_PASSWORD_AUTH_ENABLED",
+            emailPasswordAuthEnabled.toString(),
+        )
+        buildConfigField(
             "String",
             "DISTRIBUTION_CHANNEL",
             "\"${distributionChannel.ifBlank { "local-beta" }}\"",
@@ -262,6 +322,24 @@ android {
         )
         buildConfigField("String", "VKID_CLIENT_ID_SHA256", "\"${sha256(vkClientId)}\"")
         buildConfigField("String", "VKID_CLIENT_SECRET_SHA256", "\"${sha256(vkClientSecret)}\"")
+        fun quotedPublicIdentifier(raw: String): String =
+            "\"${raw.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        buildConfigField(
+            "String",
+            "RUSTORE_CONSOLE_APP_ID",
+            quotedPublicIdentifier(rustoreConsoleAppId),
+        )
+        buildConfigField(
+            "String",
+            "RUSTORE_PRO_MONTHLY_PRODUCT_ID",
+            quotedPublicIdentifier(rustoreProMonthlyProductId),
+        )
+        buildConfigField(
+            "String",
+            "RUSTORE_PRO_YEARLY_PRODUCT_ID",
+            quotedPublicIdentifier(rustoreProYearlyProductId),
+        )
+        buildConfigField("boolean", "RUSTORE_PAY_CONFIGURED", rustorePayConfigured.toString())
         manifestPlaceholders += mapOf(
             "YANDEX_CLIENT_ID" to yandexClientId.ifBlank { "0" },
             "YANDEX_OAUTH_ENABLED" to yandexOAuthConfigured.toString(),
@@ -270,6 +348,12 @@ android {
             "VKIDRedirectHost" to "vk.ru",
             "VKIDRedirectScheme" to "vk${vkClientId.ifBlank { "0" }}",
             "VKID_OAUTH_ENABLED" to vkOAuthConfigured.toString(),
+            // A disabled provider must still receive a syntactically valid
+            // manifest value. BuildConfig retains the real blank so the app
+            // can render its explicit "not configured" state.
+            "RUSTORE_CONSOLE_APP_ID" to rustoreConsoleAppId.ifBlank { "0" },
+            "RUSTORE_PAY_ENABLED" to rustorePayConfigured.toString(),
+            "RUSTORE_PAY_SCHEME" to rustorePayScheme,
         )
 
         // Firebase Cloud Messaging client config. These four values are the
@@ -418,10 +502,13 @@ android {
             )
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
             buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "EMAIL_PASSWORD_AUTH_ENABLED", "false")
             buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
             buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "RUSTORE_PAY_CONFIGURED", "false")
             manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
             manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["RUSTORE_PAY_ENABLED"] = "false"
             buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
         }
 
@@ -438,10 +525,13 @@ android {
             buildConfigField("boolean", "RECOVERY_ENDPOINTS_CONFIGURED", "true")
             buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "false")
             buildConfigField("boolean", "SYNTHETIC_AUTH_ENABLED", "false")
+            buildConfigField("boolean", "EMAIL_PASSWORD_AUTH_ENABLED", "false")
             buildConfigField("boolean", "YANDEX_OAUTH_CONFIGURED", "false")
             buildConfigField("boolean", "VK_OAUTH_CONFIGURED", "false")
+            buildConfigField("boolean", "RUSTORE_PAY_CONFIGURED", "false")
             manifestPlaceholders["YANDEX_OAUTH_ENABLED"] = "false"
             manifestPlaceholders["VKID_OAUTH_ENABLED"] = "false"
+            manifestPlaceholders["RUSTORE_PAY_ENABLED"] = "false"
             buildConfigField("int", "RECOVERY_APK_VERSION_CODE", recoveryVersionCode.toString())
         }
     }
@@ -692,6 +782,11 @@ dependencies {
     // appupdate above; RuStore caps this at one launch a day
     // (RuStoreRequestLimitReached) and we throttle further locally.
     implementation("ru.rustore.sdk:review:10.0.0")
+
+    // Current RuStore Pay SDK. This is intentionally the Pay API, not the
+    // retired billingClient API. Its public Product.amountLabel is the sole
+    // source of displayed subscription prices.
+    implementation("ru.rustore.sdk:pay:11.1.0")
 
     // Gson
     implementation("com.google.code.gson:gson:2.14.0")

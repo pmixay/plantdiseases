@@ -13,7 +13,7 @@
     <string name="account_guest_body">Join the community and keep your profile across devices.</string>
     <string name="account_later">Later</string>
     <string name="account_disclosure_title">Before you sign in</string>
-    <string name="account_disclosure_body">Signing in shares your provider identity, display name, and avatar with PlantDiseases. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked providers, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
+    <string name="account_disclosure_body">With Yandex or VK, PlantDiseases receives your provider identity, display name, and avatar. With email sign-in, your email address and password are sent directly to the PlantDiseases account service; the password is stored only as a memory-hard hash. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked methods, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
     <string name="account_disclosure_acknowledge">Acknowledge and continue</string>
     <string name="account_disclosure_privacy">Privacy policy</string>
     <string name="account_disclosure_save_failed">The acknowledgement could not be saved. Sign-in was not started.</string>
@@ -21,6 +21,19 @@
     <string name="account_continue_yandex">Sign in with Yandex ID</string>
     <string name="account_continue_vk">Continue with VK ID</string>
     <string name="account_vk_coming_soon">VK ID — coming soon</string>
+    <string name="account_email_beta_label">Email beta</string>
+    <string name="account_email">Email address</string>
+    <string name="account_password">Password</string>
+    <string name="account_password_requirements">15–128 characters</string>
+    <string name="account_email_sign_in">Sign in with email</string>
+    <string name="account_email_create">Create with email</string>
+    <string name="account_email_beta_warning">Beta warning: email verification, password reset and recovery are not ready. Do not reuse a password from another service.</string>
+    <string name="account_or_provider">or use a provider</string>
+    <string name="account_email_invalid">Enter a valid email address.</string>
+    <string name="account_password_invalid">Use a password between 15 and 128 characters.</string>
+    <string name="account_email_reauth_title">Confirm with your password</string>
+    <string name="account_email_reauth_body">Enter your PlantDiseases password. It is sent only for this confirmation and is not saved by the app.</string>
+    <string name="account_email_reauth_confirm">Confirm</string>
     <string name="account_finish_profile">Choose a nickname</string>
     <string name="account_finish_profile_body">A public nickname is required before the account is created. You can cancel and return to Guest.</string>
     <string name="account_nickname">Nickname</string>
@@ -39,6 +52,7 @@
     <string name="account_linked_accounts">Linked sign-in methods</string>
     <string name="account_provider_yandex">Yandex ID</string>
     <string name="account_provider_vk">VK ID</string>
+    <string name="account_provider_email">Email</string>
     <string name="account_provider_unknown">Sign-in provider</string>
     <string name="account_link_yandex">Link Yandex ID</string>
     <string name="account_link_vk">Link VK ID</string>
@@ -51,18 +65,21 @@
     <string name="account_session_time_unknown">Unknown</string>
     <string name="account_logout">Log out</string>
     <string name="account_delete">Delete account</string>
-    <string name="account_delete_warning">Sign in again to confirm. Your account data will be queued for removal. Local scans, garden entries, and reminders stay on this device.</string>
+    <string name="account_delete_warning">Sign in again to confirm. Your account data will be queued for removal. Local scans, garden entries, and reminders stay on this device. Deleting PlantDiseases does not cancel RuStore auto-renewal; manage or cancel the subscription in RuStore first to prevent future charges.</string>
     <string name="account_delete_confirm">Reauthenticate and delete</string>
     <string name="account_choose_reauth_provider">Confirm with a linked sign-in method</string>
     <string name="account_link_restart_required">Linking was interrupted. Start the link again to keep your account secure.</string>
     <string name="account_provider_unconfigured">This sign-in provider is not configured in this build.</string>
-    <string name="account_synthetic_notice">Synthetic team test: these buttons use generated mock identities, never a real Yandex or VK account.</string>
+    <string name="account_synthetic_notice">Synthetic team test: the Yandex and VK buttons use generated mock identities, never a real provider account. Email beta still uses the account service.</string>
     <string name="account_oauth_cancelled">Sign-in cancelled</string>
     <string name="account_error_nickname_taken">That nickname is already in use.</string>
     <string name="account_error_nickname_invalid">Choose a different nickname and try again.</string>
     <string name="account_error_nickname_cooldown">Your nickname can be changed once every 30 days.</string>
     <string name="account_error_provider_unavailable">The sign-in provider is temporarily unavailable.</string>
     <string name="account_error_identity_linked">That sign-in identity already belongs to an account.</string>
+    <string name="account_error_email_credentials">The email address or password was not accepted.</string>
+    <string name="account_error_email_registration">Couldn\'t create an account with those details. Check them or sign in instead.</string>
+    <string name="account_error_email_reauth">That password was not accepted.</string>
     <string name="account_error_generic">The account request could not be completed.</string>
     <string name="account_error_logout_not_durable">Signed out for now, but the app could not securely save or finish sign-out. Reopen the app while online and try again.</string>
     <string name="account_error_retry_online">The account request is still pending. Check your connection and try again.</string>
@@ -943,11 +960,16 @@
     <string name="species_suggest_loading">Asking PlantNet…</string>
     <!-- Per-source PlantNet failure messages. See ai_services.py
          `identify_species` for the source enum (`no_api_key`,
-         `auth_failed`, `rate_limited`, `error`). -->
+         `auth_failed`, `rate_limited`, `budget_exhausted`,
+         `budget_unavailable`, `error`). -->
     <string name="species_suggest_unavailable_body">Couldn\'t reach the species service. Add the species manually for now.</string>
     <string name="species_suggest_unavailable_no_key">Species identification isn\'t configured on this server yet. Add the species manually.</string>
     <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
     <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
+    <string name="species_suggest_unavailable_budget_exhausted">Today\'s shared species-identification capacity has been reached. Try tomorrow or add the species manually.</string>
+    <string name="species_suggest_unavailable_budget_unavailable">Species identification is temporarily unavailable before any provider call was made. Try later or add the species manually.</string>
+    <string name="identify_shared_budget_exhausted">Today\'s shared species-identification capacity has been reached. Try again tomorrow.</string>
+    <string name="identify_shared_budget_unavailable">Species identification is temporarily unavailable. No provider call was made; please try again later.</string>
     <string name="species_suggest_match">%d%% match</string>
     <string name="species_suggest_prefilled">Detected at scan time (%d%% match).</string>
     <string name="species_suggest_no_results">No confident matches found.</string>
@@ -1357,4 +1379,64 @@
 <string name="about_difficulty_easy">Easy</string>
 <string name="about_difficulty_moderate">Moderate</string>
 <string name="about_difficulty_demanding">Demanding</string>
+
+<!-- PlantDiseases PRO -->
+<string name="pro_title">PlantDiseases PRO</string>
+<string name="pro_eyebrow">GROW WITH CONFIDENCE</string>
+<string name="pro_hero_title">More insight for every plant</string>
+<string name="pro_hero_body">Unlock the full lunar calendar and help fund careful, private plant intelligence.</string>
+<string name="pro_status_free">Free plan</string>
+<string name="pro_status_active">PRO is active</string>
+<string name="pro_status_active_until">PRO is active until %1$s</string>
+<string name="pro_status_checking">Checking your plan…</string>
+<string name="pro_status_unavailable">Plan status is temporarily unavailable</string>
+<string name="pro_benefits_title">Included with PRO</string>
+<string name="pro_benefit_lunar">Full lunar calendar</string>
+<string name="pro_benefit_lunar_body">Browse the month, personalized tasks and favourable days for each plant.</string>
+<string name="pro_benefit_models">More cloud analysis</string>
+<string name="pro_benefit_models_body">Higher fair-use limits as server features become available. Offline Aqua stays free.</string>
+<string name="pro_benefit_care">More AI care guidance</string>
+<string name="pro_benefit_care_body">Higher daily limits for Plant Doctor questions and AI-polished care plans.</string>
+<string name="pro_choose_plan">Choose your plan</string>
+<string name="pro_monthly">Monthly</string>
+<string name="pro_yearly">Yearly</string>
+<string name="pro_price_loading">Fetching RuStore price…</string>
+<string name="pro_price_unavailable">Price unavailable</string>
+<string name="pro_subscribe">Continue in RuStore</string>
+<string name="pro_restore">Restore subscription</string>
+<string name="pro_refresh">Refresh plan status</string>
+<string name="pro_manage_subscription">Manage subscription in RuStore</string>
+<string name="pro_manage_unavailable">Couldn\'t open RuStore subscription management. Open RuStore → Profile → Subscriptions.</string>
+<string name="pro_sign_in">Sign in to continue</string>
+<string name="pro_sign_in_required">Sign in to your PlantDiseases account before subscribing, so PRO can be restored safely.</string>
+<string name="pro_pay_unconfigured">Subscriptions are not configured in this build.</string>
+<string name="pro_pay_unavailable">RuStore payments are unavailable right now. You can keep using the free plan.</string>
+<string name="pro_verification_unavailable">Secure purchase verification is unavailable right now. Try again later; no local switch can bypass it.</string>
+<string name="pro_purchase_failed">The subscription was not completed. No PRO access was granted.</string>
+<string name="pro_purchase_verified">Welcome to PlantDiseases PRO.</string>
+<string name="pro_purchase_pending">RuStore accepted the purchase, but PRO is not active yet. Refresh again shortly; access remains server-verified.</string>
+<string name="pro_refresh_success">Plan status refreshed.</string>
+<string name="pro_restore_empty">No eligible RuStore subscription was found.</string>
+<string name="pro_restore_failed">Couldn\'t restore the subscription right now.</string>
+<string name="pro_restore_success">Your PRO subscription was restored.</string>
+<string name="pro_renewal_disclosure">The exact localized price and billing period are shown by RuStore before payment. Subscriptions renew automatically until cancelled in RuStore.</string>
+<string name="pro_locked_badge">PRO</string>
+<string name="pro_lunar_locked_title">Unlock the full month</string>
+<string name="pro_lunar_locked_body">Today stays visible. PRO adds the month grid, tailored tasks and upcoming favourable days.</string>
+<string name="pro_unlock">See PRO</string>
+<string name="pro_profile_body">Full lunar planning and more room for cloud-powered plant care.</string>
+<string name="pro_profile_manage">Explore PRO</string>
+<string name="metered_pro_required_title">This cloud feature needs PRO</string>
+<string name="metered_pro_required_body">Your current photo or text stays on this screen. See PRO to unlock this option, or keep using the free tools.</string>
+<string name="metered_pro_active_unavailable_title">Cloud feature unavailable right now</string>
+<string name="metered_pro_required_active_body">PRO is already active, so no further upgrade is needed. Your current work is still here; try again later.</string>
+<string name="metered_quota_title">Daily cloud limit reached</string>
+<string name="metered_quota_free_body">You have used today\'s free cloud allowance. Your current work is still here; try again after the daily reset or see PRO for higher limits.</string>
+<string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Your current work is still here; try again after the daily reset.</string>
+<string name="metered_quota_remaining_detail">Remaining in this daily allowance: %1$d</string>
+<string name="metered_quota_reset_detail">Resets at %1$s</string>
+<string name="metered_quota_reset_unknown_detail">The exact reset time is temporarily unavailable.</string>
+<string name="metered_view_pro">View PRO</string>
+<string name="metered_not_now">Not now</string>
+<string name="metered_retry_photo">Try this photo again</string>
 </resources>

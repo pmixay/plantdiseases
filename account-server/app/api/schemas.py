@@ -61,7 +61,7 @@ class SignupCompletionResponse(StrictResponse):
 
 class PendingSignupResponse(StrictResponse):
     status: Literal["profile_required"]
-    provider: Literal["yandex", "vk"]
+    provider: Literal["yandex", "vk", "email"]
     pending_signup_token: str
     expires_in: int
 
@@ -82,14 +82,14 @@ class LinkResponse(StrictResponse):
 
 
 class PrimaryProviderProfile(StrictResponse):
-    provider: Literal["yandex", "vk"]
+    provider: Literal["yandex", "vk", "email"]
     display_name: str
     avatar_url: str | None
     refreshed_at: datetime | None
 
 
 class LinkedProvider(StrictResponse):
-    provider: Literal["yandex", "vk"]
+    provider: Literal["yandex", "vk", "email"]
     refreshed_at: datetime
 
 
@@ -131,3 +131,68 @@ class Jwk(StrictResponse):
 
 class JwksResponse(StrictResponse):
     keys: list[Jwk]
+
+
+class EntitlementQuota(StrictResponse):
+    feature: Literal[
+        "gamma_analysis",
+        "frontier_analysis",
+        "plant_identification",
+        "ai_doctor",
+        "care_plan",
+    ]
+    daily_limit: int
+    remaining: int
+    reset_at: datetime
+
+
+class EntitlementsResponse(StrictResponse):
+    plan: Literal["free", "pro"]
+    status: Literal["none", "pending", "trial", "active", "grace", "expired"]
+    valid_until: datetime | None
+    auto_renewing: bool
+    billing_available: bool
+    billing_external_id: uuid.UUID
+    products: list[str]
+    quota_policy_version: str
+    quotas: list[EntitlementQuota]
+
+
+class InternalEntitlementDecision(StrictResponse):
+    allowed: bool
+    replayed: bool
+    released: bool
+    plan: Literal["free", "pro"]
+    policy_version: str
+    feature: Literal[
+        "gamma_analysis",
+        "frontier_analysis",
+        "plant_identification",
+        "ai_doctor",
+        "care_plan",
+    ]
+    limit: int
+    remaining: int
+    reset_at: datetime
+    reason: Literal["pro_required", "quota_exhausted"] | None
+
+
+class InternalPlantNetBudgetDecision(StrictResponse):
+    allowed: bool
+    replayed: bool
+    policy_version: str
+    usage_date: str
+    attempt_limit: int
+    attempts_used: int
+    remaining_attempts: int
+    attempt_cost_micros: int
+    cost_limit_micros: int
+    cost_exposure_micros: int
+    remaining_cost_micros: int
+    reason: Literal["attempt_limit", "cost_limit"] | None
+
+
+class InternalNotificationReplayResponse(StrictResponse):
+    replayed: int
+    pending_total: int
+    dead_letter_total: int

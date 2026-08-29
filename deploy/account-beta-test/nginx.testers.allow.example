@@ -1,0 +1,6 @@
+# Copy to /etc/nginx/plantdisease-beta-testers.allow and replace every
+# documentation-only address with an exact named tester or controlled VPN
+# egress address. Do not use a broad ISP/mobile range and do not add `allow all`.
+allow 192.0.2.1/32;
+allow 2001:db8::1/128;
+deny all;

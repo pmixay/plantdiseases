@@ -16,6 +16,7 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
+import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -61,6 +62,10 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var entitlementRepository: EntitlementRepository
+
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     override fun attachBaseContext(newBase: Context) {
@@ -449,6 +454,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         (application as PlantDiseasesApp).retryPendingAccountLogouts()
+        // RuStore callbacks, renewals, cancellations and grace/hold changes
+        // can happen while this process stays alive. Refresh from the account
+        // server on foreground; the repository coalesces concurrent resumes.
+        entitlementRepository.refreshInBackground()
         // Check if there's a new scan result to show badge
         val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
         if (prefs.getBoolean("new_scan_result", false)) {

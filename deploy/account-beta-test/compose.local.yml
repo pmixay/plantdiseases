@@ -11,6 +11,15 @@ x-account-environment: &account-environment
   ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
   ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
   INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+  # Local mock auth never contacts RuStore. Billing integration is exercised
+  # with strict unit/contract tests and the isolated staging stack.
+  RUSTORE_LIFECYCLE_ENABLED: "false"
+  RUSTORE_CHECKOUT_ENABLED: "false"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-08-v1
+  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5
+  ENTITLEMENT_PRO_DAILY_LIMITS: gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20
+  EMAIL_PASSWORD_AUTH_ENABLED: "true"
+  RUSTORE_ALLOW_SANDBOX: "false"
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
 

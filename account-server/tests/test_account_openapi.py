@@ -12,6 +12,9 @@ EXPECTED_PATHS = {
     "/.well-known/jwks.json",
     "/v1/auth/yandex/exchange",
     "/v1/auth/vk/exchange",
+    "/v1/auth/email/register",
+    "/v1/auth/email/login",
+    "/v1/auth/email/reauth",
     "/v1/auth/signup/complete",
     "/v1/auth/signup/confirm",
     "/v1/auth/signup/cancel",
@@ -22,6 +25,9 @@ EXPECTED_PATHS = {
     "/v1/auth/reauth",
     "/v1/auth/yandex/link",
     "/v1/auth/vk/link",
+    "/v1/billing/rustore/notifications",
+    "/v1/billing/rustore/verify",
+    "/v1/entitlements",
     "/v1/me",
     "/v1/me/nickname",
     "/v1/push/device",
@@ -33,6 +39,12 @@ def test_versioned_openapi_matches_the_application_contract():
     assert committed == app.openapi()
     assert set(committed["paths"]) == EXPECTED_PATHS
     assert "/v1/internal/auth/verify" not in committed["paths"]
+    assert "/v1/internal/entitlements/consume" not in committed["paths"]
+    assert "/v1/internal/entitlements/release" not in committed["paths"]
+    assert (
+        "/v1/internal/billing/rustore/notifications/replay-dead-letters"
+        not in committed["paths"]
+    )
     assert "/v1/internal/notifications/opinion" not in committed["paths"]
 
 

@@ -34,6 +34,8 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -72,6 +74,11 @@ try:
         AccountPrincipal,
         build_account_authenticator,
     )
+    from .account_entitlements import (
+        EntitlementDecision,
+        EntitlementUnavailable,
+        account_entitlement_client,
+    )
     from .account_internal import (
         internal_service_authorized,
     )
@@ -85,6 +92,10 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        openrouter_configured,
+        plantnet_cache_lookup,
+        plantnet_configured,
+        plantnet_metrics_snapshot,
         prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
@@ -280,6 +291,11 @@ except ImportError:
         AccountPrincipal,
         build_account_authenticator,
     )
+    from account_entitlements import (
+        EntitlementDecision,
+        EntitlementUnavailable,
+        account_entitlement_client,
+    )
     from account_internal import (
         internal_service_authorized,
     )
@@ -293,6 +309,10 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        openrouter_configured,
+        plantnet_cache_lookup,
+        plantnet_configured,
+        plantnet_metrics_snapshot,
         prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
@@ -781,6 +801,27 @@ else:
 # Thread-safe structures for Quotas & Abuse/Banning
 _quota_lock = threading.Lock()
 _in_memory_quotas: dict[str, dict[str, int]] = {}  # key -> {date_str: count}
+_api_key_feature_receipts: dict[
+    tuple[int, str, str, str], EntitlementDecision
+] = {}
+_MAX_API_KEY_FEATURE_RECEIPTS = 50_000
+
+
+@dataclass(frozen=True, slots=True)
+class _MeteredReservation:
+    """One allowance consumed by this request and eligible for safe release.
+
+    ``identity`` is kept only in request-local memory. It is never logged or
+    exported as telemetry. Account releases are authoritative in PostgreSQL;
+    guest and legacy-key releases update their existing process-local ledgers.
+    """
+
+    source: str
+    identity: str
+    feature: str
+    request_id: str
+    day: int = 0
+    daily_limit: int = 0
 
 _abuse_lock = threading.Lock()
 _in_memory_violations: dict[str, tuple[float, int]] = {} # identifier -> (reset_time, count)
@@ -817,6 +858,89 @@ def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
             return False
         day_dict[current_day] = current_count + 1
         return True
+
+
+def _api_key_principal(api_key: str, daily_limit: int) -> tuple[str, int]:
+    """Return a non-secret request principal for a validated legacy API key."""
+
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest(), max(0, daily_limit)
+
+
+def _consume_api_key_feature(
+    *,
+    principal_id: str,
+    daily_limit: int,
+    feature: str,
+    request_id: str,
+    day: int | None = None,
+) -> EntitlementDecision:
+    """Consume the legacy key's existing daily quota exactly once per operation.
+
+    Metered routes defer their generic middleware quota increment to this
+    function. That lets the same UUID stop an inference replay while retaining
+    ``quota_daily`` as the key owner's one authoritative allowance. The
+    principal is a digest created only after middleware validated the key; raw
+    credentials never enter request state or receipt keys.
+    """
+
+    day = int(time.time()) // 86_400 if day is None else day
+    day_text = datetime.fromtimestamp(day * 86_400, tz=UTC).strftime("%Y-%m-%d")
+    receipt_key = (day, principal_id, feature, request_id)
+    reset_at = _quota_reset_at(day)
+    with _quota_lock:
+        previous = _api_key_feature_receipts.get(receipt_key)
+        if previous is not None:
+            return EntitlementDecision(
+                allowed=previous.allowed,
+                replayed=True,
+                plan=previous.plan,
+                feature=previous.feature,
+                limit=previous.limit,
+                remaining=previous.remaining,
+                reset_at=previous.reset_at,
+                reason=previous.reason,
+                policy_version=previous.policy_version,
+                released=previous.released,
+            )
+
+        if len(_api_key_feature_receipts) >= _MAX_API_KEY_FEATURE_RECEIPTS:
+            stale = [key for key in _api_key_feature_receipts if key[0] != day]
+            for key in stale:
+                _api_key_feature_receipts.pop(key, None)
+            while len(_api_key_feature_receipts) >= _MAX_API_KEY_FEATURE_RECEIPTS:
+                _api_key_feature_receipts.pop(next(iter(_api_key_feature_receipts)))
+
+        day_dict = _in_memory_quotas.setdefault(principal_id, {})
+        for old_day in list(day_dict):
+            if old_day != day_text:
+                day_dict.pop(old_day, None)
+        used = day_dict.get(day_text, 0)
+        if daily_limit > 0 and used >= daily_limit:
+            decision = EntitlementDecision(
+                allowed=False,
+                replayed=False,
+                plan="free",
+                feature=feature,
+                limit=daily_limit,
+                remaining=0,
+                reset_at=reset_at,
+                reason="quota_exhausted",
+            )
+        else:
+            if daily_limit > 0:
+                used += 1
+                day_dict[day_text] = used
+            decision = EntitlementDecision(
+                allowed=True,
+                replayed=False,
+                plan="free",
+                feature=feature,
+                limit=daily_limit,
+                remaining=max(0, daily_limit - used),
+                reset_at=reset_at,
+            )
+        _api_key_feature_receipts[receipt_key] = decision
+        return decision
 
 def _is_banned(identifier: str) -> bool:
     now = time.time()
@@ -909,9 +1033,375 @@ async def _require_account(request: Request) -> AccountPrincipal:
 
 
 async def _optional_account(request: Request) -> AccountPrincipal | None:
-    if _bearer_token(request) is None:
+    token = _bearer_token(request)
+    # The public API historically also accepts opaque API keys in the Bearer
+    # slot. Only a compact three-part JWT is an account credential; treating
+    # an opaque API key as a broken account login would regress those clients.
+    if token is None or token.count(".") != 2:
         return None
     return await _require_account(request)
+
+
+# Guests retain a useful daily allowance. Signed-in Free/PRO limits live in
+# the account database and are consumed atomically by the private service call
+# below; these process-local counters are only a budget guard for callers that
+# deliberately use the app without an account. They are never persisted.
+_GUEST_FEATURE_LIMITS = {
+    "gamma_analysis": max(0, get_int("GUEST_GAMMA_ANALYSIS_DAILY_QUOTA", 5)),
+    "frontier_analysis": 0,
+    "plant_identification": max(0, get_int("GUEST_IDENTIFY_DAILY_QUOTA", 1)),
+    "ai_doctor": max(0, get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 3)),
+    "care_plan": max(0, get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 5)),
+}
+_guest_feature_lock = threading.Lock()
+_guest_feature_counts: dict[tuple[int, str, str], int] = {}
+_guest_feature_receipts: dict[tuple[int, str, str, str], EntitlementDecision] = {}
+_MAX_GUEST_RECEIPTS = 50_000
+
+
+def _quota_request_id(request: Request) -> str:
+    raw = request.headers.get("x-idempotency-key", "").strip()
+    if not raw:
+        return str(uuid.uuid4())
+    if len(raw) > 64:
+        raise HTTPException(status_code=422, detail="invalid_idempotency_key")
+    try:
+        return str(uuid.UUID(raw))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_idempotency_key") from None
+
+
+def _quota_reset_at(day: int) -> str:
+    return datetime.fromtimestamp((day + 1) * 86_400, tz=UTC).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _consume_guest_feature(
+    *,
+    feature: str,
+    address: str,
+    request_id: str,
+    day: int | None = None,
+) -> EntitlementDecision:
+    limit = _GUEST_FEATURE_LIMITS[feature]
+    day = int(time.time()) // 86_400 if day is None else day
+    count_key = (day, feature, address)
+    receipt_key = (day, feature, address, request_id)
+    reset_at = _quota_reset_at(day)
+    with _guest_feature_lock:
+        previous = _guest_feature_receipts.get(receipt_key)
+        if previous is not None:
+            return EntitlementDecision(
+                allowed=previous.allowed,
+                replayed=True,
+                plan=previous.plan,
+                feature=previous.feature,
+                limit=previous.limit,
+                remaining=previous.remaining,
+                reset_at=previous.reset_at,
+                reason=previous.reason,
+                policy_version=previous.policy_version,
+                released=previous.released,
+            )
+        if len(_guest_feature_receipts) >= _MAX_GUEST_RECEIPTS:
+            stale = [key for key in _guest_feature_receipts if key[0] != day]
+            for key in stale:
+                _guest_feature_receipts.pop(key, None)
+            stale_counts = [key for key in _guest_feature_counts if key[0] != day]
+            for key in stale_counts:
+                _guest_feature_counts.pop(key, None)
+            # A same-day botnet must not make idempotency bookkeeping grow
+            # without bound. Keep quota counts but stop remembering the oldest
+            # logical requests once the hard cap is reached.
+            while len(_guest_feature_receipts) >= _MAX_GUEST_RECEIPTS:
+                _guest_feature_receipts.pop(next(iter(_guest_feature_receipts)))
+        used = _guest_feature_counts.get(count_key, 0)
+        if used >= limit:
+            reason = "pro_required" if limit == 0 else "quota_exhausted"
+            decision = EntitlementDecision(
+                allowed=False,
+                replayed=False,
+                plan="free",
+                feature=feature,
+                limit=limit,
+                remaining=0,
+                reset_at=reset_at,
+                reason=reason,
+            )
+        else:
+            used += 1
+            _guest_feature_counts[count_key] = used
+            decision = EntitlementDecision(
+                allowed=True,
+                replayed=False,
+                plan="free",
+                feature=feature,
+                limit=limit,
+                remaining=max(0, limit - used),
+                reset_at=reset_at,
+            )
+        _guest_feature_receipts[receipt_key] = decision
+        return decision
+
+
+def _released_decision(previous: EntitlementDecision) -> EntitlementDecision:
+    """Represent an exact-once local release without enabling UUID reuse."""
+
+    return EntitlementDecision(
+        allowed=True,
+        replayed=True,
+        plan=previous.plan,
+        feature=previous.feature,
+        limit=previous.limit,
+        remaining=min(previous.limit, previous.remaining + 1),
+        reset_at=previous.reset_at,
+        policy_version=previous.policy_version,
+        released=True,
+    )
+
+
+def _release_api_key_feature(reservation: _MeteredReservation) -> bool:
+    """Return one unused legacy-key unit while retaining its replay receipt."""
+
+    receipt_key = (
+        reservation.day,
+        reservation.identity,
+        reservation.feature,
+        reservation.request_id,
+    )
+    day_text = datetime.fromtimestamp(
+        reservation.day * 86_400,
+        tz=UTC,
+    ).strftime("%Y-%m-%d")
+    with _quota_lock:
+        previous = _api_key_feature_receipts.get(receipt_key)
+        if previous is None or not previous.allowed or previous.released:
+            return False
+        if reservation.daily_limit > 0:
+            day_dict = _in_memory_quotas.get(reservation.identity)
+            if day_dict is None or day_dict.get(day_text, 0) <= 0:
+                return False
+            day_dict[day_text] -= 1
+        _api_key_feature_receipts[receipt_key] = _released_decision(previous)
+        return True
+
+
+def _release_guest_feature(reservation: _MeteredReservation) -> bool:
+    """Return one unused guest unit while retaining its replay receipt."""
+
+    count_key = (reservation.day, reservation.feature, reservation.identity)
+    receipt_key = (*count_key, reservation.request_id)
+    with _guest_feature_lock:
+        previous = _guest_feature_receipts.get(receipt_key)
+        if previous is None or not previous.allowed or previous.released:
+            return False
+        if _guest_feature_counts.get(count_key, 0) <= 0:
+            return False
+        _guest_feature_counts[count_key] -= 1
+        _guest_feature_receipts[receipt_key] = _released_decision(previous)
+        return True
+
+
+def _remember_metered_reservation(
+    request: Request,
+    reservation: _MeteredReservation,
+) -> None:
+    reservations = getattr(request.state, "metered_reservations", None)
+    if not isinstance(reservations, dict):
+        reservations = {}
+        request.state.metered_reservations = reservations
+    reservations[reservation.feature] = reservation
+
+
+async def _release_metered_feature_if_no_upstream_attempt(
+    request: Request,
+    *,
+    feature: str,
+    upstream_attempted: bool | None,
+) -> bool:
+    """Release this request's allowance only on an explicit no-cost outcome.
+
+    Missing/unknown attempt state retains the allowance. That matters for
+    timeouts: the worker may still have reached PlantNet even though the
+    request coroutine can no longer observe its result.
+    """
+
+    if upstream_attempted is not False:
+        return False
+    reservations = getattr(request.state, "metered_reservations", None)
+    if not isinstance(reservations, dict):
+        return False
+    reservation = reservations.pop(feature, None)
+    if not isinstance(reservation, _MeteredReservation):
+        return False
+    if reservation.source == "guest":
+        return _release_guest_feature(reservation)
+    if reservation.source == "api_key":
+        return _release_api_key_feature(reservation)
+    if reservation.source != "account":
+        return False
+
+    client = account_entitlement_client
+    if client is None:
+        return False
+    try:
+        decision = await asyncio.get_running_loop().run_in_executor(
+            _get_net_executor(),
+            functools.partial(
+                client.release,
+                actor_id=reservation.identity,
+                feature=reservation.feature,
+                request_id=reservation.request_id,
+            ),
+        )
+    except EntitlementUnavailable:
+        # The authority may have committed before the connection failed. Its
+        # endpoint is idempotent; retaining the allowance locally is safest
+        # when the release outcome cannot be confirmed.
+        logger.warning("Entitlement release unavailable")
+        return False
+    return bool(
+        decision.allowed
+        and decision.replayed
+        and decision.released
+        and decision.feature == feature
+    )
+
+
+async def _authorize_metered_feature(
+    request: Request,
+    *,
+    feature: str,
+) -> EntitlementDecision:
+    request_id = _quota_request_id(request)
+    reservation_day = int(time.time()) // 86_400
+    legacy_principal = getattr(
+        request.state,
+        "legacy_api_key_principal",
+        None,
+    )
+    principal = await _optional_account(request)
+    if (
+        principal is None
+        and isinstance(legacy_principal, tuple)
+        and len(legacy_principal) == 2
+        and isinstance(legacy_principal[0], str)
+        and type(legacy_principal[1]) is int
+    ):
+        decision = _consume_api_key_feature(
+            principal_id=legacy_principal[0],
+            daily_limit=legacy_principal[1],
+            feature=feature,
+            request_id=request_id,
+            day=reservation_day,
+        )
+        reservation = _MeteredReservation(
+            source="api_key",
+            identity=legacy_principal[0],
+            feature=feature,
+            request_id=request_id,
+            day=reservation_day,
+            daily_limit=legacy_principal[1],
+        )
+    elif principal is None:
+        address = request.client.host if request.client is not None else "unknown"
+        decision = _consume_guest_feature(
+            feature=feature,
+            address=address,
+            request_id=request_id,
+            day=reservation_day,
+        )
+        reservation = _MeteredReservation(
+            source="guest",
+            identity=address,
+            feature=feature,
+            request_id=request_id,
+            day=reservation_day,
+        )
+    else:
+        client = account_entitlement_client
+        if client is None:
+            raise HTTPException(status_code=503, detail="entitlement_service_unavailable")
+        try:
+            decision = await asyncio.get_running_loop().run_in_executor(
+                _get_net_executor(),
+                functools.partial(
+                    client.consume,
+                    actor_id=principal.actor_id,
+                    feature=feature,
+                    request_id=request_id,
+                ),
+            )
+        except EntitlementUnavailable:
+            raise HTTPException(
+                status_code=503,
+                detail="entitlement_service_unavailable",
+            ) from None
+        reservation = _MeteredReservation(
+            source="account",
+            identity=principal.actor_id,
+            feature=feature,
+            request_id=request_id,
+        )
+    # A retry that reached the quota service once already must not become an
+    # unlimited-cost bypass by replaying one UUID while re-running inference.
+    # The Android client preserves the UUID only across its pre-consumption
+    # 401 refresh retry; a post-consumption replay starts no expensive work.
+    if decision.allowed and decision.replayed:
+        raise HTTPException(
+            status_code=409,
+            detail="operation_already_consumed",
+            headers={
+                "X-PlantDiseases-Plan": decision.plan,
+                "X-Quota-Limit": str(decision.limit),
+                "X-Quota-Remaining": str(decision.remaining),
+                "X-Quota-Reset-At": decision.reset_at,
+            },
+        )
+    if not decision.allowed:
+        status_code = 402 if decision.reason == "pro_required" else 429
+        raise HTTPException(
+            status_code=status_code,
+            detail=decision.reason,
+            headers={
+                "X-PlantDiseases-Plan": decision.plan,
+                "X-Quota-Limit": str(decision.limit),
+                "X-Quota-Remaining": str(decision.remaining),
+                "X-Quota-Reset-At": decision.reset_at,
+            },
+        )
+    _remember_metered_reservation(request, reservation)
+    return decision
+
+
+async def _authorize_optional_species_lookup(request: Request) -> dict | None:
+    """Reserve one shared PlantNet unit or describe why fan-out is skipped.
+
+    A disease diagnosis remains useful without its optional species block, so
+    quota/replay/account-service failures are represented inside that block
+    instead of failing the already-authorized diagnosis.
+    """
+
+    if not plantnet_configured():
+        return None
+    try:
+        await _authorize_metered_feature(request, feature="plant_identification")
+    except HTTPException as quota_failure:
+        if quota_failure.status_code not in {402, 409, 429, 503}:
+            raise
+        return {
+            "available": False,
+            "source": {
+                402: "pro_required",
+                409: "operation_already_consumed",
+                429: "quota_exhausted",
+                503: "entitlement_unavailable",
+            }[quota_failure.status_code],
+            "best": None,
+            "candidates": [],
+        }
+    return None
 
 
 # Daily write quotas use the live connection address only in process memory.
@@ -1318,17 +1808,27 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         protected_account_path = bool(
             path.startswith("/api/community/") and not public_community_read
         )
+        metered_account_path = path in {
+            "/api/analyze",
+            "/api/identify",
+            "/api/chat",
+            "/api/care-plan",
+        }
+        compact_account_bearer = bool(
+            bearer and bearer.count(".") == 2 and metered_account_path
+        )
         # Public reads intentionally ignore both account credentials and API
-        # keys. Protected account routes reserve Authorization for the JWT;
-        # legacy bearer API keys remain accepted everywhere else.
+        # keys. Protected account routes reserve Authorization for the JWT.
+        # The metered AI routes additionally accept a compact account JWT;
+        # opaque Bearer values remain legacy API keys everywhere else.
         api_key = (
             None
             if public_community_read or protected_account_path or internal_service_path
-            else _extract_api_key(request, allow_bearer=not protected_account_path)
+            else _extract_api_key(request, allow_bearer=not compact_account_bearer)
         )
         account_token_allowed = bool(
             bearer
-            and protected_account_path
+            and (protected_account_path or compact_account_bearer)
         )
 
         # 1. API Key validation and requirement check
@@ -1351,7 +1851,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # 2. Determine identifier and limits
         if api_key:
-            identifier = f"key:{api_key}"
             # A key's config is usually a dict of overrides, but tolerate a
             # bare string/null value (e.g. {"key": "team name"}) — that key
             # then just inherits the global limits instead of 500-ing every
@@ -1365,11 +1864,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 quota_daily = int(key_cfg.get("quota_daily", 0))
             except (TypeError, ValueError):
                 rate, capacity, quota_daily = self.rate, self.capacity, 0
+            principal_id, quota_daily = _api_key_principal(api_key, quota_daily)
+            identifier = f"key:{principal_id}"
         else:
             identifier = f"ip:{client_ip}"
             rate = self.rate
             capacity = self.capacity
             quota_daily = 0
+            principal_id = None
+
+        # Metered endpoints consume the validated legacy key's daily quota at
+        # the feature boundary, after request validation. This also gives them
+        # UUID replay protection; all other routes retain the historical
+        # middleware-level generic API-key quota.
+        deferred_metered_key_quota = bool(principal_id and metered_account_path)
+        if principal_id is not None:
+            request.state.legacy_api_key_principal = (principal_id, quota_daily)
 
         # 3. Check Banned state (abuse control)
         if _is_banned(identifier):
@@ -1381,7 +1891,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Bypass rate limiter checks if rate is infinity or non-positive
         if rate == float("inf") or rate <= 0:
             # 4. Daily quota still applies to unthrottled keys.
-            if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
+            if (
+                quota_daily > 0
+                and not deferred_metered_key_quota
+                and not _check_and_increment_quota(principal_id, quota_daily)
+            ):
                 logger.warning("API-key daily quota reached")
                 return JSONResponse(
                     status_code=429,
@@ -1420,7 +1934,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # 6. Daily quota — only requests that passed the rate limiter
         # count against the key's daily budget.
-        if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
+        if (
+            quota_daily > 0
+            and not deferred_metered_key_quota
+            and not _check_and_increment_quota(principal_id, quota_daily)
+        ):
             logger.warning("API-key daily quota reached")
             return JSONResponse(
                 status_code=429,
@@ -2185,6 +2703,7 @@ async def metrics():
         # answers "is prompt caching engaging at all" after a model switch.
         "prompt_cache": prompt_cache_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
+        "plantnet": plantnet_metrics_snapshot(),
         "training": training_snapshot,
         "community": community_snapshot,
     }
@@ -2201,6 +2720,7 @@ def _prom_label(value: str) -> str:
 async def metrics_prometheus():
     """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
     snap = _snapshot_metrics()
+    plantnet = plantnet_metrics_snapshot()
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
     version = _prom_label(APP_VERSION)
 
@@ -2231,6 +2751,32 @@ async def metrics_prometheus():
             f'plantdiseases_class_predictions_total{{class="{_prom_label(class_name)}"}} {count}'
         )
 
+    lines.extend(
+        [
+            "# HELP plantdiseases_plantnet_cache_hits_total PlantNet responses served from the local image cache.",
+            "# TYPE plantdiseases_plantnet_cache_hits_total counter",
+            f"plantdiseases_plantnet_cache_hits_total {plantnet['cache_hits_total']}",
+            "# HELP plantdiseases_plantnet_upstream_attempts_total Real PlantNet network attempts after budget authorization.",
+            "# TYPE plantdiseases_plantnet_upstream_attempts_total counter",
+            f"plantdiseases_plantnet_upstream_attempts_total {plantnet['upstream_attempts_total']}",
+            "# HELP plantdiseases_plantnet_upstream_retries_total Real PlantNet retry attempts after a transient failure.",
+            "# TYPE plantdiseases_plantnet_upstream_retries_total counter",
+            f"plantdiseases_plantnet_upstream_retries_total {plantnet['upstream_retries_total']}",
+            "# HELP plantdiseases_plantnet_budget_denials_total Attempts denied by a configured shared ceiling.",
+            "# TYPE plantdiseases_plantnet_budget_denials_total counter",
+            f"plantdiseases_plantnet_budget_denials_total {plantnet['budget_denials_total']}",
+            "# HELP plantdiseases_plantnet_budget_unavailable_total Attempts denied because the shared authority was unavailable.",
+            "# TYPE plantdiseases_plantnet_budget_unavailable_total counter",
+            f"plantdiseases_plantnet_budget_unavailable_total {plantnet['budget_unavailable_total']}",
+            "# HELP plantdiseases_plantnet_reserved_cost_micros_total Marginal-cost exposure reserved by this process.",
+            "# TYPE plantdiseases_plantnet_reserved_cost_micros_total counter",
+            f"plantdiseases_plantnet_reserved_cost_micros_total {plantnet['reserved_cost_micros_total']}",
+            "# HELP plantdiseases_plantnet_daily_cost_exposure_micros Latest shared UTC-day marginal-cost exposure observed.",
+            "# TYPE plantdiseases_plantnet_daily_cost_exposure_micros gauge",
+            f"plantdiseases_plantnet_daily_cost_exposure_micros {plantnet['daily_cost_exposure_micros']}",
+        ]
+    )
+
     body = "\n".join(lines) + "\n"
     return StarletteResponse(
         content=body,
@@ -2239,7 +2785,11 @@ async def metrics_prometheus():
 
 
 async def _species_identify_best_effort(
-    image: Image.Image, *, timeout: float, lang: str = "en",
+    image_bytes: bytes,
+    *,
+    timeout: float,
+    lang: str = "en",
+    cached: dict | None = None,
 ) -> dict | None:
     """Run PlantNet identify on the default thread pool with a tight
     timeout (NOT the single-worker inference executor — there it would
@@ -2257,40 +2807,53 @@ async def _species_identify_best_effort(
     """
     loop = asyncio.get_running_loop()
     try:
-        raw = await asyncio.wait_for(
-            loop.run_in_executor(
-                _get_net_executor(),
-                # identify_species keyword args (organ, lang) are
-                # keyword-only — run_in_executor only takes positional
-                # args, so we wrap in a lambda. Passing positionally
-                # raises TypeError at call time and surfaces as a 500.
-                lambda: identify_species(
-                    _metadata_free_external_jpeg(image), organ="auto", lang=lang,
+        raw = cached
+        if raw is None:
+            raw = await asyncio.wait_for(
+                loop.run_in_executor(
+                    _get_net_executor(),
+                    # identify_species keyword args (organ, lang) are
+                    # keyword-only — run_in_executor only takes positional
+                    # args, so we wrap in a lambda. Passing positionally
+                    # raises TypeError at call time and surfaces as a 500.
+                    lambda: identify_species(
+                        image_bytes, organ="auto", lang=lang,
+                    ),
                 ),
-            ),
-            timeout=timeout,
-        )
+                timeout=timeout,
+            )
     except (TimeoutError, asyncio.CancelledError):
         logger.info("Species identify skipped (timeout / cancelled)")
         return None
     except Exception:  # noqa: BLE001
         logger.info("Species identify failed")
         return None
+    upstream_attempted = (
+        raw.get("_upstream_attempted")
+        if isinstance(raw, dict) and type(raw.get("_upstream_attempted")) is bool
+        else None
+    )
     if not raw or not raw.get("available"):
-        return {
+        unavailable = {
             "available": False,
             "source": raw.get("source", "unavailable") if raw else "unavailable",
             "best": None,
             "candidates": [],
         }
+        if upstream_attempted is not None:
+            unavailable["_upstream_attempted"] = upstream_attempted
+        return unavailable
     candidates = raw.get("results") or []
     if not candidates:
-        return {
+        no_candidates = {
             "available": True,
             "source": raw.get("source", "plantnet"),
             "best": None,
             "candidates": [],
         }
+        if upstream_attempted is not None:
+            no_candidates["_upstream_attempted"] = upstream_attempted
+        return no_candidates
     def _shape(entry: dict) -> dict:
         # PlantNet returns a `common_names` list; we surface only the
         # first one for compactness. The full list stays available via
@@ -2301,16 +2864,20 @@ async def _species_identify_best_effort(
             "common_name": (common_names[0] if common_names else None),
             "score": round(float(entry.get("score", 0.0)), 4),
         }
-    return {
+    shaped = {
         "available": True,
         "source": raw.get("source", "plantnet"),
         "best": _shape(candidates[0]),
         "candidates": [_shape(c) for c in candidates[:3]],
     }
+    if upstream_attempted is not None:
+        shaped["_upstream_attempted"] = upstream_attempted
+    return shaped
 
 
 @api_router.post("/analyze")
 async def analyze_image(
+    request: Request,
     background_tasks: BackgroundTasks,
     image: UploadFile = File(...),
     species: str | None = Query(default=None, max_length=128),
@@ -2422,6 +2989,13 @@ async def analyze_image(
                    f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
         )
 
+    # Reject malformed/unsupported photos before spending a user's allowance,
+    # then reserve exactly one metered operation before cache or inference.
+    await _authorize_metered_feature(
+        request,
+        feature=("frontier_analysis" if family == "frontier" else "gamma_analysis"),
+    )
+
     # Same-photo short-circuit. The hash is over the raw upload bytes,
     # not the decoded pixels, so even a re-encode produces a fresh
     # entry (which is the right call: re-encoded photos can differ
@@ -2498,25 +3072,55 @@ async def analyze_image(
             )
         return JSONResponse(content=cached_payload)
 
-    # Fire the PlantNet species identify in parallel with the disease
-    # pipeline. PlantNet is best-effort: if the call fails / times out
-    # / the API key isn't configured, we still return a complete
-    # diagnosis — the species field just lands as ``None``. The 10s cap
-    # matches PLANTNET_TIMEOUT (one full HTTP attempt) while staying much
-    # tighter than INFERENCE_TIMEOUT (30s) — PlantNet is an external HTTP
-    # hop and a slow upstream shouldn't hold the whole analyze response
-    # hostage; the earlier 6s cap cut off attempts the upstream would
-    # have completed. ``plantnet_lang`` was resolved above for the cache key.
-    species_task = asyncio.create_task(
-        _species_identify_best_effort(img.copy(), timeout=10.0, lang=plantnet_lang)
+    # A first-time diagnosis also offers a best-effort PlantNet species block.
+    # That is a real vendor identification call, so it shares the *same*
+    # plant-identification allowance as the explicit /api/identify surface.
+    # Without this second authorization, 30 PRO Gamma scans plus 3 explicit
+    # identifies could silently multiply paid vendor calls even though the
+    # launch product contract caps Plant identification at 3/day for PRO.
+    # Cached diagnosis responses never reach this branch and therefore spend
+    # neither a user identification unit nor a vendor call.
+    species_task: asyncio.Task | None = None
+    species_payload: dict | None = None
+    species_authorized = False
+    species_image_bytes = await loop.run_in_executor(
+        None,
+        _metadata_free_external_jpeg,
+        img.copy(),
     )
+    cached_species = await loop.run_in_executor(
+        None,
+        functools.partial(
+            plantnet_cache_lookup,
+            species_image_bytes,
+            organ="auto",
+            lang=plantnet_lang,
+        ),
+    )
+    if cached_species is None and plantnet_configured():
+        species_payload = await _authorize_optional_species_lookup(request)
+        species_authorized = species_payload is None
+    if species_payload is None:
+        # Fire PlantNet in parallel with the disease pipeline. PlantNet remains
+        # best-effort: timeout/provider failure yields an unavailable species
+        # block while the diagnosis succeeds. The 10s cap matches one full
+        # configured HTTP attempt and stays below the inference timeout.
+        species_task = asyncio.create_task(
+            _species_identify_best_effort(
+                species_image_bytes,
+                timeout=10.0,
+                lang=plantnet_lang,
+                cached=cached_species,
+            )
+        )
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(_get_inference_executor(), serving_pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
     except TimeoutError as exc:
-        species_task.cancel()
+        if species_task is not None:
+            species_task.cancel()
         _record_error()
         logger.error("Inference timed out")
         raise HTTPException(
@@ -2524,7 +3128,8 @@ async def analyze_image(
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
         ) from exc
     except Exception as exc:
-        species_task.cancel()
+        if species_task is not None:
+            species_task.cancel()
         _record_error()
         logger.error("Inference failed")
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
@@ -2611,11 +3216,26 @@ async def analyze_image(
     # name when looking up pet toxicity, but we keep the auto-detected
     # block in the response either way so the client can show the
     # match confidence.
-    species_payload: dict | None = None
-    try:
-        species_payload = await species_task
-    except Exception:  # noqa: BLE001 — defensive; helper already swallows
-        species_payload = None
+    if species_task is not None:
+        try:
+            species_payload = await species_task
+        except Exception:  # noqa: BLE001 — defensive; helper already swallows
+            species_payload = None
+
+    species_upstream_attempted = (
+        species_payload.get("_upstream_attempted")
+        if isinstance(species_payload, dict)
+        and type(species_payload.get("_upstream_attempted")) is bool
+        else None
+    )
+    if species_authorized:
+        await _release_metered_feature_if_no_upstream_attempt(
+            request,
+            feature="plant_identification",
+            upstream_attempted=species_upstream_attempted,
+        )
+    if isinstance(species_payload, dict):
+        species_payload.pop("_upstream_attempted", None)
 
     # PlantNet on a non-plant photo always returns a low-quality guess
     # ("Phaseolus vulgaris" because there was some green pixel noise)
@@ -3119,6 +3739,7 @@ class FeedbackRequest(BaseModel):
 
 @api_router.post("/identify")
 async def identify_endpoint(
+    request: Request,
     image: UploadFile = File(...),
     organ: str = "leaf",
     locale: str = "en",
@@ -3224,29 +3845,70 @@ async def identify_endpoint(
     # able to bypass the Android uploader's sanitizer and hand PlantNet EXIF
     # (including GPS) that never needed to leave the device.
     try:
-        result = await loop.run_in_executor(
-            _get_net_executor(),
-            lambda: identify_species(
-                _metadata_free_external_jpeg(img),
-                organ=organ,
-                lang=plantnet_lang,
-            ),
+        external_image = await loop.run_in_executor(
+            None,
+            lambda: _metadata_free_external_jpeg(img),
         )
     except HTTPException:
         _record_error()
         raise
+    except Exception as exc:
+        _record_error()
+        logger.warning("Identify image validation failed")
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
+    cached_result = await loop.run_in_executor(
+        None,
+        functools.partial(
+            plantnet_cache_lookup,
+            external_image,
+            organ=organ,
+            lang=plantnet_lang,
+        ),
+    )
+    identification_authorized = False
+    if cached_result is None and plantnet_configured():
+        await _authorize_metered_feature(request, feature="plant_identification")
+        identification_authorized = True
+    try:
+        result = cached_result
+        if result is None:
+            result = await loop.run_in_executor(
+                _get_net_executor(),
+                lambda: identify_species(
+                    external_image,
+                    organ=organ,
+                    lang=plantnet_lang,
+                ),
+            )
+    except HTTPException:
+        _record_error()
+        raise
+    upstream_attempted = (
+        result.get("_upstream_attempted")
+        if isinstance(result, dict)
+        and type(result.get("_upstream_attempted")) is bool
+        else None
+    )
+    if identification_authorized:
+        await _release_metered_feature_if_no_upstream_attempt(
+            request,
+            feature="plant_identification",
+            upstream_attempted=upstream_attempted,
+        )
     # Deep-copy result before merging so a cache-hit return from
     # ``identify_species`` (which now also deep-copies, but defence in
     # depth is cheap) doesn't share its nested ``results`` /
     # ``common_names`` lists with the JSON response — middleware mutation
     # would otherwise corrupt the PlantNet LRU entry for the next reader.
-    return JSONResponse(content={**copy.deepcopy(result), "organ": organ})
+    public_result = copy.deepcopy(result)
+    public_result.pop("_upstream_attempted", None)
+    return JSONResponse(content={**public_result, "organ": organ})
 
 
 @api_router.post("/chat")
-async def chat_endpoint(payload: ChatRequest):
+async def chat_endpoint(request: Request, payload: ChatRequest):
     """AI Plant Doctor — OpenRouter chat completion (default model
-    ``openai/gpt-oss-120b``).
+    ``openai/gpt-5.6-luna``).
 
     Per-session turn + token caps prevent budget overrun. Per-IP rate
     limiting from the global middleware still applies.
@@ -3257,6 +3919,8 @@ async def chat_endpoint(payload: ChatRequest):
     diagnosis = payload.diagnosis
     if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
         raise HTTPException(status_code=400, detail="diagnosis context too large")
+    if openrouter_configured():
+        await _authorize_metered_feature(request, feature="ai_doctor")
     result = await asyncio.get_running_loop().run_in_executor(
         _get_net_executor(),
         lambda: chat_reply(
@@ -3275,7 +3939,7 @@ async def chat_endpoint(payload: ChatRequest):
 
 
 @api_router.post("/care-plan")
-async def care_plan_endpoint(payload: CarePlanRequest):
+async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
     """Build a watering / fertilising / humidity schedule for a plant.
 
     Always returns a usable rules-based plan; when an OpenRouter key
@@ -3290,6 +3954,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # Don't reject — just normalise unknown to ``unknown``. Keeps the
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
+    await _authorize_metered_feature(request, feature="care_plan")
     plan = await asyncio.get_running_loop().run_in_executor(
         _get_net_executor(),
         lambda: generate_care_plan(

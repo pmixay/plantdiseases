@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_pro_gate_scrim"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="@dimen/space_lg">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_pill_secondary"
+        android:fontFamily="sans-serif-black"
+        android:letterSpacing="0.08"
+        android:paddingHorizontal="@dimen/space_md"
+        android:paddingVertical="@dimen/space_xs"
+        android:text="@string/pro_locked_badge"
+        android:textColor="@color/primary_dark"
+        android:textSize="@dimen/text_caption" />
+
+    <TextView
+        android:id="@+id/pro_gate_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:fontFamily="sans-serif-medium"
+        android:gravity="center"
+        android:text="@string/pro_lunar_locked_title"
+        android:textColor="@color/on_surface"
+        android:textSize="@dimen/text_title_sm" />
+
+    <TextView
+        android:id="@+id/pro_gate_body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_xs"
+        android:gravity="center"
+        android:maxLines="3"
+        android:text="@string/pro_lunar_locked_body"
+        android:textColor="@color/on_surface_secondary"
+        android:textSize="@dimen/text_body_sm" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/pro_gate_button"
+        style="@style/App.Button.Filled"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_md"
+        android:minHeight="48dp"
+        android:text="@string/pro_unlock" />
+</LinearLayout>

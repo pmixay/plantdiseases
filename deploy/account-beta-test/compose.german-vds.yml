@@ -12,6 +12,7 @@ x-account-environment: &account-environment
   # Providers are independent; the account service requires at least one.
   YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
   VKID_CLIENT_ID: ${VKID_CLIENT_ID:-}
+  EMAIL_PASSWORD_AUTH_ENABLED: "${EMAIL_PASSWORD_AUTH_ENABLED:-false}"
   PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
   ACCOUNT_ROOT_PATH: /plantdisease-test/id
   ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
@@ -21,6 +22,21 @@ x-account-environment: &account-environment
   ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
   ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
   INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+  RUSTORE_LIFECYCLE_ENABLED: "${RUSTORE_LIFECYCLE_ENABLED:-false}"
+  RUSTORE_CHECKOUT_ENABLED: "${RUSTORE_CHECKOUT_ENABLED:-false}"
+  RUSTORE_APPLICATION_ID: "${RUSTORE_APPLICATION_ID:-}"
+  RUSTORE_KEY_ID: "${RUSTORE_KEY_ID:-}"
+  RUSTORE_PRIVATE_KEY_FILE: /run/rustore-secrets/private-key.b64
+  RUSTORE_NOTIFICATION_KEY_FILE: /run/rustore-secrets/notification-key.b64
+  RUSTORE_PACKAGE_NAME: com.plantdiseases.app
+  RUSTORE_SUBSCRIPTION_PRODUCTS: plantdiseases_pro_monthly,plantdiseases_pro_yearly
+  RUSTORE_ALLOW_SANDBOX: "${RUSTORE_ALLOW_SANDBOX:-false}"
+  RUSTORE_NOTIFICATION_KEY_EPOCH: "${RUSTORE_NOTIFICATION_KEY_EPOCH:-staging-v1}"
+  RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "${RUSTORE_NOTIFICATION_MAX_ATTEMPTS:-8}"
+  RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "${RUSTORE_NOTIFICATION_MAX_AGE_HOURS:-168}"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-08-v1}"
+  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5}"
+  ENTITLEMENT_PRO_DAILY_LIMITS: "${ENTITLEMENT_PRO_DAILY_LIMITS:-gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20}"
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ""
 
@@ -143,6 +159,10 @@ services:
     volumes:
       - beta_account_keys:/run/account-secrets:ro
       - beta_internal_token:/run/internal-token:ro
+      - type: bind
+        source: ${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore beta secret directory}
+        target: /run/rustore-secrets
+        read_only: true
       - ./converge-runtime-grants.py:/role-contract/converge-runtime-grants.py:ro
     networks:
       - beta-private
@@ -185,6 +205,10 @@ services:
     volumes:
       - beta_account_keys:/run/account-secrets:ro
       - beta_internal_token:/run/internal-token:ro
+      - type: bind
+        source: ${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore beta secret directory}
+        target: /run/rustore-secrets
+        read_only: true
     ports:
       - name: account-api
         target: 8000

@@ -241,7 +241,7 @@
     "/api/chat": {
       "post": {
         "summary": "Chat Endpoint",
-        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-oss-120b``).\n\nPer-session turn + token caps prevent budget overrun. Per-IP rate\nlimiting from the global middleware still applies.",
+        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun. Per-IP rate\nlimiting from the global middleware still applies.",
         "operationId": "chat_endpoint_api_chat_post",
         "requestBody": {
           "content": {

@@ -18,6 +18,9 @@ import com.plantdiseases.app.auth.OfficialProviderSessionCleaner
 import com.plantdiseases.app.auth.ProviderSessionCleaner
 import com.plantdiseases.app.auth.RefreshTokenVault
 import com.plantdiseases.app.auth.SignupCompletionStore
+import com.plantdiseases.app.billing.ProPaymentClient
+import com.plantdiseases.app.billing.RuStorePayConfiguration
+import com.plantdiseases.app.billing.RuStoreProPaymentClient
 import com.plantdiseases.app.data.account.AccountApi
 import com.plantdiseases.app.data.account.AccountApiClient
 import com.plantdiseases.app.data.local.AppDatabase
@@ -66,6 +69,17 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAccountApi(): AccountApi = AccountApiClient()
+
+    @Provides
+    @Singleton
+    fun provideProPaymentClient(): ProPaymentClient = RuStoreProPaymentClient(
+        RuStorePayConfiguration(
+            consoleAppId = BuildConfig.RUSTORE_CONSOLE_APP_ID,
+            monthlyProductId = BuildConfig.RUSTORE_PRO_MONTHLY_PRODUCT_ID,
+            yearlyProductId = BuildConfig.RUSTORE_PRO_YEARLY_PRODUCT_ID,
+            enabled = BuildConfig.RUSTORE_PAY_CONFIGURED,
+        ),
+    )
 
     @Provides
     @Singleton

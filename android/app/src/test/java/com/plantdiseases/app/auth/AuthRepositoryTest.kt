@@ -144,6 +144,71 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun emailRegistrationUsesTheSameDurablePendingProfilePath() = runTest {
+        val signupStore = FakeSignupStore()
+        val api = FakeAccountApi().apply {
+            emailRegistrationResult = ExchangeResult.ProfileRequired(
+                AuthProvider.EMAIL,
+                "email-pending",
+                600,
+            )
+        }
+        val repository = repository(api, signupCompletions = signupStore)
+
+        repository.registerWithEmail(
+            "gardener@example.com",
+            "correct horse garden staple",
+        )
+
+        assertThat(api.emailRegistrationCalls).isEqualTo(1)
+        assertThat(api.lastEmailInstallationId).isEqualTo(FakeAccountApi.INSTALLATION_ID)
+        assertThat(signupStore.value?.provider).isEqualTo(AuthProvider.EMAIL)
+        assertThat(signupStore.value?.pendingSignupToken).isEqualTo("email-pending")
+        val state = repository.state.value as AuthState.ProfileRequired
+        assertThat(state.provider).isEqualTo(AuthProvider.EMAIL)
+    }
+
+    @Test
+    fun emailLoginDisplacesAndRevokesTheOldCredentialBeforeSendingPassword() = runTest {
+        val installationId = RecordingInstallationId()
+        val api = FakeAccountApi()
+        val repository = repository(
+            api = api,
+            vault = FakeVault("old-refresh"),
+            revocations = FakeLogoutRevocations(),
+            installationId = installationId,
+        )
+
+        repository.signInWithEmail(
+            "gardener@example.com",
+            "correct horse garden staple",
+        )
+
+        assertThat(api.logoutRefreshTokens).containsExactly("old-refresh")
+        assertThat(installationId.rotations).isEqualTo(1)
+        assertThat(api.lastEmailInstallationId).isEqualTo(RecordingInstallationId.ROTATED_ID)
+        assertThat(repository.state.value).isInstanceOf(AuthState.Authenticated::class.java)
+    }
+
+    @Test
+    fun emailReauthenticationUsesCurrentAccountSessionWithoutPersistingAnotherCredential() = runTest {
+        val vault = FakeVault()
+        val api = FakeAccountApi()
+        val repository = repository(api, vault)
+        repository.signIn(AuthProvider.YANDEX, "provider-proof")
+
+        val result = repository.reauthenticateWithEmail(
+            "correct horse garden staple",
+            "link_vk",
+        )
+
+        assertThat(result.getOrThrow().reauthToken).isEqualTo("email-reauth")
+        assertThat(api.emailReauthCalls).isEqualTo(1)
+        assertThat(api.lastEmailReauthScope).isEqualTo("link_vk")
+        assertThat(vault.value).isEqualTo("refresh-1")
+    }
+
+    @Test
     fun concurrent401s_shareOneRefresh() = runTest {
         val api = FakeAccountApi().apply {
             refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")

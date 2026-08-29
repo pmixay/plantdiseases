@@ -33,6 +33,63 @@ class AccountUiPolicyTest {
     }
 
     @Test
+    fun emailPrimaryAccountCanReauthenticateWithoutAnOauthProvider() {
+        val profile = AccountProfile(
+            nickname = "Gardener",
+            communityActorId = "actor-id",
+            primaryProvider = ProviderProfile("email", "Email"),
+            linkedProviders = listOf(LinkedProvider("email", "2026-01-01T00:00:00Z")),
+            createdAt = "2026-01-01T00:00:00Z",
+            updatedAt = "2026-01-03T00:00:00Z",
+            state = "active",
+        )
+
+        assertThat(profile.reauthProviders()).containsExactly(AuthProvider.EMAIL)
+    }
+
+    @Test
+    fun emailCredentialValidationMatchesThePublicAccountPolicy() {
+        assertThat(
+            validateEmailCredential(
+                "gardener@xn--e1afmkfd.xn--p1ai",
+                "correct horse garden staple",
+            ),
+        ).isNull()
+        assertThat(
+            validateEmailCredential("not-an-address", "correct horse garden staple"),
+        ).isEqualTo(EmailCredentialIssue.INVALID_EMAIL)
+        assertThat(
+            validateEmailCredential("gardener@example.com", "too short"),
+        ).isEqualTo(EmailCredentialIssue.INVALID_PASSWORD_LENGTH)
+    }
+
+    @Test
+    fun passwordLengthUsesUnicodeCodePointsLikeTheAccountServer() {
+        val leaf = "🌿"
+
+        assertThat(passwordLengthIsValid(leaf.repeat(14))).isFalse()
+        assertThat(passwordLengthIsValid(leaf.repeat(15))).isTrue()
+        assertThat(passwordLengthIsValid(leaf.repeat(128))).isTrue()
+        assertThat(passwordLengthIsValid(leaf.repeat(129))).isFalse()
+    }
+
+    @Test
+    fun registrationErrorsDoNotRevealWhetherAnEmailAlreadyExists() {
+        assertThat(
+            emailAuthenticationError(
+                EmailAuthenticationAction.REGISTER,
+                "invalid_registration",
+            ),
+        ).isEqualTo(EmailAuthenticationError.REGISTRATION)
+        assertThat(
+            emailAuthenticationError(
+                EmailAuthenticationAction.REGISTER,
+                "registration_unavailable",
+            ),
+        ).isEqualTo(EmailAuthenticationError.REGISTRATION)
+    }
+
+    @Test
     fun parseAccountTimestamp_acceptsServerIsoInstant() {
         assertThat(parseAccountTimestamp("2026-01-02T03:04:05Z"))
             .isEqualTo(Instant.parse("2026-01-02T03:04:05Z"))

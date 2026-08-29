@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from app.api.errors import AccountAPIError
+from app.api.routes import _require_email_password_auth
 from app.config import Settings, SettingsError
 
 
@@ -193,6 +196,30 @@ def test_malformed_boolean_and_rate_limit_are_rejected():
         Settings.from_env(_base_env() | {"PROVIDER_HTTP_TIMEOUT_SECONDS": "30"})
 
 
+def test_email_password_auth_is_fail_closed_and_beta_only(tmp_path: Path):
+    disabled = Settings.from_env(_base_env())
+    enabled = Settings.from_env(
+        _base_env() | {"EMAIL_PASSWORD_AUTH_ENABLED": "true"}
+    )
+    assert disabled.email_password_auth_enabled is False
+    assert enabled.email_password_auth_enabled is True
+
+    disabled_request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(settings=disabled))
+    )
+    enabled_request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(settings=enabled))
+    )
+    with pytest.raises(AccountAPIError, match="email_auth_unavailable"):
+        _require_email_password_auth(disabled_request)
+    _require_email_password_auth(enabled_request)
+
+    production = _production_env(tmp_path)
+    production["EMAIL_PASSWORD_AUTH_ENABLED"] = "true"
+    with pytest.raises(SettingsError, match="blocked in production"):
+        Settings.from_env(production)
+
+
 def test_remote_provider_mode_accepts_each_public_application_id_independently():
     remote = _base_env() | {"AUTH_PROVIDER_MODE": "remote"}
     with pytest.raises(SettingsError, match="YANDEX_CLIENT_ID or VKID_CLIENT_ID"):
@@ -252,6 +279,199 @@ def test_safe_production_settings_are_accepted(tmp_path: Path):
     settings = Settings.from_env(_production_env(tmp_path))
     assert settings.is_production is True
     assert settings.auth_provider_mode == "remote"
+
+
+def test_rustore_billing_is_off_by_default_and_requires_complete_secret_config(
+    tmp_path: Path,
+):
+    assert Settings.from_env(_base_env()).rustore_billing_enabled is False
+    enabled = _base_env() | {"RUSTORE_BILLING_ENABLED": "true"}
+    with pytest.raises(SettingsError, match="RUSTORE_APPLICATION_ID"):
+        Settings.from_env(enabled)
+
+    enabled |= {
+        "RUSTORE_APPLICATION_ID": "12345",
+        "RUSTORE_KEY_ID": "67890",
+        "RUSTORE_PRIVATE_KEY_FILE": _secret(tmp_path / "rustore-private.b64"),
+        "RUSTORE_NOTIFICATION_KEY_FILE": _secret(tmp_path / "rustore-aes.b64"),
+    }
+    settings = Settings.from_env(enabled)
+    assert settings.rustore_billing_enabled is True
+    assert settings.rustore_lifecycle_enabled is True
+    assert settings.rustore_checkout_enabled is True
+    assert settings.rustore_products == (
+        "plantdiseases_pro_monthly",
+        "plantdiseases_pro_yearly",
+    )
+
+
+def test_rustore_checkout_can_stop_while_lifecycle_configuration_remains_active(
+    tmp_path: Path,
+):
+    env = _base_env() | {
+        "RUSTORE_LIFECYCLE_ENABLED": "true",
+        "RUSTORE_CHECKOUT_ENABLED": "false",
+        "RUSTORE_APPLICATION_ID": "12345",
+        "RUSTORE_KEY_ID": "67890",
+        "RUSTORE_PRIVATE_KEY_FILE": _secret(tmp_path / "rustore-private.b64"),
+        "RUSTORE_NOTIFICATION_KEY_FILE": _secret(tmp_path / "rustore-aes.b64"),
+        "RUSTORE_NOTIFICATION_KEY_EPOCH": "staging-rotation-2",
+    }
+
+    settings = Settings.from_env(env)
+
+    assert settings.rustore_lifecycle_enabled is True
+    assert settings.rustore_checkout_enabled is False
+    assert settings.rustore_billing_enabled is False
+    assert settings.rustore_notification_key_epoch == "staging-rotation-2"
+
+
+def test_rustore_checkout_requires_lifecycle_and_legacy_switch_cannot_be_mixed():
+    with pytest.raises(SettingsError, match="requires RUSTORE_LIFECYCLE_ENABLED"):
+        Settings.from_env(
+            _base_env()
+            | {
+                "RUSTORE_LIFECYCLE_ENABLED": "false",
+                "RUSTORE_CHECKOUT_ENABLED": "true",
+            }
+        )
+    with pytest.raises(SettingsError, match="accepted only in test/development"):
+        Settings.from_env(
+            _base_env()
+            | {
+                "ENVIRONMENT": "staging",
+                "RUSTORE_BILLING_ENABLED": "false",
+            }
+        )
+    with pytest.raises(SettingsError, match="cannot be mixed"):
+        Settings.from_env(
+            _base_env()
+            | {
+                "RUSTORE_BILLING_ENABLED": "false",
+                "RUSTORE_LIFECYCLE_ENABLED": "true",
+            }
+        )
+
+
+def test_entitlement_quota_policy_is_exact_versioned_and_operator_configurable():
+    settings = Settings.from_env(
+        _base_env()
+        | {
+            "ENTITLEMENT_QUOTA_POLICY_VERSION": "cohort-b-v2",
+            "ENTITLEMENT_FREE_DAILY_LIMITS": (
+                "gamma_analysis=2,frontier_analysis=0,plant_identification=1,"
+                "ai_doctor=2,care_plan=4"
+            ),
+            "ENTITLEMENT_PRO_DAILY_LIMITS": (
+                "gamma_analysis=20,frontier_analysis=2,plant_identification=4,"
+                "ai_doctor=12,care_plan=16"
+            ),
+        }
+    )
+
+    assert settings.entitlement_quota_policy_version == "cohort-b-v2"
+    assert settings.entitlement_free_daily_limits == (2, 0, 1, 2, 4)
+    assert settings.entitlement_pro_daily_limits == (20, 2, 4, 12, 16)
+
+    with pytest.raises(SettingsError, match="each supported feature exactly once"):
+        Settings.from_env(
+            _base_env()
+            | {"ENTITLEMENT_FREE_DAILY_LIMITS": "gamma_analysis=5"}
+        )
+
+
+def test_rustore_configuration_rejects_package_product_and_environment_mixups(
+    tmp_path: Path,
+):
+    enabled = _base_env() | {
+        "RUSTORE_BILLING_ENABLED": "true",
+        "RUSTORE_APPLICATION_ID": "12345",
+        "RUSTORE_KEY_ID": "67890",
+        "RUSTORE_PRIVATE_KEY_FILE": _secret(tmp_path / "rustore-private.b64"),
+        "RUSTORE_NOTIFICATION_KEY_FILE": _secret(tmp_path / "rustore-aes.b64"),
+    }
+    with pytest.raises(SettingsError, match="RUSTORE_PACKAGE_NAME"):
+        Settings.from_env(enabled | {"RUSTORE_PACKAGE_NAME": "com.other.app"})
+    with pytest.raises(SettingsError, match="SUBSCRIPTION_PRODUCTS"):
+        Settings.from_env(
+            enabled
+            | {
+                "RUSTORE_SUBSCRIPTION_PRODUCTS": (
+                    "plantdiseases_pro_monthly,plantdiseases_pro_monthly"
+                )
+            }
+        )
+    for invalid_application_id in ("0", "١٢٣", "1" * 20):
+        with pytest.raises(SettingsError, match="RUSTORE_APPLICATION_ID"):
+            Settings.from_env(
+                enabled | {"RUSTORE_APPLICATION_ID": invalid_application_id}
+            )
+    for invalid_key_id in ("0", "１２３", "1" * 33):
+        with pytest.raises(SettingsError, match="RUSTORE_KEY_ID"):
+            Settings.from_env(enabled | {"RUSTORE_KEY_ID": invalid_key_id})
+
+    explicit_enabled = {
+        key: value
+        for key, value in enabled.items()
+        if key != "RUSTORE_BILLING_ENABLED"
+    } | {
+        "RUSTORE_LIFECYCLE_ENABLED": "true",
+        "RUSTORE_CHECKOUT_ENABLED": "true",
+    }
+    production = _production_env(tmp_path) | explicit_enabled | {
+        "ENVIRONMENT": "production",
+        "ACCOUNT_ISSUER": "https://id.example.invalid",
+        "RUSTORE_ALLOW_SANDBOX": "true",
+    }
+    with pytest.raises(SettingsError, match="forbidden in production"):
+        Settings.from_env(production)
+
+
+def test_plantnet_budget_is_disabled_by_default_and_requires_versioned_dual_caps():
+    assert Settings.from_env(_base_env()).plantnet_budget_enabled is False
+    enabled = _base_env() | {"PLANTNET_BUDGET_ENABLED": "true"}
+    with pytest.raises(SettingsError, match="POLICY_VERSION"):
+        Settings.from_env(enabled)
+
+    enabled |= {
+        "PLANTNET_BUDGET_POLICY_VERSION": "plantnet-pro-2026-08",
+        "PLANTNET_DAILY_ATTEMPT_LIMIT": "100",
+        "PLANTNET_ATTEMPT_COST_MICROS": "5000",
+        "PLANTNET_DAILY_COST_LIMIT_MICROS": "500000",
+    }
+    settings = Settings.from_env(enabled)
+    assert settings.plantnet_budget_enabled is True
+    assert settings.plantnet_budget_policy_version == "plantnet-pro-2026-08"
+    assert settings.plantnet_daily_attempt_limit == 100
+    assert settings.plantnet_attempt_cost_micros == 5_000
+    assert settings.plantnet_daily_cost_limit_micros == 500_000
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("PLANTNET_BUDGET_POLICY_VERSION", "bad version", "POLICY_VERSION"),
+        ("PLANTNET_DAILY_ATTEMPT_LIMIT", "0", "ATTEMPT_LIMIT"),
+        ("PLANTNET_ATTEMPT_COST_MICROS", "0", "ATTEMPT_COST"),
+        ("PLANTNET_DAILY_COST_LIMIT_MICROS", "0", "COST_LIMIT"),
+        ("PLANTNET_ATTEMPT_COST_MICROS", "500001", "must not exceed"),
+    ],
+)
+def test_plantnet_budget_rejects_unversioned_or_nonpositive_policy(
+    name: str,
+    value: str,
+    message: str,
+):
+    enabled = _base_env() | {
+        "PLANTNET_BUDGET_ENABLED": "true",
+        "PLANTNET_BUDGET_POLICY_VERSION": "plantnet-pro-2026-08",
+        "PLANTNET_DAILY_ATTEMPT_LIMIT": "100",
+        "PLANTNET_ATTEMPT_COST_MICROS": "5000",
+        "PLANTNET_DAILY_COST_LIMIT_MICROS": "500000",
+        name: value,
+    }
+    with pytest.raises(SettingsError, match=message):
+        Settings.from_env(enabled)
 
 
 def _production_env(tmp_path: Path) -> dict[str, str]:

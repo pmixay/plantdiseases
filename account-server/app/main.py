@@ -7,6 +7,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
@@ -15,6 +16,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.errors import AccountAPIError
 from app.api.routes import router as account_router
+from app.billing.notifications import build_notification_decoder
+from app.billing.rustore import build_rustore_client
 from app.community_deletion import (
     build_community_deletion_dispatcher,
     build_community_nickname_dispatcher,
@@ -29,6 +32,8 @@ from app.security.internal import load_internal_service_token
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import TokenService
 from app.services.accounts import AccountService
+from app.services.entitlements import EntitlementService, QuotaPolicy
+from app.services.vendor_budgets import VendorBudgetService
 
 logger = logging.getLogger("plantdiseases.account")
 _MAINTENANCE_INTERVAL_SECONDS = 60
@@ -40,6 +45,8 @@ def create_app(
     providers: Mapping[ProviderName, ProviderAdapter] | None = None,
     database: DatabaseHandle | None = None,
     account_service: AccountService | None = None,
+    entitlement_service: EntitlementService | None = None,
+    vendor_budget_service: VendorBudgetService | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
     internal_service_token = load_internal_service_token(config)
@@ -48,6 +55,8 @@ def create_app(
         raise ValueError("At least one supported provider adapter is required")
     database_handle = database or Database(config.database_url)
     domain_service = account_service
+    domain_entitlement_service = entitlement_service
+    domain_vendor_budget_service = vendor_budget_service
     if domain_service is None and hasattr(database_handle, "session_factory"):
         domain_service = AccountService(
             repository=AccountRepository(database_handle.session_factory),
@@ -65,6 +74,29 @@ def create_app(
             nickname_dispatcher=build_community_nickname_dispatcher(
                 config, service_token=internal_service_token
             ),
+        )
+    if domain_entitlement_service is None and hasattr(
+        database_handle, "session_factory"
+    ):
+        domain_entitlement_service = EntitlementService(
+            repository=AccountRepository(database_handle.session_factory),
+            rustore_client=build_rustore_client(config),
+            notification_decoder=build_notification_decoder(config),
+            allowed_products=config.rustore_products,
+            allow_sandbox=config.rustore_allow_sandbox,
+            checkout_enabled=config.rustore_checkout_enabled,
+            quota_policy=QuotaPolicy.from_settings(config),
+            notification_max_attempts=config.rustore_notification_max_attempts,
+            notification_max_age=timedelta(
+                hours=config.rustore_notification_max_age_hours
+            ),
+        )
+    if domain_vendor_budget_service is None and hasattr(
+        database_handle, "session_factory"
+    ):
+        domain_vendor_budget_service = VendorBudgetService.from_settings(
+            repository=AccountRepository(database_handle.session_factory),
+            settings=config,
         )
 
     @asynccontextmanager
@@ -85,8 +117,23 @@ def create_app(
                             domain_service.process_nickname_jobs,
                             domain_service.process_deletion_jobs,
                         ]
+                        if domain_entitlement_service is not None:
+                            operations.extend(
+                                (
+                                    domain_entitlement_service.process_notification_jobs,
+                                    domain_entitlement_service.reconcile_due_subscriptions,
+                                )
+                            )
                         if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
                             operations.append(domain_service.prune_expired_private_state)
+                            if domain_entitlement_service is not None:
+                                operations.append(
+                                    domain_entitlement_service.prune_expired_usage
+                                )
+                            if domain_vendor_budget_service is not None:
+                                operations.append(
+                                    domain_vendor_budget_service.prune_expired_state
+                                )
                         for operation in operations:
                             try:
                                 await asyncio.to_thread(
@@ -117,6 +164,8 @@ def create_app(
     application.state.providers = provider_registry
     application.state.database = database_handle
     application.state.account_service = domain_service
+    application.state.entitlement_service = domain_entitlement_service
+    application.state.vendor_budget_service = domain_vendor_budget_service
     application.state.internal_service_token = internal_service_token
 
     if config.cors_origins:

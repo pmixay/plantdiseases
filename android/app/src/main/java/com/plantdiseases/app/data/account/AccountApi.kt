@@ -7,6 +7,18 @@ interface AccountApi {
         installationId: String,
     ): ExchangeResult
 
+    suspend fun registerEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult.ProfileRequired
+
+    suspend fun loginEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult
+
     suspend fun completeSignup(
         pendingSignupToken: String,
         completionId: String,
@@ -45,6 +57,12 @@ interface AccountApi {
         scope: String,
     ): ReauthResponse
 
+    suspend fun reauthenticateEmail(
+        accessToken: String,
+        password: String,
+        scope: String,
+    ): ReauthResponse
+
     suspend fun linkProvider(
         accessToken: String,
         provider: AuthProvider,
@@ -53,6 +71,17 @@ interface AccountApi {
     ): LinkResponse
 
     suspend fun me(accessToken: String): AccountProfile
+
+    /** Future account-server contract; entitlement truth never comes from a
+     * client preference or an unverified store callback. */
+    suspend fun entitlements(accessToken: String): EntitlementsResponse
+
+    suspend fun verifyRustorePurchase(
+        accessToken: String,
+        productId: String,
+        purchaseId: String,
+        sandbox: Boolean,
+    ): EntitlementsResponse
 
     suspend fun changeNickname(accessToken: String, nickname: String): NicknameResponse
 

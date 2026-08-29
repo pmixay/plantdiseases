@@ -92,9 +92,20 @@ def test_analyze_frontier_disabled_returns_graceful_unavailable(client, png_byte
     assert "class_name" not in body
 
 
-def test_analyze_frontier_enabled_routes_to_frontier_pipeline(client, png_bytes):
-    """With a frontier pipeline loaded, the request is served (not gated)."""
+def test_analyze_frontier_enabled_routes_to_frontier_pipeline(
+    client, png_bytes, monkeypatch
+):
+    """After PRO admission, a loaded frontier pipeline serves the request."""
     from tests.conftest import FakePipeline
+
+    async def allow_metered_feature(_request, *, feature):
+        assert feature == "frontier_analysis"
+
+    monkeypatch.setattr(
+        server_main,
+        "_authorize_metered_feature",
+        allow_metered_feature,
+    )
 
     frontier = FakePipeline()
     frontier.classifier.model_family = "frontier"
@@ -114,9 +125,20 @@ def test_analyze_frontier_enabled_routes_to_frontier_pipeline(client, png_bytes)
         server_main.pipeline_frontier = original
 
 
-def test_frontier_and_gamma_caches_do_not_collide(client, png_bytes):
+def test_frontier_and_gamma_caches_do_not_collide(client, png_bytes, monkeypatch):
     """Same bytes, different family → independent cache entries."""
     from tests.conftest import FakePipeline
+
+    authorized: list[str] = []
+
+    async def allow_metered_feature(_request, *, feature):
+        authorized.append(feature)
+
+    monkeypatch.setattr(
+        server_main,
+        "_authorize_metered_feature",
+        allow_metered_feature,
+    )
 
     frontier = FakePipeline()
     frontier.classifier.model_family = "frontier"
@@ -127,6 +149,7 @@ def test_frontier_and_gamma_caches_do_not_collide(client, png_bytes):
         f = _analyze(client, png_bytes, family="frontier").json()
         assert g["family"] == "gamma"
         assert f["family"] == "frontier"
+        assert authorized == ["gamma_analysis", "frontier_analysis"]
         # A gamma cache hit must never be replayed as frontier.
         assert g.get("is_repeat") is False
         assert f.get("is_repeat") is False

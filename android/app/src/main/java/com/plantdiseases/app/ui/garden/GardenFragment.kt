@@ -23,6 +23,7 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.snackbar.Snackbar
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
+import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.data.local.RoomEntity
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
@@ -85,6 +86,9 @@ class GardenFragment : Fragment() {
 
     @Inject
     lateinit var careRepository: CareRepository
+
+    @Inject
+    lateinit var entitlementRepository: EntitlementRepository
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -151,6 +155,7 @@ class GardenFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        entitlementRepository.refreshInBackground()
         if (_binding != null && !isFirstLoad) loadGarden(animate = false)
     }
 

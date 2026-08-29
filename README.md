@@ -167,10 +167,14 @@ setup (nginx/TLS, systemd, API keys, Android signing/FCM) is the rest of it.
    No endpoint arguments are required. Local mock development explicitly sets
    `ACCOUNT_REAL_OAUTH=false`, `APP_API_BASE_URL`, and `ACCOUNT_API_BASE_URL`.
 
-Release signing, FCM push, TLS, and the optional integrations — `PLANTNET_API_KEY`
-(species ID) and `OPENROUTER_API_KEY` (AI doctor); the server runs fine without them
-and reports each as "unavailable" — are all covered in
+Release signing, FCM push, and TLS are covered in
 [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Production loads the optional species-ID and AI Doctor integrations from
+`PLANTNET_API_KEY_FILE` and `OPENROUTER_API_KEY_FILE`; without them, the server
+runs normally and reports the corresponding feature as unavailable.
+Direct keys require an explicit `ENVIRONMENT=test` or
+`ENVIRONMENT=development`; an unset, staging, or production environment fails
+closed and accepts only the corresponding owner-only secret file.
 
 ## API
 

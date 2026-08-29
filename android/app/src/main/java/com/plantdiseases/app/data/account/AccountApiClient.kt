@@ -88,6 +88,24 @@ class AccountApiClient(
         setBody(ExchangeRequest(providerAccessToken, installationId))
     }.decodeExchange()
 
+    override suspend fun registerEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult.ProfileRequired = client.post("v1/auth/email/register") {
+        contentType(ContentType.Application.Json)
+        setBody(EmailCredentialRequest(email, password, installationId))
+    }.decodeEmailRegistration()
+
+    override suspend fun loginEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult = client.post("v1/auth/email/login") {
+        contentType(ContentType.Application.Json)
+        setBody(EmailCredentialRequest(email, password, installationId))
+    }.decodeExchange()
+
     override suspend fun completeSignup(
         pendingSignupToken: String,
         completionId: String,
@@ -162,6 +180,16 @@ class AccountApiClient(
         setBody(ReauthRequest(provider.wireName, providerAccessToken, scope))
     }.decode()
 
+    override suspend fun reauthenticateEmail(
+        accessToken: String,
+        password: String,
+        scope: String,
+    ): ReauthResponse = client.post("v1/auth/email/reauth") {
+        bearer(accessToken)
+        contentType(ContentType.Application.Json)
+        setBody(EmailReauthRequest(password, scope))
+    }.decode()
+
     override suspend fun linkProvider(
         accessToken: String,
         provider: AuthProvider,
@@ -175,6 +203,20 @@ class AccountApiClient(
 
     override suspend fun me(accessToken: String): AccountProfile =
         client.get("v1/me") { bearer(accessToken) }.decode()
+
+    override suspend fun entitlements(accessToken: String): EntitlementsResponse =
+        client.get("v1/entitlements") { bearer(accessToken) }.decode()
+
+    override suspend fun verifyRustorePurchase(
+        accessToken: String,
+        productId: String,
+        purchaseId: String,
+        sandbox: Boolean,
+    ): EntitlementsResponse = client.post("v1/billing/rustore/verify") {
+        bearer(accessToken)
+        contentType(ContentType.Application.Json)
+        setBody(RustoreVerificationRequest(productId, purchaseId, sandbox))
+    }.decode()
 
     override suspend fun changeNickname(accessToken: String, nickname: String): NicknameResponse =
         client.patch("v1/me/nickname") {
@@ -228,6 +270,14 @@ class AccountApiClient(
             )
             else -> invalidAuthResponse("invalid_auth_response")
         }
+    }
+
+    private suspend fun HttpResponse.decodeEmailRegistration(): ExchangeResult.ProfileRequired {
+        val result = decodeExchange()
+        if (result !is ExchangeResult.ProfileRequired || result.provider != AuthProvider.EMAIL) {
+            invalidAuthResponse("invalid_email_registration_response")
+        }
+        return result
     }
 
     private suspend fun HttpResponse.decodeSignupCompletion(): ExchangeResult.Authenticated {

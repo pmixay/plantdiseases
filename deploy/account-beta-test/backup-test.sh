@@ -173,12 +173,20 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
     account_nickname_jobs,
     account_security_events,
     accounts,
+    billing_customers,
+    billing_purchase_fetches,
+    billing_notification_receipts,
+    feature_usage,
+    feature_usage_receipts,
+    password_credentials,
+    pending_password_credentials,
     pending_signups,
     push_devices,
     reauth_challenges,
     refresh_tokens,
     sessions,
-    signup_completions
+    signup_completions,
+    subscriptions
 TO beta_account_runtime;
 GRANT SELECT ON TABLE alembic_version TO beta_account_runtime;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO beta_account_backup;
@@ -201,15 +209,26 @@ UNION ALL SELECT 'account_nickname_claims=' || count(*) FROM account_nickname_cl
 UNION ALL SELECT 'account_nickname_jobs=' || count(*) FROM account_nickname_jobs
 UNION ALL SELECT 'account_security_events=' || count(*) FROM account_security_events
 UNION ALL SELECT 'accounts=' || count(*) FROM accounts
+UNION ALL SELECT 'billing_customers=' || count(*) FROM billing_customers
+UNION ALL SELECT 'billing_purchase_fetches=' || count(*) FROM billing_purchase_fetches
+UNION ALL SELECT 'billing_notification_receipts=' || count(*) FROM billing_notification_receipts
+UNION ALL SELECT 'feature_usage=' || count(*) FROM feature_usage
+UNION ALL SELECT 'feature_usage_receipts=' || count(*) FROM feature_usage_receipts
+UNION ALL SELECT 'password_credentials=' || count(*) FROM password_credentials
+UNION ALL SELECT 'pending_password_credentials=' || count(*) FROM pending_password_credentials
 UNION ALL SELECT 'pending_signups=' || count(*) FROM pending_signups
 UNION ALL SELECT 'push_devices=' || count(*) FROM push_devices
 UNION ALL SELECT 'reauth_challenges=' || count(*) FROM reauth_challenges
 UNION ALL SELECT 'refresh_tokens=' || count(*) FROM refresh_tokens
 UNION ALL SELECT 'sessions=' || count(*) FROM sessions
 UNION ALL SELECT 'signup_completions=' || count(*) FROM signup_completions
+UNION ALL SELECT 'subscriptions=' || count(*) FROM subscriptions
+UNION ALL SELECT 'vendor_budget_authorities=' || count(*) FROM vendor_budget_authorities
+UNION ALL SELECT 'vendor_budget_daily=' || count(*) FROM vendor_budget_daily
+UNION ALL SELECT 'vendor_budget_receipts=' || count(*) FROM vendor_budget_receipts
 ORDER BY 1;"
 
-expected_schema_revision=0006_signup_completion_idempotency
+expected_schema_revision=0010_billing_lifecycle_quota_policy
 source_revision=$(compose exec -T beta-postgres psql \
     -X -A -t -v ON_ERROR_STOP=1 -U beta_account_backup -d plantdisease_beta \
     -c "SELECT version_num FROM alembic_version;")
@@ -230,12 +249,23 @@ account_nickname_jobs
 account_security_events
 accounts
 alembic_version
+billing_customers
+billing_purchase_fetches
+billing_notification_receipts
+feature_usage
+feature_usage_receipts
+password_credentials
+pending_password_credentials
 pending_signups
 push_devices
 reauth_challenges
 refresh_tokens
 sessions
-signup_completions"
+signup_completions
+subscriptions
+vendor_budget_authorities
+vendor_budget_daily
+vendor_budget_receipts"
 table_inventory_sql="SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
@@ -278,7 +308,7 @@ role_contract_sql="SELECT
   (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()),
   (SELECT schema_owner FROM information_schema.schemata WHERE schema_name = 'public'),
   COALESCE((SELECT bool_and(tableowner = 'beta_account_migrator') FROM pg_tables WHERE schemaname = 'public'), false),
-  COALESCE((SELECT count(*) = 13 AND bool_and(
+  COALESCE((SELECT count(*) = 20 AND bool_and(
       has_table_privilege('beta_account_runtime', format('%I.%I', schemaname, tablename), 'SELECT') AND
       has_table_privilege('beta_account_runtime', format('%I.%I', schemaname, tablename), 'INSERT') AND
       has_table_privilege('beta_account_runtime', format('%I.%I', schemaname, tablename), 'UPDATE') AND
@@ -330,7 +360,7 @@ fi
 # signup tables are empty.
 compose exec -T beta-postgres psql \
     -X -v ON_ERROR_STOP=1 -U beta_account_runtime -d "$restore_db" \
-    -c "BEGIN; SELECT count(*) FROM accounts; SELECT count(*) FROM signup_completions; INSERT INTO accounts (id) SELECT NULL::uuid WHERE false; INSERT INTO signup_completions (id, pending_signup_id, installation_id, request_fingerprint, created_at, expires_at) SELECT NULL::uuid, NULL::uuid, NULL::uuid, NULL::bytea, now(), now() WHERE false; UPDATE signup_completions SET expires_at = expires_at WHERE false; DELETE FROM signup_completions WHERE false; ROLLBACK;" >/dev/null
+    -c "BEGIN; SELECT count(*) FROM accounts; SELECT count(*) FROM password_credentials; SELECT count(*) FROM subscriptions; SELECT count(*) FROM signup_completions; INSERT INTO accounts (id) SELECT NULL::uuid WHERE false; INSERT INTO signup_completions (id, pending_signup_id, installation_id, request_fingerprint, created_at, expires_at) SELECT NULL::uuid, NULL::uuid, NULL::uuid, NULL::bytea, now(), now() WHERE false; UPDATE signup_completions SET expires_at = expires_at WHERE false; DELETE FROM signup_completions WHERE false; ROLLBACK;" >/dev/null
 if compose exec -T beta-postgres psql \
     -X -v ON_ERROR_STOP=1 -U beta_account_runtime -d "$restore_db" \
     -c "CREATE TABLE account_restore_privilege_escape (id integer);" >/dev/null 2>&1; then

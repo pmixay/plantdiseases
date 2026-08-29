@@ -7,6 +7,10 @@ reload nginx, enable OAuth, or deploy production.
 
 Testing and Android SDK setup are covered by
 [ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md](ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md).
+Email/password remains subject to
+[EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md),
+and every PlantDiseases PRO/RuStore change must follow
+[PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
 
 ## 1. Do not confuse the four environments
 
@@ -16,6 +20,12 @@ Testing and Android SDK setup are covered by
 | German account beta | Restricted `/plantdisease-test/` team staging | Dedicated disposable beta volumes | Real Yandex/VK, named test accounts only | Isolated branch Compose, loopback `18100/18101` |
 | Russian data plane | Final Android/API ingress and all user-derived storage | Account, community, media, training, telemetry, logs, polling state, and backups; push is disabled in 1.9 | Real Yandex/VK | Reviewed production deployment derived from `compose.russia-template.yml` |
 | German ML worker | Private inference called only from Russia | None; models are read-only, request temp is tmpfs | mTLS service identity only | Reviewed worker derived from `compose.germany-worker-template.yml` |
+
+The 0007 email/password backend exists in the branch but is under a production
+HOLD: no environment becomes an approved email-auth environment until inbox
+verification, recovery, and distributed abuse controls are complete. RuStore
+billing is likewise disabled by default; a restricted sandbox exercise is not
+production entitlement evidence and must use separate RSA/AES material.
 
 The existing main service and German beta may remain online while Russian
 staging is prepared. After production cutover, Germany may keep only the
@@ -102,24 +112,37 @@ source filename, metadata, client address, and consent state must not cross.
    bytes.
 4. Render the final Compose/configuration before starting. Run migrations as a
    one-shot job, require the exact reviewed head
-   `0006_signup_completion_idempotency` and its `signup_completions` table, then
-   run grant convergence over the same migrator-owned connection. It must
-   reject unexpected tables/sequences, grant runtime DML only to the 13
-   application tables, and leave `alembic_version` SELECT-only before account
-   readiness and app readiness.
+   `0010_billing_lifecycle_quota_policy`, then run grant convergence over the same
+   migrator-owned connection. It must reject unexpected tables/sequences, grant
+   runtime DML only to the exact 24 application tables, and leave
+   `alembic_version` SELECT-only before account readiness and app readiness. The
+   inventory includes `signup_completions`, both 0007 password tables, and all
+   five 0008 billing/quota tables, all three 0009 aggregate PlantNet budget
+   tables, and the 0010 purchase-fetch guard plus hardened receipt columns; an
+   older 0006/13-table database is rejected.
 5. Confirm internal services and PostgreSQL have no public host port. Expose
    only Russian TLS ingress to Android.
 6. Test the Russian reconstruction of the worker request with malicious extra
    headers/fields and prove none reaches a fake German worker.
 7. Complete encrypted backup and restore into a fresh target before accepting
    any real account. The restore evidence must match the exact revision, exact
-   13-table application inventory plus `alembic_version`, row counts (including
-   `signup_completions`), runtime denial of migration-metadata UPDATE/DELETE,
-   migrator ownership/write, and backup-role probes.
+   24-table application inventory plus `alembic_version`, row counts (including
+   password credentials, subscription state, usage counters, and receipts),
+   runtime denial of migration-metadata UPDATE/DELETE, migrator ownership/write,
+   and backup-role probes.
 
 ### Phase 3 — Real-provider Russian staging
 
 - Configure remote Yandex/VK verification with staging application IDs.
+- Keep `EMAIL_PASSWORD_AUTH_ENABLED=false` outside a controlled non-production
+  beta. A beta exercise uses disposable addresses/accounts only and does not
+  clear the production HOLD; production Settings reject an attempted enable.
+- Keep `RUSTORE_LIFECYCLE_ENABLED=false` and `RUSTORE_CHECKOUT_ENABLED=false`
+  unless running the separately approved
+  RuStore sandbox matrix with sandbox-only key material. Prove V5 package,
+  product, purchase, environment, and `billing_external_id` binding; encrypted
+  callback deduplication/reconciliation; and retry-safe quota decisions before
+  any production enablement review.
 - Register `com.plantdiseases.app` with the permanent PlantDiseases signing
   fingerprint and build the internal `staging` type with Russian HTTPS URLs as
   described in the signing and final implementation guides.
@@ -150,9 +173,13 @@ source filename, metadata, client address, and consent state must not cross.
 
 1. Release the signed production APK with account UI explicitly enabled,
    production package/provider registration, and Russian app/account URLs.
+   Do not expose email/password unless its dedicated HOLD has been closed. Do
+   not enable RuStore unless the full PRO runbook, Console, secret, callback,
+   reconciliation, and rollback evidence has been accepted.
 2. Change DNS/ingress only after Russian and German-worker acceptance. Monitor
-   errors, latency, provider mismatch, refresh failures, deletion jobs, worker
-   failures, and backup completion.
+   errors, latency, provider mismatch, refresh failures, deletion jobs,
+   entitlement refresh/callback failures, quota decisions, worker failures, and
+   backup completion.
 3. Retain the last known-good Russian deployment and the frozen legacy main for
    the agreed rollback window. A rollback returns clients to the prior Russian
    application state or prior non-account release; it never sends account
@@ -180,7 +207,7 @@ only with its exact project/env file and loopback ports.
 | Frequency | Existing main | Russian data plane | German worker |
 |---|---|---|---|
 | Every change | systemd state, loopback/public health, nginx syntax | rendered config, migration revision, account/app health | private mTLS health, public denial |
-| Daily | error rate, disk, model availability | DB/storage, deletion queue, refresh/provider errors, backup result | latency/errors, certificate expiry, tmpfs/disk residue |
+| Daily | error rate, disk, model availability | DB/storage, deletion queue, refresh/provider errors, RuStore reconciliation/callback health, aggregate quota denials, backup result | latency/errors, certificate expiry, tmpfs/disk residue |
 | Weekly | rollback release still identifiable | restore sample/fresh-target evidence, storage growth, key expiry | dependency/import drift and firewall review |
 | Every release | preserve prior unit/artifact/config | preserve prior digests/schema/JWKS overlap | preserve prior worker/model digest and cert overlap |
 
@@ -223,7 +250,14 @@ copy and require explicit approval for any stateful rollback.
   test key overlap first, or schedule and communicate mandatory session
   revocation and provider reauthentication. Future push-token ciphertext and
   fingerprints must be migrated under the same reviewed plan; never simply
-  replace the file.
+  replace the file. Revision 0007 also derives the keyed email-login lookup from
+  this key, so an unplanned replacement makes every stored password credential
+  undiscoverable. A future rotation needs a tested old/new lookup-key migration
+  or an explicit account-recovery/session plan; the current absence of password
+  recovery makes ad hoc replacement a stop condition.
+- **RuStore RSA/AES keys:** keep production and sandbox material separate. Use
+  the overlap/reconciliation procedures in the PRO runbook; never place private
+  keys, callback keys, JWE tokens, or purchase payloads in Android or Git.
 - **Internal service token:** rotate account and app owner-specific copies
   atomically.
 - **RU/DE mTLS:** overlap CA/cert trust, verify both paths, switch, then revoke
@@ -257,6 +291,11 @@ The receiving operator must get:
 - account, app, and worker OpenAPI contracts;
 - final reviewed RU and DE deployment files plus redacted config inventory;
 - schema/migration revision and fresh-target restore evidence;
+- the explicit email/password HOLD status and, if ever closed, verification,
+  recovery, distributed-abuse, and rollback evidence;
+- RuStore Console product/application ownership, V5 validation and callback
+  evidence, current billing switch state, reconciliation result, and aggregate
+  quota/cost evidence (no private keys or purchase payloads);
 - provider package IDs, client-ID ownership, and signing fingerprints (no
   provider or application tokens);
 - secret/certificate ownership and rotation calendar;
@@ -277,6 +316,8 @@ rollback without access to the implementer's workstation.
 - [ACCOUNT_BETA_EXPORT_PRIVACY_REPORT.md](ACCOUNT_BETA_EXPORT_PRIVACY_REPORT.md)
 - [../deploy/account-beta-test/SECRETS.md](../deploy/account-beta-test/SECRETS.md)
 - [../deploy/account-beta-test/ROLLBACK.md](../deploy/account-beta-test/ROLLBACK.md)
+- [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
+- [PLANTDISEASES_PRO_RELEASE_OPERATIONS.md](PLANTDISEASES_PRO_RELEASE_OPERATIONS.md)
 - `deploy/account-beta-test/handoff/ru-de-service-manifest.yml`
 - `deploy/account-beta-test/handoff/ml-worker.openapi.json`
 - `deploy/account-beta-test/handoff/compose.russia-template.yml`

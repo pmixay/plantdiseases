@@ -6,6 +6,7 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.inputmethod.EditorInfo
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -22,6 +23,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
@@ -52,6 +55,7 @@ import com.yandex.authsdk.YandexAuthResult
 import com.yandex.authsdk.YandexAuthSdk
 import java.io.File
 import java.io.IOException
+import java.net.IDN
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -170,6 +174,20 @@ class AccountActivity : AppCompatActivity() {
 
         binding.btnYandex.setOnClickListener { beginSignIn(AuthProvider.YANDEX) }
         binding.btnVk.setOnClickListener { beginSignIn(AuthProvider.VK) }
+        binding.btnEmailSignIn.setOnClickListener {
+            beginEmailAuthentication(EmailAuthenticationAction.SIGN_IN)
+        }
+        binding.btnEmailCreate.setOnClickListener {
+            beginEmailAuthentication(EmailAuthenticationAction.REGISTER)
+        }
+        binding.etPassword.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                beginEmailAuthentication(EmailAuthenticationAction.SIGN_IN)
+                true
+            } else {
+                false
+            }
+        }
         binding.btnCompleteNickname.setOnClickListener { completeNickname() }
         binding.btnCancelNickname.setOnClickListener {
             lifecycleScope.launch {
@@ -211,6 +229,7 @@ class AccountActivity : AppCompatActivity() {
         val guestVisible = state is AuthState.Guest ||
             (state is AuthState.Unavailable && state.lastAuthenticated == null)
         binding.guestGroup.isVisible = guestVisible
+        if (!guestVisible) binding.etPassword.text?.clear()
         binding.btnLater.isVisible = onboardingEntry && guestVisible
         binding.nicknameGroup.isVisible = state is AuthState.ProfileRequired
         binding.accountGroup.isVisible = state is AuthState.Authenticated
@@ -297,6 +316,7 @@ class AccountActivity : AppCompatActivity() {
             val providerLabel = when (profile.primaryProvider.provider) {
                 AuthProvider.YANDEX.wireName -> getString(R.string.account_provider_yandex)
                 AuthProvider.VK.wireName -> getString(R.string.account_provider_vk)
+                AuthProvider.EMAIL.wireName -> getString(R.string.account_provider_email)
                 else -> getString(R.string.account_provider_unknown)
             }
             binding.tvProviderName.text = getString(
@@ -314,6 +334,7 @@ class AccountActivity : AppCompatActivity() {
                     when (provider) {
                         AuthProvider.YANDEX.wireName -> getString(R.string.account_provider_yandex)
                         AuthProvider.VK.wireName -> getString(R.string.account_provider_vk)
+                        AuthProvider.EMAIL.wireName -> getString(R.string.account_provider_email)
                         else -> provider
                     }
                 }
@@ -402,8 +423,19 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun beginSignIn(provider: AuthProvider) {
+        withAccountDisclosure { launchOAuth(provider, OAuthAction.SIGN_IN) }
+    }
+
+    private fun beginEmailAuthentication(action: EmailAuthenticationAction) {
+        if (!BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED) return
+        // Do not capture the password in a dialog callback. The actual submit
+        // reads and clears it only after the disclosure has been acknowledged.
+        withAccountDisclosure { submitEmailAuthentication(action) }
+    }
+
+    private fun withAccountDisclosure(continueSignIn: () -> Unit) {
         if (accountDisclosurePrefs.acknowledged) {
-            launchOAuth(provider, OAuthAction.SIGN_IN)
+            continueSignIn()
             return
         }
         val dialog = MaterialAlertDialogBuilder(this)
@@ -419,7 +451,7 @@ class AccountActivity : AppCompatActivity() {
                     false
                 }
                 if (acknowledgementSaved) {
-                    launchOAuth(provider, OAuthAction.SIGN_IN)
+                    continueSignIn()
                 } else {
                     Toast.makeText(this, R.string.account_disclosure_save_failed, Toast.LENGTH_LONG).show()
                 }
@@ -429,6 +461,47 @@ class AccountActivity : AppCompatActivity() {
             dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener { openPrivacyPolicy() }
         }
         dialog.show()
+    }
+
+    private fun submitEmailAuthentication(action: EmailAuthenticationAction) {
+        val email = binding.etEmail.text?.toString()?.trim().orEmpty()
+        val password = binding.etPassword.text?.toString().orEmpty()
+        // Password EditText state is neither saved nor retained after a submit,
+        // including locally rejected attempts.
+        binding.etPassword.text?.clear()
+        binding.emailLayout.error = null
+        binding.passwordLayout.error = null
+        when (validateEmailCredential(email, password)) {
+            EmailCredentialIssue.INVALID_EMAIL -> {
+                binding.emailLayout.error = getString(R.string.account_email_invalid)
+                binding.etEmail.requestFocus()
+                return
+            }
+            EmailCredentialIssue.INVALID_PASSWORD_LENGTH -> {
+                binding.passwordLayout.error = getString(R.string.account_password_invalid)
+                binding.etPassword.requestFocus()
+                return
+            }
+            null -> Unit
+        }
+        lifecycleScope.launch {
+            setLoading(true)
+            try {
+                when (action) {
+                    EmailAuthenticationAction.SIGN_IN ->
+                        authRepository.signInWithEmail(email, password)
+                    EmailAuthenticationAction.REGISTER ->
+                        authRepository.registerWithEmail(email, password)
+                }
+                com.plantdiseases.app.push.PushManager.registerIfEnabled(this@AccountActivity)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                showEmailAuthenticationError(failure, action)
+            } finally {
+                setLoading(false)
+            }
+        }
     }
 
     private fun openPrivacyPolicy() {
@@ -457,13 +530,13 @@ class AccountActivity : AppCompatActivity() {
             return
         }
         if (providers.size == 1) {
-            launchOAuth(providers.single(), action)
+            beginReauthentication(providers.single(), action)
             return
         }
         val labels = providers.map(::providerLabel).toTypedArray()
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.account_choose_reauth_provider)
-            .setItems(labels) { _, index -> launchOAuth(providers[index], action) }
+            .setItems(labels) { _, index -> beginReauthentication(providers[index], action) }
             .setNegativeButton(android.R.string.cancel) { _, _ -> resetOAuthFlow() }
             .setOnCancelListener { resetOAuthFlow() }
             .show()
@@ -472,9 +545,93 @@ class AccountActivity : AppCompatActivity() {
     private fun providerLabel(provider: AuthProvider): String = when (provider) {
         AuthProvider.YANDEX -> getString(R.string.account_provider_yandex)
         AuthProvider.VK -> getString(R.string.account_provider_vk)
+        AuthProvider.EMAIL -> getString(R.string.account_provider_email)
+    }
+
+    private fun beginReauthentication(provider: AuthProvider, action: OAuthAction) {
+        if (provider == AuthProvider.EMAIL) {
+            promptEmailReauthentication(action)
+        } else {
+            launchOAuth(provider, action)
+        }
+    }
+
+    private fun promptEmailReauthentication(action: OAuthAction) {
+        if (
+            !BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED ||
+            action !in setOf(OAuthAction.REAUTH_LINK, OAuthAction.REAUTH_DELETE)
+        ) {
+            resetOAuthFlow()
+            showError(null)
+            return
+        }
+        oauthAction = action
+        val content = layoutInflater.inflate(R.layout.dialog_account_email_reauth, null)
+        val passwordLayout = content.findViewById<TextInputLayout>(R.id.reauth_password_layout)
+        val passwordInput = content.findViewById<TextInputEditText>(R.id.et_reauth_password)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.account_email_reauth_title)
+            .setView(content)
+            .setNegativeButton(android.R.string.cancel) { _, _ -> resetOAuthFlow() }
+            .setPositiveButton(R.string.account_email_reauth_confirm, null)
+            .setOnCancelListener { resetOAuthFlow() }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val password = passwordInput.text?.toString().orEmpty()
+                passwordInput.text?.clear()
+                if (!passwordLengthIsValid(password)) {
+                    passwordLayout.error = getString(R.string.account_password_invalid)
+                    passwordInput.requestFocus()
+                    return@setOnClickListener
+                }
+                passwordLayout.error = null
+                dialog.dismiss()
+                submitEmailReauthentication(password, action)
+            }
+        }
+        dialog.show()
+        passwordInput.requestFocus()
+    }
+
+    private fun submitEmailReauthentication(password: String, action: OAuthAction) {
+        lifecycleScope.launch {
+            setLoading(true)
+            try {
+                val scope = when (action) {
+                    OAuthAction.REAUTH_LINK -> {
+                        val target = linkTarget ?: return@launch resetBrokenOAuthFlow()
+                        "link_${target.wireName}"
+                    }
+                    OAuthAction.REAUTH_DELETE -> "deletion"
+                    else -> return@launch resetBrokenOAuthFlow()
+                }
+                val reauth = authRepository.reauthenticateWithEmail(password, scope)
+                    .getOrElse {
+                        showEmailReauthenticationError(it)
+                        return@launch
+                    }
+                when (action) {
+                    OAuthAction.REAUTH_LINK -> {
+                        val target = linkTarget ?: return@launch resetBrokenOAuthFlow()
+                        linkReauthToken = reauth.reauthToken
+                        launchOAuth(target, OAuthAction.LINK_TARGET)
+                    }
+                    OAuthAction.REAUTH_DELETE -> deleteAfterReauthentication(reauth.reauthToken)
+                }
+            } finally {
+                setLoading(false)
+            }
+        }
     }
 
     private fun launchOAuth(provider: AuthProvider, action: OAuthAction) {
+        if (provider == AuthProvider.EMAIL) {
+            // Email has its own direct account-service flow and must never be
+            // routed into either third-party OAuth SDK.
+            resetBrokenOAuthFlow()
+            return
+        }
         oauthAction = action
         if (BuildConfig.SYNTHETIC_AUTH_ENABLED) {
             acceptProviderToken(
@@ -486,6 +643,7 @@ class AccountActivity : AppCompatActivity() {
         val configured = when (provider) {
             AuthProvider.YANDEX -> BuildConfig.YANDEX_OAUTH_CONFIGURED
             AuthProvider.VK -> BuildConfig.VK_OAUTH_CONFIGURED
+            AuthProvider.EMAIL -> false
         }
         if (!configured) {
             resetOAuthFlow()
@@ -511,6 +669,7 @@ class AccountActivity : AppCompatActivity() {
                     },
                 )
             }
+            AuthProvider.EMAIL -> Unit
         }
     }
 
@@ -519,6 +678,7 @@ class AccountActivity : AppCompatActivity() {
             when (provider) {
                 AuthProvider.YANDEX -> BuildConfig.YANDEX_OAUTH_CONFIGURED
                 AuthProvider.VK -> BuildConfig.VK_OAUTH_CONFIGURED
+                AuthProvider.EMAIL -> false
             }
 
     private fun acceptProviderToken(provider: AuthProvider, token: String) {
@@ -561,16 +721,7 @@ class AccountActivity : AppCompatActivity() {
                         token,
                         "deletion",
                     ).onSuccess { reauth ->
-                        val deletedAccountId = privateProfile?.communityActorId
-                        authRepository.deleteAccount(reauth.reauthToken)
-                            .onSuccess {
-                                resetOAuthFlow()
-                                stopAccountNotifications()
-                                if (deletedAccountId != null) {
-                                    profileAvatarStore.clear(deletedAccountId)
-                                }
-                            }
-                            .onFailure(::showError)
+                        deleteAfterReauthentication(reauth.reauthToken)
                     }.onFailure(::showError)
                     OAuthAction.DISCARD_LINK_RESULT -> resetOAuthFlow()
                 }
@@ -578,6 +729,19 @@ class AccountActivity : AppCompatActivity() {
                 setLoading(false)
             }
         }
+    }
+
+    private suspend fun deleteAfterReauthentication(reauthToken: String) {
+        val deletedAccountId = privateProfile?.communityActorId
+        authRepository.deleteAccount(reauthToken)
+            .onSuccess {
+                resetOAuthFlow()
+                stopAccountNotifications()
+                if (deletedAccountId != null) {
+                    profileAvatarStore.clear(deletedAccountId)
+                }
+            }
+            .onFailure(::showError)
     }
 
     private fun providerCancelled() {
@@ -879,6 +1043,9 @@ class AccountActivity : AppCompatActivity() {
     private fun configureSignInProviders() {
         val yandexAvailable = isProviderAvailable(AuthProvider.YANDEX)
         val vkAvailable = isProviderAvailable(AuthProvider.VK)
+        binding.emailAuthGroup.isVisible = BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED
+        binding.btnEmailSignIn.isEnabled = BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED
+        binding.btnEmailCreate.isEnabled = BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED
         binding.btnYandex.isVisible = yandexAvailable
         binding.btnYandex.isEnabled = yandexAvailable
         binding.btnVk.isVisible = true
@@ -919,6 +1086,37 @@ class AccountActivity : AppCompatActivity() {
                 "identity_already_linked" -> R.string.account_error_identity_linked
                 else -> R.string.account_error_generic
             }
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun showEmailAuthenticationError(
+        failure: Throwable,
+        action: EmailAuthenticationAction,
+    ) {
+        val message = if (failure is IOException) {
+            R.string.account_error_retry_online
+        } else {
+            when (
+                emailAuthenticationError(
+                    action,
+                    (failure as? AccountApiException)?.errorCode,
+                )
+            ) {
+                EmailAuthenticationError.CREDENTIALS -> R.string.account_error_email_credentials
+                EmailAuthenticationError.REGISTRATION -> R.string.account_error_email_registration
+                EmailAuthenticationError.GENERIC -> R.string.account_error_generic
+            }
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun showEmailReauthenticationError(failure: Throwable) {
+        val message = when {
+            failure is IOException -> R.string.account_error_retry_online
+            (failure as? AccountApiException)?.errorCode == "reauth_required" ->
+                R.string.account_error_email_reauth
+            else -> R.string.account_error_generic
         }
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
@@ -978,4 +1176,78 @@ internal fun signupNicknameIsEditable(
 ): Boolean = !loading &&
     (state !is AuthState.ProfileRequired || state.pendingNickname == null)
 
+internal enum class EmailAuthenticationAction {
+    SIGN_IN,
+    REGISTER,
+}
+
+internal enum class EmailCredentialIssue {
+    INVALID_EMAIL,
+    INVALID_PASSWORD_LENGTH,
+}
+
+internal enum class EmailAuthenticationError {
+    CREDENTIALS,
+    REGISTRATION,
+    GENERIC,
+}
+
+internal fun validateEmailCredential(email: String, password: String): EmailCredentialIssue? {
+    if (!emailAddressIsValid(email)) return EmailCredentialIssue.INVALID_EMAIL
+    if (!passwordLengthIsValid(password)) return EmailCredentialIssue.INVALID_PASSWORD_LENGTH
+    return null
+}
+
+internal fun passwordLengthIsValid(password: String): Boolean =
+    password.codePointCount(0, password.length) in PASSWORD_MIN_LENGTH..PASSWORD_MAX_LENGTH
+
+/** Mirrors the account service's public-address shape without normalizing or retaining the value. */
+internal fun emailAddressIsValid(email: String): Boolean {
+    val candidate = email.trim()
+    if (candidate.count { it == '@' } != 1) return false
+    val (local, rawDomain) = candidate.split('@', limit = 2)
+    if (
+        local.isEmpty() ||
+        local.length > EMAIL_LOCAL_MAX_LENGTH ||
+        local.startsWith('.') ||
+        local.endsWith('.') ||
+        ".." in local ||
+        !EMAIL_LOCAL_PATTERN.matches(local)
+    ) {
+        return false
+    }
+    val domain = runCatching { IDN.toASCII(rawDomain.removeSuffix(".")) }.getOrNull()
+        ?.lowercase()
+        ?: return false
+    val labels = domain.split('.')
+    if (
+        labels.size < 2 ||
+        domain.length > EMAIL_DOMAIN_MAX_LENGTH ||
+        labels.any { !EMAIL_DOMAIN_LABEL_PATTERN.matches(it) }
+    ) {
+        return false
+    }
+    return "$local@$domain".length <= EMAIL_MAX_LENGTH
+}
+
+internal fun emailAuthenticationError(
+    action: EmailAuthenticationAction,
+    serverCode: String?,
+): EmailAuthenticationError = when {
+    action == EmailAuthenticationAction.SIGN_IN && serverCode == "invalid_credentials" ->
+        EmailAuthenticationError.CREDENTIALS
+    action == EmailAuthenticationAction.REGISTER &&
+        serverCode in setOf("invalid_registration", "registration_unavailable") ->
+        EmailAuthenticationError.REGISTRATION
+    else -> EmailAuthenticationError.GENERIC
+}
+
 private const val NICKNAME_CHANGE_INTERVAL_DAYS = 30L
+private const val PASSWORD_MIN_LENGTH = 15
+private const val PASSWORD_MAX_LENGTH = 128
+private const val EMAIL_LOCAL_MAX_LENGTH = 64
+private const val EMAIL_DOMAIN_MAX_LENGTH = 253
+private const val EMAIL_MAX_LENGTH = 254
+private val EMAIL_LOCAL_PATTERN = Regex("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+")
+private val EMAIL_DOMAIN_LABEL_PATTERN =
+    Regex("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")

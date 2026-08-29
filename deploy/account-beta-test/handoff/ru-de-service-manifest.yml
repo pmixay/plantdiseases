@@ -17,6 +17,12 @@ services:
       - session_id
       - nickname
       - provider_data
+      - email_address
+      - password
+      - billing_external_id
+      - rustore_purchase_id
+      - subscription_state
+      - feature_usage
       - installation_id
       - fcm_token
       - source_filename
@@ -36,7 +42,7 @@ services:
   ru-account-api:
     country: RU
     public_android_endpoint: true
-    schema_revision: 0006_signup_completion_idempotency
+    schema_revision: 0010_billing_lifecycle_quota_policy
     database_tables:
       - account_consents
       - account_deletion_jobs
@@ -46,31 +52,90 @@ services:
       - account_security_events
       - accounts
       - alembic_version
+      - billing_customers
+      - billing_purchase_fetches
+      - billing_notification_receipts
+      - feature_usage
+      - feature_usage_receipts
+      - password_credentials
+      - pending_password_credentials
       - pending_signups
       - push_devices
       - reauth_challenges
       - refresh_tokens
       - sessions
       - signup_completions
+      - subscriptions
+      - vendor_budget_authorities
+      - vendor_budget_daily
+      - vendor_budget_receipts
     account_features:
       - installation_bound_pending_signup
       - two_phase_signup_completion
       - bounded_signup_completion_idempotency
       - explicit_signup_confirmation_or_cancellation
+      - email_password_backend_beta
+      - keyed_email_lookup_and_argon2id
       - runtime_read_only_migration_metadata
       - nickname_claim_registry
       - durable_nickname_propagation
+      - server_verified_rustore_subscription_v5
+      - dedicated_billing_external_account_binding
+      - encrypted_billing_notification_deduplication
+      - purchase_scoped_canonical_fetch_generation
+      - bounded_billing_dead_letter_and_manual_replay
+      - atomic_retry_safe_daily_feature_quotas
+      - versioned_feature_quota_policy_and_exact_once_release
+      - atomic_global_plantnet_attempt_and_cost_budget
+    release_holds:
+      email_password:
+        - inbox_ownership_verification
+        - password_recovery
+        - shared_multi_replica_abuse_controls
+      rustore_pro:
+        - console_product_and_legal_approval
+        - production_rsa_and_aes_secret_provisioning
+        - live_v5_callback_and_reconciliation_evidence
+        - quota_cost_and_rollback_evidence
     persists:
       - account_private_postgresql
       - encrypted_push_registrations
       - deletion_jobs
       - nickname_propagation_jobs
       - nickname_claim_registry
+      - password_credential_hashes_and_email_fingerprints
+      - canonical_rustore_subscriptions
+      - billing_notification_receipts
+      - billing_purchase_fetch_generations
+      - daily_feature_usage_and_decision_receipts
+      - aggregate_plantnet_budget_ledgers_and_receipts
     receives:
       - yandex_access_token
       - vk_access_token
+      - email_and_password_beta_transient_only
       - application_refresh_token
       - account_profile_request
+      - rustore_purchase_reference
+      - encrypted_rustore_notification
+    optional_external_processors:
+      firebase_cloud_messaging:
+        provider: Google Firebase Cloud Messaging
+        location: global Google infrastructure
+        data:
+          - fcm_installation_token
+          - event_type
+          - pseudonymous_recipient_id
+          - shared_scan_reference
+          - diagnosis_class_key
+          - responder_nickname
+          - optional_opinion_note
+        forbidden:
+          - authorization
+          - oauth_token
+          - email_address
+          - billing_identifier
+          - image
+        release_gate: disabled_until_operator_privacy_transfer_and_delivery_sink_approval
 
   ru-app-api:
     country: RU
@@ -86,6 +151,42 @@ services:
       - optional_account_bearer_token
       - community_request
       - structured_feedback
+      - optional_plant_care_text
+    optional_external_processors:
+      plantnet:
+        provider: Pl@ntNet/CIRAD
+        location: France
+        endpoint: my-api.plantnet.org
+        data:
+          - metadata_free_jpeg
+          - plant_organ_hint
+          - response_language
+        forbidden:
+          - authorization
+          - account_id
+          - actor_id
+          - installation_id
+          - billing_identifier
+          - image_metadata
+        provider_image_retention: volatile_memory_only
+        operator_query_history: request_fact_and_time_for_quota_and_statistics
+        release_gate: disabled_until_global_budget_contract_attribution_and_legal_approval
+      openrouter:
+        location: United States and operator-approved model endpoint
+        data:
+          - plant_care_text
+          - recent_feature_history
+          - structured_diagnosis_context
+          - pseudonymous_routing_session_key
+        forbidden:
+          - image
+          - authorization
+          - account_id
+          - actor_id
+          - billing_identifier
+        retention_requirement: zero
+        data_collection_requirement: deny
+        release_gate: disabled_until_privacy_region_legal_and_budget_approval
     de_outbound_contract: ml-worker.openapi.json
 
   ru-backup:

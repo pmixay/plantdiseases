@@ -18,6 +18,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.load.DataSource
@@ -27,6 +29,9 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.R
+import com.plantdiseases.app.billing.EntitlementPolicy
+import com.plantdiseases.app.billing.EntitlementRepository
+import com.plantdiseases.app.billing.ProFeature
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
@@ -46,6 +51,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
+import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.CommunityPrefs
@@ -86,6 +92,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     @Inject
     lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var entitlementRepository: EntitlementRepository
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
@@ -119,6 +128,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySpeciesDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                entitlementRepository.state.collect { state ->
+                    binding.lunarCalendar.setProAccess(
+                        EntitlementPolicy.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
+                    ) { startActivity(ProActivity.intent(this@SpeciesDetailActivity)) }
+                }
+            }
+        }
         onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
         onboardingCoordinator.setContext(OnboardingContext.SPECIES_DETAILS)
 
@@ -160,6 +178,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
         bindAboutFacts()
         // Purely local — no load() call to pair with this, unlike the cards above.
         binding.lunarCalendar.setSpecies(scientificName, commonName)
+        binding.lunarCalendar.setProAccess(
+            entitlementRepository.allows(ProFeature.LUNAR_FULL_CALENDAR),
+        ) { startActivity(ProActivity.intent(this)) }
         // Tapping an upcoming-day row selects a date whose detail panel may sit
         // below the fold; the calendar asks its host to bring that panel up.
         binding.lunarCalendar.onRequestScrollTo = { target -> scrollSpeciesTo(target) }
@@ -178,6 +199,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         sections.forEach { outState.putBoolean(it.stateKey, it.expanded) }
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        entitlementRepository.refreshInBackground()
     }
 
     /**

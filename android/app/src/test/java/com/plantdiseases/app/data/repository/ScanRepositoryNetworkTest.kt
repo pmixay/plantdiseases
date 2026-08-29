@@ -25,6 +25,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.util.UUID
 
 /**
  * Integration coverage of the ML-diagnosis network hop driven against a
@@ -96,6 +97,7 @@ class ScanRepositoryNetworkTest {
         assertThat(request.path).contains("locale=en")
         assertThat(request.path).contains("training_consent=false")
         assertThat(request.getHeader("Content-Type")).contains("multipart/form-data")
+        assertMeteredHeaders(request)
         val body = request.body.readUtf8()
         assertThat(body).contains("filename=\"scan.jpg\"")
         assertThat(body).contains("only-sanitized-pixels")
@@ -182,21 +184,133 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun analyze_429_mapsToRateLimit() {
-        // POST retries an explicit 429 once, so enqueue two.
-        server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.RateLimitException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_quotaTagged429_mapsToQuotaExhausted() {
+        val denied = MockResponse().setResponseCode(429)
+            .setHeader("X-PlantDiseases-Plan", "free")
+            .setHeader("X-Quota-Limit", "5")
+            .setHeader("X-Quota-Remaining", "0")
+            .setHeader("X-Quota-Reset-At", "2026-08-27T00:00:00Z")
+        server.enqueue(denied)
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        val error = result.exceptionOrNull()
+        assertThat(error).isInstanceOf(ScanRepository.QuotaExhaustedException::class.java)
+        error as ScanRepository.QuotaExhaustedException
+        assertThat(error.plan).isEqualTo("free")
+        assertThat(error.limit).isEqualTo(5)
+        assertThat(error.remaining).isEqualTo(0)
+        assertThat(error.resetAt).isEqualTo("2026-08-27T00:00:00Z")
+        val request = server.takeRequest()
+        assertThat(UUID.fromString(checkNotNull(request.getHeader("X-Idempotency-Key")))).isNotNull()
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_402_mapsToProRequired() {
+        server.enqueue(
+            MockResponse().setResponseCode(402)
+                .setHeader("X-PlantDiseases-Plan", "free")
+                .setHeader("X-Quota-Limit", "0")
+                .setHeader("X-Quota-Remaining", "0")
+                .setHeader("X-Quota-Reset-At", "2026-08-27T00:00:00Z"),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile, family = "frontier") }
+
+        val error = result.exceptionOrNull()
+        assertThat(error).isInstanceOf(ScanRepository.ProRequiredException::class.java)
+        error as ScanRepository.ProRequiredException
+        assertThat(error.plan).isEqualTo("free")
+        assertThat(error.limit).isEqualTo(0)
+    }
+
+    @Test
+    fun signedAnalyze_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease_name":"Leaf Spot"}"""),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        val first = server.takeRequest()
+        val retry = server.takeRequest()
+        assertThat(first.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(retry.getHeader("Authorization")).isEqualTo("Bearer access-2")
+        assertThat(first.getHeader("X-Idempotency-Key"))
+            .isEqualTo(retry.getHeader("X-Idempotency-Key"))
+    }
+
+    @Test
+    fun guestAnalyze_omitsBearerButStillSendsIdempotencyKey() {
+        val guestRepository = ScanRepository(
+            FakeScanDao(),
+            client,
+            imageSanitizer = object : UploadImageSanitizer {
+                override fun sanitize(source: File, maxDimension: Int, quality: Int) =
+                    SanitizedImage(sanitizedBytes, width = 12, height = 8)
+            },
+            authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease_name":"Leaf Spot"}"""),
+        )
+
+        val result = runBlocking { guestRepository.analyzeImage(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        val request = server.takeRequest()
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(UUID.fromString(checkNotNull(request.getHeader("X-Idempotency-Key")))).isNotNull()
     }
 
     @Test
     fun analyze_503_mapsToServerStarting() {
         server.enqueue(MockResponse().setResponseCode(503))
-        server.enqueue(MockResponse().setResponseCode(503))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.ServerStartingException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_consumedOperation409IsNotReplayed() {
+        server.enqueue(
+            MockResponse().setResponseCode(409)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"detail":"operation_already_consumed"}"""),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("409")
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun appTransportDisablesImplicitConnectionRetries() {
+        val field = PlantApiClient::class.java.getDeclaredField("client")
+            .apply { isAccessible = true }
+        val transport = field.get(client) as okhttp3.OkHttpClient
+
+        assertThat(transport.retryOnConnectionFailure).isFalse()
     }
 
     @Test
@@ -437,6 +551,40 @@ class ScanRepositoryNetworkTest {
         assertThat(plan).isNull()
     }
 
+    @Test
+    fun repositoryCarePlan_sendsAccountAndIdempotencyHeaders() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease":"quota-header-test","watering_days":7}"""),
+        )
+
+        val result = runBlocking {
+            repo.fetchCarePlan(CarePlanRequest(disease = "quota-header-test-${UUID.randomUUID()}"))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertMeteredHeaders(server.takeRequest())
+    }
+
+    @Test
+    fun repositoryCarePlan_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease":"retry-care-plan","watering_days":7}"""),
+        )
+
+        val result = runBlocking {
+            repo.fetchCarePlan(CarePlanRequest(disease = "retry-care-plan-${UUID.randomUUID()}"))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
+    }
+
     // --- POST /api/chat (Ktor, Map<String,Any?> diagnosis via AnyMapSerializer) ---
 
     @Test
@@ -466,6 +614,7 @@ class ScanRepositoryNetworkTest {
         val sent = server.takeRequest()
         assertThat(sent.method).isEqualTo("POST")
         assertThat(sent.path).isEqualTo("/api/chat")
+        assertMeteredHeaders(sent)
         val body = sent.body.readUtf8()
         // diagnosis must be a real nested JSON object, not a toString() blob.
         assertThat(body).contains("\"diagnosis\":{")
@@ -476,13 +625,28 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
+    fun chat_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":true,"reply":"ok"}"""),
+        )
+
+        val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
+    }
+
+    @Test
     fun chat_429_mapsToRateLimit() {
-        // POST retries an explicit 429 once.
-        server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.RateLimitException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
     }
 
     // --- POST /api/progression (Ktor, List<Map<String,Any?>> via AnyMapListSerializer) ---
@@ -539,6 +703,23 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("organ=leaf")
         assertThat(req.path).contains("locale=ru")
         assertThat(req.getHeader("Content-Type")).contains("multipart/form-data")
+        assertMeteredHeaders(req)
+    }
+
+    @Test
+    fun identify_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":false,"results":[]}"""),
+        )
+
+        val result = runBlocking { repo.identifySpecies(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
     }
 
     @Test
@@ -965,6 +1146,23 @@ class ScanRepositoryNetworkTest {
         assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-2")
     }
 
+    private fun assertMeteredHeaders(request: okhttp3.mockwebserver.RecordedRequest) {
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val requestId = request.getHeader("X-Idempotency-Key")
+        assertThat(requestId).isNotNull()
+        assertThat(UUID.fromString(checkNotNull(requestId))).isNotNull()
+    }
+
+    private fun assertRefreshRetryReusesLogicalRequestId() {
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        val first = server.takeRequest()
+        val retry = server.takeRequest()
+        assertThat(first.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(retry.getHeader("Authorization")).isEqualTo("Bearer access-2")
+        assertThat(first.getHeader("X-Idempotency-Key"))
+            .isEqualTo(retry.getHeader("X-Idempotency-Key"))
+    }
+
     private class FakeVault : RefreshTokenVault {
         private var token: String? = null
         private var pendingRotationId: String? = null
@@ -993,5 +1191,4 @@ class ScanRepositoryNetworkTest {
 
         override fun rotate() = Unit
     }
-
 }

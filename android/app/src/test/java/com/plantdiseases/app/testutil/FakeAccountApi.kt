@@ -6,6 +6,7 @@ import com.plantdiseases.app.data.account.AccountSession
 import com.plantdiseases.app.data.account.AuthProvider
 import com.plantdiseases.app.data.account.DeletionResponse
 import com.plantdiseases.app.data.account.ExchangeResult
+import com.plantdiseases.app.data.account.EntitlementsResponse
 import com.plantdiseases.app.data.account.LinkResponse
 import com.plantdiseases.app.data.account.NicknameResponse
 import com.plantdiseases.app.data.account.ReauthResponse
@@ -15,6 +16,16 @@ open class FakeAccountApi : AccountApi {
     var exchangeResult: ExchangeResult = authenticated()
     var exchangeCalls = 0
     var lastExchangeInstallationId: String? = null
+    var emailRegistrationResult = emailProfileRequired()
+    var emailLoginResult: ExchangeResult = authenticated()
+    var emailRegistrationCalls = 0
+    var emailLoginCalls = 0
+    var lastEmail: String? = null
+    var lastEmailPassword: String? = null
+    var lastEmailInstallationId: String? = null
+    var emailReauthCalls = 0
+    var lastEmailReauthPassword: String? = null
+    var lastEmailReauthScope: String? = null
     var refreshResult: ExchangeResult.Authenticated = authenticated()
     var completeResult: ExchangeResult.Authenticated = authenticated()
     var completeCalls = 0
@@ -52,6 +63,30 @@ open class FakeAccountApi : AccountApi {
         exchangeCalls++
         lastExchangeInstallationId = installationId
         return exchangeResult
+    }
+
+    override suspend fun registerEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult.ProfileRequired {
+        emailRegistrationCalls++
+        lastEmail = email
+        lastEmailPassword = password
+        lastEmailInstallationId = installationId
+        return emailRegistrationResult
+    }
+
+    override suspend fun loginEmail(
+        email: String,
+        password: String,
+        installationId: String,
+    ): ExchangeResult {
+        emailLoginCalls++
+        lastEmail = email
+        lastEmailPassword = password
+        lastEmailInstallationId = installationId
+        return emailLoginResult
     }
 
     override suspend fun completeSignup(
@@ -124,6 +159,17 @@ open class FakeAccountApi : AccountApi {
         scope: String,
     ): ReauthResponse = ReauthResponse("reauth", scope, 300)
 
+    override suspend fun reauthenticateEmail(
+        accessToken: String,
+        password: String,
+        scope: String,
+    ): ReauthResponse {
+        emailReauthCalls++
+        lastEmailReauthPassword = password
+        lastEmailReauthScope = scope
+        return ReauthResponse("email-reauth", scope, 300)
+    }
+
     override suspend fun linkProvider(
         accessToken: String,
         provider: AuthProvider,
@@ -132,6 +178,16 @@ open class FakeAccountApi : AccountApi {
     ): LinkResponse = LinkResponse("linked", provider.wireName)
 
     override suspend fun me(accessToken: String): AccountProfile = error("not used")
+
+    override suspend fun entitlements(accessToken: String): EntitlementsResponse =
+        EntitlementsResponse()
+
+    override suspend fun verifyRustorePurchase(
+        accessToken: String,
+        productId: String,
+        purchaseId: String,
+        sandbox: Boolean,
+    ): EntitlementsResponse = EntitlementsResponse()
 
     override suspend fun changeNickname(accessToken: String, nickname: String): NicknameResponse =
         NicknameResponse(nickname, "new-access", "Bearer", 300)
@@ -176,6 +232,12 @@ open class FakeAccountApi : AccountApi {
             expiresIn = 300,
             profile = profile,
             session = session,
+        )
+
+        fun emailProfileRequired() = ExchangeResult.ProfileRequired(
+            provider = AuthProvider.EMAIL,
+            pendingSignupToken = "email-pending",
+            expiresIn = 600,
         )
 
         const val INSTALLATION_ID = "00000000-0000-4000-8000-000000000001"
