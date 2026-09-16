@@ -314,3 +314,32 @@ def test_unbound_bundle_requires_explicit_diagnostic_opt_in(tmp_path):
     binding = _load_bundle_binding(tmp_path, allow_legacy_unbound=True)
     assert binding["bound"] is False
     assert "not release evidence" in binding["diagnostic_advisory"]
+
+
+def test_served_verdict_uses_pipeline_contract_and_counts_natural_nap():
+    from tools.paired_eval import _served_verdict, abstention_summary
+
+    # Explicit contract fields, no warning strings at all.
+    assert _served_verdict({
+        "class_name": "leaf_spot", "abstained": True, "abstention_reason": "ood",
+    }) == (ABSTAIN_SENTINEL, "ood")
+    assert _served_verdict({
+        "class_name": "unknown", "warnings": ["blurry_image"],
+    }) == (ABSTAIN_SENTINEL, "image_quality")
+    # A natural NAP argmax stays a prediction of that class (correct on a
+    # not_a_plant row, wrong on a plant row) but is coverage loss.
+    assert _served_verdict({
+        "class_name": "not_a_plant", "abstained": True,
+        "abstention_reason": "not_a_plant",
+    }) == ("not_a_plant", "not_a_plant")
+    assert _served_verdict({
+        "class_name": "healthy", "warnings": ["low_confidence"],
+    }) == ("healthy", None)
+
+    summary = abstention_summary(
+        [ABSTAIN_SENTINEL, "not_a_plant", "healthy", "leaf_spot"],
+        ["ood", "not_a_plant", None, None])
+    assert summary["count"] == 1 and summary["rate"] == 0.25
+    assert summary["natural_not_a_plant"] == 1
+    assert summary["coverage"] == 0.5
+    assert summary["by_reason"] == {"not_a_plant": 1, "ood": 1}

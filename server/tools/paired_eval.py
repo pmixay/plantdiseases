@@ -81,7 +81,6 @@ if str(_SERVER_DIR) not in sys.path:
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 ABSTAIN_SENTINEL = "__ABSTAIN__"
-_SERVED_REJECTION_WARNINGS = {"nap_ood_gated", "blurry_image"}
 
 # The eval-supplement's on-disk stem, built by the notebook's
 # ``_save_archive_member``: ``sanitise(f"supp_{class/relative/path/stem}")``.
@@ -508,19 +507,61 @@ def _stratified_limit(paths: list[Path], y_true: list[int], limit: int):
     return [paths[i] for i in chosen], [y_true[i] for i in chosen]
 
 
-def _served_class_or_abstain(result: dict) -> str:
-    """Map production rejection warnings to an explicit scored-wrong sentinel."""
-    warnings = result.get("warnings") or []
-    codes = set()
-    for warning in warnings:
+def _served_verdict(result: dict) -> tuple[str, str | None]:
+    """``(scored prediction, abstention reason)`` for one served response.
+
+    The verdict comes from ``pipeline._derive_abstention`` — the function the
+    API itself uses — so this tool cannot drift from the serving contract by
+    re-parsing warning strings. A gate rejection (``ood``, ``image_quality``)
+    scores as the wrong-by-construction sentinel and is coverage loss. A
+    NATURAL ``not_a_plant`` argmax is also an abstention on the served
+    contract, but it is a *prediction* of that class: it scores correct on a
+    ``not_a_plant`` row and wrong on a plant row, and is reported as coverage
+    loss under its own reason so two bundles with different NAP-head trigger
+    rates do not show identical coverage.
+    """
+    from pipeline import _derive_abstention
+
+    warnings = []
+    for warning in result.get("warnings") or []:
         if isinstance(warning, str):
-            codes.add(warning)
+            warnings.append(warning)
         elif isinstance(warning, dict):
-            codes.add(str(warning.get("code") or warning.get("warning") or ""))
-    codes.update(str(x) for x in (result.get("warning_codes") or []))
-    if codes & _SERVED_REJECTION_WARNINGS:
-        return ABSTAIN_SENTINEL
-    return result.get("class_name") or result.get("disease") or "not_a_plant"
+            warnings.append(str(warning.get("code") or warning.get("warning") or ""))
+    warnings.extend(str(x) for x in (result.get("warning_codes") or []))
+    abstained, reason = _derive_abstention({**result, "warnings": warnings})
+    if abstained and reason != "not_a_plant":
+        return ABSTAIN_SENTINEL, reason
+    pred = result.get("class_name") or result.get("disease") or "not_a_plant"
+    return pred, (reason if abstained else None)
+
+
+def _served_class_or_abstain(result: dict) -> str:
+    """Scored prediction only (see :func:`_served_verdict`)."""
+    return _served_verdict(result)[0]
+
+
+def abstention_summary(preds: list[str], reasons: list[str | None] | None) -> dict:
+    """Coverage accounting for one model over ``len(preds)`` rows.
+
+    ``count``/``rate`` are the gate abstentions (the ``-1`` sentinel rows);
+    ``coverage`` also subtracts natural ``not_a_plant`` verdicts, because the
+    user received no plant diagnosis on those rows either.
+    """
+    n = len(preds)
+    gated = sum(p == ABSTAIN_SENTINEL for p in preds)
+    reasons = list(reasons or [])
+    natural_nap = sum(r == "not_a_plant" for r in reasons)
+    by_reason: dict[str, int] = {}
+    for r in reasons:
+        if r:
+            by_reason[r] = by_reason.get(r, 0) + 1
+    return {
+        "count": gated, "rate": gated / n if n else 0.0,
+        "natural_not_a_plant": natural_nap,
+        "coverage": 1.0 - (gated + natural_nap) / n if n else 0.0,
+        "by_reason": dict(sorted(by_reason.items())),
+    }
 
 
 def predict_served(
@@ -528,8 +569,12 @@ def predict_served(
     paths: list[Path],
     label: str,
     classifier_path: Path | None = None,
+    reasons: list[str | None] | None = None,
 ) -> list[str]:
     """Predicted class names through the FULL production pipeline.
+
+    ``reasons``, when given, receives one abstention reason (or ``None``) per
+    row so the caller can report coverage by cause.
 
     Stage-2 argmax is what the notebook's ``[final val_realworld]`` reports, so
     it is the number that compares to history — but it is NOT what a user gets.
@@ -554,7 +599,10 @@ def predict_served(
     for i, p in enumerate(paths, 1):
         with Image.open(p) as im:
             r = pipe.analyze(im.convert("RGB"))
-        preds.append(_served_class_or_abstain(r))
+        pred, reason = _served_verdict(r)
+        preds.append(pred)
+        if reasons is not None:
+            reasons.append(reason)
         if i % 50 == 0 or i == len(paths):
             print(f"  [{label}] {i}/{len(paths)}  ({i/max(time.time()-t0,1e-6):.1f} img/s)",
                   flush=True)
@@ -755,30 +803,29 @@ def main() -> None:
                 i = -1
             out.append(i)
         if off:
-            print(f"  WARN: [{label}] predicted a non-shared class {off}x (scored as -1, "
-                  f"i.e. always wrong — this is honest, not a bug)")
+            n_abst = sum(p == ABSTAIN_SENTINEL for p in preds)
+            print(f"  WARN: [{label}] {off} row(s) scored as -1 (always wrong): "
+                  f"{n_abst} gate abstention(s) + {off - n_abst} prediction(s) of a "
+                  f"class outside the shared space — this is honest, not a bug)")
         return out
 
-    def _score(bundle: Path, label: str, binding: dict) -> list[str]:
+    def _score(bundle: Path, label: str, binding: dict) -> tuple[list[str], list | None]:
         if args.served:
-            return predict_served(bundle, paths, label, binding["classifier_path"])
-        return predict(bundle, paths, args.batch, label, binding["classifier_path"])
+            reasons: list[str | None] = []
+            preds = predict_served(bundle, paths, label, binding["classifier_path"],
+                                   reasons=reasons)
+            return preds, reasons
+        return predict(bundle, paths, args.batch, label, binding["classifier_path"]), None
     payload["mode"] = "served" if args.served else "argmax"
     print(f"\nscoring {args.label_a}… (mode={payload['mode']})")
-    _pred_a = _score(args.bundle_a, args.label_a, binding_a)
-    _abstain_a = sum(p == ABSTAIN_SENTINEL for p in _pred_a)
-    payload["abstention_a"] = {
-        "count": _abstain_a, "rate": _abstain_a / len(paths),
-        "coverage": 1.0 - _abstain_a / len(paths)}
+    _pred_a, _reasons_a = _score(args.bundle_a, args.label_a, binding_a)
+    payload["abstention_a"] = abstention_summary(_pred_a, _reasons_a)
     payload["y_pred_a"] = _to_idx(_pred_a, args.label_a)
     if args.bundle_b:
         print(f"\nscoring {args.label_b}…")
         payload["label_b"] = args.label_b
-        _pred_b = _score(args.bundle_b, args.label_b, binding_b)
-        _abstain_b = sum(p == ABSTAIN_SENTINEL for p in _pred_b)
-        payload["abstention_b"] = {
-            "count": _abstain_b, "rate": _abstain_b / len(paths),
-            "coverage": 1.0 - _abstain_b / len(paths)}
+        _pred_b, _reasons_b = _score(args.bundle_b, args.label_b, binding_b)
+        payload["abstention_b"] = abstention_summary(_pred_b, _reasons_b)
         payload["y_pred_b"] = _to_idx(_pred_b, args.label_b)
     print(f"  abstention [{args.label_a}]: {payload['abstention_a']}")
     if args.bundle_b:

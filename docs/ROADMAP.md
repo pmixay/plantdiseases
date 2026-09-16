@@ -155,6 +155,95 @@ is only the newest structurally complete **legacy diagnostic candidate**;
 v2.7.3 failed its own recorded gate and lacks Aqua. The next production
 candidate must be a fresh GPU run on approved v9 data.
 
+### 2026-09-16 review — code is done, the model is data-gated
+
+The two `model-fix-test` commits (`ec8916f`, `f002dc8`) are contract and
+provenance work: manifest-bound bundle with SHA-256 binding and one selected
+graph, per-image licence/provenance on every row, HF/Kaggle revision pinning,
+fail-closed Aqua, deterministic torch, DoctorP off by default, the served-gate
+precondition on the OOD overlay, and the v2 sentinel demoted to diagnostic.
+None of it moves capability; the branch itself concludes the next candidate
+needs v9 data. So the answer to "code or data?" is **both, in that order —
+and the code half is now mostly done**. What the review changed and what is
+still open:
+
+**Fixed on the branch (this review).**
+
+- **Train/serve geometry parity** (§4). The 2.8.0 draft trained on a
+  letterboxed full frame (`PadToSquare → Resize(IMG, IMG)`) while every eval
+  slice, both calibration splits, `classifier.py` and the Aqua client
+  centre-crop after a shorter-side resize at `EVAL_RESIZE_RATIO`. A 4:3 frame
+  reached the head ~1.4× larger at serve time than at train time, with
+  padding bars serving never produces — introduced together with the removal
+  of the only scale augmentation. Training now uses the serving transform
+  with `RandomCrop(IMG)` in place of the centre crop
+  (`serve_parity_v2_unablated`).
+- **The unseen-domain sentinel must run.** `REQUIRE_OOD_BENCHMARK` stays
+  `False` (v2 is not a gate), but `REQUIRE_OOD_DIAGNOSTIC_RUN=True` fails a
+  run that cannot download and score it, and its alerts are written into
+  `model_card.json → ood_benchmark.alerts` and `run_log.jsonl`. A non-blocking
+  check that can silently stop existing is the failure mode the original gate
+  comment warned about.
+- **CI never ran on this branch** — `model-fix-test` matched no push glob.
+  `model-*` is now in `.github/workflows/ci.yml`.
+
+- **Evaluation tooling** (fresh-eyes review of `tools/`, `bundle.py` and
+  their tests). Fixed: `build_ood_benchmark.py report()` printed healthy
+  *recall* where the docs said false-fire, so a bundle abstaining on half its
+  healthy images and one calling half of them scorched printed identical rows
+  (now recall, abstentions and a separate FALSE-FIRE row); `eval_bootstrap`
+  averaged absent disease classes in as hard zeros (a perfect model on the
+  healthy+scorch benchmark scored 1/7, and family resampling dragged every
+  thin class's CI toward 0 — now macro over the classes present, `nan`-aware
+  CIs, ties reported as `p_tie`); `None`/`NaN` capture-family IDs were pooled
+  into one pseudo-family (now rejected); `paired_eval --served` re-parsed
+  warning strings instead of using `pipeline._derive_abstention` and did not
+  count natural `not_a_plant` verdicts as coverage loss (now both);
+  `build_ood_benchmark.cluster_paths` silently dropped undecodable images
+  (now an error); `verify_bundle` accepted an embedding bank declared without
+  `bank_file` that boot then rejected (now rejected at preflight). Still open:
+  `paired_eval._load_bundle_binding` in `--argmax` mode follows symlinks and
+  accepts `size_bytes == 0` where `bundle.verify_bundle` does not — reuse the
+  latter; and `report()`/`predict_served` have no end-to-end test.
+
+**Open, code-only (no data needed), ordered by value.**
+
+- [ ] **Served-gate calibration tool.** Every 2.8.0 bundle serves with the
+      secondary OOD overlay **OFF** (trained `not_a_plant` head + blur gate
+      only), because §6 fits the embedding threshold one image at a time and
+      `pipeline.py` refuses a threshold not fitted on the served statistic
+      (min member distance over crops + whole frame). Calibrating in the
+      notebook would mean re-implementing the crop logic there — the drift the
+      contract exists to prevent. The honest fix is a server tool
+      (`tools/calibrate_served_gate.py`) that runs the real
+      `PlantVisionPipeline` on held-out plant and non-plant images, fits the
+      min-member threshold at `TARGET_PLANT_FPR`, writes `ood.served_gate`
+      and re-seals `bundle_manifest.json`. Note the direction of the old
+      error: min-over-members ≤ whole-frame distance, so the per-image
+      threshold applied to the served statistic *under*-fires — the overlay
+      was conservative, not dangerous, and switching it off costs NAP
+      rejections the head misses.
+- [ ] **Production-faithful eval is OFF in the shipping mode.**
+      `RUN_DETECTOR_CROP_EVAL = (TRAIN_MODE != 'combined')` — `combined` is
+      the default, so the detector-crop macro-F1 is never produced for the
+      run that ships. The pass is now streamed in 256-image chunks after the
+      TF objects are freed, so the OOM rationale may no longer hold; confirm
+      on one Colab run with host-RAM logging, then flip the default.
+- [ ] **Strict determinism is untested end to end.**
+      `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
+      §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
+      kernel. The first 2.8.0 run is the test; if it trips, prefer
+      `warn_only=True` with the warning recorded in `run_manifest.json` over
+      losing the run.
+- [ ] **The augmentation profile is unablated** (v1 letterbox and v2 parity
+      alike). One paired run at `SEED=0`, profile vs no-artifact-augs, scored
+      with `tools/eval_bootstrap.py` on capture families, settles whether the
+      sensor-artifact block earns its CPU cost.
+
+**Data (the critical path)** — the v9 protocol, the OOD benchmark v3 and the
+locked deployment-representative test set are specified in
+`DATASET_LABELING_PLAN.md` ("v9 collection protocol").
+
 ### Superseded historical interpretation (do not use as a release gate)
 
 **The OOD AND-gate has been three-of-three since 2.7.2.** It fires

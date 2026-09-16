@@ -254,3 +254,20 @@ def test_verify_bundle_rejects_stub_serving_contract(tmp_path):
     _write_manifest(tmp_path, manifest)
     with pytest.raises(BundleLoadError, match="schema_version|missing sections"):
         verify_bundle(tmp_path)
+
+
+def test_verify_bundle_rejects_embedding_without_explicit_bank_file(tmp_path):
+    """ood.py defaults a missing bank_file to ood_embedding.npz; a bundle that
+    passed preflight and then failed at boot is the worst preflight outcome."""
+    manifest = _bundle(tmp_path)
+    classes_path = tmp_path / "classes.json"
+    classes = json.loads(classes_path.read_text())
+    classes["ood"]["embedding"] = {
+        "method": "knn", "metric": "cosine", "k": 5,
+        "threshold": 0.5, "embed_dim": 384,
+    }
+    classes_path.write_text(json.dumps(classes))
+    manifest["artifacts"]["classes"] = _record(classes_path)
+    _write_manifest(tmp_path, manifest)
+    with pytest.raises(BundleLoadError, match="bank_file"):
+        verify_bundle(tmp_path)

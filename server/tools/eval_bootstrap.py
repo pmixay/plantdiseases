@@ -78,13 +78,28 @@ def _disease_indices(class_names: list[str]) -> list[int]:
 def disease_macro_f1(
     y_true: np.ndarray, y_pred: np.ndarray, class_names: list[str]
 ) -> float:
-    """Disease-only macro-F1, matching the notebook ship-gate metric."""
+    """Disease-only macro-F1 over the disease classes PRESENT in ``y_true``.
+
+    On a fully populated slice (``val_realworld``) this is exactly the
+    notebook's ship-gate ``disease_macro_f1``. On a slice missing classes —
+    an OOD benchmark holding only healthy + scorch, or a bootstrap replicate
+    that drew no row of a thin class — the absent classes are left out rather
+    than averaged in as hard zeros (the notebook's ``supported_disease_macro_f1``).
+    A perfect model on a two-class subset used to score 1/7 here, and every
+    replicate that missed a rare class dragged that class's CI toward 0. An
+    absent class is not a failure; it is no evidence. Returns ``nan`` when
+    ``y_true`` holds no disease class at all.
+    """
     disease_idx = _disease_indices(class_names)
     if not disease_idx:
         raise ValueError("class_names contains no disease classes to score")
+    present = set(np.unique(np.asarray(y_true)).tolist())
+    labels = [i for i in disease_idx if i in present]
+    if not labels:
+        return float("nan")
     return float(
         f1_score(
-            y_true, y_pred, labels=disease_idx, average="macro", zero_division=0
+            y_true, y_pred, labels=labels, average="macro", zero_division=0
         )
     )
 
@@ -145,9 +160,14 @@ def _as_int_array(x) -> np.ndarray:
 
 
 def _percentile_ci(samples: np.ndarray, ci: float) -> tuple[float, float]:
+    """Percentile CI over the FINITE replicates; an all-``nan`` set is an error."""
+    samples = np.asarray(samples, dtype=np.float64)
+    valid = samples[~np.isnan(samples)]
+    if valid.size == 0:
+        raise ValueError("no bootstrap replicate produced a finite metric")
     lo_q = (1.0 - ci) / 2.0 * 100.0
     hi_q = (1.0 + ci) / 2.0 * 100.0
-    return float(np.percentile(samples, lo_q)), float(np.percentile(samples, hi_q))
+    return float(np.percentile(valid, lo_q)), float(np.percentile(valid, hi_q))
 
 
 def _validate_bootstrap_config(n_boot: int, ci: float) -> None:
@@ -155,6 +175,9 @@ def _validate_bootstrap_config(n_boot: int, ci: float) -> None:
         raise ValueError("n_boot must be a positive integer")
     if not 0.0 < float(ci) < 1.0:
         raise ValueError("ci must be strictly between 0 and 1")
+
+
+_MISSING_GROUP_TOKENS = frozenset({"none", "nan", "null", "na", "n/a"})
 
 
 def _prepare_groups(group_ids, n: int) -> list[np.ndarray] | None:
@@ -166,9 +189,13 @@ def _prepare_groups(group_ids, n: int) -> list[np.ndarray] | None:
         raise ValueError("group_ids must be a 1-D vector matching the labels")
     groups: dict[str, list[int]] = {}
     for i, raw in enumerate(values):
+        # ``None``/``NaN`` used to stringify to "None"/"nan" and pool every
+        # unlabelled row into ONE pseudo-family — the opposite of independence.
+        if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+            raise ValueError(f"group_ids contains a missing value at row {i}")
         key = str(raw).strip()
-        if not key:
-            raise ValueError(f"group_ids contains a blank value at row {i}")
+        if not key or key.lower() in _MISSING_GROUP_TOKENS:
+            raise ValueError(f"group_ids contains a missing value at row {i}")
         groups.setdefault(key, []).append(i)
     return [np.asarray(indices, dtype=np.int64) for indices in groups.values()]
 
@@ -217,6 +244,8 @@ def bootstrap_macro_f1_ci(
     groups = _prepare_groups(group_ids, n)
 
     point = disease_macro_f1(y_true, y_pred, class_names)
+    if np.isnan(point):
+        raise ValueError("y_true holds no disease class; disease macro-F1 is undefined")
     rng = np.random.default_rng(seed)
     boot = np.empty(n_boot, dtype=np.float64)
     for b in range(n_boot):
@@ -231,6 +260,7 @@ def bootstrap_macro_f1_ci(
         "ci_level": ci,
         "n": int(n),
         "n_boot": int(n_boot),
+        "n_boot_effective": int(np.sum(~np.isnan(boot))),
         "ci_half_width": (hi - lo) / 2.0,
         **_sampling_meta(groups, n),
     }
@@ -269,6 +299,8 @@ def paired_bootstrap(
     groups = _prepare_groups(group_ids, n)
     f1_a = disease_macro_f1(y_true, y_pred_a, class_names)
     f1_b = disease_macro_f1(y_true, y_pred_b, class_names)
+    if np.isnan(f1_a) or np.isnan(f1_b):
+        raise ValueError("y_true holds no disease class; disease macro-F1 is undefined")
     rng = np.random.default_rng(seed)
     diffs = np.empty(n_boot, dtype=np.float64)
     for b in range(n_boot):
@@ -278,7 +310,8 @@ def paired_bootstrap(
             disease_macro_f1(yt, y_pred_a[idx], class_names)
             - disease_macro_f1(yt, y_pred_b[idx], class_names)
         )
-    lo, hi = _percentile_ci(diffs, ci)
+    valid = diffs[~np.isnan(diffs)]
+    lo, hi = _percentile_ci(valid, ci)
     return {
         "metric": "disease_macro_f1",
         "f1_a": f1_a,
@@ -287,10 +320,15 @@ def paired_bootstrap(
         "diff_ci_low": lo,
         "diff_ci_high": hi,
         "ci_level": ci,
-        "p_a_gt_b": float(np.mean(diffs > 0.0)),
+        # Ties are reported, not dropped: two identical models give
+        # p_a_gt_b = p_b_gt_a = 0 and p_tie = 1, never a spurious 0/1 split.
+        "p_a_gt_b": float(np.mean(valid > 0.0)),
+        "p_b_gt_a": float(np.mean(valid < 0.0)),
+        "p_tie": float(np.mean(valid == 0.0)),
         "significant": bool(lo > 0.0 or hi < 0.0),
         "n": int(n),
         "n_boot": int(n_boot),
+        "n_boot_effective": int(valid.size),
         **_sampling_meta(groups, n),
     }
 

@@ -260,7 +260,20 @@ def cluster_paths(
     family_ids: dict[Path, str] | None = None,
 ) -> list[list[Path]]:
     """Single-link capture families using pHash and geometric correspondences."""
-    decoded = [(p, h) for p in sorted(paths) if (h := _phash(p)) is not None]
+    decoded, undecodable = [], []
+    for p in sorted(paths):
+        h = _phash(p)
+        if h is None:
+            undecodable.append(p)
+        else:
+            decoded.append((p, h))
+    if undecodable:
+        # A corrupt file used to vanish here with no count, and the
+        # ``files -> families`` line then attributed the shrink to dedup.
+        raise RuntimeError(
+            f"{len(undecodable)} image(s) could not be decoded for pHash and would "
+            f"silently disappear from the benchmark; fix or remove them first. "
+            f"Examples: {[str(p) for p in undecodable[:5]]}")
     if robust and len(decoded) > MAX_EXHAUSTIVE_SIFT_IMAGES and family_ids is None:
         pairs = len(decoded) * (len(decoded) - 1) // 2
         raise RuntimeError(
@@ -584,32 +597,52 @@ def report(preds_path: Path, manifest: Path) -> None:
     sp = np.array([species.get(_key(i), "?") for i in d["items"]])
     ar = np.array([arms.get(_key(i), "") for i in d["items"]])
 
-    print(f"{'class / arm / species':38s} {la:>9s} {lb:>9s} {'delta':>8s}   n")
+    disease_idx = [i for i, n in enumerate(names) if n not in ("healthy", "not_a_plant")]
+    healthy_idx = names.index("healthy") if "healthy" in names else None
+
+    def _line(label: str, k, ci: int, note: str = "") -> None:
+        ra, rb = float((ya[k] == ci).mean()), float((yb[k] == ci).mean())
+        aa, ab = int((ya[k] == -1).sum()), int((yb[k] == -1).sum())
+        print(f"{label:38s} {ra:9.3f} {rb:9.3f} {rb - ra:+8.3f} {int(k.sum()):4d}"
+              f"   {aa:6d} {ab:6d}{note}")
+
+    def _false_fire_line(label: str, k) -> None:
+        fa = float(np.isin(ya[k], disease_idx).mean())
+        fb = float(np.isin(yb[k], disease_idx).mean())
+        print(f"{label:38s} {fa:9.3f} {fb:9.3f} {fb - fa:+8.3f} {int(k.sum()):4d}")
+
+    # An abstention (-1: blur gate, OOD gate) is scored WRONG for recall and is
+    # coverage loss; it is never a false fire. The healthy rows therefore carry
+    # two statistics: recall of ``healthy`` (which an abstention lowers) and the
+    # FALSE-FIRE rate (a disease call on a healthy image — the user-facing harm,
+    # which an abstention does not commit). Reading only the first one made a
+    # model that abstains on half its healthy images indistinguishable from one
+    # that calls half of them scorched.
+    print("recall of the row's own class | n | abstentions (scored wrong, not false fires)")
+    print(f"{'class / arm / species':38s} {la:>9s} {lb:>9s} {'delta':>8s}   n   "
+          f"{'abst_' + la[:3]:>6s} {'abst_' + lb[:3]:>6s}")
     for ci, cname in enumerate(names):
         m = yt == ci
         if not m.any():
             continue
         armed = sorted(a for a in set(ar[m]) if a)
-        print(f"{cname:38s} {(ya[m]==ci).mean():9.3f} {(yb[m]==ci).mean():9.3f} "
-              f"{(yb[m]==ci).mean()-(ya[m]==ci).mean():+8.3f} {int(m.sum()):4d}"
-              + ("   <- POOLED; read the arms below, not this" if len(armed) > 1 else ""))
+        _line(cname, m, ci,
+              "   <- POOLED; read the arms below, not this" if len(armed) > 1 else "")
         if not armed:                      # no arms on this class (e.g. healthy)
             for s in sorted(set(sp[m])):
-                k = m & (sp == s)
-                print(f"    └ {s:32s} {(ya[k]==ci).mean():9.3f} {(yb[k]==ci).mean():9.3f} "
-                      f"{(yb[k]==ci).mean()-(ya[k]==ci).mean():+8.3f} {int(k.sum()):4d}")
+                _line(f"    └ {s:32s}"[:38], m & (sp == s), ci)
+            if ci == healthy_idx:
+                _false_fire_line("healthy FALSE-FIRE (any disease call)", m)
+                for s in sorted(set(sp[m])):
+                    _false_fire_line(f"    └ {s:32s}"[:38], m & (sp == s))
             continue
         for arm in armed:
             a = m & (ar == arm)
             note = {"necrosis": "  (diagnostic regression sentinel; not a release gate)",
                     "turgor": "  (off-morphology probe: information, not a gate)"}.get(arm, "")
-            print(f"  [{arm}]{'':30s}"[:38]
-                  + f" {(ya[a]==ci).mean():9.3f} {(yb[a]==ci).mean():9.3f} "
-                  f"{(yb[a]==ci).mean()-(ya[a]==ci).mean():+8.3f} {int(a.sum()):4d}{note}")
+            _line(f"  [{arm}]{'':30s}"[:38], a, ci, note)
             for s in sorted(set(sp[a])):
-                k = a & (sp == s)
-                print(f"    └ {s:32s} {(ya[k]==ci).mean():9.3f} {(yb[k]==ci).mean():9.3f} "
-                      f"{(yb[k]==ci).mean()-(ya[k]==ci).mean():+8.3f} {int(k.sum()):4d}")
+                _line(f"    └ {s:32s}"[:38], a & (sp == s), ci)
 
     # Between-species spread is what decides whether a pooled number means
     # anything. With k=2 species at SD 0.616 the 95% CI on a domain-level scorch

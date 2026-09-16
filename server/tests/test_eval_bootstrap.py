@@ -244,6 +244,54 @@ def test_capture_family_ids_must_be_complete_and_aligned():
     with pytest.raises(ValueError, match="matching"):
         eb.bootstrap_macro_f1_ci(
             y, y, CLASS_NAMES, n_boot=5, group_ids=["a"])
-    with pytest.raises(ValueError, match="blank"):
+    with pytest.raises(ValueError, match="missing"):
         eb.bootstrap_macro_f1_ci(
             y, y, CLASS_NAMES, n_boot=5, group_ids=["a", "b", "", "d"])
+
+
+def test_disease_macro_f1_ignores_classes_absent_from_the_slice():
+    # A benchmark holding only disease_a: a perfect model scores 1.0, not 0.5
+    # (the absent disease_b used to be averaged in as a hard zero).
+    y_true = np.array([0, 0, 0, 2, 2])
+    assert eb.disease_macro_f1(y_true, y_true, CLASS_NAMES) == 1.0
+    # No disease class at all -> undefined, and the CI refuses rather than
+    # reporting a number.
+    y_nd = np.array([2, 3, 2])
+    assert np.isnan(eb.disease_macro_f1(y_nd, y_nd, CLASS_NAMES))
+    with pytest.raises(ValueError, match="no disease class"):
+        eb.bootstrap_macro_f1_ci(y_nd, y_nd, CLASS_NAMES, n_boot=5)
+    with pytest.raises(ValueError, match="no disease class"):
+        eb.paired_bootstrap(y_nd, y_nd, y_nd, CLASS_NAMES, n_boot=5)
+
+
+def test_replicate_missing_a_thin_class_does_not_drag_ci_to_zero():
+    # Two capture families of disease_b among forty of disease_a. Family
+    # resampling drops disease_b from many replicates; a perfect model must
+    # still get a degenerate [1, 1] interval, not a CI dragged toward 0.5.
+    y_true = np.array([0] * 40 + [1] * 2 + [2] * 10)
+    groups = ([f"a{i}" for i in range(40)] + ["b0", "b1"]
+              + [f"h{i}" for i in range(10)])
+    out = eb.bootstrap_macro_f1_ci(
+        y_true, y_true, CLASS_NAMES, n_boot=200, seed=1, group_ids=groups)
+    assert out["point"] == 1.0
+    assert (out["ci_low"], out["ci_high"]) == (1.0, 1.0)
+    assert out["n_boot_effective"] == 200
+
+
+def test_missing_group_ids_are_rejected_not_pooled():
+    y = np.array([0, 1, 2, 3])
+    for bad in ([None, "a", "b", "c"],
+                [float("nan"), "a", "b", "c"],
+                ["NaN", "a", "b", "c"],
+                ["null", "a", "b", "c"]):
+        with pytest.raises(ValueError, match="missing"):
+            eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=5, group_ids=bad)
+
+
+def test_paired_bootstrap_reports_ties_instead_of_dropping_them():
+    y = np.array([0, 1, 0, 1, 2, 3] * 5)
+    out = eb.paired_bootstrap(y, y, y, CLASS_NAMES, n_boot=50, seed=3)
+    assert out["p_tie"] == 1.0
+    assert out["p_a_gt_b"] == 0.0 and out["p_b_gt_a"] == 0.0
+    assert out["significant"] is False
+    assert out["n_boot_effective"] == 50

@@ -239,3 +239,39 @@ def test_refuses_nested_output_that_could_delete_source(src):
     with pytest.raises(ValueError, match="non-nested"):
         b.build(src, src / "bench", per_class_cap=10,
                 min_clusters_per_class=1, robust_dedup=False)
+
+
+def test_report_separates_abstention_from_false_fire(tmp_path, capsys):
+    """A model that abstains on half its healthy images and one that calls
+    half of them scorched used to print identical healthy rows."""
+    import json
+
+    names = ["healthy", "leaf_scorch_underwatering", "leaf_spot"]
+    items = [f"healthy/h{i}.jpg" for i in range(10)]
+    manifest = tmp_path / "manifest.csv"
+    with manifest.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["filename", "class", "species", "arm"])
+        w.writeheader()
+        w.writerows({"filename": it, "class": "healthy", "species": "rose", "arm": ""}
+                    for it in items)
+    preds = tmp_path / "preds.json"
+    preds.write_text(json.dumps({
+        "class_names": names, "items": items, "y_true": [0] * 10,
+        "y_pred_a": [-1] * 5 + [0] * 5,   # abstains on half, never false-fires
+        "y_pred_b": [1] * 5 + [0] * 5,    # calls half of them scorched
+        "label_a": "abstainer", "label_b": "alarmist"}))
+    b.report(preds, manifest)
+    lines = capsys.readouterr().out.splitlines()
+    recall = next(ln.split() for ln in lines if ln.split()[:2] == ["healthy", "0.500"])
+    assert recall[1:] == ["0.500", "0.500", "+0.000", "10", "5", "0"]
+    false_fire = next(ln.split() for ln in lines if ln.startswith("healthy FALSE-FIRE"))
+    assert false_fire[-4:] == ["0.000", "0.500", "+0.500", "10"]
+
+
+def test_undecodable_image_is_an_error_not_a_silent_drop(tmp_path):
+    good = tmp_path / "ok.jpg"
+    _img(good, 1)
+    bad = tmp_path / "bad.jpg"
+    bad.write_bytes(b"not an image")
+    with pytest.raises(RuntimeError, match="could not be decoded"):
+        b.cluster_paths([good, bad], robust=False)

@@ -444,6 +444,12 @@ def verify_bundle(model_dir: Path) -> VerifiedBundle:
         raise BundleLoadError("conformal.json was not fit for the selected classifier graph")
 
     emb = classes.get("ood", {}).get("embedding") if isinstance(classes.get("ood"), dict) else None
+    if isinstance(emb, dict) and "bank_file" not in emb:
+        # ood.py would default this to ``ood_embedding.npz`` at boot; a bound
+        # bundle names its bank explicitly so preflight and boot judge the
+        # same file (a bundle that verified here but failed at boot is the
+        # worst outcome a preflight can have).
+        raise BundleLoadError("classes.json ood.embedding must declare bank_file explicitly")
     declared_bank = emb.get("bank_file") if isinstance(emb, dict) else None
     ood_record = artifacts.get("ood_embedding")
     if declared_bank is None and ood_record is not None:
