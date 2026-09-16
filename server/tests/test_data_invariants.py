@@ -222,7 +222,7 @@ def _augmentation_helpers():
     from PIL import ImageDraw, ImageFilter
 
     src = _notebook_source()
-    start = src.index("class PadToSquare:")
+    start = src.index("class LocalSpecularGlare:")
     end = src.index("class JpegRecompress:", start)
     namespace = {
         "math": math, "random": random, "PILImage": PILImage,
@@ -232,23 +232,27 @@ def _augmentation_helpers():
     return namespace
 
 
-def test_augmentation_profile_preserves_label_bearing_margins():
-    """The complete frame survives preprocessing; no RRC/erasing may return."""
+def test_augmentation_geometry_matches_serving():
+    """Training sees the serving transform (shorter-side Resize at
+    EVAL_RESIZE_RATIO, then an IMG crop) with only the crop window randomised.
+
+    The first 2.8.0 draft letterboxed the full frame at train time while every
+    eval slice, both calibration splits, the server and the Aqua client
+    centre-crop — a ~1.4x scale shift on a 4:3 frame plus padding bars serving
+    never produces. No letterbox, RRC or erasing may return on the train side;
+    a full-frame policy has to change the SERVING transform and re-calibrate.
+    """
     src = _notebook_source()
-    assert "'version': 'margin_preserving_v1_unablated'" in src
+    assert "'version': 'serve_parity_v2_unablated'" in src
+    assert "T.Resize(int(IMG * EVAL_RESIZE_RATIO)), T.RandomCrop(IMG)" in src
+    # The eval/calibration loader and the crop eval use the same constant.
+    assert "T.Resize(int(img_size * EVAL_RESIZE_RATIO))" in src
+    assert "T.Resize(int(IMG * EVAL_RESIZE_RATIO)), T.CenterCrop(IMG)" in src
+    assert "class PadToSquare" not in src and "PadToSquare()" not in src
     assert "RandomResizedCrop(" not in src
     assert "RandomErasing(" not in src
     assert "_geo_aug = indoor_train_pil_tx" in src, (
         "Aqua and Gamma must not train on different augmentation distributions"
-    )
-
-    helpers = _augmentation_helpers()
-    pad = helpers["PadToSquare"]()
-    image = helpers["PILImage"].new("RGB", (20, 10), "red")
-    out = pad(image)
-    assert out.size == (20, 20)
-    assert out.crop((0, 5, 20, 15)).tobytes() == image.tobytes(), (
-        "letterboxing cropped or changed a source pixel"
     )
 
 
@@ -1083,6 +1087,17 @@ def test_private_v2_unseen_domain_set_is_diagnostic_not_ship_gate():
     assert "'diagnostic_only': True, 'release_blocking': False" in src
     assert "independent_family_count_verified" in src
     assert "OOD SHIP GATE PASSED" not in src
+
+
+def test_unseen_domain_diagnostic_must_run_and_record_alerts():
+    """Non-blocking is not the same as optional: the sentinel must be scored on
+    every production run and its alerts must land in the artefact, not only in
+    the Colab log."""
+    src = _notebook_source()
+    assert re.search(r"REQUIRE_OOD_DIAGNOSTIC_RUN\s*=\s*True", src)
+    assert "raise RuntimeError(\n            'OOD DIAGNOSTIC NOT RUN: '" in src
+    assert "ood_benchmark['alerts'] = list(_ood_fail)" in src
+    assert "log_run({'phase': 'ood_diagnostic'" in src
 
 
 def test_aqua_sidecar_declares_preprocessing_and_logit_semantics():

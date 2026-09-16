@@ -81,7 +81,7 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   the matching env vars), else a debug-key fallback so the APK still installs.
 
 ### CI (`.github/workflows/ci.yml`)
-Push-only on `main`, `claude/**`, `work/**`, `codex/**`; there is deliberately no
+Push-only on `main`, `claude/**`, `work/**`, `codex/**`, `model-*`; there is deliberately no
 `pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
 the **android** job on `android/**` and the **server** job on `server/**`, each plus
 the workflow file. It gates **per branch, not per push**: with no `base` input
