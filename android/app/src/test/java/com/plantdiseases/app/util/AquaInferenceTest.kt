@@ -94,7 +94,7 @@ class AquaInferenceTest {
         }
         val r = AquaInference.buildResponse(mapOf("leaf_spot" to 8f, "healthy" to 2f))
         assertThat(r.confidence).isWithin(1e-6f).of(0.8f)
-        assertThat(r.allProbs.values.sum()).isWithin(1e-6f).of(1f)
+        assertThat(checkNotNull(r.allProbs).values.sum()).isWithin(1e-6f).of(1f)
     }
 
     @Test

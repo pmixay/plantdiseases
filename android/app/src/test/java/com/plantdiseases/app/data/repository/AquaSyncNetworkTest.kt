@@ -257,6 +257,39 @@ class AquaSyncNetworkTest {
         assertThat(server.takeRequest().path).isEqualTo("/api/aqua/manifest")
         assertThat(server.takeRequest().path).isEqualTo("/api/aqua/model")
 
+        // Install a valid two-class bundle so the rejection paths below have
+        // an active last-known-good pointer to preserve.
+        val validBytes = tfliteContractBytes()
+        val validModelSha = sha256(validBytes)
+        val semanticClassesV2 = semanticClasses
+            .replace("\"model_version\": \"9\"", "\"model_version\": \"8\"")
+        val classesShaV2 = classesSha256(semanticClassesV2)
+        val bundleShaV2 = bundleSha256(validModelSha, classesShaV2)
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    manifestBody(
+                        version = "8",
+                        modelSha = validModelSha,
+                        classesSha = classesShaV2,
+                        bundleSha = bundleShaV2,
+                        semanticClasses = semanticClassesV2,
+                        sizeBytes = validBytes.size,
+                    ),
+                ),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/octet-stream")
+                .setBody(Buffer().write(validBytes)),
+        )
+        val validInstall = runBlocking { repo.syncAquaModel(context) }
+        assertThat(validInstall.getOrNull()).isTrue()
+        assertThat(AquaModelManager.isUpToDate(context, bundleShaV2)).isTrue()
+        assertThat(server.takeRequest().path).isEqualTo("/api/aqua/manifest")
+        assertThat(server.takeRequest().path).isEqualTo("/api/aqua/model")
+
         // A hash-valid replacement with a head for three classes must not
         // displace the currently active two-class bundle.
         val wrongHeadBytes = tfliteContractBytes(outputShape = intArrayOf(1, 3))
