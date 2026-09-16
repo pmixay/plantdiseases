@@ -194,7 +194,7 @@ class ScanRepositoryTest {
     }
 
     @Test
-    fun saveScan_persistsExplicitAbstentionWithoutRoomMigration() = runBlocking {
+    fun saveScan_persistsExplicitAbstentionWithoutRoomMigration(): Unit = runBlocking {
         repo.saveScan(
             "/p.jpg",
             AnalysisResponse(

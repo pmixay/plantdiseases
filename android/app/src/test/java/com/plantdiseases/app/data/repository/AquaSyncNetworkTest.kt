@@ -197,7 +197,7 @@ class AquaSyncNetworkTest {
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """{"available":true,"version":"legacy","sha256":"${"0".repeat(64)},"classes":{}}""",
+                    """{"available":true,"version":"legacy","sha256":"${"0".repeat(64)}","classes":{}}""",
                 ),
         )
 
