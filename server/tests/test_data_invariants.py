@@ -1220,3 +1220,24 @@ def test_server_sidecar_declares_complete_classifier_preprocessing():
                         "'eval_resize_ratio': EVAL_RESIZE_RATIO",
                         "'output_semantics': 'logits'"):
         assert declaration in block.group(0)
+
+
+def test_supplement_accepts_filter_tool_verdict_vocabulary():
+    """``tools/filter_supplement.py`` writes the ``filter_verdict`` column; §2
+    must accept every verdict it can emit, and reject a byte/manifest mismatch."""
+    src = _notebook_source()
+    for verdict in ("dup_intra", "dup_cross", "tiny", "corrupt", "missing",
+                    "phash_mismatch", "bench_leak", "keep"):
+        assert f"'{verdict}'" in src.split("_KNOWN_FILTER_VERDICTS = {", 1)[1].split("}", 1)[0]
+    assert "_filter_counts.get('phash_mismatch', 0)" in src
+
+
+def test_supplement_family_cannot_straddle_eval_and_train():
+    src = _notebook_source()
+    assert "_family_sources.setdefault(_family_id, set()).add(_src)" in src
+    assert "if 'supplement' in s and len(s) > 1" in src
+
+
+def test_ood_diagnostic_accepts_builder_manifest_filename():
+    src = _notebook_source()
+    assert "next(_ood_root.rglob('manifest.csv'), None)" in src

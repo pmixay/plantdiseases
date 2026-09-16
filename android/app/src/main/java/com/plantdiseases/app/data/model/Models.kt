@@ -258,10 +258,7 @@ fun AnalysisResponse.diagnosticContractViolation(): String? {
         return "all_probs keys do not match the canonical taxonomy"
     }
     if (probs.any { (name, probability) ->
-            name.isBlank() ||
-                name != name.trim() ||
-                !probability.isFinite() ||
-                probability !in 0f..1f
+            !isWellFormedClassKey(name) || !isUnitProbability(probability)
         }
     ) {
         return "all_probs contains an invalid class or probability"
@@ -290,11 +287,9 @@ fun AnalysisResponse.diagnosticContractViolation(): String? {
         val probability = probs[candidateKey]
             ?: return "top_k contains a class absent from all_probs"
         if (
-            candidateKey.isBlank() ||
-            candidateKey != candidateKey.trim() ||
+            !isWellFormedClassKey(candidateKey) ||
             !seen.add(candidateKey) ||
-            !candidateConfidence.isFinite() ||
-            candidateConfidence !in 0f..1f
+            !isUnitProbability(candidateConfidence)
         ) {
             return "top_k contains an invalid candidate"
         }
@@ -314,6 +309,10 @@ fun AnalysisResponse.diagnosticContractViolation(): String? {
 // tolerance permits only that documented wire-format loss, not a different
 // probability or class.
 private const val PROBABILITY_WIRE_TOLERANCE = 0.0011f
+
+private fun isWellFormedClassKey(key: String): Boolean = key.isNotBlank() && key == key.trim()
+
+private fun isUnitProbability(value: Float): Boolean = value.isFinite() && value in 0f..1f
 
 // Strict wire taxonomy for the currently shipped nine-class head. A taxonomy
 // migration must update this set and the UI label/care catalog in the same app

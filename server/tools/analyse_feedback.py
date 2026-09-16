@@ -73,18 +73,31 @@ from typing import Any
 
 # ── Configuration knobs ─────────────────────────────────────────────
 
-# Production head — kept in sync with ``_FEEDBACK_IN_HEAD_CLASSES`` in
-# ``server/main.py``. Hard-coded rather than imported so the script
-# stands alone (a notebook can run it against a DB snapshot without
-# wiring up the FastAPI app's import graph).
-IN_HEAD_CLASSES: frozenset[str] = frozenset({
-    "gray_mold_botrytis",
-    "healthy",
-    "leaf_spot",
-    "not_a_plant",
-    "powdery_mildew",
-    "viral_disease",
-})
+# Production head — the same derivation as ``_FEEDBACK_IN_HEAD_CLASSES`` in
+# ``server/main.py`` (``classifier.DEFAULT_CLASS_NAMES``), so a taxonomy change
+# cannot leave this script counting in-head corrections as out-of-head. The
+# hard-coded copy it replaced listed SIX classes and silently mis-binned every
+# leaf_scorch / nutrient_deficiency / pests correction. The literal fallback
+# below exists only for a snapshot analysis run without the server package on
+# the path; it must stay identical to ``DEFAULT_CLASS_NAMES``.
+_SERVER_DIR = Path(__file__).resolve().parents[1]
+if str(_SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(_SERVER_DIR))
+try:
+    from classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
+except Exception:  # noqa: BLE001 — standalone snapshot run without onnxruntime
+    _HEAD_CLASS_NAMES = [
+        "gray_mold_botrytis",
+        "healthy",
+        "leaf_scorch_underwatering",
+        "leaf_spot",
+        "not_a_plant",
+        "nutrient_deficiency",
+        "pests",
+        "powdery_mildew",
+        "viral_disease",
+    ]
+IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
 # Confidence-bucket edges for the calibration table. Open lower bound
 # on each bucket, closed upper bound — i.e. (0.0, 0.5] / (0.5, 0.7] /

@@ -93,9 +93,14 @@ them even when a request doesn't mention them.
 3. **Nothing ships until BOTH gates pass — and the in-domain one is not
    enough.** In-domain (`val_realworld`): disease macro-F1 ≥ **0.70**, no
    disease class at recall 0, healthy-bias < 1.5, healthy recall ≥ 0.70.
-   Out-of-domain (§6, blocking since 2026-08-18): the never-trained OOD
-   benchmark, **per arm, never pooled** — `hibiscus` scorch recall ≥ 0.70 and
-   healthy false-fire ≤ 0.12 on the same 151 never-trained clusters.
+   Out-of-domain (§6): the never-trained OOD benchmark, **per arm, never
+   pooled** — `hibiscus` scorch recall ≥ 0.70 and healthy false-fire ≤ 0.12 on
+   the same 151 never-trained clusters. **Status since 2026-08-23:** the
+   private v2 set is a *diagnostic*, not a gate (`REQUIRE_OOD_BENCHMARK=False`
+   — its 31 scorch rows are one studio session with geometric pseudo-replicates),
+   but it must still run and land in `model_card.json` on every production run
+   (`REQUIRE_OOD_DIAGNOSTIC_RUN=True`). The blocking floor returns with a
+   family-clean v3 (`docs/DATASET_LABELING_PLAN.md`, "OOD benchmark v3").
 
    The second gate exists because the first one is satisfiable by a collapsed
    model: **2.7.0, 2.7.1 and 2.7.2 each passed in-domain while scoring ~0

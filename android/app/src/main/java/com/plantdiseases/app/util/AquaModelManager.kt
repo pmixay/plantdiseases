@@ -65,6 +65,35 @@ object AquaModelManager {
             }
         }
 
+    private fun allSha256(vararg digests: String): Boolean = digests.all { SHA_RE.matches(it) }
+
+    /**
+     * Stream [body] into [dest] while hashing it. Throws when the stream is
+     * empty or exceeds [MAX_MODEL_BYTES]; returns the lowercase SHA-256 hex.
+     */
+    private fun streamModelToFile(body: InputStream, dest: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        dest.outputStream().use { out ->
+            val buf = ByteArray(64 * 1024)
+            body.use { input ->
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    if (n == 0) continue
+                    total += n
+                    if (total > MAX_MODEL_BYTES) {
+                        throw IOException("Aqua model exceeds $MAX_MODEL_BYTES bytes")
+                    }
+                    digest.update(buf, 0, n)
+                    out.write(buf, 0, n)
+                }
+            }
+        }
+        if (total == 0L) throw IOException("Aqua model download is empty")
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun activeBundle(context: Context): InstalledBundle? {
         // Read one SharedPreferences snapshot. Resolving model and sidecar in
         // separate calls could otherwise straddle an update and pair files
@@ -74,13 +103,8 @@ object AquaModelManager {
         val classesSha = (stored[KEY_CLASSES_SHA] as? String)?.lowercase() ?: return null
         val bundleSha = (stored[KEY_BUNDLE_SHA] as? String)?.lowercase() ?: return null
         val slot = stored[KEY_SLOT] as? String ?: return null
-        if (
-            !SHA_RE.matches(modelSha) ||
-            !SHA_RE.matches(classesSha) ||
-            !SHA_RE.matches(bundleSha) ||
-            !SLOT_RE.matches(slot) ||
-            !slot.startsWith("$bundleSha-")
-        ) {
+        val slotWellFormed = SLOT_RE.matches(slot) && slot.startsWith("$bundleSha-")
+        if (!allSha256(modelSha, classesSha, bundleSha) || !slotWellFormed) {
             return null
         }
         val dir = File(bundlesDir(context), slot)
@@ -232,14 +256,10 @@ object AquaModelManager {
             classesSha256(classes).equals(classesSha, ignoreCase = true) &&
                 bundleSha256(modelSha, classesSha).equals(bundleSha, ignoreCase = true)
         }.getOrDefault(false)
-        if (
-            !SHA_RE.matches(modelSha) ||
-            !SHA_RE.matches(classesSha) ||
-            !SHA_RE.matches(bundleSha) ||
-            hasReservedBindings ||
-            !validClasses(classes, version) ||
-            !contractMatches
-        ) {
+        val contractValid = !hasReservedBindings &&
+            validClasses(classes, version) &&
+            contractMatches
+        if (!allSha256(modelSha, classesSha, bundleSha) || !contractValid) {
             Log.w(TAG, "Rejecting Aqua install with malformed or inconsistent bundle contract")
             try {
                 body.close()
@@ -260,26 +280,7 @@ object AquaModelManager {
             finalDir = published
             if (!staging.mkdir()) throw IOException("Cannot create Aqua staging directory")
             val tmpModel = File(staging, MODEL_FILE)
-            val digest = MessageDigest.getInstance("SHA-256")
-            var total = 0L
-            tmpModel.outputStream().use { out ->
-                val buf = ByteArray(64 * 1024)
-                body.use { input ->
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        if (n == 0) continue
-                        total += n
-                        if (total > MAX_MODEL_BYTES) {
-                            throw IOException("Aqua model exceeds $MAX_MODEL_BYTES bytes")
-                        }
-                        digest.update(buf, 0, n)
-                        out.write(buf, 0, n)
-                    }
-                }
-            }
-            if (total == 0L) throw IOException("Aqua model download is empty")
-            val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
+            val actualSha = streamModelToFile(body, tmpModel)
             if (!actualSha.equals(modelSha, ignoreCase = true)) {
                 Log.w(
                     TAG,
@@ -346,14 +347,10 @@ object AquaModelManager {
         }
         val family = classes.get("model_family")?.asString
         val sidecarVersion = classes.get("model_version")?.asString
-        if (
-            family != ModelFamily.AQUA.id ||
-            sidecarVersion.isNullOrBlank() ||
-            manifestVersion.isNullOrBlank() ||
-            sidecarVersion != manifestVersion
-        ) {
-            return false
-        }
+        val versionsAgree = !sidecarVersion.isNullOrBlank() &&
+            !manifestVersion.isNullOrBlank() &&
+            sidecarVersion == manifestVersion
+        if (family != ModelFamily.AQUA.id || !versionsAgree) return false
 
         val training = classes.getAsJsonObject("training") ?: return false
         val sizeValue = training.get("img_size")
