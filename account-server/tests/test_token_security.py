@@ -114,6 +114,31 @@ def test_extra_claims_are_rejected_even_when_correctly_signed():
         service.decode_access(token_with_extra_claim, now=NOW)
 
 
+def test_correctly_signed_token_beyond_the_issued_lifetime_is_rejected():
+    """``exp`` is checked against policy, not just against the clock.
+
+    Every access token is minted with ACCESS_TOKEN_TTL. One carrying a year of
+    validity — from a mistaken change, or from misuse of a signing key — would
+    otherwise stay usable long past the window revocation is designed around,
+    so the bound is re-checked on the way in.
+    """
+    service = _service()
+    claims = jwt.decode(_issue(service), options={"verify_signature": False})
+    claims["exp"] = int((NOW + timedelta(days=365)).timestamp())
+    overlong = service.key_ring.sign(claims)
+
+    with pytest.raises(AccountAPIError, match="auth_required"):
+        service.decode_access(overlong, now=NOW)
+
+    # The normally issued token is unaffected, at issue and at its last second.
+    token = _issue(service)
+    assert service.decode_access(token, now=NOW).nickname == "SyntheticLeaf"
+    assert (
+        service.decode_access(token, now=NOW + timedelta(minutes=14)).nickname
+        == "SyntheticLeaf"
+    )
+
+
 def test_unsigned_and_unknown_kid_tokens_are_rejected():
     service = _service()
     claims = jwt.decode(_issue(service), options={"verify_signature": False})

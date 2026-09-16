@@ -89,6 +89,132 @@ Yandex dashboard before release even though PlantDiseases does not use it.
   ID/SDK bytecode, disabled VK components, exactly one pinned signer, and an
   APK SHA-256 handoff file must all pass before artifact upload.
 
+## Follow-up pass — 2026-09-16 (post-avatar-editor commit)
+
+Reviewed `7c938e6` (account redesign + avatar editor) and re-swept the account
+trust boundary. The Android side of that commit introduced no new external
+attack surface: `CropActivity` stays `exported="false"`, the picked image is
+bounded, decoded, EXIF-stripped and re-encoded by `UploadImageSanitizer` before
+anything becomes durable, the stored portrait lives in `noBackupFilesDir` keyed
+by a SHA-256 of the account's community actor ID (so one account can never read
+another's local picture), and account deletion clears it. Four defects and
+hardening gaps were found elsewhere on the boundary and are fixed.
+
+### Fixed in this pass
+
+- **Unauthenticated 500 on both internal-service auth checks.**
+  `secrets.compare_digest` raises `TypeError` on non-ASCII `str` operands, and
+  Starlette decodes header bytes before the check sees them. A single high byte
+  in `X-Internal-Service-Token` therefore escaped the comparison as an
+  unhandled exception: a bare 500 plus a server traceback, from an
+  unauthenticated caller, on `POST /v1/internal/auth/verify`,
+  `POST /v1/internal/notifications/opinion` (account API) and
+  `POST /api/internal/account-deletions` / `account-nicknames` (app API — these
+  are deliberately exempt from the API-key gate, so they are reachable without
+  any credential). No authentication bypass: the comparison never returned
+  true. Both checks now reject a non-ASCII candidate before comparing, which is
+  sound because both loaders read the credential with `encoding="ascii"`.
+  Regression tests assert a stable 401 on every affected route.
+
+- **Unhandled exceptions bypassed the account API's response contract.**
+  Anything not converted by an existing handler fell through to Starlette's
+  plain-text 500, which also skips the middleware that sets `Cache-Control:
+  no-store`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and
+  the per-hop `X-Request-ID`. The middleware now converts an unexpected failure
+  into the same redacted `{"error": {"code": "service_unavailable"}}` envelope
+  used elsewhere, keeps the headers, and logs the exception *type name* only —
+  never its message or repr, which can carry provider, refresh, pending-signup
+  or FCM values.
+
+- **A VK portrait URL could name any HTTPS host.** The Yandex path builds its
+  avatar URL from an opaque `default_avatar_id` and is fixed to
+  `avatars.yandex.net` by construction, but VK returns a whole URL that was
+  accepted on nothing but scheme. That value reaches `/v1/me` and is handed to
+  the phone's image loader, so a provider-side response (or anything able to
+  forge one) could learn every signed-in user's IP address. VK portraits are
+  now pinned to VK's own photo infrastructure (`userapi.com`, `vk.com`,
+  `vk.ru`, `vk-cdn.net`, `vkuser.net`, `vkuserphoto.ru`, and subdomains).
+  Anything else degrades to "no portrait", which the app already renders as its
+  placeholder. This closes before VK is enabled rather than after.
+
+- **Access-token lifetime was taken on the issuer's word.** Both verifiers
+  required `exp > iat` but never bounded `exp - iat`, so a token signed by a
+  trusted key but minted with a far-future expiry would have been honoured for
+  as long as it claimed. Both `TokenService.decode_access` and the app API's
+  `RemoteAccountAuthenticator._verify_local` now enforce the published
+  15-minute `ACCESS_TOKEN_TTL` independently, so the revocation window stays
+  the only variable a session's reach depends on.
+
+### Reviewed and found sound (no change)
+
+Two-stage token validation (local Ed25519 verify, then live introspection with
+an equality check on the whole principal, and a JWKS outage failing 503 rather
+than 401); refresh-token rotation with reuse detection, family revocation and
+HMAC-derived idempotent retries; reauthentication scoping for deletion and
+linking; per-account authorization-version invalidation; single-script
+nickname validation (blocks homoglyph, RTL and zero-width injection);
+advisory-lock serialization of first-time provider-subject signups; SQL —
+every dynamic fragment in `server/` interpolates only fixed literal table
+names, with values always bound; path handling on `/api/community/thumb/` and
+the Wikimedia photo proxy; Android credential storage (AES-GCM under a
+non-exportable Keystore key, with the normalized issuer as authenticated
+additional data); and redirect refusal on every credential-bearing request
+across both servers and the app.
+
+### Open, not fixed here
+
+- **VK access-token → application binding is unverified.** Yandex is safe by
+  cross-check: its `/info` response carries `client_id` and the adapter refuses
+  a mismatch, so a token issued to a *different* Yandex application cannot be
+  replayed into PlantDiseases. The VK adapter passes `client_id` as a query
+  parameter to `id.vk.ru/oauth2/user_info` and trusts VK to reject a token that
+  belongs to another application — the response contains no field to
+  cross-check. If VK does not enforce that binding, anyone operating any VK
+  application could sign in here as any of *their* users. This must be proven
+  empirically before VK is enabled: obtain an access token from a second,
+  unrelated VK application and confirm `POST /v1/auth/vk/exchange` returns
+  `invalid_provider_token` or `provider_application_mismatch` rather than
+  authenticating. If VK does not bind it, move VK verification to the `id_token`
+  (JWT) flow and check its `aud` claim against `VKID_CLIENT_ID`.
+
+- **`VKIDClientSecret` is embedded in the APK.** The VK ID Android SDK requires
+  it as a manifest placeholder, so it is extractable from any published build
+  and must be treated as public. Never reuse that VK application for a
+  server-side confidential flow, and rotate it only through VK's dashboard.
+
+- **`RedirectUriReceiverActivity` uses a `vk<client-id>` custom scheme.** A
+  custom scheme is claimable by any other app on the device. VK ID mitigates
+  with PKCE and a signature check; confirm on a real device that a second app
+  registering the same scheme cannot complete the flow.
+
+- **Android `FileProvider` maps the whole cache root** (`<cache-path
+  name="share_images" path="/">`), which now also covers the avatar working
+  files. Not exploitable today — grants are per-URI, no prefix grant is used,
+  and no provider path is built from untrusted input — but the tree should be
+  narrowed to the directories actually shared when the share and avatar
+  temporary files are next touched.
+
+- **Account-service push delivery is not wired.** `create_app` never passes
+  `notification_sink`, so `PUT /v1/push/device` always answers
+  `503 push_unavailable` and `/ready` reports `push_delivery: disabled`. This
+  fails closed (no unusable FCM credentials accumulate), but account-bound
+  opinion notifications cannot be delivered until the FCM sink is connected.
+
+- **`IDEMPOTENT_REFRESH_RETRY_GRACE` is 7 days.** A consumed refresh token
+  still returns its successor for a week when replayed with the matching
+  client-chosen `rotation_id`. That is far longer than a lost-response retry
+  needs; consider minutes.
+
+### Verification
+
+- Account server: Ruff clean; **217 passed, 3 skipped** (was 206/3).
+- Main server: Ruff clean; **642 passed** (was 635).
+- Each fix was confirmed by reverting the source change and watching its new
+  test fail, then restoring it and watching it pass.
+- Android was not compiled locally per repository policy; `ktlintCheck`,
+  `detekt`, unit tests and R8 `assembleRelease` run in CI. This pass changed no
+  Android source.
+
 ## Verification evidence
 
 - Main server: Ruff clean; **605/605 tests passed**.

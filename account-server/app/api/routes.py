@@ -144,10 +144,18 @@ def _limit_ip(request: Request, service: AccountService, operation: str) -> None
 def _require_internal_service(request: Request) -> None:
     expected = getattr(request.app.state, "internal_service_token", None)
     supplied = request.headers.get("x-internal-service-token", "")
+    # ``compare_digest`` refuses non-ASCII *str* operands with TypeError.
+    # Starlette decodes header bytes as latin-1, so a single high byte in this
+    # header used to leave the comparison unhandled: an unauthenticated caller
+    # got a bare 500 with a server traceback instead of the stable 401 this
+    # route promises. The credential is ASCII by construction (both loaders
+    # read it with ``encoding="ascii"``), so anything else is simply wrong.
     if (
         not isinstance(expected, str)
+        or not expected.isascii()
         or not supplied
         or len(supplied) > 512
+        or not supplied.isascii()
         or not secrets.compare_digest(supplied, expected)
     ):
         raise AccountAPIError("auth_required", status_code=401)

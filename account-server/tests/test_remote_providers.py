@@ -286,7 +286,7 @@ def test_vk_uses_client_bound_user_info_and_discards_phone_and_email():
                     "user_id": "123456",
                     "first_name": "Synthetic",
                     "last_name": "VK Person",
-                    "avatar": "https://images.invalid/vk/avatar.png",
+                    "avatar": "https://sun6-21.userapi.com/s/v1/if1/avatar.jpg",
                     "email": "must-not-be-retained@example.invalid",
                     "phone": "+70000000000",
                 }
@@ -304,7 +304,7 @@ def test_vk_uses_client_bound_user_info_and_discards_phone_and_email():
     assert identity.provider == "vk"
     assert identity.subject == "123456"
     assert identity.display_name == "Synthetic VK Person"
-    assert identity.avatar_url == "https://images.invalid/vk/avatar.png"
+    assert identity.avatar_url == "https://sun6-21.userapi.com/s/v1/if1/avatar.jpg"
     assert not hasattr(identity, "phone")
     call = transport.calls[0]
     assert call["method"] == "POST"
@@ -312,6 +312,44 @@ def test_vk_uses_client_bound_user_info_and_discards_phone_and_email():
     assert call["headers"] == {}
     assert call["form"] == {"access_token": "opaque-vk-token"}
     assert "opaque-vk-token" not in call["url"]
+
+
+@pytest.mark.parametrize(
+    "avatar",
+    [
+        "https://attacker.invalid/vk/avatar.png",
+        "https://userapi.com.attacker.invalid/avatar.png",
+        "https://vk.ru.evil.invalid/avatar.png",
+        "http://sun6-21.userapi.com/avatar.jpg",
+        "https://user:pass@sun6-21.userapi.com/avatar.jpg",
+        "https://sun6-21.userapi.com/avatar.jpg#fragment",
+    ],
+)
+def test_vk_portrait_outside_vk_photo_infrastructure_is_dropped(avatar):
+    """A provider-supplied host must never reach the phone's image loader.
+
+    Dropping it is not an error: the account keeps its identity and the app
+    renders its placeholder, exactly as for a VK user with no portrait.
+    """
+    transport = FakeTransport(
+        response=ProviderHttpResponse(
+            200,
+            {
+                "user": {
+                    "user_id": "123456",
+                    "first_name": "Synthetic",
+                    "last_name": "VK Person",
+                    "avatar": avatar,
+                }
+            },
+        )
+    )
+    adapter = VkProviderAdapter(client_id="12345", timeout_seconds=3, transport=transport)
+
+    identity = asyncio.run(adapter.verify("opaque-vk-token"))
+
+    assert identity.subject == "123456"
+    assert identity.avatar_url is None
 
 
 @pytest.mark.parametrize(

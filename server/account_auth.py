@@ -32,6 +32,14 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 _ACCESS_CLAIMS = {"sid", "act", "nick", "iss", "aud", "iat", "nbf", "exp", "av"}
 _KID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _MAX_TOKEN_BYTES = 8192
+# The account service issues exactly ``ACCESS_TOKEN_TTL`` (15 minutes) in
+# ``account-server/app/security/tokens.py``. Enforcing that bound here as well
+# means this API honours the documented lifetime on its own evidence instead of
+# trusting whatever ``exp`` a signed token happens to carry: a token minted with
+# a far-future expiry — by a mistaken change, or by misuse of a signing key —
+# cannot outlive its stated policy on this side of the trust boundary. The
+# leeway matches the clock skew already allowed for the individual claims.
+_MAX_ACCESS_TOKEN_LIFETIME_SECONDS = 15 * 60 + 5
 _MAX_DOCUMENT_BYTES = 64 * 1024
 _DEFAULT_TIMEOUT_SECONDS = 2.0
 _DEFAULT_JWKS_TTL_SECONDS = 300
@@ -276,6 +284,8 @@ class RemoteAccountAuthenticator:
             if claims["iss"] != self.issuer or claims["aud"] != self.audience:
                 raise ValueError
             if claims["exp"] <= claims["iat"]:
+                raise ValueError
+            if claims["exp"] - claims["iat"] > _MAX_ACCESS_TOKEN_LIFETIME_SECONDS:
                 raise ValueError
             if type(claims["av"]) is not int or claims["av"] < 1:
                 raise ValueError

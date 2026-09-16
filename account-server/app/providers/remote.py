@@ -39,6 +39,20 @@ _MAX_SUBJECT_LENGTH = 512
 _MAX_DISPLAY_NAME_LENGTH = 200
 _MAX_AVATAR_URL_LENGTH = 2048
 _YANDEX_AVATAR_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+# The Yandex portrait URL is built here from an opaque id, so its host is fixed
+# by construction. VK hands back a whole URL instead, which would otherwise let
+# a provider-side response (or anything that can forge one) point the phone's
+# image loader at an arbitrary host and learn every signed-in user's IP. Pin it
+# to VK's own photo infrastructure; anything else degrades to "no portrait",
+# which the app already renders as the placeholder.
+_VK_AVATAR_HOSTS = (
+    "userapi.com",
+    "vk.com",
+    "vk.ru",
+    "vk-cdn.net",
+    "vkuser.net",
+    "vkuserphoto.ru",
+)
 _APPLICATION_ERRORS = frozenset(
     {"invalid_client", "invalid_client_id", "client_mismatch", "application_mismatch"}
 )
@@ -176,7 +190,12 @@ def _required_text(value: object, *, maximum: int) -> str:
     return normalized
 
 
-def _safe_avatar(value: object) -> str | None:
+def _allowed_avatar_host(hostname: str, allowed: tuple[str, ...]) -> bool:
+    host = hostname.rstrip(".").lower()
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in allowed)
+
+
+def _safe_avatar(value: object, *, allowed_hosts: tuple[str, ...]) -> str | None:
     if value in (None, ""):
         return None
     if not isinstance(value, str) or len(value) > _MAX_AVATAR_URL_LENGTH:
@@ -188,6 +207,7 @@ def _safe_avatar(value: object) -> str | None:
         or parsed.username
         or parsed.password
         or parsed.fragment
+        or not _allowed_avatar_host(parsed.hostname, allowed_hosts)
     ):
         return None
     return value
@@ -320,6 +340,8 @@ class VkProviderAdapter(ProviderAdapter):
             provider=self.provider,
             subject=subject,
             display_name=display_name,
-            avatar_url=_safe_avatar(user.get("avatar")),
+            avatar_url=_safe_avatar(
+                user.get("avatar"), allowed_hosts=_VK_AVATAR_HOSTS
+            ),
             refreshed_at=datetime.now(UTC),
         )

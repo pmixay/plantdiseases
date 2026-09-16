@@ -170,11 +170,23 @@ _internal_service_token = _load_internal_token(
 
 
 def internal_service_authorized(supplied: str) -> bool:
+    """Constant-time check of the private service credential.
+
+    ``compare_digest`` raises TypeError on non-ASCII *str* operands, and
+    Starlette decodes header bytes before this sees them, so an unauthenticated
+    request carrying one high byte in ``X-Internal-Service-Token`` used to
+    escape as a 500 with a traceback rather than the stable 401 the internal
+    routes promise. ``_load_internal_token`` reads the credential as ASCII, so
+    a non-ASCII candidate can only ever be wrong: reject it first.
+    """
+    token = _internal_service_token
     return bool(
-        _internal_service_token
+        token
         and supplied
         and len(supplied) <= 512
-        and secrets.compare_digest(_internal_service_token, supplied)
+        and supplied.isascii()
+        and token.isascii()
+        and secrets.compare_digest(token, supplied)
     )
 
 

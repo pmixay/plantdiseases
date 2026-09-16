@@ -134,7 +134,21 @@ def create_app(
         # Every hop gets a fresh short-lived correlation value.
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:  # noqa: BLE001 - see below
+            # Expected failures are already converted by the handlers below,
+            # so reaching here means a genuine defect. Starlette would answer
+            # it with a bare plain-text 500 that also skips every header set
+            # here, breaking the stable envelope the app client parses. Log
+            # the exception *type* only: its message and repr can carry the
+            # provider, refresh, pending-signup, or FCM values this service
+            # deliberately never records.
+            logger.error("Unhandled account API error: %s", type(exc).__name__)
+            response = JSONResponse(
+                status_code=500,
+                content={"error": {"code": "service_unavailable"}},
+            )
         response.headers["X-Request-ID"] = request_id
         if request.url.path.endswith("/.well-known/jwks.json"):
             response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"

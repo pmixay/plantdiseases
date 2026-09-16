@@ -214,6 +214,11 @@ def test_random_unknown_kids_share_the_global_refresh_backoff(monkeypatch):
         {"iss": "https://wrong.synthetic.invalid"},
         {"av": 0},
         {"unexpected": "claim"},
+        # ``exp`` alone must not decide how far a session reaches. The account
+        # service mints exactly a 15-minute token; one signed by a trusted key
+        # but carrying a year of validity is outside that published policy, so
+        # it is refused here rather than honoured on the issuer's arithmetic.
+        {"exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())},
     ],
 )
 def test_invalid_claim_contract_fails_before_introspection(monkeypatch, override):
@@ -553,3 +558,20 @@ def test_notification_client_rejects_unsafe_single_label_internal_origin(
     )
 
     assert AccountInternalClient.from_env() is None
+
+
+def test_access_token_at_exactly_the_policy_lifetime_is_still_accepted(monkeypatch):
+    """The bound above must not clip a normally issued token."""
+    now = datetime.now(UTC)
+    token, jwks, _introspection, _public = _fixture_token(
+        iat=int(now.timestamp()),
+        nbf=int(now.timestamp()),
+        exp=int((now + timedelta(minutes=15)).timestamp()),
+    )
+
+    monkeypatch.setattr(
+        "account_auth._open_no_redirect",
+        lambda _request, timeout: _Response(jwks),
+    )
+
+    assert _authenticator()._verify_local(token).nickname == "Synthetic Fern"

@@ -2084,3 +2084,71 @@ def test_deletion_stays_accepted_when_immediate_worker_crashes(
         job = transaction.scalar(select(AccountDeletionJob))
         assert account is not None and account.state == "deletion_pending"
         assert job is not None and job.state == "pending"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/v1/internal/auth/verify", "/v1/internal/notifications/opinion"],
+)
+def test_internal_routes_reject_non_ascii_service_token(api: ApiHarness, path):
+    """A high byte in the credential header is a wrong credential, not a crash.
+
+    ``secrets.compare_digest`` raises TypeError on non-ASCII ``str`` operands
+    and Starlette decodes header bytes before the check sees them, so this
+    unauthenticated request used to escape as a bare 500 with a traceback.
+    """
+    response = api.client.post(
+        path,
+        headers={
+            b"X-Internal-Service-Token": b"\xe9" + b"a" * 39,
+            b"Authorization": b"Bearer synthetic",
+        },
+        json={
+            "actor_id": "00000000-0000-0000-0000-000000000001",
+            "scan_id": "synthetic",
+            "disease": "synthetic",
+            "note": "",
+            "nickname": "synthetic",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": {"code": "auth_required"}}
+
+
+def test_internal_verify_still_accepts_the_configured_service_token(api: ApiHarness):
+    tokens = _signup(api)
+
+    response = api.client.post(
+        "/v1/internal/auth/verify",
+        headers={
+            "X-Internal-Service-Token": api.client.app.state.internal_service_token,
+            "Authorization": f"Bearer {tokens['access_token']}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["nickname"] == tokens["profile"]["nickname"]
+
+
+def test_unexpected_route_failure_keeps_the_redacted_envelope_and_headers(
+    api: ApiHarness, monkeypatch,
+):
+    """A defect must not become a bare Starlette 500 without safety headers."""
+
+    def explode(_self, _current):
+        raise RuntimeError("refresh_token=synthetic-secret-value")
+
+    monkeypatch.setattr(AccountService, "get_me", explode)
+    tokens = _signup(api)
+
+    response = api.client.get("/v1/me", headers=api.headers(tokens["access_token"]))
+
+    assert response.status_code == 500
+    assert response.json() == {"error": {"code": "service_unavailable"}}
+    assert "synthetic-secret-value" not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["X-Request-ID"]

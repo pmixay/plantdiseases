@@ -264,6 +264,16 @@ class TokenService:
                 raise ValueError
             if claims["exp"] <= claims["iat"]:
                 raise ValueError
+            # A token is only ever minted with ACCESS_TOKEN_TTL. Re-check the
+            # bound on the way in so a long-lived token — from a mistaken
+            # change, or from misuse of a signing key — cannot outlive the
+            # policy this service publishes, and so revocation stays the only
+            # variable a session's reach depends on.
+            if (
+                claims["exp"] - claims["iat"]
+                > int(ACCESS_TOKEN_TTL.total_seconds()) + leeway_seconds
+            ):
+                raise ValueError
             if type(claims["av"]) is not int or claims["av"] < 1:
                 raise ValueError
             if not isinstance(claims["nick"], str):
