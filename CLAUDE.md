@@ -25,7 +25,9 @@ is actually running.
 `README.md` — product overview, the class table, the API table, the model tiers ·
 `DEPLOYMENT.md` — production config, proxy/service setup, Android release signing +
 FCM · `docs/ROADMAP.md` — model status, release history, in-flight feature work,
-documentation debt · `docs/DATASET_LABELING_PLAN.md` — the data/labeling loop ·
+documentation debt · `docs/MODEL_HISTORY.md` — per-bundle ledger of every archived
+run (metrics, knob diffs, data deltas, Drive links) + the cross-release comparison
+rules · `docs/DATASET_LABELING_PLAN.md` — the data/labeling loop ·
 `server/models/MODEL_CARD.md` — version-agnostic pipeline overview, with per-run
 numbers in `model_card.json` beside the artefacts · `server/train_notebook.ipynb` —
 the full training recipe (§1–§7).

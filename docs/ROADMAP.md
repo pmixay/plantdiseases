@@ -227,6 +227,15 @@ still open:
       threshold applied to the served statistic *under*-fires — the overlay
       was conservative, not dangerous, and switching it off costs NAP
       rejections the head misses.
+- [ ] **Conformal `coverage` on the wire is `1 − alpha`, and alpha has been 0.6
+      since 2.7.0.** The §6 RAPS grid minimises set size subject to audit
+      coverage ≥ 0.9 + 2 SE and, since the grid widened in 2.7.0, picks
+      `alpha = 0.6` (audit coverage 0.98, mean set 1.5). `conformal.py`
+      reports `coverage_target = 1 − alpha`, so a 2.7.x-shaped bundle makes
+      `/api/analyze` advertise `coverage: 0.4` while `conformal.json` carries
+      `target_coverage: 0.9`. Either clamp the grid to `alpha ≤ 1 − target` or
+      export `target_coverage` and serve that. Found in the archives
+      (`MODEL_HISTORY.md`, "Sidecar findings").
 - [ ] **Production-faithful eval is OFF in the shipping mode.**
       `RUN_DETECTOR_CROP_EVAL = (TRAIN_MODE != 'combined')` — `combined` is
       the default, so the detector-crop macro-F1 is never produced for the
@@ -384,6 +393,10 @@ compatible with the collection round.
    a whole frame. Also the honest fix for the crop-vs-whole gap above.
 
 ### Closed releases
+
+Per-run numbers, knob diffs, data deltas and the Drive archive for every one of
+these (plus the 2.3.1–2.6.7 runs) are in `MODEL_HISTORY.md`, read out of each
+archive's own sidecars.
 
 - **2.6.8** — shipped, still deployed. The incumbent on every axis.
 - **2.6.9** — gate-passed, lost a paired A/B vs 2.6.8. Not shipped. On the OOD
