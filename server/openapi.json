@@ -182,7 +182,7 @@
     "/api/identify": {
       "post": {
         "summary": "Identify Endpoint",
-        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").",
+        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").\n\nThe same local NAP gate used by ``/api/analyze`` runs before PlantNet.\nA ``not_a_plant`` verdict returns a graceful ``available: false``\npayload and does not spend a PlantNet identification request.",
         "operationId": "identify_endpoint_api_identify_post",
         "parameters": [
           {
@@ -817,7 +817,7 @@
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.",
+        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\nAuthentication is optional for this public read. When present it adds\ncaller-specific fields such as ``liked_by_me`` and ``is_mine`` and applies\nthe caller's block list.",
         "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
         "parameters": [
           {
@@ -827,6 +827,44 @@
             "schema": {
               "type": "string",
               "title": "Scan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/profile/{author_token}": {
+      "get": {
+        "summary": "Community Author Profile",
+        "description": "Public community activity for one opaque account-author handle.",
+        "operationId": "community_author_profile_api_community_profile__author_token__get",
+        "parameters": [
+          {
+            "name": "author_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Author Token"
             }
           }
         ],
@@ -877,13 +915,55 @@
     "/api/community/view": {
       "post": {
         "summary": "Community Record Scan View",
-        "description": "Record that the caller opened someone else's shared scan. Deduped per\nviewer server-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire on every open.",
+        "description": "Record that the caller opened (or merely scrolled past) someone\nelse's shared scan — one id via ``scan_id``, or up to 50 via\n``scan_ids`` for feed-scroll impressions. Deduped per viewer\nserver-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire liberally.\n\nThe whole batch is resolved and written in one pass and is bound to the\nverified account actor, never a client-supplied identifier.",
         "operationId": "community_record_scan_view_api_community_view_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/like": {
+      "post": {
+        "summary": "Community Like Scan",
+        "description": "Like or unlike a shared scan. A self-like is refused (0 either way);\nliking your own scan makes no more sense than viewing it does.",
+        "operationId": "community_like_scan_api_community_like_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityLikeRequest"
               }
             }
           },
@@ -961,7 +1041,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country; ``worldwide`` drops\nthe geo filter entirely (every country, newest first — needs no location).\n``species`` + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which widens nearby→country to stay filled.\n\n``cursor`` pages both recommendation and recent order with a signed,\nopaque composite key; tied upload timestamps therefore cannot lose rows.\nThe response cursor is null once a page comes back short. Paging is\nsingle-pass only:\ncombining it with ``disease`` or ``species`` is rejected with 422,\nbecause those widen the query into several concatenated passes whose\nconcatenation has no single global ``created_at`` order to page on.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -1084,6 +1164,38 @@
                 }
               ],
               "title": "Scope"
+            }
+          },
+          {
+            "name": "ranking",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ranking"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           }
         ],
@@ -2117,6 +2229,26 @@
         ],
         "title": "CommunityBlockRequest"
       },
+      "CommunityLikeRequest": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scan Id"
+          },
+          "liked": {
+            "type": "boolean",
+            "title": "Liked",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id"
+        ],
+        "title": "CommunityLikeRequest"
+      },
       "CommunityOpinionRequest": {
         "properties": {
           "scan_id": {
@@ -2216,16 +2348,34 @@
       "CommunityViewRequest": {
         "properties": {
           "scan_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Scan Id"
+          },
+          "scan_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Ids"
           }
         },
         "type": "object",
-        "required": [
-          "scan_id"
-        ],
         "title": "CommunityViewRequest"
       },
       "FeedbackRequest": {

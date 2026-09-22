@@ -85,6 +85,24 @@
         <item quantity="many">%d сканов</item>
         <item quantity="other">%d скана</item>
     </plurals>
+    <plurals name="room_count">
+        <item quantity="one">%d комната</item>
+        <item quantity="few">%d комнаты</item>
+        <item quantity="many">%d комнат</item>
+        <item quantity="other">%d комнаты</item>
+    </plurals>
+    <plurals name="room_plants_count">
+        <item quantity="one">%d растение</item>
+        <item quantity="few">%d растения</item>
+        <item quantity="many">%d растений</item>
+        <item quantity="other">%d растения</item>
+    </plurals>
+    <plurals name="care_tasks_count">
+        <item quantity="one">%d задача</item>
+        <item quantity="few">%d задачи</item>
+        <item quantity="many">%d задач</item>
+        <item quantity="other">%d задачи</item>
+    </plurals>
 
     <!-- Tabs -->
     <string name="tab_scan">Сканер</string>
@@ -148,7 +166,6 @@
 
     <!-- Result actions -->
     <string name="share">Поделиться</string>
-    <string name="low_confidence_warning">Низкая уверенность результата. Попробуйте сделать более чёткое фото при лучшем освещении.</string>
 
     <!-- Profile -->
     <string name="tab_profile">Профиль</string>
@@ -186,9 +203,11 @@
     <string name="guidance_title_gallery">Галерея</string>
     <string name="guidance_title_profile">Профиль</string>
     <string name="guidance_title_species">О виде растения</string>
+    <string name="guidance_title_community">Сообщество</string>
     <string name="guidance_home_actions">«Сканировать» проверяет здоровье, «Определить» распознаёт вид.</string>
     <string name="guidance_home_tools">Измеряйте свет, рассчитывайте полив, проверяйте симптомы и открывайте справочник.</string>
     <string name="guidance_home_scan_nav">Откройте «Скан», чтобы проверить здоровье растения.</string>
+    <string name="guidance_home_notifications">Здесь собираются ответы, напоминания об уходе и подсказки по саду.</string>
     <string name="guidance_camera_permission">Разрешите камеру для фото листа или выберите фото в галерее.</string>
     <string name="guidance_camera_preview">Снимайте один лист при ровном свете на простом фоне.</string>
     <string name="guidance_camera_gallery">Выберите чёткое фото одного растения.</string>
@@ -213,6 +232,8 @@
     <string name="guidance_species_care">Разверните план ухода: полив, свет и другие рекомендации.</string>
     <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
     <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
+    <string name="guidance_community_scope">Показывать сканы рядом, по стране или со всего мира.</string>
+    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации; через «Сортировать по» можно включить строгий порядок от новых к старым. Откройте фото, чтобы читать ответы; ответить можно, только пока владелец активно просит второе мнение. Сердечком ставится лайк.</string>
     <string name="guidance_previous">Предыдущий шаг</string>
     <string name="guidance_next">Следующий шаг</string>
     <string name="guidance_activate_target">Нажать выделенный элемент</string>
@@ -229,6 +250,7 @@
 
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
+    <string name="new_scan_hint">Сделайте новое фото или выберите его из галереи</string>
     <string name="heatmap_label">Область обнаружения</string>
 
     <!-- Camera -->
@@ -289,8 +311,6 @@
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
 
     <string name="species_card_title">Определённый вид</string>
-    <string name="species_source_wikipedia">Источник: Wikipedia</string>
-    <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы в вашей стране</string>
@@ -303,6 +323,7 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет — ваш будет первым.</string>
     <!-- Community second opinion -->
+    <string name="replies_title">Ответы на ваш скан</string>
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
     <string name="community_opinion_diagnosis_label">Диагноз</string>
@@ -311,14 +332,20 @@
     <string name="community_opinion_send">Отправить мнение</string>
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
+    <string name="community_opinion_my_vote">Ваше мнение: %1$s</string>
+    <string name="community_opinion_more">Ещё</string>
+    <string name="community_opinion_change">Изменить мнение</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
+    <string name="community_opinion_loading">Загружаем ответы сообщества…</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
     <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
+    <string name="community_opinion_replies_title">Второе мнение сообщества</string>
+    <string name="community_opinion_replies_subtitle">Что сообщество думает об этом скане.</string>
     <string name="community_report_content">Пожаловаться</string>
     <string name="community_block_author">Заблокировать автора</string>
     <string name="community_report_title">Жалоба на материал сообщества</string>
@@ -361,18 +388,57 @@
     <string name="second_opinion_sheet_status">Запрос активен · осталось %1$d ч. О новых ответах придёт уведомление.</string>
     <string name="second_opinion_stop">Отменить запрос</string>
     <string name="second_opinion_stopped">Запрос отменён — уведомлений по этому скану больше не будет.</string>
-    <string name="community_opinion_replies_title">Второе мнение сообщества</string>
-    <string name="community_opinion_replies_subtitle">Что сообщество думает об этом скане.</string>
-    <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_opinion_list_header">Ответы (%1$d)</string>
-    <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
+    <string name="community_wants_opinion_badge">Ждёт мнения</string>
+    <string name="community_like_action">Нравится</string>
+    <string name="community_open_replies">Открыть ответы: %1$d</string>
+    <string name="community_replies_locked_short">Ответы закрыты</string>
+    <string name="community_replies_locked_readable">Ответы доступны только для чтения: владелец не запрашивает мнения</string>
+    <string name="community_opinion_locked_body">Ответы доступны только для чтения. Владелец не запрашивал второе мнение либо запрос уже завершён.</string>
+    <string name="community_opinion_locked_toast">Запрос второго мнения уже завершён.</string>
+    <string name="community_report_action">Пожаловаться</string>
+    <string name="community_block_action">Заблокировать автора</string>
+    <string name="community_report_title">Почему вы жалуетесь?</string>
+    <string name="community_report_sent">Жалоба отправлена. Спасибо.</string>
+    <string name="community_block_title">Заблокировать автора?</string>
+    <string name="community_block_body">Его сканы и ответы будут скрыты от вас, а ваши публикации — от него.</string>
+    <string name="community_block_confirm">Заблокировать</string>
+    <string name="community_blocked">Автор заблокирован.</string>
+    <string name="community_safety_error">Не удалось обновить настройки безопасности. Попробуйте снова.</string>
+    <string-array name="community_report_reason_labels">
+        <item>Контент сексуального характера</item>
+        <item>Насилие или угрозы</item>
+        <item>Ненависть или травля</item>
+        <item>Незаконный или опасный совет</item>
+        <item>Спам или ложная информация</item>
+        <item>Нарушение приватности или подмена личности</item>
+        <item>Другое нарушение правил</item>
+    </string-array>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Сканы сообщества</string>
+    <string name="nearby_scans_title">Лента сообщества</string>
+    <string name="community_profile_title">Профиль</string>
+    <string name="community_profile_avatar">Аватар профиля сообщества</string>
+    <string name="community_open_profile">Открыть профиль %1$s</string>
+    <string name="community_profile_joined">В сообществе с %1$s</string>
+    <string name="community_profile_scans">%1$d\nСканов</string>
+    <string name="community_profile_opinions">%1$d\nОтветов</string>
+    <string name="community_profile_likes">%1$d\nЛайков</string>
+    <string name="community_profile_posts">Публикации</string>
+    <string name="community_profile_no_posts">Публичных сканов пока нет</string>
+    <string name="community_profile_unavailable">Этот профиль недоступен</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
+    <string name="notifications_cd">Уведомления</string>
+    <string name="notifications_title">Уведомления</string>
+    <string name="privacy_policy_title">Политика конфиденциальности</string>
+    <string name="privacy_policy_subtitle">Как обрабатываются фото сканов и другие данные приложения.</string>
+    <string name="notifications_empty">Пока пусто — здесь появятся ответы, напоминания об уходе и подсказки по саду.</string>
+    <string name="notifications_mark_all_read">Отметить все прочитанными</string>
+    <string name="notifications_clear_all">Очистить всё</string>
+    <string name="notifications_clear_confirm_title">Очистить все уведомления?</string>
+    <string name="notifications_clear_confirm_body">Список очистится полностью. Сами ответы, напоминания и подсказки никуда не денутся.</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
-    <string name="nearby_scans_second_opinion">Второе мнение</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
     <string name="community_filter_country">Страна</string>
@@ -392,13 +458,11 @@
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
     <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
-    <!-- Nearby scans sort & filter overlay -->
-    <string name="nearby_filter_title">Сортировка и фильтр</string>
-    <string name="nearby_filter_by_date">По дате</string>
-    <string name="nearby_filter_date_newest">Сначала новые</string>
-    <string name="nearby_filter_date_oldest">Сначала старые</string>
-    <string name="nearby_filter_by_type">По типу</string>
-    <string name="nearby_filter_apply">Применить</string>
+    <!-- Сортировка ленты сообщества -->
+    <string name="nearby_sort_title">Сортировать по</string>
+    <string name="nearby_sort_recommended">Рекомендованные</string>
+    <string name="nearby_sort_newest">Новые</string>
+    <string name="nearby_sort_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_scope_global">по всему миру</string>
@@ -421,22 +485,17 @@
     <string name="blurry_photo_message">Фото кажется размытым. Результаты могут быть менее точными. Продолжить?</string>
 
     <!-- Retry analysis -->
-    <string name="retry_analysis">Повторить анализ</string>
     <string name="inline_confidence_retake">Фото может быть размытым.\nПереснимите его так, чтобы лист заполнял большую часть кадра.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Очень низкая уверенность</string>
-    <string name="warning_very_low_confidence">Модель не уверена в результате — переснимите фото так, чтобы лист занимал большую часть кадра, при ровном освещении и на однотонном фоне.</string>
     <string name="warning_uncertain_healthy_title">Возможно, болезнь</string>
     <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
     <string name="warning_viral_variegation_title">Возможно, это естественная пёстрость</string>
     <string name="warning_viral_variegation">Яркие или пятнистые узоры на декоративной листве (калатея, каладиум, колеус, кротон, аглаонема…) легко спутать с вирусной мозаикой. Если это пёстрый сорт, рисунок может быть нормой — сравните со здоровым листом того же растения и спросите второе мнение, прежде чем лечить.</string>
     <string name="warning_blurry_image_title">Снимок размытый</string>
     <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
-    <string name="warning_weak_healthy_rerouted_title">Выглядит нездоровым</string>
-    <string name="warning_weak_healthy_rerouted">Растение лишь немного больше похоже на здоровое, поэтому мы показываем наиболее вероятную проблему. Считайте это подсказкой, а не точным диагнозом — пересними при хорошем освещении.</string>
     <string name="warning_low_confidence_title">Низкая уверенность</string>
-    <string name="warning_low_confidence">Модель не очень уверена в этом результате. Проверьте альтернативные диагнозы ниже и попробуйте переснять ближе и при лучшем освещении.</string>
     <string name="warning_nap_ood_gated_title">Не похоже на лист</string>
     <string name="warning_nap_ood_gated">Детектору это изображение не показалось листом растения, поэтому результат может быть ненадёжным. Сфотографируйте один лист, заполняющий большую часть кадра, и попробуйте снова.</string>
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
@@ -455,7 +514,7 @@
     <!-- My Garden -->
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
-    <string name="garden_subtitle">Все растения, история сканов, заметки, фото и полив в одном зелёном месте.</string>
+    <string name="garden_subtitle">Все растения, сканы и полив в одном месте.</string>
     <string name="profile_subtitle">Ваши растения, активность и настройки.</string>
     <string name="add_plant">Добавить</string>
     <string name="edit_plant">Редактировать</string>
@@ -463,6 +522,87 @@
     <string name="plant_species">Вид</string>
     <string name="plant_room">Комната (необязательно)</string>
     <string name="plant_room_unassigned">Без комнаты</string>
+
+    <!-- Garden refactor — Rooms -->
+    <string name="garden_care_calendar">Календарь ухода</string>
+    <string name="garden_subtitle_combined">%1$s · %2$s</string>
+    <string name="room_add">Добавить комнату</string>
+    <string name="room_name_hint">Название комнаты</string>
+    <string name="room_name_taken">Комната с таким названием уже есть</string>
+    <string name="room_rename">Переименовать комнату</string>
+    <string name="room_delete">Удалить комнату</string>
+    <string name="room_delete_confirm">Комната будет удалена. Растения останутся в саду и перейдут в «Без комнаты».</string>
+    <string name="room_empty_plants">Пока пусто · нажмите, чтобы добавить</string>
+    <string name="room_why_hint">Свет и влажность в комнатах разные — группировка растений делает график ухода точнее.</string>
+    <string name="room_plus_more">+%1$d</string>
+    <string name="room_preset_living">Гостиная</string>
+    <string name="room_preset_bedroom">Спальня</string>
+    <string name="room_preset_kitchen">Кухня</string>
+    <string name="room_preset_office">Кабинет</string>
+    <string name="room_preset_balcony">Балкон</string>
+    <string name="room_preset_bathroom">Ванная</string>
+    <string name="room_preset_other">Другое</string>
+
+    <!-- Garden refactor — plant health status badge -->
+    <string name="plant_status_healthy">Здорово</string>
+    <string name="plant_status_treatment">Лечение</string>
+    <string name="plant_status_watch">Наблюдение</string>
+    <string name="plant_status_recovering">Восстановление</string>
+    <string name="plant_status_no_scans">Сканов пока нет</string>
+
+    <!-- Garden refactor — plant profile -->
+    <string name="plant_tab_overview">Обзор</string>
+    <string name="plant_tab_care">Уход</string>
+    <string name="plant_tab_history">История</string>
+    <string name="plant_tab_gallery">Галерея</string>
+    <string name="plant_health_title">Здоровье</string>
+    <string name="plant_health_header_status">Здоровье · %1$s</string>
+    <string name="plant_health_header_score">Здоровье · %1$s · %2$d%%</string>
+    <string name="plant_health_delta_week">%1$s за неделю</string>
+    <string name="plant_health_need_scans">Отсканируйте растение дважды, чтобы увидеть динамику здоровья</string>
+    <string name="treatment_plan_current">Текущий план лечения</string>
+    <string name="treatment_step_of">Шаг %1$d из %2$d</string>
+    <string name="treatment_step_done">Выполнено · %1$s</string>
+    <string name="treatment_step_due">Срок %1$s</string>
+    <string name="treatment_step_overdue">Просрочено · срок был %1$s</string>
+    <string name="treatment_finished">Лечение завершено · %1$d из %2$d шагов · отсканируйте растение, чтобы подтвердить выздоровление</string>
+    <string name="add_observation">Добавить наблюдение</string>
+
+    <!-- Garden refactor — calendar, day view, task detail -->
+    <string name="calendar_legend_pending">Есть задачи</string>
+    <string name="calendar_legend_overdue">Просрочено</string>
+    <string name="calendar_legend_done">Выполнено</string>
+    <string name="calendar_today_prefix">Сегодня, %1$s</string>
+    <string name="garden_do_today_title">Сделать сегодня</string>
+    <string name="garden_do_today_summary">%1$s · %2$s</string>
+    <plurals name="garden_do_today_overdue_count">
+        <item quantity="one">%d просрочена</item>
+        <item quantity="few">%d просрочены</item>
+        <item quantity="many">%d просрочено</item>
+        <item quantity="other">%d просрочено</item>
+    </plurals>
+    <string name="calendar_all_caught_up">Всё сделано 🌿</string>
+    <string name="calendar_empty_day">На этот день задач нет</string>
+    <string name="calendar_show_done">Показать выполненные (%1$d)</string>
+    <string name="calendar_hide_done">Скрыть выполненные</string>
+    <string name="calendar_overdue_header">Просроченные</string>
+    <string name="task_description">Описание</string>
+    <string name="task_what_to_do">Что нужно сделать</string>
+    <string name="task_recommendations">Рекомендации</string>
+    <string name="task_products">Рекомендованные препараты</string>
+    <string name="task_products_disclaimer">Следуйте инструкции производителя и местным правилам. Это рекомендация, а не назначение.</string>
+    <string name="task_history">История выполнения</string>
+    <string name="task_last_done">Последний раз: %1$s</string>
+    <string name="task_mark_done">Выполнено</string>
+    <string name="task_undo">Отменить</string>
+    <string name="task_temp_range">Температура воздуха: %1$d–%2$d °C</string>
+    <plurals name="task_dry_hours">
+        <item quantity="one">Избегайте осадков в ближайший %1$d час</item>
+        <item quantity="few">Избегайте осадков в ближайшие %1$d часа</item>
+        <item quantity="many">Избегайте осадков в ближайшие %1$d часов</item>
+        <item quantity="other">Избегайте осадков в ближайшие %1$d часа</item>
+    </plurals>
+    <string name="task_type_treatment">Обработка</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>
@@ -470,9 +610,10 @@
     <string name="empty_garden_title">Ваш сад готов</string>
     <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
     <string name="empty_garden_cta_add">Добавить первое растение</string>
-    <string name="empty_garden_secondary_hint">Уже сканировали растение? Нажмите «Добавить в сад» на результате.</string>
-    <string name="no_scans_attached">Сканы ещё не привязаны</string>
     <string name="plant_detail_title">Растение</string>
+    <!-- Экраны, открытые по устаревшей записи из центра уведомлений -->
+    <string name="scan_no_longer_available">Этот скан больше не хранится на устройстве.</string>
+    <string name="plant_no_longer_available">Этого растения больше нет в вашем саду.</string>
     <string name="scans">Сканы</string>
     <string name="journal">Журнал</string>
     <string name="waterings">Поливы</string>
@@ -484,16 +625,9 @@
     <string name="log_repotting">Пересадка</string>
     <string name="log_pruning">Обрезка</string>
     <string name="log_misting">Опрыскивание</string>
-    <!-- Сад: статусная строка карточки растения -->
-    <string name="garden_card_health_healthy">Здоров %1$d%%</string>
-    <string name="garden_card_health_disease">%1$s</string>
-    <string name="garden_card_action_overdue">%1$s просрочено</string>
-    <string name="garden_card_action_tomorrow">%1$s завтра</string>
-    <string name="garden_card_action_in_days">%1$s через %2$d дн.</string>
-    <!-- Сад: поиск и секция «требуют внимания» -->
+    <!-- Сад: поиск -->
     <string name="garden_search_hint">Поиск растений…</string>
     <string name="garden_search_empty">По запросу «%1$s» ничего не найдено</string>
-    <string name="garden_section_attention">Требуют внимания</string>
     <!-- Подтверждение переноса напоминания после отметки «полито/удобрено» -->
     <plurals name="care_reminder_rescheduled">
         <item quantity="one">Записано — следующее напоминание через %1$d день</item>
@@ -527,6 +661,7 @@
     <string name="photo_caption_hint">Опциональная подпись к фото</string>
     <string name="journal_text_required">Сначала напишите заметку</string>
     <string name="add_to_garden">В сад</string>
+    <string name="add_to_garden_hint">Нажмите на растение, чтобы прикрепить к нему этот скан</string>
     <string name="added_to_garden">В саду</string>
     <string name="create_new_plant">Создать растение</string>
     <string name="scan_added_to_garden">Скан добавлен в сад</string>
@@ -616,8 +751,8 @@
     <string name="reminder_action_done">Сделал</string>
     <string name="reminder_action_snooze">Отложить на 1 д</string>
     <string name="reminder_streak_last_watered">Последний полив: %s</string>
-    <!-- Вкладка «Фото» + слайдер сравнения «до/после» -->
-    <string name="plant_photos">Фото</string>
+    <!-- Слайдер сравнения «до/после» (ярлык вкладки «Фото» заменён на
+         plant_tab_gallery в новой структуре Обзор/Уход/История/Галерея) -->
     <string name="plant_photos_empty_title">Пока нет фото</string>
     <string name="plant_photos_empty_hint">Здесь появляется каждое сканирование и каждое фото из журнала. Удерживайте тайл, чтобы сравнить два снимка.</string>
     <string name="photo_compare_title">До / после</string>
@@ -935,23 +1070,16 @@
 
     <!-- Определение вида -->
     <string name="identify_unavailable">Определение вида сейчас недоступно на этом сервере.</string>
+    <string name="identify_not_a_plant">На фото не удалось обнаружить растение. Переснимите ближе: один чёткий, хорошо освещённый лист или цветок должен занимать большую часть кадра.</string>
     <string name="identify_no_match">Уверенного совпадения нет — попробуйте более близкое фото одного листа или цветка при хорошем свете.</string>
     <string name="identify_failed">Что-то пошло не так. Проверьте соединение и повторите.</string>
     <string name="identify_loading">Загрузка…</string>
     <string name="identify_no_info">Энциклопедической статьи об этом виде не найдено.</string>
     <string name="identify_wikipedia">Читать в Википедии</string>
-    <string name="identify_care_title">Уход вкратце</string>
-    <string name="identify_light_tier">Свет: %1$s</string>
-    <string name="identify_light_low">слабый свет</string>
-    <string name="identify_light_medium">средний свет</string>
-    <string name="identify_light_bright_indirect">яркий рассеянный свет</string>
-    <string name="identify_light_direct">прямое солнце</string>
-    <string name="identify_water_days">Полив примерно раз в %1$d дн.</string>
-    <string name="identify_water_as_needed">Поливать, когда верхний слой почвы сухой</string>
-    <string name="identify_humidity">Влажность: %1$s</string>
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
     <string name="native_range_title">Природный ареал</string>
+    <string name="native_range_subtitle">Где растёт в природе и к какому климату привык.</string>
     <string name="native_range_expand">Показать природный ареал</string>
     <string name="native_range_collapse">Скрыть природный ареал</string>
     <string name="native_range_loading">Загружаем природный ареал…</string>
@@ -965,6 +1093,7 @@
     <string name="native_range_map_content_description">Карта природного ареала: %1$s. Нажмите на страну, чтобы проверить её.</string>
     <string name="native_range_map_empty">Карта природного ареала недоступна</string>
     <string name="flowering_title">Цветение по месяцам</string>
+    <string name="flowering_subtitle">Когда цветёт и что помогает заложить бутоны.</string>
     <string name="flowering_loading">Загружаем календарь цветения…</string>
     <string name="flowering_blooms_now">Цветёт сейчас</string>
     <string name="flowering_next_bloom">Следующее цветение — в %1$s</string>
@@ -985,7 +1114,6 @@
     <string name="species_info_toggle_content_description">%1$s. %2$s</string>
     <string name="list_show_all">Показать все: %1$d</string>
     <string name="list_show_fewer">Показать меньше</string>
-    <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
     <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
     <string name="flowering_chart_content_description">%1$s. График отмечает каждый месяц: нет, иногда или пик. Точка отмечает текущий месяц. %2$s</string>
     <string-array name="flowering_month_initials">
@@ -1045,6 +1173,7 @@
 
     <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
     <string name="lunar_title">Лунный календарь</string>
+    <string name="lunar_subtitle">Благоприятные и неблагоприятные дни по фазам луны.</string>
     <string name="lunar_expand">Показать лунный календарь</string>
     <string name="lunar_collapse">Скрыть лунный календарь</string>
     <string name="lunar_today">Сегодня, %1$s</string>
@@ -1082,6 +1211,11 @@
     <string name="lunar_task_watering">Полив</string>
     <string name="lunar_task_pruning">Обрезка</string>
     <string name="lunar_category_note">Подобрано для: %1$s</string>
+    <string name="lunar_breakdown_row">Для %1$s — %2$s</string>
+    <string name="lunar_breakdown_heading">По типам растений</string>
+    <string name="lunar_rating_good_day">благоприятный день</string>
+    <string name="lunar_rating_neutral_day">нейтральный день</string>
+    <string name="lunar_rating_bad_day">неблагоприятный день</string>
     <string name="lunar_cat_fruiting">плодовых</string>
     <string name="lunar_cat_root">корнеплодов</string>
     <string name="lunar_cat_leafy">зелени</string>
@@ -1101,23 +1235,12 @@
     <!-- Collapsible sections on the species screen -->
     <string name="section_about_title">О растении</string>
     <string name="section_about_subtitle">Описание, особенности и виды.</string>
-    <string name="section_care_title">Уход</string>
-    <string name="section_care_subtitle">Полив, свет, температура, влажность и обрезка.</string>
     <string name="section_fertiliser_title">Удобрения и подкормка</string>
     <string name="section_fertiliser_subtitle">Чем и когда подкармливать.</string>
     <string name="section_diseases_title">Болезни и вредители</string>
     <string name="section_diseases_subtitle">Распространённые проблемы и способы лечения.</string>
     <string name="section_expand">Развернуть раздел</string>
     <string name="section_collapse">Свернуть раздел</string>
-    <plurals name="fertiliser_interval">
-        <item quantity="one">Подкармливать каждую неделю в период активного роста.</item>
-        <item quantity="few">Подкармливать каждые %1$d недели в период активного роста.</item>
-        <item quantity="many">Подкармливать каждые %1$d недель в период активного роста.</item>
-        <item quantity="other">Подкармливать каждые %1$d недели в период активного роста.</item>
-    </plurals>
-    <string name="fertiliser_interval_none">Регулярная подкормка этому растению не нужна.</string>
-    <string name="fertiliser_npk">Удобрение: %1$s</string>
-    <string name="fertiliser_soil">Субстрат: %1$s</string>
 
     <!-- Fertiliser guide: substrate per group -->
 <string name="feed_soil_fruiting">Питательный суглинок с компостом, pH 6,0–6,8, без застоя воды</string>

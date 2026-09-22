@@ -26,7 +26,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -160,7 +160,9 @@ class MainActivity : AppCompatActivity() {
         // Kick off the periodic second-opinion poll from a UI context (not
         // Application.onCreate, which would touch WorkManager too early), plus
         // an immediate catch-up check so a reply that arrived while the app was
-        // closed notifies now instead of at the next periodic tick.
+        // closed records now instead of at the next periodic tick. The poll
+        // runs even when popup notifications are off because it also drives
+        // Community V2's in-app notification centre.
         val opinionAction = opinionWorkAction(
             BuildConfig.ACCOUNT_UI_ENABLED,
             com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this),
@@ -180,11 +182,11 @@ class MainActivity : AppCompatActivity() {
                     scheduleOpinionChecks()
                     checkOpinionsNow()
                 }
-                com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
             }
 
             OpinionWorkAction.NONE -> Unit
         }
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         // Warm the guide/disease example photos into Glide's disk cache so they
         // render offline (they're server-hosted, not bundled). Independent of
         // notifications — always worth doing on a connected launch.

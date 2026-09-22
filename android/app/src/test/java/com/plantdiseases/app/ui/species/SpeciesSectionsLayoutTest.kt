@@ -4,11 +4,13 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
+import com.plantdiseases.app.ui.common.factRow
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -37,8 +39,9 @@ class SpeciesSectionsLayoutTest {
     )
 
     private val sections = listOf(
+        // Care is deliberately absent: it has no section card at all — see
+        // theCarePlanSlotIsNotWrappedInASection.
         SectionIds("about", R.id.card_about, R.id.about_header, R.id.iv_about_chevron, R.id.about_body),
-        SectionIds("care", R.id.card_care, R.id.care_header, R.id.iv_care_chevron, R.id.care_body),
         SectionIds(
             "fertiliser",
             R.id.card_fertiliser,
@@ -132,14 +135,21 @@ class SpeciesSectionsLayoutTest {
         }
     }
 
+    /**
+     * Care has no section card at all. CarePlanCardView is already a
+     * collapsible card with its own header and chevron, so wrapping it in one
+     * stacked two chevrons over a single body and shipped both closed —
+     * loadCare() drops it straight into this slot instead.
+     */
     @Test
-    fun theCareCardStillOwnsTheRuntimeCarePlanSlot() {
+    fun theCarePlanSlotIsNotWrappedInASection() {
         val root = inflate()
         val slot = root.findViewById<View>(R.id.care_slot)
-        // loadCare() addViews the CarePlanCardView into care_slot; if the slot
-        // ever escapes care_body, the card would show while collapsed.
         assertThat(slot).isNotNull()
-        assertThat(slot.isDescendantOf(root.findViewById<View>(R.id.care_body))).isTrue()
+        for (s in sections) {
+            assertWithMessage("care_slot must not live inside the ${s.name} section")
+                .that(slot.isDescendantOf(root.findViewById<View>(s.body))).isFalse()
+        }
     }
 
     @Test
@@ -164,5 +174,64 @@ class SpeciesSectionsLayoutTest {
                 .that(body.visibility).isEqualTo(View.GONE)
             assertThat(chevron.rotation).isEqualTo(0f)
         }
+    }
+
+    /** Regression, twice over. The value column was once WRAP_CONTENT with no
+     *  weight, so in a horizontal LinearLayout it measured first against the
+     *  FULL row width (the weighted label contributes nothing at that stage)
+     *  and a long sentence value starved the weight-1 label. The fix then
+     *  over-corrected to 0dp on both children, which splits the row by weight
+     *  alone regardless of content — a fixed, narrow label column that breaks
+     *  long RU labels mid-word beside a short value in dead space.
+     *
+     *  The settled contract is WRAP_CONTENT + a weight on both: each column
+     *  asks for what its content needs, and the weights only divide the
+     *  surplus, so neither side is starved and neither is over-served.
+     *
+     *  This asserts the LayoutParams directly rather than a measured width:
+     *  Robolectric's default (non-@GraphicsMode) text layout doesn't measure
+     *  real glyph widths, so a measured-width assertion here would likely
+     *  pass on the broken code too and prove nothing. */
+    @Test
+    fun factRowLabelAndValueAreBothWrapContentAndWeighted() {
+        val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
+        val row = activity.factRow(R.drawable.ic_garden, "Концентрация", "some value") as ViewGroup
+
+        val label = row.getChildAt(1).layoutParams as LinearLayout.LayoutParams
+        val value = row.getChildAt(2).layoutParams as LinearLayout.LayoutParams
+
+        assertWithMessage("label column should be WRAP_CONTENT — a 0dp base ignores content width")
+            .that(label.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
+        assertWithMessage("label column should carry a weight")
+            .that(label.weight).isGreaterThan(0f)
+        assertWithMessage("value column should be WRAP_CONTENT — a 0dp base ignores content width")
+            .that(value.width).isEqualTo(ViewGroup.LayoutParams.WRAP_CONTENT)
+        assertWithMessage("value column should carry a weight — unweighted, it starves the label")
+            .that(value.weight).isGreaterThan(0f)
+    }
+
+    /** The other half of that contract. Equal weights only keep both columns
+     *  alive while both fit on one line; a full sentence (the About card's
+     *  native-range fact) still squeezed the label to zero width and left an
+     *  unlabelled paragraph against the right edge. Long values now stack
+     *  under the label instead, which is a different child structure: one
+     *  column beside the icon rather than two siblings. */
+    @Test
+    fun factRowStacksALongValueUnderItsLabel() {
+        val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
+        val longValue = "Tomato originated in western South America and was domesticated in Mexico."
+        val row = activity.factRow(R.drawable.ic_moon, "Native range", longValue) as ViewGroup
+
+        assertWithMessage("a stacked row is icon + one column, not icon + label + value")
+            .that(row.childCount).isEqualTo(2)
+        val column = row.getChildAt(1) as ViewGroup
+        assertWithMessage("the column takes the width the icon leaves, so the value can wrap")
+            .that((column.layoutParams as LinearLayout.LayoutParams).width).isEqualTo(0)
+        assertWithMessage("label then value, both full width of the column")
+            .that(column.childCount).isEqualTo(2)
+        assertThat((column.getChildAt(0) as android.widget.TextView).text.toString())
+            .isEqualTo("Native range")
+        assertThat((column.getChildAt(1) as android.widget.TextView).text.toString())
+            .isEqualTo(longValue)
     }
 }

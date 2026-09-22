@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One row in the day view's task list. Compact, time-led — unlike
+    item_plant_card, the leading element here is the time, not a photo.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/care_task_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_sm"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:clickable="true"
+    android:focusable="true"
+    android:background="@drawable/bg_thumb_rounded"
+    android:padding="@dimen/space_md"
+    android:minHeight="@dimen/species_info_touch_target">
+
+    <TextView
+        android:id="@+id/care_task_time"
+        android:layout_width="48dp"
+        android:layout_height="wrap_content"
+        android:textColor="@color/on_surface"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif-medium"
+        tools:text="08:00" />
+
+    <ImageView
+        android:id="@+id/care_task_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="@dimen/space_sm"
+        android:src="@drawable/ic_watering"
+        android:contentDescription="@null"
+        app:tint="@color/primary" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="@dimen/space_md"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/care_task_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/on_surface"
+            android:textSize="14sp"
+            tools:text="Watering" />
+
+        <TextView
+            android:id="@+id/care_task_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_caption"
+            tools:text="Venus flytrap · Office" />
+
+    </LinearLayout>
+
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/care_task_checkbox"
+        android:layout_width="@dimen/species_info_touch_target"
+        android:layout_height="@dimen/species_info_touch_target"
+        android:layout_marginStart="@dimen/space_sm" />
+
+</LinearLayout>

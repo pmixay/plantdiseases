@@ -28,6 +28,10 @@ class OpinionCheckWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val ctx = applicationContext
+        // Runs regardless of the opinion-notifications preference: it drives
+        // the notification centre, not just the popup. OpinionNotifier itself
+        // decides whether to interrupt the user; this poll is the only way a
+        // new opinion is even discovered on a device without FCM configured.
         if (!shouldRunOpinionCheck(BuildConfig.ACCOUNT_UI_ENABLED, OpinionPrefs.notificationsEnabled(ctx))) {
             return Result.success()
         }
@@ -58,5 +62,6 @@ class OpinionCheckWorker(
 
 internal fun shouldRunOpinionCheck(
     accountUiEnabled: Boolean,
+    @Suppress("UNUSED_PARAMETER")
     notificationsEnabled: Boolean,
-): Boolean = accountUiEnabled && notificationsEnabled
+): Boolean = accountUiEnabled

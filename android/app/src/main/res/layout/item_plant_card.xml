@@ -2,9 +2,9 @@
 <!--
     A single plant row in the Garden list. Soft PictureThis-style card:
     no stroke, gentle elevation, 96dp rounded thumbnail with a health
-    dot badge, then name / species / status-chip column. The thumbnail
-    image, health-dot colour and status chips are populated at bind time
-    by GardenFragment.buildPlantCard.
+    dot badge, then name / health-status column. The thumbnail image,
+    health-dot colour and status line are populated at bind time by
+    RoomDetailActivity.buildPlantRow.
 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -77,7 +77,7 @@
                 tools:text="Monstera" />
 
             <TextView
-                android:id="@+id/plant_species"
+                android:id="@+id/plant_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xxs"
@@ -85,20 +85,22 @@
                 android:ellipsize="end"
                 android:textColor="@color/on_surface_secondary"
                 android:textSize="@dimen/text_body_sm"
-                android:visibility="gone"
-                tools:text="Monstera deliciosa"
-                tools:visibility="visible" />
-
-            <LinearLayout
-                android:id="@+id/plant_status_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:orientation="horizontal"
-                android:visibility="gone"
-                tools:visibility="visible" />
+                android:fontFamily="sans-serif-medium"
+                tools:text="Healthy · 92%" />
 
         </LinearLayout>
+
+        <!-- Only relevant inside RoomDetailActivity's list (tap opens the
+             plant profile) — GardenFragment no longer renders this card
+             directly, so this is unconditionally visible now that the
+             Garden tab shows room cards instead. -->
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="@dimen/space_sm"
+            android:src="@drawable/ic_chevron_right"
+            android:contentDescription="@null"
+            app:tint="@color/on_surface_secondary" />
 
     </LinearLayout>
 

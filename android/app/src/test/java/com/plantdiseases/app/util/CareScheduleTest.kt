@@ -3,12 +3,13 @@ package com.plantdiseases.app.util
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import java.util.Calendar
+import java.util.TimeZone
 
 /**
- * Verifies the pure reminder-schedule math in [CareSchedule]: next-due
- * computation off a care anchor, overdue / days-until bucketing for the
- * garden chips, and the WorkManager initial-delay calculations (first
- * schedule + the "user just watered, push the next fire out" path).
+ * Verifies the pure reminder-schedule math in [CareSchedule]: wall-clock
+ * next-due computation off a care anchor, overdue checks for the garden
+ * chips, and the WorkManager initial-delay calculations (first schedule +
+ * the "user just watered, push the next fire out" path).
  */
 class CareScheduleTest {
 
@@ -18,31 +19,13 @@ class CareScheduleTest {
             set(Calendar.MILLISECOND, 0)
         }
 
-    // ── nextDueAt ────────────────────────────────────────────────────
-
-    @Test
-    fun nextDueAtAddsWholeDays() {
-        val anchor = 1_000_000L
-        assertThat(CareSchedule.nextDueAt(anchor, 7))
-            .isEqualTo(anchor + 7 * CareSchedule.DAY_MS)
-    }
-
-    @Test
-    fun nextDueAtClampsNegativeInterval() {
-        val anchor = 5_000L
-        assertThat(CareSchedule.nextDueAt(anchor, -3)).isEqualTo(anchor)
-    }
-
-    // ── isOverdue / daysUntil ────────────────────────────────────────
+    // ── isOverdue ────────────────────────────────────────────────────
 
     @Test
     fun dueWithinNext24HoursIsNotOverdue() {
         val now = 100L * CareSchedule.DAY_MS
         val dueIn12h = now + CareSchedule.DAY_MS / 2
         assertThat(CareSchedule.isOverdue(dueIn12h, now)).isFalse()
-        // Truncates to 0 days — the UI renders this as "tomorrow", never
-        // as overdue.
-        assertThat(CareSchedule.daysUntil(dueIn12h, now)).isEqualTo(0)
     }
 
     @Test
@@ -51,14 +34,6 @@ class CareScheduleTest {
         assertThat(CareSchedule.isOverdue(now - 1, now)).isTrue()
         assertThat(CareSchedule.isOverdue(now, now)).isTrue()
         assertThat(CareSchedule.isOverdue(now + 1, now)).isFalse()
-    }
-
-    @Test
-    fun daysUntilCountsWholeDays() {
-        val now = 50L * CareSchedule.DAY_MS
-        assertThat(CareSchedule.daysUntil(now + 3 * CareSchedule.DAY_MS, now)).isEqualTo(3)
-        assertThat(CareSchedule.daysUntil(now + 3 * CareSchedule.DAY_MS + 1, now)).isEqualTo(3)
-        assertThat(CareSchedule.daysUntil(now - 2 * CareSchedule.DAY_MS, now)).isEqualTo(-2)
     }
 
     // ── initialDelayMs ───────────────────────────────────────────────
@@ -111,5 +86,33 @@ class CareScheduleTest {
         val delay = CareSchedule.delayAfterCareMs(9, 0, 0, now)
         assertThat(delay).isGreaterThan(0L)
         assertThat(delay).isAtMost(2 * CareSchedule.DAY_MS)
+    }
+
+    @Test
+    fun scheduledDueAtKeepsWallClockTimeAcrossDaylightSaving() {
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+            val anchor = Calendar.getInstance().apply {
+                set(2026, Calendar.MARCH, 7, 10, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            val dueAt = CareSchedule.scheduledDueAt(
+                anchorMs = anchor.timeInMillis,
+                intervalDays = 2,
+                hour = 9,
+                minute = 30,
+            )
+            val due = Calendar.getInstance().apply { timeInMillis = dueAt }
+
+            assertThat(due.get(Calendar.DAY_OF_MONTH)).isEqualTo(9)
+            assertThat(due.get(Calendar.HOUR_OF_DAY)).isEqualTo(9)
+            assertThat(due.get(Calendar.MINUTE)).isEqualTo(30)
+            assertThat(CareSchedule.delayAfterCareMs(9, 30, 2, anchor))
+                .isEqualTo(dueAt - anchor.timeInMillis)
+        } finally {
+            TimeZone.setDefault(original)
+        }
     }
 }

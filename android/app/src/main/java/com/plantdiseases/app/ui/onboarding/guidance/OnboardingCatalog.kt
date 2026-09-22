@@ -18,6 +18,15 @@ object OnboardingCatalog {
             OnboardingAnchorKey.HOME_QUICK_TOOLS,
             R.string.guidance_home_tools,
         ),
+        // Sits before HOME_SCAN_NAV deliberately: that step navigates into
+        // the camera and never returns to Home within the chapter.
+        step(
+            OnboardingStepId.HOME_NOTIFICATIONS,
+            OnboardingChapter.HOME_SCAN,
+            OnboardingContext.HOME,
+            OnboardingAnchorKey.HOME_NOTIFICATIONS,
+            R.string.guidance_home_notifications,
+        ),
         step(
             OnboardingStepId.HOME_SCAN_NAV,
             OnboardingChapter.HOME_SCAN,
@@ -207,6 +216,22 @@ object OnboardingCatalog {
             conditional = true,
             skipWhenUnavailable = true,
         ),
+        step(
+            OnboardingStepId.COMMUNITY_SCOPE,
+            OnboardingChapter.COMMUNITY,
+            OnboardingContext.COMMUNITY,
+            OnboardingAnchorKey.COMMUNITY_SCOPE,
+            R.string.guidance_community_scope,
+        ),
+        step(
+            OnboardingStepId.COMMUNITY_FEED,
+            OnboardingChapter.COMMUNITY,
+            OnboardingContext.COMMUNITY,
+            OnboardingAnchorKey.COMMUNITY_FEED,
+            R.string.guidance_community_feed,
+            conditional = true,
+            skipWhenUnavailable = true,
+        ),
     )
 
     private val byId = steps.associateBy(OnboardingStep::id)
@@ -244,6 +269,7 @@ object OnboardingCatalog {
             OnboardingChapter.GALLERY -> R.string.guidance_title_gallery
             OnboardingChapter.PROFILE -> R.string.guidance_title_profile
             OnboardingChapter.SPECIES_DETAILS -> R.string.guidance_title_species
+            OnboardingChapter.COMMUNITY -> R.string.guidance_title_community
         },
         bodyRes = bodyRes,
         inlineLinkTextRes = inlineLinkTextRes,

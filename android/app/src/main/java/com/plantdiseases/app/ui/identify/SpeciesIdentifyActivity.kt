@@ -8,7 +8,6 @@ import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -94,7 +93,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
                 .replace(
                     R.id.camera_container,
                     CameraFragment().apply {
-                        arguments = bundleOf(CameraFragment.ARG_IDENTIFY_MODE to true)
+                        arguments = Bundle().apply { putBoolean(CameraFragment.ARG_IDENTIFY_MODE, true) }
                     },
                 )
                 .commit()
@@ -128,6 +127,12 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             binding.identifyProgress.visibility = View.GONE
             result.onSuccess { resp ->
                 when {
+                    // The server runs the same not-a-plant / blur gate as the
+                    // disease scanner before spending a PlantNet request. This
+                    // must precede the generic availability branch because a
+                    // rejected photo intentionally carries available=false.
+                    resp.wasRejectedAsNotAPlant ->
+                        showStatus(getString(R.string.identify_not_a_plant))
                     !resp.available -> showStatus(getString(R.string.identify_unavailable))
                     resp.results.isEmpty() -> showStatus(getString(R.string.identify_no_match))
                     else -> openTopCandidate(resp.results)

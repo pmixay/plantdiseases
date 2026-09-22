@@ -1,401 +1,230 @@
 # Deployment Guide
 
-Production deployment notes for the PlantDiseases FastAPI server. The
-Android client needs no server-side change — point it at the public URL
-through **Profile → Server URL**.
-
-Configuration keys below match `server/main.py`, `server/ai_services.py`
-and `server/config.example.json`. The server reads `server/config.json`
-first; environment variables are still honoured as a fallback so existing
-existing CI / systemd deployments keep working.
+Operator runbook for the PlantDiseases / PlantVision FastAPI server, plus the
+Android release build. Architecture and API surface live in
+[`README.md`](README.md); model status lives in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 
-## 1. Production configuration
+## 0. Overview & topology
 
-The recommended path is to copy the committed example file:
+- One plain Python process: `uvicorn main:app` over a virtualenv on a host.
+  **Nothing is containerised** and no deployment asset is checked in — the
+  nginx and systemd snippets below are templates to copy onto the host, not
+  files in this repo. CI never deploys.
+- TLS terminates in nginx; uvicorn binds loopback and speaks plain HTTP.
+- State (SQLite stores, image dirs, LLM cache, logs) is on local disk and must
+  be pointed outside the code tree — see §3.2 *Storage paths* and §5.
+- The Android client's server URL is **compiled into the APK**; there is no
+  in-app override. Build against a deployment with
+  `./gradlew :app:assembleRelease -PAPI_BASE_URL=https://your.host/` (a
+  trailing `/` is appended if missing). Default is `https://pdis.arbuz.lol/`.
+
+## 1. Prerequisites
+
+- **Python 3.14.** That is what CI runs (`.github/workflows/ci.yml`) and the
+  only version tested. `server/start.sh` requires ≥ 3.10 (the syntax floor),
+  so it will still launch on an untested interpreter — pin the venv to 3.14
+  explicitly.
+- `pip install -r server/requirements.txt`. Serving is ONNX Runtime only; no
+  `torch` import exists anywhere in `server/`, so torch is **not** a runtime
+  dependency.
+- CPU-only is fine for the `gamma` (DINOv2 ViT-S/14) default. A GPU host is
+  only worth it for `frontier_enabled=true` (ViT-B/14).
+- The model bundle (§2) must be on disk before first boot.
+
+## 2. Model bundle (`server/models/`)
+
+Model artefacts are **never committed and never auto-downloaded**. Build them
+with [`server/train_notebook.ipynb`](server/train_notebook.ipynb) (§6/§6b) and
+copy them in. There is no demo fallback.
+
+| Artefact | Status | If absent |
+|---|---|---|
+| `detector.onnx` | **required** | `DetectorLoadError`, boot aborts. A `.pt` is *never* loaded at serve time — `_resolve_detector_path` resolves to `detector.onnx` in every branch. |
+| `classifier_int8.onnx` **or** `classifier.onnx` | **required** (int8 wins when both exist) | `ClassifierLoadError`, boot aborts |
+| `classes.json` | contract-bearing | Server boots on the 9 built-in `DEFAULT_CLASS_NAMES`, `img_size=224`, `model_family=gamma`. **If present**, `class_names` must equal the ONNX head width exactly — a mismatch raises `ClassifierLoadError` and the process dies. There is no pad/truncate migration shim. |
+| `temperature.json` | optional | temperature = 1.0 (uncalibrated) |
+| `conformal.json` | optional | no prediction sets |
+| `ood_embedding.npz` | optional | k-NN OOD falls back to the MaxLogit floor |
+| `model_card.json` | optional | `/api/capabilities` reports `int8_shipped: false` |
+| `models/frontier/*` | only when `frontier_enabled=true` | logged, `pipeline_frontier=None`, frontier reports unavailable — gamma still boots |
+
+Out of band and not in this table: `server/static/aqua/` (the on-device TFLite
+model + its `classes.json`) and `server/static/guide/` (disease example photos).
+
+Validate a bundle before shipping it:
 
 ```bash
-cp server/config.example.json server/config.json
+python .claude/skills/houseplant-disease-ml/scripts/check_bundle.py server/models/
+```
+
+## 3. Configuration
+
+### 3.1 Precedence and gotchas
+
+```bash
+cp server/config.example.json server/config.json   # gitignored
 $EDITOR server/config.json
 ```
 
-`server/config.json` is gitignored. JSON sections (`server`, `models`,
-`limits`, `ai`, `plantnet`, `security`, `push`) are flattened so each leaf
-key maps to the same name as the legacy environment variable.
+- **Order: `server/config.json` → same-named environment variable → code
+  default.** The file wins over the environment.
+- A **blank string in the file** counts as unset, so an env var can still win.
+  A **blank environment variable does not** — `get_str` returns `""`, not the
+  default.
+- JSON section names (`server`, `models`, `limits`, `ai`, `plantnet`,
+  `security`, `push`) are decorative: nesting is flattened to flat UPPERCASE
+  leaf keys. The one exception is `api_keys`, which survives as a dict.
+- Config is read **once at import**. There is no hot reload — restart to apply.
+- `PLANTDISEASES_CONFIG=/path/to/config.json` relocates the file. It is
+  env-only.
+- `config.example.json` is a starting point, **not a reference**: around 50 keys the
+  server reads are absent from it (notably `rate_limit_burst`,
+  `telemetry_enabled`, the community quotas and every storage path). It also
+  ships values that differ from the code defaults — `rate_limit_rps: 1.0`
+  (code: `2.0`) and `plantnet_timeout: 8.0` (code: `10.0`). If you copied the
+  example, those are what you are running.
 
-| Key | Default | Purpose |
+### 3.2 Keys
+
+Defaults below are the **code** defaults.
+
+**Bind & proxy**
+
+| Key | Default | Notes |
 |---|---|---|
-| `cors_origins` | `["http://localhost:3000","http://127.0.0.1:3000"]` | Allowed CORS origins. **Do not set to `["*"]` in production.** |
-| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / Cloudflare; otherwise `X-Forwarded-For` is ignored entirely. **Must list every hop between the client and the app** — see §3.1, which also covers how to verify the value you chose is actually being honoured. |
-| `feedback_ip_pepper` (env `FEEDBACK_IP_PEPPER`) | *(empty → generated)* | Secret peppering the SHA-256 of a client IP before it is stored (`client_ip_hash` in the feedback / community / telemetry stores). IPv4 is only 32 bits, so a hash with a weak or known pepper enumerates back to the raw IP in seconds. Leave blank and the server generates a random one on first use and persists it as `.ip_hash_pepper` beside the feedback DB; **set it explicitly** to control rotation, to share one pepper across replicas, or if your state dir is read-only (see §4). Changing it resets the 24 h per-IP write quotas once. |
-| `forwarded_allow_ips` | `127.0.0.1` | Passed to uvicorn `--forwarded-allow-ips`; controls which peers can update `Host` / scheme via forwarded headers. |
-| `rate_limit_rps` | `1.0` | Per-IP request rate limit. Rate-limited responses return `429` with a `Retry-After` header. |
-| `max_file_size` | `10485760` (10 MB) | Hard cap on uploaded bytes. |
-| `max_image_dimension` | `4096` | Pixel limit per side, in addition to Pillow decompression-bomb guard. |
-| `inference_timeout` | `30` | Seconds before `/api/analyze` returns `504`. |
-| `infer_workers` | `1` | ThreadPoolExecutor workers for model inference. With `onnx_intra_op_threads=0` a single scan uses all cores, so one worker avoids CPU oversubscription. Raise it only if you also pin `onnx_intra_op_threads` low for real concurrency on a many-core host. |
-| `net_workers` | `16` | ThreadPoolExecutor workers for external-service HTTP (OpenRouter / PlantNet / Wikipedia / FCM). These threads wait on the network, not the CPU, so the pool is sized for concurrency regardless of core count — without it, concurrent 20 s LLM calls exhaust the tiny CPU-derived default pool and queue every other threaded operation (DB writes included) behind them. |
-| `onnx_intra_op_threads` | `0` | Intra-op threads per ONNX session. `0` lets ONNX Runtime use all physical cores — the biggest CPU-latency lever for the DINOv2 ViT classifier. Pin lower on a shared host. |
-| `frontier_enabled` | `false` | Enable server inference for the high-capacity **frontier** family (ViT-B/14, ~86M param). Off by default because it expects a GPU host. When off (or the bundle fails to load), `/api/analyze?family=frontier` returns a graceful `available:false` payload and `/api/capabilities` reports it unavailable so the app greys it out. A broken frontier bundle never blocks gamma boot. |
-| `frontier_models_dir` | `models/frontier` | Where the frontier bundle (`classifier.onnx`, `classes.json`, `temperature.json`, `conformal.json`) lives when `frontier_enabled=true`. The YOLOv8n detector is shared with gamma. |
-| `guide_static_dir` | `<server>/static/guide` | Directory of disease/pest example photos served by `GET /api/guide/photo/<key>`. Moved out of the Android APK to shrink the app; committed to the repo and served straight off disk. The client disk-caches them for offline use. |
-| `aqua_static_dir` | `<server>/static/aqua` | Directory hosting the on-device **Aqua** TFLite model (`aqua_classifier.tflite` + `classes.json`), served by `GET /api/aqua/model` (+ `GET /api/aqua/manifest`). Provisioned out of band (not committed, like the weights); when absent the manifest reports `available:false` and the app uses the server model. The app downloads + caches it and re-downloads only when the sha changes. |
-| `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
-| `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
-| `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
-| `openrouter_model` | `openai/gpt-5.6-luna` | Pinned chat model. Pick anything OpenRouter exposes; the AI content surfaces expect a model with **structured outputs** (`response_format: json_schema`) and reasoning-effort support. A model without them still works — the schema is dropped after one rejected request and the tolerant JSON parsers take over. |
-| `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
-| `openrouter_provider_only` | `openai` | Comma-separated provider slugs the model may be routed to; blank = OpenRouter's choice. See "Provider pinning" below. |
-| `openrouter_reasoning_effort` | `medium` | Global fallback effort for callers that don't pin their own. `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no reasoning field. A stale `minimal` (gpt-5.0-era, rejected by gpt-5.6) is mapped to `low` rather than failing the call. |
-| `species_profile_reasoning_effort` | `high` | Flowering calendar + ISO-3166 native range — the hardest recall here, cached 30 days per species. |
-| `species_diseases_reasoning_effort` | `medium` | Per-species common problems, cached 7 days. |
-| `care_plan_polish_reasoning_effort` | `medium` | Care-plan Markdown rewrite; judged on copying canonical dosages verbatim. |
-| `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
-| `fcm_credentials_file` | *(empty)* | Path to a Firebase service-account JSON for FCM push (opinion notifications). Empty → push is a no-op. See §8.2. |
-
-### 1.1 Third-party API keys
-
-Two optional features depend on external services. The server still
-starts and responds with a graceful "unavailable" payload when a key
-is missing, so deployments without these features stay supported.
-
-**PlantNet — species identification.** Used by the Android *Create
-new plant* flow and the gallery's "identify species" button.
-
-1. Sign up at <https://my.plantnet.org/account/doc> (free tier:
-   500 identifications / day).
-2. Generate an API key from the account page.
-3. Drop it into `server/config.json` under `plantnet_api_key`, OR
-   export `PLANTNET_API_KEY=...` in the environment that starts the
-   server.
-4. Restart the server. `/api/identify` should now return
-   `available: true` with a list of candidate species; without the
-   key it returns `{"available": false, "source": "no_api_key"}` and
-   the Android app shows *"Species identification isn't configured
-   on this server yet"* instead of the candidate list.
-
-The PlantNet client is read in `server/ai_services.py:50` and the
-identify call lives in `identify_species()` lower in the same file.
-
-**OpenRouter — AI plant doctor + care-plan polish.** Used by the
-chat sheet and the optional Markdown summary on care plans.
-
-1. Sign up at <https://openrouter.ai> and create an API key.
-2. Drop it into `server/config.json` under `openrouter_api_key`, or
-   export `OPENROUTER_API_KEY=...`. Optionally pin a model with
-   `openrouter_model` (default `openai/gpt-5.6-luna`).
-3. Restart the server. The care-plan endpoint still returns a
-   complete, deterministic plan without a key; only the
-   `summary_md` polish step is skipped.
-
-**Provider pinning.** One OpenRouter model id is served by several
-providers, and the price spread is not a rounding error — for
-`openai/gpt-5.6-luna`:
-
-| Endpoint | Input | Output | Reachable how |
-|---|---|---|---|
-| `openai` | $0.10/M | $0.60/M | default routing or pin |
-| `openai/flex` | $0.05/M | $0.30/M | **opt-in only** (tier slug) |
-| `amazon-bedrock/us-east-1` | $0.22/M | $1.32/M | default routing or pin |
-| `azure` | $1.00/M | $6.00/M | default routing or pin |
-
-Leaving routing to OpenRouter does *not* mean it picks the best option,
-in either direction:
-
-* Default routing is price-weighted load **balancing** (inverse square of
-  price, among providers with no recent outage), not cheapest-first — the
-  expensive endpoints keep a real share of traffic.
-* A provider that doesn't support a parameter still receives the request
-  and silently **ignores** the parameter. Balanced onto Bedrock (no
-  `response_format`), a species-profile call comes back as unconstrained
-  prose. That is why every request also carries
-  `provider.require_parameters = true`, which is what makes an unpinned
-  deployment safe.
-* Cheaper service tiers are **not** reachable automatically. Tier
-  endpoints are excluded from default routing and from base-slug matching,
-  so `only: ["openai"]` never yields flex, and blanking the pin never
-  yields it either.
-
-So `openrouter_provider_only` defaults to `openai`.
-
-**About flex.** It is 50% off and opt-in by slug
-(`openrouter_provider_only: "openai/flex"`). Two things to weigh before
-switching: a flex request never falls back to standard on a capacity
-error — that would break its price guarantee, so you get a 429 (retried
-here with backoff, into the same tier) — and OpenAI documents flex as
-unsuitable for real-time work: normally seconds, minutes under load.
-Every AI call in this server is made while a user waits on a screen (the
-care-plan polish runs inside the `/api/care-plan` request), so the trade
-is a visible stall against a fraction of a cent per call. Fine for a
-deployment that values cost over tail latency; not the default.
-
-The pin is a request, not a receipt — billing follows the endpoint that
-actually ran, and a service tier can decline. Confirm what really served
-a request in OpenRouter's own activity log, which reports the provider,
-the tier and the charge per call.
-
-**Reasoning effort.** gpt-5.6 treats `reasoning.effort` as a *ceiling*,
-not a floor: on a prompt it judges easy the model may spend no reasoning
-tokens at all, even at `high`. So each caller asks for the effort its own
-task needs (the table above) rather than inheriting one global setting,
-and a higher setting costs nothing on the calls that don't use it. Two
-things to keep in mind when tuning:
-
-* The hidden trace bills against `max_tokens`, so raising an effort means
-  raising the matching `*_max_tokens` (`chat_max_tokens`,
-  `species_profile_max_tokens`, `species_diseases_max_tokens`,
-  `care_plan_polish_max_tokens`). A call that runs out mid-answer is
-  rejected outright (`require_complete`) and degrades to the
-  deterministic fallback rather than serving a truncated one.
-* Reasoning tokens also count against `chat_session_token_cap`, which is
-  why that cap is 32000 — low enough values end a doctor conversation
-  several turns before `chat_session_turn_cap` does.
-
-**Structured outputs.** The species-profile and species-diseases calls
-send a strict JSON schema (`response_format: json_schema`) instead of
-asking for a shape in prose, so the shape is a provider-side constraint
-rather than an instruction the model can drift from. The tolerant parsers
-and sanitisers stay in place regardless — a schema constrains shape, never
-truthfulness. If the configured model/provider rejects the schema, the
-server logs it, retries once without it and carries on.
-
-**Cache generations.** Every AI answer is cached twice — server-side
-(in-memory + `server/ai_cache/`, 7 days for species diseases and care-plan
-polish, 30 days for species profiles) and again on the device
-(`ResponseCache`, 7 days). Those caches are the reason a model or prompt
-change can appear to do nothing: the old answer keeps being served until
-it expires. So the cache keys carry a generation, and this change bumps
-all of them — species profile `v3`→`v4`, species diseases → `v2`,
-care-plan polish dir → `care_plan_polish_v3`, plus the matching Android
-keys and the `profile_version` query parameter. Superseded entries are
-never read again; the orphaned JSON files under `server/ai_cache/` are
-harmless and can be deleted at any time (`rm -rf
-server/ai_cache/care_plan_polish_v2`). Bump the generation whenever you
-change a prompt, model or effort in a way that should reach users before
-the TTL does.
-
-**Prompt caching (on by default).** Every chat turn re-sends the same
-~600-token system prompt plus the conversation so far. With
-`openrouter_prompt_caching` enabled the server asks OpenRouter to cache
-that prefix and pins each conversation to one provider (a hashed
-`session_id`, so no client identifier leaves the box), so repeat turns
-are billed at a fraction of input price — 0.1× on Anthropic/DeepSeek,
-0.25× on Google/Grok, 0.5× on Groq — instead of full price.
-
-It is opportunistic and safe to leave on: providers that cache
-automatically (OpenAI, Groq, DeepSeek, Grok, Z.AI, Gemini 2.5 — including
-the default `openai/gpt-5.6-luna`, whose cached input reads bill at 0.1×)
-ignore the breakpoint, and a prompt
-under a provider's minimum cacheable prefix (1024 tokens for
-OpenAI/Anthropic) simply doesn't cache and costs what it costs today.
-Set `openrouter_prompt_caching: false` to opt out entirely.
-
-Verify it is working via `GET /api/metrics` → `ai_doctor`:
-
-```json
-"ai_doctor": {
-  "requests": 42, "tokens_in": 61000, "tokens_out": 4300,
-  "prompt_caching": true,
-  "cached_tokens_in": 38200, "cache_write_tokens_in": 9100,
-  "cache_hit_ratio": 0.6262
-}
-```
-
-`cached_tokens_in` is the share of `tokens_in` served from the provider's
-cache (a subset, not an addition). A `cache_hit_ratio` stuck at `0.0`
-over real multi-turn traffic means caching is not engaging — usually a
-model whose provider doesn't cache, or first turns whose prompt is still
-under the provider's minimum.
-
-The same endpoint carries `care_plan_polish`, the quality signal for
-care-plan prose:
-
-```json
-"care_plan_polish": {
-  "attempts": 120, "accepted": 117, "rejected": 2, "failed": 1,
-  "reject_ratio": 0.0167
-}
-```
-
-`rejected` counts polishes the model returned but the canonical-dosage
-guard refused (it contradicted the plan's own watering / feeding / NPK
-numbers); `failed` counts calls that produced no usable text at all. Both
-fall back to the deterministic summary, so neither is visible to the user
-— which is exactly why they need watching. A `reject_ratio` that climbs
-after a model or prompt change means the new configuration is drifting off
-the canonical numbers and the LLM summary is being silently thrown away.
-
----
-
-## 2. Running the server
-
-The server is a plain Python process — `uvicorn` over a virtualenv, with
-nothing containerised. `server/start.sh` creates the venv, installs CPU torch
-plus `requirements.txt`, and starts uvicorn on `:8000`. That is fine for a
-first run; for anything long-lived use the systemd unit in §4, which wraps the
-same command with restart, logging and sandboxing.
-
-Supported Python is **3.14**; CI runs the suite against it. Configuration
-comes from `server/config.json` (copy `config.example.json`), with
-environment variables as the fallback — so the same settings can be
-exported before starting:
-
-```bash
-cd server
-export CORS_ORIGINS="https://plantdiseases.example.com"
-export TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8"
-export RATE_LIMIT_RPS=2.0
-./start.sh
-```
-
-**Bind to loopback.** The API speaks plain HTTP and TLS terminates in nginx
-(§3), so uvicorn must not be reachable from off the host. The production
-invocation — what the systemd unit in §4 runs — is:
-
-```bash
-uvicorn main:app --host 127.0.0.1 --port 8000 \
-  --forwarded-allow-ips 127.0.0.1 --proxy-headers \
-  --limit-concurrency 64 --timeout-keep-alive 5
-```
-
-`--limit-concurrency 64` caps simultaneously-accepted connections: past that
-uvicorn answers 503 rather than queueing unboundedly, so a slowloris-style
-flood cannot exhaust the event loop. With `infer_workers=1` a scan's heavy
-work is serialised through a single executor slot anyway.
-
-Binding `0.0.0.0` is only correct when the TLS terminator is **not** on this
-host — a cloud load balancer or a separate proxy machine. In that topology the
-host firewall is what protects the port, so verify it actually does.
-
-Memory is bounded by the systemd unit (`MemoryMax=`, §4), which matters when
-`frontier_enabled=true` (ViT-B/14 is ~350 MB of weights plus its own arena) or
-`infer_workers > 1`. Note that a `MemoryMax` kill plus `Restart=always` becomes
-a restart loop paying the ~18 s cold model load each cycle — size it with
-headroom rather than tightly.
-
-Model weights + calibration artefacts are **not auto-downloaded**. Populate
-`server/models/` with the trained artefacts before starting —
-`detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`),
-`classes.json`, and the calibration files. The server is fail-fast: if it
-can't find `detector.{pt,onnx}` and `classifier.onnx` it refuses to boot.
-
-Smoke test:
-
-```bash
-curl -s http://127.0.0.1:8000/api/health | jq
-curl -F "image=@sample.jpg" http://127.0.0.1:8000/api/analyze | jq
-```
-
-Note this passes whether or not the port is reachable from off the host, so it
-cannot tell you the bind address was right. Verify the way real traffic
-arrives — through nginx, from another machine:
-
-```bash
-curl -s https://plantdiseases.example.com/api/health | jq
-```
-
----
-
-
-## 3. Reverse proxy (nginx + Let's Encrypt)
-
-TLS termination and HTTP→HTTPS redirect belong in nginx; the app
-server talks plain HTTP on `127.0.0.1:8000`.
-
-```nginx
-# /etc/nginx/sites-available/plantdiseases.conf
-server {
-    listen 80;
-    server_name plantdiseases.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name plantdiseases.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/plantdiseases.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/plantdiseases.example.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-
-    client_max_body_size 15m;          # must exceed MAX_FILE_SIZE
-    proxy_read_timeout   60s;          # must exceed INFERENCE_TIMEOUT
-
-    location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Issue and renew the certificate:
-
-```bash
-sudo certbot --nginx -d plantdiseases.example.com
-sudo systemctl enable --now certbot.timer
-```
-
-Because nginx is now forwarding, set `TRUSTED_PROXIES` on the app server so its
-rate limiter reads `X-Forwarded-For` honestly — but read §3.1 first, because the
-right value is often *not* `127.0.0.1`.
-
-### 3.1 Getting the client IP right
-
-`X-Forwarded-For` decides the identity every abuse control keys on: the
-rate-limiter bucket and the hashed `client_ip_hash` behind each 24 h write
-quota. Get it wrong and you either throttle nobody or throttle everybody.
-
-`$proxy_add_x_forwarded_for` above **appends** the peer nginx sees to whatever
-the client already sent, so the header the app receives is
-`<whatever the client claimed>, <real peer>`. The app therefore walks the list
-**right to left**, skipping entries that are in `TRUSTED_PROXIES`, and takes the
-first one that is not — the leftmost entries are attacker-supplied and must
-never win.
-
-Two ways this goes wrong:
-
-**A CDN in front of nginx.** With Cloudflare, the header arrives as
-`<real client>, <CF edge>`. Because CF's ranges are not in `TRUSTED_PROXIES`,
-the app stops at the CF edge IP — so *every* visitor through one PoP shares a
-single rate-limit bucket and a single daily write quota. That fails **closed**:
-mass `429`s and users locked out of feedback. Fix it in nginx, so the real
-client is what gets appended:
-
-```nginx
-    # Cloudflare: https://www.cloudflare.com/ips/ — keep this list current
-    set_real_ip_from 173.245.48.0/20;   # (…all CF ranges…)
-    real_ip_header   CF-Connecting-IP;
-```
-
-Adding CF's ranges to `TRUSTED_PROXIES` also works, but it is more brittle —
-that list changes.
-
-**The peer address is what must match, not the address you expect.** With
-nginx on the same host proxying to `127.0.0.1:8000`, the peer uvicorn sees is
-`127.0.0.1` and that is what `trusted_proxies` must contain. Put any other
-network hop in front — a proxy on a second machine, a NAT, anything that
-rewrites the source address — and a literal `127.0.0.1` never matches, the
-header is ignored, and every client collapses into one rate-limit bucket.
-
-**Verify rather than assume** — every request logs the resolved address:
-
-```bash
-journalctl -u plantdiseases | grep -o 'IP=[^ ]*' | sort | uniq -c | sort -rn | head
-```
-
-A healthy spread of client addresses is right. One address repeated for every
-request means the header is not being honoured and all clients share a bucket.
-
----
-
-## 4. systemd unit
-
-How the server should actually run in production — a single Python venv plus
-a user-scoped service.
+| `host` / `port` | `0.0.0.0` / `8000` | Read **only** by `python main.py`. The systemd `ExecStart` and `start.sh` pass uvicorn flags instead. |
+| `forwarded_allow_ips` | `127.0.0.1` | uvicorn `--forwarded-allow-ips`. `start.sh` reads it from the *environment* only. |
+| `trusted_proxies` | `[]` | IPs/CIDRs whose `X-Forwarded-For` is honoured. See §6.1 — the right value is often not `127.0.0.1`. |
+| `cors_origins` | `["http://localhost:3000","http://127.0.0.1:3000"]` | `["*"]` logs a production warning. Methods are fixed to `GET, POST`; headers to `Content-Type, Accept`. |
+| `structured_logs` | `false` | JSON log lines instead of text. |
+
+**Limits & concurrency**
+
+| Key | Default | Notes |
+|---|---|---|
+| `max_file_size` | `10485760` (10 MB) | Image field of a multipart upload. |
+| `max_request_bytes` | `max_file_size + 2 MB` | Whole body, every route and content type. Rejected with 413. |
+| `max_image_dimension` | `4096` | Per side, on top of Pillow's decompression-bomb guard. |
+| `min_image_dimension` | `48` | Below this → 400. An 8×8 noise image otherwise passes the blur gate and gets a confident verdict. |
+| `inference_timeout` | `30.0` | Seconds before `/api/analyze` returns 504. |
+| `analyze_cache_ttl_seconds` / `analyze_cache_max_entries` | `86400` / `512` | In-memory exact-bytes response dedup. |
+| `infer_workers` | `1` | Inference thread pool. With `onnx_intra_op_threads=0` one scan already uses every core; raise only if you also pin intra-op low. |
+| `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia / FCM waits, so 20 s LLM calls don't queue DB writes behind them. |
+| `onnx_intra_op_threads` | `0` | `0` = all physical cores — the biggest CPU-latency lever. Pin lower on a shared host. |
+| `plant_photo_max_side` / `plant_photo_quality` / `popular_bundle_ttl_seconds` / `popular_placeholder_ttl_seconds` | `1000` / `80` / `1800` / `300` | Photo proxy re-encode and popular-plants bundle cache. |
+
+**Security, auth & quotas**
+
+| Key | Default | Notes |
+|---|---|---|
+| `require_api_key` | `false` | When true, every non-exempt route needs `X-API-Key:` or `Authorization: Bearer …`. An unknown key is 401 either way. |
+| `api_keys` | `{}` | `{"<key>": {"rate_limit_rps": …, "burst": …, "quota_daily": …}}`. Missing sub-fields inherit the global rate/burst; `quota_daily: 0` = unlimited. Accepted as a dict or a JSON string. |
+| `rate_limit_rps` / `rate_limit_burst` | `2.0` / `20.0` | Per-identity token bucket (`ip:<addr>` or `key:<key>`); over-limit = 429 + `Retry-After`. One user scan fans out into ~8 requests, hence the burst of 20. |
+| `violation_threshold` / `violation_window` / `ban_duration` | `40` / `60.0` / `300.0` | Sustained over-limit requests earn a temporary 403 ban. |
+| `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
+| `community_author_key_pepper` / `community_cursor_secret` | `community-author-storage-v2` / falls back to `feedback_ip_pepper` then `community-cursor-v1` | Set both explicitly in production. |
+| `feedback_daily_quota`, `community_daily_quota`, `community_opinion_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `60`, `300`, `100` | Per hashed IP, per day. |
+| `telemetry_enabled` / `telemetry_daily_cap_per_ip` | `true` / `200` | Anonymous client error reports (stores a hashed IP). |
+| `scan_recording_enabled` | `true` | **On by default** — persists downscaled user scan images for the labeling loop. Disclosed by the app's consent screen and bundled privacy policy; turn it off if your deployment does not make that disclosure. |
+| `scan_retention_days` / `scan_max_images` / `scan_common_keep_rate` / `scan_daily_cap_per_class` | `90` / `20000` / `0.1` / `50` | Bounds on that corpus. |
+| `labeling_trust_conformal` / `labeling_conf_high` | `true` / `0.85` | Auto-accept thresholds for collected scans. |
+| `feedback_retention_days`, `community_retention_days`, `telemetry_retention_days`, `prune_interval_seconds`, `issued_scan_id_ttl_days` | `180`, `90`, `30`, `86400`, `30` | Daily prune task drops rows past the retention age. |
+
+**Storage paths** — defaults all land *inside* `server/`, which is wrong under
+the hardened unit in §5. Point every one of these at the state directory.
+
+| Key | Default |
+|---|---|
+| `log_dir` | `logs` (rotating, 5 MB × 5 backups) |
+| `feedback_db_path` / `feedback_img_dir` | `server/feedback.db` / `server/feedback_images` |
+| `community_db_path` / `community_thumb_dir` | `server/community.db` / `server/community_thumbs` |
+| `labeling_db_path` / `labeling_img_dir` | `server/labeling.db` / `server/labeling_images` |
+| `telemetry_db_path` | `server/telemetry.db` |
+| `push_db_path` | `server/push.db` |
+| `plant_photo_cache_dir` | `server/plant_photo_cache` |
+| `ai_cache_dir` | `server/ai_cache` |
+
+**Models & families**
+
+| Key | Default | Notes |
+|---|---|---|
+| `models_dir` | `models` | The gamma bundle (§2). |
+| `frontier_enabled` | `false` | Off because it expects a GPU host. When off (or its bundle fails to load), `/api/analyze?family=frontier` returns HTTP 200 with `available:false` and `/api/capabilities` greys it out. |
+| `frontier_models_dir` | `models/frontier` | `classifier.onnx` + `classes.json` + calibration. The detector is shared with gamma. |
+| `guide_static_dir` | `server/static/guide` | Served by `GET /api/guide/photo/{key}`, disk-cached by the client. |
+| `aqua_static_dir` | `server/static/aqua` | `aqua_classifier.tflite` + `classes.json`, served by `/api/aqua/manifest` and `/api/aqua/model`. Provisioned out of band. |
+
+**AI integrations** (all optional — see §4)
+
+| Key | Default | Notes |
+|---|---|---|
+| `plantnet_api_key` / `plantnet_project` | *(empty)* / `all` | |
+| `plantnet_timeout` / `plantnet_attempts` | `10.0` / `2` | One bounded retry on a transient network fault; 401/429 are terminal. |
+| `plantnet_cache_size` / `plantnet_cache_ttl_seconds` | `256` / `604800` (7 d) | |
+| `openrouter_api_key` | *(empty)* | |
+| `openrouter_model` | `openai/gpt-5.6-luna` | Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
+| `openrouter_base_url` / `openrouter_total_timeout` | `https://openrouter.ai/api/v1` / `30.0` | Override the URL only for compatible gateways. The timeout is a per-call ceiling, retries included. |
+| `openrouter_provider_only` | `openai` | Comma-separated provider slugs; blank = OpenRouter's own routing. |
+| `openrouter_reasoning_effort` + the per-caller `species_profile_` / `species_diseases_` / `care_plan_polish_reasoning_effort` | `medium` + `high` / `medium` / `medium` | `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no field. A stale `minimal` maps to `low`. |
+| `chat_max_tokens` / `species_profile_max_tokens` / `species_diseases_max_tokens` / `care_plan_polish_max_tokens` | `2048` / `4096` / `4096` / `3072` | Raising an effort means raising the matching cap: the hidden reasoning trace bills against it, and a truncated answer is rejected outright and degrades to the deterministic path. |
+| `openrouter_prompt_caching` / `openrouter_prompt_cache_key` / `prompt_cache_min_prefix_tokens` | `true` / `plantvision-v1` / `1024` | See §4. |
+| `chat_session_turn_cap` / `chat_session_token_cap` / `chat_session_ttl_sec` | `20` / `32000` / `3600` | Reasoning tokens draw down the token cap, which is why it is 32000 — lower values end a conversation before the turn cap does. |
+| `chat_session_max_messages` / `chat_history_keep_last` / `chat_session_max_sessions` | `60` / `12` / `10000` | |
+| `species_profile_cache_size` / `_ttl_seconds` | `256` / `2592000` (30 d) | `species_diseases_*` and `care_plan_*` take the same size with a `604800` (7 d) TTL. |
+
+**Push**
+
+| Key | Default | Notes |
+|---|---|---|
+| `fcm_credentials_file` | *(empty)* | Path to a Firebase **service-account JSON**. Empty → push is a no-op. The four Android `FCM_*` values are build inputs, not server config (§8.2). |
+
+## 4. Optional integrations
+
+None of these block boot. Missing credentials produce an `available:false`
+payload and a specific "not configured" UX in the app.
+
+**PlantNet — species identification.** Key from
+<https://my.plantnet.org/account/doc> (free tier 500 IDs/day) → `plantnet_api_key`
+→ restart. Verify: `/api/identify` returns `available: true`; without a key,
+`{"available": false, "source": "no_api_key"}`.
+
+**OpenRouter — plant doctor, species content, care-plan polish.** Key from
+<https://openrouter.ai> → `openrouter_api_key` → restart. Without it
+`/api/care-plan` still returns a complete deterministic plan; only the
+`summary_md` polish is skipped.
+
+- *Provider pinning.* `openrouter_provider_only` defaults to `openai` because
+  unpinned routing is price-weighted load **balancing**, not cheapest-first.
+  Unpinned is still safe — every request carries
+  `provider.require_parameters=true`, so a provider that would silently ignore
+  `response_format` is filtered out. The pin is a request, not a receipt:
+  confirm what actually served a call in OpenRouter's activity log.
+- *Prompt caching.* On by default, and worth leaving on: the shared
+  `_HOUSE_PREAMBLE` every request leads with is what clears the provider's
+  1024-token cacheable-prefix minimum. Keep `openrouter_prompt_cache_key`
+  **identical across replicas that share the preamble**; disable with
+  `openrouter_prompt_caching: false`. Verify via `prompt_cache.hit_ratio` (§7).
+- *Answer caching.* AI answers are cached in `ai_cache_dir` (7 days; 30 for
+  species profiles) and again on the device (7 days), so a prompt or model
+  change can appear to do nothing until the TTL expires. Bump the cache
+  generation in `ai_services.py` to reach users sooner; orphaned generation
+  dirs under the cache dir are safe to `rm -rf`.
+
+**FCM push.** Point `fcm_credentials_file` at the service-account JSON (§8.2).
+Blank, or an init failure, disables push rather than crashing.
+
+## 5. Running in production
+
+`server/start.sh` is a **first-run convenience only**: it always binds
+`0.0.0.0` and honours only a `PORT` env var. Use the unit below for anything
+long-lived.
+
+The API speaks plain HTTP and TLS terminates in nginx (§6), so uvicorn binds
+loopback. `0.0.0.0` is only correct when the TLS terminator is on another host
+— and then the host firewall is what protects the port, so verify that it does.
 
 ```ini
 # /etc/systemd/system/plantdiseases.service
@@ -411,15 +240,8 @@ Group=plantd
 WorkingDirectory=/opt/plantdiseases/server
 Environment=CORS_ORIGINS=https://plantdiseases.example.com
 Environment=TRUSTED_PROXIES=127.0.0.1
-Environment=RATE_LIMIT_RPS=2.0
 Environment=FORWARDED_ALLOW_IPS=127.0.0.1
-# Mutable state must live OUTSIDE the code dir: under ProtectSystem=strict the
-# whole tree is read-only, so the defaults (which land in the server dir) can't
-# be written. StateDirectory auto-creates /var/lib/plantdiseases (RW for the
-# service user); point the SQLite stores AND the persistent LLM cache there.
-# Miss this and AI_CACHE_DIR is silently unwritable, so the species "common
-# problems" / care-plan cache never persists and every open re-pays the ~20 s
-# OpenRouter call.
+Environment=LOG_DIR=/var/lib/plantdiseases/logs
 Environment=AI_CACHE_DIR=/var/lib/plantdiseases/ai_cache
 Environment=FEEDBACK_DB_PATH=/var/lib/plantdiseases/feedback.db
 Environment=FEEDBACK_IMG_DIR=/var/lib/plantdiseases/feedback_images
@@ -430,42 +252,62 @@ Environment=LABELING_IMG_DIR=/var/lib/plantdiseases/labeling_images
 Environment=TELEMETRY_DB_PATH=/var/lib/plantdiseases/telemetry.db
 Environment=PUSH_DB_PATH=/var/lib/plantdiseases/push.db
 Environment=PLANT_PHOTO_CACHE_DIR=/var/lib/plantdiseases/plant_photo_cache
+Environment=FCM_CREDENTIALS_FILE=/var/lib/plantdiseases/fcm-service-account.json
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
           --forwarded-allow-ips 127.0.0.1 --proxy-headers \
           --limit-concurrency 64 --timeout-keep-alive 5
 Restart=on-failure
 RestartSec=3
-# Hardening
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 StateDirectory=plantdiseases
-ReadWritePaths=/opt/plantdiseases/server/logs
-# Bounds the blast radius of a decompression-bomb or oversized-image request
-# to this service instead of letting the host OOM-killer pick a victim. Raise
-# it for frontier_enabled=true (ViT-B/14 weights + its own arena) or
-# infer_workers > 1. Do not size it tight: a kill plus Restart=on-failure is a
-# restart loop paying the ~18 s cold model load every cycle.
 MemoryMax=4G
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Two things this unit is doing that are easy to get wrong:
+
+- **Mutable state must live outside the code tree.** Under `ProtectSystem=strict`
+  the whole tree is read-only, and every storage-path default lands in
+  `server/`. `StateDirectory=plantdiseases` auto-creates `/var/lib/plantdiseases`
+  writable for the service user; point every SQLite store, image dir, `LOG_DIR`
+  **and** `AI_CACHE_DIR` there. Miss `AI_CACHE_DIR` and the LLM cache silently
+  never persists, re-paying a 10–20 s OpenRouter call on every cold worker.
+- **Size `MemoryMax` with headroom**, not tightly: a kill plus
+  `Restart=on-failure` is a restart loop paying the cold model load every cycle.
+  Raise it for `frontier_enabled=true` (ViT-B/14 weights plus its own arena) or
+  `infer_workers > 1`.
+
+`--limit-concurrency 64` caps simultaneously-accepted connections — past that
+uvicorn answers 503 instead of queueing unboundedly.
+
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
-sudo -u plantd python3 -m venv /opt/plantdiseases/.venv   # 3.14
+sudo -u plantd python3.14 -m venv /opt/plantdiseases/.venv
 sudo -u plantd /opt/plantdiseases/.venv/bin/pip install -r /opt/plantdiseases/server/requirements.txt
 sudo systemctl daemon-reload
 sudo systemctl enable --now plantdiseases
 journalctl -u plantdiseases -f
 ```
 
----
+## 6. Reverse proxy & TLS (nginx + Let's Encrypt)
 
-## 5. Monitoring
+```nginx
+# /etc/nginx/sites-available/plantdiseases.conf
+server {
+    listen 80;
+    server_name plantdiseases.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name plantdiseases.example.com;
 
 - JSON counters: `GET /api/metrics`
 - Prometheus exposition: `GET /api/metrics/prometheus`
@@ -496,72 +338,88 @@ are in
   (`Content-Type: text/plain; version=0.0.4`)
 - Liveness probe: `GET /api/health` — also used by the container `HEALTHCHECK`.
 
-Both metrics endpoints are exempt from the rate limiter, so they are
-safe to scrape every 15 s.
+    client_max_body_size 15m;          # must exceed max_request_bytes
+    proxy_read_timeout   60s;          # must exceed inference_timeout
 
----
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+}
+```
 
-## 6. Pre-launch checklist
+```bash
+sudo certbot --nginx -d plantdiseases.example.com
+sudo systemctl enable --now certbot.timer
+```
 
-Before opening the service to the public:
+### 6.1 Getting the client IP right
 
-- [ ] TLS enforced — HTTP redirects to HTTPS, HSTS enabled at the proxy.
-- [ ] `CORS_ORIGINS` pinned to the real front-end origin(s); **no `*`**.
-- [ ] `TRUSTED_PROXIES` set to just the reverse-proxy IP(s)/CIDR.
-- [ ] `RATE_LIMIT_RPS` tuned for expected traffic (default `1.0` is per-IP).
-- [ ] `MAX_FILE_SIZE` aligned with nginx `client_max_body_size`.
-- [ ] `proxy_read_timeout` ≥ `INFERENCE_TIMEOUT`.
-- [ ] Model artefacts present under `server/models/`: `detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`), `classes.json` — otherwise the server fails to start. They are not auto-downloaded; there is no demo fallback.
-- [ ] `/api/health` returns 200 with `status: "ok"`.
-- [ ] `classes.json` `num_classes` matches the classifier head size (the server logs a mismatch otherwise).
-- [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.
-- [ ] Prometheus/Grafana (or equivalent) is scraping `/api/metrics/prometheus`.
-- [ ] Backup strategy for `server/logs/` and `server/models/` in place.
-- [ ] Service runs as a non-root user (the systemd unit in §4 sets `User=plantd`).
-- [ ] Deployed from a tagged commit, not a moving branch.
-- [ ] Android app `network_security_config.xml` points at the production HTTPS host (HTTP cleartext is only allowed for `10.0.2.2` / `localhost`).
-- [ ] Smoke test: `curl -F "image=@leaf.jpg" https://.../api/analyze` returns a bilingual diagnosis (HTTP 200).
+`X-Forwarded-For` decides the identity every abuse control keys on — the
+rate-limit bucket and the hashed `client_ip_hash` behind each 24 h write quota.
+Get it wrong and you throttle either nobody or everybody.
 
----
+`$proxy_add_x_forwarded_for` **appends** the peer nginx sees to whatever the
+client sent, so the app receives `<whatever the client claimed>, <real peer>`
+and walks it **right to left**, skipping entries in `trusted_proxies` and
+taking the first that is not — leftmost entries are attacker-supplied and must
+never win. `trusted_proxies` must match the **peer address**: with nginx on the
+same host that is `127.0.0.1`, but put any other hop in front (a proxy on a
+second machine, a NAT) and a literal `127.0.0.1` never matches, the header is
+ignored, and every client collapses into one bucket.
 
-## 7. Post-deploy smoke QA (Android client + server)
+With a CDN in front of nginx the header arrives as `<real client>, <CF edge>`,
+so the app stops at the edge IP and every visitor through one PoP shares a
+bucket and a daily quota — mass 429s. Fix it in nginx so the real client is
+what gets appended:
 
-Run this on a real device with the production URL configured. Target: under 5 minutes end-to-end.
+```nginx
+    # Cloudflare: https://www.cloudflare.com/ips/ — keep this list current
+    set_real_ip_from 173.245.48.0/20;   # (…all CF ranges…)
+    real_ip_header   CF-Connecting-IP;
+```
 
-**Server reachability**
-- [ ] `curl https://.../api/health` returns 200 with `status: "ok"`.
-- [ ] `Profile → Server Diagnostics` shows green dot, server version and class count populated (no `—`).
-- [ ] Tap the refresh button on the diagnostics card — values blink to `Checking…` and reload.
+Verify rather than assume — every request logs the resolved address:
 
-**Happy-path scan**
-- [ ] Take a clear photo of a healthy leaf → diagnosis screen shows `Healthy` with confidence ≥ 70 %.
-- [ ] Take a photo of a known-diseased leaf → correct disease label, treatment + prevention lists are non-empty in both EN and RU (toggle via `Profile → Language`).
-- [ ] Scan appears in `Gallery` and `Profile` stats increment (`Total Scans`, healthy/diseased counts).
+```bash
+journalctl -u plantdiseases | grep -o 'IP=[^ ]*' | sort | uniq -c | sort -rn | head
+```
 
-**Model families & offline (scan-screen model picker)**
-- [ ] `curl https://.../api/capabilities` lists `aqua`, `gamma`, `frontier` with `available` flags; `gamma` true, `frontier` matches `frontier_enabled`.
-- [ ] Scan-screen model chip opens the picker; `gamma` selectable, `aqua` shows an **Offline** badge, `frontier` is greyed **Unavailable** unless the server enables it.
-- [ ] With `frontier_enabled=false`, `curl -F "image=@leaf.jpg" "https://.../api/analyze?family=frontier"` returns `{"available": false, ...}` (HTTP 200, no diagnosis).
-- [ ] **Aqua offline**: if `static/aqua/` is provisioned, open the scan screen once online (model downloads), then enable airplane mode and scan with `aqua` selected → a diagnosis appears with **no network**. If not provisioned, picking `aqua` toasts "offline model isn't installed" and falls back to the server.
-- [ ] Disease example photos still render on the result/guide screens (served by `/api/guide/photo/<key>`, disk-cached) — `curl -o /dev/null -w "%{http_code}" https://.../api/guide/photo/powdery_mildew` returns 200.
+A healthy spread of addresses is right. One address for every request means the
+header is not being honoured.
 
-**Error states (each must show a clear card with a one-tap Retry that re-uses the same photo)**
-- [ ] **Timeout**: throttle network or stop the API container mid-request → `Server Not Responding` card; image preview still shown above the error.
-- [ ] **No network**: enable airplane mode → `No Internet Connection` card with retry CTA.
-- [ ] **429 rate limit**: hit `/api/analyze` rapidly from same IP (or set `RATE_LIMIT_RPS=0.1`) → `Server Busy` card; retry succeeds after the `Retry-After` window.
-- [ ] **503 server starting / pipeline unavailable**: restart the server and scan within the warm-up window → `Server is warming up` card; retry succeeds once `/api/health` returns 200.
-- [ ] **Unsupported image (400/415)**: pick a non-image file or an unsupported format from the gallery → `Unsupported image` card; Retry button re-runs analysis on the same selection.
-- [ ] After every error card, the captured image preview is still visible at the top of the screen and Retry does **not** re-prompt the user to pick a photo.
+## 7. Monitoring & health
 
-**Localization**
-- [ ] Switch to Russian: every new diagnostics row (`Версия сервера`, `Классов болезней`) and every new error card title/body renders in RU with no `@string/...` fallbacks.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Liveness. **503 `Pipeline not ready` until the models finish loading**; then 200 with `status`, `version`, `num_classes`, `uptime_seconds`, `total_requests`. |
+| `GET /api/capabilities` | Families + availability, model/version metadata, `int8_shipped`. |
+| `GET /api/metrics` | JSON counters. |
+| `GET /api/metrics/prometheus` | `text/plain; version=0.0.4`. |
 
-**Regressions**
-- [ ] Onboarding still launches from `Profile → How to Use`.
-- [ ] `Clear All History` empties stats and gallery.
-- [ ] Light Meter entry still opens.
+Rate-limiter exemptions are `/api/health`, `/api/capabilities`, and GET/HEAD on
+`/api/guide/*`, `/api/community/thumb/*`, `/api/aqua/manifest`. **The metrics
+endpoints are not exempt** — they run full-table SQLite aggregates, so they are
+metered like any other route, and they sit behind `require_api_key` when it is
+on. At the default 2 rps a 15 s scrape is nowhere near the bucket; if you
+tighten the limit, give the scraper its own API key.
 
----
+`/api/capabilities` always reports `aqua: available:true` — it describes the
+on-device tier, not server state. To check whether the TFLite model is actually
+hosted, curl `/api/aqua/manifest`, which returns `available:false` when
+`aqua_static_dir` is unprovisioned.
+
+Counters worth alerting on, from `/api/metrics`:
+
+| Counter | Healthy | A bad value means |
+|---|---|---|
+| `prompt_cache.hit_ratio` | somewhat under 1.0, with a small steady `cache_write_tokens_in` | Near `0.0` over real traffic: the shared prefix changed or fell under `min_prefix_tokens`. Check `shared_prefix_tokens_est` still clears it and that nothing volatile crept in ahead of the preamble. |
+| `prompt_cache.enabled` | `true` | Caching was turned off; every call pays full input price. |
+| `ai_doctor.cache_hit_ratio` | same shape, chat only | Chat-specific prefix breakage. |
+| `care_plan_polish.reject_ratio` | near 0 | Climbing after a model/prompt change = the model is drifting off the plan's canonical watering/feeding/NPK numbers and the LLM summary is being silently discarded (users see the deterministic fallback, so nothing else surfaces it). |
 
 ## 8. Android release: signing & FCM
 
@@ -709,21 +567,53 @@ clear the gate.
 
 ### 8.4 RuStore in-app updates
 
-The app bundles the [RuStore in-app updates SDK](https://www.rustore.ru/help/guides/sdk-in-app-updates)
-(`ru.rustore.sdk:appupdate`, resolved from VK's artifactory — see
-`android/settings.gradle.kts`). Nothing to configure at build or deploy time:
+Nothing to configure at build or deploy time. To ship an update, publish an APK
+with a higher `versionCode` to the [RuStore Console](https://console.rustore.ru),
+signed with the same release key. The flow can only be exercised on a device
+where the app was installed *from* RuStore, not from a sideloaded build.
 
-- **Only installs that came from RuStore get updates.** On launch,
-  `util/InAppUpdateManager` asks the RuStore app whether a newer build is
-  published; if so it shows the store's *flexible* update dialog (at most once
-  per 24 h), downloads in the background, and offers an "Install" snackbar
-  when the APK is ready. Sideloads / other stores / devices without RuStore:
-  every call fails inside the SDK and the app behaves exactly as before.
-- **To ship an update**, publish the new APK (higher `versionCode`) in the
-  [RuStore Console](https://console.rustore.ru) — same artifact CI builds,
-  signed with the release keystore (the signature must match the version
-  already in the store).
-- **Testing the flow end-to-end** requires a device with RuStore where the app
-  was installed *from the store* and a published build with a higher
-  `versionCode` — it cannot be exercised from a sideloaded debug build (the
-  SDK reports `RuStoreNotInstalledException`/`ERROR_APP_NOT_OWNED` instead).
+## 9. Go-live checklist
+
+- [ ] TLS enforced — HTTP redirects to HTTPS, HSTS on at the proxy.
+- [ ] `cors_origins` pinned to the real front-end origin(s); **no `*`**.
+- [ ] `trusted_proxies` set to the real peer address(es) and **verified** with
+      the `journalctl … grep IP=` one-liner in §6.1.
+- [ ] Rate limits tuned (`rate_limit_rps`, `rate_limit_burst`); if you copied
+      `config.example.json` you are on `1.0`, not the code default.
+- [ ] `feedback_ip_pepper` and `community_author_key_pepper` set explicitly.
+- [ ] nginx `client_max_body_size` > `max_request_bytes`; `proxy_read_timeout`
+      > `inference_timeout`.
+- [ ] Model bundle present and validated (§2, `check_bundle.py`).
+- [ ] All storage paths point into the state directory; it is backed up.
+- [ ] `scan_recording_enabled` matches what your privacy policy discloses.
+- [ ] Service runs as a non-root user; deployed from a tagged commit.
+- [ ] Logs rotating (`log_dir`) and shipped off-box; Prometheus scraping
+      `/api/metrics/prometheus`.
+- [ ] `GET /api/health` returns 200 with `status: "ok"` **through nginx, from
+      another machine** (a loopback curl cannot tell you the bind was right).
+- [ ] `GET /api/capabilities`: `gamma` true, `frontier` matches
+      `frontier_enabled`. With frontier off,
+      `curl -F image=@leaf.jpg ".../api/analyze?family=frontier"` returns HTTP
+      200 with `available:false`.
+- [ ] End-to-end: `curl -F "image=@leaf.jpg" https://…/api/analyze` returns a
+      bilingual diagnosis (HTTP 200).
+- [ ] The shipped APK was built with `-PAPI_BASE_URL=https://…`. Release builds
+      are HTTPS-only — `res/xml/network_security_config.xml` permits no
+      cleartext; the `10.0.2.2`/`localhost` exemption lives only in
+      `src/debug/`.
+
+## 10. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Process exits at boot, `DetectorLoadError` | Only `detector.pt` in `models/`; nothing loads a `.pt` at serve time (`start.sh`'s pre-flight now refuses it too) | Export `detector.onnx` (notebook §6) |
+| Process exits at boot, `ClassifierLoadError` naming a class count | `classes.json -> class_names` length ≠ ONNX head width | Ship the `classes.json` that matches the trained head, in training order. There is no migration shim; deleting the file falls back to the 9 built-in defaults |
+| `/api/health` 503 `Pipeline not ready` | Models still loading, or the lifespan never completed | Wait out the cold load; if it persists, check the journal for the load error |
+| Every client shares one rate-limit bucket; mass 429/403 | `trusted_proxies` does not contain the actual peer address, or a CDN sits in front | §6.1 — verify with the `IP=` log walk, add `real_ip_header` for a CDN |
+| Species/care-plan screens are slow for everyone, every time | `AI_CACHE_DIR` unwritable under `ProtectSystem=strict` — writes are best-effort and swallowed | Point `AI_CACHE_DIR` into `StateDirectory`; the server logs a warning at startup when the probe write fails |
+| A prompt/model change has no visible effect | Server-side (7–30 d) and on-device (7 d) answer caches | Bump the cache generation in `ai_services.py`; `rm -rf` the stale dir under `ai_cache_dir` |
+| `prompt_cache.hit_ratio` flat at 0.0 | Shared prefix changed or fell under `prompt_cache_min_prefix_tokens` | Check `shared_prefix_tokens_est`; build system prompts through `ai_services._system_prompt()` |
+| Release APK installs but Play/RuStore rejects it | Built without `RELEASE_STORE_FILE` → debug key fallback | Supply the four `RELEASE_*` props; CI fails this case when `RELEASE_KEYSTORE_BASE64` is set |
+| Push silently does nothing | Server: `fcm_credentials_file` blank or init failed (logged, then disabled). Client: any `FCM_*` build value blank | Set the service-account path server-side; rebuild with all four `FCM_*` values |
+| The on-device model never downloads and `aqua` scans fall back to the server, yet `/api/capabilities` reports `aqua: available:true` | `capabilities` describes the on-device tier, not provisioning | Check `/api/aqua/manifest` — `available:false` means `aqua_static_dir` is unprovisioned |
+| Restart loop after a memory kill | `MemoryMax` too tight; each cycle re-pays the cold model load | Raise `MemoryMax`, especially with `frontier_enabled=true` or `infer_workers > 1` |

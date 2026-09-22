@@ -1,122 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One post in the "Scans near you" feed. Photo on top with the author avatar
-    (top-start) and a views/comments count pill (top-end) overlaid on it, so
-    the footer text gets the full card width: the author's nickname, then the
-    place, then a dedicated distance·time line that always stays visible.
-    The diagnosis is deliberately NOT shown on the card — voters should look
-    at the photo first; the model's verdict appears inside the opinion sheet.
+    One post in the community feed — full sheet width, single column
+    (Community v2 replaced the staggered photo grid with a scrolling forum).
+    Header (avatar + nickname + place/time, wants-opinion chip trailing),
+    full-width photo, then an action row: like (tappable), comments and
+    views (both open the sheet). The diagnosis is deliberately NOT shown
+    here — voters should look at the photo first; the model's verdict
+    appears inside the opinion sheet.
 -->
-<com.google.android.material.card.MaterialCardView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="@dimen/space_xs"
-    app:cardCornerRadius="@dimen/radius_md"
-    app:cardElevation="0dp"
-    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-    app:strokeWidth="0dp">
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/space_md"
+    android:paddingVertical="@dimen/space_md">
 
+    <!-- Header: avatar + nickname/meta stacked, wants-opinion chip trailing. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-        <!-- Scan photo + overlays -->
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="150dp">
+        <TextView
+            android:id="@+id/tv_nearby_avatar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:background="@drawable/bg_circle_surface_variant"
+            android:backgroundTint="@color/primary"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:fontFamily="sans-serif-medium"
+            android:importantForAccessibility="no"
+            tools:text="KX" />
 
-            <com.facebook.shimmer.ShimmerFrameLayout
-                android:id="@+id/shimmer_nearby_photo"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                app:shimmer_auto_start="false"
-                app:shimmer_base_color="@color/shimmer_base"
-                app:shimmer_duration="1000"
-                app:shimmer_highlight_color="@color/shimmer_highlight">
-
-                <ImageView
-                    android:id="@+id/iv_nearby_photo"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:scaleType="centerCrop"
-                    android:background="?attr/colorSurfaceVariant"
-                    android:contentDescription="@null" />
-
-            </com.facebook.shimmer.ShimmerFrameLayout>
-
-            <!-- Anonymous author avatar (deterministic colour + monogram).
-                 Overlaid top-start so the footer text below spans full width.
-                 Decorative: TalkBack would read "KX" as meaningless noise. -->
-            <TextView
-                android:id="@+id/tv_nearby_avatar"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:layout_gravity="top|start"
-                android:layout_margin="@dimen/space_xs"
-                android:gravity="center"
-                android:background="@drawable/bg_circle_surface_variant"
-                android:backgroundTint="@color/primary"
-                android:textColor="@android:color/white"
-                android:textSize="11sp"
-                android:fontFamily="sans-serif-medium"
-                android:importantForAccessibility="no"
-                tools:text="KX" />
-
-            <!-- Views + comments(opinions) count pill (top-end). Each part is
-                 hidden when its count is 0; the whole pill hides when both are. -->
-            <LinearLayout
-                android:id="@+id/ll_nearby_counts"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|end"
-                android:layout_margin="@dimen/space_xs"
-                android:background="@drawable/bg_glass_dark_pill"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_sm"
-                android:paddingVertical="2dp"
-                android:visibility="gone"
-                tools:visibility="visible">
-
-                <TextView
-                    android:id="@+id/tv_nearby_views"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:drawablePadding="3dp"
-                    android:gravity="center_vertical"
-                    android:textColor="@android:color/white"
-                    android:textSize="@dimen/text_caption"
-                    android:fontFamily="sans-serif-medium"
-                    app:drawableStartCompat="@drawable/ic_eye"
-                    app:drawableTint="@android:color/white"
-                    tools:text="12" />
-
-                <TextView
-                    android:id="@+id/tv_nearby_comments"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/space_sm"
-                    android:drawablePadding="3dp"
-                    android:gravity="center_vertical"
-                    android:textColor="@android:color/white"
-                    android:textSize="@dimen/text_caption"
-                    android:fontFamily="sans-serif-medium"
-                    app:drawableStartCompat="@drawable/ic_comment"
-                    app:drawableTint="@android:color/white"
-                    tools:text="3" />
-            </LinearLayout>
-        </FrameLayout>
-
-        <!-- Footer -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="@dimen/space_md">
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_sm"
+            android:orientation="vertical">
 
             <TextView
                 android:id="@+id/tv_nearby_label"
@@ -129,6 +56,9 @@
                 android:ellipsize="end"
                 tools:text="Leafy Sage 7" />
 
+            <!-- Place · distance · time, on one line — long place names still
+                 leave room for the always-relevant distance/time tail because
+                 they share a single ellipsized TextView via buildWhen(). -->
             <TextView
                 android:id="@+id/tv_nearby_meta"
                 android:layout_width="match_parent"
@@ -139,56 +69,185 @@
                 android:ellipsize="end"
                 tools:text="Berlin, Germany" />
 
-            <!-- Distance + time on their own line so they're never truncated
-                 by a long place name (the feed sorts by recency). -->
             <TextView
                 android:id="@+id/tv_nearby_when"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
                 android:textSize="@dimen/text_caption"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:maxLines="1"
                 android:ellipsize="end"
                 tools:text="≈ 3 km · 2 hr. ago" />
-
-            <!-- Scanner is waiting on the community for a second opinion. -->
-            <TextView
-                android:id="@+id/tv_nearby_wants_opinion"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:drawablePadding="4dp"
-                android:gravity="center_vertical"
-                android:text="@string/community_wants_opinion_badge"
-                android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="@color/warning_amber"
-                android:fontFamily="sans-serif-medium"
-                app:drawableStartCompat="@drawable/ic_community"
-                app:drawableTint="@color/warning_amber"
-                android:visibility="gone"
-                tools:visibility="visible" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_nearby_opinion"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:insetLeft="0dp"
-                android:insetRight="0dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                android:paddingHorizontal="@dimen/space_sm"
-                android:paddingVertical="6dp"
-                android:textSize="@dimen/text_body_sm"
-                android:text="@string/nearby_scans_second_opinion"
-                app:icon="@drawable/ic_comment"
-                app:iconSize="16dp"
-                app:iconGravity="textStart" />
         </LinearLayout>
+
+        <!-- Scanner is waiting on the community for a second opinion.
+             Sentence case, not the all-caps Caption style: at 0.08 letter
+             spacing the Russian label ran ~19 characters wide and starved
+             the nickname column next to it. maxLines + ellipsize cap it
+             for any future translation. -->
+        <TextView
+            android:id="@+id/tv_nearby_wants_opinion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_xs"
+            android:maxWidth="128dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:drawablePadding="4dp"
+            android:gravity="center_vertical"
+            android:text="@string/community_wants_opinion_badge"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textAllCaps="false"
+            android:letterSpacing="0"
+            android:textColor="@color/warning_amber"
+            android:fontFamily="sans-serif-medium"
+            app:drawableStartCompat="@drawable/ic_community"
+            app:drawableTint="@color/warning_amber"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
     </LinearLayout>
 
-</com.google.android.material.card.MaterialCardView>
+    <!-- Scan photo, full row width. Tapping it opens the sheet. -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        app:cardCornerRadius="@dimen/radius_md"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp">
+
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_nearby_photo"
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            app:shimmer_auto_start="false"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_duration="1000"
+            app:shimmer_highlight_color="@color/shimmer_highlight">
+
+            <ImageView
+                android:id="@+id/iv_nearby_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="?attr/colorSurfaceVariant"
+                android:contentDescription="@null" />
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Action row: like (tappable, toggles), comments + views (both open
+         the sheet). Each pair is its own touch target rather than one
+         giant row, so a tap on "comments" can't be misread as a like. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_xs"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:id="@+id/ll_nearby_like"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:paddingVertical="@dimen/space_xs"
+            android:paddingEnd="@dimen/space_md"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/iv_nearby_like"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@string/community_like_action"
+                android:src="@drawable/ic_heart"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tv_nearby_likes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:textSize="@dimen/text_body_sm"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/on_surface_secondary"
+                tools:text="14" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_nearby_comments"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:paddingVertical="@dimen/space_xs"
+            android:paddingEnd="@dimen/space_md"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/iv_nearby_comments"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_comment"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tv_nearby_comments"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:textSize="@dimen/text_body_sm"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/on_surface_secondary"
+                tools:text="7" />
+
+        </LinearLayout>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/ll_nearby_views"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="@dimen/space_xs">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_eye"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tv_nearby_views"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:textSize="@dimen/text_body_sm"
+                android:textColor="@color/on_surface_secondary"
+                tools:text="48" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="@dimen/space_md"
+        android:background="@color/surface_variant" />
+
+</LinearLayout>

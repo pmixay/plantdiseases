@@ -75,6 +75,30 @@ class LunarCalendarTest {
     }
 
     @Test
+    fun `aggregateRating picks the rating shared by the most plants`() {
+        // 2026-08-20 (Sagittarius, see the test above): GOOD for SUCCULENT,
+        // NEUTRAL for FOLIAGE. Two succulents outvote one foliage plant.
+        val date = LocalDate.of(2026, 8, 20)
+        val categories = listOf(PlantCategory.SUCCULENT, PlantCategory.SUCCULENT, PlantCategory.FOLIAGE)
+        assertEquals(LunarCalendar.Rating.GOOD, LunarCalendar.aggregateRating(date, categories))
+    }
+
+    @Test
+    fun `aggregateRating breaks an even split toward NEUTRAL`() {
+        // Same date, one plant of each category: GOOD and NEUTRAL tie 1-1,
+        // so neither wins outright.
+        val date = LocalDate.of(2026, 8, 20)
+        val categories = listOf(PlantCategory.SUCCULENT, PlantCategory.FOLIAGE)
+        assertEquals(LunarCalendar.Rating.NEUTRAL, LunarCalendar.aggregateRating(date, categories))
+    }
+
+    @Test
+    fun `aggregateRating on an empty garden is NEUTRAL, not a crash`() {
+        val date = LocalDate.of(2026, 8, 20)
+        assertEquals(LunarCalendar.Rating.NEUTRAL, LunarCalendar.aggregateRating(date, emptyList()))
+    }
+
+    @Test
     fun `every day of 2026 and 2027 computes a dayInfo without throwing`() {
         var date = LocalDate.of(2026, 1, 1)
         val end = LocalDate.of(2027, 12, 31)
@@ -88,6 +112,18 @@ class LunarCalendarTest {
             date = date.plusDays(1)
         }
         assertEquals(730, count)
+    }
+
+    @Test
+    fun `current and next calendar years are fully navigable`() {
+        val currentYear = LocalDate.now().year
+        for (year in currentYear..(currentYear + 1)) {
+            assertTrue(LunarCalendar.isInRange(LocalDate.of(year, 1, 1)))
+            assertTrue(LunarCalendar.isInRange(LocalDate.of(year, 12, 31)))
+            for (month in 1..12) {
+                assertEquals(LocalDate.of(year, month, 1).lengthOfMonth(), LunarCalendar.month(year, month).size)
+            }
+        }
     }
 
     @Test

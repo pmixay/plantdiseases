@@ -141,7 +141,5 @@
     <color name="moon_dark">#242B31</color>
     <color name="moon_mare">#8E8A7E</color>
     <color name="moon_glow">#33FFFFFF</color>
-
-    <!-- Section badge background (SectionUiKit) -->
-    <color name="section_badge_bg">#1A2E7D32</color>
+    <color name="moon_terminator_glow">#66E8B87A</color>
 </resources>

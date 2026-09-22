@@ -85,6 +85,7 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -109,13 +110,22 @@ try:
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from .community import (
+        decode_recommendation_cursor as community_decode_recommendation_cursor,
+    )
+    from .community import (
         density_grid as community_density_grid,
+    )
+    from .community import (
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from .community import (
         init_db as init_community_db,
     )
     from .community import (
         is_analysis_token_issued as community_analysis_token_issued,
+    )
+    from .community import (
+        like_counts as community_like_counts,
     )
     from .community import (
         map_scans as community_map_scans,
@@ -145,6 +155,12 @@ try:
         prune_older_than as community_prune_older_than,
     )
     from .community import (
+        public_account_profile as community_public_account_profile,
+    )
+    from .community import (
+        recommended_scans as community_recommended_scans,
+    )
+    from .community import (
         record_analysis_scan as community_record_analysis_scan,
     )
     from .community import (
@@ -157,7 +173,7 @@ try:
         record_opinion_with_status as community_record_opinion,
     )
     from .community import (
-        record_view as community_record_view,
+        record_views as community_record_views,
     )
     from .community import (
         region_summary as community_region_summary,
@@ -176,6 +192,9 @@ try:
     )
     from .community import (
         scans_by_species as community_scans_by_species,
+    )
+    from .community import (
+        set_like as community_set_like,
     )
     from .community import (
         set_wants_opinion as community_set_wants_opinion,
@@ -274,6 +293,7 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        prompt_cache_metrics_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -298,13 +318,22 @@ except ImportError:
         clear_wants_opinion as community_clear_wants_opinion,
     )
     from community import (
+        decode_recommendation_cursor as community_decode_recommendation_cursor,
+    )
+    from community import (
         density_grid as community_density_grid,
+    )
+    from community import (
+        encode_recommendation_cursor as community_encode_recommendation_cursor,
     )
     from community import (
         init_db as init_community_db,
     )
     from community import (
         is_analysis_token_issued as community_analysis_token_issued,
+    )
+    from community import (
+        like_counts as community_like_counts,
     )
     from community import (
         map_scans as community_map_scans,
@@ -334,6 +363,12 @@ except ImportError:
         prune_older_than as community_prune_older_than,
     )
     from community import (
+        public_account_profile as community_public_account_profile,
+    )
+    from community import (
+        recommended_scans as community_recommended_scans,
+    )
+    from community import (
         record_analysis_scan as community_record_analysis_scan,
     )
     from community import (
@@ -346,7 +381,7 @@ except ImportError:
         record_opinion_with_status as community_record_opinion,
     )
     from community import (
-        record_view as community_record_view,
+        record_views as community_record_views,
     )
     from community import (
         region_summary as community_region_summary,
@@ -365,6 +400,9 @@ except ImportError:
     )
     from community import (
         scans_by_species as community_scans_by_species,
+    )
+    from community import (
+        set_like as community_set_like,
     )
     from community import (
         set_wants_opinion as community_set_wants_opinion,
@@ -626,7 +664,7 @@ AQUA_STATIC_DIR = Path(get_str(
 
 # Model weights + calibration artefacts are NOT committed to the repo and
 # are NOT auto-downloaded. Provision them out of band: drop the trained
-# files (detector.{pt,onnx}, classifier.onnx, classes.json, ...) into
+# files (detector.onnx, classifier.onnx, classes.json, ...) into
 # MODELS_DIR before starting the server. Boot is fail-fast — the pipeline
 # refuses to start if a required artefact is missing.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
@@ -882,6 +920,9 @@ async def _optional_account(request: Request) -> AccountPrincipal | None:
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
 COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
+# Likes are cheap and low-stakes compared to an opinion, so they get their
+# own (looser) daily cap rather than sharing the opinion quota.
+COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 _daily_write_lock = threading.Lock()
 _daily_write_counts: dict[tuple[int, str, str], int] = {}
 
@@ -1212,24 +1253,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = time.monotonic()
         self._warned_about_xff = False
 
-    # ── backwards-compat shim used by tests that tune the limiter ────
-    @property
-    def min_interval(self) -> float:
-        return 1.0 / self.rate if self.rate > 0 else 0.0
-
-    @min_interval.setter
-    def min_interval(self, value: float) -> None:
-        # Tests poke ``mw.min_interval = 0.0`` to disable the limiter
-        # for an entire fixture; preserve that contract by rebuilding
-        # the rate from the value they hand us.
-        self.rate = (1.0 / value) if value > 0 else float("inf")
-
-    @property
-    def _last_request(self) -> dict[str, tuple[float, float]]:
-        """Legacy alias used by the rate-limited test fixture to
-        ``.clear()`` the bucket between cases."""
-        return self._buckets
-
     def _cleanup_stale(self, now: float) -> None:
         # A bucket whose tokens never dropped below capacity in the
         # last 60 s is effectively inactive — drop it. Holding every
@@ -1515,7 +1538,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # requests and become an undeclared installation/account correlate.
         trace_id = uuid.uuid4().hex
         token = request_id_var.set(trace_id)
-        
+        # Also stash it on the request scope. The ContextVar is reset by the
+        # `finally` below before Starlette's outermost ServerErrorMiddleware
+        # gets to run `_unhandled_exception_handler`, but `request.state` is
+        # backed by the scope dict and survives — so that handler can stamp
+        # the SAME trace id on the 500 that this log line carries.
+        request.state.trace_id = trace_id
         _record_request()
         start = time.time()
         try:
@@ -1532,6 +1560,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 elapsed,
             )
             return response
+        except Exception:
+            # An unhandled handler exception never reaches the success path
+            # above, so without this arm the access log simply has no line for
+            # the request that failed. Log it as the 500 the client will get
+            # (`_unhandled_exception_handler` produces the response), then
+            # re-raise so that handler still runs.
+            elapsed = time.time() - start
+            logger.info(
+                "REQUEST %s %s -> %d (%.3fs) IP=%s",
+                request.method,
+                request.url.path,
+                500,
+                elapsed,
+                _client_ip(request),
+            )
+            raise
         finally:
             request_id_var.reset(token)
 
@@ -1682,6 +1726,51 @@ app = FastAPI(
     root_path=APP_ROOT_PATH,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Own the unhandled-exception path so a crash is still observable.
+
+    Without this, an exception escaping a handler is turned into a response by
+    Starlette's ServerErrorMiddleware: a bare text/plain "Internal Server
+    Error" with NO ``X-Trace-ID`` header (that is only set on the success path
+    in :class:`RequestLoggingMiddleware`) and no metrics increment — so the one
+    request the operator most needs to find is the one with nothing to grep
+    for. Here we count it, log it with a traceback under the request's trace
+    id, and hand back the same JSON ``{"detail": ...}`` shape every other error
+    on this API uses, carrying the trace id the access log line also shows.
+
+    The handler runs OUTSIDE every middleware added below, so ``request_id_var``
+    has already been reset by the time we get here; the id comes off
+    ``request.state`` (stamped by the logging middleware, and backed by the
+    scope dict so it survives). The fallback covers an exception raised in a
+    middleware layer outside the logging one, which never got stamped.
+
+    The detail string is deliberately generic — an exception message can carry
+    a path, a query fragment or a key, and this is the one error the client did
+    not ask a question specific enough to deserve an answer to. The trace id is
+    the operator's join key into the log.
+
+    Starlette re-raises after this returns, so uvicorn still logs the traceback
+    and ``TestClient(raise_server_exceptions=True)`` still surfaces it in tests.
+    """
+    _record_error()
+    # Server-minted only: RequestLoggingMiddleware deliberately ignores any
+    # client-supplied trace id, so this must not reintroduce one via headers.
+    trace_id = getattr(request.state, "trace_id", "") or uuid.uuid4().hex
+    logger.exception(
+        "UNHANDLED %s %s trace=%s: %s",
+        request.method,
+        request.url.path,
+        trace_id,
+        exc.__class__.__name__,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={"X-Trace-ID": trace_id},
+    )
 
 # ── CORS ─────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = get_list(
@@ -1994,7 +2083,7 @@ async def capabilities():
     (its real capability depends on the app shipping the tflite student).
     Tolerates a not-yet-ready pipeline so the app can call it during boot.
     """
-    base_ready = pipeline is not None
+    base_ready = _family_available("gamma")
     families = [
         {
             "id": "aqua",
@@ -2082,13 +2171,22 @@ async def metrics():
     """Operational metrics (JSON). Useful for dashboards and jury demos."""
     snap = _snapshot_metrics()
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
+    # The two store snapshots are blocking sqlite3 and each runs several
+    # full-table COUNT(*) scans, so they hop to a worker thread; the
+    # in-process counters above are just dict reads.
+    loop = asyncio.get_running_loop()
+    training_snapshot = await loop.run_in_executor(None, training_store.training_counts)
+    community_snapshot = await loop.run_in_executor(None, community_stats_snapshot)
     return {
         "uptime_seconds": round(uptime, 1),
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
+        # Across every OpenRouter caller, not just the doctor — the number that
+        # answers "is prompt caching engaging at all" after a model switch.
+        "prompt_cache": prompt_cache_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
-        "training": training_store.training_counts(),
-        "community": community_stats_snapshot(),
+        "training": training_snapshot,
+        "community": community_snapshot,
     }
 
 
@@ -2445,18 +2543,6 @@ async def analyze_image(
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
-    # Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
-    # Guards: empty dict, single-class (log(1)=0) and degenerate
-    # all-zero distributions all collapse to 0.0 instead of NaN.
-    uncertainty = 0.0
-    if len(rounded_probs) > 1:
-        vals = [p for p in rounded_probs.values() if p > 0]
-        if vals:
-            entropy = -sum(p * math.log(p) for p in vals)
-            max_entropy = math.log(len(rounded_probs))
-            if max_entropy > 0:
-                uncertainty = round(max(0.0, min(1.0, entropy / max_entropy)), 4)
-
     detection = result["detection"]
 
     # Annotate top_k with the bilingual display name so the client can
@@ -2591,7 +2677,6 @@ async def analyze_image(
         "prevention_ru": disease_info["prevention_ru"],
         "is_healthy": is_healthy_effective,
         "detection": detection,
-        "uncertainty": uncertainty,
         "severity": result.get("severity", "low"),
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
@@ -2773,6 +2858,38 @@ def _localize_item_country(row: dict) -> None:
     en, ru = COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
     row["country_name_en"] = en
     row["country_name_ru"] = ru
+
+
+def _to_public_feed_item(
+    row: dict, *, opinions: dict, views: dict | None = None,
+) -> dict:
+    """Make one community-feed row safe to hand to a viewer (in place).
+
+    Every viewer-facing feed does the same four things, and forgetting any one
+    of them is a leak rather than a cosmetic bug — which is why they live here
+    instead of being retyped per handler:
+
+    1. annotate the row with its second-opinion count (and, on the feeds that
+       show it, its view count) so the card can badge it;
+    2. swap the real ``scan_id`` for the public token — the real id authorises
+       ``/api/feedback`` writes and must never reach another user (see
+       ``community.public_scan_token``);
+    3. drop the private keyset-pagination fields the query attaches;
+    4. localize the country code so cards show "Poland"/"Польша", not "PL".
+
+    Rows that already carry a count (the recommended ranking computes its own
+    in SQL) keep it. ``views=None`` means this feed does not expose a view
+    count, so the key is not added.
+    """
+    sid = str(row.get("scan_id"))
+    row.setdefault("opinion_count", opinions.get(sid, 0))
+    if views is not None:
+        row.setdefault("view_count", views.get(sid, 0))
+    row["scan_id"] = row.pop("public_id", None) or row["scan_id"]
+    row.pop("_cursor_score", None)
+    row.pop("_cursor_row_id", None)
+    _localize_item_country(row)
+    return row
 
 
 def _valid_coord(value, limit: float) -> float | None:
@@ -3017,6 +3134,10 @@ async def identify_endpoint(
     ``locale`` is forwarded to PlantNet's ``lang`` query param so the
     common names come back localised (e.g. "Каучуковое дерево" on
     ru-RU instead of "Rubber tree").
+
+    The same local NAP gate used by ``/api/analyze`` runs before PlantNet.
+    A ``not_a_plant`` verdict returns a graceful ``available: false``
+    payload and does not spend a PlantNet identification request.
     """
     if pipeline is None:
         _record_error()
@@ -3043,11 +3164,70 @@ async def identify_endpoint(
         organ = "auto"
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
+
+    # Decode and validate the pixels before sending anything to PlantNet. The
+    # NAP filter is the same detector + classifier pipeline as /api/analyze,
+    # so it must see the same EXIF-normalised RGB image and run on the same
+    # bounded inference executor (never on the event loop or network pool).
+    try:
+        img = await loop.run_in_executor(None, _open_image, contents)
+    except HTTPException:
+        _record_error()
+        raise
+    except Exception as exc:
+        _record_error()
+        logger.exception("Unexpected error while decoding /api/identify upload: %s", exc)
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
+
+    img_w, img_h = img.size
+    if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
+        _record_error()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too large ({img_w}x{img_h}). "
+                   f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+        )
+    if min(img_w, img_h) < MIN_IMAGE_DIMENSION:
+        _record_error()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too small ({img_w}x{img_h}). "
+                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
+        )
+
+    try:
+        nap_result = await asyncio.wait_for(
+            loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
+            timeout=INFERENCE_TIMEOUT,
+        )
+    except TimeoutError as exc:
+        _record_error()
+        logger.error("NAP filter timed out after %.0fs for /api/identify", INFERENCE_TIMEOUT)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
+        ) from exc
+    except Exception as exc:
+        _record_error()
+        logger.exception("NAP filter crashed for /api/identify: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal inference error") from exc
+
+    if nap_result.get("class_name") == "not_a_plant":
+        return JSONResponse(content={
+            "available": False,
+            "results": [],
+            "source": "skipped_nap",
+            "organ": organ,
+        })
+
+    # Re-encode from the already-decoded image: a direct API client must not be
+    # able to bypass the Android uploader's sanitizer and hand PlantNet EXIF
+    # (including GPS) that never needed to leave the device.
     try:
         result = await loop.run_in_executor(
             _get_net_executor(),
             lambda: identify_species(
-                _metadata_free_external_jpeg(_open_image(contents)),
+                _metadata_free_external_jpeg(img),
                 organ=organ,
                 lang=plantnet_lang,
             ),
@@ -3956,6 +4136,9 @@ async def community_opinions_list(scan_id: str, request: Request):
 
     Accepts the real scan_id (owner's own app) or the feed's public
     token (viewers); echoes back whichever form the caller sent.
+    Authentication is optional for this public read. When present it adds
+    caller-specific fields such as ``liked_by_me`` and ``is_mine`` and applies
+    the caller's block list.
     """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
@@ -3975,6 +4158,26 @@ async def community_opinions_list(scan_id: str, request: Request):
     return JSONResponse(content={"scan_id": sid, **result})
 
 
+@api_router.get("/community/profile/{author_token}")
+async def community_author_profile(author_token: str, request: Request):
+    """Public community activity for one opaque account-author handle."""
+    if len(author_token) != 32 or not author_token.startswith("ca"):
+        raise HTTPException(status_code=404, detail="profile_not_found")
+    principal = await _optional_account(request)
+    profile = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_public_account_profile(
+            author_token,
+            viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
+    )
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile_not_found")
+    for item in profile.get("items", []):
+        _localize_item_country(item)
+    return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
+
+
 @api_router.get(
     "/community/my-scan-opinions", dependencies=[Depends(community_bearer)]
 )
@@ -3990,30 +4193,102 @@ async def community_my_scan_opinions(request: Request):
 
 
 class CommunityViewRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
+    # ``scan_id`` (singular) is the original single-open shape, kept required
+    # in name only — older installs still send it alone. ``scan_ids`` is the
+    # newer batch shape for reporting many feed impressions in one call. A
+    # request must carry at least one of the two; see the validator below.
+    scan_id: str | None = Field(None, max_length=128)
+    scan_ids: list[str] | None = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def _require_a_target(self) -> "CommunityViewRequest":
+        if not (self.scan_id or "").strip() and not any(
+            (s or "").strip() for s in (self.scan_ids or [])
+        ):
+            raise ValueError("scan_id or scan_ids is required")
+        return self
 
 
 @api_router.post("/community/view", dependencies=[Depends(community_bearer)])
 async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
-    """Record that the caller opened someone else's shared scan. Deduped per
-    viewer server-side; a scan owner viewing their own scan and views of an
-    unknown scan never count, so this is safe to fire on every open."""
+    """Record that the caller opened (or merely scrolled past) someone
+    else's shared scan — one id via ``scan_id``, or up to 50 via
+    ``scan_ids`` for feed-scroll impressions. Deduped per viewer
+    server-side; a scan owner viewing their own scan and views of an
+    unknown scan never count, so this is safe to fire liberally.
+
+    The whole batch is resolved and written in one pass and is bound to the
+    verified account actor, never a client-supplied identifier."""
     principal = await _require_account(request)
     loop = asyncio.get_running_loop()
-    # Viewers send the feed's public token — resolve it to the real id.
+    ids = [s.strip() for s in (payload.scan_ids or []) if s and s.strip()]
+    if payload.scan_id and payload.scan_id.strip():
+        ids.append(payload.scan_id.strip())
+    # The declared cap is per-field; ``scan_id`` + a full ``scan_ids`` can
+    # exceed it, and a client may repeat an id across the two.
+    ids = list(dict.fromkeys(ids))[:50]
+    # An explicit single-scan open keeps the read-only contract the opinion
+    # route states: a legacy (pre-account) row is readable but never mutable,
+    # and the caller is told so rather than being handed a silent no-op. A
+    # feed-scroll batch stays lenient and just skips any such id.
+    if payload.scan_id and payload.scan_id.strip() and not payload.scan_ids:
+        sid = await loop.run_in_executor(
+            None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
+        )
+        owner_actor = await loop.run_in_executor(
+            None, lambda: community_account_owner_of(sid)
+        )
+        if owner_actor is None:
+            raise HTTPException(status_code=409, detail="legacy_scan_read_only")
+    counted = await loop.run_in_executor(
+        None,
+        lambda: community_record_views(ids, account_actor_id=principal.actor_id),
+    )
+    return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
+
+
+class CommunityLikeRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    liked: bool = True
+
+
+@api_router.post("/community/like", dependencies=[Depends(community_bearer)])
+async def community_like_scan(payload: CommunityLikeRequest, request: Request):
+    """Like or unlike a shared scan. A self-like is refused (0 either way);
+    liking your own scan makes no more sense than viewing it does."""
+    principal = await _require_account(request)
+    client_ip = _client_ip(request)
+    loop = asyncio.get_running_loop()
+    if payload.liked and not _consume_daily_write(
+        "community_like", client_ip, COMMUNITY_LIKE_DAILY_QUOTA
+    ):
+        raise HTTPException(status_code=429, detail="Daily like quota reached.")
     sid = await loop.run_in_executor(
         None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
     )
-    owner_actor = await loop.run_in_executor(
-        None, lambda: community_account_owner_of(sid)
-    )
-    if owner_actor is None:
-        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
-    counted = await loop.run_in_executor(
+    liked = await loop.run_in_executor(
         None,
-        lambda: community_record_view(sid, account_actor_id=principal.actor_id),
+        lambda: community_set_like(
+            sid,
+            liked=payload.liked,
+            account_actor_id=principal.actor_id,
+        ),
     )
-    return JSONResponse(content={"ok": True, "counted": bool(counted)})
+    count = await loop.run_in_executor(
+        None, lambda: community_like_counts([sid]).get(sid, 0),
+    )
+    return JSONResponse(content={"ok": True, "liked": liked, "count": count})
+
+
+_COMMUNITY_REPORT_REASONS = {
+    "sexual_content",
+    "violence_or_threats",
+    "hate_or_harassment",
+    "illegal_or_dangerous",
+    "spam_or_misleading",
+    "privacy_or_impersonation",
+    "other_rules_violation",
+}
 
 
 class CommunityScanCountsRequest(BaseModel):
@@ -4048,6 +4323,8 @@ async def community_scan_nearby(
     species: str | None = None,
     limit: int = 20,
     scope: str | None = None,
+    ranking: str | None = None,
+    cursor: str | None = None,
 ):
     """List the most recent community-shared scans near the requester.
 
@@ -4058,8 +4335,36 @@ async def community_scan_nearby(
     the geo filter entirely (every country, newest first — needs no location).
     ``species`` + ``disease`` narrow the result-screen "similar scans"
     carousel, which widens nearby→country to stay filled.
+
+    ``cursor`` pages both recommendation and recent order with a signed,
+    opaque composite key; tied upload timestamps therefore cannot lose rows.
+    The response cursor is null once a page comes back short. Paging is
+    single-pass only:
+    combining it with ``disease`` or ``species`` is rejected with 422,
+    because those widen the query into several concatenated passes whose
+    concatenation has no single global ``created_at`` order to page on.
     """
+    ranking_norm = (ranking or "recent").strip().lower()
+    if ranking_norm not in {"recent", "recommended"}:
+        raise HTTPException(status_code=422, detail="Invalid community ranking.")
+    if cursor and ((disease or "").strip() or (species or "").strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="cursor cannot be combined with disease or species.",
+        )
+    if ranking_norm == "recommended" and ((disease or "").strip() or (species or "").strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="recommended ranking cannot be combined with disease or species.",
+        )
     principal = await _optional_account(request)
+    try:
+        recommendation_cursor = community_decode_recommendation_cursor(cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
+    if ranking_norm == "recent" and recommendation_cursor is not None \
+            and recommendation_cursor[0] != 0:
+        raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
     scope_norm = (scope or "nearby").strip().lower()
@@ -4077,42 +4382,90 @@ async def community_scan_nearby(
     # so it never sets the flag. Storage stays privacy-preserving — there is
     # deliberately no server-side IP geolocation.
     location_required = not worldwide and not (bool(country_norm) or has_coords)
-    rows = community_nearby_scans(
-        country=country_norm,
-        lat=geo["lat"] if nearby else None,
-        lon=geo["lon"] if nearby else None,
-        disease=(disease or None),
-        species=(species or None),
-        limit=max(1, min(int(limit), 50)),
-        exclude_account_actor_id=principal.actor_id if principal else None,
-        viewer_account_actor_id=principal.actor_id if principal else None,
-        scope=scope_norm,
-    )
+    effective_limit = max(1, min(int(limit), 50))
+    # Every community_* call below is blocking sqlite3. This is the feed the
+    # gallery polls and the queries are the heaviest reads in the server, so
+    # each one hops to a worker thread rather than stalling the event loop.
+    loop = asyncio.get_running_loop()
+    if ranking_norm == "recommended":
+        rows = await loop.run_in_executor(
+            None,
+            lambda: community_recommended_scans(
+                country=country_norm,
+                lat=geo["lat"] if nearby else None,
+                lon=geo["lon"] if nearby else None,
+                limit=effective_limit,
+                exclude_account_actor_id=principal.actor_id if principal else None,
+                viewer_account_actor_id=principal.actor_id if principal else None,
+                scope=scope_norm,
+                cursor=recommendation_cursor,
+            ),
+        )
+    else:
+        rows = await loop.run_in_executor(
+            None,
+            lambda: community_nearby_scans(
+                country=country_norm,
+                lat=geo["lat"] if nearby else None,
+                lon=geo["lon"] if nearby else None,
+                disease=(disease or None),
+                species=(species or None),
+                limit=effective_limit,
+                exclude_account_actor_id=principal.actor_id if principal else None,
+                viewer_account_actor_id=principal.actor_id if principal else None,
+                scope=scope_norm,
+                cursor=(recommendation_cursor[1], recommendation_cursor[2])
+                if recommendation_cursor is not None else None,
+            ),
+        )
+    # A short page means the scope is exhausted; a full page might have more
+    # (the very last page just happens to also be full-sized, and the client
+    # finds out on the follow-up request that comes back empty).
+    next_cursor = None
+    if rows and len(rows) >= effective_limit:
+        last = rows[-1]
+        next_cursor = community_encode_recommendation_cursor(
+            int(last.get("_cursor_score", 0)),
+            int(last["created_at"]),
+            int(last["_cursor_row_id"]),
+        )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
     # around" readout). Excludes the requester's own rows so the row doesn't
     # surface the scan they just uploaded.
-    summary = community_region_summary(
-        country_norm or "",
+    summary = await loop.run_in_executor(
         None,
-        exclude_account_actor_id=principal.actor_id if principal else None,
-        viewer_account_actor_id=principal.actor_id if principal else None,
+        lambda: community_region_summary(
+            country_norm or "",
+            None,
+            exclude_account_actor_id=principal.actor_id if principal else None,
+            viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
     )
     # Annotate each cell with how many second opinions it has so the carousel
     # can show a badge, then swap the publication capability for its stable,
     # per-scan public token. The author pseudonym rotates independently;
     # feedback uses a separate receipt.
     scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = community_opinion_counts(
-        scan_ids,
-        viewer_account_actor_id=principal.actor_id if principal else None,
-    )
-    views = community_view_counts(scan_ids)
+    counts: dict = {}
+    views: dict = {}
+    if ranking_norm == "recent":
+        counts = await loop.run_in_executor(
+            None,
+            lambda: community_opinion_counts(
+                scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
+            ),
+        )
+        views = await loop.run_in_executor(
+            None, lambda: community_view_counts(scan_ids),
+        )
     for r in rows:
         sid = str(r.get("scan_id"))
-        r["opinion_count"] = counts.get(sid, 0)
-        r["view_count"] = views.get(sid, 0)
+        r.setdefault("opinion_count", counts.get(sid, 0))
+        r.setdefault("view_count", views.get(sid, 0))
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
+        r.pop("_cursor_score", None)
+        r.pop("_cursor_row_id", None)
         # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
         _localize_item_country(r)
     meta = _country_display(country_norm)
@@ -4134,7 +4487,15 @@ async def community_scan_nearby(
     # compatibility for what's already installed. Only the nested copy is
     # coerced — the top-level `country` field stays nullable.
     summary["country"] = summary.get("country") or ""
-    return JSONResponse(content={"items": rows, "summary": summary, **meta})
+    return JSONResponse(
+        content={
+            "items": rows,
+            "summary": summary,
+            "ranking": ranking_norm,
+            "next_cursor": next_cursor,
+            **meta,
+        },
+    )
 
 
 def _valid_bbox(
@@ -4173,7 +4534,8 @@ async def community_map(
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
     lo_lat, lo_lon, hi_lat, hi_lon = box
-    data = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(
         None,
         lambda: community_map_scans(
             lo_lat, hi_lat, lo_lon, hi_lon,
@@ -4187,9 +4549,12 @@ async def community_map(
     rows = data["items"]
     # Same opinion-count annotation + public-token swap + country localization as
     # the nearby feed; here we KEEP lat/lon for the markers.
-    counts = community_opinion_counts(
-        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
-        viewer_account_actor_id=principal.actor_id if principal else None,
+    map_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
+    counts = await loop.run_in_executor(
+        None,
+        lambda: community_opinion_counts(
+            map_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
     )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
@@ -4235,7 +4600,8 @@ async def community_by_species(
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
-    rows = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    rows = await loop.run_in_executor(
         None,
         lambda: community_scans_by_species(
             sci,
@@ -4244,9 +4610,12 @@ async def community_by_species(
             viewer_account_actor_id=principal.actor_id if principal else None,
         ),
     )
-    counts = community_opinion_counts(
-        [str(r.get("scan_id")) for r in rows if r.get("scan_id")],
-        viewer_account_actor_id=principal.actor_id if principal else None,
+    species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
+    counts = await loop.run_in_executor(
+        None,
+        lambda: community_opinion_counts(
+            species_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
+        ),
     )
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
@@ -4683,7 +5052,7 @@ async def aqua_model():
 
 
 # --- /api/popular: personalized, short-cached popular-plants bundle ----
-# key "{country|'global'}:{locale}" -> (expiry_epoch, payload). The list is a
+# ``_popular_cache_key(...)`` -> (expiry_epoch, payload). The list is a
 # live community-scan aggregate, so the bundle is cached only briefly (and
 # served stale-while-revalidate) — new scans surface within the TTL instead of
 # being pinned for hours. The (static) per-species photos are NOT re-resolved
@@ -4702,6 +5071,17 @@ _POPULAR_MAX_CARDS = 10
 # data within minutes of the first scan in that scope; real data keeps the
 # full TTL since aggregates move slowly.
 _POPULAR_PLACEHOLDER_TTL_S = get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
+
+
+def _popular_cache_key(
+    country: str | None, lat, lon, locale: str,
+) -> str:
+    """Cache key for one popular bundle scope.
+
+    Shared by the reader (:func:`popular_endpoint`) and the boot-time
+    pre-warm, which used to build the key by hand in a different shape and so
+    filed its warmed bundles under slots nothing could ever read."""
+    return f"{country or ''}|{lat or ''},{lon or ''}|{locale}"
 
 
 def _popular_ttl(bundle: dict) -> int:
@@ -4751,7 +5131,7 @@ async def _warm_placeholder_images() -> None:
             bundle = await loop.run_in_executor(
                 _get_net_executor(), lambda n=locale: _build_popular_bundle(None, None, None, None, n),
             )
-            key = f"||{locale}"
+            key = _popular_cache_key(None, None, None, locale)
             with _popular_lock:
                 _popular_cache[key] = (time.time() + _popular_ttl(bundle), bundle)
                 _popular_cache.move_to_end(key)
@@ -4890,7 +5270,7 @@ async def popular_endpoint(request: Request, country: str | None = None,
     city_n = geo["city"]
     locale = "ru" if str(locale or "en").lower().startswith("ru") else "en"
 
-    key = f"{country_norm or ''}|{lat_n or ''},{lon_n or ''}|{locale}"
+    key = _popular_cache_key(country_norm, lat_n, lon_n, locale)
     now = time.time()
     with _popular_lock:
         hit = _popular_cache.get(key)
@@ -4957,6 +5337,12 @@ def _refresh_popular_bg(
 app.include_router(api_router)
 
 
+# Direct-run convenience only. The documented deployment paths (start.sh,
+# start.bat, the systemd unit in DEPLOYMENT.md) all exec ``uvicorn main:app``
+# and pass the host/port/forwarded-allow-ips as CLI flags from the shell
+# environment — so HOST / PORT / FORWARDED_ALLOW_IPS below are read *solely*
+# by ``python main.py``. Setting them in config.json has no effect anywhere
+# else.
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

@@ -10,6 +10,15 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
+# Deliberately NOT RUF100 (unused-noqa): ruff 0.15 reports the `# noqa: E402`
+# directives on the sys.path-preamble imports (tools/export_data.py,
+# tests/test_paired_eval.py) as unused even though dropping them makes E402
+# fire, so `--fix` would strip live suppressions and turn the gate red. The
+# tree's other suppression comments name rules nothing here runs (BLE001,
+# S608, PLC0415) — they are intent notes for a future rule set, not gates. The
+# two leftover wemake-python-styleguide `# noqa: WPS433` directives were
+# dropped: there is no flake8/wemake dependency in the tree, so they never
+# suppressed anything and ruff cannot adjudicate them.
 select = ["E", "F", "I", "B"]
 ignore = [
     "E501",  # line-length warnings are informational only; formatter handles it

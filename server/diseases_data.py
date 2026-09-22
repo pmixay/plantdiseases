@@ -613,3 +613,165 @@ def lookup_pet_toxicity(species: str | None) -> dict:
     # request. ``{**entry, ...}`` is a shallow merge and the list is
     # still aliased.
     return {**copy.deepcopy(entry), "source": "db", "matched": key}
+
+
+# ─── Treatment products (Garden refactor — treatment-plan "Recommended
+# products" card) ─────────────────────────────────────────────────────
+#
+# Hand-maintained, bilingual, keyed by the SAME protocol key
+# ``ai_services.py::generate_care_plan`` resolves against
+# ``_DISEASE_PROTOCOL`` — never generated, never LLM-sourced. A wrong
+# product recommendation has a physical consequence (someone sprays a
+# plant, or themselves), so a class with no entry here gets NO products
+# card at all rather than a generic fallback. ``active_ingredient`` is
+# the load-bearing field: brand names differ by market and go out of
+# production, the chemistry doesn't. Scoped to the classes the model can
+# actually return AND that have a real product-based intervention —
+# ``viral_disease`` (no cure), ``leaf_scorch_underwatering`` (a watering
+# fix, not a product) and ``healthy``/``not_a_plant`` deliberately have
+# no entry. ``edema``/``sunburn_or_scorch`` are deferred-feedback-only
+# classes the classifier head doesn't yet predict (see module docstring
+# above) so a scan can't diagnose them today either — no entry until
+# that changes. ``pests`` IS a shipped head class with a real protocol,
+# but has no entry here yet: naming a specific insecticide brand needs
+# the same market/registration check the fungicides above went through,
+# so its plan names the chemistry (insecticidal soap, neem, horticultural
+# oil) in the treatment steps and shows no products card.
+TREATMENT_PRODUCTS: dict[str, list[dict]] = {
+    "powdery_mildew": [
+        {
+            "key": "physan20",
+            "kind": "fungicide",
+            "name_en": "Physan 20",
+            "name_ru": "Physan 20",
+            "active_ingredient_en": "quaternary ammonium (didecyl dimethyl ammonium chloride)",
+            "active_ingredient_ru": "четвертичное аммониевое соединение "
+            "(дидецилдиметиламмоний хлорид)",
+            "note_en": "Broad-spectrum contact fungicide; safe on most "
+            "houseplant foliage at label dilution.",
+            "note_ru": "Контактный фунгицид широкого спектра; при "
+            "разведении по инструкции безопасен для листвы "
+            "большинства комнатных растений.",
+        },
+        {
+            "key": "potassium_bicarbonate",
+            "kind": "fungicide",
+            "name_en": "GreenCure",
+            "name_ru": "GreenCure",
+            "active_ingredient_en": "potassium bicarbonate",
+            "active_ingredient_ru": "гидрокарбонат калия",
+            "note_en": "Contact-only, no systemic action — reapply after "
+            "watering or misting washes it off.",
+            "note_ru": "Только контактное действие, не системный "
+            "препарат — нанесите заново после полива или "
+            "опрыскивания, смывающего состав.",
+        },
+    ],
+    "gray_mold_botrytis": [
+        {
+            "key": "switch",
+            "kind": "fungicide",
+            "name_en": "Switch 62.5WG",
+            "name_ru": "Свитч 62,5 WG",
+            "active_ingredient_en": "cyprodinil + fludioxonil",
+            "active_ingredient_ru": "ципродинил + флудиоксонил",
+            "note_en": "Contact + systemic pair; alternate with a "
+            "different mode of action across applications to "
+            "avoid resistance.",
+            "note_ru": "Контактно-системная пара; чередуйте с "
+            "препаратом другого механизма действия между "
+            "обработками, чтобы не выработалась устойчивость.",
+        },
+        {
+            "key": "cease_biofungicide",
+            "kind": "biofungicide",
+            "name_en": "CEASE (Bacillus subtilis)",
+            "name_ru": "CEASE (Bacillus subtilis)",
+            "active_ingredient_en": "Bacillus subtilis strain QST 713",
+            "active_ingredient_ru": "Bacillus subtilis, штамм QST 713",
+            "note_en": "Biological option — lower resistance risk than "
+            "a synthetic fungicide, safe for repeated weekly use.",
+            "note_ru": "Биологический препарат — ниже риск выработки "
+            "устойчивости, чем у синтетического фунгицида, "
+            "можно применять еженедельно.",
+        },
+    ],
+    "leaf_spot": [
+        {
+            "key": "copper_hydroxide",
+            "kind": "fungicide/bactericide",
+            "name_en": "Bonide Copper Fungicide",
+            "name_ru": "Bonide Copper Fungicide",
+            "active_ingredient_en": "copper hydroxide",
+            "active_ingredient_ru": "гидроксид меди",
+            "note_en": "Covers both fungal and bacterial leaf spot — "
+            "useful when the cause isn't visually certain.",
+            "note_ru": "Действует и на грибковую, и на бактериальную "
+            "пятнистость — полезно, если возбудитель точно "
+            "не определён.",
+        },
+        {
+            "key": "chlorothalonil",
+            "kind": "fungicide",
+            "name_en": "Daconil (Chlorothalonil)",
+            "name_ru": "Daconil (хлороталонил)",
+            "active_ingredient_en": "chlorothalonil",
+            "active_ingredient_ru": "хлороталонил",
+            "note_en": "Fungal cases only — has no effect on a "
+            "bacterial leaf spot.",
+            "note_ru": "Только для грибковой пятнистости — не "
+            "действует на бактериальную.",
+        },
+    ],
+    "nutrient_deficiency": [
+        {
+            "key": "balanced_liquid_fertiliser",
+            "kind": "fertiliser",
+            "name_en": "A balanced liquid houseplant fertiliser (e.g. 10-10-10 or 20-20-20)",
+            "name_ru": "Сбалансированное жидкое удобрение для "
+            "комнатных растений (например, 10-10-10 или 20-20-20)",
+            "active_ingredient_en": "N-P-K + micronutrients",
+            "active_ingredient_ru": "N-P-K + микроэлементы",
+            "note_en": "Dilute to half label strength for the first "
+            "feed — a starved plant's roots can be scorched by "
+            "a full-strength dose.",
+            "note_ru": "Для первой подкормки разведите вдвое слабее "
+            "указанного на упаковке — корни истощённого "
+            "растения легче обжечь удобрением полной "
+            "концентрации.",
+        },
+    ],
+}
+
+# Application-window guidance shown alongside the matching products
+# entry (Garden refactor task-detail "Recommendations" card). Same
+# scoping rule as TREATMENT_PRODUCTS: only the spray/feed-based
+# protocols get one.
+TREATMENT_CONDITIONS: dict[str, dict] = {
+    "powdery_mildew": {
+        "best_time_en": "Early morning or evening — never in direct sun.",
+        "best_time_ru": "Рано утром или вечером — не под прямым солнцем.",
+        "temp_c": [15, 26],
+        "dry_hours": 12,
+    },
+    "gray_mold_botrytis": {
+        "best_time_en": "Morning, after leaves have fully dried from any overnight condensation.",
+        "best_time_ru": "Утром, когда листья полностью высохнут от "
+        "ночного конденсата.",
+        "temp_c": [15, 25],
+        "dry_hours": 24,
+    },
+    "leaf_spot": {
+        "best_time_en": "Morning or evening — never in direct midday sun.",
+        "best_time_ru": "Утром или вечером — не под прямым полуденным солнцем.",
+        "temp_c": [15, 27],
+        "dry_hours": 24,
+    },
+    "nutrient_deficiency": {
+        "best_time_en": "Any time of day; avoid feeding within 24 h of repotting.",
+        "best_time_ru": "В любое время суток; не подкармливайте в "
+        "течение 24 ч после пересадки.",
+        "temp_c": [18, 26],
+        "dry_hours": 0,
+    },
+}

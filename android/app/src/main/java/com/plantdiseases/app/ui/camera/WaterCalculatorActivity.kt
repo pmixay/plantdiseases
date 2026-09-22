@@ -106,8 +106,8 @@ class WaterCalculatorActivity : AppCompatActivity() {
             dormant: Boolean,
         ): Pair<Int, Int> {
             val d = potDiameterCm.coerceIn(MIN_POT_CM, MAX_POT_CM).toDouble()
-            val type = typeIndex.coerceIn(0, WATER_FRACTION.size - 1)
-            val light = lightLevel.coerceIn(0, LIGHT_FACTOR.size - 1)
+            val type = typeIndex.coerceIn(TYPE_GENERAL, TYPE_VEGETABLE)
+            val light = lightLevel.coerceIn(LIGHT_LOW, LIGHT_BRIGHT)
 
             // Soil volume of a cylinder ≈ π r² h, in cm³ (= ml).
             val radius = d / 2.0
@@ -150,7 +150,7 @@ class WaterCalculatorActivity : AppCompatActivity() {
             val common = intent.getStringExtra(EXTRA_COMMON_NAME).orEmpty()
             if (common.isNotBlank()) pick = LightMeterActivity.pickSpeciesBucket(common)
         }
-        typeIndex = pick.coerceIn(0, 4)
+        typeIndex = pick.coerceIn(TYPE_GENERAL, TYPE_VEGETABLE)
         dormant = defaultDormant(Calendar.getInstance().get(Calendar.MONTH))
 
         WindowCompat.setDecorFitsSystemWindows(window, false)

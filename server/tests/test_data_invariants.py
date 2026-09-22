@@ -3,15 +3,12 @@ Defensive invariants for the training pipeline (audit followups).
 
 These tests don't execute the notebook — they validate the parts of the
 pipeline we can statically check (label maps, keyword lists, helper
-existence) and the data-on-disk invariants we can verify when an actual
-training run has produced output. Notebook execution itself is gated on
-GPU availability and would be too slow for CI.
+existence) by grepping the notebook source. Notebook execution itself is
+gated on GPU availability and would be too slow for CI, and nothing here
+looks at data on disk.
 
 Run with:
     pytest server/tests/test_data_invariants.py -q
-
-The notebook's data-on-disk tests will skip cleanly if `data_v2/` doesn't
-exist yet (i.e., before §2 has been run for the first time).
 """
 
 from __future__ import annotations
@@ -169,16 +166,49 @@ def test_phash_cross_check_present():
     each colliding pair — PlantDoc / PlantVillage publish near-duplicate
     photos across their train/test boundary, and raising on every run
     blocked legitimate training. Either name satisfies the contract.
+
+    From 2.7.2 the target is ``_MUTABLE_SPLITS`` rather than ``SPLIT_ROOTS``:
+    the permanent holdout is excluded because dropping rows from it would make
+    its membership a function of the training corpus, which is the one property
+    its stable hash bucket exists to guarantee. Leakage against the holdout is
+    still resolved — on the TRAIN side instead — and that reversed pass is
+    asserted below, so this cannot be relaxed into "the holdout is simply not
+    checked".
     """
     src = _notebook_source()
     assert re.search(
         r"\b(?:assert_no|resolve)_phash_split_leakage\b", src
     ), "audit fix #1 — pHash leakage check missing"
-    # And it must be invoked at the end of §3.
+    # And it must be invoked at the end of §3, over the mutable splits.
     assert re.search(
-        r"(?:assert_no|resolve)_phash_split_leakage\(TRAIN_ROOT\s*,\s*SPLIT_ROOTS",
+        r"(?:assert_no|resolve)_phash_split_leakage\(TRAIN_ROOT\s*,\s*"
+        r"(?:SPLIT_ROOTS|_MUTABLE_SPLITS)",
         src,
     ), "audit fix #1 — pHash leakage check defined but not called"
+
+
+def test_holdout_leakage_is_resolved_on_the_train_side():
+    """The holdout is a fixed instrument: nothing may delete from it.
+
+    ``audit_cross_class_phash_leakage(..., drop=True)`` unlinks rows from the
+    roots it is given. Pointed at the holdout it would remove a different subset
+    every release (the set depends on what happens to be in TRAIN_ROOT), so two
+    releases would score on different images and the delta between them would be
+    meaningless. The leak still has to be resolved, so the arguments are
+    reversed: HOLDOUT becomes the reference and TRAIN_ROOT is what gets pruned.
+    """
+    src = _notebook_source()
+    assert "_MUTABLE_SPLITS = tuple(r for r in SPLIT_ROOTS if r != HOLDOUT)" in src, (
+        "the mutating §3 guards are no longer excluding HOLDOUT"
+    )
+    assert re.search(
+        r"audit_cross_class_phash_leakage\(\s*HOLDOUT\s*,\s*\(\s*TRAIN_ROOT\s*,?\s*\)",
+        src,
+    ), "holdout-vs-train leakage is never resolved — the instrument can be leaked into"
+    # The mutating pass must NOT be handed the holdout.
+    assert not re.search(
+        r"audit_cross_class_phash_leakage\(TRAIN_ROOT\s*,\s*SPLIT_ROOTS", src
+    ), "the dropping audit is still pointed at SPLIT_ROOTS, which includes HOLDOUT"
 
 
 def test_head_training_early_stops_and_restores_best():

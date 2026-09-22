@@ -27,11 +27,13 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.notifications.NotificationsActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
@@ -69,6 +71,9 @@ class HomeFragment : Fragment() {
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     // Use the app's persisted UI language (LocaleHelper), NOT the device
     // locale: a Russian phone with the app switched to English must send
@@ -136,6 +141,10 @@ class HomeFragment : Fragment() {
             Haptics.tick(requireContext())
             startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
         }
+        binding.btnNotifications.setOnClickListener {
+            Haptics.tick(requireContext())
+            startActivity(Intent(requireContext(), NotificationsActivity::class.java))
+        }
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
             startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
@@ -150,8 +159,8 @@ class HomeFragment : Fragment() {
         binding.tileSymptom.setOnClickListener {
             startActivity(Intent(requireContext(), SymptomCheckerActivity::class.java))
         }
-        binding.tileGuide.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
-        binding.tvGuideAll.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
+        binding.tileGuide.setOnClickListener { openGuide() }
+        binding.tvGuideAll.setOnClickListener { openGuide() }
 
         binding.rvSpecies.layoutManager =
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
@@ -178,6 +187,20 @@ class HomeFragment : Fragment() {
                 OnboardingAnchorKey.HOME_QUICK_TOOLS,
                 binding.homeQuickTools,
             )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.HOME_NOTIFICATIONS,
+                binding.btnNotifications,
+            )
+        }
+    }
+
+    /** Push the guide above the tab shell through the graph action that owns
+     *  its forward/back motion. Both Guide entry points deliberately share
+     *  this path so their animation and back-stack behaviour cannot drift. */
+    private fun openGuide() {
+        val controller = findNavController()
+        if (controller.currentDestination?.id == R.id.shellFragment) {
+            controller.navigate(R.id.action_shellFragment_to_guideFragment)
         }
     }
 
@@ -225,6 +248,23 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadPopular()
+        refreshNotificationBadge()
+    }
+
+    /** No live observer (this app has no Flow/LiveData plumbing over Room —
+     *  every screen re-reads on resume) so the badge is only as fresh as the
+     *  last time Home came to the foreground; good enough for a count. */
+    private fun refreshNotificationBadge() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val count = notificationRepository.getUnreadCount()
+            val badge = _binding?.tvNotificationsBadge ?: return@launch
+            if (count <= 0) {
+                badge.visibility = View.GONE
+            } else {
+                badge.visibility = View.VISIBLE
+                badge.text = if (count > 99) "99+" else count.toString()
+            }
+        }
     }
 
     override fun onDestroyView() {
@@ -236,6 +276,10 @@ class HomeFragment : Fragment() {
             unregisterOnboardingAnchor(
                 OnboardingAnchorKey.HOME_QUICK_TOOLS,
                 _binding?.homeQuickTools,
+            )
+            unregisterOnboardingAnchor(
+                OnboardingAnchorKey.HOME_NOTIFICATIONS,
+                _binding?.btnNotifications,
             )
         }
         super.onDestroyView()

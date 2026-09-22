@@ -28,6 +28,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -36,13 +37,13 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.InAppReviewManager
-import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.enableWhileOnline
 import dagger.hilt.android.AndroidEntryPoint
@@ -82,6 +83,9 @@ class ResultActivity : AppCompatActivity() {
     lateinit var plantRepository: PlantRepository
 
     @Inject
+    lateinit var careRepository: CareRepository
+
+    @Inject
     lateinit var communityUploader: CommunityUploader
 
     @Inject
@@ -96,6 +100,10 @@ class ResultActivity : AppCompatActivity() {
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     private var pendingScanForToolbar: ScanEntity? = null
+
+    /** True for the one render that follows a just-completed analysis; see
+     *  [EXTRA_FRESH_SCAN]. Cleared as soon as it is spent. */
+    private var freshScan = false
 
     // RuStore in-app review prompt, shared by every "the user just had a good
     // moment" controller below — one cooldown across all of them (see
@@ -115,7 +123,16 @@ class ResultActivity : AppCompatActivity() {
             reviewManager,
         )
     }
-    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository, reviewManager) }
+    private val gardenAttach by lazy {
+        GardenAttachController(
+            this,
+            binding,
+            plantRepository,
+            scanRepository,
+            careRepository,
+            reviewManager,
+        )
+    }
     private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
         CommunityController(
@@ -196,6 +213,13 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only a scan that JUST finished analysing earns the success buzz.
+        // Opening a saved scan from the gallery or a plant's timeline was
+        // buzzing too, which read as "we scanned something" when nothing had
+        // happened. `savedInstanceState == null` keeps a rotation from
+        // re-firing it on the same scan.
+        freshScan = savedInstanceState == null &&
+            intent.getBooleanExtra(EXTRA_FRESH_SCAN, false)
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
@@ -347,7 +371,10 @@ class ResultActivity : AppCompatActivity() {
             binding.bottomActionBar.visibility = View.VISIBLE
 
             displayResult(scan, scanRepository)
-            Haptics.success(this@ResultActivity)
+            if (freshScan) {
+                freshScan = false
+                Haptics.success(this@ResultActivity)
+            }
             onboardingCoordinator.registerAnchor(
                 OnboardingAnchorKey.RESULT_DIAGNOSIS,
                 binding.cardStatus,
@@ -762,6 +789,15 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Catches a request/reply state change made on MyScanRepliesActivity
+        // (e.g. Stop) — that screen is separate now, so this is how the
+        // second-opinion control finds out, same as every other on-resume
+        // refresh in this app (no Flow/LiveData plumbing over Room here).
+        community.onResume()
+    }
+
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
@@ -771,13 +807,13 @@ class ResultActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
+        /** Set by [com.plantdiseases.app.ui.analysis.AnalysisActivity] only.
+         *  Every other entry point (gallery, plant timeline, notifications)
+         *  is opening history, and history does not buzz. */
+        const val EXTRA_FRESH_SCAN = "extra_fresh_scan"
+
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
         private const val DISEASE_APPEARANCE_TAG = "disease_appearance"
-
-        /** When true, auto-open the community opinions for this scan once it
-         *  loads — set from an opinion notification tap and from tapping a
-         *  Gallery row that has new opinions. */
-        const val EXTRA_OPEN_OPINIONS = "extra_open_opinions"
     }
 }

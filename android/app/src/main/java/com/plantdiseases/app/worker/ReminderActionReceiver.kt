@@ -49,17 +49,10 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 ?.cancel(notificationId)
         }
 
-        // "Snooze 1d": bring this reminder back in 24h (one-shot; does not
-        // alter the periodic schedule). The re-fire data rides on the intent.
-        if (action == ACTION_SNOOZE) {
-            val plantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
-            val reminderId = intent.getLongExtra(EXTRA_REMINDER_ID, -1L)
-            val type = intent.getStringExtra(EXTRA_REMINDER_TYPE)
-            val plantName = intent.getStringExtra(EXTRA_PLANT_NAME)
-            if (plantId > 0 && !type.isNullOrBlank() && !plantName.isNullOrBlank()) {
-                ReminderManager.snooze(context, plantId, plantName, type, reminderId)
-            }
-        }
+        val plantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
+        val reminderId = intent.getLongExtra(EXTRA_REMINDER_ID, -1L)
+        val type = intent.getStringExtra(EXTRA_REMINDER_TYPE)
+        val plantName = intent.getStringExtra(EXTRA_PLANT_NAME)
 
         // Persist off the main thread, but hold the broadcast open with
         // goAsync() so the OS does not kill the process before the write
@@ -69,7 +62,31 @@ class ReminderActionReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                plantRepository.resolveReminderEvent(eventId, resolution)
+                val changed = plantRepository.resolveReminderEvent(eventId, resolution)
+                val hasReminderContext = plantId > 0 && !type.isNullOrBlank() && !plantName.isNullOrBlank()
+                // Schedule only after the event transition commits. Replayed
+                // broadcasts are repository no-ops and cannot enqueue several
+                // one-shot snoozes or reset periodic cadence more than once.
+                if (changed && hasReminderContext) {
+                    if (action == ACTION_SNOOZE) {
+                        ReminderManager.snooze(context, plantId, plantName, type, reminderId, eventId)
+                    } else if (action == ACTION_DONE) {
+                        plantRepository.getReminderById(reminderId)
+                            ?.takeIf { it.enabled }
+                            ?.let { reminder ->
+                                ReminderManager.rescheduleAfterCare(
+                                    context = context,
+                                    plantId = plantId,
+                                    plantName = plantName,
+                                    type = reminder.type,
+                                    intervalDays = reminder.intervalDays,
+                                    hour = reminder.hour,
+                                    minute = reminder.minute,
+                                    reminderId = reminder.id,
+                                )
+                            }
+                    }
+                }
             } finally {
                 pending.finish()
             }

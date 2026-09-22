@@ -50,6 +50,21 @@ def _headers(label: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {_test_access_token(label, label.title())}"}
 
 
+def _opinion_token(community, opinion_id: int) -> str:
+    """The stored moderation token for one reply.
+
+    ``public_opinion_token`` mints an unpredictable value (hashing the
+    sequential row id would only disguise an enumerable one), so a test cannot
+    recompute it — it reads back what the write persisted.
+    """
+    with community._connect() as conn:
+        row = conn.execute(
+            "SELECT public_id FROM community_opinions WHERE id = ?", (int(opinion_id),)
+        ).fetchone()
+    assert row is not None and row[0]
+    return str(row[0])
+
+
 def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
     community.record_scan(
         scan_id=scan_id,
@@ -85,11 +100,18 @@ def test_opinions_expose_only_opaque_safety_token_and_viewer_flag(safety_store):
         "opaque-opinion", viewer_account_actor_id=responder
     )["opinions"][0]
 
-    assert owner_view["content_id"] == community.public_opinion_token(
-        "opaque-opinion", opinion_id
-    )
+    assert owner_view["content_id"] == _opinion_token(community, opinion_id)
     assert owner_view["content_id"].startswith("co")
-    assert str(opinion_id) not in owner_view["content_id"]
+    assert len(owner_view["content_id"]) == 32
+    # The token is random, not derived from the row id, so a substring check on
+    # the id would pass or fail by chance. Assert unpredictability instead: a
+    # second reply on the same scan gets an unrelated token.
+    other_id = community.record_opinion(
+        scan_id="opaque-opinion",
+        account_actor_id=_actor("third-party"),
+        suggested_disease="leaf_spot",
+    )
+    assert _opinion_token(community, other_id) != owner_view["content_id"]
     assert owner_view["is_mine"] is False
     assert responder_view["is_mine"] is True
     assert "account_actor_id" not in owner_view
@@ -105,7 +127,7 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
         account_actor_id=owner,
         suggested_disease="healthy",
     )
-    opinion_token = community.public_opinion_token("reported-scan", opinion_id)
+    opinion_token = _opinion_token(community, opinion_id)
 
     assert community.record_content_report(
         reporter_actor_id=reporter,
@@ -251,7 +273,7 @@ def test_blocked_reply_disappears_and_cannot_interact_again(safety_store):
         note="unsafe reply",
         nickname="Responder",
     )
-    opinion_token = community.public_opinion_token("thread-scan", opinion_id)
+    opinion_token = _opinion_token(community, opinion_id)
     community.block_content_author(
         blocker_actor_id=owner,
         target_type="opinion",
@@ -310,7 +332,7 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
         suggested_disease="leaf_spot",
         note="remove only this reply",
     )
-    opinion_token = community.public_opinion_token("moderated-scan", opinion_id)
+    opinion_token = _opinion_token(community, opinion_id)
     community.record_content_report(
         reporter_actor_id=reporter,
         target_type="opinion",

@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -41,6 +42,10 @@ import org.robolectric.shadows.ShadowNetworkCapabilities
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
+// runCurrent/advanceTimeBy/currentTime are still ExperimentalCoroutinesApi.
+// The whole class drives the TestScope clock (see the note above), so opt in
+// once here rather than at ~30 call sites.
+@OptIn(ExperimentalCoroutinesApi::class)
 class ConnectivityObserverTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

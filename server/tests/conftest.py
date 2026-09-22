@@ -18,7 +18,9 @@ import base64
 import io
 import json
 import os
+import shutil
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -33,6 +35,21 @@ if str(SERVER_DIR) not in sys.path:
 # want to exercise the 429 path re-tune the middleware through the
 # ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
+
+# Redirect the AI disk caches (species profile/diseases, care-plan polish) at a
+# throwaway directory. They default to ``server/ai_cache/``, so without this a
+# test that exercises a real polish/lookup path writes into the working tree —
+# and, worse, the entry it leaves behind is a cache HIT for the next run, which
+# turns "did this call OpenRouter?" tests into order-dependent flakes. Set
+# before any test module imports ai_services (it reads the dir at import).
+_AI_CACHE_TMPDIR = tempfile.mkdtemp(prefix="plantvision-ai-cache-")
+os.environ.setdefault("AI_CACHE_DIR", _AI_CACHE_TMPDIR)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_ai_cache_tmpdir():
+    yield
+    shutil.rmtree(_AI_CACHE_TMPDIR, ignore_errors=True)
 
 
 def _test_access_token(identity: str, nickname: str | None = None) -> str:
@@ -108,12 +125,6 @@ def png_bytes() -> bytes:
     return _encode_image(img, "PNG")
 
 
-@pytest.fixture
-def jpeg_bytes() -> bytes:
-    img = Image.new("RGB", (64, 64), color=(160, 80, 40))
-    return _encode_image(img, "JPEG")
-
-
 # ── Fake pipeline (no weights required) ─────────────────────────────
 
 
@@ -121,9 +132,10 @@ class _FakeClassifier:
     backend = "fake"
     img_size = 224
     # Mirror the real classifier's metadata-driven ``architecture`` attr
-    # (classes.json -> architecture) that the /version endpoint surfaces.
+    # (classes.json -> architecture) that /api/capabilities surfaces.
     architecture = "dinov2_vits14+mlp_head"
-    # Capacity tier (classes.json -> model_family), surfaced by /version.
+    # Capacity tier (classes.json -> model_family), also surfaced by
+    # /api/capabilities.
     model_family = "gamma"
 
     def __init__(self):
@@ -134,7 +146,11 @@ class _FakeClassifier:
 
 
 class _FakeDetector:
-    is_loaded = True
+    """Stand-in for ``LeafDetector``. The real one carries a loaded ONNX
+    session; nothing above the pipeline reads either attribute."""
+
+    model = None
+    input_name = ""
 
     def detect(self, _img: Image.Image) -> dict:
         return {"detections": [], "confidence": 0.0, "primary_box": None}
@@ -200,6 +216,12 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     import telemetry
     import training_store
 
+    # Keep a handle on the real class before it is shadowed. Swapping in the
+    # fake makes the genuine pipeline unreachable for the whole session, so a
+    # test that wants to exercise real gate plumbing (rather than the HTTP
+    # layer) has nothing to instantiate. Tests use
+    # ``pipeline._RealPipelineForTests``; nothing in production reads it.
+    pipeline_module._RealPipelineForTests = pipeline_module.PlantDiseasePipeline
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     server_main.account_authenticator = _TestAccountAuthenticator()
@@ -215,6 +237,13 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     community._initialised = False
     # main imports this path by value for the thumbnail response endpoint.
     server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
+
+    # Same story for the proxied-photo cache: a route that fetches one would
+    # otherwise create ``server/plant_photo_cache/`` in the working tree. The
+    # env var matters because a per-test ``importlib.reload`` re-reads it.
+    import plant_photos
+    plant_photos.PHOTO_CACHE_DIR = state_dir / "plant-photos"
+    os.environ["PLANT_PHOTO_CACHE_DIR"] = str(plant_photos.PHOTO_CACHE_DIR)
 
     telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
@@ -262,9 +291,9 @@ def client():
     with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.min_interval = 0.0
+            mw.rate = float("inf")
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()
         # The same-photo dedup cache leaks state across tests because
         # the test PNG bytes hash to a stable SHA-256 — without this
         # reset, a confident-pipeline test gets the unconfident response
@@ -280,9 +309,9 @@ def client():
 def rate_limited_client():
     """Variant of ``client`` that keeps a 1 req/s rate limit active.
 
-    Capacity is pinned to 1.0 so the token-bucket reduces to the
-    strict "min_interval between requests" behaviour the rate-limit
-    test asserts. Production keeps the larger default burst.
+    Capacity is pinned to 1.0 so the token-bucket reduces to the strict
+    "one request per second, no burst" behaviour the rate-limit test
+    asserts. Production keeps the larger default burst.
     """
     from fastapi.testclient import TestClient
 
@@ -294,11 +323,11 @@ def rate_limited_client():
     with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.min_interval = 1.0
+            mw.rate = 1.0
             mw.capacity = 1.0
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()
         yield c
         if mw is not None:
             with mw._lock:
-                mw._last_request.clear()
+                mw._buckets.clear()

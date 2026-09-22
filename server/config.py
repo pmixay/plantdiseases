@@ -134,3 +134,18 @@ def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list
     if isinstance(raw, list):
         return [str(x).strip() for x in raw if str(x).strip()]
     return [s.strip() for s in str(raw).split(sep) if s.strip()]
+
+
+def onnx_intra_op_threads() -> int:
+    """Intra-op thread count shared by every ONNX Runtime session.
+
+    Returns ``ONNX_INTRA_OP_THREADS`` (config/env), defaulting to ``0``
+    which tells ONNX Runtime to use its own default — the host's physical
+    core count. The DINOv2 ViT backbone is dominated by intra-op
+    parallelism, so giving a single inference all cores is the biggest
+    CPU-latency lever; it is paired with ``INFER_WORKERS=1`` so concurrent
+    scans do not oversubscribe. Operators on a shared host can pin it
+    lower. Lives here rather than in ``classifier.py`` because both ORT
+    sessions (classifier and detector) must agree on the key and default.
+    """
+    return get_int("ONNX_INTRA_OP_THREADS", 0)

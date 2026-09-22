@@ -55,6 +55,9 @@ def isolated_community(tmp_path, monkeypatch):
 
     server_main.community_record_analysis_scan = legacy_analysis_write
     server_main.community_nearby_scans = comm.nearby_scans
+    server_main.community_recommended_scans = comm.recommended_scans
+    server_main.community_encode_recommendation_cursor = comm.encode_recommendation_cursor
+    server_main.community_decode_recommendation_cursor = comm.decode_recommendation_cursor
     server_main.community_region_summary = comm.region_summary
     server_main.community_stats_snapshot = comm.stats_snapshot
     server_main.community_set_wants_opinion = comm.set_wants_opinion
@@ -88,6 +91,15 @@ def _form(**fields):
     return {k: str(v) for k, v in fields.items() if v is not None}
 
 
+def _request_opinion(client, scan_id: str, owner: str):
+    response = client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": scan_id, "user_pseudo_id": owner},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["flagged"] is True
+
+
 def _png_bytes() -> bytes:
     from PIL import Image
     buf = io.BytesIO()
@@ -97,6 +109,20 @@ def _png_bytes() -> bytes:
 
 def _account_headers(identity: str, nickname: str = "Signed Fern") -> dict[str, str]:
     return {"Authorization": f"Bearer {_test_access_token(identity, nickname)}"}
+
+
+def _jpeg_with_exif_bytes(size=(1200, 900)) -> bytes:
+    """An oversized (> the 512px thumbnail cap), EXIF-carrying JPEG — proof
+    material for _save_thumbnail actually decoding and re-encoding rather
+    than writing client bytes straight through."""
+    from PIL import Image
+    img = Image.new("RGB", size, color=(60, 140, 60))
+    buf = io.BytesIO()
+    exif = Image.Exif()
+    exif[0x010F] = "TestMake"  # Make — stands in for the GPS tags a real
+    exif[0x0131] = "TestSoftware"  # phone photo would carry alongside them.
+    img.save(buf, format="JPEG", exif=exif)
+    return buf.getvalue()
 
 
 # ── Happy paths ─────────────────────────────────────────────────────
@@ -810,6 +836,58 @@ def test_community_scan_thumbnail_size_limit(client, isolated_community):
     assert r.status_code == 200
 
 
+def test_community_thumbnail_is_decoded_downscaled_and_exif_stripped(client, isolated_community):
+    """_save_thumbnail used to write whatever bytes the client sent straight
+    to disk — its own docstring claimed a 512px JPEG while enforcing nothing
+    of the kind. A modified client could put a full-resolution, GPS-tagged
+    photo behind a publicly served .jpg filename. Now it actually decodes."""
+    _, thumb_dir = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanexif0001",
+            user_pseudo_id="pseudoexif1",
+            region="Berlin", country="DE",
+            disease="healthy",
+        ),
+        files={"image": ("scan.jpg", _jpeg_with_exif_bytes((1200, 900)), "image/jpeg")},
+    )
+    assert r.status_code == 200, r.text
+
+    files = list(thumb_dir.iterdir())
+    assert len(files) == 1
+    from PIL import Image
+    with Image.open(files[0]) as saved:
+        assert max(saved.size) <= 512
+        assert not saved.getexif()
+
+
+def test_community_thumbnail_rejects_undecodable_bytes(client, isolated_community):
+    """Bytes that pass the size cap but aren't a real image (a modified
+    client, or a truncated upload) must not land on disk at all — the row
+    is still recorded (best-effort thumbnail), just with no thumb_path."""
+    db_path, thumb_dir = isolated_community
+    garbage = b"\x89PNG\r\n\x1a\n" + b"not actually a png" * 100
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scangarbage1",
+            user_pseudo_id="pseudogarba1",
+            region="Berlin", country="DE",
+            disease="healthy",
+        ),
+        files={"image": ("scan.png", garbage, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    assert list(thumb_dir.iterdir()) == []
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT thumb_path FROM community_scans WHERE scan_id = ?",
+            ("scangarbage1",),
+        ).fetchone()
+    assert row[0] is None
+
+
 # ── Nearby + region summary ─────────────────────────────────────────
 
 
@@ -1021,9 +1099,7 @@ def test_community_request_opinion_flags_owner_scan(client, isolated_community):
             and items[0]["scan_id"] == comm.public_scan_token("wantsopinion1")
         return items[0]["wants_opinion"]
 
-    # A non-owner's request is recorded (the endpoint never errors), but
-    # owner-scoping means it is NEVER applied to the scan — the feed flag
-    # stays false.
+    # A non-owner cannot create the durable request that authorises writes.
     r_wrong = client.post(
         "/api/community/request-opinion",
         json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-not-owner"},
@@ -1582,6 +1658,7 @@ def test_feed_token_round_trip_for_opinions_and_views(client, isolated_community
             disease="leaf_spot",
         ),
     )
+    _request_opinion(client, "realscanid01", "pseudo-owner-1")
     feed = client.get(
         "/api/community/nearby",
         params={"country": "FR", "user_pseudo_id": "pseudo-viewer-1"},
@@ -1617,62 +1694,6 @@ def test_feed_token_round_trip_for_opinions_and_views(client, isolated_community
     # Viewer reads under the token and sees the same.
     via_token = client.get(f"/api/community/opinions/{token}").json()
     assert len(via_token["opinions"]) == 1
-
-
-def test_opinion_push_only_when_owner_requested(client, isolated_community, monkeypatch):
-    """The owner is only pushed about a new opinion when they explicitly asked
-    for a second opinion. Sharing a scan to the corpus is not such a request."""
-    import main as server_main
-
-    pushes: list[tuple] = []
-    monkeypatch.setattr(
-        server_main, "_send_account_opinion_notification",
-        lambda owner, sid, disease, note, nickname: pushes.append((owner, sid, disease)),
-    )
-
-    # Two shared scans by the same owner; only the second is flagged for input.
-    for sid in ("nudgeoff0001", "nudgeon00001"):
-        client.post(
-            "/api/community/scan",
-            data=_form(
-                scan_id=sid, user_pseudo_id="pseudo-owner-9",
-                region="Paris", country="FR", disease="leaf_spot",
-            ),
-        )
-    client.post(
-        "/api/community/request-opinion",
-        json={"scan_id": "nudgeon00001", "user_pseudo_id": "pseudo-owner-9"},
-    )
-
-    # A viewer weighs in on both scans.
-    for sid in ("nudgeoff0001", "nudgeon00001"):
-        r = client.post(
-            "/api/community/opinion",
-            json={
-                "scan_id": sid,
-                "user_pseudo_id": "pseudo-viewer-9",
-                "suggested_disease": "powdery_mildew",
-            },
-        )
-        assert r.status_code == 200, r.text
-
-    # Only the requested scan triggered a push to the owner.
-    assert [p[1] for p in pushes] == ["nudgeon00001"]
-
-    replay = client.post(
-        "/api/community/opinion",
-        json={
-            "scan_id": "nudgeon00001",
-            "user_pseudo_id": "pseudo-viewer-9",
-            "suggested_disease": "powdery_mildew",
-        },
-    )
-    assert replay.status_code == 200
-    assert [p[1] for p in pushes] == ["nudgeon00001"]
-    import uuid
-    assert pushes[0][0] == str(
-        uuid.uuid5(uuid.NAMESPACE_URL, "test-account:pseudo-owner-9")
-    )
 
 
 def test_opinion_on_unknown_scan_rejected(client, isolated_community):
@@ -1822,6 +1843,7 @@ def test_opinion_on_stale_scan_rejected_410(client, isolated_community):
             disease="leaf_spot",
         ),
     )
+    _request_opinion(client, "staleshared01", "pseudo-owner-1")
     token = comm.public_scan_token("staleshared01")
     # A fresh opinion lands fine.
     fresh = client.post(
@@ -1850,6 +1872,360 @@ def test_opinion_on_stale_scan_rejected_410(client, isolated_community):
         },
     )
     assert r.status_code == 410, r.text
+
+
+def _share(client, scan_id: str, species: str):
+    """Share one FR scan, identified in the feed by its species.
+
+    The feed deliberately returns an opaque per-response ``scan_id`` rather
+    than the stored one, so ranking assertions key off a field that survives
+    the round trip.
+    """
+    response = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id=scan_id,
+            user_pseudo_id=f"pseudo-owner-{scan_id}",
+            region="Lyon",
+            country="FR",
+            disease="leaf_spot",
+            species=species,
+        ),
+    )
+    assert response.status_code == 200, response.text
+
+
+def _recommended_species(client):
+    feed = client.get(
+        "/api/community/nearby",
+        params={
+            "country": "FR",
+            "scope": "country",
+            "ranking": "recommended",
+            "user_pseudo_id": "pseudo-reader",
+            "limit": 10,
+        },
+    )
+    assert feed.status_code == 200, feed.text
+    return [row["species"] for row in feed.json()["items"]]
+
+
+def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
+    client, isolated_community,
+):
+    """Freshness is the ranking's baseline, not a tiebreak.
+
+    Under the pre-``_RANK_*`` weights freshness ticked once per six hours
+    while a like was worth 120 points — about a month of recency — and the
+    row-id jitter alone was worth ~25 days, so a quiet week-old post
+    routinely outranked everything posted today and the feed read as
+    shuffled rather than dated. Every term is now denominated in hours of
+    freshness, so five days of age outweighs a single like.
+    """
+    db_path, _ = isolated_community
+    _share(client, "freshpost0001", "Fresh nothing")
+    _share(client, "staleliked001", "Stale liked")
+    _share(client, "stalequiet001", "Stale quiet")
+    liked = client.post(
+        "/api/community/like",
+        json={"scan_id": "staleliked001", "user_pseudo_id": "pseudo-liker", "liked": True},
+    )
+    assert liked.status_code == 200, liked.text
+    assert liked.json()["count"] == 1
+
+    now = 1_800_000_000
+    day = 86_400
+    with sqlite3.connect(str(db_path)) as conn:
+        for scan_id, created_at in (
+            ("freshpost0001", now),
+            ("staleliked001", now - 5 * day),
+            ("stalequiet001", now - 10 * day),
+        ):
+            changed = conn.execute(
+                "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+                (created_at, scan_id),
+            ).rowcount
+            assert changed == 1, scan_id
+
+    assert _recommended_species(client) == ["Fresh nothing", "Stale liked", "Stale quiet"]
+
+
+def test_recommended_feed_caps_total_engagement_below_material_freshness(
+    client, isolated_community,
+):
+    """No combination of ordinary engagement can bury a materially fresh post.
+
+    The individual metric caps are not sufficient on their own: at the current
+    weights, 50 opinions + 100 likes + 500 views are worth almost 96 days of
+    freshness when summed. Pin the aggregate promotion cap by saturating every
+    input; even then, a brand-new post must rank ahead of one from 30 days ago.
+    Live second-opinion requests deliberately sit outside this cap and are
+    covered by the following test.
+    """
+    db_path, _ = isolated_community
+    _share(client, "freshmax0001", "Fresh post")
+    _share(client, "staleengaged1", "Max-engaged stale post")
+
+    now = 1_800_000_000
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now, "freshmax0001"),
+        )
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now - 30 * 86_400, "staleengaged1"),
+        )
+        conn.executemany(
+            "INSERT INTO community_opinions "
+            "(scan_id, author_pseudo_id, suggested_disease, created_at) "
+            "VALUES (?, ?, 'leaf_spot', ?)",
+            [("staleengaged1", f"opinion-{i}", now) for i in range(50)],
+        )
+        conn.executemany(
+            "INSERT INTO community_likes "
+            "(scan_id, user_pseudo_id, liked, created_at) VALUES (?, ?, 1, ?)",
+            [("staleengaged1", f"like-{i}", now) for i in range(100)],
+        )
+        conn.executemany(
+            "INSERT INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            [("staleengaged1", f"view-{i}", now) for i in range(500)],
+        )
+
+    assert _recommended_species(client) == ["Fresh post", "Max-engaged stale post"]
+
+
+def test_recommended_feed_keeps_a_live_opinion_request_ahead_of_fresher_posts(
+    client, isolated_community,
+):
+    """The needs-help pin has to outlast the request, not the universe.
+
+    ``_RANK_LIVE_REQUEST`` is finite now — it used to be 50000, worth about
+    34 years of freshness — so this pins the property that making it finite
+    could break: a scan whose request is still open leads the feed even
+    against a post made a full ``OPINION_REQUEST_TTL_HOURS`` later, which is
+    the widest freshness gap that can open up while the request is live.
+    """
+    import community as comm
+
+    db_path, _ = isolated_community
+    _share(client, "askingpost001", "Asking for help")
+    _share(client, "newerpost0001", "Newer and quiet")
+    _request_opinion(client, "askingpost001", "pseudo-owner-askingpost001")
+
+    now = 1_800_000_000
+    with sqlite3.connect(str(db_path)) as conn:
+        changed = conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now - comm.OPINION_REQUEST_TTL_HOURS * 3600, "askingpost001"),
+        ).rowcount
+        assert changed == 1
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (now, "newerpost0001"),
+        )
+
+    assert _recommended_species(client) == ["Asking for help", "Newer and quiet"]
+
+
+def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
+    client, isolated_community,
+):
+    db_path, _ = isolated_community
+    scan_ids = [f"recommend{i:04d}" for i in range(5)]
+    for index, scan_id in enumerate(scan_ids):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=scan_id,
+                user_pseudo_id=f"pseudo-author-{index}",
+                region="Lyon",
+                country="FR",
+                disease="leaf_spot",
+            ),
+        )
+    # Force the timestamp tie that a created_at-only cursor cannot page.
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
+    _request_opinion(client, scan_ids[0], "pseudo-author-0")
+
+    params = {
+        "country": "FR",
+        "scope": "country",
+        "ranking": "recommended",
+        "user_pseudo_id": "pseudo-reader",
+        "limit": 2,
+    }
+    first = client.get("/api/community/nearby", params=params)
+    assert first.status_code == 200, first.text
+    page1 = first.json()
+    assert page1["ranking"] == "recommended"
+    assert page1["next_cursor"].startswith("r1.")
+    assert page1["items"][0]["recommendation_reason"] == "needs_opinion"
+
+    # Same snapshot + request produces the same order.
+    repeat = client.get("/api/community/nearby", params=params).json()
+    assert [row["scan_id"] for row in repeat["items"]] == [
+        row["scan_id"] for row in page1["items"]
+    ]
+
+    seen: list[str] = []
+    page = page1
+    while True:
+        seen.extend(row["scan_id"] for row in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+        page = client.get(
+            "/api/community/nearby",
+            params={**params, "cursor": cursor},
+        ).json()
+    assert len(seen) == 5
+    assert len(set(seen)) == 5
+
+    assert client.get(
+        "/api/community/nearby",
+        params={**params, "cursor": "not-a-cursor"},
+    ).status_code == 422
+    tampered = page1["next_cursor"][:-1] + (
+        "0" if page1["next_cursor"][-1] != "0" else "1"
+    )
+    assert client.get(
+        "/api/community/nearby",
+        params={**params, "cursor": tampered},
+    ).status_code == 422
+
+
+def test_recent_composite_cursor_keeps_same_second_rows(client, isolated_community):
+    db_path, _ = isolated_community
+    for index in range(5):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=f"recenttie{index:03d}",
+                user_pseudo_id=f"recent-owner-{index}",
+                country="FR",
+                region="Lyon",
+                disease="healthy",
+            ),
+        )
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
+
+    params = {
+        "country": "FR",
+        "scope": "country",
+        "ranking": "recent",
+        "user_pseudo_id": "recent-reader",
+        "limit": 2,
+    }
+    seen: list[str] = []
+    response = client.get("/api/community/nearby", params=params)
+    assert response.status_code == 200, response.text
+    page = response.json()
+    while True:
+        seen.extend(row["scan_id"] for row in page["items"])
+        if page["next_cursor"] is None:
+            break
+        response = client.get(
+            "/api/community/nearby",
+            params={**params, "cursor": page["next_cursor"]},
+        )
+        assert response.status_code == 200, response.text
+        page = response.json()
+    assert len(seen) == 5
+    assert len(set(seen)) == 5
+
+
+def test_consensus_counts_latest_pick_per_author(client, isolated_community):
+    """One author posting twice contributes ONE vote to the consensus tally
+    (their latest pick), even though both comments stay in the thread."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="consensusscan1", user_pseudo_id="pseudo-owner-c",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    _request_opinion(client, "consensusscan1", "pseudo-owner-c")
+    for disease in ("powdery_mildew", "healthy"):
+        r = client.post(
+            "/api/community/opinion",
+            json={
+                "scan_id": "consensusscan1",
+                "user_pseudo_id": "pseudo-flip-flop",
+                "suggested_disease": disease,
+            },
+        )
+        assert r.status_code == 200, r.text
+
+    result = client.get("/api/community/opinions/consensusscan1").json()
+    # Both comments are kept in the thread...
+    assert len(result["opinions"]) == 2
+    # ...but the consensus tally counts one vote, for the latest pick.
+    assert sum(c["count"] for c in result["consensus"]) == 1
+    assert result["consensus"] == [{"disease": "healthy", "count": 1}]
+
+
+def test_like_toggle_and_self_like_rejected(client, isolated_community):
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="likescan00001", user_pseudo_id="pseudo-owner-l",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    liked = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": True},
+    )
+    assert liked.status_code == 200, liked.text
+    assert liked.json() == {"ok": True, "liked": True, "count": 1}
+
+    unliked = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": False},
+    )
+    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
+
+    self_like = client.post(
+        "/api/community/like",
+        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-owner-l", "liked": True},
+    )
+    assert self_like.json() == {"ok": True, "liked": False, "count": 0}
+
+
+def test_batch_impression_views_counted_once(client, isolated_community):
+    for sid in ("viewbatch0001", "viewbatch0002"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-owner-v",
+                region="Turin", country="IT", disease="leaf_spot",
+            ),
+        )
+    first = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewbatch0001", "viewbatch0002"],
+            "user_pseudo_id": "pseudo-scroller-1",
+        },
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["counted_n"] == 2
+
+    # Same two ids again — both are already-seen, so nothing new is counted.
+    second = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewbatch0001", "viewbatch0002"],
+            "user_pseudo_id": "pseudo-scroller-1",
+        },
+    )
+    assert second.json()["counted_n"] == 0
+    counts = client.get("/api/community/opinions/viewbatch0001").json()
+    assert counts["views"] == 1
 
 
 def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
@@ -1893,3 +2269,182 @@ def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkey
     assert rows[0]["thumb_path"] == f"{token}_abc.jpg"
     assert (tmp_path / "thumbs" / f"{token}_abc.jpg").exists()
     assert not (tmp_path / "thumbs" / "legacyscan01_abc.jpg").exists()
+
+
+def test_nearby_cursor_rejected_with_disease_or_species(client, isolated_community):
+    """A disease/species-scoped call is several concatenated passes with no
+    global created_at order, so a keyset cursor is refused rather than paging
+    wrongly (duplicated rows on the next page, and a whole pass silently
+    dropped)."""
+    base = {
+        "country": "FR", "scope": "country", "limit": 2, "user_pseudo_id": "x",
+    }
+    for extra in ({"disease": "leaf_spot"}, {"species": "Ficus elastica"}):
+        keyed = client.get(
+            "/api/community/nearby",
+            params={**base, "cursor": "r1.opaque.signature", **extra},
+        )
+        assert keyed.status_code == 422, keyed.text
+        assert keyed.json()["detail"] == "cursor cannot be combined with disease or species."
+
+    # The filters are still fine on their own — only the cursor is refused.
+    r = client.get(
+        "/api/community/nearby",
+        params={**base, "disease": "leaf_spot"},
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_scan_id_index_exists_and_is_not_unique(isolated_community):
+    """``community_scans.scan_id`` is the hot lookup key (token resolution,
+    views, likes, ownership) and must be indexed — but NOT uniquely: legacy
+    rows may repeat a scan_id, and a UNIQUE index would fail to build and
+    take boot down with it."""
+    db_path, _ = isolated_community
+    import community as comm
+    comm.init_db()
+    with sqlite3.connect(str(db_path)) as conn:
+        idx = {
+            row[1]: bool(row[2])
+            for row in conn.execute("PRAGMA index_list(community_scans)").fetchall()
+        }
+    assert "ix_community_scan_id" in idx
+    assert idx["ix_community_scan_id"] is False
+
+
+def test_legacy_backfill_pseudo_columns_are_indexed(isolated_community):
+    db_path, _ = isolated_community
+    import community as comm
+    comm.init_db()
+    with sqlite3.connect(str(db_path)) as conn:
+        view_indexes = {
+            row[1] for row in conn.execute(
+                "PRAGMA index_list(community_scan_views)",
+            ).fetchall()
+        }
+        like_indexes = {
+            row[1] for row in conn.execute(
+                "PRAGMA index_list(community_likes)",
+            ).fetchall()
+        }
+    assert "ix_views_viewer_pseudo" in view_indexes
+    assert "ix_likes_user_pseudo" in like_indexes
+
+
+def test_batch_view_mixes_token_forms_and_drops_self_views(client, isolated_community):
+    """One batch can carry public tokens and real scan_ids for the same rows;
+    both resolve to one view each, unknown ids are ignored, and the owner's
+    own impressions never count."""
+    import community as comm
+
+    for sid in ("viewmix000001", "viewmix000002"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-owner-m",
+                region="Turin", country="IT", disease="leaf_spot",
+            ),
+        )
+    token = comm.public_scan_token("viewmix000001")
+    r = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": [token, "viewmix000001", "viewmix000002", "neverssharedx"],
+            "user_pseudo_id": "pseudo-scroller-m",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["counted_n"] == 2
+
+    own = client.post(
+        "/api/community/view",
+        json={
+            "scan_ids": ["viewmix000001", "viewmix000002"],
+            "user_pseudo_id": "pseudo-owner-m",
+        },
+    )
+    assert own.json()["counted_n"] == 0
+
+
+def test_unlike_soft_deletes_so_the_daily_like_quota_holds(client, isolated_community):
+    """Unliking must not hand the daily quota slot back: the row survives as
+    ``liked = 0``, and re-liking keeps its ORIGINAL ``created_at`` instead of
+    sliding out of the 24h window. A signed like is keyed on the account actor,
+    so the row lives in ``community_account_likes``."""
+    db_path, _ = isolated_community
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="likesoft00001", user_pseudo_id="pseudo-owner-s",
+            region="Turin", country="IT", disease="leaf_spot",
+        ),
+    )
+    body = {
+        "scan_id": "likesoft00001",
+        "user_pseudo_id": "pseudo-liker-s",
+        "liked": True,
+    }
+    assert client.post("/api/community/like", json=body).json()["count"] == 1
+    with sqlite3.connect(str(db_path)) as conn:
+        (created_at,) = conn.execute(
+            "SELECT created_at FROM community_account_likes",
+        ).fetchone()
+
+    unliked = client.post("/api/community/like", json={**body, "liked": False})
+    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT liked, created_at FROM community_account_likes",
+        ).fetchall()
+    assert rows == [(0, created_at)]
+
+    assert client.post("/api/community/like", json=body).json()["count"] == 1
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT liked, created_at FROM community_account_likes",
+        ).fetchall()
+    assert rows == [(1, created_at)]
+
+
+def test_author_adopt_is_atomic_under_concurrency(isolated_community, monkeypatch):
+    """Simultaneous adopts of the SAME key must all return the one row — a
+    check-then-insert raced into "UNIQUE constraint failed", i.e. a 500 on an
+    endpoint documented as idempotent.
+
+    The write lock is disabled for the duration so this pins the SQL itself
+    rather than the lock: a second uvicorn worker is a second process, and no
+    in-process lock spans it. Eight barrier-synchronised keys at 16 threads
+    each — the pre-fix code loses this race on roughly 40% of keys, so the
+    run as a whole fails it essentially always."""
+    import contextlib
+    import threading
+
+    import community as comm
+
+    comm.init_db()
+    monkeypatch.setattr(comm, "_write_lock", contextlib.nullcontext())
+    threads_per_key = 16
+
+    for n in range(8):
+        key = f"{n:02x}" * 32
+        barrier = threading.Barrier(threads_per_key)
+        ids: list[str] = []
+        errors: list[Exception] = []
+
+        def _adopt(key: str = key, barrier: threading.Barrier = barrier,
+                   ids: list = ids, errors: list = errors) -> None:
+            barrier.wait()
+            try:
+                ids.append(comm.resolve_author(key, "Racer", "pseudo-race")["author_id"])
+            except Exception as exc:  # noqa: BLE001 — the assertion is "none of these"
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_adopt) for _ in range(threads_per_key)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert not errors, errors
+        assert len(ids) == threads_per_key
+        assert len(set(ids)) == 1

@@ -43,6 +43,7 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -80,6 +81,7 @@ class CommunityMapActivity : AppCompatActivity() {
     lateinit var connectivity: ConnectivityObserver
     private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
+    private val likeWritesInFlight = mutableSetOf<String>()
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -189,6 +191,8 @@ class CommunityMapActivity : AppCompatActivity() {
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
                     maxLon = box.lonEast,
+                    userPseudoId = TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                    context = this@CommunityMapActivity,
                 ).getOrNull()
                 binding.mapProgress.visibility = View.GONE
                 val items = res?.items.orEmpty()
@@ -397,11 +401,39 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun openScan(item: CommunityScanItem) {
+        lifecycleScope.launch {
+            scanRepository.recordCommunityView(
+                item.scanId,
+                TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                this@CommunityMapActivity,
+            )
+        }
         CommunityOpinionSheet.show(
             supportFragmentManager,
             item,
             DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
         )
+    }
+
+    /** Optimistic like toggle for a row in the grouped-scans bottom sheet —
+     *  same contract as [NearbyScansActivity]'s, just parameterised by which
+     *  adapter instance owns the tapped row. */
+    private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
+        if (!likeWritesInFlight.add(item.scanId)) return
+        val next = !item.likedByMe
+        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
+        adapter.updateLike(item.scanId, optimisticCount, next)
+        lifecycleScope.launch {
+            scanRepository.setCommunityLike(
+                item.scanId,
+                TelemetryIds.userPseudoId(this@CommunityMapActivity),
+                next,
+                this@CommunityMapActivity,
+            )
+                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
+                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
+            likeWritesInFlight.remove(item.scanId)
+        }
     }
 
     /** Bottom sheet listing the scans grouped at one point — reuses the feed
@@ -420,10 +452,11 @@ class CommunityMapActivity : AppCompatActivity() {
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
-            onSecondOpinion = { item ->
+            onOpen = { item ->
                 dialog.dismiss()
                 openScan(item)
             },
+            onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
         )
         list.adapter = adapter
         adapter.submit(group)

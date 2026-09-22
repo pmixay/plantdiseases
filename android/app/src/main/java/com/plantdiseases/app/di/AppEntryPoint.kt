@@ -3,6 +3,7 @@ package com.plantdiseases.app.di
 import android.content.Context
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.LogoutRetryScheduler
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import dagger.hilt.EntryPoint
@@ -15,8 +16,9 @@ import dagger.hilt.components.SingletonComponent
  * via `@AndroidEntryPoint`:
  *   * `CoroutineWorker` subclasses (`OpinionCheckWorker`, `PlantReminderWorker`)
  *     — see the note on `androidx.hilt:hilt-work` below.
- *   * the plain Kotlin `object` singletons in `push/` that aren't Android
- *     framework components at all (`OpinionNotifier`, `PushManager`).
+ *   * the plain Kotlin `object` singletons in `push/`/`util/` that aren't
+ *     Android framework components at all (`OpinionNotifier`, `PushManager`,
+ *     `NotificationCenter`).
  *   * [com.plantdiseases.app.ui.common.SpeciesInfoCardView] — a custom View
  *     that IS eligible for `@AndroidEntryPoint`, but `SpeciesInfoCardViewTest`
  *     constructs it directly against a plain (non-Hilt) `AppCompatActivity`
@@ -49,6 +51,8 @@ interface AppEntryPoint {
     fun scanRepository(): ScanRepository
 
     fun plantRepository(): PlantRepository
+
+    fun notificationRepository(): NotificationRepository
 }
 
 /** `EntryPointAccessors.fromApplication` against the given context's

@@ -22,8 +22,10 @@ the detector crop first means Stage 2 sees a tight leaf, not a whole room.
   `MIN_CROP_SIZE=32` px and `MIN_BBOX_AREA_FRAC=0.005` (0.5% of frame).
   `CROP_PADDING_RATIO=0.10` pads each bbox.
 - **Mean voting** across valid crops — one noisy edge crop can't win the room.
-- **Whole-frame arbitration** (`FOLD_WHOLE_FRAME_VOTE=True`) folds the full
-  image into the vote to recover detector-crop loss on leaf-centric inputs.
+- **Whole-frame arbitration** (`FOLD_WHOLE_FRAME_VOTE`, default on, settable
+  via `limits.fold_whole_frame_vote`) folds the full image into the vote to
+  recover detector-crop loss on leaf-centric inputs. Turning it off is the
+  cheapest latency lever — it drops one full ViT forward per scan.
 - `TOP_K_ALTERNATIVES=3` — the response always carries the top-3.
 
 ### Guards (the "honest uncertainty" machinery)
@@ -93,7 +95,7 @@ The flywheel that the notebook §2 ultimately consumes:
 judging + a **read-only** analysis pass that surfaces overconfident errors. Keep
 all training/judging off the serving box; the server only emits signal.
 
-## Tests guard the contract (`server/tests/`, ~36 files, pytest)
+## Tests guard the contract (`server/tests/`, 45 files, pytest)
 
 The suite encodes the invariants above — run it before trusting a change:
 - `test_pipeline_helpers.py`, `test_ood.py`, `test_conformal.py` — gate logic,

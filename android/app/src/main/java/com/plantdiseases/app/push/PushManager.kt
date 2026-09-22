@@ -69,6 +69,9 @@ object PushManager {
         if (!ensureFirebase(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
+        // Deprecated in favour of Firebase Installation IDs — see the note on
+        // PlantMessagingService.onNewToken for why this stays on tokens.
+        @Suppress("DEPRECATION")
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener

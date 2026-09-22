@@ -18,6 +18,7 @@ import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
+import com.plantdiseases.app.data.model.CommunityPublicProfile
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
@@ -458,11 +459,21 @@ class ScanRepository(
             }
         }
 
-    /** List community "second opinions" + consensus for a shared scan. */
+    /** List community opinions with viewer-relative state when signed in. */
     suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             optionalAccountGet { token ->
                 apiClient.httpClient.get("api/community/opinions/$scanId") {
+                    token?.let { bearer(it) }
+                }
+            }
+        }
+
+    /** Public account activity behind an opaque community author token. */
+    suspend fun getCommunityProfile(authorToken: String): Result<CommunityPublicProfile> =
+        withContext(Dispatchers.IO) {
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/profile/$authorToken") {
                     token?.let { bearer(it) }
                 }
             }
@@ -479,6 +490,7 @@ class ScanRepository(
                     contentType(ContentType.Application.Json)
                     setBody(request)
                 }
+                if (response.status.value == 423) throw CommunityOpinionsLockedException()
                 response.protectedBody<CommunityOpinionsResponse>()
             }
         }
@@ -785,6 +797,7 @@ class ScanRepository(
     class RateLimitException : Exception("Server is busy, please wait")
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
     class UnsupportedImageException : Exception("Unsupported image format")
+    class CommunityOpinionsLockedException : Exception("Second opinions are locked")
     class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
     class CommunityRequestException(val statusCode: Int) : Exception("Community request failed: $statusCode")
 
@@ -892,16 +905,16 @@ class ScanRepository(
         }
     }
 
-    /** Get recent scan history */
-    suspend fun getRecentScans(limit: Int = 20): List<ScanHistoryItem> =
-        withContext(Dispatchers.IO) {
-            scanDao.getRecentScans(limit).map { it.toHistoryItem() }
-        }
-
     /** Get all scans */
     suspend fun getAllScans(): List<ScanHistoryItem> =
         withContext(Dispatchers.IO) {
             scanDao.getAllScans().map { it.toHistoryItem() }
+        }
+
+    /** Local scan ids used to hide the current user's own posts from discovery. */
+    suspend fun localClientScanIds(): Set<String> =
+        withContext(Dispatchers.IO) {
+            scanDao.allClientScanIds().filterTo(mutableSetOf()) { it.isNotBlank() }
         }
 
     /** Get full scan details */
@@ -945,22 +958,65 @@ class ScanRepository(
             }
         }
 
-    /** Batched {opinions, views} per scan_id for the Gallery badges. Returns
-     *  an empty map on failure so the UI just shows no badges. */
+    /** Record that this account scrolled past (not necessarily opened) up to
+     *  50 shared scans in the feed. Same fire-and-forget contract as
+     *  [recordCommunityView]; the caller is expected to have already
+     *  filtered out ids already reported this screen session. */
+    suspend fun recordCommunityViews(scanIds: List<String>): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            if (scanIds.isEmpty()) return@withContext Result.success(Unit)
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/view") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityViewRequest(
+                            scanIds = scanIds.take(50),
+                        ),
+                    )
+                }
+                response.requireProtectedSuccess()
+            }
+        }
+
+    /** Batched {opinions, views} per scan for account-owned Gallery rows. */
     suspend fun getCommunityScanCounts(
         scanIds: List<String>,
     ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
         withContext(Dispatchers.IO) {
             if (scanIds.isEmpty()) return@withContext emptyMap()
             authenticatedAppCall { token ->
-                val r = apiClient.httpClient.post("api/community/scan-counts") {
+                val response = apiClient.httpClient.post("api/community/scan-counts") {
                     bearer(token)
                     contentType(ContentType.Application.Json)
                     setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
                 }
-                r.protectedBody<com.plantdiseases.app.data.model.CommunityScanCountsResponse>()
+                response.protectedBody<com.plantdiseases.app.data.model.CommunityScanCountsResponse>()
                     .counts
             }.getOrDefault(emptyMap())
+        }
+
+    /** Like or unlike a shared scan. Returns the resulting liked state on
+     *  success — the caller should already have applied it optimistically
+     *  and only needs to roll back on failure. */
+    suspend fun setCommunityLike(
+        scanId: String,
+        liked: Boolean,
+    ): Result<com.plantdiseases.app.data.model.CommunityLikeResponse> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/like") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityLikeRequest(
+                            scanId = scanId,
+                            liked = liked,
+                        ),
+                    )
+                }
+                response.protectedBody<com.plantdiseases.app.data.model.CommunityLikeResponse>()
+            }
         }
 
     /** Delete a scan */
@@ -1386,6 +1442,7 @@ class ScanRepository(
         species: String? = null,
         limit: Int = 12,
         scope: String? = null,
+        before: Long? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             optionalAccountGet { token ->
@@ -1398,6 +1455,7 @@ class ScanRepository(
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
+                    before?.let { parameter("before", it) }
                     parameter("limit", limit)
                 }
             }

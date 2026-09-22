@@ -707,6 +707,21 @@ class ScanRepositoryNetworkTest {
     // --- Community write POSTs / DELETE / push (Ktor) ---
 
     @Test
+    fun submitCommunityOpinion_423_mapsToLockedException() {
+        server.enqueue(MockResponse().setResponseCode(423))
+        val result = runBlocking {
+            repo.submitCommunityOpinion(
+                CommunityOpinionRequest(
+                    scanId = "sc-locked",
+                    suggestedDisease = "healthy",
+                ),
+            )
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
+    }
+
+    @Test
     fun submitCommunityOpinion_success_postsBodyAndParses() {
         server.enqueue(
             MockResponse().setResponseCode(200)
@@ -978,4 +993,5 @@ class ScanRepositoryNetworkTest {
 
         override fun rotate() = Unit
     }
+
 }

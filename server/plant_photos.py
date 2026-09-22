@@ -106,7 +106,9 @@ def name_proxy_path(name: str, locale: str) -> str:
     its scientific name (Wikipedia lookup + byte cache happen server-side). Used
     for the popular carousel so a species that only just became popular (a fresh
     scan) still resolves a photo on demand, without the bundle having to pin a
-    URL at build time."""
+    URL at build time. Every production caller pins ``locale="en"`` by design —
+    the lead image is the same photo whatever the UI language — so the parameter
+    exists for the by-name lookup's benefit, not the caller's."""
     return (
         "api/plant-photo?name=" + urllib.parse.quote(name, safe="")
         + "&locale=" + urllib.parse.quote(locale or "en", safe="")

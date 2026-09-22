@@ -55,8 +55,9 @@ def test_record_and_list_opinions_with_consensus(comm):
 
 def test_opinions_for_unknown_scan_is_empty(comm):
     assert comm.opinions_for("does-not-exist") == {
-        "opinions": [], "consensus": [], "views": 0,
+        "opinions": [], "consensus": [], "my_opinion": None, "views": 0,
         "wants_opinion": False, "opinion_requested_at": None,
+        "like_count": 0, "liked_by_me": False,
     }
 
 
@@ -82,8 +83,9 @@ def test_opinions_for_orphaned_companion_rows_fails_closed(comm):
         )
 
     assert comm.opinions_for("orphan") == {
-        "opinions": [], "consensus": [], "views": 0,
+        "opinions": [], "consensus": [], "my_opinion": None, "views": 0,
         "wants_opinion": False, "opinion_requested_at": None,
+        "like_count": 0, "liked_by_me": False,
     }
 
 
@@ -174,9 +176,10 @@ def test_author_token_rotates_with_identity_epoch(comm):
         _t.time = real_time
 
 
-def test_one_opinion_per_author_per_scan(comm):
-    """A second submit by the same author on the same scan is ignored — the
-    original opinion stands (the client locks its input to match)."""
+def test_repeat_author_keeps_every_comment_but_consensus_takes_latest(comm):
+    """Community v2: comments are a thread, not a single vote slot. The same
+    author posting twice keeps BOTH rows (Community v2 unlocked repeat
+    commenting), but the consensus tally counts their latest pick only."""
     _scan(comm, "s9")
     id1 = comm.record_opinion(
         scan_id="s9", author_pseudo_id="bob", suggested_disease="leaf_spot",
@@ -185,13 +188,65 @@ def test_one_opinion_per_author_per_scan(comm):
         scan_id="s9", author_pseudo_id="bob",
         suggested_disease="powdery_mildew", note="changed my mind",
     )
-    assert id1 == id2  # same row, no duplicate
-    res = comm.opinions_for("s9")
-    assert len(res["opinions"]) == 1
-    assert res["opinions"][0]["suggested_disease"] == "leaf_spot"  # original kept
+    assert id1 != id2  # a new row, not a dedupe
 
-    # A different author can still leave their own opinion.
+    res = comm.opinions_for("s9")
+    assert len(res["opinions"]) == 2  # both comments kept, newest first
+    assert res["opinions"][0]["suggested_disease"] == "powdery_mildew"
+    assert res["opinions"][1]["suggested_disease"] == "leaf_spot"
+    # Consensus counts bob once, for his latest pick.
+    assert res["consensus"] == [{"disease": "powdery_mildew", "count": 1}]
+
+    # A different author's own opinion adds a second, independent vote.
     comm.record_opinion(
         scan_id="s9", author_pseudo_id="carol", suggested_disease="viral_disease",
     )
-    assert len(comm.opinions_for("s9")["opinions"]) == 2
+    res = comm.opinions_for("s9")
+    assert len(res["opinions"]) == 3
+    assert sum(c["count"] for c in res["consensus"]) == 2
+
+
+# ── Durable forum identity (resolve_author) ───────────────────────────
+
+def test_resolve_author_creates_one_row_per_key_hash(comm):
+    a = comm.resolve_author(key_hash="k" * 64, seed_display_name="Leafy Sage 7")
+    assert a["author_id"].startswith("au_")
+    assert a["display_name"] == "Leafy Sage 7"
+    assert a["status"] == "active"
+
+
+def test_resolve_author_is_idempotent_and_does_not_overwrite_the_seed(comm):
+    first = comm.resolve_author(
+        key_hash="a" * 64, seed_display_name="Leafy Sage 7", legacy_pseudo_id="pseudo-1",
+    )
+    # Same key, different (later) seed values -- a re-adopt call must not
+    # rename the author or swap which legacy pseudo id it backfills from.
+    second = comm.resolve_author(
+        key_hash="a" * 64, seed_display_name="Renamed Later", legacy_pseudo_id="pseudo-2",
+    )
+    assert second["author_id"] == first["author_id"]
+    assert second["display_name"] == "Leafy Sage 7"
+    assert second["last_seen_at"] >= first["last_seen_at"]
+
+    with comm._connect() as conn:
+        stored = conn.execute(
+            "SELECT legacy_pseudo_id FROM community_authors WHERE author_id = ?",
+            (first["author_id"],),
+        ).fetchone()
+    assert stored[0] == "pseudo-1"
+
+
+def test_resolve_author_different_keys_never_collide(comm):
+    a = comm.resolve_author(key_hash="b" * 64, seed_display_name="Author A")
+    b = comm.resolve_author(key_hash="c" * 64, seed_display_name="Author B")
+    assert a["author_id"] != b["author_id"]
+
+
+def test_resolve_author_blank_key_hash_rejected(comm):
+    with pytest.raises(ValueError):
+        comm.resolve_author(key_hash="", seed_display_name="Someone")
+
+
+def test_resolve_author_blank_display_name_falls_back(comm):
+    a = comm.resolve_author(key_hash="d" * 64, seed_display_name="   ")
+    assert a["display_name"] == "Plant grower"

@@ -54,7 +54,6 @@ object OpinionPrefs {
     fun markViewedOpinions(context: Context, scanId: String, count: Int) {
         prefs(context).edit().putInt(KEY_VIEWED_PREFIX + scanId, count).apply()
     }
-
     private fun prefs(context: Context) = context.applicationContext
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

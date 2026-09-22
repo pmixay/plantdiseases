@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:
-    from .config import get_str
+    from .config import get_str  # type: ignore[import-not-found]
 except ImportError:
     from config import get_str
 

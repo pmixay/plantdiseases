@@ -10,10 +10,10 @@
         app:showAsAction="ifRoom" />
 
     <item
-        android:id="@+id/action_filter"
-        android:icon="@drawable/ic_filter"
+        android:id="@+id/action_sort"
+        android:icon="@drawable/ic_sort"
         android:iconTint="@color/toolbar_title"
-        android:title="@string/nearby_filter_title"
+        android:title="@string/nearby_sort_title"
         app:showAsAction="ifRoom" />
 
     <item

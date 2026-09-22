@@ -1,4 +1,18 @@
 // Top-level build file
+
+// Built-in Kotlin takes its compiler from whatever KGP is on the buildscript
+// classpath, and AGP 9.1.1 only *depends on* KGP 2.2.10. That default would be
+// a silent downgrade from the 2.4.10 this project deliberately runs: Hilt
+// 2.60.1 ships a kotlin-stdlib 2.3.21, whose metadata a 2.2.10 compiler cannot
+// read — the exact failure that used to pin Hilt at 2.57.2. Naming KGP here
+// (on the classpath, never applied as a plugin) keeps the compiler at 2.4.10,
+// which is also what the serialization compiler plugin below must match.
+buildscript {
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10")
+    }
+}
+
 plugins {
     // AGP 9. This is what lets compileSdk move to 37 and androidx.core to
     // 1.19.0 (its aar-metadata declares minCompileSdk=37, minAgp=9.1.0).
@@ -12,18 +26,22 @@ plugins {
     // so no wrapper change is needed. JDK 17 and build-tools 36.0.0 are also
     // required and both are already what CI provisions.
     id("com.android.application") version "9.1.1" apply false
-    // ── The Kotlin lockstep group ────────────────────────────────────────
-    // These three moved together, from Kotlin 2.1.21. The serialization
-    // compiler plugin must equal the Kotlin version exactly (it generates the
-    // serializers the compiler then reads), which is why an automated bump of
-    // only the plugin to 2.4.10 (#166) broke Gradle at configuration time —
-    // the fix is to move the compiler with it, not to pin the plugin back.
+    // ── Kotlin ───────────────────────────────────────────────────────────
+    // `org.jetbrains.kotlin.android` is NOT here any more: AGP 9's built-in
+    // Kotlin compiles the sources, and applying that plugin alongside it is
+    // an error. The compiler version is pinned on the buildscript classpath
+    // above instead.
+    //
+    // The serialization compiler plugin must equal the Kotlin version exactly
+    // (it generates the serializers the compiler then reads), which is why an
+    // automated bump of only the plugin to 2.4.10 (#166) broke Gradle at
+    // configuration time — the fix is to move the compiler with it, not to
+    // pin the plugin back. It therefore stays locked to the classpath KGP.
     //
     // Kotlin 2.4.10 is the current stable and is what lifts the ceilings that
     // were pinning kotlinx-serialization, Ktor, OkHttp, Hilt and LiteRT to old
     // releases in app/build.gradle.kts. Gradle 9.5.0 is Kotlin 2.4.x's
     // maximum fully-supported Gradle, so the pinned wrapper matches exactly.
-    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10" apply false
     // KSP is NOT part of that lockstep any more. As of KSP 2.3.0 the version
     // is independent of the Kotlin version (the old `<kotlin>-<ksp>` scheme is
@@ -41,17 +59,34 @@ plugins {
     id("com.google.dagger.hilt.android") version "2.60.1" apply false
     // Kotlin linting replaces Android Lint as the code-quality gate:
     // ktlint (formatting/style) + detekt (static analysis / smells).
-    // detekt 1.23.8 IS the current stable (the 2.x line is still pre-release).
-    // The ktlint plugin is deliberately NOT on its current 14.x: both it and
-    // the engine pin in app/build.gradle.kts feed baselines
-    // (config/ktlint/baseline.xml) that only `./gradlew ktlintGenerateBaseline`
-    // can regenerate, and nobody builds this project locally — so a rule-set
-    // bump lands as a wall of CI failures with no way to re-baseline them in
-    // the same change. Bump plugin + engine + baseline together, on their own.
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.2" apply false
+    //
+    // detekt 1.23.8 IS the current stable (the 2.x line is still alpha). Its
+    // Android integration still speaks the AGP types the new DSL removed
+    // (BaseExtension, com.android.build.gradle.api.BaseVariant), which would
+    // normally block android.newDsl — but that integration only engages when
+    // the `kotlin-android` plugin is applied, and under built-in Kotlin it
+    // never is, so those classes are never loaded and detekt runs fine. The
+    // visible cost: detekt's EXPERIMENTAL per-variant tasks (detektMain,
+    // detektDebug, detektRelease, detektTest) no longer exist. Nothing used
+    // them — CI runs the plain `detekt` task and the extension in
+    // app/build.gradle.kts pins `source` explicitly — but re-adding the
+    // Kotlin plugin, or wanting type-resolution detekt, means detekt 2.x.
+    //
+    // ktlint had to move to 14.x for built-in Kotlin: 12.x finds Kotlin source
+    // sets by looking for the `org.jetbrains.kotlin.android` plugin id, so with
+    // that plugin gone it creates NO ktlint tasks at all and the style gate
+    // silently passes without checking anything. 14.1.0 (PR #1016) detects the
+    // `com.android.base` + KotlinBaseApi pairing that built-in Kotlin applies.
+    // The engine moves with it (1.3.1 -> 1.5.0, app/build.gradle.kts); both
+    // baselines are empty and 1.5.0 reports zero violations on this tree, so
+    // the rule-set bump costs nothing here.
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
-task("clean", Delete::class) {
+// `tasks.register` rather than the eager `task(...)`: the latter is deprecated
+// (it builds the task even on runs that never use it) and configuration
+// avoidance is the whole point of the replacement.
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

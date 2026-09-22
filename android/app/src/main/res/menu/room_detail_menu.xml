@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- Add-plant is the frequent action here, so it gets a toolbar icon
+         rather than living in the overflow (unlike PlantDetailActivity's
+         menu, where the equivalent actions are all rare). -->
+    <item
+        android:id="@+id/action_add_plant_to_room"
+        android:title="@string/add_plant"
+        android:icon="@drawable/ic_add"
+        app:showAsAction="ifRoom"
+        app:iconTint="@color/toolbar_title" />
+
+    <!-- Absent entirely for the Unassigned pseudo-room (it isn't a real
+         row, can't be renamed or deleted) — RoomDetailActivity removes
+         these two items from the menu in that case. -->
+    <item
+        android:id="@+id/action_rename_room"
+        android:title="@string/room_rename"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_delete_room"
+        android:title="@string/room_delete"
+        app:showAsAction="never" />
+
+</menu>

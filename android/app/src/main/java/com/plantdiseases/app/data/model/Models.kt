@@ -26,12 +26,14 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 
-// NOTE (Ktor + kotlinx.serialization migration, step 2): the response models
-// reachable from /api/analyze are dual-annotated — @SerializedName keeps Gson
-// working for the endpoints still on Retrofit and for local persistence
-// (ScanRepository's Gson cache, ResultActivity intent payloads), while
-// @Serializable + @SerialName let the same classes deserialize through the new
-// Ktor client. The two annotations mirror each other 1:1.
+// NOTE: kotlinx.serialization is the wire format — every HTTP endpoint runs
+// through the Ktor client and no Retrofit remains anywhere in the app. The
+// models stay dual-annotated because Gson is still live *off* the network:
+// @SerializedName is what keeps the Room field JSON (ScanEntity's
+// `prediction_set` / `regions`), util/ResponseCache and the ResultActivity
+// intent payloads readable — including rows and cache files already on disk.
+// @Serializable + @SerialName drive the Ktor decode. The two annotations
+// mirror each other 1:1; dropping either breaks something silently under R8.
 
 /** Single bounding box returned by the YOLOv8 detector (Stage 1). */
 @Serializable
@@ -80,28 +82,6 @@ data class PredictionSetItem(
 )
 
 /**
- * A full bilingual care card for one class of a *dual-care* prediction set.
- *
- * Emitted only when the conformal set can't separate the two
- * physiological-stress classes — under-watering (`leaf_scorch_underwatering`)
- * vs `nutrient_deficiency` — whose advice genuinely diverges ("water me" vs
- * "feed me"). The result screen can then show both cards instead of forcing
- * the user to guess which one to act on. Empty for every other set.
- */
-@Serializable
-data class PredictionSetCareCard(
-    @SerializedName("class") @SerialName("class") val className: String = "",
-    @SerializedName("name_en") @SerialName("name_en") val nameEn: String? = null,
-    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String? = null,
-    @SerializedName("description") @SerialName("description") val description: String = "",
-    @SerializedName("description_ru") @SerialName("description_ru") val descriptionRu: String = "",
-    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String> = emptyList(),
-    @SerializedName("treatment_ru") @SerialName("treatment_ru") val treatmentRu: List<String> = emptyList(),
-    @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
-    @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
-)
-
-/**
  * Conformal prediction set — the classes the model can't rule out at
  * the configured coverage level (e.g. 90 %). Surfaced honestly when
  * calibration data is loaded server-side; the field is null otherwise.
@@ -119,14 +99,10 @@ data class PredictionSet(
      * consider" rather than claiming "<coverage>% guaranteed coverage".
      */
     @SerializedName("advisory") @SerialName("advisory") val advisory: Boolean = true,
-    /**
-     * True when the set is the ambiguous physiological-stress pair
-     * (under-watering vs nutrient deficiency) and `careCards` carries both
-     * full care cards so the UI can show "water me" AND "feed me" side by
-     * side instead of only the top-1's advice.
-     */
-    @SerializedName("dual_care") @SerialName("dual_care") val dualCare: Boolean = false,
-    @SerializedName("care_cards") @SerialName("care_cards") val careCards: List<PredictionSetCareCard> = emptyList(),
+    // The server also emits `dual_care` / `care_cards` for the ambiguous
+    // under-watering vs nutrient-deficiency pair. No screen renders them, so
+    // they are not modelled here; ignoreUnknownKeys drops them harmlessly.
+    // Re-add both fields alongside the UI that would show the two cards.
 )
 
 /** Response from the server after analyzing an image */
@@ -303,6 +279,9 @@ data class CommunityScansResponse(
     // showing a misleading "no scans near you" empty state.
     @SerializedName("location_required") @SerialName("location_required")
     val locationRequired: Boolean = false,
+    // Cursor for the next (older) page — pass back as the `before` param.
+    // Null once a page comes back short, meaning the scope is exhausted.
+    @SerializedName("next_before") @SerialName("next_before") val nextBefore: Long? = null,
 )
 
 @Serializable
@@ -351,6 +330,24 @@ data class CommunityScanItem(
     // strips them), so the map can pin a marker. Null elsewhere.
     @SerializedName("lat") @SerialName("lat") val lat: Double? = null,
     @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
+    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
+    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
+)
+
+/** Public, privacy-safe account surface reached from a community author.
+ *  The opaque token is community-only; provider ids and internal account ids
+ *  are never returned. `joinedAt` is first public community activity. */
+@Serializable
+data class CommunityPublicProfile(
+    @SerializedName("author_token") @SerialName("author_token") val authorToken: String = "",
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    @SerializedName("joined_at") @SerialName("joined_at") val joinedAt: Long = 0L,
+    @SerializedName("last_active_at") @SerialName("last_active_at") val lastActiveAt: Long = 0L,
+    @SerializedName("scan_count") @SerialName("scan_count") val scanCount: Int = 0,
+    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
+    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
+    @SerializedName("is_me") @SerialName("is_me") val isMe: Boolean = false,
+    @SerializedName("items") @SerialName("items") val items: List<CommunityScanItem> = emptyList(),
 )
 
 /** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
@@ -467,6 +464,9 @@ data class CommunityOpinion(
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    // Opaque public account handle used only to open the author's community
+    // profile. Null for unlinked legacy comments.
+    @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
     // Opaque public token for reporting/blocking this reply. It cannot be used
     // to recover the database row id or account actor id.
     @SerializedName("content_id") @SerialName("content_id") val contentId: String? = null,
@@ -516,6 +516,9 @@ data class CommunityOpinionsResponse(
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("opinions") @SerialName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
     @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
+    // The signed-in account's most recent pick on this scan, resolved from
+    // the bearer principal. Null for anonymous reads or no prior opinion.
+    @SerializedName("my_opinion") @SerialName("my_opinion") val myOpinion: String? = null,
     // Distinct-viewer count on this scan (per-user deduped server-side).
     @SerializedName("views") @SerialName("views") val views: Int = 0,
     // Whether the owner has a LIVE second-opinion request on this scan
@@ -527,13 +530,33 @@ data class CommunityOpinionsResponse(
     @SerializedName("opinion_requested_at") @SerialName("opinion_requested_at") val opinionRequestedAt: Long? = null,
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
     @SerializedName("count") @SerialName("count") val count: Int = 0,
+    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
+    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
+)
+
+/** /api/community/like request body. */
+@Serializable
+data class CommunityLikeRequest(
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("liked") @SerialName("liked") val liked: Boolean = true,
+)
+
+/** /api/community/like response. */
+@Serializable
+data class CommunityLikeResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("liked") @SerialName("liked") val liked: Boolean = false,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** /api/community/view request body — records that the caller opened
  *  someone else's shared scan (deduped per viewer server-side). */
 @Serializable
 data class CommunityViewRequest(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    // Single-open shape. `scanIds` (batch, feed-scroll impressions) is the
+    // alternative — the server requires exactly one of the two to be set.
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String? = null,
+    @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>? = null,
 )
 
 /** /api/community/scan-counts request + response: batched {opinions, views}
@@ -611,15 +634,12 @@ data class ScanHistoryItem(
      */
     val isNotAPlant: Boolean,
     val timestamp: Long,
-    /** Globally-unique community scan id (empty for legacy rows). Used to
-     *  fetch community activity counts for the Gallery badge. */
+    /** Globally unique community id, empty for legacy/local-only rows. */
     val clientScanId: String = "",
-    /** Community activity on this scan, filled in lazily by the Gallery after
-     *  a batched /community/scan-counts call (0 when none / not shared). */
+    /** Activity counts filled by the Gallery's batched account-protected query. */
     val communityOpinions: Int = 0,
     val communityViews: Int = 0,
-    /** Opinions on this scan the user hasn't viewed yet (current minus the
-     *  per-scan viewed baseline). Drives the red "+N" badge + row highlight. */
+    /** Opinions received since this scan's thread was last opened. */
     val newOpinions: Int = 0,
 )
 
@@ -930,6 +950,13 @@ data class CarePlanResponse(
     @SerializedName("checkpoints") @SerialName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
     @SerializedName("season") @SerialName("season") val season: String? = null,
     @SerializedName("season_note") @SerialName("season_note") val seasonNote: String? = null,
+    /** Garden refactor v2 addition — curated, hand-maintained catalogue
+     *  entries (never LLM/generated). Absent, not an empty list, when the
+     *  disease has no curated products; see server diseases_data.py
+     *  TREATMENT_PRODUCTS for why an empty list would be misleading. */
+    @SerializedName("products") @SerialName("products") val products: List<CarePlanProduct>? = null,
+    @SerializedName("treatment_conditions") @SerialName("treatment_conditions")
+    val treatmentConditions: TreatmentConditions? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -967,6 +994,29 @@ data class TemperatureBand(
 data class CarePlanCheckpoint(
     @SerializedName("day") @SerialName("day") val day: Int = 0,
     @SerializedName("check") @SerialName("check") val check: String = "",
+)
+
+/** One curated treatment-product catalogue entry — see
+ *  server/diseases_data.py TREATMENT_PRODUCTS. [activeIngredient] is the
+ *  field the UI must always render: brand names differ by market, the
+ *  chemistry doesn't. */
+@Serializable
+data class CarePlanProduct(
+    @SerializedName("key") @SerialName("key") val key: String = "",
+    @SerializedName("kind") @SerialName("kind") val kind: String = "",
+    @SerializedName("name") @SerialName("name") val name: String = "",
+    @SerializedName("active_ingredient") @SerialName("active_ingredient")
+    val activeIngredient: String = "",
+    @SerializedName("note") @SerialName("note") val note: String? = null,
+)
+
+/** Application-window guidance shown alongside [CarePlanProduct]s on the
+ *  treatment task-detail screen. */
+@Serializable
+data class TreatmentConditions(
+    @SerializedName("best_time") @SerialName("best_time") val bestTime: String = "",
+    @SerializedName("temp_c") @SerialName("temp_c") val tempC: List<Int>? = null,
+    @SerializedName("dry_hours") @SerialName("dry_hours") val dryHours: Int? = null,
 )
 
 /**

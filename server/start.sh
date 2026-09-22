@@ -2,8 +2,8 @@
 #
 # PlantDiseases Server — Linux / macOS startup script.
 #
-# Creates a virtual environment, installs CPU-only PyTorch + server
-# dependencies, and starts the FastAPI server.
+# Creates a virtual environment, installs the server dependencies, and
+# starts the FastAPI server.
 #
 # Usage:
 #     chmod +x start.sh
@@ -11,7 +11,7 @@
 #     ./start.sh --port 9000  # custom port
 #
 # Model weights + calibration artefacts are NOT committed and NOT
-# auto-downloaded. Drop detector.{pt,onnx}, classifier.onnx (+ optional
+# auto-downloaded. Drop detector.onnx, classifier.onnx (+ optional
 # classifier_int8.onnx) and classes.json into server/models/ before
 # starting. The server is fail-fast if a required artefact is missing.
 #
@@ -31,7 +31,7 @@ Usage: $0 [--port PORT]
 
   --port PORT   Server port (default: 8000)
 
-Model artefacts are not auto-downloaded: drop detector.{pt,onnx},
+Model artefacts are not auto-downloaded: drop detector.onnx,
 classifier.onnx and classes.json into server/models/ before starting.
 USAGE
             exit 0
@@ -49,7 +49,7 @@ for cmd in python3 python; do
         version=$("$cmd" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "")
         major="${version%%.*}"
         minor="${version##*.}"
-        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 9 ]] || [[ "${major:-0}" -gt 3 ]]; then
+        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 10 ]] || [[ "${major:-0}" -gt 3 ]]; then
             PYTHON="$cmd"
             break
         fi
@@ -57,7 +57,8 @@ for cmd in python3 python; do
 done
 
 if [[ -z "$PYTHON" ]]; then
-    echo "ERROR: Python 3.9+ is required but was not found." >&2
+    echo "ERROR: Python 3.10+ is required but was not found." >&2
+    echo "       (3.10 is the syntax floor; 3.14 is what CI tests.)" >&2
     echo "Install Python from https://www.python.org/downloads/" >&2
     exit 1
 fi
@@ -72,9 +73,7 @@ echo "[+] Activating virtual environment..."
 # shellcheck disable=SC1091
 source venv/bin/activate
 
-echo "[+] Installing PyTorch (CPU-only)..."
 pip install --quiet --upgrade pip
-pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 echo "[+] Installing server dependencies..."
 pip install --quiet -r requirements.txt
@@ -87,11 +86,11 @@ mkdir -p models logs
 # authoritative fail-fast if a required artefact is still missing.
 detector_present=0
 classifier_present=0
-[[ -f models/detector.pt   || -f models/detector.onnx ]]                  && detector_present=1
+[[ -f models/detector.onnx ]]                                             && detector_present=1
 [[ -f models/classifier.onnx || -f models/classifier_int8.onnx ]]         && classifier_present=1
 if [[ $detector_present -eq 0 || $classifier_present -eq 0 ]]; then
     echo "[!] Model artefacts missing under server/models/." >&2
-    echo "    Drop detector.{pt,onnx} + classifier.onnx (+ optional" >&2
+    echo "    Drop detector.onnx + classifier.onnx (+ optional" >&2
     echo "    classifier_int8.onnx) + classes.json into server/models/." >&2
     echo "    Build them with train_notebook.ipynb (§6/§6b)." >&2
     exit 1

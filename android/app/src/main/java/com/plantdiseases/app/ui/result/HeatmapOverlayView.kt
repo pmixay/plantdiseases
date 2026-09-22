@@ -86,7 +86,10 @@ class HeatmapOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!showOverlay || overlayAlpha == 0f || imgWidth <= 0 || imgHeight <= 0 || boxes.isEmpty()) return
+        // Nothing to paint: the overlay is off or fully transparent, or there
+        // is no measured source image / no boxes to project onto it.
+        if (!showOverlay || overlayAlpha == 0f) return
+        if (imgWidth <= 0 || imgHeight <= 0 || boxes.isEmpty()) return
 
         val viewW = width.toFloat()
         val viewH = height.toFloat()

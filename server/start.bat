@@ -1,17 +1,18 @@
 @echo off
 rem PlantDiseases Server - Windows startup script.
 rem
-rem Creates a virtual environment, installs CPU-only PyTorch + server
-rem dependencies, and starts the FastAPI server.
+rem Creates a virtual environment, installs the server dependencies, and
+rem starts the FastAPI server.
 rem
 rem Usage:
 rem     start.bat                 start server (default port 8000)
 rem     start.bat --port 9000     custom port
 rem
 rem Models are trained in Colab via train_notebook.ipynb. Drop the
-rem resulting detector.{pt,onnx}, classifier.{pth,onnx} and
-rem classes.json into server\models\ before starting - the server is
-rem fail-fast and will refuse to start without trained weights.
+rem resulting detector.onnx, classifier.onnx (+ optional
+rem classifier_int8.onnx) and classes.json into server\models\ before
+rem starting - the server is fail-fast and will refuse to start without
+rem trained weights.
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
@@ -37,8 +38,9 @@ echo.
 echo   --port PORT   Server port (default: 8000)
 echo.
 echo Train models in Colab via train_notebook.ipynb, then drop
-echo detector.{pt,onnx}, classifier.{pth,onnx} and classes.json into
-echo server\models\. The server will not start without them.
+echo detector.onnx, classifier.onnx (+ optional classifier_int8.onnx)
+echo and classes.json into server\models\. The server will not start
+echo without them.
 exit /b 0
 
 :args_done
@@ -49,7 +51,7 @@ echo.
 where python >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Python is not found in PATH.
-    echo Install Python 3.9+ from https://www.python.org/downloads/
+    echo Install Python 3.10+ from https://www.python.org/downloads/ - 3.14 is what CI tests.
     echo Make sure "Add Python to PATH" is checked during installation.
     exit /b 1
 )
@@ -65,9 +67,7 @@ if not exist "venv" (
 echo [+] Activating virtual environment...
 call venv\Scripts\activate.bat
 
-echo [+] Installing PyTorch (CPU-only)...
 pip install --quiet --upgrade pip
-pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 echo [+] Installing server dependencies...
 pip install --quiet -r requirements.txt
@@ -78,7 +78,6 @@ if not exist "logs" mkdir logs
 rem Sanity-check trained artefacts before exec'ing uvicorn.
 set DETECTOR_PRESENT=0
 set CLASSIFIER_PRESENT=0
-if exist "models\detector.pt"          set DETECTOR_PRESENT=1
 if exist "models\detector.onnx"        set DETECTOR_PRESENT=1
 if exist "models\classifier.onnx"       set CLASSIFIER_PRESENT=1
 if exist "models\classifier_int8.onnx"  set CLASSIFIER_PRESENT=1
@@ -88,7 +87,7 @@ goto start_server
 
 :missing_models
 echo [!] Trained model artefacts missing under server\models\.
-echo     Need detector.{pt,onnx} AND classifier.onnx (+ optional int8).
+echo     Need detector.onnx AND classifier.onnx (+ optional int8).
 echo     Train in Colab via train_notebook.ipynb, then copy them in.
 exit /b 1
 

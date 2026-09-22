@@ -3,7 +3,8 @@ import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // No org.jetbrains.kotlin.android — AGP 9's built-in Kotlin compiles this
+    // module. The serialization compiler plugin still applies on top of it.
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
@@ -211,7 +212,7 @@ android {
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
-        minSdk = 29 // Android 10
+        minSdk = 31 // Android 12
         // Deliberately behind compileSdk, and stated explicitly (AGP 9
         // otherwise defaults targetSdk to compileSdk when unset). targetSdk is
         // what opts the app into a platform's *behaviour* changes; raising it
@@ -468,14 +469,13 @@ android {
             excludes += "**/libLiteRtOpenClAccelerator.so"
             excludes += "**/libLiteRtClGlAccelerator.so"
 
-            // These prebuilt .so libs (DataStore, CameraX JNI) can't be
-            // stripped by the NDK strip tool, which logs a noisy "Unable to
-            // strip the following libraries" warning every build. They are
-            // packaged as-is either way, so declaring them here just keeps
-            // their (already-present) symbols and silences the warning — the
-            // APK size is unchanged.
+            // These prebuilt CameraX JNI .so libs can't be stripped by the
+            // NDK strip tool, which logs a noisy "Unable to strip the
+            // following libraries" warning every build. They are packaged
+            // as-is either way, so declaring them here just keeps their
+            // (already-present) symbols and silences the warning — the APK
+            // size is unchanged.
             keepDebugSymbols += listOf(
-                "**/libdatastore_shared_counter.so",
                 "**/libimage_processing_util_jni.so",
                 "**/libsurface_util_jni.so",
             )
@@ -510,6 +510,26 @@ android {
             // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
             // report it points at lives on the runner, not in the log.
             all {
+                // Fan the test classes out over the machine's cores: ~58
+                // Robolectric classes, each CPU-bound instrumenting
+                // android-all into its own sandbox classloader, and one fork
+                // means one core. Forks are separate JVMs, so this makes the
+                // tests MORE isolated than the shared-JVM default, not less.
+                // Capped at 4 because the fork count multiplies peak heap and
+                // the GitHub runner this has to fit in is 2 cores / 7 GB.
+                //
+                // What this is and is not worth, measured on a --profile run:
+                // in a full CI invocation the test task overlaps
+                // minifyReleaseWithR8 (Gradle runs both as async workers —
+                // task time summed to 15m44 against a 9m33 build), and R8 at
+                // 5m08 is the longer of the two, so forking buys little wall
+                // clock there and does compete with R8 for the two cores.
+                // It pays when the test task IS the critical path: a run whose
+                // release variant comes from the build cache, and
+                // `./gradlew testDebugUnitTest` on its own, where the suite
+                // goes from minutes to ~20-30s.
+                it.maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
+
                 it.testLogging {
                     events("failed")
                     exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -542,7 +562,10 @@ androidComponents {
 }
 
 kotlin {
-    // Replaces the deprecated android.kotlinOptions block (Kotlin 2.x DSL).
+    // Still the right home for compiler options under built-in Kotlin — it is
+    // `android.kotlinOptions` that AGP 9 dropped, not this block. jvmTarget
+    // would default to compileOptions.targetCompatibility; stated explicitly
+    // so the two can't drift apart silently.
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
@@ -550,10 +573,12 @@ kotlin {
 
 // ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
 // Gating: ktlint (formatting/style) + detekt (static analysis) fail the build
-// on any NEW violation. The pre-existing tree is grandfathered via baselines
-// (config/ktlint/baseline.xml, config/detekt/baseline.xml) generated once with
-// `./gradlew ktlintGenerateBaseline detektBaseline` after a `./gradlew
-// ktlintFormat` cleanup, so only newly-introduced issues break CI.
+// on any violation. The baselines (config/ktlint/baseline.xml,
+// config/detekt/baseline.xml) once grandfathered a backlog; that backlog is now
+// fixed and both files are empty, so the gate is zero-tolerance. Keep them empty
+// — a violation is meant to be fixed, not baselined. They stay wired up only for
+// a rule-set bump, where `./gradlew ktlintGenerateBaseline detektBaseline`
+// regenerates them so the bump and the cleanup can land separately.
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
@@ -568,7 +593,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 }
 
 ktlint {
-    version.set("1.3.1")
+    version.set("1.5.0")
     android.set(true)
     ignoreFailures.set(false)
     baseline.set(file("config/ktlint/baseline.xml"))
@@ -673,9 +698,12 @@ dependencies {
 
     // Glide for images. On 5.x — the app only uses the plain
     // Glide.with(...).load(...) surface (no @GlideModule / generated GlideApp),
-    // which is the part Glide 5 kept source-compatible.
+    // which is the part Glide 5 kept source-compatible. The Glide KSP
+    // annotation processor is deliberately NOT declared: with no
+    // @GlideModule/@AppGlideModule/@GlideExtension anywhere it generates
+    // nothing. Re-add `ksp("com.github.bumptech.glide:ksp:5.0.9")` (and the
+    // matching keeps in proguard-rules.pro) the day one is introduced.
     implementation("com.github.bumptech.glide:glide:5.0.9")
-    ksp("com.github.bumptech.glide:ksp:5.0.9")
 
     // Hilt (Dagger) dependency injection. Replaces the hand-rolled `by lazy`
     // singletons on PlantDiseasesApp with a Hilt graph (di/AppModule.kt).
@@ -695,19 +723,10 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
-    // Lifecycle 2.11's Compose artifact is compiled against API 37 and declares
-    // AGP 9.1 as its minimum. Keep the atomic Lifecycle family on 2.10 while
-    // this project intentionally remains on compileSdk 36 / AGP 8.13.2.
-    val lifecycleVersion = "2.10.0"
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
-    constraints {
-        implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion") {
-            version { strictly(lifecycleVersion) }
-            because("Lifecycle 2.11 requires compileSdk 37 and AGP 9.1+")
-        }
-    }
+    // Lifecycle. Runtime only — this app has no ViewModel and no LiveData
+    // (activity + controller + repository, see HomeFragment's note), so the
+    // viewmodel/livedata artifacts would only be dead weight.
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 
     // Lottie animations
     implementation("com.airbnb.android:lottie:6.7.1")
@@ -719,9 +738,6 @@ dependencies {
     // no Play Services (mavenCentral). We draw the aggregated heat cells +
     // scan markers ourselves; OSM raster tiles need a descriptive User-Agent.
     implementation("org.osmdroid:osmdroid-android:6.1.20")
-
-    // Preferences DataStore
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     // Shimmer effect for skeleton loading
     implementation("com.facebook.shimmer:shimmer:0.5.0")
@@ -770,30 +786,19 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:core:1.7.0")
-    testImplementation("androidx.test:core-ktx:1.7.0")
-    testImplementation("androidx.test.ext:junit:1.3.0")
-    testImplementation("androidx.test.ext:junit-ktx:1.3.0")
     testImplementation("com.google.truth:truth:1.4.5")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
     // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.room:room-testing:2.8.4")
 
     // ─── Instrumented / Espresso UI tests (./gradlew connectedDebugAndroidTest,
     //     device or emulator required) ──────────────────────────────────────
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:core:1.7.0")
-    androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
-    androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
     androidTestImplementation("androidx.fragment:fragment-testing:1.9.0")
-    androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
-    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // Provides the empty host Activity that launchFragmentInContainer needs,
     // merged into the debug app manifest.
     debugImplementation("androidx.fragment:fragment-testing-manifest:1.9.0")

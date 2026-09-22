@@ -1,7 +1,5 @@
 <div align="center">
 
-[English](README.md) | [Русский](README.ru.md)
-
 # 🌿 PlantDiseases
 
 **AI-powered plant disease detection for houseplants and garden ornamentals — on-device camera, cloud inference, bilingual care plans.**
@@ -42,13 +40,13 @@ plant care reminders and an AI plant doctor.
 │                      │ ──────► │                                  │
 │  • CameraX capture   │         │   ┌──────────────────────────┐   │
 │  • Room scan history │         │   │ Stage 1 — leaf detector  │   │
-│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n single-class      │   │
+│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n single-class     │   │
 │  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
 │  • EN / RU strings   │         │              │                   │
 │  • Reminders worker  │         │   ┌──────────▼───────────────┐   │
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
-│                      │         │   │ frozen DINOv2 ViT-S/14    │   │
-│                      │         │   │ + LoRA + MLP head         │   │
+│                      │         │   │ frozen DINOv2 ViT-S/14   │   │
+│                      │         │   │ + LoRA + MLP head        │   │
 │                      │         │   │ 9 classes incl. NaP head │   │
 │                      │         │   │ + embedding-kNN OOD gate │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
@@ -60,7 +58,11 @@ Why two stages — letting YOLOv8n find the leaf first means the
 classifier sees a tight crop instead of a whole room. The OOD AND-gate
 ([`pipeline.py`](server/pipeline.py)) catches the residual case where
 Stage 1 fires weakly on a non-leaf texture: it fires only when detector
-confidence **and** a classifier-side OOD signal both agree. The OOD
+confidence **and** a classifier-side OOD signal both agree **and** the
+classifier's own `not_a_plant` head does not veto it (a near-zero
+`P(not_a_plant)` means the model is sure this *is* a plant, and an
+OOD score that fires anyway is measuring *unfamiliar*, not *not a
+plant*). The OOD
 signal is an embedding-space k-NN distance on the DINOv2 CLS vector
 ([`ood.py`](server/ood.py)) when the bundle ships a memory bank, falling
 back to the legacy MaxLogit floor otherwise. The blur gate
@@ -79,23 +81,18 @@ one per scan and `/api/capabilities` reports which the server offers):
 | Family | Backbone | Input | Where it runs |
 |---|---|---|---|
 | `aqua` | MobileNetV3-Small (distilled from `gamma`) → TFLite INT8 | 224 | **on-device, fully offline** (downloaded from the server, cached) |
-| **`gamma`** | **frozen DINOv2 ViT-S/14 + MLP head** | **224** | **server — current production, balance of cost/accuracy** |
-| `frontier` | frozen DINOv2 ViT-B/14 (~86M) + MLP head | 224 | server — high-capacity; **inference gated OFF by default** (needs a GPU host), the app shows it "unavailable" until enabled |
+| **`gamma`** | **frozen DINOv2 ViT-S/14 + (optional) LoRA + MLP head** | **224** | **server — current production, balance of cost/accuracy** |
+| `frontier` | frozen DINOv2 ViT-B/14 (~86M) + (optional) LoRA + MLP head | 224 | server — high-capacity; **inference gated OFF by default** (needs a GPU host), the app shows it "unavailable" until enabled |
 
-`gamma` and `frontier` share one frozen-DINOv2 recipe (only the backbone +
-input size differ); `aqua` is a knowledge-distilled mobile student
+`gamma` and `frontier` share one frozen-DINOv2 recipe (only the backbone
+differs — both run at 224); `aqua` is a knowledge-distilled mobile student
 (`train_notebook.ipynb` §5) exported to TFLite.
 
-> **Optional data supplement:** §2 can pull real indoor-houseplant /
-> ornamental disease sets from Kaggle (incl. money-plant / pothos disease
-> imagery). It is **fail-soft** — provide credentials to
-> enable it, otherwise the notebook skips it cleanly. Credentials can be
-> the **new-format API token** (a Colab secret or env var
-> `KAGGLE_API_TOKEN`, or `~/.kaggle/access_token`) or a legacy
-> `kaggle.json`; the §1 helper `kaggle_install_api_config()` lets you
-> upload either file in Colab. The source is **train-only** and drops any
-> folder it can't confidently map, and the run prints every discovered
-> folder so you can refine the label map.
+> **Optional data supplement:** notebook §2 can pull real indoor-houseplant /
+> ornamental disease sets from Kaggle. It is **fail-soft** — without credentials
+> the notebook skips it cleanly. Accepted credential formats are documented at
+> §1's `kaggle_install_api_config()` in
+> [`server/train_notebook.ipynb`](server/train_notebook.ipynb).
 
 ---
 
@@ -118,12 +115,15 @@ are not reliably separable from a phone photo:
 | 7 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
 | 8 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
-The pipeline also accepts **deferred** labels on `/api/feedback`
-(`edema`, `sunburn_or_scorch`) even though the classifier head doesn't
-predict them yet — the retraining loop uses them to prioritise the next
-round of data collection.
+The pipeline also accepts **out-of-head** corrections on `/api/feedback`
+(`edema`, `sunburn_or_scorch`, `other`, and `is_a_plant` — the one-tap
+"the reject was wrong" correction on a `not_a_plant` / blur verdict) even
+though the head doesn't predict them. They are stored with `out_of_head=1`
+so the retraining loop can prioritise the next round of data collection.
 
-Canonical list: [`server/models/classes.json`](server/models/classes.json).
+Canonical in-repo list: [`DEFAULT_CLASS_NAMES` in
+`server/classifier.py`](server/classifier.py). A deployed bundle overrides it
+via `classes.json`, which is provisioned out of band and never committed.
 
 ---
 
@@ -145,17 +145,22 @@ start.bat
 ```
 
 The script creates a virtualenv, installs CPU-only PyTorch + `requirements.txt`,
-and serves FastAPI on `http://localhost:8000`.
+and serves FastAPI on `0.0.0.0:8000` — override with `./start.sh --port N` or an
+inherited `PORT` (`start.bat` takes `--port` but ignores `PORT`).
 
-Model weights are **not committed** and **not auto-downloaded** — drop the trained
-bundle (`detector.{pt,onnx}`, `classifier.onnx`, `classes.json`, calibration JSON)
-into `server/models/` first; the server is **fail-fast** without them, and
-`train_notebook.ipynb` §6b tars them for you. Production setup (systemd, nginx/TLS,
-systemd, API keys, Android signing/FCM) lives in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Model weights are **not committed** and **not auto-downloaded**. The server is
+**fail-fast**: booting needs `detector.onnx` *and* a classifier ONNX
+(`classifier_int8.onnx` or `classifier.onnx`) in `server/models/` — a `.pt`
+detector alone will not load. `classes.json` and the calibration files are
+optional but contract-bearing (absent → fallback class list, `T=1.0`, no
+conformal prediction set). `train_notebook.ipynb` §6b tars a complete bundle;
+the full artefact list is [`DEPLOYMENT.md`](DEPLOYMENT.md) §2, and production
+setup (nginx/TLS, systemd, API keys, Android signing/FCM) is the rest of it.
 
 ### Android client
 
-1. Open `android/` in Android Studio (Hedgehog 2023.1+), sync Gradle, run on a
+1. Open `android/` in a current Android Studio — the build needs AGP 9.1.1 /
+   Gradle 9.5 / JDK 17, `compileSdk 37`, `minSdk 31`. Sync Gradle, run on a
    device or emulator.
 2. A fresh checkout's debug and local release builds enable real Yandex OAuth
    and use the live beta application/account URLs under `/plantdisease-test/`.
@@ -210,7 +215,7 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/community/scan`      | Share a scan into the anonymized corpus (opt-in, coarse-rounded coords) |
-| `GET`  | `/api/community/nearby`    | Nearby-scans feed (≤30 km or country scope; coords stripped, distance only) |
+| `GET`  | `/api/community/nearby`    | Shared-scans feed (`scope=nearby` ~30 km / `country` / `worldwide`; coords stripped, distance only) |
 | `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
 | `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
 | `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
@@ -232,7 +237,7 @@ Content criteria and the private operator workflow are documented in
 
 ```
 plantdiseases/
-├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Koin DI)
+├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Hilt DI)
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
@@ -243,8 +248,12 @@ plantdiseases/
 │   ├── conformal.py        RAPS prediction sets
 │   ├── diseases_data.py    Bilingual disease database
 │   ├── train_notebook.ipynb End-to-end training recipe
-│   └── models/             Trained weights + classes.json + MODEL_CARD.md
+│   └── models/             MODEL_CARD.md + .gitkeep (weights provisioned out of band)
+├── docs/                   ROADMAP.md (live model status), DATASET_LABELING_PLAN.md
+├── .github/workflows/      ci.yml — push-only CI (ruff + pytest; ktlint + detekt
+│                           + unit tests + assembleRelease)
 ├── DEPLOYMENT.md           Production deployment guide
+├── CLAUDE.md               Working notes for agents in this repo
 └── README.md               You are here
 ```
 
@@ -252,11 +261,14 @@ plantdiseases/
 
 ## Documentation
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production config, systemd, nginx +
-  Let's Encrypt, systemd, monitoring, pre-launch checklist, smoke QA, and Android
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — model bundle, production config, nginx +
+  Let's Encrypt, the systemd unit, monitoring, go-live checklist, and Android
   release signing / FCM.
-- [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) — classifier
-  architecture, training data, calibration, intended use, known limitations.
+- [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) — pipeline,
+  classifier architecture, class set, validation contract, calibration & OOD,
+  known limitations. Deliberately **version-agnostic**: per-run numbers ship as
+  `model_card.json` inside the bundle, and the live model status is the roadmap's
+  model track.
 - [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full training
   recipe (group-aware splits + leakage guard, the three families, Aqua KD → TFLite,
   calibration + ONNX export).
@@ -270,7 +282,7 @@ plantdiseases/
 
 [Unlicense](https://unlicense.org) — public domain, free for any use.
 
-The Unlicense covers first-party code. Third-party model weights (DINOv2,
-Ultralytics YOLOv8), datasets (PlantVillage, PlantDoc, iNaturalist, COCO,
-Open Images), and runtime libraries remain under their own licenses — see
-[`NOTICE`](NOTICE) and [`THIRD_PARTY.md`](THIRD_PARTY.md).
+The Unlicense covers first-party code. Third-party model weights (DINOv2 —
+Apache-2.0, Ultralytics YOLOv8 — AGPL-3.0, used at training/export time only),
+datasets (PlantVillage, PlantDoc, iNaturalist, COCO, Open Images), and runtime
+libraries remain under their own licenses.

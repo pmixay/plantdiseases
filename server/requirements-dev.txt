@@ -2,12 +2,14 @@
 # Used for linting and running the test suite in CI.
 -r requirements.txt
 pytest>=9.1.1
-# Runtime integrations (firebase-admin) still depend on legacy httpx. Keep it
-# available for those consumers, but do not let Starlette's compatibility
-# fallback drive TestClient: Starlette 1.2+ builds TestClient on maintained
-# httpx2 and treats the legacy fallback as deprecated.
-httpx>=0.28.1
-httpx2>=2.7,<3
+# Starlette 1.x's TestClient imports ``httpx2`` and only falls back to the
+# old ``httpx`` — with a StarletteDeprecationWarning — when it is absent, so
+# httpx2 is the client the TestClient is actually supported on now. This
+# replaces the historical ``httpx`` dev pin (whose ``<0.28`` cap was itself
+# already lifted); httpx 0.x still arrives transitively via firebase-admin at
+# runtime, and nothing under server/ imports either library directly.
+# Testing on the supported client also roughly halves the suite's wall time.
+httpx2>=2.12.0
 ruff>=0.16.3
 bandit==1.9.4
 pip-audit==2.10.1

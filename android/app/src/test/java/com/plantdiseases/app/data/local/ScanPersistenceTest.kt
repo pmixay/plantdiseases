@@ -62,12 +62,11 @@ class ScanPersistenceTest {
     }
 
     @Test
-    fun recentAndAll_returnInsertedRows() = runBlocking {
+    fun getAllScans_returnsInsertedRows() = runBlocking {
         repo.saveScan("/a.jpg", AnalysisResponse(diseaseName = "A", scanId = "a"))
         repo.saveScan("/b.jpg", AnalysisResponse(diseaseName = "B", scanId = "b"))
         repo.saveScan("/c.jpg", AnalysisResponse(diseaseName = "C", scanId = "c"))
         assertThat(repo.getAllScans()).hasSize(3)
-        assertThat(repo.getRecentScans(2)).hasSize(2)
     }
 
     @Test

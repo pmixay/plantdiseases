@@ -6,8 +6,7 @@
     stack of collapsible sections:
 
         About       encyclopedia blurb + Wikipedia link   (open by default)
-        Care        CarePlanCardView from /api/care-plan  (open by default)
-        Fertiliser  feeding/NPK/soil off that same plan
+        Fertiliser  feeding/NPK/soil off the care plan
         Diseases    AI common problems, else the bundled guide
         Flowering   /api/species-profile
         Native range/api/species-profile
@@ -17,6 +16,10 @@
     stays visible while its body expands — and they are all driven by
     SpeciesDetailActivity.Section over ExpandableSectionAnimator. Adding one
     means copying a card here and adding a row to that list, nothing else.
+    Care is the deliberate exception: it has no section card at all. The
+    CarePlanCardView dropped into care_slot is already a collapsible card
+    with its own header and chevron, so a section around it was a second
+    chevron over the same body.
     Pet toxicity and the community-scans strip stay uncollapsed: both are
     short, and toxicity is a safety note that should not be behind a tap.
 
@@ -296,94 +299,19 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Care. The same rich CarePlanCardView the scan result and
-                     garden detail render (gradient header + watering/light/
-                     humidity pills + expandable details), inserted into
-                     care_slot at runtime. -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_care"
-                    style="@style/App.GlassCard"
+                <!-- Care. CarePlanCardView IS the card here — it brings its own
+                     header, chevron, collapsed state and "Tailored for X"
+                     subtitle, so wrapping it in a section card stacked two
+                     chevrons over one body and shipped both closed. It is
+                     inserted into this slot at runtime by loadCare(), which
+                     also turns its detail panel off: this screen shows the
+                     plan at a glance, the way the scan result's cure plan
+                     does, and the long tail lives on the plant itself. -->
+                <FrameLayout
+                    android:id="@+id/care_slot"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    app:cardBackgroundColor="@color/surface"
-                    app:contentPadding="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/space_lg">
-
-                        <LinearLayout
-                            android:id="@+id/care_header"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:background="?attr/selectableItemBackground"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:gravity="center_vertical"
-                            android:minHeight="@dimen/species_info_touch_target"
-                            android:orientation="horizontal">
-
-                            <ImageView
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:contentDescription="@null"
-                                android:importantForAccessibility="no"
-                                android:src="@drawable/ic_treatment"
-                                app:tint="@color/primary" />
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_sm"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:fontFamily="sans-serif-medium"
-                                    android:text="@string/section_care_title"
-                                    android:textColor="@color/on_surface"
-                                    android:textSize="@dimen/text_title_sm" />
-
-                                <TextView
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:text="@string/section_care_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
-                                    android:textSize="@dimen/text_caption" />
-                            </LinearLayout>
-
-                            <ImageView
-                                android:id="@+id/iv_care_chevron"
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
-                                android:layout_marginStart="@dimen/space_sm"
-                                android:contentDescription="@null"
-                                android:importantForAccessibility="no"
-                                android:src="@drawable/ic_chevron_down"
-                                app:tint="@color/primary" />
-                        </LinearLayout>
-
-                        <FrameLayout
-                            android:id="@+id/care_body"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:visibility="gone">
-
-                            <FrameLayout
-                                android:id="@+id/care_slot"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm" />
-                        </FrameLayout>
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
+                    android:layout_marginTop="@dimen/space_md" />
 
                 <!-- Fertiliser. Reads fertilise_weeks / fertiliser_npk /
                      soil_mix off the care plan already fetched for the card
@@ -463,18 +391,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
-                            android:visibility="gone">
-
-                            <TextView
-                                android:id="@+id/tv_fertiliser_body"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm"
-                                android:lineSpacingExtra="3dp"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body"
-                                android:visibility="gone" />
-                        </LinearLayout>
+                            android:visibility="gone" />
 
                     </LinearLayout>
 
@@ -642,7 +559,8 @@
                         <LinearLayout
                             android:id="@+id/flowering_header"
                             android:layout_width="match_parent"
-                            android:layout_height="@dimen/species_info_touch_target"
+                            android:layout_height="wrap_content"
+                            android:minHeight="@dimen/species_info_touch_target"
                             android:background="?attr/selectableItemBackground"
                             android:clickable="true"
                             android:focusable="true"
@@ -657,15 +575,28 @@
                                 android:src="@drawable/ic_garden"
                                 app:tint="@color/primary" />
 
-                            <TextView
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="@dimen/space_sm"
                                 android:layout_weight="1"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/flowering_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm" />
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/flowering_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/flowering_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
 
                             <ImageView
                                 android:id="@+id/iv_flowering_chevron"
@@ -800,31 +731,57 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone">
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
 
                         <LinearLayout
                             android:id="@+id/native_range_header"
                             android:layout_width="match_parent"
-                            android:layout_height="@dimen/species_info_touch_target"
+                            android:layout_height="wrap_content"
+                            android:minHeight="@dimen/species_info_touch_target"
                             android:background="?attr/selectableItemBackground"
                             android:clickable="true"
                             android:focusable="true"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
-                            <TextView
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_map"
+                                app:tint="@color/primary" />
+
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
                                 android:layout_weight="1"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/native_range_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm" />
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/native_range_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/native_range_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
 
                             <ImageView
                                 android:id="@+id/iv_native_range_chevron"
@@ -926,7 +883,8 @@
                         <LinearLayout
                             android:id="@+id/lunar_header"
                             android:layout_width="match_parent"
-                            android:layout_height="@dimen/species_info_touch_target"
+                            android:layout_height="wrap_content"
+                            android:minHeight="@dimen/species_info_touch_target"
                             android:background="?attr/selectableItemBackground"
                             android:clickable="true"
                             android:focusable="true"
@@ -941,15 +899,28 @@
                                 android:src="@drawable/ic_moon"
                                 app:tint="@color/primary" />
 
-                            <TextView
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="@dimen/space_sm"
                                 android:layout_weight="1"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/lunar_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_title_sm" />
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/lunar_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/lunar_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
 
                             <ImageView
                                 android:id="@+id/iv_lunar_chevron"

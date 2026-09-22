@@ -151,7 +151,6 @@ def test_analyze_response_contract(client, png_bytes):
         "prevention_ru",
         "is_healthy",
         "detection",
-        "uncertainty",
         "all_probs",
         "top_k",
         "warnings",
@@ -168,7 +167,6 @@ def test_analyze_response_contract(client, png_bytes):
     assert isinstance(body["class_name"], str) and body["class_name"]
 
     assert 0.0 <= body["confidence"] <= 1.0
-    assert 0.0 <= body["uncertainty"] <= 1.0
     assert body["severity"] in ("low", "medium", "high")
     assert isinstance(body["treatment"], list)
     assert isinstance(body["all_probs"], dict)
@@ -402,6 +400,100 @@ def test_identify_strips_exif_before_plantnet(client, monkeypatch):
         assert image.mode == "RGB"
         assert not image.getexif()
         assert {"exif", "icc_profile", "xmp", "iptc"}.isdisjoint(image.info)
+
+
+def test_identify_endpoint_nap_rejection_skips_plantnet(client, png_bytes, monkeypatch):
+    """The local rejection head must stop NAP uploads before they spend
+    PlantNet quota or surface a plausible-looking species guess."""
+    import main as server_main
+
+    calls = {"pipeline": 0, "plantnet": 0}
+
+    class _NapPipeline:
+        def analyze(self, img):
+            calls["pipeline"] += 1
+            assert img.mode == "RGB"
+            return {"class_name": "not_a_plant"}
+
+    def fake_identify(*_args, **_kwargs):
+        calls["plantnet"] += 1
+        return {"available": True, "results": [], "source": "plantnet"}
+
+    monkeypatch.setattr(server_main, "pipeline", _NapPipeline())
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+
+    r = client.post(
+        "/api/identify",
+        files={"image": ("not-a-plant.png", png_bytes, "image/png")},
+        params={"organ": "auto", "locale": "en"},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "available": False,
+        "results": [],
+        "source": "skipped_nap",
+        "organ": "auto",
+    }
+    assert calls == {"pipeline": 1, "plantnet": 0}
+
+
+def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
+    client, png_bytes, monkeypatch,
+):
+    """A plant verdict falls through to the existing PlantNet proxy with
+    its normalized organ and locale unchanged."""
+    import main as server_main
+
+    calls: dict[str, object] = {"pipeline": 0, "plantnet": 0}
+
+    class _PlantPipeline:
+        def analyze(self, img):
+            calls["pipeline"] = int(calls["pipeline"]) + 1
+            calls["image_size"] = img.size
+            return {"class_name": "healthy"}
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        calls["plantnet"] = int(calls["plantnet"]) + 1
+        calls["organ"] = organ
+        calls["lang"] = lang
+        calls["bytes_len"] = len(image_bytes)
+        return {
+            "available": True,
+            "results": [
+                {
+                    "scientific_name": "Ficus elastica",
+                    "common_names": ["Каучуковое дерево"],
+                    "score": 0.91,
+                },
+            ],
+            "source": "plantnet",
+        }
+
+    monkeypatch.setattr(server_main, "pipeline", _PlantPipeline())
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+
+    r = client.post(
+        "/api/identify",
+        files={"image": ("plant.png", png_bytes, "image/png")},
+        params={"organ": "FLOWER", "locale": "ru-RU"},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["available"] is True
+    assert body["organ"] == "flower"
+    assert body["results"][0]["scientific_name"] == "Ficus elastica"
+    assert {k: calls[k] for k in ("pipeline", "plantnet", "image_size", "organ", "lang")} == {
+        "pipeline": 1,
+        "plantnet": 1,
+        "image_size": (64, 64),
+        "organ": "flower",
+        "lang": "ru",
+    }
+    # Forwarded bytes are the metadata-free re-encode, not the upload itself —
+    # see test_identify_strips_exif_before_plantnet.
+    assert int(calls["bytes_len"]) > 0
 
 
 def test_analyze_response_issues_separate_community_and_feedback_tokens(

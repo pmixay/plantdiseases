@@ -22,14 +22,17 @@ import com.plantdiseases.app.data.account.AccountApi
 import com.plantdiseases.app.data.account.AccountApiClient
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.ConnectivityObserver
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.FeedbackReceiptStore
-import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ReachabilityReporter
 import com.plantdiseases.app.util.SharedPreferencesFeedbackReceiptStore
@@ -232,6 +235,37 @@ object AppModule {
         database.plantReminderDao(),
         database.plantReminderEventDao(),
         database.chatMessageDao(),
+        database.roomDao(),
+        database.treatmentPlanDao(),
+        database.treatmentStepDao(),
+        database,
+    )
+
+    @Provides
+    @Singleton
+    fun provideRoomRepository(database: AppDatabase): RoomRepository = RoomRepository(
+        database,
+        database.roomDao(),
+        database.plantDao(),
+        database.scanDao(),
+    )
+
+    @Provides
+    @Singleton
+    fun provideCareRepository(
+        database: AppDatabase,
+        plantRepository: PlantRepository,
+    ): CareRepository = CareRepository(
+        database = database,
+        plantDao = database.plantDao(),
+        scanDao = database.scanDao(),
+        roomDao = database.roomDao(),
+        reminderDao = database.plantReminderDao(),
+        reminderEventDao = database.plantReminderEventDao(),
+        journalDao = database.plantJournalDao(),
+        treatmentPlanDao = database.treatmentPlanDao(),
+        treatmentStepDao = database.treatmentStepDao(),
+        plantRepository = plantRepository,
     )
 
     @Provides
@@ -247,4 +281,9 @@ object AppModule {
         authRepository,
         imageSanitizer,
     )
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(database: AppDatabase): NotificationRepository =
+        NotificationRepository(database.notificationDao())
 }
