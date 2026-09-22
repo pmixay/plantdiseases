@@ -359,12 +359,12 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                         }
                     },
                     onFailure = { err ->
-                    if (MeteredAccessUi.showDialog(requireContext(), err)) {
-                        getString(MeteredAccessUi.message(err))
-                    } else {
-                        formatChatNetworkError(err)
-                    }
-                },
+                        if (MeteredAccessUi.showDialog(requireContext(), err)) {
+                            getString(MeteredAccessUi.message(err))
+                        } else {
+                            formatChatNetworkError(err)
+                        }
+                    },
                 )
 
                 if (_binding != null) {

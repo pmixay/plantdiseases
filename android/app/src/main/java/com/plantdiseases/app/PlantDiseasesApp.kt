@@ -272,7 +272,7 @@ class PlantDiseasesApp : Application() {
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker.
      *  Scheduled regardless of the opinion-notifications preference: a user
      *  who opted out of the popup still gets the reply recorded in the
-    *  notification centre, and this poll is the only way it's discovered on
+     *  notification centre, and this poll is the only way it's discovered on
      *  a device without FCM configured. */
     fun scheduleOpinionChecks() {
         if (!BuildConfig.ACCOUNT_UI_ENABLED) return

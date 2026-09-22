@@ -81,9 +81,15 @@ class SimilarScansAdapter(
                     ?.let { it.startsWith("ca") && it.length == 32 } == true
                 label.isClickable = hasProfile
                 label.isFocusable = hasProfile
-                label.setOnClickListener(if (hasProfile) View.OnClickListener {
-                    onAuthorClick(item)
-                } else null)
+                label.setOnClickListener(
+                    if (hasProfile) {
+                        View.OnClickListener {
+                            onAuthorClick(item)
+                        }
+                    } else {
+                        null
+                    }
+                )
                 // Distance only — no place name. Hidden when the feed had no
                 // location anchor (country/worldwide scope) so we never show a
                 // misleading "0 km" or an empty line.

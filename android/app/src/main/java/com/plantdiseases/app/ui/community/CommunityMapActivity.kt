@@ -457,8 +457,8 @@ class CommunityMapActivity : AppCompatActivity() {
                 item.authorToken
                     ?.takeIf { it.startsWith("ca") && it.length == 32 }
                     ?.let { token ->
-                    startActivity(CommunityProfileActivity.intent(this, token))
-                }
+                        startActivity(CommunityProfileActivity.intent(this, token))
+                    }
             },
             onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
         )
