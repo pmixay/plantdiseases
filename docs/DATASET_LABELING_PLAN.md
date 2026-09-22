@@ -33,11 +33,47 @@ version-agnostic and carries no run-specific numbers by design.
        │ pulled by train_notebook.ipynb → model bundle
 ```
 
+## Study-project policy (2026-09-21): licences are provenance, not a gate
+
+Everything below that says a licence, a landing URL, an immutable source id, a
+capture family or a first-seen version is *required* now reads: **recorded when
+present, defaulted with a warning when absent, never a reason to drop a row or
+refuse a run.** The `STRICT_SUPPLEMENT_*` knobs in notebook §2 default to
+`False`; the per-source licence filters (iNat `photo_license`, COCO licence
+ids, Open Images licence keys, the DoctorP opt-out) are gone and every fetcher
+writes what it saw into the sidecar. `model_card.json →
+source_inventory.license_policy` tallies the result per run. What still gates
+is *quality*: the benchmark deny-list, `bench_leak` / `phash_mismatch`, the
+blur floor, pHash and SHA dedup, the domain judge, `REQUIRED_SOURCE_FLOORS`
+and `SUPPLEMENT_MIN_ROWS`.
+
+### Sources returned under the 2026-09-21 policy, and their eligibility
+
+Eligibility here means data quality and independence, which is what the
+notebook still enforces; the licence was the only reason each of these was
+switched off on 2026-08-25.
+
+| source | rows it contributed (2.7.2 inventory) | what the licence filter would have cost | eligibility (quality) | verdict |
+|---|---|---|---|---|
+| **DoctorP** + **DoctorP-pepper** (`doctorp`, `doctorp_pepper`) | 1,403 + 155 train rows; eval-eligible in every split | all of it (CC BY-NC-SA data cards) | The only public source of real plant-doctor *app* photos: the gardener's framing, no augmentation, the source that supplies `nutrient_deficiency` and `gray_mold` in deployment framing. Uniformly ~128 px, so `fetch_doctorp_disease` runs with a lowered `min_side`; labels are the dataset's folder labels (no per-row confidence); not on the benchmark deny-list; SHA/pHash-deduped against every other source; `REQUIRED_SOURCE_FLOORS` 1000 / 80 restored so a silent upstream loss fails the run | **eligible, restored at its prior weights** (`doctorp` 1.0, `doctorp_pepper` 0.8) |
+| **iNaturalist** research-grade photos outside CC0 / CC-BY / CC-BY-SA (`inat`, `inat_pest`, `inat_physiological`, `inat_hard_greentexture`, `inat_animalia`) | 2,505 + 1,597 + 504 + 927 + 495 rows | ~87 % of the supply: 83.0M research-grade Plantae observations with photos, 10.8M under the three permitted licences (live API, 2026-09-21) | The licence is the uploader's account default and is uncorrelated with focus, framing or identification quality; research grade is the quality bar and is unchanged. Every other gate applies as before (green-content check, `min_side`, dedup, per-taxon caps, benchmark deny-list) | **eligible; the `photo_license` API filter is removed**, `license_code` recorded per photo (`unlicensed` when iNat reports none) |
+| **COCO val2017** images with licence ids 1–3 (`coco`, `coco_hard_partial_plant`) | part of 750 + 223 NAP negatives | ids 1–3 are the NC variants of the same Flickr pool; a minority of the split | Indoor-clutter and partial-plant *negatives* for the `not_a_plant` head; their licence has no bearing on whether they are non-plants. Plant-category exclusion and the partial-plant area rule are unchanged | **eligible**; licence id and name recorded |
+| **Open Images** validation rows without a metadata row or with a non-CC-BY-2.0 key (`openimages_indoor`) | part of 640 NAP negatives | small: Open Images photos are CC BY 2.0 by construction, so the filter mostly dropped rows with no metadata line | Indoor negatives; same reasoning as COCO | **eligible**; licence key recorded (`unknown` when the metadata row is missing) |
+| **Supplement v8 rows** (`supplement*`) | 1,900 eval-eligible / 695 train-only / 787 boundary | all 3,389 rows: v8 carries no `license_id`, `immutable_source_id`, `capture_family_id` or `first_seen_model_version` column, so the strict loader raised on line 2 | The corpus every shipped bundle was fitted to. QA'd on bytes on 2026-08-17 ("Corpus verification" below): zero benchmark leakage, zero duplication, 4 blur failures, 54 rows under the 384 px floor. Fallbacks: `sha256:` of the bytes as source id, no family (each row its own group, as v8 always was), `split_hint` routing, the permanent `HOLDOUT` carve for the never-trained slice | **eligible under the soft contract**; the one WARN per absent column is expected on v8 |
+
+Not returned, because they never left for licence reasons: the benchmark
+source (`aditisalvi04`, deny-listed for contamination), `coleaf` and
+`kaggle_strawberry` (agricultural proxies, removed for domain), `kaggle_nutrient`
+(dropped in 2.7.0 for content). The deny-list rule ("deny at the branch")
+stands.
+
 ## Supplement routing — version-aware and fail-closed
 
-- **Supply (train):** only rows with compatible rights, immutable source item
-  identity, capture-family identity, a passed filter verdict, and adequate human
-  verification are eligible. Unknown fields mean reject, not “best effort.”
+- **Supply (train):** every row with a passed filter verdict (or none — a
+  manifest without the column is treated as all-`keep` with a warning) is
+  eligible. Rights, immutable source identity, capture-family identity and
+  human verification are recorded when present and defaulted when absent
+  (study-project policy above); they are not admission criteria.
 - **Candidate evaluation:** a row/family is eligible only when its
   `first_seen_model_version` is later than the candidate model's complete
   training lineage and no capture/augmentation sibling was seen. An `eval_ok`
@@ -66,7 +102,7 @@ carry one of three statuses. Each stale section also carries an inline
 | Acceptance criteria (every version) | **baseline, extended** | still true; the per-row contract is now the stricter one in P4 |
 | Corpus verification — the published v8 (2026-08-17) | **bytes stand, reading superseded** | the counts (3,389 rows, 662 distinct scorch, 54 under 384 px, 5 failures) were measured on bytes and are not disputed; "the eval set is outside the training corpus" and "scorch scores 0.000 across three releases" rest on the v2 sentinel, which the audit found non-independent, and on archive predictions that contradict the headline scores |
 | Domain — houseplants → ornamentals → edibles | **policy current, numbers exploratory** | the domain line stands; the `kaggle_ornamental` ablation numbers are exploratory |
-| Version status · Source loss · 2.6.10 · v8 · stale-upload incident | **historical** | metrics are pre-audit and exploratory; the deny-list, the `REQUIRED_SOURCE_FLOORS` lesson and the `SUPPLEMENT_MIN_ROWS` guard stand in code; v8 rows carry no per-row licence/family/first-seen columns, so for a 2.8.0 candidate they are train-only at best and rejected by §2 unless re-derived (P4) |
+| Version status · Source loss · 2.6.10 · v8 · stale-upload incident | **historical** | metrics are pre-audit and exploratory; the deny-list, the `REQUIRED_SOURCE_FLOORS` lesson and the `SUPPLEMENT_MIN_ROWS` guard stand in code; v8 rows carry no per-row licence/family/first-seen columns; since 2026-09-21 §2 loads them with documented fallbacks (see the study-project policy section) |
 | v9 — the finding that changes the target, §1–§5, §7, §9 | **exploratory** | probes and ablations scored on the v2 sentinel (one species, one session, ≥11 SIFT+RANSAC pseudo-replicates among the nominal 31) and on classifier-only argmax; the *direction* (early/dull scorch is confused with `leaf_spot`; plain ground reads as `not_a_plant`) is the collection hypothesis, the numbers are not release evidence |
 | v9 §6 stratum table | **targets stand** | the per-stratum targets and predicates are carried into P1 unchanged; the coverage brackets are exploratory |
 | v9 §6b — the out-of-domain ship gate | **superseded** | §6 now has `REQUIRE_OOD_BENCHMARK = False`, `OOD_ARM_FLOORS = {'hibiscus': 0.70}` and `OOD_MAX_HEALTHY_FALSE_FIRE = 0.12` marked *advisory heuristic*; the notebook records `diagnostic_only: True, release_blocking: False`. `REQUIRE_OOD_DIAGNOSTIC_RUN = True` only makes a run that cannot download and score the sentinel fail — it *records*, it does not gate. Nothing blocks on v2 |
@@ -200,10 +236,13 @@ What the notebook and `filter_supplement.py` enforce on the id:
 ### P4. The per-row record a v9 row must carry
 
 `manifest.csv`, one row per published file. Columns marked *notebook* are read
-by §2 `fetch_kaggle_supplement` and a missing or malformed value **raises**;
-columns marked *tool* are required by `filter_supplement.py`; columns marked
-*protocol* are this document's requirement and are recorded verbatim (the
-notebook ignores unknown columns).
+by §2 `fetch_kaggle_supplement`; since 2026-09-21 a **missing** column gets the
+fallback named in the notebook's `STRICT_SUPPLEMENT_*` note and a warning,
+while a **malformed** present value still raises. Columns marked *tool* are
+read by `filter_supplement.py` (`--require-provenance` makes the three
+provenance columns mandatory; the default accepts a v8-shaped manifest);
+columns marked *protocol* are this document's requirement and are recorded
+verbatim (the notebook ignores unknown columns).
 
 | column | required by | rule |
 |---|---|---|
@@ -214,15 +253,15 @@ notebook ignores unknown columns).
 | `split_hint` | notebook | `eval_ok` or `train_only`; anything else routes train-only |
 | `filter_verdict` | notebook, tool | present on every row; v9 publishes **only `keep` rows** (P7 step 1). The notebook accepts the tool's full vocabulary (`keep / blurry / bench_leak / too_small / tiny / duplicate / dup_intra / dup_cross / missing / corrupt / phash_mismatch`), skips every non-`keep` row, and raises on any `bench_leak` or `phash_mismatch` row |
 | `filter_independence_method` | notebook, tool | exactly `capture_family_id+phash_v1` on **every** row (`SUPPLEMENT_REQUIRED_INDEPENDENCE_METHOD`); the tool writes it when provenance is present |
-| `license_id` | notebook | one of `cc0`, `cc-by-2.0`, `cc-by-4.0`, `cc-by-sa-2.0`, `cc-by-sa-4.0`, `public-domain`, `project-owned` (`SUPPLEMENT_ALLOWED_LICENSES`). Non-commercial licences are rejected: `ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES = False`, and DoctorP (CC BY-NC-SA) is out of the default recipe for that reason |
+| `license_id` | notebook (recorded) | free text, tallied per run; `SUPPLEMENT_KNOWN_LICENSES` supplies a URL for the ids it knows. Never gated on (2026-09-21); `unknown` when blank |
 | `license_url` | notebook (optional) | defaulted from the allowed-licence table when blank |
-| `creator` | notebook | **required** when `license_id` starts with `cc-by` |
-| `source_url` | notebook | **non-empty on every row, `project-owned` included**. Internet rows: the landing page. First-party rows: an opaque, non-resolving reference to the batch record, e.g. `plantvision://acquisition/<batch_id>/<immutable_source_id>` — never a real URL that identifies a person or device |
+| `creator` | notebook (recorded) | attribution; recommended when `license_id` starts with `cc-by` |
+| `source_url` | notebook (recorded) | Internet rows: the landing page. First-party rows: an opaque, non-resolving reference to the batch record, e.g. `plantvision://acquisition/<batch_id>/<immutable_source_id>` — never a real URL that identifies a person or device |
 | `source_item_id` | protocol | the source's own id (`observation:<id>/photo:<id>`, post id); first-party: the capture id / scan sha |
 | `attribution` | notebook (optional) | as the licence requires; defaults to `creator` |
-| `immutable_source_id` | notebook, tool | globally unique per **photograph**, never reused across rows (raises), never derived from a mutable path. Internet: `<host>:<item>:<photo>`. First-party: `scan:<sha256 of original bytes>` |
-| `capture_family_id` | notebook, tool | P2 |
-| `first_seen_model_version` | notebook, tool | literal **`never`** for a row no model has trained on; otherwise the semver of the first model whose *training* split held it. The notebook routes any value **≤ `MODEL_VERSION` (2.8.0 today) train-only** whatever `split_hint` says, so for the 2.8.0 candidate only `never` rows can grade or calibrate |
+| `immutable_source_id` | notebook, tool | globally unique per **photograph**, never reused across rows (raises when present twice), never derived from a mutable path. Internet: `<host>:<item>:<photo>`. First-party: `scan:<sha256 of original bytes>`. Absent → `sha256:<bytes>` |
+| `capture_family_id` | notebook, tool | P2. Absent → none (the row is its own group) |
+| `first_seen_model_version` | notebook, tool | literal **`never`** for a row no model has trained on; otherwise the semver of the first model whose *training* split held it. The notebook routes any value **≤ `MODEL_VERSION` (2.7.5 today) train-only** whatever `split_hint` says. Absent → routed by `split_hint` alone (v8 behaviour); the permanent `HOLDOUT` carve keeps the never-trained slice |
 | `subject_domain`, `subject_plant` | notebook (recorded) | verbatim; never gated |
 | `phash` | tool | recorded at build; the tool allows ≤ 6 bits of drift |
 | `stratum` | protocol | the P1 stratum name, verbatim |
@@ -230,15 +269,14 @@ notebook ignores unknown columns).
 | `verified_by`, `adjudication_status`, `adjudication_note` | protocol | P6 |
 | `bbox_x, bbox_y, bbox_w, bbox_h` | protocol | pixel coordinates in the published file for the boxed strata; **not consumed by the notebook today** — `_save_archive_member` writes `bbox=[0,0,0,0]` for every supplement row, so Stage 1 cannot train on them until §2 is extended. Publish them anyway; the detector round needs them |
 
-**Carry-over of v8 rows.** A v8 row enters v9 only if all of the above can be
-supplied honestly: a verified licence + landing URL, an immutable source id, a
-family id (one row per source item), and `first_seen_model_version` set to the
-first release that trained on it (never `never`; if the exact release is
-unknown, the revision it was published in bounds it from above, and any value
-≤ 2.8.0 routes it train-only, which is the safe direction). Rows without a
-recoverable licence stay in `staging/`, not in v9. The audit's finding is that
-most of v8 lacks auditable acquisition records, so expect the carry-over to be a
-minority; note `SUPPLEMENT_MIN_ROWS = 3000` below.
+**Carry-over of v8 rows.** Under the 2026-09-21 policy every v8 row carries
+over as it is; the columns above are what a v9 revision *adds*, not what
+admits a row. When they can be supplied, supply them honestly: an immutable
+source id, a family id (one row per source item), and
+`first_seen_model_version` set to the first release that trained on it (if the
+exact release is unknown, the revision it was published in bounds it from
+above, and any value ≤ 2.7.5 routes it train-only, which is the safe
+direction). `SUPPLEMENT_MIN_ROWS = 3000` is comfortably met by v8's 3,389.
 
 **Post-run re-stamping.** After a run trains on v9, every row that sat in a
 *training* split of that run gets `first_seen_model_version = <that
@@ -470,11 +508,8 @@ The carve:
    partner — collect it alongside item 1, it is cheap indoors), plain-ground
    healthy, ND-regime healthy, `pests` + `gray_mold` with boxes.
 
-**Minimum that unblocks a first 2.8.0 candidate run** (targets): a v9 revision
-that *loads* — every row P4-complete, `filter_verdict=keep` with the
-independence method on every row, ≥ 1 boundary row, ≥ 1 `eval_ok` `never`
-family per weak class, row total ≥ 3,000 or a reviewed edit — **and** that is
-*worth running*: scorch early/dull ≥ 200 families and houseplant `leaf_spot`
+**Minimum that unblocks a first 2.7.5 candidate run:** nothing — v8 loads
+under the 2026-09-21 policy. **What makes a v9 run *worth running*** (targets): scorch early/dull ≥ 200 families and houseplant `leaf_spot`
 ≥ 100 families adjudicated across the boundary, plus a family-verified v3 at
 whatever *n* exists so the run reports a family-level number (advisory). The
 **full round** is the ~1,600 families of P1, v3 at ≥ ~100 families per scored
@@ -679,7 +714,7 @@ OOD bank on the broader in-distribution is what accepts ornamentals and still re
 
 ## Version status
 
-> **Historical (audit 2026-08-23).** Pre-audit release metrics; exploratory. `MODEL_VERSION` is 2.8.0 and no historical bundle is deployable under the current manifest contract (`docs/ROADMAP.md`, Model track).
+> **Historical (audit 2026-08-23).** Pre-audit release metrics; exploratory. `MODEL_VERSION` is 2.7.5 and no historical bundle is deployable under the current manifest contract (`docs/ROADMAP.md`, Model track).
 
 - **v5 / 2.6.7** (06-26): gray_mold fixed on clean foliage (R/P 0.83/0.83) after the
   agricultural strawberry-Botrytis proxy was removed. realworld disease macro-F1 0.862.

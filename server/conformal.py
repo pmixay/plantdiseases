@@ -70,17 +70,54 @@ class ConformalConfig:
     k_reg: int = 1
     calibration_n: int = 0
     empirical_coverage: float | None = None
+    # Written by notebook §6: the product target the grid search was held to,
+    # whether ``empirical_coverage`` was measured on a held-out audit split
+    # (``"out_of_sample"``) or on the fitting rows (``"in_sample"``), and the
+    # audit split's size. Absent on legacy sidecars.
+    target_coverage: float | None = None
+    empirical_coverage_kind: str | None = None
+    audit_n: int = 0
+
+    @property
+    def audit_backs_target(self) -> bool:
+        """True when the sidecar proves its target on an out-of-sample audit."""
+        return (
+            self.target_coverage is not None
+            and self.empirical_coverage_kind == "out_of_sample"
+            and self.audit_n >= MIN_AUDIT_N
+            and self.empirical_coverage is not None
+            and self.empirical_coverage >= self.target_coverage
+        )
+
+    @property
+    def coverage_basis(self) -> str:
+        return "audit_target" if self.audit_backs_target else "nominal_one_minus_alpha"
 
     @property
     def coverage_target(self) -> float:
-        """Return the configured *nominal* marginal coverage target.
+        """Return the marginal coverage the API advertises for the set.
 
-        Historical exporters wrote ``empirical_coverage`` from the same rows
-        used to choose ``q_hat``. That is an in-sample calibration diagnostic,
-        not an independent coverage estimate, so it must not replace the
-        client-facing target. Current API prediction sets remain advisory.
+        ``alpha`` is the notebook's quantile *search knob*, not the guarantee:
+        §6 grid-searches ``(alpha, lambda_reg, k_reg)`` for the smallest RAPS
+        set whose coverage on a held-out audit split clears ``target_coverage``
+        plus a 2-SE margin, and that search has selected ``alpha = 0.6`` since
+        2.7.0. Advertising ``1 - alpha`` there would tell the client 40 % for
+        sets that audit at 98 %. So: ``target_coverage`` when the sidecar
+        carries the audit that backs it (out-of-sample, ``audit_n`` at least
+        ``MIN_AUDIT_N``, measured coverage at or above the target); otherwise
+        the nominal ``1 - alpha``. An in-sample ``empirical_coverage`` never
+        overrides the nominal value — it was measured on the rows that chose
+        ``q_hat`` and is a diagnostic, not evidence.
         """
+        if self.audit_backs_target:
+            return float(self.target_coverage)  # type: ignore[arg-type]
         return 1.0 - self.alpha
+
+
+# Smallest audit split whose coverage estimate is worth advertising: at 50
+# rows the binomial SE at p=0.9 is ~0.04, and §6 only selects with a 2-SE
+# margin, so a sidecar that passes this is backed with room to spare.
+MIN_AUDIT_N = 50
 
 
 class ConformalLoadError(RuntimeError):
@@ -151,6 +188,20 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
             empirical = float(empirical_raw)
             if not math.isfinite(empirical) or not 0.0 <= empirical <= 1.0:
                 raise ValueError("empirical_coverage must be finite and in [0, 1]")
+        target = None
+        if data.get("target_coverage") is not None:
+            target_raw = data["target_coverage"]
+            if isinstance(target_raw, bool) or not isinstance(target_raw, (int, float)):
+                raise TypeError("target_coverage must be numeric")
+            target = float(target_raw)
+            if not math.isfinite(target) or not 0.0 < target < 1.0:
+                raise ValueError("target_coverage must be finite and strictly between 0 and 1")
+        kind = data.get("empirical_coverage_kind")
+        if kind is not None and not isinstance(kind, str):
+            raise TypeError("empirical_coverage_kind must be a string")
+        audit_n = data.get("audit_n", 0)
+        if isinstance(audit_n, bool) or not isinstance(audit_n, int) or audit_n < 0:
+            raise TypeError("audit_n must be a non-negative integer")
         cfg = ConformalConfig(
             method=method,
             alpha=alpha,
@@ -159,12 +210,16 @@ def load_conformal_config(model_dir: Path | None) -> ConformalConfig | None:
             k_reg=k_reg,
             calibration_n=calibration_n,
             empirical_coverage=empirical,
+            target_coverage=target,
+            empirical_coverage_kind=kind,
+            audit_n=audit_n,
         )
     except (KeyError, ValueError, TypeError, json.JSONDecodeError) as e:
         raise ConformalLoadError(f"Could not parse declared {path}: {e}") from e
     logger.info(
-        "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f)",
-        path, cfg.method, cfg.alpha, cfg.q_hat,
+        "Loaded conformal config from %s (method=%s alpha=%.3f q_hat=%.3f "
+        "advertised coverage=%.2f basis=%s)",
+        path, cfg.method, cfg.alpha, cfg.q_hat, cfg.coverage_target, cfg.coverage_basis,
     )
     return cfg
 

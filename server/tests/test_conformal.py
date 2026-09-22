@@ -118,6 +118,10 @@ def test_calibration_coverage_does_not_override_nominal_target(tmp_path):
         {"k_reg": 1.5},
         {"calibration_n": -1},
         {"empirical_coverage": 1.1},
+        {"target_coverage": 1.0},
+        {"target_coverage": "0.9"},
+        {"audit_n": -5},
+        {"empirical_coverage_kind": 7},
     ],
 )
 def test_load_conformal_config_rejects_invalid_numeric_contract(tmp_path, patch):
@@ -173,3 +177,46 @@ def test_load_conformal_config_searches_classifier_dir(tmp_path):
     assert cfg is not None
     assert cfg.method == "aps"
     assert cfg.q_hat == pytest.approx(0.95)
+
+
+def test_audit_backed_target_is_advertised_instead_of_one_minus_alpha(tmp_path):
+    """Notebook §6 picks alpha as a search knob (0.6 since 2.7.0) subject to the
+    out-of-sample audit clearing the product target; the API must advertise
+    that target, not 1 - alpha = 0.4."""
+    (tmp_path / "conformal.json").write_text(json.dumps({
+        "method": "raps", "alpha": 0.6, "q_hat": 0.9708, "lambda_reg": 0.3,
+        "k_reg": 1, "calibration_n": 934, "empirical_coverage": 0.9872,
+        "empirical_coverage_kind": "out_of_sample", "audit_n": 234,
+        "target_coverage": 0.9, "coverage_basis": "audit_target",
+    }))
+    cfg = load_conformal_config(tmp_path)
+    assert cfg is not None
+    assert cfg.audit_backs_target is True
+    assert cfg.coverage_basis == "audit_target"
+    assert cfg.coverage_target == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"empirical_coverage_kind": "in_sample"},     # measured on the fitting rows
+        {"audit_n": 20},                               # too few audit rows to lean on
+        {"empirical_coverage": 0.85},                  # audit missed the target
+        {"target_coverage": None},                     # legacy sidecar, no target
+    ],
+)
+def test_target_is_not_advertised_without_a_backing_audit(tmp_path, patch):
+    payload = {
+        "method": "raps", "alpha": 0.6, "q_hat": 0.9708, "lambda_reg": 0.3,
+        "k_reg": 1, "calibration_n": 934, "empirical_coverage": 0.9872,
+        "empirical_coverage_kind": "out_of_sample", "audit_n": 234,
+        "target_coverage": 0.9,
+    }
+    payload.update(patch)
+    payload = {k: v for k, v in payload.items() if v is not None}
+    (tmp_path / "conformal.json").write_text(json.dumps(payload))
+    cfg = load_conformal_config(tmp_path)
+    assert cfg is not None
+    assert cfg.audit_backs_target is False
+    assert cfg.coverage_basis == "nominal_one_minus_alpha"
+    assert cfg.coverage_target == pytest.approx(0.4)

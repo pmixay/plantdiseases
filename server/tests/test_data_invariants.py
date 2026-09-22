@@ -876,16 +876,18 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     # Calibration block must exist
     assert "TARGET_PLANT_FPR" in src, "audit fix #2 — calibration target missing"
     assert "_maxlogit_distribution" in src, "audit fix #2 — distribution helper missing"
-    # And classes_payload must read ML_FLOOR (not the literal 4.0)
-    m = re.search(
-        r"'max_logit_floor'\s*:\s*([A-Z_a-z0-9.]+)",
-        src,
+    # And classes_payload must read ML_FLOOR (not the literal 4.0). The
+    # served-gate block writes its own ``'max_logit_floor': _srv_ml_floor``
+    # (fitted on the served statistic), so check every occurrence: one must
+    # be the calibrated single-image floor and none may be a number.
+    vals = re.findall(r"'max_logit_floor'\s*:\s*([A-Z_a-z0-9.]+)", src)
+    assert vals, "max_logit_floor entry missing"
+    assert any(v in ("ML_FLOOR", "ML_FLOOR_PERSISTED") for v in vals), (
+        f"max_logit_floor values are {vals}, one must reference the calibrated "
+        f"ML_FLOOR / ML_FLOOR_PERSISTED variable"
     )
-    assert m, "max_logit_floor entry missing"
-    val = m.group(1)
-    assert val in ("ML_FLOOR", "ML_FLOOR_PERSISTED"), (
-        f"max_logit_floor is {val}, must reference the calibrated "
-        f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
+    assert not any(re.fullmatch(r"[0-9.]+", v) for v in vals), (
+        f"a max_logit_floor is hardcoded: {vals}"
     )
 
 
@@ -939,10 +941,10 @@ def test_required_source_floors_gate_missing_upstream_corpora():
             f"'{must_guard}' has no positive floor — a silent upstream loss "
             f"would train a model that is not comparable to any other version"
         )
-    assert "if ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" in src
-    assert "REQUIRED_SOURCE_FLOORS.update({'doctorp': 1000" in src, (
-        "DoctorP floors may exist only behind the explicit research-only NC opt-in"
-    )
+    # DoctorP (real app photos, the starved-class supply) is guarded
+    # unconditionally: licences are recorded, never gated (2026-09-21).
+    assert floors.get("doctorp", 0) >= 1000 and floors.get("doctorp_pepper", 0) > 0
+    assert "ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" not in src
     # It must actually raise, not just warn, by default.
     assert re.search(r"STRICT_SOURCE_FLOORS\s*=\s*True", src), (
         "STRICT_SOURCE_FLOORS must default to True (fail-fast over fail-soft)"
@@ -1021,8 +1023,8 @@ def test_supplement_joins_and_saves_by_complete_path():
     text = body.group(0)
     assert "Path(r['filename']).name" not in text
     assert "PurePosixPath(_raw)" in text and "duplicate path key" in text
-    assert "STRICT_SUPPLEMENT_FILTER_VERDICT = True" in src
-    assert "STRICT_SUPPLEMENT_LICENSE_PROVENANCE = True" in src
+    assert "STRICT_SUPPLEMENT_FILTER_VERDICT = False" in src
+    assert "STRICT_SUPPLEMENT_LICENSE_PROVENANCE = False" in src
     assert "output_stem=_row['_disk_stem']" in text
 
 
@@ -1045,21 +1047,36 @@ def test_zero_support_holdout_classes_are_reported():
     assert "by_class.get(c, 0) for c in CLASSES" in src
 
 
-def test_public_image_sources_fail_closed_on_per_image_rights():
+def test_public_image_sources_record_rights_but_never_gate_on_them():
+    """Study-project policy (2026-09-21): per-image licence/provenance is
+    written into every sidecar so a bundle can report what it trained on, and
+    no fetcher, floor or bundler may drop a row or refuse a run because of it.
+    The 2026-08-25 licence filters cost ~87 % of iNat's research-grade Plantae
+    supply (83.0M vs 10.8M observations, measured against the live API) and
+    all 1,558 DoctorP rows."""
     src = _notebook_source()
-    assert "'photo_license': _INAT_PHOTO_LICENSE_FILTER" in src
+    # iNat: no API-side licence filter; every photo tallied, none rejected.
+    assert "'photo_license'" not in src
     assert "_inat_photo_provenance" in src and "license_code" in src
-    assert "COCO_ALLOWED_LICENSE_IDS = {4, 5, 6, 7, 8}" in src
-    assert "validation-images-with-rotation.csv" in src
-    assert "OriginalLandingURL" in src and "license_id='cc-by-2.0'" in src
-    assert "_RIGHTS_REQUIRED_SOURCES" in src and "RIGHTS PROVENANCE MISSING" in src
+    assert "_INAT_LICENSE_TALLY" in src and "_INAT_LICENSE_REJECTED" not in src
+    assert "INAT_KNOWN_PHOTO_LICENSES.get(code)" in src
+    # COCO / Open Images: recorded, never filtered.
+    assert "COCO_ALLOWED_LICENSE_IDS" not in src and "_coco_tally(im)" in src
+    assert "OI_ALLOWED_LICENSE_KEYS" not in src and "_OI_LICENSE_TALLY" in src
+    assert "validation-images-with-rotation.csv" in src and "OriginalLandingURL" in src
+    # Missing licences are reported, not fatal.
+    assert "_RIGHTS_REQUIRED_SOURCES" in src and "RIGHTS PROVENANCE MISSING" not in src
+    assert "'policy': 'study_project_record_only'" in src
+    assert "'gated_on_license': False" in src
 
 
-def test_noncommercial_doctorp_is_research_only_and_cannot_bundle():
+def test_doctorp_is_in_the_default_recipe_with_its_licence_recorded():
     src = _notebook_source()
-    assert re.search(r"ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES\s*=\s*False", src)
+    assert "ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" not in src
     assert "DOCTORP_LICENSE_ID = 'cc-by-nc-sa-4.0'" in src
-    assert "RESEARCH-ONLY RUN: non-commercial data" in src
+    assert "license_id=DOCTORP_LICENSE_ID" in src
+    assert "_try_fetch('doctorp', fetch_doctorp_disease, per_class_cap=400)" in src
+    assert "RESEARCH-ONLY RUN: non-commercial data" not in src
 
 
 def test_recipe_uses_deterministic_torch_settings():
@@ -1071,8 +1088,13 @@ def test_recipe_uses_deterministic_torch_settings():
 
 
 def test_supplement_eval_is_model_era_and_capture_family_aware():
+    """The provenance columns are honoured when present and fall back with a
+    warning when absent (v8 carries none); the strict knob is opt-in."""
     src = _notebook_source()
-    assert "STRICT_SUPPLEMENT_MODEL_PROVENANCE = True" in src
+    assert "STRICT_SUPPLEMENT_MODEL_PROVENANCE = False" in src
+    assert "_SUPPLEMENT_PROVENANCE_FALLBACKS" in src
+    assert "if not _first_seen or _first_seen == 'never':" in src
+    assert "f'sha256:{hashlib.sha256(body).hexdigest()}'" in src
     assert "SUPPLEMENT_EVAL_THROUGH_MODEL_VERSION = MODEL_VERSION" in src
     assert "first_seen_model_version" in src and "immutable_source_id" in src
     assert "capture_family_id" in src
@@ -1241,3 +1263,45 @@ def test_supplement_family_cannot_straddle_eval_and_train():
 def test_ood_diagnostic_accepts_builder_manifest_filename():
     src = _notebook_source()
     assert "next(_ood_root.rglob('manifest.csv'), None)" in src
+
+
+def test_served_ood_gate_is_calibrated_on_the_served_statistic():
+    """2.7.5: the overlay pipeline.py applies is fitted in §6 through the same
+    detector -> crop -> whole-frame-fold path it serves, and the crop/detector
+    rules the notebook mirrors are the ones pipeline.py / detector.py run."""
+    import detector as detector_module
+    import pipeline as pipeline_module
+
+    src = _notebook_source()
+    assert "SERVED-PATH OOD calibration" in src
+    assert "'calibration_mode': 'full_served_pipeline'" in src
+    assert "'embedding_aggregation': 'min_member_distance'" in src
+    assert "'max_logit_aggregation': 'max_member_logit'" in src
+    assert "'served_gate': SERVED_GATE" in src
+    assert "np.quantile(_emb_p, 1.0 - TARGET_PLANT_FPR)" in src
+    assert "neither served signal separates" in src
+    crop = re.search(r"SERVED_GATE_CROP = \{(.*?)\}", src, re.DOTALL)
+    assert crop
+    got = dict(re.findall(r"'([a-z_]+)':\s*([0-9.]+|True|False)", crop.group(1)))
+    real = getattr(pipeline_module, "_RealPipelineForTests", pipeline_module.PlantDiseasePipeline)
+    assert int(got["max_crops"]) == real._MAX_RECLASSIFY
+    assert int(got["min_size_px"]) == pipeline_module.MIN_CROP_SIZE
+    assert float(got["min_area_fraction"]) == pipeline_module.MIN_BBOX_AREA_FRAC
+    assert float(got["padding_ratio"]) == pipeline_module.CROP_PADDING_RATIO
+    det = re.search(r"SERVED_GATE_DETECTOR = \{(.*?)\}", src, re.DOTALL)
+    assert det
+    dgot = dict(re.findall(r"'([a-z_]+)':\s*([0-9.]+)", det.group(1)))
+    assert int(dgot["img_size"]) == detector_module.DETECTOR_IMG_SIZE
+    assert float(dgot["min_confidence"]) == detector_module.MIN_CONFIDENCE
+    assert int(dgot["max_detections"]) == detector_module.MAX_DETECTIONS
+    floor = re.search(r"SERVED_GATE_DET_CONF_FLOOR = ([0-9.]+)", src)
+    assert floor and float(floor.group(1)) == pipeline_module.NAP_DETECTOR_CONF_FLOOR
+    # The manifest reads the same dicts, so the mirror cannot drift from the contract.
+    assert "**SERVED_GATE_CROP," in src and "**SERVED_GATE_DETECTOR," in src
+
+
+def test_conformal_sidecar_declares_its_coverage_basis():
+    src = _notebook_source()
+    assert "cfg['coverage_basis'] = (" in src
+    assert "'audit_target'" in src and "'nominal_one_minus_alpha'" in src
+    assert "best['target_coverage'] = CONF_TARGET_COVERAGE" in src

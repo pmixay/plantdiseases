@@ -146,7 +146,7 @@ def _verdicts(rows: list[dict]) -> dict[str, str]:
 
 def test_every_gate_fires_on_its_own_row(bundle):
     root, bench, expected = bundle
-    rows, report = fs.filter_bundle(root, bench, workers=4)
+    rows, report = fs.filter_bundle(root, bench, workers=4, require_provenance=True)
     assert _verdicts(rows) == expected
     assert report["totals"]["benchmark_leaks"] == 1
 
@@ -154,7 +154,7 @@ def test_every_gate_fires_on_its_own_row(bundle):
 def test_blur_gate_is_asymmetric_for_not_a_plant(bundle):
     """Same smooth image, two classes, two verdicts — this is the point."""
     root, bench, _ = bundle
-    got = _verdicts(fs.filter_bundle(root, bench, workers=4)[0])
+    got = _verdicts(fs.filter_bundle(root, bench, workers=4, require_provenance=True)[0])
     assert got["leaf_spot/smooth.jpg"] == "blurry"
     assert got["not_a_plant/smooth.jpg"] == "keep"
 
@@ -214,7 +214,7 @@ def test_blur_threshold_is_the_serving_one():
 def test_counts_are_clusters_not_files(bundle):
     """A class of near-duplicates must not report its file count as coverage."""
     root, bench, _ = bundle
-    _, report = fs.filter_bundle(root, bench, workers=4)
+    _, report = fs.filter_bundle(root, bench, workers=4, require_provenance=True)
     spot = report["per_class"]["leaf_spot"]
     assert spot["manifest_rows"] > spot["distinct_clusters"]
     assert spot["inflation"] > 1.0
@@ -331,7 +331,9 @@ def test_benchmark_leak_overrides_blur_quality_verdict(tmp_path):
     assert report["totals"]["benchmark_leaks"] == 1
 
 
-def test_production_filter_requires_stable_capture_provenance(tmp_path):
+def test_strict_filter_requires_stable_capture_provenance_only_when_asked(tmp_path):
+    """A v8-shaped manifest (no provenance columns) is accepted by default and
+    labelled as pHash-only; the v9 contract is an explicit opt-in."""
     root = tmp_path / "supp"
     _noise(root / "healthy/h.jpg", seed=30)
     with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
@@ -339,8 +341,13 @@ def test_production_filter_requires_stable_capture_provenance(tmp_path):
         w.writeheader()
         w.writerow({"filename": "healthy/h.jpg", "class": "healthy",
                     "phash": _phash_of(root / "healthy/h.jpg")})
+    rows, report = fs.filter_bundle(root, None, workers=1)
+    assert _verdicts(rows)["healthy/h.jpg"] == "keep"
+    assert report["thresholds"]["independence_method"] == "legacy_phash_only_NOT_CERTIFIED"
+    assert {row["filter_independence_method"] for row in rows} == {
+        "legacy_phash_only_NOT_CERTIFIED"}
     with pytest.raises(SystemExit, match="capture_family_id"):
-        fs.filter_bundle(root, None, workers=1)
+        fs.filter_bundle(root, None, workers=1, require_provenance=True)
 
 
 def test_capture_family_merges_phash_distinct_siblings(tmp_path):
@@ -358,7 +365,7 @@ def test_capture_family_merges_phash_distinct_siblings(tmp_path):
                         "immutable_source_id": "source:" + name,
                         "capture_family_id": "one-underlying-capture",
                         "first_seen_model_version": "never"})
-    rows, report = fs.filter_bundle(root, None, workers=1)
+    rows, report = fs.filter_bundle(root, None, workers=1, require_provenance=True)
     assert sorted(_verdicts(rows).values()) == ["dup_intra", "keep"]
     assert report["thresholds"]["independence_method"].startswith(
         "curator_capture_family_id")

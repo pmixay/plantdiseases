@@ -191,6 +191,15 @@ FOLD_WHOLE_FRAME_VOTE = get_bool("FOLD_WHOLE_FRAME_VOTE", True)
 # a conservative compatibility threshold, not a validated v9 operating point.
 # It is intentionally permissive; v9 must lock and report a served-path quality
 # slice before changing or claiming performance for it.
+#
+# ONE STATISTIC, ONE FLOOR, BOTH TIERS. The on-device Aqua tier runs the same
+# quality gate before its classifier (android ``util/BlurGate.kt``): the same
+# ITU-R 601-2 integer luma PIL uses for ``convert("L")``, the same 320 px
+# long-edge downscale, the same interior 3x3 Laplacian and the same 50.0
+# floor. Until 2.7.5 the app scored a quarter-resolution decode (a 12 MP
+# frame at ~1000 px) against a floor of 100, so the two tiers rejected
+# different photographs. ``tests/test_blur_parity.py`` and the app's
+# ``BlurGateTest`` pin the two implementations to one synthetic fixture.
 BLUR_LAPLACIAN_FLOOR = 50.0
 # The score is computed on a downscaled grayscale copy so we don't pay
 # the cost of a full-resolution convolution per request. 320 px is
@@ -305,6 +314,41 @@ def _served_ood_gate_contract(meta: dict) -> tuple[bool, str]:
         if not matches:
             return False, f"ood.served_gate.{key}={got!r}, expected {wanted!r}"
     return True, "matching full-served-pipeline calibration contract"
+
+
+def _resolve_served_gate_thresholds(meta: dict) -> tuple[float | None, float | None]:
+    """Thresholds fitted on the *served* statistic (``ood.served_gate``).
+
+    Returns ``(embedding_threshold, max_logit_floor)``. Each is ``None`` when
+    the sidecar declares no served value for it (the notebook writes ``null``
+    when a signal did not separate on the served statistic). A declared value
+    must be a finite number in range; anything else fails readiness, because
+    silently falling back to the single-image threshold in ``ood.embedding``
+    is exactly the mis-calibration the served-gate contract exists to prevent.
+    """
+    ood = meta.get("ood") if isinstance(meta, dict) else None
+    gate = ood.get("served_gate") if isinstance(ood, dict) else None
+    if not isinstance(gate, dict):
+        return None, None
+    resolved: list[float | None] = []
+    for key, upper in (("embedding_threshold", 2.0), ("max_logit_floor", None)):
+        val = gate.get(key)
+        if val is None:
+            resolved.append(None)
+            continue
+        if (
+            isinstance(val, bool)
+            or not isinstance(val, (int, float))
+            or not math.isfinite(float(val))
+            or float(val) < 0.0
+            or (upper is not None and float(val) > upper)
+        ):
+            raise RuntimeError(
+                f"classes.json ood.served_gate.{key} must be null or a finite number "
+                f"in range, got {val!r}"
+            )
+        resolved.append(float(val))
+    return resolved[0], resolved[1]
 
 
 def _require_contract_value(contract: dict, dotted: str, expected) -> None:
@@ -534,6 +578,16 @@ class PlantDiseasePipeline:
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
         self.nap_max_logit_scope = _resolve_max_logit_scope(meta)
         self.nap_head_mass_floor = _resolve_head_mass_floor(meta)
+        # The ONLY thresholds the overlay applies are the served-statistic ones
+        # from ``ood.served_gate`` (fitted in notebook §6 through detector ->
+        # crops -> whole-frame fold -> min distance / max logit). The
+        # single-image ``ood.embedding.threshold`` and ``ood.max_logit_floor``
+        # stay in the sidecar as calibration provenance and are never served.
+        self._served_embedding_threshold: float | None = None
+        if self._secondary_ood_gate_enabled:
+            served_emb, served_ml = _resolve_served_gate_thresholds(meta)
+            self._served_embedding_threshold = served_emb
+            self.nap_max_logit_floor = served_ml if served_ml is not None else 0.0
         # Which per-crop key carries the score this bundle's floor was fit on.
         self._max_logit_key = (
             "plant_max_logit"
@@ -551,10 +605,12 @@ class PlantDiseasePipeline:
         )
         if self.verified_bundle is not None:
             self._validate_bundle_serving_contract(meta)
-        if self.embedding_ood is not None and self._secondary_ood_gate_enabled:
+        if self._served_embedding_threshold is not None and self.embedding_ood is not None:
             logger.info(
-                "OOD: embedding k-NN gate active (threshold=%.4f) — "
-                "supersedes the MaxLogit floor on the classifier side.",
+                "OOD: embedding k-NN gate active on the served statistic "
+                "(min member distance > %.4f; single-image sidecar threshold %.4f "
+                "is provenance only) — supersedes the MaxLogit floor.",
+                self._served_embedding_threshold,
                 self.embedding_ood.threshold,
             )
         if not self._secondary_ood_gate_enabled:
@@ -564,7 +620,10 @@ class PlantDiseasePipeline:
                 "alone can never reject an image.",
                 self._secondary_ood_gate_contract_reason,
             )
-        elif self.embedding_ood is None and self.nap_max_logit_floor <= 0:
+        elif (
+            (self.embedding_ood is None or self._served_embedding_threshold is None)
+            and self.nap_max_logit_floor <= 0
+        ):
             logger.warning(
                 "Secondary OOD overlay has a matching serving contract but no "
                 "usable classifier-side signal; it is OFF rather than "
@@ -897,14 +956,22 @@ class PlantDiseasePipeline:
           3. Otherwise no classifier signal — the secondary overlay stays off.
 
         The entire overlay also requires ``ood.served_gate`` to state that its
-        threshold was calibrated with the same crop/whole aggregation and
-        detector runtime. Historical one-image-at-a-time thresholds are
-        advisory and cannot reject.
+        thresholds were calibrated with the same crop/whole aggregation and
+        detector runtime, and it applies ONLY the thresholds declared there
+        (``embedding_threshold`` / ``max_logit_floor``). The one-image-at-a-time
+        thresholds in ``ood.embedding`` / ``ood.max_logit_floor`` are
+        calibration provenance and cannot reject.
         """
         if not getattr(self, "_secondary_ood_gate_enabled", False):
             return False
+        # Served-statistic threshold only. ``None`` (no bank, or the notebook
+        # found the embedding signal did not separate on the served statistic)
+        # hands the decision to the served MaxLogit floor, then to no signal.
+        served_threshold = getattr(self, "_served_embedding_threshold", None)
         ood_threshold = (
-            self.embedding_ood.threshold if self.embedding_ood is not None else None
+            served_threshold
+            if self.embedding_ood is not None and served_threshold is not None
+            else None
         )
         probs = classification.get("all_probs") or {}
         triggered, desc = _decide_nap_route(
@@ -934,10 +1001,13 @@ class PlantDiseasePipeline:
 
         Honest UX: clients should render the *set* as advisory alternatives
         rather than pretending the top-1 was a single confident answer. The
-        ``coverage`` field is the nominal ``1-alpha`` target, not delivered
-        coverage; that requires a locked independent evaluation. The dict is
-        keyed by ``classes`` / ``coverage`` / ``method`` so the client doesn't
-        need to know about the calibration internals.
+        ``coverage`` field is ``ConformalConfig.coverage_target``: the
+        notebook's product target when the sidecar carries the out-of-sample
+        audit that backs it, else the nominal ``1 - alpha`` (see
+        ``conformal.py``). Neither is delivered coverage measured on a locked
+        independent set. The dict is keyed by ``classes`` / ``coverage`` /
+        ``method`` so the client doesn't need to know about the calibration
+        internals.
 
         The conformal calibration covers accepted *plant* inputs only.
         Attaching its coverage statement to a natural ``not_a_plant`` result

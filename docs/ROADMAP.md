@@ -152,12 +152,51 @@ Still open:
 > ship from those numbers. Evidence-backed status and v9 requirements follow
 > in this file.
 
-`MODEL_VERSION` is now **2.8.0** (notebook §1). No discovered historical archive
-has the new notebook-bound manifest, complete lineage, and serving contract, so
-none is deployable by the strict current API. `plantvision_combined_v2.7.1.tar`
-is only the newest structurally complete **legacy diagnostic candidate**;
-v2.7.3 failed its own recorded gate and lacks Aqua. The next production
-candidate must be a fresh GPU run on approved v9 data.
+`MODEL_VERSION` is now **2.7.5** (notebook §1; set 2026-09-21 for the next
+Colab run). No discovered historical archive has the notebook-bound manifest,
+complete lineage, and serving contract, so none is deployable by the strict
+current API. `plantvision_combined_v2.7.1.tar` is only the newest structurally
+complete **legacy diagnostic candidate**; v2.7.3 failed its own recorded gate
+and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
+2026-09-21 policy below; v9 is no longer a precondition.
+
+### 2026-09-21 — study-project policy, and the 2.7.5 run is unblocked
+
+- **Licences are provenance, not a gate.** Every fetcher records the per-row
+  licence (iNat `license_code`, COCO licence id, Open Images licence key,
+  DoctorP `cc-by-nc-sa-4.0`, the supplement's `license_id`) and nothing
+  filters on it: `source_inventory.license_policy` in `model_card.json`
+  tallies what the bundle trained on. The 2026-08-25 filters would have
+  dropped ~87 % of iNat research-grade Plantae (83.0M vs 10.8M observations,
+  live API 2026-09-21) and all 1,558 DoctorP rows. Eligibility analysis of the
+  returned sources: `DATASET_LABELING_PLAN.md`, "Sources returned under the
+  2026-09-21 policy".
+- **The supplement contract is soft.** `STRICT_SUPPLEMENT_FILTER_VERDICT /
+  _LICENSE_PROVENANCE / _MODEL_PROVENANCE` default to `False`: a v8 manifest
+  loads, every absent column gets a documented fallback (sha256 source id, no
+  family, `split_hint` routing) and one warning with the count. Present
+  columns are validated as before; `bench_leak` / `phash_mismatch` still raise.
+- **The served OOD overlay is calibrated and on.** §6 now fits
+  `ood.served_gate` through the served path (Stage 1 ONNX → the
+  `serving_contract.crop` rules → whole-frame fold → min member distance / max
+  member plant logit) at `TARGET_PLANT_FPR` on `temperature_cal`, reports the
+  three-of-three gate's NAP recall and plant false-reject beside the head-only
+  rates, and `pipeline.py` applies **only** those thresholds. Closes the
+  "Served-gate calibration tool" item below; the tool route was not needed.
+- **Conformal `coverage` is honest again.** `conformal.py` advertises the
+  notebook's `target_coverage` (0.90) when the sidecar carries the
+  out-of-sample audit that backs it (`coverage_basis = audit_target`), else
+  `1 − alpha`. Closes the alpha = 0.6 item below.
+- **One blur gate on both tiers.** Android `util/BlurGate.kt` computes the
+  server's statistic (PIL luma, 320 px long edge, interior Laplacian) and uses
+  the server's 50.0 floor; the app used to score a ~1000 px decode against 100.
+  `test_blur_parity.py` and `BlurGateTest` pin both to one fixture. Aqua's
+  `not_a_plant` rejection remains the trained head alone — it has no detector,
+  so it cannot run the served gate; §6 reports its head recall in the aqua
+  metrics.
+- **Still open from this round:** the seed replicate, the augmentation
+  ablation and `RUN_DETECTOR_CROP_EVAL` for combined mode (below); and Aqua
+  has no classifier-side OOD signal of its own.
 
 ### 2026-09-16 review — code is done, the model is data-gated
 
@@ -212,30 +251,14 @@ still open:
 
 **Open, code-only (no data needed), ordered by value.**
 
-- [ ] **Served-gate calibration tool.** Every 2.8.0 bundle serves with the
-      secondary OOD overlay **OFF** (trained `not_a_plant` head + blur gate
-      only), because §6 fits the embedding threshold one image at a time and
-      `pipeline.py` refuses a threshold not fitted on the served statistic
-      (min member distance over crops + whole frame). Calibrating in the
-      notebook would mean re-implementing the crop logic there — the drift the
-      contract exists to prevent. The honest fix is a server tool
-      (`tools/calibrate_served_gate.py`) that runs the real
-      `PlantVisionPipeline` on held-out plant and non-plant images, fits the
-      min-member threshold at `TARGET_PLANT_FPR`, writes `ood.served_gate`
-      and re-seals `bundle_manifest.json`. Note the direction of the old
-      error: min-over-members ≤ whole-frame distance, so the per-image
-      threshold applied to the served statistic *under*-fires — the overlay
-      was conservative, not dangerous, and switching it off costs NAP
-      rejections the head misses.
-- [ ] **Conformal `coverage` on the wire is `1 − alpha`, and alpha has been 0.6
-      since 2.7.0.** The §6 RAPS grid minimises set size subject to audit
-      coverage ≥ 0.9 + 2 SE and, since the grid widened in 2.7.0, picks
-      `alpha = 0.6` (audit coverage 0.98, mean set 1.5). `conformal.py`
-      reports `coverage_target = 1 − alpha`, so a 2.7.x-shaped bundle makes
-      `/api/analyze` advertise `coverage: 0.4` while `conformal.json` carries
-      `target_coverage: 0.9`. Either clamp the grid to `alpha ≤ 1 − target` or
-      export `target_coverage` and serve that. Found in the archives
-      (`MODEL_HISTORY.md`, "Sidecar findings").
+- [x] **Served-gate calibration** — done in the notebook (2026-09-21, above),
+      with the crop/detector rules mirrored from `serving_contract` and pinned
+      to `pipeline.py` / `detector.py` by `test_data_invariants.py`. The
+      direction of the old error still holds: min-over-members ≤ whole-frame
+      distance, so a per-image threshold under-fires; the served fit is
+      strictly more permissive on plants at the same false-reject target.
+- [x] **Conformal `coverage` on the wire** — `conformal.py` advertises the
+      audit-backed `target_coverage` (2026-09-21, above).
 - [ ] **Production-faithful eval is OFF in the shipping mode.**
       `RUN_DETECTOR_CROP_EVAL = (TRAIN_MODE != 'combined')` — `combined` is
       the default, so the detector-crop macro-F1 is never produced for the
@@ -245,7 +268,7 @@ still open:
 - [ ] **Strict determinism is untested end to end.**
       `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
       §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
-      kernel. The first 2.8.0 run is the test; if it trips, prefer
+      kernel. The first 2.7.5 run is the test; if it trips, prefer
       `warn_only=True` with the warning recorded in `run_manifest.json` over
       losing the run.
 - [ ] **The augmentation profile is unablated** (v1 letterbox and v2 parity
@@ -413,6 +436,9 @@ archive's own sidecars.
 - **2.7.3** — regime-aware sampling + regime conformal. Both falsified, both
   removed from the notebook. First release stopped by the out-of-domain gate
   before producing a bundle.
+- **2.7.5** — not yet run. First run under the 2026-09-21 study-project policy:
+  DoctorP and unfiltered iNat back in the mix, served OOD gate calibrated,
+  audit-backed conformal coverage, one blur gate on both tiers.
 
 ---
 

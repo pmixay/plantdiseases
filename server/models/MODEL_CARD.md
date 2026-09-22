@@ -102,10 +102,19 @@ agree. Any one of them abstaining keeps an accepted classifier verdict.
 There is an additional calibration precondition: `ood.served_gate` must declare
 schema v1, `calibration_mode="full_served_pipeline"`, the served embedding and
 MaxLogit aggregations, the exact detector-confidence floor, and the current
-whole-frame-vote mode. Historical thresholds were fitted one image at a time,
-whereas serving takes minimum member distance / maximum member logit across
-crops plus the whole frame. Those are different statistics; absent or
-mismatched metadata leaves the secondary overlay advisory/off. A declared
+whole-frame-vote mode — and it carries the **only thresholds the overlay
+applies** (`embedding_threshold`, `max_logit_floor`). Notebook §6 fits them on
+the served statistic: Stage 1 ONNX → the same crop rules as
+`serving_contract.crop` → whole-frame fold → min member k-NN distance / max
+member plant logit per image, thresholded at the target plant false-reject
+rate on `temperature_cal`, with the resulting three-of-three gate's
+`not_a_plant` recall and plant false-reject recorded beside the head-only
+numbers (`served_gate.calibration`). The single-image thresholds in
+`ood.embedding` / `ood.max_logit_floor` are calibration provenance and never
+reject: min-over-members is a smaller statistic than a whole-frame distance,
+so applying them would under-fire. A run where the served calibration fails,
+or where neither signal separates plants from non-plants on the served
+statistic, ships `served_gate: null` and the overlay stays off. A declared
 embedding artifact that is missing or invalid fails bundle readiness rather
 than silently falling through to a weaker gate.
 
@@ -234,7 +243,9 @@ run as a self-contained Colab upload.
   PlantDoc, PlantVillage, iNaturalist, DoctorP and a Kaggle eval supplement,
   with pHash leakage resolution and a per-source inventory persisted so a
   version-over-version delta can be checked for source drift before it is
-  believed.
+  believed. Per-image licence and provenance are **recorded, never gated**
+  (study-project policy, 2026-09-21): `source_inventory.license_policy`
+  tallies what the bundle trained on.
 - **§3 — dedup, Stage 1 detector, DINOv2 diagnostic probe.**
 - **§4 — Stage 2.** Backbone frozen and in `eval()` so its LayerNorm
   statistics are identical at train, eval and export; **only the head plus
@@ -268,13 +279,13 @@ paired comparison can be run with `server/tools/eval_bootstrap.py` or
 `paired_eval.py`, but the present private supplement and regression set are not
 independent enough to promote that comparison to a release claim.
 
-This means 2.8.0 is deliberately conservative: `classes.json` exports no
-full-served-pipeline OOD threshold and the secondary server overlay remains
-off. Natural `not_a_plant` predictions and image-quality rejection still work.
-Dataset v9 must provide an independent non-plant/difficult-negative OOD set and
-a separately locked deployment-representative test, grouped by capture family;
-only served-path calibration on those data may enable the overlay or a new
-release gate. See `docs/ROADMAP.md`.
+From 2.7.5 the served OOD overlay is calibrated in §6 (above) and is on
+whenever that calibration produced a threshold. Natural `not_a_plant`
+predictions and image-quality rejection work regardless. Dataset v9 still owes
+an independent non-plant/difficult-negative OOD set and a separately locked
+deployment-representative test, grouped by capture family; until then the
+served-gate numbers in `served_gate.calibration` are measured on
+`temperature_cal`, not on a locked set. See `docs/ROADMAP.md`.
 
 PlantVillage is **excluded** from the real-world gate and from both
 calibration splits — its studio backgrounds violate exchangeability with the
@@ -305,12 +316,16 @@ The margin is the point: the guard is measured on a few hundred audit rows,
 so selecting exactly at the target ships sets whose true coverage falls short
 about half the time.
 
-The API's `coverage` field is the nominal target `1 - alpha`, not a measured
-delivery guarantee. Historical `empirical_coverage` values in
-`conformal.json` were computed on a same-calibration-row diagnostic and are not
-out-of-sample evidence; the runtime validates them as metadata but does not
-advertise them as achieved coverage. Prediction sets remain explicitly
-`advisory` until a locked, independent coverage evaluation is shipped.
+`alpha` is a **search knob**, not the coverage claim: the grid has selected
+`alpha = 0.6` since 2.7.0 because a sharp head still audits at ~0.98 coverage
+there with sets of ~1.5. The API's `coverage` field is therefore
+`target_coverage` (0.90) whenever `conformal.json` proves it on an
+out-of-sample audit (`empirical_coverage_kind = "out_of_sample"`, `audit_n ≥
+50`, audit coverage at or above the target — `coverage_basis =
+"audit_target"`), and the nominal `1 - alpha` otherwise. An in-sample
+`empirical_coverage` never overrides the nominal value. Neither number is
+delivered coverage measured on a locked independent set; prediction sets
+remain explicitly `advisory` until one is shipped.
 
 The pipeline **omits the prediction set entirely on every abstention** (natural
 `not_a_plant`, OOD gate, or image-quality rejection). The plant calibration

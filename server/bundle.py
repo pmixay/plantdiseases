@@ -231,6 +231,38 @@ def _validate_classes_contract(classes: dict, *, version: str, family: str, run_
             or (upper is not None and not 0.0 <= float(value) <= upper)
         ):
             raise BundleLoadError(f"classes.json -> ood.{key} is invalid")
+    _validate_served_gate(ood.get("served_gate"))
+
+
+def _validate_served_gate(gate: object) -> None:
+    """Check the served-statistic thresholds the notebook fits in §6.
+
+    ``null`` means the overlay is off. A declared gate must carry at least one
+    finite threshold: ``embedding_threshold`` (cosine k-NN distance, in
+    ``[0, 2]``) or ``max_logit_floor`` (non-negative). A gate with neither is a
+    sidecar that says "enabled" while nothing can fire, which the notebook is
+    written never to emit — reject it rather than serve a silent no-op.
+    """
+    if gate is None:
+        return
+    if not isinstance(gate, dict):
+        raise BundleLoadError("classes.json -> ood.served_gate must be an object or null")
+    for key, upper in (("embedding_threshold", 2.0), ("max_logit_floor", None)):
+        value = gate.get(key)
+        if value is None:
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) < 0.0
+            or (upper is not None and float(value) > upper)
+        ):
+            raise BundleLoadError(f"classes.json -> ood.served_gate.{key} is invalid")
+    if gate.get("embedding_threshold") is None and gate.get("max_logit_floor") is None:
+        raise BundleLoadError(
+            "classes.json -> ood.served_gate declares no threshold; write null to disable"
+        )
 
 
 _SERVING_CONTRACT_SECTIONS = {

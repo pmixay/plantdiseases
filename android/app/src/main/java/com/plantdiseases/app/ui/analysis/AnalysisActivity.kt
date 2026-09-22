@@ -27,6 +27,7 @@ import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.AquaInference
+import com.plantdiseases.app.util.BlurGate
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
@@ -133,7 +134,9 @@ class AnalysisActivity : AppCompatActivity() {
                 ImageUtils.computeBlurScore(imagePath)
             }
 
-            blurQaFailed = blurScore < 100.0
+            // Same statistic and floor as the server gate, so Aqua and gamma
+            // reject the same photographs (util/BlurGate.kt).
+            blurQaFailed = BlurGate.isTooBlurry(blurScore)
             if (blurQaFailed) {
                 // Photo is blurry — warn user. Keep the reference so onDestroy
                 // can dismiss it and avoid a leaked window on recreation.

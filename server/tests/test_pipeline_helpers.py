@@ -969,3 +969,88 @@ def test_viral_high_confidence_keeps_caveat_without_demotion():
 
     assert "viral_variegation_caveat" in out["warnings"]
     assert "low_confidence" not in out["warnings"]
+
+
+def test_served_gate_applies_served_thresholds_not_the_single_image_ones():
+    """The overlay must reject on ``ood.served_gate.embedding_threshold`` (fitted
+    on min-over-members) and never on ``ood.embedding.threshold`` (fitted one
+    image at a time). A served min distance between the two thresholds is the
+    exact case that used to be mis-gated."""
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+
+    class StubClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot", "not_a_plant"]
+
+    class StubBank:
+        threshold = 0.55   # single-image threshold: provenance only
+
+    pipe.classifier = StubClassifier()
+    pipe._secondary_ood_gate_enabled = True
+    pipe.embedding_ood = StubBank()
+    pipe._served_embedding_threshold = 0.70
+    pipe.nap_max_logit_floor = 0.0
+    pipe.nap_max_logit_scope = "plant_only"
+    pipe._max_logit_key = "plant_max_logit"
+    pipe.nap_head_mass_floor = 0.05
+    base = {
+        "class_name": "leaf_spot",
+        "all_probs": {"healthy": 0.2, "leaf_spot": 0.6, "not_a_plant": 0.2},
+        "max_logit": 1.0, "plant_max_logit": 1.0,
+    }
+    between = {**base, "ood_score": 0.62}   # > single-image 0.55, < served 0.70
+    beyond = {**base, "ood_score": 0.75}    # > served 0.70
+    assert pipe._should_route_to_nap(between, det_conf=0.1) is False
+    assert pipe._should_route_to_nap(beyond, det_conf=0.1) is True
+    # No served embedding threshold -> the bank is not a signal at all.
+    pipe._served_embedding_threshold = None
+    assert pipe._should_route_to_nap(beyond, det_conf=0.1) is False
+
+
+def test_served_gate_thresholds_are_resolved_strictly():
+    import pipeline as pipeline_module
+
+    resolve = pipeline_module._resolve_served_gate_thresholds
+    assert resolve({}) == (None, None)
+    assert resolve({"ood": {"served_gate": None}}) == (None, None)
+    both = {"ood": {"served_gate": {"embedding_threshold": 0.63, "max_logit_floor": 1.75}}}
+    assert resolve(both) == (0.63, 1.75)
+    only_ml = {"ood": {"served_gate": {"embedding_threshold": None, "max_logit_floor": 1.75}}}
+    assert resolve(only_ml) == (None, 1.75)
+    for bad in (True, "0.6", float("nan"), -0.1, 2.5):
+        with pytest.raises(RuntimeError):
+            resolve({"ood": {"served_gate": {"embedding_threshold": bad}}})
+    with pytest.raises(RuntimeError):
+        resolve({"ood": {"served_gate": {"max_logit_floor": -1.0}}})
+
+
+def test_pipeline_init_adopts_served_thresholds_when_contract_matches():
+    """``__init__`` must replace the single-image MaxLogit floor with the served
+    one and keep the served embedding threshold beside the bank."""
+    import pipeline as pipeline_module
+
+    meta = {
+        "ood": {
+            "max_logit_floor": 2.01,          # single-image: provenance only
+            "max_logit_scope": "plant_only",
+            "nap_head_mass_floor": 0.05,
+            "served_gate": {
+                "schema_version": 1,
+                "calibration_mode": "full_served_pipeline",
+                "embedding_aggregation": "min_member_distance",
+                "max_logit_aggregation": "max_member_logit",
+                "detector_confidence_floor": pipeline_module.NAP_DETECTOR_CONF_FLOOR,
+                "fold_whole_frame_vote": pipeline_module.FOLD_WHOLE_FRAME_VOTE,
+                "embedding_threshold": 0.68,
+                "max_logit_floor": 1.4,
+            },
+        }
+    }
+    enabled, _ = pipeline_module._served_ood_gate_contract(meta)
+    assert enabled is True
+    served_emb, served_ml = pipeline_module._resolve_served_gate_thresholds(meta)
+    assert served_emb == 0.68 and served_ml == 1.4
+    # Single-image resolver still reads the provenance value untouched.
+    assert pipeline_module._resolve_max_logit_floor(meta) == 2.01

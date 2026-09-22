@@ -422,57 +422,10 @@ object ImageUtils {
     }
 
     /**
-     * Compute Laplacian variance to detect blurry images.
-     * Returns a variance value — lower means blurrier.
-     * Threshold ~100 is a reasonable default: below it the image is likely blurry.
+     * Variance-of-Laplacian focus score on the server's statistic
+     * (see [BlurGate]). Lower means blurrier; compare against
+     * [BlurGate.VARIANCE_LAPLACIAN_FLOOR]. Returns [Double.MAX_VALUE] on
+     * any decode failure (assume sharp).
      */
-    fun computeBlurScore(imagePath: String): Double {
-        return try {
-            val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-            val bitmap = BitmapFactory.decodeFile(imagePath, options) ?: return Double.MAX_VALUE
-            val w = bitmap.width
-            val h = bitmap.height
-
-            // Bulk-read all pixels at once (20-30x faster than per-pixel getPixel)
-            val pixels = IntArray(w * h)
-            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
-            bitmap.recycle()
-
-            // Convert to grayscale in place — reuse the pixel buffer rather than
-            // allocating a second full-size IntArray (saves ~w*h*4 bytes).
-            for (i in pixels.indices) {
-                val pixel = pixels[i]
-                val r = (pixel shr 16) and 0xFF
-                val g = (pixel shr 8) and 0xFF
-                val b = pixel and 0xFF
-                pixels[i] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-            }
-
-            // Apply Laplacian kernel [0,1,0; 1,-4,1; 0,1,0] and compute variance
-            var sum = 0.0
-            var sumSq = 0.0
-            var count = 0
-            for (y in 1 until h - 1) {
-                for (x in 1 until w - 1) {
-                    val laplacian = pixels[(y - 1) * w + x] +
-                        pixels[(y + 1) * w + x] +
-                        pixels[y * w + (x - 1)] +
-                        pixels[y * w + (x + 1)] -
-                        4 * pixels[y * w + x]
-                    sum += laplacian
-                    sumSq += laplacian.toDouble() * laplacian
-                    count++
-                }
-            }
-            if (count == 0) return Double.MAX_VALUE
-            val mean = sum / count
-            (sumSq / count) - (mean * mean) // variance
-        } catch (e: OutOfMemoryError) {
-            Log.w(TAG, "computeBlurScore: out of memory", e)
-            Double.MAX_VALUE
-        } catch (e: Exception) {
-            Log.w(TAG, "computeBlurScore failed", e)
-            Double.MAX_VALUE // On error, assume sharp
-        }
-    }
+    fun computeBlurScore(imagePath: String): Double = BlurGate.score(imagePath)
 }

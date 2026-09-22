@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from bundle import BundleLoadError, verify_bundle
+from bundle import BundleLoadError, _validate_served_gate, verify_bundle
 from tools import verify_bundle as verify_bundle_cli
 
 
@@ -271,3 +271,23 @@ def test_verify_bundle_rejects_embedding_without_explicit_bank_file(tmp_path):
     _write_manifest(tmp_path, manifest)
     with pytest.raises(BundleLoadError, match="bank_file"):
         verify_bundle(tmp_path)
+
+
+def test_served_gate_sidecar_validation():
+    """``ood.served_gate`` is null (overlay off) or an object with at least one
+    finite served threshold; a gate that names none is an enabled no-op and is
+    refused at preflight, as are out-of-range values."""
+    _validate_served_gate(None)
+    _validate_served_gate({"embedding_threshold": 0.63, "max_logit_floor": None})
+    _validate_served_gate({"embedding_threshold": None, "max_logit_floor": 1.75})
+    for bad in (
+        "off",
+        {"embedding_threshold": None, "max_logit_floor": None},
+        {"embedding_threshold": 2.5},
+        {"embedding_threshold": -0.1},
+        {"embedding_threshold": True},
+        {"max_logit_floor": float("nan")},
+        {"max_logit_floor": "1.7"},
+    ):
+        with pytest.raises(BundleLoadError):
+            _validate_served_gate(bad)

@@ -146,9 +146,16 @@ trained-head `not_a_plant` argmax is already a rejection and skips the overlay. 
 head-mass floor is checked first and is per-bundle configurable via
 `classes.json -> ood.nap_head_mass_floor`, where `null` restores the two-signal
 behaviour. The OOD signal is an embedding-space k-NN distance on the CLS vector
-(`ood.py`) with a MaxLogit-floor fallback. Calibration adds temperature scaling +
-RAPS conformal prediction sets (`conformal.py`) so the server can say "I'm not sure"
-honestly.
+(`ood.py`) with a MaxLogit-floor fallback. The thresholds the overlay applies come
+only from `classes.json -> ood.served_gate`, which notebook §6 fits on the *served*
+statistic (min member distance / max member logit over crops + whole frame); the
+single-image `ood.embedding.threshold` is provenance and never rejects, and a bundle
+with `served_gate: null` serves with the overlay off. The blur floor (50.0 on a 320 px
+long edge, PIL luma, interior Laplacian) is one statistic on both tiers: the Android
+`util/BlurGate.kt` mirrors it for the on-device Aqua tier. Calibration adds
+temperature scaling + RAPS conformal prediction sets (`conformal.py`) so the server
+can say "I'm not sure" honestly; the advertised `coverage` is the notebook's target
+when the sidecar's out-of-sample audit backs it, else `1 - alpha`.
 
 **Model families.** Each bundle declares its tier in `classes.json -> model_family`;
 `/api/capabilities` reports the tiers to the app's scan-screen picker. `aqua` runs
@@ -207,7 +214,9 @@ detail screen only.
   `config.example.json`) **wins over** the same-named env var **wins over** the
   default. Blank handling is asymmetric — a blank value in `config.json` counts as
   unset (so the empty `""` secrets in `config.example.json` let an env var win), but a
-  **blank env var does not**: it wins as an empty string and shadows the default.
+  **blank env var does not**: it wins as an empty string and shadows the default —
+  except through `get_bool`, which treats a blank or unrecognised value as unset and
+  warns (`1/true/yes/on`, `0/false/no/off` only).
   Nested JSON sections flatten to flat UPPERCASE keys, discarding the section name
   (`api_keys` is the one section kept whole as a dict). Config is read once at import,
   so a change needs a process restart.

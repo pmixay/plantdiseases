@@ -336,7 +336,18 @@ def _resolution_stats(sides: list[int]) -> dict:
 
 
 def filter_bundle(root: Path, bench: Path | None, workers: int, *,
-                  require_provenance: bool = True) -> tuple[list[dict], dict]:
+                  require_provenance: bool = False) -> tuple[list[dict], dict]:
+    """QA one supplement build on its bytes.
+
+    ``require_provenance=False`` (the default since 2026-09-21) accepts a
+    v8-shaped manifest (``filename``, ``class``, ``phash`` …) and clusters on
+    pHash alone, recording ``legacy_phash_only_NOT_CERTIFIED`` as the
+    independence method so the notebook can warn that rotated/noised siblings
+    may hide. Pass ``True`` (``--require-provenance``) to demand
+    ``immutable_source_id`` / ``capture_family_id`` /
+    ``first_seen_model_version`` on every row and cluster on the curator's
+    families; that is the v9 contract, not a precondition for running QA.
+    """
     manifest_path = root / "manifest.csv"
     if not manifest_path.exists():
         sys.exit(f"no manifest at {manifest_path}")
@@ -525,9 +536,15 @@ def main() -> None:
     ap.add_argument("--bench", type=Path, help="OOD benchmark dir to check leakage against")
     ap.add_argument("--out", type=Path, required=True, help="output prefix (.json + .csv)")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--require-provenance", action="store_true",
+                    help="demand immutable_source_id / capture_family_id / "
+                         "first_seen_model_version on every row and cluster on the "
+                         "curator's capture families (the v9 contract); default: "
+                         "accept a v8-shaped manifest and cluster on pHash alone")
     args = ap.parse_args()
 
-    rows, report = filter_bundle(args.root, args.bench, args.workers)
+    rows, report = filter_bundle(args.root, args.bench, args.workers,
+                                 require_provenance=args.require_provenance)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.with_suffix(".json").write_text(json.dumps(report, indent=2))
