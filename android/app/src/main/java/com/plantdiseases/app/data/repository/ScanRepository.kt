@@ -1548,7 +1548,12 @@ class ScanRepository(
         species: String? = null,
         limit: Int = 12,
         scope: String? = null,
-        before: Long? = null,
+        // `recent` (default) or `recommended`. The server rejects anything
+        // else with 422, and pairs both orders with the opaque `cursor`
+        // below — there is no `before` timestamp cursor any more, because
+        // recommendation order is score + time + id, not time alone.
+        ranking: String? = null,
+        cursor: String? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             optionalAccountGet { token ->
@@ -1561,7 +1566,8 @@ class ScanRepository(
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
-                    before?.let { parameter("before", it) }
+                    ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
+                    cursor?.takeIf { it.isNotBlank() }?.let { parameter("cursor", it) }
                     parameter("limit", limit)
                 }
             }

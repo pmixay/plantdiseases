@@ -375,7 +375,6 @@ class CommunityController(
                 // gracefully when the species bucket is empty.
                 species = speciesScientific,
                 limit = 12,
-                context = activity,
             ).onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = if (isRu) {

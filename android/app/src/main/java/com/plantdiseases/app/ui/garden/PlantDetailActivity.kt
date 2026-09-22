@@ -89,7 +89,6 @@ class PlantDetailActivity : AppCompatActivity() {
     private lateinit var toolbarTitle: TextView
     private var plantId: Long = -1L
     private var currentPlant: PlantEntity? = null
-    private var lunarCalendarView: LunarCalendarView? = null
 
     // UI state restored after rotation / process-death (the plant itself
     // reloads from the repository by plantId).

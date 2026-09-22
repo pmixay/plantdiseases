@@ -279,9 +279,14 @@ data class CommunityScansResponse(
     // showing a misleading "no scans near you" empty state.
     @SerializedName("location_required") @SerialName("location_required")
     val locationRequired: Boolean = false,
-    // Cursor for the next (older) page — pass back as the `before` param.
-    // Null once a page comes back short, meaning the scope is exhausted.
+    // Legacy timestamp cursor from the pre-`next_cursor` feed. The current
+    // server no longer sends it and no client code reads it; kept only so an
+    // older deployment's `next_before` still lands somewhere typed.
     @SerializedName("next_before") @SerialName("next_before") val nextBefore: Long? = null,
+    // Recommended pages use an opaque composite cursor because their order is
+    // score + time + id, not time alone. Clients must return it unchanged.
+    @SerializedName("next_cursor") @SerialName("next_cursor") val nextCursor: String? = null,
+    @SerializedName("ranking") @SerialName("ranking") val ranking: String? = null,
 )
 
 @Serializable
@@ -731,7 +736,14 @@ data class IdentifyResponse(
      *  the UI — kept on the wire for future "served from cache"
      *  indicator next to species suggestions. */
     @SerializedName("cached") @SerialName("cached") val cached: Boolean? = null,
-)
+) {
+    /** The shared disease pipeline rejected this upload before PlantNet was
+     *  called. Keep this separate from [available]: both states deliberately
+     *  use `available=false`, but only this one should ask for a clearer plant
+     *  photo instead of claiming that the species service is unavailable. */
+    val wasRejectedAsNotAPlant: Boolean
+        get() = source == "skipped_nap"
+}
 
 /** /api/species-info response — localized Wikipedia blurb + lead photo. */
 @Serializable

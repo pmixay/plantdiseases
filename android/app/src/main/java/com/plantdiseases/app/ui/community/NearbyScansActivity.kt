@@ -506,7 +506,6 @@ class NearbyScansActivity : AppCompatActivity() {
             scope = scope,
             ranking = ranking,
             cursor = cursor,
-            context = this@NearbyScansActivity,
         )
 
     // Belt-and-braces: also drop the user's own scans client-side. The server
