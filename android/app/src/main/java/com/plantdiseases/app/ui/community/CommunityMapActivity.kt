@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -31,6 +32,8 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -43,7 +46,6 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
-import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -78,10 +80,14 @@ class CommunityMapActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var authRepository: AuthRepository
+
+    private val likeWritesInFlight = mutableSetOf<String>()
+
+    @Inject
     lateinit var connectivity: ConnectivityObserver
     private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
-    private val likeWritesInFlight = mutableSetOf<String>()
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -191,8 +197,6 @@ class CommunityMapActivity : AppCompatActivity() {
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
                     maxLon = box.lonEast,
-                    userPseudoId = TelemetryIds.userPseudoId(this@CommunityMapActivity),
-                    context = this@CommunityMapActivity,
                 ).getOrNull()
                 binding.mapProgress.visibility = View.GONE
                 val items = res?.items.orEmpty()
@@ -401,13 +405,6 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun openScan(item: CommunityScanItem) {
-        lifecycleScope.launch {
-            scanRepository.recordCommunityView(
-                item.scanId,
-                TelemetryIds.userPseudoId(this@CommunityMapActivity),
-                this@CommunityMapActivity,
-            )
-        }
         CommunityOpinionSheet.show(
             supportFragmentManager,
             item,
@@ -419,20 +416,19 @@ class CommunityMapActivity : AppCompatActivity() {
      *  same contract as [NearbyScansActivity]'s, just parameterised by which
      *  adapter instance owns the tapped row. */
     private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
+        if (authRepository.state.value !is AuthState.Authenticated) {
+            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+            startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(this))
+            return
+        }
         if (!likeWritesInFlight.add(item.scanId)) return
         val next = !item.likedByMe
         val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
         adapter.updateLike(item.scanId, optimisticCount, next)
         lifecycleScope.launch {
-            scanRepository.setCommunityLike(
-                item.scanId,
-                TelemetryIds.userPseudoId(this@CommunityMapActivity),
-                next,
-                this@CommunityMapActivity,
-            )
+            scanRepository.setCommunityLike(item.scanId, next)
                 .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
                 .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
-            likeWritesInFlight.remove(item.scanId)
         }
     }
 
@@ -455,6 +451,14 @@ class CommunityMapActivity : AppCompatActivity() {
             onOpen = { item ->
                 dialog.dismiss()
                 openScan(item)
+            },
+            onAuthor = { item ->
+                dialog.dismiss()
+                item.authorToken
+                    ?.takeIf { it.startsWith("ca") && it.length == 32 }
+                    ?.let { token ->
+                    startActivity(CommunityProfileActivity.intent(this, token))
+                }
             },
             onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
         )
