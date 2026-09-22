@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [30])
+@Config(sdk = [33])
 class ProLockedOverlayViewTest {
     private val context: Context
         get() = ContextThemeWrapper(

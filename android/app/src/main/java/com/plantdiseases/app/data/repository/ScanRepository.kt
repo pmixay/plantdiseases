@@ -1194,13 +1194,11 @@ class ScanRepository(
     fun verdictClassKey(scan: ScanEntity): String? =
         scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: topClassKey(scan)
 
-    /**
-     * NAP detection: prefer the canonical class key from `all_probs`;
-     * fall back to the localised display name (covers legacy scans
-     * without `all_probs`).
-     */
+    /** NAP detection follows the canonical displayed verdict. The persisted
+     * displayed key wins over the raw argmax after a server reroute; legacy
+     * scans fall back to the argmax and then their localised display name. */
     fun isNotAPlantScan(scan: ScanEntity): Boolean {
-        if (topClassKey(scan) == "not_a_plant") return true
+        if (verdictClassKey(scan) == "not_a_plant") return true
         return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
             scan.diseaseNameRu == "Не растение"
     }

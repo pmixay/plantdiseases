@@ -15,9 +15,9 @@ class OpinionCheckWorkerPolicyTest {
     }
 
     @Test
-    fun enabledBuildRequiresNotificationOptIn() {
+    fun enabledBuildChecksForTheInAppInboxRegardlessOfNotificationOptIn() {
         assertThat(shouldRunOpinionCheck(accountUiEnabled = true, notificationsEnabled = false))
-            .isFalse()
+            .isTrue()
         assertThat(shouldRunOpinionCheck(accountUiEnabled = true, notificationsEnabled = true))
             .isTrue()
     }
