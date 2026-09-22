@@ -195,6 +195,7 @@
     <!-- Onboarding -->
 
     <!-- Independent optional privacy choices -->
+    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
     <string name="consent_title">Privacy choices</string>
     <string name="consent_body">Plant diagnosis works without either optional data use below. You can change each choice later in Profile. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
     <string name="consent_agree">Continue</string>
@@ -419,13 +420,7 @@
     <string name="community_opinion_locked_toast">This opinion request has ended.</string>
     <string name="community_report_action">Report</string>
     <string name="community_block_action">Block author</string>
-    <string name="community_report_title">Why are you reporting this?</string>
-    <string name="community_report_sent">Report sent. Thank you.</string>
-    <string name="community_block_title">Block this author?</string>
-    <string name="community_block_body">Their scans and replies will be hidden from you, and your posts will be hidden from them.</string>
-    <string name="community_block_confirm">Block</string>
     <string name="community_blocked">Author blocked.</string>
-    <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
     <string-array name="community_report_reason_labels">
         <item>Sexual content</item>
         <item>Violence or threats</item>

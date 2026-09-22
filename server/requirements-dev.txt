@@ -17,3 +17,10 @@ pip-audit==2.10.1
 # macro-F1; an eval/report-only dependency, deliberately kept out of the
 # runtime requirements.txt so it never lands in the production image.
 scikit-learn>=1.9
+# pHash for the dataset tools (tools/kaggle_inventory.py,
+# tools/filter_supplement.py, tools/build_ood_benchmark.py) and
+# tests/test_filter_supplement.py. It used to sit in requirements.txt for
+# labeling.py's phash column; that module is gone with the training-store
+# rewrite, and nothing the server serves imports it, so it belongs here —
+# same reasoning as scikit-learn above.
+ImageHash>=4.3.2
