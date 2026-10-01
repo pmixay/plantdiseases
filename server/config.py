@@ -90,8 +90,20 @@ def get(key: str, default: Any = None, cast: type | None = None) -> Any:
     if cast is None or isinstance(raw, cast):
         return raw
     try:
-        if cast is bool and isinstance(raw, str):
-            return raw.strip().lower() in ("1", "true", "yes", "on")
+        if cast is bool:
+            if isinstance(raw, str):
+                normalised = raw.strip().lower()
+                if normalised in ("1", "true", "yes", "on"):
+                    return True
+                if normalised in ("0", "false", "no", "off"):
+                    return False
+                raise ValueError(f"unrecognised boolean: {raw!r}")
+            # JSON booleans were returned by the isinstance check above.  Be
+            # deliberately strict for numeric values so a typo such as ``2``
+            # cannot silently enable a security or inference switch.
+            if raw in (0, 1):
+                return bool(raw)
+            raise ValueError(f"unrecognised boolean: {raw!r}")
         return cast(raw)
     except (TypeError, ValueError):
         logger.warning("Invalid server configuration value; using safe default")
@@ -113,14 +125,12 @@ def get_float(key: str, default: float) -> float:
 
 def get_bool(key: str, default: bool) -> bool:
     """Read a boolean. JSON ``true``/``false`` pass through; string values
-    (env vars are always strings) are parsed permissively
-    (``1/true/yes/on`` → True). Anything else falls back to ``default``."""
-    raw = get(key, None)
-    if raw is None:
-        return default
-    if isinstance(raw, bool):
-        return raw
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    (env vars are always strings) are parsed as
+    ``1/true/yes/on`` → True and ``0/false/no/off`` → False. Blank or
+    unrecognised values fall back to ``default`` rather than silently
+    becoming False.
+    """
+    return bool(get(key, default, cast=bool))
 
 
 def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list[str]:

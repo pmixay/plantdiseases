@@ -412,30 +412,27 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
+        val isAbstained = repository.isAbstainedScan(scan)
+        val isInconclusive = isAbstained && !isNotAPlant
         val warnings = repository.parseWarnings(scan.warnings)
-        // Trust the server's final verdict end-to-end (isHealthy/diseaseName),
-        // not a re-derived argmax over all_probs — overriding it fought the
-        // server's own weak-healthy reroute and flipped the visible verdict.
-        val isHealthyVerdict = scan.isHealthy
-        // A not_a_plant verdict carrying the blur warning is really "couldn't
-        // read the photo", not a confident "this isn't a plant" — present it as
-        // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
-        val isBlurryReject = isNotAPlant &&
-            "blurry_image" in warnings
+        // A rejected raw healthy/disease argmax is diagnostic evidence, not a
+        // verdict. The repository's shared policy prevents it from driving any
+        // disease badge or downstream action.
+        val isHealthyVerdict = repository.isHealthyVerdict(scan)
         // On-device (Aqua) scan: local-first and deliberately limited. It has no
         // server-issued scan_id, so it never joins the community feed, can't be
         // added to the garden, and has no feedback channel. The offline warning
         // card (DiagnosisContentController) marks it in the result body.
         val isOfflineAqua = "offline_aqua" in warnings
-        val confidenceAdvisory = confidenceAdvisoryFor(scan, warnings, isNotAPlant)
+        val confidenceAdvisory = confidenceAdvisoryFor(scan, warnings, isAbstained)
         val diseaseName = when {
-            isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
+            isInconclusive -> getString(R.string.inconclusive_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
         }
         val resultDescription = when {
-            isBlurryReject -> getString(R.string.blurry_or_not_a_plant_result_body)
+            isInconclusive -> getString(R.string.inconclusive_result_body)
             isNotAPlant -> getString(R.string.not_a_plant_result_body)
             isRu -> scan.descriptionRu
             else -> scan.description
@@ -454,7 +451,9 @@ class ResultActivity : AppCompatActivity() {
             // verdict, so mark EVERY detected leaf red (not just the primary
             // crop) — the primary box just gets a thicker stroke.
             val regions = repository.parseRegions(scan.regions)
-            if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
+            heatmapOverlay.visibility = if (isAbstained) View.GONE else View.VISIBLE
+            if (isAbstained) tvHeatmapLabel.visibility = View.GONE
+            if (!isAbstained && !isHealthyVerdict && regions.isNotEmpty()) {
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
@@ -482,12 +481,10 @@ class ResultActivity : AppCompatActivity() {
             // Both the guide and example image move into the compact question
             // overlay, keeping the scrollable result focused on care actions.
             val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
-            // The example-photo preview is keyed off the DISPLAYED verdict
-            // (verdictClassKey), not the raw argmax, so a rerouted scan opens
-            // the right reference image.
+            // Example/guide content is meaningful only for an accepted class.
             val appearanceImageUrl =
                 GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
-            btnDiseaseAppearance.visibility = if (isNotAPlant) View.GONE else View.VISIBLE
+            btnDiseaseAppearance.visibility = if (isAbstained) View.GONE else View.VISIBLE
             btnDiseaseAppearance.setOnClickListener {
                 if (supportFragmentManager.findFragmentByTag(DISEASE_APPEARANCE_TAG) == null) {
                     DiseaseAppearanceDialog.newInstance(
@@ -500,9 +497,9 @@ class ResultActivity : AppCompatActivity() {
             }
 
             val confidencePercent = (scan.confidence * 100).toInt()
-            // For NAP we don't expose a confidence bar — "100% confident this
-            // isn't a plant" reads as the model being certain about a diagnosis.
-            if (isNotAPlant) {
+            // On abstention the raw confidence is diagnostic, not an accepted
+            // diagnosis score, so keep it out of the user-facing status card.
+            if (isAbstained) {
                 tvConfidence.visibility = View.GONE
                 progressConfidence.visibility = View.GONE
                 tvStickyConfidence.visibility = View.GONE
@@ -522,8 +519,8 @@ class ResultActivity : AppCompatActivity() {
             }
 
             val statusBackgroundColor = when {
-                isBlurryReject -> {
-                    tvStatusLabel.text = getString(R.string.status_blurry_or_not_a_plant)
+                isInconclusive -> {
+                    tvStatusLabel.text = getString(R.string.status_inconclusive)
                     tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
@@ -553,9 +550,10 @@ class ResultActivity : AppCompatActivity() {
             }
             bindInlineConfidenceAdvisory(confidenceAdvisory, statusBackgroundColor)
 
-            // Description: for NAP we swap in a retry hint and silence the
-            // disease-only sections below.
-            if (isNotAPlant) {
+            // Rejections keep only neutral retry/correction content. The raw
+            // class/probabilities remain stored for audit but never leak into
+            // disease care, species, community, doctor, guide or share UI.
+            if (isAbstained) {
                 cardDescription.visibility = View.VISIBLE
                 tvDescription.text = resultDescription
                 cardAlternatives.visibility = View.GONE
@@ -563,8 +561,7 @@ class ResultActivity : AppCompatActivity() {
                 cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 btnAskDoctor.visibility = View.GONE
-                // Share / add-to-garden don't make sense for NAP — collapse the
-                // bottom bar to just the "new scan" button.
+                // Collapse the bottom bar to the retake action.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
             } else {
@@ -579,18 +576,18 @@ class ResultActivity : AppCompatActivity() {
                 binding.cardSpecies.bind(scan.speciesScientific, scan.speciesCommon)
                 community.bindSimilarScans(scan, repository, isRu)
                 btnAskDoctor.visibility = View.VISIBLE
-                diagnosisContent.setupAskDoctor(scan)
+                diagnosisContent.setupAskDoctor(scan, repository)
                 carePlan.bind(scan, repository, isRu)
             }
 
-            // Toxicity renders for every plant verdict but stays hidden on NAP.
+            // Toxicity renders for accepted plant verdicts only.
             // Feedback binds to a server-issued scan_id; an offline Aqua scan
             // has none, so it's hidden rather than offering an action that
             // can't post. NAP gets a dedicated single-action variant: a
             // wrongly-rejected plant photo is high-value retraining signal,
             // so the card offers a structured "This is a plant" correction
             // instead of the yes/no pair.
-            if (isNotAPlant) {
+            if (isAbstained) {
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
@@ -636,7 +633,7 @@ class ResultActivity : AppCompatActivity() {
             // No-photo fallback CTA: offer the symptom checker whenever the
             // pipeline couldn't get a confident plant read or the diagnosis is
             // low-confidence, so the user still gets guidance.
-            val showSymptomChecker = isNotAPlant || (scan.confidence < 0.5f && !isHealthyVerdict)
+            val showSymptomChecker = isAbstained || (scan.confidence < 0.5f && !isHealthyVerdict)
             btnSymptomChecker.visibility = if (showSymptomChecker) View.VISIBLE else View.GONE
             btnSymptomChecker.setOnClickListener {
                 startActivity(
@@ -649,7 +646,7 @@ class ResultActivity : AppCompatActivity() {
             // ones; the owner may doubt any result). Hidden for NAP (the
             // feed hides NAP scans, so nobody could answer) and for offline
             // scans (no server scan_id to share).
-            if (!isNotAPlant && !isOfflineAqua) {
+            if (!isAbstained && !isOfflineAqua) {
                 btnSecondOpinion.visibility = View.VISIBLE
                 community.setupSecondOpinion(scan, isRu)
             } else {
@@ -681,9 +678,9 @@ class ResultActivity : AppCompatActivity() {
     private fun confidenceAdvisoryFor(
         scan: ScanEntity,
         warnings: List<String>,
-        isNotAPlant: Boolean,
+        isAbstained: Boolean,
     ): ConfidenceAdvisory? {
-        if (isNotAPlant) return null
+        if (isAbstained) return null
         return when {
             "very_low_confidence" in warnings || scan.confidence < VERY_LOW_CONFIDENCE_FALLBACK ->
                 ConfidenceAdvisory.VERY_LOW

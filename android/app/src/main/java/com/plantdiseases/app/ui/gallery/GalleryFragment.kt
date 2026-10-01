@@ -203,10 +203,9 @@ class GalleryFragment : Fragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            // NAP / blur rejects never belong in the gallery. Their rows exist
-            // briefly (they back the reject's result screen + "this is a
-            // plant" feedback) and are swept after 48 h; this filter keeps
-            // them out of the grid in the meantime.
+            // Rejections never belong in the gallery. ScanRepository already
+            // removes inconclusive OOD/quality rows; this natural-NAP filter is
+            // retained for its short-lived correction-feedback row.
             allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
 
             // The stagger belongs to the true first paint; a refresh (returning

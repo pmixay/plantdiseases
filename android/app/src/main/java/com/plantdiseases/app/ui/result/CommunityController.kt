@@ -115,6 +115,11 @@ class CommunityController(
      * so there's no result callback on return — [onResume] re-probes instead.
      */
     fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
+        if (repository.isAbstainedScan(scan)) {
+            binding.btnSecondOpinion.visibility = View.GONE
+            lastScan = null
+            return
+        }
         lastScan = scan
         lastIsRu = isRu
         // This control is not in the activity's enableWhileOnline set — it
@@ -231,6 +236,7 @@ class CommunityController(
     }
 
     private fun beginRequest(scan: ScanEntity, isRu: Boolean) {
+        if (repository.isAbstainedScan(scan)) return
         opinionRequestInFlight = true
         val btn = binding.btnSecondOpinion
         applySecondOpinionEnabled()
@@ -289,9 +295,10 @@ class CommunityController(
         rv.visibility = View.GONE
         empty.visibility = View.GONE
         binding.btnEnableSimilar.visibility = View.GONE
+        if (repository.isAbstainedScan(scan)) return
 
-        // Scope the carousel by the verdict the user actually SAW — the
-        // server's reroute-aware displayed class — not the raw argmax.
+        // Accepted scans use their probability-backed diagnostic class. An
+        // abstained diagnostic argmax returns above and never scopes a feed.
         val diseaseKey = repository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val adapter = SimilarScansAdapter(

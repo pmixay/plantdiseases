@@ -136,14 +136,12 @@ data class ScanEntity(
     // Conformal prediction set the server returned at /api/analyse
     // time (JSON array of class keys). Persisted here so feedback
     // submission later — even from a stale gallery row — can echo it
-    // back to the server, enabling the "was the right answer in the
-    // 90 % set?" diagnostic.
+    // back to the server for set-membership diagnostics. Coverage remains
+    // nominal/advisory until an independent locked evaluation exists.
     @ColumnInfo(name = "prediction_set") val predictionSet: String? = null,
-    // Canonical class key the server returned for this scan (e.g.
-    // ``leaf_spot``). Persisted because ``argmax(all_probs)``
-    // can disagree after the server's weak-healthy reroute, and
-    // feedback submission must echo the DISPLAYED verdict — not
-    // the argmax — to keep per-class accuracy metrics honest.
+    // Probability-backed class key the server returned (e.g. ``leaf_spot``).
+    // Abstention is persisted separately through warning markers, so the raw
+    // diagnostic remains available without being presented as a diagnosis.
     @ColumnInfo(name = "displayed_class_key") val displayedClassKey: String? = null,
     @ColumnInfo(name = "severity") val severity: String = "low",
 )

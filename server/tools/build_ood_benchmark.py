@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
-"""Build a NEVER-TRAINED out-of-domain benchmark that passes this repo's own
-eval gates, then hand it to ``tools/paired_eval.py``.
+"""Build a family-deduplicated unseen-domain diagnostic for ``paired_eval``.
+
+This is not a general OOD-detection benchmark: it contains healthy ornamental
+leaves and one labelled disease arm, but no non-plant/OOD class.  The historical
+filename is retained for compatibility; reports must describe it as an
+``unseen-domain regression benchmark``.
 
 Why this exists
 ---------------
-The first version of this benchmark (2026-08-11) caught a real 2.7.0 regression
-and then failed the near-dup criterion `DATASET_LABELING_PLAN.md` requires of
-*any* eval set: 2,000 files held **501 SHA-unique images and 206 pHash clusters**
-at Hamming <= 6. Every count and p-value it produced was inflated ~4x, and one
-finding (healthy false-fire) evaporated entirely once deduped. A benchmark that
-is not deduped is not a benchmark — it is the same picture, counted repeatedly.
+The first version (2026-08-11) surfaced a possible regression, then failed the
+near-duplicate criterion required of any evaluation set: 2,000 files held only
+501 SHA-unique images and 206 pHash clusters at Hamming <= 6. Its counts and
+p-values were therefore pseudo-replicated, and one apparent finding vanished
+after deduplication. It cannot establish a historical release conclusion.
 
 So this script does the gating in code rather than in a follow-up audit:
 
-* **pHash dedup at Hamming <= 6**, the repo's stated criterion, keeping ONE
-  representative per cluster. SHA dedup alone is not enough — augmented copies
-  of a photo have different bytes and identical content.
-* **Species is recorded and reported**, because the first benchmark's entire
-  headline delta turned out to be 31 clusters of a single species (hibiscus),
-  while the incumbent was *already* collapsed on the other one (banana_bush).
-  A per-class number that is really a per-species number is a trap.
-* **A minimum cluster count per class**, so the tree cannot silently ship a
-  slice too thin to carry a release decision.
+* **pHash plus geometric-family dedup**, keeping ONE representative per
+  single-link cluster.  pHash catches ordinary edits but misses rotations and
+  noisy re-encodes; SIFT correspondences followed by a RANSAC homography catch
+  those pseudo-replicates.  SHA dedup alone is not enough.
+* **Species is recorded and reported**, because a one-species/source result is
+  not a class-general result. A per-class number that is really a per-species
+  number is a trap.
+* **A minimum independent-family count per class**, so a diagnostic cannot
+  silently claim an image count that is mostly augmented copies.
+
+The existing private v2 artifact is a *diagnostic sentinel*, not a release
+gate: its 31 scorch rows come from one studio domain and contain confirmed
+rotated/noised pseudo-replicates.  Rebuild it with this tool before quoting an
+effective sample size, and do not turn it into a release gate until a genuinely
+independent, deployment-representative v3 exists.
 
 The source must be in NO training corpus. The default
 (`shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`, MIT) is
@@ -37,6 +46,13 @@ Usage
 
     # From an already-extracted copy:
     python -m server.tools.build_ood_benchmark --src ext/flower_data --out oodbench
+
+    # For a source above the exhaustive safety cap, first run the same
+    # SIFT+RANSAC family audit offline/blocked in batches and provide an
+    # exhaustive CSV with source_relative_path,capture_family_id,family_method
+    # (family_method must be sift_ransac_v1):
+    python -m server.tools.build_ood_benchmark --src ext/flower_data --out oodbench \
+        --family-manifest audited_families.csv
 
     # Or download it first (needs KAGGLE_API_TOKEN):
     curl -sSL -H "Authorization: Bearer $KAGGLE_API_TOKEN" \\
@@ -55,11 +71,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import shutil
 import sys
-from collections import Counter, defaultdict
-from pathlib import Path
+from collections import Counter, defaultdict, deque
+from pathlib import Path, PurePosixPath
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -72,30 +89,26 @@ CONDITION_MAP = {
     "scorch": "leaf_scorch_underwatering",
 }
 PHASH_MAX_HAMMING = 6      # DATASET_LABELING_PLAN.md "Image gates"
+SIFT_MIN_HOMOGRAPHY_INLIERS = 30
+SIFT_RATIO_TEST = 0.75
+SIFT_RANSAC_REPROJ_THRESHOLD = 5.0
+MAX_EXHAUSTIVE_SIFT_IMAGES = 500
+MAX_EXHAUSTIVE_CROSS_CLASS_SIFT_PAIRS = 125_000
+PRECOMPUTED_FAMILY_METHOD = "sift_ransac_v1"
 MIN_CLUSTERS_PER_CLASS = 60
+SOURCE_DATASET_SLUG = "shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update"
+SOURCE_DATASET_VERSION = "1"
+SOURCE_LICENSE_ID = "MIT"
+SOURCE_URL = f"https://www.kaggle.com/datasets/{SOURCE_DATASET_SLUG}/versions/{SOURCE_DATASET_VERSION}"
+SOURCE_RIGHTS_STATUS = "dataset_page_declaration_only; per-image_rights_unverified"
 
 # ── Taxonomy arms ────────────────────────────────────────────────────
-# A class-level number pooled over species is a lie when the species disagree,
-# and here they disagree completely: on the deployed 2.6.8 bundle + the NAP head
-# veto, benchmark leaf_scorch is **31/31 on hibiscus and 4/31 on banana_bush**.
-# Pooling those gives "0.565", a figure that describes neither.
-#
-# The reason is that the two species are not showing the same condition:
-# banana_bush's "scorch" folder is turgor loss (wilting, foliage still green)
-# while hibiscus's is necrosis (dead brown tissue). Our
-# `leaf_scorch_underwatering` class is trained on the latter, so a model
-# scoring 0 on banana_bush is not obviously wrong — it is being asked a
-# different question. Every model in the archive behaves this way, which is the
-# evidence for the split: across the 13 archived bundles scored served, hibiscus
-# recall is >= banana_bush in ALL of them and strictly greater in 11 (the two
-# ties are the collapsed 2.7.x bundles, both at 0.000). Medians: hibiscus 0.806
-# vs banana_bush 0.129; best-ever 0.839 vs 0.419.
-#
-# So the arms are reported separately and read differently:
-#   necrosis  — the release-blocking arm. 2.6.8 + veto is saturated at 31/31,
-#               so it can only ever measure a REGRESSION now.
-#   turgor    — an off-morphology probe. A model that scores 0 here is not
-#               obviously wrong; treat movement as information, not as a gate.
+# Do not pool different morphologies under a shared folder word. Manual review
+# found the source's banana_bush "scorch" branch looks primarily like green
+# turgor loss, whereas the labelled hibiscus branch shows necrotic tissue.
+# Neither interpretation is medically adjudicated here, so the tool keeps only
+# an explicit diagnostic arm and never turns folder-name performance into a
+# release verdict.
 #
 # ARM ASSIGNMENT IS AN EXPLICIT LIST, NOT A MEASUREMENT — and that is a
 # retreat, recorded honestly. The intent was to sort species automatically by
@@ -115,15 +128,8 @@ SPECIES_ARMS = {
 }
 DEFAULT_ARM = "unassigned"
 
-# Arms whose diseased images are NOT our class, dropped from the build rather
-# than labelled and shipped. `banana_bush` was retired in benchmark v2
-# (2026-08-18): its "scorch" folder is turgor loss — wilting with the foliage
-# still green — and `leaf_scorch_underwatering` is marginal necrosis from
-# underwatering, salt or sun. Pooling the two produced the 0.565 headline that
-# three releases were judged against, when the honest hibiscus-only figure for
-# the same bundle is 1.000. It was also indistinguishable from the healthy arm
-# on every measured property (nongreen-in-subject AUC 0.605, marginality 0.581,
-# lesion count 0.492) and no release ever beat 4/31.
+# Arms whose diseased images are not reliably aligned to this project's class
+# definition are dropped instead of being relabelled by assumption.
 #
 # Only the DISEASED images are dropped. Healthy banana_bush stays: it is
 # correctly labelled, the species is an in-domain garden ornamental, and cutting
@@ -191,113 +197,376 @@ def _phash(path: Path):
         return None
 
 
-def dedup(paths: list[Path], threshold: int = PHASH_MAX_HAMMING) -> list[Path]:
-    """Keep one representative per pHash cluster.
+def _sift_features(path: Path, cache: dict[Path, tuple[object, object]]):
+    """Return cached SIFT keypoints/descriptors, failing closed without OpenCV.
 
-    Greedy single-pass against kept representatives — the same shape as the
-    notebook's ``_dedup_train_in_place``, so the benchmark is filtered by the
-    criterion the training corpus is filtered by.
+    Rotation/noise families in benchmark v2 are SHA- and pHash-unique.  Silently
+    falling back to pHash would therefore re-certify the exact broken artifact
+    this builder exists to replace.
     """
-    kept: list[Path] = []
-    reps: list = []
+    if path in cache:
+        return cache[path]
+    try:
+        import cv2
+    except ImportError as exc:  # pragma: no cover - environment-dependent
+        raise RuntimeError(
+            "robust benchmark-family dedup requires OpenCV with SIFT support "
+            "(`pip install opencv-python-headless`); refusing pHash-only build"
+        ) from exc
+    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        cache[path] = ((), None)
+        return cache[path]
+    keypoints, descriptors = cv2.SIFT_create().detectAndCompute(image, None)
+    cache[path] = (keypoints or (), descriptors)
+    return cache[path]
+
+
+def _sift_homography_inliers(
+    left: Path,
+    right: Path,
+    cache: dict[Path, tuple[object, object]] | None = None,
+) -> int:
+    """Count geometrically consistent SIFT matches between two captures."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:  # pragma: no cover - environment-dependent
+        raise RuntimeError(
+            "robust benchmark-family dedup requires OpenCV with SIFT support "
+            "(`pip install opencv-python-headless`)"
+        ) from exc
+    cache = {} if cache is None else cache
+    kp_left, desc_left = _sift_features(left, cache)
+    kp_right, desc_right = _sift_features(right, cache)
+    if desc_left is None or desc_right is None or len(desc_left) < 4 or len(desc_right) < 4:
+        return 0
+    pairs = cv2.BFMatcher(cv2.NORM_L2).knnMatch(desc_left, desc_right, k=2)
+    good = [a for pair in pairs if len(pair) == 2
+            for a, b in [pair] if a.distance < SIFT_RATIO_TEST * b.distance]
+    if len(good) < 4:
+        return 0
+    src = np.float32([kp_left[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst = np.float32([kp_right[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    _homography, mask = cv2.findHomography(
+        src, dst, cv2.RANSAC, SIFT_RANSAC_REPROJ_THRESHOLD)
+    return 0 if mask is None else int(mask.ravel().sum())
+
+
+def cluster_paths(
+    paths: list[Path],
+    threshold: int = PHASH_MAX_HAMMING,
+    robust: bool = True,
+    family_ids: dict[Path, str] | None = None,
+) -> list[list[Path]]:
+    """Single-link capture families using pHash and geometric correspondences."""
+    decoded, undecodable = [], []
     for p in sorted(paths):
         h = _phash(p)
         if h is None:
-            continue
-        if any((h - r) <= threshold for r in reps):
-            continue
-        reps.append(h)
-        kept.append(p)
-    return kept
+            undecodable.append(p)
+        else:
+            decoded.append((p, h))
+    if undecodable:
+        # A corrupt file used to vanish here with no count, and the
+        # ``files -> families`` line then attributed the shrink to dedup.
+        raise RuntimeError(
+            f"{len(undecodable)} image(s) could not be decoded for pHash and would "
+            f"silently disappear from the benchmark; fix or remove them first. "
+            f"Examples: {[str(p) for p in undecodable[:5]]}")
+    if robust and len(decoded) > MAX_EXHAUSTIVE_SIFT_IMAGES and family_ids is None:
+        pairs = len(decoded) * (len(decoded) - 1) // 2
+        raise RuntimeError(
+            f"refusing {pairs:,} exhaustive SIFT/RANSAC comparisons for "
+            f"{len(decoded)} images. Supply --family-manifest produced by an "
+            f"offline {PRECOMPUTED_FAMILY_METHOD} audit; pHash-only fallback is unsafe")
+    if family_ids is not None:
+        missing = [p for p, _h in decoded if not family_ids.get(p)]
+        if missing:
+            raise RuntimeError(
+                f"precomputed family manifest misses {len(missing)} decoded rows; "
+                f"examples: {missing[:5]}")
+    parent = list(range(len(decoded)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        a, b = find(i), find(j)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
+    for i, (_p, h) in enumerate(decoded):
+        for j in range(i):
+            if (h - decoded[j][1]) <= threshold:
+                union(i, j)
+
+    if family_ids is not None:
+        first: dict[str, int] = {}
+        for i, (path, _hash) in enumerate(decoded):
+            family = family_ids[path]
+            if family in first:
+                union(i, first[family])
+            else:
+                first[family] = i
+
+    if robust and family_ids is None:
+        feature_cache: dict[Path, tuple[object, object]] = {}
+        # pHash-connected rows need no second comparison.  Every other pair is
+        # checked because an arbitrary rotation/noisy edit can move far outside
+        # the pHash radius while still being the same underlying capture.
+        for i, (path_i, _hash_i) in enumerate(decoded):
+            for j in range(i):
+                if find(i) == find(j):
+                    continue
+                path_j = decoded[j][0]
+                if _sift_homography_inliers(path_i, path_j, feature_cache) \
+                        >= SIFT_MIN_HOMOGRAPHY_INLIERS:
+                    union(i, j)
+
+    groups: dict[int, list[Path]] = defaultdict(list)
+    for i, (path, _hash) in enumerate(decoded):
+        groups[find(i)].append(path)
+    return [groups[root] for root in sorted(groups)]
 
 
-def build(src: Path, out: Path, per_class_cap: int) -> None:
+def dedup(
+    paths: list[Path],
+    threshold: int = PHASH_MAX_HAMMING,
+    robust: bool = True,
+    family_ids: dict[Path, str] | None = None,
+) -> list[Path]:
+    """Keep one deterministic representative per independent capture family."""
+    return [group[0] for group in cluster_paths(
+        paths, threshold, robust, family_ids)]
+
+
+def _load_family_manifest(path: Path, src: Path) -> dict[Path, str]:
+    """Load an exhaustive offline SIFT/RANSAC family assignment."""
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    required = {"source_relative_path", "capture_family_id", "family_method"}
+    if not rows or required - set(rows[0]):
+        raise RuntimeError(
+            f"family manifest must contain {sorted(required)} and at least one row")
+    out: dict[Path, str] = {}
+    for line, row in enumerate(rows, start=2):
+        raw = (row.get("source_relative_path") or "").strip().replace("\\", "/")
+        rel = PurePosixPath(raw)
+        family = (row.get("capture_family_id") or "").strip()
+        method = (row.get("family_method") or "").strip()
+        if (not raw or rel.is_absolute() or ".." in rel.parts or not family
+                or method != PRECOMPUTED_FAMILY_METHOD):
+            raise RuntimeError(
+                f"invalid family manifest line {line}: path={raw!r}, "
+                f"family={family!r}, method={method!r}")
+        local = src.joinpath(*rel.parts).resolve()
+        if src != local and src not in local.parents:
+            raise RuntimeError(f"family manifest path escapes source at line {line}: {raw!r}")
+        if local in out:
+            raise RuntimeError(f"duplicate family-manifest path at line {line}: {raw!r}")
+        out[local] = family
+    return out
+
+
+def build(src: Path, out: Path, per_class_cap: int,
+          min_clusters_per_class: int = MIN_CLUSTERS_PER_CLASS,
+          *, robust_dedup: bool = True,
+          family_manifest: Path | None = None) -> None:
+    """Build a capped, class-wide family-deduped diagnostic benchmark."""
+    src, out = src.resolve(), out.resolve()
+    if not src.is_dir():
+        raise ValueError(f"source directory does not exist: {src}")
+    if per_class_cap <= 0 or min_clusters_per_class <= 0:
+        raise ValueError("per_class_cap and min_clusters_per_class must be positive")
+    if src == out or src in out.parents or out in src.parents:
+        raise ValueError("--src and --out must be separate, non-nested directories")
+    precomputed_families = (
+        _load_family_manifest(family_manifest.resolve(), src)
+        if family_manifest is not None else None)
+
     # group: class -> species -> [paths]
     pool: dict[str, dict[str, list[Path]]] = defaultdict(lambda: defaultdict(list))
     for split_dir in sorted(p for p in src.iterdir() if p.is_dir()):
         for species_dir in sorted(p for p in split_dir.iterdir() if p.is_dir()):
             for cond_dir in sorted(p for p in species_dir.iterdir() if p.is_dir()):
                 cls = CONDITION_MAP.get(cond_dir.name.lower())
-                if not cls:
-                    continue
-                pool[cls][species_dir.name] += [
-                    f for f in cond_dir.iterdir()
-                    if f.is_file() and f.suffix.lower() in IMG_EXTS
-                ]
+                if cls:
+                    pool[cls][species_dir.name].extend(
+                        f for f in cond_dir.iterdir()
+                        if f.is_file() and f.suffix.lower() in IMG_EXTS)
+    expected_classes = set(CONDITION_MAP.values())
+    missing_source_classes = expected_classes - set(pool)
+    if missing_source_classes:
+        raise RuntimeError(f"source has no mapped rows for {sorted(missing_source_classes)}")
+
+    # Dedup across the WHOLE class, not once per species. A re-uploaded photo
+    # under two species is still one capture and must not count twice.
+    unique_by_class: dict[str, dict[str, list[Path]]] = {}
+    class_hashes: dict[str, list[tuple[Path, object]]] = {}
+    family_size_by_path: dict[Path, int] = {}
+    for cls, by_species in sorted(pool.items()):
+        candidates = []
+        for species, files in sorted(by_species.items()):
+            if cls != "healthy" and species in RETIRED_DISEASE_ARMS:
+                print(f"  {species:28s} RETIRED for {cls} — {len(files)} files skipped")
+                continue
+            candidates.extend(files)
+        class_family_ids = ({p: precomputed_families.get(p, "") for p in candidates}
+                            if precomputed_families is not None else None)
+        families = cluster_paths(
+            candidates, robust=robust_dedup, family_ids=class_family_ids)
+        unique = [family[0] for family in families]
+        for family in families:
+            family_size_by_path[family[0]] = len(family)
+        regrouped: dict[str, list[Path]] = defaultdict(list)
+        for p in unique:
+            regrouped[p.parent.parent.name].append(p)
+        unique_by_class[cls] = dict(regrouped)
+        class_hashes[cls] = [(p, h) for p in unique if (h := _phash(p)) is not None]
+
+    # Contradictory labels within either duplicate signal are not "dedup": they
+    # are a benchmark-integrity error. Stop instead of keeping whichever class
+    # sorts first. Same basenames in different class directories remain fine
+    # when the content differs; downstream joins key on class/path.
+    conflicts = []
+    cross_class_feature_cache: dict[Path, tuple[object, object]] = {}
+    classes = sorted(class_hashes)
+    cross_pairs = sum(
+        len(class_hashes[a]) * len(class_hashes[b])
+        for i, a in enumerate(classes) for b in classes[i + 1:])
+    if (robust_dedup and precomputed_families is None
+            and cross_pairs > MAX_EXHAUSTIVE_CROSS_CLASS_SIFT_PAIRS):
+        raise RuntimeError(
+            f"refusing {cross_pairs:,} cross-class SIFT/RANSAC comparisons; "
+            f"supply --family-manifest ({PRECOMPUTED_FAMILY_METHOD})")
+    for i, cls_a in enumerate(classes):
+        for cls_b in classes[i + 1:]:
+            for pa, ha in class_hashes[cls_a]:
+                for pb, hb in class_hashes[cls_b]:
+                    distance = int(ha - hb)
+                    inliers = 0
+                    same_precomputed_family = (
+                        precomputed_families is not None
+                        and precomputed_families.get(pa) == precomputed_families.get(pb))
+                    if (robust_dedup and precomputed_families is None
+                            and distance > PHASH_MAX_HAMMING):
+                        inliers = _sift_homography_inliers(
+                            pa, pb, cross_class_feature_cache)
+                    if distance <= PHASH_MAX_HAMMING \
+                            or inliers >= SIFT_MIN_HOMOGRAPHY_INLIERS \
+                            or same_precomputed_family:
+                        conflicts.append((cls_a, pa, cls_b, pb, distance, inliers))
+                        if len(conflicts) >= 12:
+                            break
+                if len(conflicts) >= 12:
+                    break
+    if conflicts:
+        preview = "\n".join(
+            f"  {a}:{pa} <-> {b}:{pb} (pHash d={d}, SIFT inliers={n})"
+            for a, pa, b, pb, d, n in conflicts)
+        raise RuntimeError("cross-class duplicate-family conflicts in benchmark:\n" + preview)
+
+    # Round-robin the class cap across active species. The old floor-division
+    # quota counted retired/empty species in its denominator and max(1, ...)
+    # could exceed the requested class cap when species > cap.
+    selected: dict[str, dict[str, list[Path]]] = {}
+    for cls, by_species in sorted(unique_by_class.items()):
+        queues = {s: deque(sorted(v)) for s, v in sorted(by_species.items()) if v}
+        chosen: dict[str, list[Path]] = defaultdict(list)
+        total = 0
+        while queues and total < per_class_cap:
+            for species in list(queues):
+                if total >= per_class_cap:
+                    break
+                q = queues[species]
+                chosen[species].append(q.popleft())
+                total += 1
+                if not q:
+                    del queues[species]
+        selected[cls] = dict(chosen)
+
+    counts = {c: sum(len(v) for v in selected.get(c, {}).values())
+              for c in expected_classes}
+    thin = {c: n for c, n in counts.items() if n < min_clusters_per_class}
+    if thin:
+        raise RuntimeError(
+            f"under {min_clusters_per_class} independent capture families; "
+            f"diagnostic sample size is not credible: {thin}")
 
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     rows = []
-    for cls, by_species in sorted(pool.items()):
+    for cls, by_species in sorted(selected.items()):
         print(f"\n{cls}:")
         (out / cls).mkdir(parents=True, exist_ok=True)
-        for species, files in sorted(by_species.items()):
-            # Before dedup or copying: a retired arm must not reach disk at all.
-            # Dropping it later would leave orphan images with no manifest row,
-            # and the ship gate joins images to the manifest by filename.
-            if cls != "healthy" and species in RETIRED_DISEASE_ARMS:
-                print(f"  {species:28s} RETIRED for {cls} — not our condition, see "
-                      f"RETIRED_DISEASE_ARMS ({len(files)} files skipped)")
-                continue
-            uniq = dedup(files)
-            # Cap PER SPECIES so no single species can dominate a class the way
-            # hibiscus dominated the first benchmark's scorch arm.
-            take = uniq[: max(1, per_class_cap // max(len(by_species), 1))]
+        for species, take in sorted(by_species.items()):
             browns = []
-            # Where this species' rows START. `rows[-len(take):]` looks
-            # equivalent and is not: at len(take)==0 it is `rows[-0:]` == the
-            # WHOLE list, and the arm assignment below would then overwrite
-            # every previously-written row with this species' arm. Reachable
-            # whenever a mapped condition dir yields no usable images.
-            start = len(rows)
+            arm = SPECIES_ARMS.get(species, DEFAULT_ARM) if cls != "healthy" else ""
             for f in take:
-                # The split is part of the name because build() POOLS every
-                # split dir into pool[cls][species] before copying. Without it,
-                # train/hibiscus/scorch/1.jpg and test/hibiscus/scorch/1.jpg —
-                # different photographs, both kept by dedup — write to the same
-                # destination and one silently overwrites the other, leaving two
-                # manifest rows and one file. The cluster counts and the
-                # thin-class check read the manifest, so an under-sized
-                # benchmark would pass and advertise a size it does not have.
-                _split = f.parent.parent.parent.name or "x"
-                dst = out / cls / f"{_split}__{species}__{f.stem}{f.suffix.lower()}"
+                split = f.parent.parent.parent.name or "x"
+                dst = out / cls / f"{split}__{species}__{f.stem}{f.suffix.lower()}"
+                if dst.exists():
+                    raise RuntimeError(f"destination collision: {dst}")
                 shutil.copy(f, dst)
                 bf = brown_fraction(dst)
                 if bf is not None:
                     browns.append(bf)
-                rows.append({"filename": f"{cls}/{dst.name}", "class": cls,
-                             "species": species, "source": str(src),
-                             "brown_fraction": "" if bf is None else f"{bf:.4f}"})
+                rows.append({
+                    "filename": f"{cls}/{dst.name}", "class": cls,
+                    "species": species, "source": SOURCE_DATASET_SLUG,
+                    "source_slug": SOURCE_DATASET_SLUG,
+                    "source_version": SOURCE_DATASET_VERSION,
+                    "source_relative_path": f.relative_to(src).as_posix(),
+                    "license_id": SOURCE_LICENSE_ID, "source_url": SOURCE_URL,
+                    "rights_status": SOURCE_RIGHTS_STATUS,
+                    "release_eligible": "false",
+                    "capture_family_id": (
+                        precomputed_families[f] if precomputed_families is not None
+                        else hashlib.sha256(
+                            (SOURCE_DATASET_SLUG + ":" + f.relative_to(src).as_posix()).encode()
+                        ).hexdigest()[:16]),
+                    "family_method": (
+                        PRECOMPUTED_FAMILY_METHOD if precomputed_families is not None
+                        else "exhaustive_sift_ransac_v1"),
+                    "source_family_size": family_size_by_path[f],
+                    "brown_fraction": "" if bf is None else f"{bf:.4f}",
+                    "arm": arm,
+                })
             med = sorted(browns)[len(browns) // 2] if browns else None
-            # The arm describes WHICH CONDITION a species' diseased images show,
-            # so it is meaningless on the healthy arm — a healthy hibiscus leaf
-            # is not "necrosis". Left blank there rather than mislabelled.
-            arm = SPECIES_ARMS.get(species, DEFAULT_ARM) if cls != "healthy" else ""
-            for r in rows[start:]:
-                r["arm"] = arm
-            print(f"  {species:28s} {len(files):5d} files -> {len(uniq):4d} clusters -> "
+            raw_n = len(pool[cls].get(species, []))
+            uniq_n = len(unique_by_class[cls].get(species, []))
+            print(f"  {species:28s} {raw_n:5d} files -> {uniq_n:4d} families -> "
                   f"{len(take):4d} kept   brown_median="
                   f"{'n/a' if med is None else f'{med:.3f}'}  arm={arm}")
             if arm == DEFAULT_ARM and cls != "healthy":
-                print(f"    WARN: {species!r} is not in SPECIES_ARMS. Look at its images and "
-                      f"decide whether they show necrosis or turgor loss, then add it — "
-                      f"an unassigned arm is excluded from the release-blocking read.")
+                print(f"    WARN: {species!r} is not in SPECIES_ARMS; inspect and assign it")
 
+    keys = [r["filename"] for r in rows]
+    dupes = [k for k, n in Counter(keys).items() if n != 1]
+    if dupes:
+        raise RuntimeError(f"duplicate class/path manifest keys: {dupes[:12]}")
+    fields = ["filename", "class", "species", "source", "source_slug",
+              "source_version", "source_relative_path", "license_id", "source_url",
+              "rights_status", "release_eligible",
+              "capture_family_id", "family_method", "source_family_size",
+              "brown_fraction", "arm"]
     with open(out / "manifest.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["filename", "class", "species", "source",
-                                          "brown_fraction", "arm"])
+        w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
 
-    print(f"\nwrote {out} — {len(rows)} images, manifest.csv with species")
-    thin = {c: n for c, n in Counter(r["class"] for r in rows).items()
-            if n < MIN_CLUSTERS_PER_CLASS}
-    if thin:
-        print(f"WARN: under {MIN_CLUSTERS_PER_CLASS} clusters — too thin to carry a "
-              f"release decision on its own: {thin}")
-    for cls in sorted(pool):
-        n_sp = len({r["species"] for r in rows if r["class"] == cls})
+    on_disk = {p.relative_to(out).as_posix() for p in out.rglob("*")
+               if p.is_file() and p.suffix.lower() in IMG_EXTS}
+    if set(keys) != on_disk or len(keys) != len(on_disk):
+        raise RuntimeError("manifest/image class-path keys disagree after build")
+    print(f"\nwrote unseen-domain regression benchmark {out} — {len(rows)} images")
+    for cls in sorted(expected_classes):
+        n_sp = len(selected.get(cls, {}))
         if n_sp < 3:
             print(f"WARN: {cls} spans only {n_sp} species — report PER SPECIES and do "
                   f"not read a class-level delta as a domain-level one.")
@@ -328,32 +597,52 @@ def report(preds_path: Path, manifest: Path) -> None:
     sp = np.array([species.get(_key(i), "?") for i in d["items"]])
     ar = np.array([arms.get(_key(i), "") for i in d["items"]])
 
-    print(f"{'class / arm / species':38s} {la:>9s} {lb:>9s} {'delta':>8s}   n")
+    disease_idx = [i for i, n in enumerate(names) if n not in ("healthy", "not_a_plant")]
+    healthy_idx = names.index("healthy") if "healthy" in names else None
+
+    def _line(label: str, k, ci: int, note: str = "") -> None:
+        ra, rb = float((ya[k] == ci).mean()), float((yb[k] == ci).mean())
+        aa, ab = int((ya[k] == -1).sum()), int((yb[k] == -1).sum())
+        print(f"{label:38s} {ra:9.3f} {rb:9.3f} {rb - ra:+8.3f} {int(k.sum()):4d}"
+              f"   {aa:6d} {ab:6d}{note}")
+
+    def _false_fire_line(label: str, k) -> None:
+        fa = float(np.isin(ya[k], disease_idx).mean())
+        fb = float(np.isin(yb[k], disease_idx).mean())
+        print(f"{label:38s} {fa:9.3f} {fb:9.3f} {fb - fa:+8.3f} {int(k.sum()):4d}")
+
+    # An abstention (-1: blur gate, OOD gate) is scored WRONG for recall and is
+    # coverage loss; it is never a false fire. The healthy rows therefore carry
+    # two statistics: recall of ``healthy`` (which an abstention lowers) and the
+    # FALSE-FIRE rate (a disease call on a healthy image — the user-facing harm,
+    # which an abstention does not commit). Reading only the first one made a
+    # model that abstains on half its healthy images indistinguishable from one
+    # that calls half of them scorched.
+    print("recall of the row's own class | n | abstentions (scored wrong, not false fires)")
+    print(f"{'class / arm / species':38s} {la:>9s} {lb:>9s} {'delta':>8s}   n   "
+          f"{'abst_' + la[:3]:>6s} {'abst_' + lb[:3]:>6s}")
     for ci, cname in enumerate(names):
         m = yt == ci
         if not m.any():
             continue
         armed = sorted(a for a in set(ar[m]) if a)
-        print(f"{cname:38s} {(ya[m]==ci).mean():9.3f} {(yb[m]==ci).mean():9.3f} "
-              f"{(yb[m]==ci).mean()-(ya[m]==ci).mean():+8.3f} {int(m.sum()):4d}"
-              + ("   <- POOLED; read the arms below, not this" if len(armed) > 1 else ""))
+        _line(cname, m, ci,
+              "   <- POOLED; read the arms below, not this" if len(armed) > 1 else "")
         if not armed:                      # no arms on this class (e.g. healthy)
             for s in sorted(set(sp[m])):
-                k = m & (sp == s)
-                print(f"    └ {s:32s} {(ya[k]==ci).mean():9.3f} {(yb[k]==ci).mean():9.3f} "
-                      f"{(yb[k]==ci).mean()-(ya[k]==ci).mean():+8.3f} {int(k.sum()):4d}")
+                _line(f"    └ {s:32s}"[:38], m & (sp == s), ci)
+            if ci == healthy_idx:
+                _false_fire_line("healthy FALSE-FIRE (any disease call)", m)
+                for s in sorted(set(sp[m])):
+                    _false_fire_line(f"    └ {s:32s}"[:38], m & (sp == s))
             continue
         for arm in armed:
             a = m & (ar == arm)
-            note = {"necrosis": "  (release-blocking: regression metric)",
+            note = {"necrosis": "  (diagnostic regression sentinel; not a release gate)",
                     "turgor": "  (off-morphology probe: information, not a gate)"}.get(arm, "")
-            print(f"  [{arm}]{'':30s}"[:38]
-                  + f" {(ya[a]==ci).mean():9.3f} {(yb[a]==ci).mean():9.3f} "
-                  f"{(yb[a]==ci).mean()-(ya[a]==ci).mean():+8.3f} {int(a.sum()):4d}{note}")
+            _line(f"  [{arm}]{'':30s}"[:38], a, ci, note)
             for s in sorted(set(sp[a])):
-                k = a & (sp == s)
-                print(f"    └ {s:32s} {(ya[k]==ci).mean():9.3f} {(yb[k]==ci).mean():9.3f} "
-                      f"{(yb[k]==ci).mean()-(ya[k]==ci).mean():+8.3f} {int(k.sum()):4d}")
+                _line(f"    └ {s:32s}"[:38], a & (sp == s), ci)
 
     # Between-species spread is what decides whether a pooled number means
     # anything. With k=2 species at SD 0.616 the 95% CI on a domain-level scorch
@@ -389,6 +678,11 @@ def main() -> None:
     ap.add_argument("--src", type=Path, help="extracted source root (e.g. ext/flower_data)")
     ap.add_argument("--out", type=Path, default=Path("oodbench"))
     ap.add_argument("--per-class-cap", type=int, default=400)
+    ap.add_argument("--min-clusters-per-class", type=int,
+                    default=MIN_CLUSTERS_PER_CLASS)
+    ap.add_argument(
+        "--family-manifest", type=Path,
+        help="exhaustive offline SIFT/RANSAC family CSV for large sources")
     ap.add_argument("--report", type=Path, help="preds.json to break down per species")
     ap.add_argument("--manifest", type=Path, help="benchmark manifest.csv (with --report)")
     args = ap.parse_args()
@@ -399,7 +693,8 @@ def main() -> None:
         return
     if not args.src:
         sys.exit("--src is required (or use --report)")
-    build(args.src, args.out, args.per_class_cap)
+    build(args.src, args.out, args.per_class_cap, args.min_clusters_per_class,
+          family_manifest=args.family_manifest)
 
 
 if __name__ == "__main__":

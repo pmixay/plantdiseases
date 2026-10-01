@@ -12,6 +12,8 @@ import json
 import re
 import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -46,6 +48,7 @@ ALLOWED_KINDS = frozenset(
         "uncaught_exception",
         "http_error",
         "model_unavailable",
+        "invalid_envelope",
     }
 )
 ALLOWED_FAMILIES = frozenset({"aqua", "gamma", "frontier", "unknown"})
@@ -112,22 +115,38 @@ class TelemetryValueError(ValueError):
     pass
 
 
-def _connect(*, read_only: bool = False) -> sqlite3.Connection:
+@contextmanager
+def _connect(*, read_only: bool = False) -> Iterator[sqlite3.Connection]:
+    """Yield a short-lived connection and always close its file handles.
+
+    ``sqlite3.Connection.__exit__`` commits or rolls back but does not close
+    the connection, so closure is explicit (Windows file locks, WAL handles
+    in long-running workers).
+    """
     if read_only:
         connection = sqlite3.connect(
             f"file:{TELEMETRY_DB_PATH.resolve()}?mode=ro",
             uri=True,
             isolation_level=None,
         )
-        connection.execute("PRAGMA query_only=ON")
     else:
         connection = sqlite3.connect(
             str(TELEMETRY_DB_PATH), isolation_level=None, check_same_thread=False
         )
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-    connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        if read_only:
+            connection.execute("PRAGMA query_only=ON")
+        else:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
+        connection.row_factory = sqlite3.Row
+        yield connection
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def init_db() -> None:

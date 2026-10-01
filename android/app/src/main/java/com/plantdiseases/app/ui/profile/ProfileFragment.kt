@@ -603,8 +603,8 @@ class ProfileFragment : Fragment() {
             }
 
             // `totalScans` counts plant scans only (healthy + real disease).
-            // NAP / blur rejects are no longer persisted at all, so they can't
-            // pad any number here.
+            // Natural NAP and inconclusive rows are excluded from these plant
+            // counts even while their short-lived correction rows persist.
             if (stats.totalScans == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE

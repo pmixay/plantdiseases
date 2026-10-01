@@ -19,6 +19,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.diagnosticContractViolation
+import com.plantdiseases.app.data.model.isEffectivelyAbstained
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
@@ -26,6 +28,7 @@ import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.AquaInference
+import com.plantdiseases.app.util.BlurGate
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
@@ -69,6 +72,7 @@ class AnalysisActivity : AppCompatActivity() {
     // Held so onDestroy can dismiss the blurry-photo dialog — a config-change
     // recreate while it is showing would otherwise leak the dialog window.
     private var blurDialog: androidx.appcompat.app.AlertDialog? = null
+    private var blurQaFailed = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -135,7 +139,10 @@ class AnalysisActivity : AppCompatActivity() {
                 ImageUtils.computeBlurScore(imagePath)
             }
 
-            if (blurScore < 100.0) {
+            // Same statistic and floor as the server gate, so Aqua and gamma
+            // reject the same photographs (util/BlurGate.kt).
+            blurQaFailed = BlurGate.isTooBlurry(blurScore)
+            if (blurQaFailed) {
                 // Photo is blurry — warn user. Keep the reference so onDestroy
                 // can dismiss it and avoid a leaked window on recreation.
                 blurDialog = MaterialAlertDialogBuilder(this@AnalysisActivity)
@@ -171,7 +178,10 @@ class AnalysisActivity : AppCompatActivity() {
             // the model is present, so a missing model simply falls through
             // to the server (tagged family=aqua).
             if (family == ModelFamily.AQUA && AquaClassifier.isAvailable(this@AnalysisActivity)) {
-                val response = runAquaOnDevice(imagePath)
+                val response = runAquaOnDevice(
+                    imagePath,
+                    imageQualityRejected = blurQaFailed,
+                )
                 if (response != null) {
                     proceedWithResult(imagePath, response)
                     return@launch
@@ -222,7 +232,10 @@ class AnalysisActivity : AppCompatActivity() {
                             forcedFamily == null &&
                             AquaClassifier.isAvailable(this@AnalysisActivity)
                         ) {
-                            runAquaOnDevice(imagePath)
+                            runAquaOnDevice(
+                                imagePath,
+                                imageQualityRejected = blurQaFailed,
+                            )
                         } else {
                             null
                         }
@@ -258,11 +271,25 @@ class AnalysisActivity : AppCompatActivity() {
                             getString(R.string.server_starting_detail),
                         )
                     }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ModelUnavailableException -> {
+                        TelemetryReporter.report("analyze", "model_unavailable", family = error.family)
+                        showError(
+                            getString(R.string.model_unavailable_title),
+                            getString(R.string.model_unavailable_detail),
+                        )
+                    }
                     is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException -> {
                         TelemetryReporter.report("analyze", "unsupported_image", family = family.id)
                         showError(
                             getString(R.string.unsupported_image_title),
                             getString(R.string.unsupported_image_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.InvalidAnalysisResponseException -> {
+                        TelemetryReporter.report("analyze", "invalid_envelope", family = family.id)
+                        showError(
+                            getString(R.string.analysis_contract_error_title),
+                            getString(R.string.analysis_contract_error_detail),
                         )
                     }
                     else -> {
@@ -284,14 +311,23 @@ class AnalysisActivity : AppCompatActivity() {
         imagePath: String,
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ) {
+        if (response.diagnosticContractViolation() != null) {
+            TelemetryReporter.report("analyze", "invalid_envelope", family = response.family)
+            showError(
+                getString(R.string.analysis_contract_error_title),
+                getString(R.string.analysis_contract_error_detail),
+            )
+            return
+        }
+        val abstained = response.isEffectivelyAbstained()
         // Autosave the kept (cropped) photo to the user's device gallery only
         // now that we KNOW it's a plant — opt-in, camera captures only (moved
-        // here from the camera screen precisely so NAP / blur rejects never
+        // here from the camera screen precisely so abstained results never
         // land in the user's photo library). Reject verdicts still open the
         // full result screen (so the user can flag "this is a plant"), but
         // they're hidden from the in-app gallery and stats, and swept from
         // the DB after a couple of days.
-        if (response.classKey != NOT_A_PLANT_CLASS &&
+        if (!abstained &&
             intent.getBooleanExtra(EXTRA_FROM_CAMERA, false) &&
             com.plantdiseases.app.util.AutosavePrefs.enabled(this)
         ) {
@@ -314,7 +350,7 @@ class AnalysisActivity : AppCompatActivity() {
         // Only server-diagnosed scans qualify — an offline Aqua scan (no
         // server-issued scan_id) is never added to the garden, even from the
         // in-garden scanner (which forces at least gamma anyway).
-        if (attachPlantId >= 0L && !response.scanId.isNullOrBlank()) {
+        if (!abstained && attachPlantId >= 0L && !response.scanId.isNullOrBlank()) {
             careRepository.attachScanWithStoredChecklist(
                 scanId = scanId,
                 existingPlantId = attachPlantId,
@@ -325,7 +361,7 @@ class AnalysisActivity : AppCompatActivity() {
         // "Improve online" upgrade: carry over the replaced offline scan's plant
         // link (if any), then delete it so the upgraded online scan takes its
         // place instead of leaving a duplicate in history.
-        if (replaceScanId >= 0L && replaceScanId != scanId) {
+        if (!abstained && replaceScanId >= 0L && replaceScanId != scanId) {
             scanRepository.getScanById(replaceScanId)?.plantId?.let { pid ->
                 careRepository.attachScanWithStoredChecklist(
                     scanId = scanId,
@@ -342,14 +378,14 @@ class AnalysisActivity : AppCompatActivity() {
         val savedScan = scanRepository.getScanById(scanId)
         if (savedScan != null) {
             // MainActivity turns this flag into Gallery's "1" badge. Only set
-            // it for a row Gallery can actually show: NAP / blur rejects keep
+            // it for a row Gallery can actually show: abstentions keep
             // a short-lived DB row for their result + feedback screen, but the
             // gallery intentionally filters that row out.
-            if (!scanRepository.isNotAPlantScan(savedScan)) {
+            if (!scanRepository.isAbstainedScan(savedScan)) {
                 getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
                     .edit().putBoolean("new_scan_result", true).apply()
+                app.launchCommunityUpload(savedScan, response)
             }
-            app.launchCommunityUpload(savedScan, response)
         }
 
         val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
@@ -368,7 +404,7 @@ class AnalysisActivity : AppCompatActivity() {
     private fun storedChecklist(
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ): CareRepository.StoredChecklist? {
-        if (response.isHealthy || response.classKey == NOT_A_PLANT_CLASS) return null
+        if (response.isEffectivelyAbstained() || response.isHealthy) return null
         val preferred = if (LocaleHelper.isRussian(this)) response.treatmentRu else response.treatment
         val alternate = if (LocaleHelper.isRussian(this)) response.treatment else response.treatmentRu
         val treatment = preferred.filter { it.isNotBlank() }.ifEmpty { alternate.filter { it.isNotBlank() } }
@@ -390,18 +426,39 @@ class AnalysisActivity : AppCompatActivity() {
     /** Run the Aqua TFLite model on-device, off the main thread. Returns a
      *  minimal AnalysisResponse, or null if decode/inference failed (caller
      *  then falls back to the server). */
-    private suspend fun runAquaOnDevice(imagePath: String): com.plantdiseases.app.data.model.AnalysisResponse? =
+    private suspend fun runAquaOnDevice(
+        imagePath: String,
+        imageQualityRejected: Boolean = false,
+    ): com.plantdiseases.app.data.model.AnalysisResponse? =
         withContext(Dispatchers.Default) {
-            val classifier = AquaClassifier.create(this@AnalysisActivity) ?: return@withContext null
+            // The user may acknowledge the blur dialog to inspect the neutral
+            // result, but failed QA cannot enter the Aqua classifier. Aqua has
+            // no calibrated OOD overlay to rescue an accepted argmax later.
+            if (imageQualityRejected) {
+                return@withContext AquaInference.buildImageQualityAbstention()
+            }
+            var classifier: AquaClassifier? = null
             try {
+                // Interpreter construction and model mmap can themselves throw
+                // OutOfMemoryError on low-RAM devices, so they belong inside
+                // the same guarded fallback as decode and inference.
+                val activeClassifier = AquaClassifier.create(this@AnalysisActivity)
+                    ?: return@withContext null
+                classifier = activeClassifier
                 val bitmap = AquaClassifier.decodeForInference(imagePath) ?: return@withContext null
                 // Recycle in finally so a classify() failure can't leak the bitmap.
                 val probs = try {
-                    classifier.classify(bitmap)
+                    activeClassifier.classify(bitmap)
                 } finally {
                     bitmap.recycle()
                 }
-                AquaInference.buildResponse(probs)
+                val response = AquaInference.buildResponse(probs)
+                if (response.diagnosticContractViolation() != null) {
+                    Log.w(TAG, "Aqua envelope violated diagnostic contract")
+                    TelemetryReporter.report("aqua_inference", "invalid_envelope", family = "aqua")
+                    return@withContext null
+                }
+                response
             } catch (_: OutOfMemoryError) {
                 // OutOfMemoryError is an Error, not an Exception — without this
                 // clause a decode/inference OOM escapes and crashes the app
@@ -414,7 +471,7 @@ class AnalysisActivity : AppCompatActivity() {
                 TelemetryReporter.report("aqua_inference", "internal_error", family = "aqua")
                 null
             } finally {
-                classifier.close()
+                classifier?.close()
             }
         }
 
@@ -436,13 +493,8 @@ class AnalysisActivity : AppCompatActivity() {
 
         /** True when the photo came from the camera shutter (not a gallery
          *  import) — gates the opt-in device-gallery autosave, which runs
-         *  only after a real plant verdict. */
+         *  only after an accepted plant verdict. */
         const val EXTRA_FROM_CAMERA = "extra_from_camera"
-
-        /** Pipeline rejection class — gates the device-gallery autosave
-         *  (rejects still open the result screen but must not land in the
-         *  user's photo library). */
-        private const val NOT_A_PLANT_CLASS = "not_a_plant"
 
         /** Optional plant id; when present the saved scan is auto-attached to
          *  that plant (see PlantDetailActivity's "New scan" action). */

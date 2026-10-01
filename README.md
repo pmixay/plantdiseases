@@ -28,7 +28,7 @@ plant care reminders and an AI plant doctor.
 | 🪴 | **Personal garden** — Room-backed scan history, multi-plant tracking, watering / fertilising reminders via WorkManager. |
 | 🤖 | **AI plant doctor** — opt-in OpenRouter chat scoped to your scan's diagnosis for follow-up questions. |
 | 🔎 | **Species identification** — PlantNet integration (optional) auto-fills the plant species from the scan photo. |
-| 📊 | **Honest uncertainty** — top-3 alternatives, conformal prediction sets, weak-healthy reroute, severity scoring + soft warnings (`uncertain_healthy`, `low_confidence`, `blurry_image`). |
+| 📊 | **Honest uncertainty** — probability-consistent top-3 alternatives, conformal prediction sets, OOD abstention, and soft warnings (`uncertain_healthy`, `disease_suspected:*`, `low_confidence`, `blurry_image`). |
 
 ---
 
@@ -62,13 +62,23 @@ confidence **and** a classifier-side OOD signal both agree **and** the
 classifier's own `not_a_plant` head does not veto it (a near-zero
 `P(not_a_plant)` means the model is sure this *is* a plant, and an
 OOD score that fires anyway is measuring *unfamiliar*, not *not a
-plant*). The OOD
-signal is an embedding-space k-NN distance on the DINOv2 CLS vector
-([`ood.py`](server/ood.py)) when the bundle ships a memory bank, falling
-back to the legacy MaxLogit floor otherwise. The blur gate
-(variance-of-Laplacian) short-circuits unfocused shots to a
-`not_a_plant` verdict so the user re-takes instead of getting a fake
-diagnosis.
+plant*). A hit emits explicit `abstained=true`, `abstention_reason="ood"`
+(plus the legacy `nap_ood_gated` warning) and leaves the calibrated class
+probabilities untouched; only the trained head's natural argmax is reported as
+`not_a_plant`. The secondary OOD overlay is active only when the bundle declares
+a matching full-served-pipeline calibration contract (crop/whole aggregation,
+detector floor and vote mode); historical single-image thresholds stay advisory.
+The OOD signal is an embedding-space k-NN distance on the DINOv2 CLS vector
+([`ood.py`](server/ood.py)) when the bundle ships a memory bank, falling back
+to the legacy MaxLogit floor otherwise. The blur gate (variance-of-Laplacian)
+returns an `image_quality` abstention with empty classifier diagnostics; it does
+not invent `P(not_a_plant)=1` when the classifier never ran.
+
+Postprocessing likewise never replaces the probability argmax with a
+lower-probability disease. Borderline healthy results keep `healthy` while
+surfacing the competing class through `disease_suspected:*` and `top_k`.
+`severity` is currently a conservative `low` compatibility value: leaf boxes
+localise leaves, not lesions, and no trained severity target exists yet.
 
 Detailed training recipe lives in
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb) and the
@@ -80,19 +90,44 @@ one per scan and `/api/capabilities` reports which the server offers):
 
 | Family | Backbone | Input | Where it runs |
 |---|---|---|---|
-| `aqua` | MobileNetV3-Small (distilled from `gamma`) → TFLite INT8 | 224 | **on-device, fully offline** (downloaded from the server, cached) |
-| **`gamma`** | **frozen DINOv2 ViT-S/14 + (optional) LoRA + MLP head** | **224** | **server — current production, balance of cost/accuracy** |
+| `aqua` | MobileNetV3-Small (distilled from `gamma`) → TFLite **float32** | 224 | **on-device, fully offline** (downloaded from the server, cached) |
+| **`gamma`** | **frozen DINOv2 ViT-S/14 + (optional) LoRA + MLP head** | **224** | **server — intended production tier, balance of cost/accuracy** |
 | `frontier` | frozen DINOv2 ViT-B/14 (~86M) + (optional) LoRA + MLP head | 224 | server — high-capacity; **inference gated OFF by default** (needs a GPU host), the app shows it "unavailable" until enabled |
 
 `gamma` and `frontier` share one frozen-DINOv2 recipe (only the backbone
 differs — both run at 224); `aqua` is a knowledge-distilled mobile student
 (`train_notebook.ipynb` §5) exported to TFLite.
 
-> **Optional data supplement:** notebook §2 can pull real indoor-houseplant /
-> ornamental disease sets from Kaggle. It is **fail-soft** — without credentials
-> the notebook skips it cleanly. Accepted credential formats are documented at
-> §1's `kaggle_install_api_config()` in
-> [`server/train_notebook.ipynb`](server/train_notebook.ipynb).
+Aqua enforces blur/quality rejection and retains its trained `not_a_plant`
+head, but it has no calibrated detector/embedding OOD overlay. The app does not
+invent one from Gamma thresholds; that remains a v9 served-path data task.
+
+Aqua has the trained `not_a_plant` class and blocks photos that fail the
+existing on-device blur QA before inference. It does **not** ship the server's
+detector + embedding/MaxLogit calibrated OOD overlay; an Aqua class argmax must
+not be described as OOD evidence, and low confidence is not an OOD detector.
+
+Aqua updates are activated only after the model/sidecar/bundle digests and the
+staged TFLite tensor contract agree (one FLOAT32 NHWC input at the declared
+size and one FLOAT32 logits head matching `class_names`); this inspection does
+not run inference. A successfully decoded `available:false` manifest is an
+authoritative withdrawal and clears the active pointer while retaining the
+immutable bytes for rollback. Network errors and non-2xx manifest responses
+leave the last-known-good bundle active.
+
+> **Kaggle is required for the default production recipe.** Individual fetch
+> attempts report failures cleanly, but strict source floors stop the notebook
+> before training if the approved houseplant/ornamental supplement is absent or
+> truncated. Only an explicitly degraded, non-production diagnostic run may
+> disable that gate. Accepted credential formats are documented at §1's
+> `kaggle_install_api_config()` in
+> [`server/train_notebook.ipynb`](server/train_notebook.ipynb). Kaggle handles
+> resolve to the latest revision visible at download time. The resolved Kaggle
+> revision and full corpus digests are bound into each run manifest, but the
+> inputs are intentionally not predetermined before a run. An authenticated
+> check on 2026-08-23 found the private supplement still at v8; it fails the
+> strict v9 manifest contract. A compliant v9 published at the same handle will
+> be picked up automatically.
 
 ---
 
@@ -121,9 +156,10 @@ The pipeline also accepts **out-of-head** corrections on `/api/feedback`
 though the head doesn't predict them. They are stored with `out_of_head=1`
 so the retraining loop can prioritise the next round of data collection.
 
-Canonical in-repo list: [`DEFAULT_CLASS_NAMES` in
-`server/classifier.py`](server/classifier.py). A deployed bundle overrides it
-via `classes.json`, which is provisioned out of band and never committed.
+Canonical recipe list: [`DEFAULT_CLASS_NAMES` in
+`server/classifier.py`](server/classifier.py). Strict API startup nevertheless
+requires the ordered, manifest-bound `classes.json`; defaults are only for
+isolated/non-strict tests and cannot rescue a deployment.
 
 ---
 
@@ -144,18 +180,23 @@ cd server
 start.bat
 ```
 
-The script creates a virtualenv, installs CPU-only PyTorch + `requirements.txt`,
+The script creates a virtualenv, installs the inference-server requirements,
 and serves FastAPI on `0.0.0.0:8000` — override with `./start.sh --port N` or an
 inherited `PORT` (`start.bat` takes `--port` but ignores `PORT`).
 
 Model weights are **not committed** and **not auto-downloaded**. The server is
-**fail-fast**: booting needs `detector.onnx` *and* a classifier ONNX
-(`classifier_int8.onnx` or `classifier.onnx`) in `server/models/` — a `.pt`
-detector alone will not load. `classes.json` and the calibration files are
-optional but contract-bearing (absent → fallback class list, `T=1.0`, no
-conformal prediction set). `train_notebook.ipynb` §6b tars a complete bundle;
-the full artefact list is [`DEPLOYMENT.md`](DEPLOYMENT.md) §2, and production
-setup (nginx/TLS, systemd, API keys, Android signing/FCM) is the rest of it.
+**fail-fast** and accepts only one complete notebook-produced tree in
+`server/models/`, with `bundle_manifest.json`, the exact selected classifier,
+detector, taxonomy, calibration, conformal, data-lineage, and run-lineage files.
+It verifies every bound size/SHA-256 and the serving contract before loading a
+graph; missing, mixed, changed, unbound, or loose legacy artefacts abort startup.
+Extract the whole archive into a fresh directory—do not flatten or combine runs.
+The full contract is [`DEPLOYMENT.md`](DEPLOYMENT.md) §2.
+
+Training, calibration fitting, conversion, and model export are **not server
+features**. They exist only inside the self-contained Colab notebook
+[`server/train_notebook.ipynb`](server/train_notebook.ipynb), which refuses to
+train on CPU. Server and Android code are load/verify/inference-only.
 
 ### Android client
 

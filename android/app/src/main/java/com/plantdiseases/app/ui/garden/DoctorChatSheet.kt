@@ -216,7 +216,11 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     /** Bind session-dependent views. Safe once [plant] or [scan] is set. */
     private fun bindSession() {
-        binding.chatPlantName.text = resolveSubtitle(plant, scan, requireContext())
+        binding.chatPlantName.text = if (scan?.let(scanRepository::isAbstainedScan) == true) {
+            getString(R.string.inconclusive_diagnosis_name)
+        } else {
+            resolveSubtitle(plant, scan, requireContext())
+        }
         loadMessages()
     }
 
@@ -322,18 +326,27 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                         "species" to (p.scientificName ?: p.species),
                     )
                 } ?: scan?.let { s ->
-                    val classKey = scanRepo.topClassKey(s)
-                        ?: s.diseaseName.lowercase().replace(' ', '_')
-                    mapOf(
-                        "class_name" to classKey,
-                        "disease_name" to s.diseaseName,
-                        "confidence" to s.confidence.toDouble(),
-                        "severity" to s.severity,
-                        "is_healthy" to s.isHealthy,
-                        "warnings" to scanRepo.parseWarnings(s.warnings),
-                        "plant_name" to displayName,
-                        "species" to (s.speciesScientific ?: s.speciesCommon),
-                    )
+                    if (scanRepo.isAbstainedScan(s)) {
+                        // A direct/stale route must not turn a rejected raw
+                        // argmax into clinical context for the assistant.
+                        mapOf(
+                            "plant_name" to displayName,
+                            "species" to (s.speciesScientific ?: s.speciesCommon),
+                        )
+                    } else {
+                        val classKey = scanRepo.topClassKey(s)
+                            ?: s.diseaseName.lowercase().replace(' ', '_')
+                        mapOf(
+                            "class_name" to classKey,
+                            "disease_name" to s.diseaseName,
+                            "confidence" to s.confidence.toDouble(),
+                            "severity" to s.severity,
+                            "is_healthy" to s.isHealthy,
+                            "warnings" to scanRepo.parseWarnings(s.warnings),
+                            "plant_name" to displayName,
+                            "species" to (s.speciesScientific ?: s.speciesCommon),
+                        )
+                    }
                 }
 
                 val request = ChatRequest(

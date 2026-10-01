@@ -14,6 +14,7 @@ import com.plantdiseases.app.data.model.CarePlanCheckpoint
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
+import com.plantdiseases.app.util.PlantHealth
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
@@ -570,6 +571,56 @@ class CareRepositoryTest {
 
         assertThat(loaded?.stepCount).isEqualTo(3)
         assertThat(loaded?.plan?.status).isEqualTo("completed")
+    }
+
+    @Test
+    fun legacyAbstainedAssignedScan_isExcludedFromGardenDiagnostics() = runBlocking {
+        val now = System.currentTimeMillis()
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        val acceptedId = db.scanDao().insert(
+            diseaseScan(plantId).copy(
+                imagePath = "file://accepted.jpg",
+                diseaseName = "Healthy",
+                diseaseNameRu = "Здоровое растение",
+                displayedClassKey = "healthy",
+                allProbs = """{"healthy":0.95,"leaf_spot":0.05}""",
+                confidence = 0.95f,
+                isHealthy = true,
+                timestamp = now - 1_000L,
+            ),
+        )
+        db.scanDao().insert(
+            diseaseScan(plantId).copy(
+                imagePath = "file://rejected.jpg",
+                displayedClassKey = "leaf_spot",
+                allProbs = """{"leaf_spot":0.99,"healthy":0.01}""",
+                confidence = 0.99f,
+                isHealthy = false,
+                warnings = """["nap_ood_gated"]""",
+                timestamp = now,
+            ),
+        )
+
+        val acceptedScans = plantRepository.getScansForPlant(plantId)
+        val latest = plantRepository.getLatestScanForPlant(plantId)
+        val summary = plantRepository.getPlants().single()
+        val picker = plantRepository.getPlantsForPicker().single()
+        val healthFromRawRows = plantRepository.getPlantHealth(
+            plantId,
+            db.scanDao().getScansForPlant(plantId),
+            activePlanId = null,
+            nowMs = now,
+        )
+
+        assertThat(acceptedScans.map { it.id }).containsExactly(acceptedId)
+        assertThat(latest?.id).isEqualTo(acceptedId)
+        assertThat(summary.scanCount).isEqualTo(1)
+        assertThat(summary.latestScan?.id).isEqualTo(acceptedId)
+        assertThat(summary.latestScan?.diseaseName).isEqualTo("Healthy")
+        assertThat(summary.health.scanCount).isEqualTo(1)
+        assertThat(picker.thumbnailSource).isEqualTo("file://accepted.jpg")
+        assertThat(healthFromRawRows.scanCount).isEqualTo(1)
+        assertThat(healthFromRawRows.status).isEqualTo(PlantHealth.Status.UNKNOWN)
     }
 
     private fun recurringView(

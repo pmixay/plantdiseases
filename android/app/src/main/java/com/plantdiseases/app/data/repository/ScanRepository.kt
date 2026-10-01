@@ -11,6 +11,7 @@ import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
 import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
@@ -26,6 +27,8 @@ import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.model.diagnosticContractViolation
+import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
@@ -277,13 +280,28 @@ class ScanRepository(
                 when (response.status.value) {
                     in 200..299 -> {
                         val analysis = response.body<AnalysisResponse>()
-                        analysis.scanId?.takeIf { it.isNotBlank() }?.let { scanId ->
-                            // Hold only a small in-memory handoff until saveScan creates
-                            // the owning Room row. A process death then fails publication
-                            // closed instead of leaving an unowned private disk sidecar.
-                            rememberPendingAnalysisImage(imageFile, scanId, image)
+                        if (!analysis.available) {
+                            Result.failure(
+                                ModelUnavailableException(
+                                    family = analysis.family,
+                                    reason = analysis.unavailableReason,
+                                    serverMessage = analysis.availabilityMessage,
+                                ),
+                            )
+                        } else {
+                            val violation = analysis.diagnosticContractViolation()
+                            if (violation == null) {
+                                analysis.scanId?.takeIf { it.isNotBlank() }?.let { scanId ->
+                                    // Hold only a small in-memory handoff until saveScan creates
+                                    // the owning Room row. A process death then fails publication
+                                    // closed instead of leaving an unowned private disk sidecar.
+                                    rememberPendingAnalysisImage(imageFile, scanId, image)
+                                }
+                                Result.success(analysis)
+                            } else {
+                                Result.failure(InvalidAnalysisResponseException(violation))
+                            }
                         }
-                        Result.success(analysis)
                     }
                     // 403 = a temporary abuse-control cooldown (the server bans
                     // an IP that briefly burst past the rate limit). Treat it
@@ -347,8 +365,9 @@ class ScanRepository(
      * Download/update the Aqua on-device model from the server if needed.
      * Best-effort: returns success(false) when there's nothing to do (no
      * server model, or already up to date) and success(true) when a new model
-     * was installed. The model is fetched only when its sha differs from the
-     * installed one, so repeated calls are cheap (one manifest GET).
+     * was installed. Freshness is keyed by the combined model+semantic-sidecar
+     * bundle digest, so a classes/preprocess contract update cannot be missed
+     * when the TFLite bytes stay unchanged.
      */
     suspend fun syncAquaModel(context: android.content.Context): Result<Boolean> =
         withContext(Dispatchers.IO) {
@@ -360,21 +379,36 @@ class ScanRepository(
                 val manifest =
                     manifestResp.body<com.plantdiseases.app.data.model.AquaManifestResponse>()
                 if (!manifest.available) {
+                    // A successfully decoded authoritative manifest can
+                    // withdraw a broken/stale generation. Clear only the
+                    // active pointer; retained immutable bytes remain a
+                    // rollback. HTTP and network failures return above/below
+                    // without changing the last-known-good installation.
+                    return@withContext if (AquaModelManager.deactivate(context)) {
+                        Result.success(false)
+                    } else {
+                        Result.failure(Exception("Could not deactivate withdrawn Aqua bundle"))
+                    }
+                }
+                if (manifest.bundleSchemaVersion != 1) {
                     return@withContext Result.success(false)
                 }
-                val sha = manifest.sha256
+                val modelSha = manifest.sha256?.takeIf(String::isNotBlank)
+                    ?: return@withContext Result.success(false)
+                val classesSha = manifest.classesSha256?.takeIf(String::isNotBlank)
+                    ?: return@withContext Result.success(false)
+                val bundleSha = manifest.bundleSha256?.takeIf(String::isNotBlank)
+                    ?: return@withContext Result.success(false)
                 val classes = manifest.classes
-                if (sha.isNullOrBlank() || classes == null) {
-                    return@withContext Result.success(false)
-                }
-                if (AquaModelManager.isUpToDate(context, sha)) {
+                    ?: return@withContext Result.success(false)
+                if (AquaModelManager.isUpToDate(context, bundleSha)) {
                     return@withContext Result.success(false)
                 }
                 // Serialise the download+install; re-check freshness inside the
                 // lock so a waiter that the first install already satisfied
                 // no-ops instead of racing the shared temp/model file.
                 aquaSyncMutex.withLock {
-                    if (AquaModelManager.isUpToDate(context, sha)) {
+                    if (AquaModelManager.isUpToDate(context, bundleSha)) {
                         return@withContext Result.success(false)
                     }
                     val modelResp = apiClient.httpClient.get("api/aqua/model")
@@ -387,7 +421,15 @@ class ScanRepository(
                     // InputStream rather than buffering it all in memory — the
                     // Retrofit path used @Streaming for the same reason.
                     val installed = modelResp.bodyAsChannel().toInputStream().use { stream ->
-                        AquaModelManager.install(context, stream, sha, manifest.version, classes)
+                        AquaModelManager.install(
+                            context,
+                            stream,
+                            modelSha,
+                            classesSha,
+                            bundleSha,
+                            manifest.version,
+                            classes,
+                        )
                     }
                     Result.success(installed)
                 }
@@ -874,13 +916,16 @@ class ScanRepository(
     fun scanToProgressionPayload(scan: ScanEntity): Map<String, Any?> {
         val classKey = topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
+        val effectiveAbstentionReason = abstentionReason(scan)
         return mapOf(
             "class_name" to classKey,
             "disease_name" to scan.diseaseName,
             "confidence" to scan.confidence.toDouble(),
-            "is_healthy" to scan.isHealthy,
+            "is_healthy" to (scan.isHealthy && effectiveAbstentionReason == null),
             "severity" to scan.severity,
             "warnings" to parseWarnings(scan.warnings),
+            "abstained" to (effectiveAbstentionReason != null),
+            "abstention_reason" to effectiveAbstentionReason,
         )
     }
 
@@ -902,6 +947,14 @@ class ScanRepository(
     ) : Exception("Daily $plan quota exhausted")
 
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
+    class ModelUnavailableException(
+        val family: String,
+        val reason: String?,
+        val serverMessage: String?,
+    ) : Exception("Model family $family is unavailable${reason?.let { ": $it" }.orEmpty()}")
+    class InvalidAnalysisResponseException(
+        val violation: String,
+    ) : Exception("Analysis response violated the diagnostic contract: $violation")
     class UnsupportedImageException : Exception("Unsupported image format")
     class CommunityOpinionsLockedException : Exception("Second opinions are locked")
     class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
@@ -923,21 +976,33 @@ class ScanRepository(
                         it.height == primary.height
                 }.takeIf { it >= 0 }
             }
-            val warningsJson = result.warnings
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { gson.toJson(it) }
-            val best = result.species?.best
+            val effectiveAbstentionReason = result.effectiveAbstentionReason()
+            val accepted = effectiveAbstentionReason == null
+            val persistedWarnings = LinkedHashSet(result.warnings.orEmpty())
+            if (effectiveAbstentionReason != null) {
+                // No Room migration: explicit API fields are persisted as
+                // durable warning markers so old and new rows share one policy.
+                persistedWarnings += "abstained"
+                persistedWarnings += "abstention_reason:$effectiveAbstentionReason"
+            }
+            val warningsJson = persistedWarnings
+                .takeIf { it.isNotEmpty() }
+                ?.let { gson.toJson(it.toList()) }
+            val best = if (accepted) result.species?.best else null
             // Keep the server-issued community publication capability when
             // present. Feedback uses a separate one-use receipt and never
             // sends this value.
             val serverScanId = result.scanId?.takeIf { it.isNotBlank() }
             // Persist the conformal classes list for local result/history UI.
             val predictionSetJson = result.predictionSet?.classes
+                ?.takeIf { accepted }
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
-            // ``classKey`` is the post-reroute verdict. Persisting it as
-            // ``displayedClassKey`` keeps local UI labels aligned with what
-            // the user saw; feedback itself trusts only the server receipt.
+            // The probability-backed diagnostic argmax is preserved even when
+            // a separate abstention verdict prevents diagnosis presentation.
+            // Persisting it as ``displayedClassKey`` keeps local UI labels
+            // aligned with what the user saw; feedback itself trusts only the
+            // server receipt.
             val displayedClassKey = result.classKey?.takeIf { it.isNotBlank() }
             val clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString()
             val entity = ScanEntity(
@@ -953,22 +1018,22 @@ class ScanRepository(
                 confidence = result.confidence,
                 description = result.description,
                 descriptionRu = result.descriptionRu,
-                treatment = gson.toJson(result.treatment),
-                treatmentRu = gson.toJson(result.treatmentRu),
-                prevention = gson.toJson(result.prevention),
-                preventionRu = gson.toJson(result.preventionRu),
-                isHealthy = result.isHealthy,
+                treatment = gson.toJson(if (accepted) result.treatment else emptyList<String>()),
+                treatmentRu = gson.toJson(if (accepted) result.treatmentRu else emptyList<String>()),
+                prevention = gson.toJson(if (accepted) result.prevention else emptyList<String>()),
+                preventionRu = gson.toJson(if (accepted) result.preventionRu else emptyList<String>()),
+                isHealthy = accepted && result.isHealthy,
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
                 detectionImageWidth = detection?.imageWidth ?: 0,
                 detectionImageHeight = detection?.imageHeight ?: 0,
                 allProbs = result.allProbs?.let { gson.toJson(it) },
                 warnings = warningsJson,
-                toxicToPets = result.toxicToPets,
+                toxicToPets = accepted && result.toxicToPets,
                 toxicSpeciesList = result.toxicSpeciesList
-                    .takeIf { it.isNotEmpty() }
+                    .takeIf { accepted && it.isNotEmpty() }
                     ?.let { gson.toJson(it) },
-                toxicitySource = result.toxicitySource,
+                toxicitySource = if (accepted) result.toxicitySource else "unknown",
                 severity = result.severity ?: "low",
             )
             val rowId = scanArtifactMutex.withLock {
@@ -1014,7 +1079,12 @@ class ScanRepository(
     /** Get all scans */
     suspend fun getAllScans(): List<ScanHistoryItem> =
         withContext(Dispatchers.IO) {
-            scanDao.getAllScans().map { it.toHistoryItem() }
+            // Rejected raw argmaxes must not reappear as accepted diagnoses in
+            // gallery/history. The backing row remains addressable by id for
+            // the immediate retake/correction result screen.
+            scanDao.getAllScans()
+                .filterNot { isInconclusiveScan(it) }
+                .map { it.toHistoryItem() }
         }
 
     /** Local scan ids used to hide the current user's own posts from discovery. */
@@ -1174,46 +1244,38 @@ class ScanRepository(
         clientScanId = clientScanId,
     )
 
-    /** Persisted top-class key from `all_probs`; null when not stored. */
+    /** Persisted probability argmax from `all_probs`; null when not stored. */
     fun topClassKey(scan: ScanEntity): String? =
         parseAllProbs(scan.allProbs).entries.maxByOrNull { it.value }?.key
 
     /**
-     * The canonical verdict class key the user actually saw — the
-     * server-issued ``displayedClassKey`` (which already reflects the
-     * weak-healthy reroute / healthy-fallback / OOD gate), falling back
-     * to ``argmax(all_probs)`` for legacy scans saved before that column
-     * existed.
-     *
-     * Use this — NOT [topClassKey] — for any UI surface that asks "what
-     * is THIS scan's diagnosis" (guide deep-link, example photos, …).
-     * The raw argmax can disagree with the displayed verdict after a
-     * server reroute, which made the result screen's example photos
-     * appear for some scans and silently vanish for others.
+     * Canonical diagnostic class key. Modern responses keep this equal to the
+     * calibrated probability argmax; explicit abstention is a separate
+     * verdict and callers must check [isAbstainedScan] before disease UI.
      */
     fun verdictClassKey(scan: ScanEntity): String? =
         scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: topClassKey(scan)
 
-    /** NAP detection follows the canonical displayed verdict. The persisted
-     * displayed key wins over the raw argmax after a server reroute; legacy
-     * scans fall back to the argmax and then their localised display name. */
-    fun isNotAPlantScan(scan: ScanEntity): Boolean {
-        if (verdictClassKey(scan) == "not_a_plant") return true
-        return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-            scan.diseaseNameRu == "Не растение"
-    }
+    /** Effective rejection reason, including markers persisted from new API
+     * fields and legacy warnings from cached responses. */
+    fun abstentionReason(scan: ScanEntity): String? =
+        PersistedScanAbstentionPolicy.reason(scan)
+
+    fun isAbstainedScan(scan: ScanEntity): Boolean = abstentionReason(scan) != null
+
+    fun isInconclusiveScan(scan: ScanEntity): Boolean =
+        abstentionReason(scan)?.let { it != AnalysisAbstentionReasons.NOT_A_PLANT } == true
+
+    /** Natural trained-head NAP only. Quality/OOD rejection has neutral copy. */
+    fun isNotAPlantScan(scan: ScanEntity): Boolean =
+        abstentionReason(scan) == AnalysisAbstentionReasons.NOT_A_PLANT
 
     /**
-     * "Healthy" verdict for the result UI. Trusts the server's final
-     * ``is_healthy`` flag — that's already what the server's
-     * post-processing rules (weak-healthy reroute, healthy-fallback,
-     * OOD gate) settled on, so using it here keeps the badge / image
-     * highlight / share copy consistent with the description and
-     * stored disease name. Falling back to the top-class key here
-     * caused a visible mismatch where a server-rerouted "Fungal Leaf
-     * Spot" verdict showed as "Healthy Plant" in the UI.
+     * "Healthy" verdict for the result UI. The server flag is trusted only for
+     * an accepted scan; an OOD/quality-rejected healthy argmax is inconclusive.
      */
-    fun isHealthyVerdict(scan: ScanEntity): Boolean = scan.isHealthy
+    fun isHealthyVerdict(scan: ScanEntity): Boolean =
+        !isAbstainedScan(scan) && scan.isHealthy
 
     /**
      * Stats reflect the user's plant-care reality, not the raw row count.
@@ -1236,6 +1298,7 @@ class ScanRepository(
         val diseaseRuByEn = mutableMapOf<String, String>()
         for (s in all) {
             when {
+                isInconclusiveScan(s) -> Unit
                 isNotAPlantScan(s) -> notAPlant++
                 s.isHealthy -> healthy++
                 else -> {
@@ -1272,7 +1335,7 @@ class ScanRepository(
     }
 
     /**
-     * Sweep stale `not_a_plant` / blur-reject rows. The row backs the
+     * Sweep stale abstention rows. The row backs the
      * verdict's result screen (incl. the "this is a plant" feedback path),
      * but NAP scans are hidden from the gallery and stats, so after
      * [olderThanMs] the row is unreachable dead weight. NAP is a derived
@@ -1285,7 +1348,7 @@ class ScanRepository(
         scanArtifactMutex.withLock {
             val cutoff = System.currentTimeMillis() - olderThanMs
             val stale = scanDao.getAllScans()
-                .filter { it.timestamp < cutoff && isNotAPlantScan(it) }
+                .filter { it.timestamp < cutoff && isAbstainedScan(it) }
             var removed = 0
             for (s in stale) {
                 if (deleteRetainedAnalysisImage(s) == ArtifactDeletion.FAILED) continue

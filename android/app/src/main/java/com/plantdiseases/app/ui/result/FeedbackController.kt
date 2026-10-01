@@ -93,10 +93,11 @@ class FeedbackController(
     }
 
     /**
-     * NAP / blur-reject variant: a single "This is a plant" action instead of
-     * the yes/no pair. A wrongly-rejected plant
-     * photo is exactly the training signal the rejection head needs, and
-     * negative feedback also uploads the image bytes (see [submit]).
+     * Natural NAP / OOD / quality-abstention variant: a single "This is a
+     * plant" action instead of confirming the raw diagnostic argmax. A
+     * wrongly rejected plant photo is exactly the training signal the
+     * rejection head needs (and gate / quality-policy evidence), and negative
+     * feedback also uploads the image bytes (see [submit]).
      */
     fun bindNotAPlant(scan: ScanEntity) {
         val card = binding.cardFeedback

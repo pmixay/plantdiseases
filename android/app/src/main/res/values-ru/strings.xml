@@ -161,9 +161,9 @@
     <string name="status_not_a_plant">Не растение</string>
     <string name="not_a_plant_diagnosis_name">В кадре нет растения</string>
     <string name="not_a_plant_result_body">Модель не нашла лист растения на фото. Попробуйте сделать снимок так, чтобы лист занимал большую часть кадра, при ровном освещении и без дрожания.</string>
-    <string name="status_blurry_or_not_a_plant">Не удалось распознать</string>
-    <string name="blurry_or_not_a_plant_diagnosis_name">Размытое фото или не растение</string>
-    <string name="blurry_or_not_a_plant_result_body">Снимок слишком размыт, чтобы поставить диагноз, — либо в кадре нет растения. Если вы фотографировали растение, подойдите ближе, держите камеру неподвижно, дождитесь автофокуса и сделайте чёткий снимок одного листа при хорошем освещении.</string>
+    <string name="status_inconclusive">Результат неопределён</string>
+    <string name="inconclusive_diagnosis_name">Не удалось поставить диагноз</string>
+    <string name="inconclusive_result_body">Снимок не удалось принять для диагностики. Сделайте резкое фото при хорошем освещении так, чтобы один лист занимал большую часть кадра.</string>
     <string name="description_label">Описание</string>
     <string name="result_learn_more">Открыть полное руководство</string>
 
@@ -1038,6 +1038,10 @@
     <string name="model_family_frontier">Frontier</string>
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
+    <string name="model_unavailable_title">Модель недоступна</string>
+    <string name="model_unavailable_detail">Этот вариант модели стал недоступен. Выберите Gamma и повторите попытку.</string>
+    <string name="analysis_contract_error_title">Результат нельзя принять</string>
+    <string name="analysis_contract_error_detail">Диагноз пришёл неполным или противоречивым. Сделайте резкое фото одного листа при хорошем освещении.</string>
     <string name="model_family_offline_badge">Офлайн</string>
     <string name="model_family_needs_connection">Нужен интернет</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>

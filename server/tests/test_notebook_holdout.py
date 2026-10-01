@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import shutil
 from pathlib import Path
 
@@ -229,13 +230,24 @@ def test_class_logit_bias_folds_before_calibration():
     assert "Recorded for traceability only" in c14
 
 
-def test_stage1_audit_runs_in_every_mode():
-    """The audit is the thing that would have caught the detector lottery. It
-    must not sit behind RUN_DETECTOR_CROP_EVAL, which is off for `combined` —
-    the mode that ships."""
-    c14 = next(s for s in _cells().values() if "_stage1_boxes = None" in s)
-    assert c14.index("_stage1_boxes = None") < c14.index("RUN_DETECTOR_CROP_EVAL =")
-    assert c14.count("_det.predict(") == 1, "the crop eval should reuse the audit's boxes"
+def test_stage1_audit_and_end_to_end_eval_run_in_every_mode():
+    """The audit is the thing that would have caught the detector lottery, and
+    the end-to-end eval is the only number that scores what users get. Both
+    run in every mode — `combined` is the mode that ships — off ONE bounded
+    served pass: no second runtime, no second decode, pools released first."""
+    c14 = next(s for s in _cells().values() if "RUN_DETECTOR_CROP_EVAL =" in s)
+    assert re.search(r"^RUN_DETECTOR_CROP_EVAL = True\b", c14, re.M), (
+        "the end-to-end eval must be ON in every mode")
+    assert "TRAIN_MODE != 'combined'" not in c14
+    # One runtime: the shipped detector.onnx through the served mirrors.
+    assert "_YOLO" not in c14 and ".predict(" not in c14, "Ultralytics is back in §6"
+    tail = c14[c14.index("STAGE1_MISS_RATIO_WARN ="):]
+    assert tail.count("_served_pass(") == 1, "the audit and the eval must share one pass"
+    assert tail.index("_release_host_memory()") < tail.index("_served_pass(")
+    # The audit reads the pass's detector confidences; it is not gated on the eval.
+    audit = tail[tail.index("# ── Readout 1"):tail.index("# ── Readout 2")]
+    assert "_best_conf < STAGE1_AUDIT_CONF" in audit
+    assert "RUN_DETECTOR_CROP_EVAL" not in audit
 
 
 def test_whole_group_moves_together(tmp_path):
@@ -257,7 +269,7 @@ def test_whole_group_moves_together(tmp_path):
     assert not list(ns["_iter_images"](train_root))
 
 
-# ── 2.7.3: regime-aware sampling + the calibration arithmetic ──────────────
+# ── Superseded 2.7.3 research narrative ────────────────────────────────────
 
 def _section_source(marker: str) -> str:
     """Source of the notebook cell containing ``marker``.
@@ -275,24 +287,17 @@ def _section_source(marker: str) -> str:
             return src
     pytest.fail(f"no notebook cell contains {marker!r} — was it renamed?")
 
-def test_falsified_levers_stay_removed():
-    """2.7.3 ran regime-aware sampling and regime-stratified conformal, and both
-    failed. The code is gone; this pins the DECISION so it is not rebuilt.
+def test_untrusted_historical_levers_are_not_release_evidence():
+    """Do not encode decisions from the audit-invalid private instrument.
 
-    Regime sampling moved the benchmark 3/31 -> 4/31 (Fisher p=1.000) while
-    in-domain held, so it is not a trade that went too far — it does nothing.
-    Regime conformal found the dull stratum already better covered (0.972 vs
-    0.965), so there was no under-coverage to fix. Rebuilding either costs an
-    A100 run and returns nothing.
+    A future independent v9 experiment may revisit a sampler or calibration
+    design. This regression test pins only the evidence warning, never a claim
+    that a lever is permanently falsified by the old 31-row artifact.
     """
-    setup, sampler = _section_source("MODEL_VERSION ="), _section_source("make_source_weighted_sampler")
-    for gone in ("REGIME_UPWEIGHT_CLASSES = ", "REGIME_BOOST = ", "REGIME_SAT_QUANTILE = "):
-        assert gone not in setup, f"{gone.strip()} is back — see the falsification record in §1"
-    for gone in ("def regime_multipliers", "def _mean_saturation", "regime_mult"):
-        assert gone not in sampler, f"{gone} is back in §4 — the lever was falsified"
-    # the record itself must survive, or the next session re-derives the idea
-    assert "falsified" in setup.lower() and "3/31" in setup, \
-        "the 2.7.3 falsification record was deleted along with the code"
+    setup = _section_source("MODEL_VERSION =")
+    assert "SUPERSEDED 2.7.3 ARCHIVE NARRATIVE" in setup
+    assert "DO NOT USE AS EVIDENCE" in setup
+    assert "docs/ROADMAP.md" in setup
 
 
 def test_temperature_is_not_claimed_to_move_predictions():

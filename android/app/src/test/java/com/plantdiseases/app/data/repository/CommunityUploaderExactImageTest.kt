@@ -78,10 +78,7 @@ class CommunityUploaderExactImageTest {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scan_id":"server-scan-1","class_name":"leaf_spot",""" +
-                        """"disease_name":"Leaf Spot","confidence":0.9}""",
-                ),
+                .setBody(analysisBody("server-scan-1")),
         )
         val analysis = runBlocking { repository.analyzeImage(source) }.getOrThrow()
         val analyzeRequest = server.takeRequest()
@@ -247,10 +244,18 @@ class CommunityUploaderExactImageTest {
     private fun analysisResponse(scanId: String) = MockResponse()
         .setResponseCode(200)
         .setHeader("Content-Type", "application/json")
-        .setBody(
-            """{"scan_id":"$scanId","class_name":"leaf_spot",""" +
-                """"disease_name":"Leaf Spot","confidence":0.9}""",
-        )
+        .setBody(analysisBody(scanId))
+
+    // A complete nine-class diagnostic: the repository rejects partial bodies.
+    private fun analysisBody(scanId: String) =
+        """
+        {"scan_id":"$scanId","class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.9,
+         "all_probs":{"gray_mold_botrytis":0,"healthy":0.1,"leaf_scorch_underwatering":0,
+          "leaf_spot":0.9,"not_a_plant":0,"nutrient_deficiency":0,"pests":0,
+          "powdery_mildew":0,"viral_disease":0},
+         "top_k":[{"class":"leaf_spot","confidence":0.9},{"class":"healthy","confidence":0.1}],
+         "abstained":false,"verdict_status":"accepted"}
+        """.trimIndent()
 
     private fun scan(clientScanId: String) = ScanEntity(
         clientScanId = clientScanId,

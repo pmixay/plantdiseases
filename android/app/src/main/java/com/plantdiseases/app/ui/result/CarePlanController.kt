@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.result
 
 import android.util.TypedValue
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -32,6 +33,10 @@ class CarePlanController(
     private var card: CarePlanCardView? = null
 
     fun bind(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        if (repository.isAbstainedScan(scan)) {
+            card?.visibility = View.GONE
+            return
+        }
         val container = binding.contentLayout
         val classKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
@@ -51,6 +56,7 @@ class CarePlanController(
                 .takeIf { it >= 0 } ?: (container.childCount - 1)
             container.addView(fresh, anchorIdx + 1)
         }
+        view.visibility = View.VISIBLE
 
         // Offline (Aqua) scans never call the server: bind a basic,
         // locally-computed plan instead, visually marked as offline.

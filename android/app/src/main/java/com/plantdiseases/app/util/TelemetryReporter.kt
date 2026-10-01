@@ -87,6 +87,7 @@ object TelemetryReporter {
         "uncaught_exception",
         "http_error",
         "model_unavailable",
+        "invalid_envelope",
     )
     private val allowedFamilies = setOf("aqua", "gamma", "frontier", "unknown")
     private val allowedBreadcrumbs = setOf(

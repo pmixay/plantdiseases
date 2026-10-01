@@ -41,6 +41,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -906,7 +908,8 @@ def _actor_is_deleted(conn: sqlite3.Connection, actor_id: str | None) -> bool:
     ).fetchone() is not None
 
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(
         str(COMMUNITY_DB_PATH),
         check_same_thread=False,
@@ -915,7 +918,14 @@ def _connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.create_function("community_distance_km", 4, _haversine_km, deterministic=True)
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _add_column_if_missing(

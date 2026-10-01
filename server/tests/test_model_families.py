@@ -62,11 +62,14 @@ def test_analyze_gamma_explicit(client, png_bytes):
 
 def test_analyze_aqua_served_by_gamma_for_parity(client, png_bytes):
     # Aqua normally runs on-device, but an online request must still get a
-    # real diagnosis (served by the base pipeline) tagged as the asked family.
+    # real diagnosis from the base pipeline. The response distinguishes the
+    # requested tier from the model that actually produced the probabilities.
     r = _analyze(client, png_bytes, family="aqua")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["family"] == "aqua"
+    assert body["family"] == "gamma"
+    assert body["requested_family"] == "aqua"
+    assert body["family_fallback_reason"] == "aqua_served_by_gamma"
     assert "class_name" in body and "confidence" in body
 
 

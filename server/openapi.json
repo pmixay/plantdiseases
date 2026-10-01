@@ -77,7 +77,7 @@
     "/api/analyze": {
       "post": {
         "summary": "Analyze Image",
-        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected region (with severity score) and the top-k class\nprobabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.\n\n``family`` selects the model tier (aqua | gamma | frontier). ``gamma``\nis the default; ``aqua`` is normally answered on-device but is served\nby gamma here for online parity; ``frontier`` requires the operator to\nhave enabled and provisioned it (otherwise a graceful ``available:false``\npayload is returned, never a 5xx).",
+        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected regions, a conservative compatibility severity placeholder, and\nthe top-k class probabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.\n\n``family`` selects the model tier (aqua | gamma | frontier). ``gamma``\nis the default; ``aqua`` is normally answered on-device but is served\nby gamma here for online parity; ``frontier`` requires the operator to\nhave enabled and provisioned it (otherwise a graceful ``available:false``\npayload is returned, never a 5xx).",
         "operationId": "analyze_image_api_analyze_post",
         "parameters": [
           {
@@ -1792,7 +1792,7 @@
     "/api/aqua/manifest": {
       "get": {
         "summary": "Aqua Manifest",
-        "description": "Describe the hosted Aqua on-device model so the app can decide whether\nto (re)download it. ``available:false`` when the artefact isn't provisioned\n— the app then just uses the server model. ``sha256`` lets the client skip\na re-download when it already has the current bytes; ``classes`` is the\nsidecar metadata (class order, input size, normalisation) the app needs to\nrun the model.",
+        "description": "Describe the hosted Aqua on-device model so the app can decide whether\nto (re)download it. ``available:false`` when the artefact isn't provisioned\n— the app then just uses the server model. ``sha256`` lets the client skip\na re-download when it already has the current bytes; ``classes`` is the\nsidecar metadata (class order, input size, normalisation) the app needs to\nrun the model.  ``bundle_sha256`` binds model bytes to the semantic\nsidecar, so changing class order or preprocessing also forces an update.",
         "operationId": "aqua_manifest_api_aqua_manifest_get",
         "responses": {
           "200": {

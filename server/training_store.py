@@ -24,6 +24,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -151,7 +153,14 @@ class FeedbackResult:
     stored_image: bool = False
 
 
-def _connect(*, read_only: bool = False) -> sqlite3.Connection:
+@contextmanager
+def _connect(*, read_only: bool = False) -> Iterator[sqlite3.Connection]:
+    """Yield a short-lived connection and always close its file handles.
+
+    ``sqlite3.Connection.__exit__`` commits or rolls back but does *not* close
+    the connection; relying on CPython finalisation left the database locked on
+    Windows and can retain WAL handles longer than a request.
+    """
     if read_only:
         uri = f"file:{TRAINING_DB_PATH.resolve()}?mode=ro"
         connection = sqlite3.connect(
@@ -161,12 +170,20 @@ def _connect(*, read_only: bool = False) -> sqlite3.Connection:
         connection = sqlite3.connect(
             str(TRAINING_DB_PATH), check_same_thread=False, isolation_level=None
         )
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-    connection.execute("PRAGMA foreign_keys=ON")
-    connection.execute("PRAGMA busy_timeout=5000")
-    connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        if not read_only:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=5000")
+        connection.row_factory = sqlite3.Row
+        yield connection
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def init_db() -> None:

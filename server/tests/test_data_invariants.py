@@ -17,6 +17,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NB_PATH = REPO_ROOT / "server" / "train_notebook.ipynb"
 
@@ -211,6 +213,82 @@ def test_holdout_leakage_is_resolved_on_the_train_side():
     ), "the dropping audit is still pointed at SPLIT_ROOTS, which includes HOLDOUT"
 
 
+def _augmentation_helpers():
+    """Execute only the pure-Pillow augmentation helpers, never notebook work."""
+    import math
+    import random
+
+    from PIL import Image as PILImage
+    from PIL import ImageDraw, ImageFilter
+
+    src = _notebook_source()
+    start = src.index("class LocalSpecularGlare:")
+    end = src.index("class JpegRecompress:", start)
+    namespace = {
+        "math": math, "random": random, "PILImage": PILImage,
+        "ImageDraw": ImageDraw, "ImageFilter": ImageFilter,
+    }
+    exec(src[start:end], namespace)  # noqa: S102 - audited isolated definitions
+    return namespace
+
+
+def test_augmentation_geometry_matches_serving():
+    """Training sees the serving transform (shorter-side Resize at
+    EVAL_RESIZE_RATIO, then an IMG crop) with only the crop window randomised.
+
+    The first 2.8.0 draft letterboxed the full frame at train time while every
+    eval slice, both calibration splits, the server and the Aqua client
+    centre-crop — a ~1.4x scale shift on a 4:3 frame plus padding bars serving
+    never produces. No letterbox, RRC or erasing may return on the train side;
+    a full-frame policy has to change the SERVING transform and re-calibrate.
+    """
+    src = _notebook_source()
+    assert "'version': 'serve_parity_v2_unablated'" in src
+    assert "T.Resize(int(IMG * EVAL_RESIZE_RATIO)), T.RandomCrop(IMG)" in src
+    # The eval/calibration loader and the crop eval use the same constant.
+    assert "T.Resize(int(img_size * EVAL_RESIZE_RATIO))" in src
+    assert "T.Resize(int(IMG * EVAL_RESIZE_RATIO)), T.CenterCrop(IMG)" in src
+    assert "class PadToSquare" not in src and "PadToSquare()" not in src
+    assert "RandomResizedCrop(" not in src
+    assert "RandomErasing(" not in src
+    assert "_geo_aug = indoor_train_pil_tx" in src, (
+        "Aqua and Gamma must not train on different augmentation distributions"
+    )
+
+
+def _notebook_markdown() -> str:
+    nb = json.loads(NB_PATH.read_text(encoding="utf-8"))
+    return "\n\n".join(
+        "".join(c.get("source", []))
+        for c in nb["cells"]
+        if c["cell_type"] == "markdown"
+    )
+
+def test_motion_blur_is_directional_and_glare_is_local():
+    """Guard against the old BoxBlur/global-brightness implementations."""
+    import random
+
+    import numpy as np
+    from PIL import Image as PILImage
+
+    helpers = _augmentation_helpers()
+    horizontal = helpers["_directional_motion_kernel"](angle_degrees=0)
+    vertical = helpers["_directional_motion_kernel"](angle_degrees=90)
+    assert horizontal != vertical
+    assert sum(horizontal) == pytest.approx(5.0)
+    assert {i // 5 for i, value in enumerate(horizontal) if value} == {2}
+    assert {i % 5 for i, value in enumerate(vertical) if value} == {2}
+
+    random.seed(7)
+    glare = helpers["LocalSpecularGlare"](p=1.0)
+    before = PILImage.new("RGB", (100, 100), "black")
+    after = np.asarray(glare(before))
+    changed_fraction = float((after.max(axis=2) > 0).mean())
+    assert 0.0 < changed_fraction < 0.65, (
+        "glare should be a local soft highlight, not global brightness"
+    )
+
+
 def test_head_training_early_stops_and_restores_best():
     """Report Stage 1: the production model is a frozen DINOv2 + trained
     head. The head loop must early-stop on a plateau and restore the best
@@ -235,8 +313,11 @@ def test_backbone_base_frozen_head_and_optional_lora_trained():
     src = _notebook_source()
     assert "DINOv2Classifier" in src, "frozen-DINOv2 model class missing"
     assert "p.requires_grad_(False)" in src, "backbone base params are not frozen"
-    assert "model.backbone.eval()" in src, (
-        "backbone must stay in eval() during head/LoRA training"
+    assert "def _set_backbone_train_mode" in src and "backbone.eval()" in src, (
+        "backbone base must stay in eval() during head/LoRA training"
+    )
+    assert "'lora_dropout' in name" in src and "module.train()" in src, (
+        "PEFT LoRA dropout must be re-enabled after the frozen base enters eval mode"
     )
     assert "torch.optim.AdamW(model.head.parameters()" in src, (
         "the head must always be optimised"
@@ -311,7 +392,7 @@ def test_knowledge_distillation_scoped_to_aqua_only():
     """Design invariant: the SERVER-served gamma/frontier model is the frozen
     DINOv2 + MLP head — no distillation in that path. KD was deliberately
     re-introduced ONLY to produce the **Aqua** on-device student
-    (MobileNetV3-Small, §5), gated behind the aqua family so it never touches
+    (MobileNetV3-Small, §5), gated behind combined mode's distill flag so it never touches
     the gamma/frontier pipeline. The earlier EfficientNetV2-S→MobileNetV3
     multi-candidate teacher-snapshot machinery (the genuinely wrong tool) must
     stay gone."""
@@ -323,9 +404,9 @@ def test_knowledge_distillation_scoped_to_aqua_only():
             f"legacy distillation machinery {gone!r} is back — only the scoped "
             f"Aqua MobileNetV3 student KD should exist"
         )
-    # KD is gated behind the aqua family's distill flag, not run unconditionally.
+    # KD is gated behind combined mode's distill flag, not run unconditionally.
     assert "FAMILY_CONFIG.get('distill')" in src, (
-        "Aqua KD must be gated behind the aqua family's distill flag"
+        "Aqua KD must be gated behind combined mode's distill flag"
     )
     # The Aqua student is a MobileNetV3-Small distilled from the gamma teacher.
     assert "mobilenet_v3_small" in src, (
@@ -735,19 +816,14 @@ def test_deploy_bundle_includes_ood_npz_and_excludes_torch_checkpoints():
     embedding OOD gate at serve time in v2.3.1. The ONNX-only runtime cannot load
     the torch checkpoints (.pt/.pth), so those must NOT bloat the deploy bundle."""
     src = _notebook_source()
-    m = re.search(r"_BUNDLE_SUFFIXES\s*=\s*\{([^}]*)\}", src)
-    assert m, "_BUNDLE_SUFFIXES not found"
-    suffixes = m.group(1)
-    assert "'.npz'" in suffixes, "deploy bundle MUST include .npz (the embedding-OOD bank)"
-    assert "'.onnx'" in suffixes and "'.json'" in suffixes
-    assert "'.pth'" not in suffixes and "'.pt'" not in suffixes, (
-        "torch checkpoints (.pt/.pth) are not loadable by the ONNX-only server "
-        "and must not bloat the deploy bundle"
-    )
-    # And a guard that fails loud if a declared OOD bank isn't bundled.
-    assert "references ood bank" in src and "embedding OOD will be DISABLED" in src, (
-        "§6b must warn when classes.json declares an OOD bank absent from the archive"
-    )
+    assert "_bound['ood_embedding'] = 'ood_embedding.npz'" in src
+    assert "for _role, _spec in sorted(_ship_artifacts.items())" in src
+    assert "_verified_manifest_artifact(_role, _spec)" in src
+    assert "_tar.add(_p, arcname=_arc)" in src
+    assert "_tar.add(Path('models/detector.pt')" not in src
+    assert "_tar.add(Path('models/classifier.pth')" not in src
+    # A declared bank is a hard integrity failure, never a warning/fallback.
+    assert "references OOD bank" in src and "not bound by manifest" in src
 
 
 def test_nutrient_deficiency_supplied_without_field_crop_sources():
@@ -800,16 +876,18 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     # Calibration block must exist
     assert "TARGET_PLANT_FPR" in src, "audit fix #2 — calibration target missing"
     assert "_maxlogit_distribution" in src, "audit fix #2 — distribution helper missing"
-    # And classes_payload must read ML_FLOOR (not the literal 4.0)
-    m = re.search(
-        r"'max_logit_floor'\s*:\s*([A-Z_a-z0-9.]+)",
-        src,
+    # And classes_payload must read ML_FLOOR (not the literal 4.0). The
+    # served-gate block writes its own ``'max_logit_floor': _srv_ml_floor``
+    # (fitted on the served statistic), so check every occurrence: one must
+    # be the calibrated single-image floor and none may be a number.
+    vals = re.findall(r"'max_logit_floor'\s*:\s*([A-Z_a-z0-9.]+)", src)
+    assert vals, "max_logit_floor entry missing"
+    assert any(v in ("ML_FLOOR", "ML_FLOOR_PERSISTED") for v in vals), (
+        f"max_logit_floor values are {vals}, one must reference the calibrated "
+        f"ML_FLOOR / ML_FLOOR_PERSISTED variable"
     )
-    assert m, "max_logit_floor entry missing"
-    val = m.group(1)
-    assert val in ("ML_FLOOR", "ML_FLOOR_PERSISTED"), (
-        f"max_logit_floor is {val}, must reference the calibrated "
-        f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
+    assert not any(re.fullmatch(r"[0-9.]+", v) for v in vals), (
+        f"a max_logit_floor is hardcoded: {vals}"
     )
 
 
@@ -858,11 +936,15 @@ def test_required_source_floors_gate_missing_upstream_corpora():
     # The sources whose loss is invisible to the ship gate (train-only) or that
     # carry a whole class are the ones this gate exists for.
     for must_guard in ("kaggle_ornamental", "plantdoc", "plantvillage", "inat",
-                       "doctorp", "kaggle_houseplant", "inat_pest"):
+                       "kaggle_houseplant", "inat_pest"):
         assert floors.get(must_guard, 0) > 0, (
             f"'{must_guard}' has no positive floor — a silent upstream loss "
             f"would train a model that is not comparable to any other version"
         )
+    # DoctorP (real app photos, the starved-class supply) is guarded
+    # unconditionally: licences are recorded, never gated (2026-09-21).
+    assert floors.get("doctorp", 0) >= 1000 and floors.get("doctorp_pepper", 0) > 0
+    assert "ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" not in src
     # It must actually raise, not just warn, by default.
     assert re.search(r"STRICT_SOURCE_FLOORS\s*=\s*True", src), (
         "STRICT_SOURCE_FLOORS must default to True (fail-fast over fail-soft)"
@@ -911,3 +993,318 @@ def test_eval_bootstrap_exposes_per_class_precision():
     from tools import eval_bootstrap as eb
     assert hasattr(eb, "per_class_precision")
     assert hasattr(eb, "bootstrap_per_class_precision_ci")
+
+
+def test_class_logit_bias_validation_runs_after_mode_definition():
+    src = _notebook_source()
+    mode = src.index("TRAIN_MODES = {")
+    family = src.index("FAMILY_CONFIG = TRAIN_MODES[TRAIN_MODE]")
+    guard = src.index("if CLASS_LOGIT_BIAS and FAMILY_CONFIG.get('distill')")
+    assert mode < family < guard, (
+        "a non-empty CLASS_LOGIT_BIAS must not reference TRAIN_MODES before definition"
+    )
+
+
+def test_kaggle_folder_identity_uses_full_relative_parent_paths():
+    src = _notebook_source()
+    assert "def _images_by_relative_parent" in src
+    assert "p.parent.relative_to(root).as_posix()" in src
+    assert "by_folder.setdefault(p.parent.name" not in src, (
+        "same-named leaf folders from different branches must never be merged"
+    )
+    orn = re.search(r"def fetch_kaggle_ornamental_disease.*?(?=\ndef )", src, re.DOTALL)
+    assert orn and "_orn_map_folder(norm, slug, rel_norm=norm)" in orn.group(0)
+
+
+def test_supplement_joins_and_saves_by_complete_path():
+    src = _notebook_source()
+    body = re.search(r"def fetch_kaggle_supplement.*?(?=\n# 'pests')", src, re.DOTALL)
+    assert body
+    text = body.group(0)
+    assert "Path(r['filename']).name" not in text
+    assert "PurePosixPath(_raw)" in text and "duplicate path key" in text
+    assert "STRICT_SUPPLEMENT_FILTER_VERDICT = False" in src
+    assert "STRICT_SUPPLEMENT_LICENSE_PROVENANCE = False" in src
+    assert "output_stem=_row['_disk_stem']" in text
+
+
+def test_archive_import_sidecar_sets_required_source_field():
+    src = _notebook_source()
+    body = re.search(r"def _save_archive_member.*?(?=\n# )", src, re.DOTALL)
+    assert body
+    assert "source=source," in body.group(0)
+
+
+def test_holdout_checks_same_and_cross_class_near_duplicates():
+    src = _notebook_source()
+    same = src.index("resolve_phash_split_leakage(HOLDOUT, (TRAIN_ROOT,), threshold=6)")
+    cross = src.index("audit_cross_class_phash_leakage(HOLDOUT, (TRAIN_ROOT,), threshold=6")
+    assert same < cross
+
+
+def test_zero_support_holdout_classes_are_reported():
+    src = _notebook_source()
+    assert "by_class.get(c, 0) for c in CLASSES" in src
+
+
+def test_public_image_sources_record_rights_but_never_gate_on_them():
+    """Study-project policy (2026-09-21): per-image licence/provenance is
+    written into every sidecar so a bundle can report what it trained on, and
+    no fetcher, floor or bundler may drop a row or refuse a run because of it.
+    The 2026-08-25 licence filters cost ~87 % of iNat's research-grade Plantae
+    supply (83.0M vs 10.8M observations, measured against the live API) and
+    all 1,558 DoctorP rows."""
+    src = _notebook_source()
+    # iNat: no API-side licence filter; every photo tallied, none rejected.
+    assert "'photo_license'" not in src
+    assert "_inat_photo_provenance" in src and "license_code" in src
+    assert "_INAT_LICENSE_TALLY" in src and "_INAT_LICENSE_REJECTED" not in src
+    assert "INAT_KNOWN_PHOTO_LICENSES.get(code)" in src
+    # COCO / Open Images: recorded, never filtered.
+    assert "COCO_ALLOWED_LICENSE_IDS" not in src and "_coco_tally(im)" in src
+    assert "OI_ALLOWED_LICENSE_KEYS" not in src and "_OI_LICENSE_TALLY" in src
+    assert "validation-images-with-rotation.csv" in src and "OriginalLandingURL" in src
+    # Missing licences are reported, not fatal.
+    assert "_RIGHTS_REQUIRED_SOURCES" in src and "RIGHTS PROVENANCE MISSING" not in src
+    assert "'policy': 'study_project_record_only'" in src
+    assert "'gated_on_license': False" in src
+
+
+def test_doctorp_is_in_the_default_recipe_with_its_licence_recorded():
+    src = _notebook_source()
+    assert "ALLOW_NONCOMMERCIAL_RESEARCH_SOURCES" not in src
+    assert "DOCTORP_LICENSE_ID = 'cc-by-nc-sa-4.0'" in src
+    assert "license_id=DOCTORP_LICENSE_ID" in src
+    assert "_try_fetch('doctorp', fetch_doctorp_disease, per_class_cap=400)" in src
+    assert "RESEARCH-ONLY RUN: non-commercial data" not in src
+
+
+def test_recipe_uses_deterministic_torch_settings():
+    src = _notebook_source()
+    assert "CUBLAS_WORKSPACE_CONFIG" in src
+    assert "torch.backends.cudnn.benchmark = False" in src
+    assert "torch.backends.cudnn.deterministic = True" in src
+    assert "torch.use_deterministic_algorithms(True)" in src
+
+
+def test_supplement_eval_is_model_era_and_capture_family_aware():
+    """The provenance columns are honoured when present and fall back to
+    defaults when absent (v8 carries none); the strict knob is opt-in. Family
+    conflicts are RESOLVED by routing the family as one unit, never raised —
+    behaviour pinned in test_notebook_supplement.py."""
+    src = _notebook_source()
+    assert "STRICT_SUPPLEMENT_MODEL_PROVENANCE = False" in src
+    assert "_SUPPLEMENT_PROVENANCE_FALLBACKS" in src
+    assert "if not _first_seen or _first_seen == 'never':" in src
+    assert "f'sha256:{hashlib.sha256(body).hexdigest()}'" in src
+    assert "SUPPLEMENT_EVAL_THROUGH_MODEL_VERSION = MODEL_VERSION" in src
+    assert "first_seen_model_version" in src and "immutable_source_id" in src
+    assert "capture_family_id" in src
+    assert "elif r.get('_seen_by_eval_model')" in src
+    assert "SUPPLEMENT_REQUIRED_INDEPENDENCE_METHOD = 'capture_family_id+phash_v1'" in src
+    assert "SUPPLEMENT_LOAD_UNLISTED_IMAGES = True" in src
+    assert "_planned[_k] = ('supplement_train_only',) + tuple(_plan[1:])" in src
+
+
+def test_private_v2_unseen_domain_set_is_diagnostic_not_ship_gate():
+    src = _notebook_source()
+    assert re.search(r"REQUIRE_OOD_BENCHMARK\s*=\s*False", src)
+    assert "'diagnostic_only': True, 'release_blocking': False" in src
+    assert "independent_family_count_verified" in src
+    assert "OOD SHIP GATE PASSED" not in src
+
+
+def test_unseen_domain_diagnostic_must_run_and_record_alerts():
+    """Non-blocking is not the same as optional: the sentinel must be scored on
+    every production run and its alerts must land in the artefact, not only in
+    the Colab log."""
+    src = _notebook_source()
+    assert re.search(r"REQUIRE_OOD_DIAGNOSTIC_RUN\s*=\s*True", src)
+    assert "raise RuntimeError(\n            'OOD DIAGNOSTIC NOT RUN: '" in src
+    assert "ood_benchmark['alerts'] = list(_ood_fail)" in src
+    assert "log_run({'phase': 'ood_diagnostic'" in src
+
+
+def test_aqua_sidecar_declares_preprocessing_and_logit_semantics():
+    src = _notebook_source()
+    aqua = re.search(
+        r"\(AQUA_DIR / 'classes\.json'\).*?(?=print\(f'Aqua TFLite written)",
+        src, re.DOTALL)
+    assert aqua
+    assert "'eval_resize_ratio': EVAL_RESIZE_RATIO" in aqua.group(0)
+    assert "'output_semantics': 'logits'" in aqua.group(0)
+
+
+def test_aqua_export_requires_one_float32_graph_and_never_substitutes_quantized():
+    src = _notebook_source()
+    assert "_float32_emitted = [p for p in _emitted if 'float32' in p.name.lower()]" in src
+    assert "if len(_float32_emitted) != 1:" in src
+    assert "_chosen = _float32_emitted[0]" in src
+    assert "Aqua serving contract requires FLOAT32 I/O" in src
+    assert "Aqua FLOAT32 TFLite parity OK" in src
+    assert "_tflite_rank" not in src
+    assert "combined run aborted: Aqua exact served-artifact validation failed" in src
+
+
+def test_export_emits_checksummed_single_graph_serving_manifest():
+    src = _notebook_source()
+    assert "Path('models/bundle_manifest.json').write_text" in src
+    assert "'fallback_allowed': False" in src
+    assert "_selected_classifier = ('classifier_int8.onnx' if int8_shipped" in src
+    assert "'calibration_source': _expected_fit_source" in src
+    for bound in ("'classifier'", "'detector'", "'classes'", "'temperature'",
+                  "'conformal'"):
+        assert bound in src
+    for contract in ("'padding_ratio'", "'max_crops'", "'min_confidence'",
+                     "'nms_iou'", "'max_detections'",
+                     "'fold_whole_frame_vote'", "'output_semantics'",
+                     "'variance_laplacian_floor'", "'detector_confidence_floor'"):
+        assert contract in src
+
+
+def test_notebook_run_boundary_is_fresh_gpu_only_and_manifest_owned():
+    src = _notebook_source()
+    assert "if not torch.cuda.is_available():" in src
+    assert "CUDA GPU required for training" in src
+    assert "RUN_LOG.write_text('', encoding='utf-8')" in src
+    assert "exist_ok=False" in src and "DETECTOR_RUN_DIR" in src
+    assert "next(Path('runs/detect').rglob('best.pt'))" not in src
+    assert "AQUA_EXPORT_SUCCEEDED = True" in src
+    assert "combined run aborted" in src
+    assert "for _p in sorted(Path('models').iterdir())" not in src
+    assert "for _role, _spec in sorted(_ship_artifacts.items())" in src
+
+
+def test_notebook_binds_data_run_and_backbone_revision():
+    src = _notebook_source()
+    assert "DINOV2_REPO_REF = 'facebookresearch/dinov2:" in src
+    assert "torch.hub.load(DINOV2_REPO_REF" in src
+    assert "classification_sha256" in src
+    assert "Path('models/data_manifest.json').write_text" in src
+    assert "Path('models/run_manifest.json').write_text" in src
+    assert "'data_manifest': 'data_manifest.json'" in src
+    assert "'run_manifest': 'run_manifest.json'" in src
+
+
+def test_notebook_binds_mutable_sources_weights_and_colab_environment():
+    src = _notebook_source()
+    assert "PACKAGE_RESOLUTION_POLICY = 'colab_cuda_abi_runtime_resolved_manifest_bound_v1'" in src
+    assert "_importlib_metadata.distributions()" in src
+    assert "'recipe_environment_sha256': _recipe_environment_sha256" in src
+    assert "_hf_resolve_dataset_revision(name)" in src
+    assert "revision=revision, token=_HF_AUTH" in src
+    assert "'huggingface_revisions'" in src
+    assert "YOLO_BASE_WEIGHT_IDENTITY = {" in src
+    assert "'sha256': sha256_file(_base_path)" in src
+    assert "'detector_base_weights': YOLO_BASE_WEIGHT_IDENTITY" in src
+
+
+def test_kaggle_latest_revision_is_recorded_after_download():
+    """Mutable latest is deliberate, but completed runs remain auditable."""
+    src = _notebook_source()
+    assert "KAGGLE_REVISION_SELECTION_POLICY = 'latest_at_download_time'" in src
+    assert "kagglehub.dataset_download(slug)" in src
+    assert "KAGGLE_EXPECTED_REVISIONS" not in src
+    assert "'selection_policy': KAGGLE_REVISION_SELECTION_POLICY" in src
+    assert "'kaggle_version': _resolved_version" in src
+    assert "'kaggle': dict(sorted(_KAGGLE_RESOLVED_REVISIONS.items()))" in src
+
+
+def test_notebook_documents_kaggle_fail_soft_but_production_required():
+    raw = NB_PATH.read_text(encoding="utf-8")
+    assert "Kaggle credentials (required by the default production recipe)" in raw
+    assert "Individual Kaggle fetchers fail soft" in raw
+    assert "REQUIRE_SUPPLEMENT=True" in raw
+
+
+def test_historical_archive_narrative_is_explicitly_superseded():
+    src = _notebook_source()
+    assert "SUPERSEDED 2.7.3 ARCHIVE NARRATIVE (DO NOT USE AS EVIDENCE)" in src
+    assert "archive-derived counts such as 3/31 -> 4/31" in src
+    assert "Those historical point estimates, p-values and" in src
+    assert "pseudoreplicates" in src
+
+
+def test_evaluation_contract_documents_manifest_only_deploy_and_advisory_ood():
+    markdown = _notebook_markdown()
+    section = markdown.split("## §7 — Evaluation contract", 1)[1]
+    assert "`fallback_allowed=false`" in section
+    assert "exactly the graph that passed drift/calibration; never both" in section
+    assert "`classifier.pth`, `detector.pt`, `classifier_fp32.onnx`" in section
+    assert "are **not deploy artefacts**" in section
+    assert "`REQUIRE_OOD_BENCHMARK=False`" in section
+    assert "`served_gate_enabled=false`" in section
+    assert "resample independent capture families" in section
+
+
+def test_server_sidecar_declares_complete_classifier_preprocessing():
+    src = _notebook_source()
+    block = re.search(r"classes_payload = \{.*?# ── Inference benchmark", src, re.DOTALL)
+    assert block
+    for declaration in ("'layout': 'NCHW'", "'normalize_mean'", "'normalize_std'",
+                        "'eval_resize_ratio': EVAL_RESIZE_RATIO",
+                        "'output_semantics': 'logits'"):
+        assert declaration in block.group(0)
+
+
+def test_supplement_accepts_filter_tool_verdict_vocabulary():
+    """``tools/filter_supplement.py`` writes the ``filter_verdict`` column; §2
+    must accept every verdict it can emit, and reject a byte/manifest mismatch."""
+    src = _notebook_source()
+    for verdict in ("dup_intra", "dup_cross", "tiny", "corrupt", "missing",
+                    "phash_mismatch", "bench_leak", "keep"):
+        assert f"'{verdict}'" in src.split("_KNOWN_FILTER_VERDICTS = {", 1)[1].split("}", 1)[0]
+    assert "_filter_counts.get('phash_mismatch', 0)" in src
+
+
+def test_supplement_family_cannot_straddle_eval_and_train():
+    src = _notebook_source()
+    assert "_family_sources.setdefault(_family_id, set()).add(_src)" in src
+    assert "if 'supplement' in s and len(s) > 1" in src
+
+
+def test_ood_diagnostic_accepts_builder_manifest_filename():
+    src = _notebook_source()
+    assert "next(_ood_root.rglob('manifest.csv'), None)" in src
+
+
+def test_served_ood_gate_is_calibrated_on_the_served_statistic():
+    """2.7.5: the overlay pipeline.py applies is fitted in §6 through the same
+    detector -> crop -> whole-frame-fold path it serves, and the crop/detector
+    rules the notebook mirrors are the ones pipeline.py / detector.py run."""
+    import detector as detector_module
+    import pipeline as pipeline_module
+
+    src = _notebook_source()
+    assert "SERVED-PATH OOD calibration" in src
+    assert "'calibration_mode': 'full_served_pipeline'" in src
+    assert "'embedding_aggregation': 'min_member_distance'" in src
+    assert "'max_logit_aggregation': 'max_member_logit'" in src
+    assert "'served_gate': SERVED_GATE" in src
+    assert "np.quantile(_emb_p, 1.0 - TARGET_PLANT_FPR)" in src
+    assert "neither served signal separates" in src
+    crop = re.search(r"SERVED_GATE_CROP = \{(.*?)\}", src, re.DOTALL)
+    assert crop
+    got = dict(re.findall(r"'([a-z_]+)':\s*([0-9.]+|True|False)", crop.group(1)))
+    real = getattr(pipeline_module, "_RealPipelineForTests", pipeline_module.PlantDiseasePipeline)
+    assert int(got["max_crops"]) == real._MAX_RECLASSIFY
+    assert int(got["min_size_px"]) == pipeline_module.MIN_CROP_SIZE
+    assert float(got["min_area_fraction"]) == pipeline_module.MIN_BBOX_AREA_FRAC
+    assert float(got["padding_ratio"]) == pipeline_module.CROP_PADDING_RATIO
+    det = re.search(r"SERVED_GATE_DETECTOR = \{(.*?)\}", src, re.DOTALL)
+    assert det
+    dgot = dict(re.findall(r"'([a-z_]+)':\s*([0-9.]+)", det.group(1)))
+    assert int(dgot["img_size"]) == detector_module.DETECTOR_IMG_SIZE
+    assert float(dgot["min_confidence"]) == detector_module.MIN_CONFIDENCE
+    assert int(dgot["max_detections"]) == detector_module.MAX_DETECTIONS
+    floor = re.search(r"SERVED_GATE_DET_CONF_FLOOR = ([0-9.]+)", src)
+    assert floor and float(floor.group(1)) == pipeline_module.NAP_DETECTOR_CONF_FLOOR
+    # The manifest reads the same dicts, so the mirror cannot drift from the contract.
+    assert "**SERVED_GATE_CROP," in src and "**SERVED_GATE_DETECTOR," in src
+
+
+def test_conformal_sidecar_declares_its_coverage_basis():
+    src = _notebook_source()
+    assert "cfg['coverage_basis'] = (" in src
+    assert "'audit_target'" in src and "'nominal_one_minus_alpha'" in src
+    assert "best['target_coverage'] = CONF_TARGET_COVERAGE" in src

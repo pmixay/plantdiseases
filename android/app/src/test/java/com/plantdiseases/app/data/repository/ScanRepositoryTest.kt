@@ -121,8 +121,7 @@ class ScanRepositoryTest {
             .isTrue()
         // a real diagnosis is not NAP
         assertThat(repo.isNotAPlantScan(scan(diseaseName = "Leaf Spot"))).isFalse()
-        // A server-rerouted displayed diagnosis is authoritative over the
-        // raw argmax, so checklist/health UI follows what the user actually saw.
+        // Legacy inconsistent rows prefer their explicitly persisted class key.
         assertThat(
             repo.isNotAPlantScan(
                 scan(
@@ -147,6 +146,8 @@ class ScanRepositoryTest {
         assertThat(payload["class_name"]).isEqualTo("leaf_spot")
         assertThat(payload["is_healthy"]).isEqualTo(false)
         assertThat(payload["severity"]).isEqualTo("medium")
+        assertThat(payload["abstained"]).isEqualTo(false)
+        assertThat(payload["abstention_reason"]).isNull()
         // confidence is Float -> Double widened, so 0.7f != 0.7 exactly.
         assertThat(payload["confidence"] as Double).isWithin(1e-6).of(0.7)
         @Suppress("UNCHECKED_CAST")
@@ -238,6 +239,57 @@ class ScanRepositoryTest {
         assertThat(receiptStore.values).isEmpty()
     }
 
+    @Test
+    fun saveScan_persistsExplicitAbstentionWithoutRoomMigration(): Unit = runBlocking {
+        repo.saveScan(
+            "/p.jpg",
+            AnalysisResponse(
+                classKey = "leaf_spot",
+                diseaseName = "Unidentified Condition",
+                confidence = 0.72f,
+                warnings = listOf("nap_ood_gated"),
+                abstained = true,
+                abstentionReason = "ood",
+                treatment = listOf("Disease-specific action must not persist"),
+                toxicToPets = true,
+                toxicitySource = "db",
+            ),
+        )
+        val stored = dao.lastInserted!!
+        assertThat(repo.topClassKey(stored)).isNull() // no fabricated distribution
+        assertThat(repo.verdictClassKey(stored)).isEqualTo("leaf_spot")
+        assertThat(repo.isAbstainedScan(stored)).isTrue()
+        assertThat(repo.isInconclusiveScan(stored)).isTrue()
+        assertThat(repo.isNotAPlantScan(stored)).isFalse()
+        assertThat(repo.parseStringList(stored.treatment)).isEmpty()
+        assertThat(stored.toxicToPets).isFalse()
+        assertThat(stored.toxicitySource).isEqualTo("unknown")
+        assertThat(repo.parseWarnings(stored.warnings)).containsAtLeast(
+            "nap_ood_gated",
+            "abstained",
+            "abstention_reason:ood",
+        )
+    }
+
+    @Test
+    fun legacyWarnings_distinguishInconclusiveFromNaturalNap() {
+        val ood = scan(
+            displayedClassKey = "leaf_spot",
+            warnings = """["nap_ood_gated"]""",
+        )
+        val blur = scan(
+            displayedClassKey = "not_a_plant",
+            warnings = """["blurry_image"]""",
+        )
+        val naturalNap = scan(displayedClassKey = "not_a_plant")
+
+        assertThat(repo.abstentionReason(ood)).isEqualTo("ood")
+        assertThat(repo.isInconclusiveScan(ood)).isTrue()
+        assertThat(repo.abstentionReason(blur)).isEqualTo("image_quality")
+        assertThat(repo.isNotAPlantScan(blur)).isFalse()
+        assertThat(repo.isNotAPlantScan(naturalNap)).isTrue()
+    }
+
     // ─── Stats rollup ────────────────────────────────────────────────────
 
     @Test
@@ -246,6 +298,13 @@ class ScanRepositoryTest {
         dao.insert(scan(diseaseName = "Leaf Spot", isHealthy = false))
         dao.insert(scan(diseaseName = "Leaf Spot", isHealthy = false))
         dao.insert(scan(diseaseName = "Not a Plant", isHealthy = false))
+        dao.insert(
+            scan(
+                diseaseName = "Leaf Spot",
+                displayedClassKey = "leaf_spot",
+                warnings = """["nap_ood_gated"]""",
+            )
+        )
 
         val stats = repo.getStats()
         assertThat(stats.totalScans).isEqualTo(3) // healthy + diseased, excludes NAP
@@ -253,6 +312,22 @@ class ScanRepositoryTest {
         assertThat(stats.diseasedCount).isEqualTo(2)
         assertThat(stats.notAPlantCount).isEqualTo(1)
         assertThat(stats.mostCommonDisease).isEqualTo("Leaf Spot")
+    }
+
+    @Test
+    fun getAllScans_hidesInconclusiveArgmaxButKeepsAcceptedRows() = runBlocking {
+        dao.insert(scan(diseaseName = "Healthy", isHealthy = true))
+        dao.insert(
+            scan(
+                diseaseName = "Leaf Spot",
+                displayedClassKey = "leaf_spot",
+                warnings = """["abstention_reason:ood"]""",
+            )
+        )
+
+        val history = repo.getAllScans()
+        assertThat(history).hasSize(1)
+        assertThat(history.single().diseaseName).isEqualTo("Healthy")
     }
 
     private class FakeReceiptStore : FeedbackReceiptStore {

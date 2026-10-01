@@ -45,14 +45,17 @@ Artefact format (``models/ood_embedding.npz`` + ``classes.json -> ood.embedding`
     ood_embedding.npz:
       bank: (M, D) float32  — in-distribution plant CLS embeddings.
 
-The file is optional. When missing/malformed, ``load_embedding_ood`` returns
-``None`` and OOD falls back to whatever ``classes.json -> ood.max_logit_floor``
-declares (typically the auto-disabled gate).
+The section is optional. When it is absent, embedding OOD is off. When it is
+present, however, every declared artifact is part of the bundle contract:
+malformed metadata or a missing/corrupt bank fails readiness rather than
+silently changing the routing policy.
 """
 
 from __future__ import annotations
 
 import logging
+import math
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,12 +64,17 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 _EPS = 1e-12
+_MAX_BANK_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
 
 
 def _l2_normalize(x: np.ndarray, axis: int = -1) -> np.ndarray:
     """Row-wise L2 normalisation; zero rows are left as zeros (cos→0)."""
-    norm = np.linalg.norm(x, axis=axis, keepdims=True)
-    return x / np.maximum(norm, _EPS)
+    # Scale first so a finite but very large untrusted vector cannot overflow
+    # the float32 square/sum inside np.linalg.norm.
+    scale = np.max(np.abs(x), axis=axis, keepdims=True)
+    scaled = x / np.maximum(scale, _EPS)
+    norm = np.linalg.norm(scaled, axis=axis, keepdims=True)
+    return scaled / np.maximum(norm, _EPS)
 
 
 @dataclass(frozen=True)
@@ -79,6 +87,10 @@ class EmbeddingOODConfig:
     threshold: float     # score strictly above this ⇒ OOD
     embed_dim: int
     bank_file: str = "ood_embedding.npz"
+
+
+class EmbeddingOODLoadError(RuntimeError):
+    """A bundle declared embedding OOD but its contract cannot be loaded."""
 
 
 class EmbeddingOODScorer:
@@ -95,12 +107,31 @@ class EmbeddingOODScorer:
             raise ValueError(f"OOD bank must be a non-empty 2-D array, got {bank.shape}")
         if cfg.method != "knn":
             raise ValueError(f"Unsupported OOD method {cfg.method!r} (only 'knn')")
+        if cfg.metric != "cosine":
+            raise ValueError(f"Unsupported OOD metric {cfg.metric!r} (only 'cosine')")
+        if cfg.k <= 0:
+            raise ValueError(f"OOD k must be positive, got {cfg.k}")
+        if cfg.k > bank.shape[0]:
+            raise ValueError(
+                f"OOD k={cfg.k} exceeds bank row count {bank.shape[0]}; "
+                "clamping would invalidate the calibrated threshold"
+            )
+        if not math.isfinite(float(cfg.threshold)) or not 0.0 <= cfg.threshold <= 2.0:
+            raise ValueError(f"OOD threshold must be finite and in [0, 2], got {cfg.threshold}")
+        if cfg.embed_dim <= 0 or bank.shape[1] != cfg.embed_dim:
+            raise ValueError(
+                f"OOD bank width {bank.shape[1]} != configured embed_dim {cfg.embed_dim}"
+            )
+        if not np.isfinite(bank).all():
+            raise ValueError("OOD bank contains NaN or infinite values")
+        row_scale = np.max(np.abs(bank.astype(np.float32, copy=False)), axis=1)
+        if np.any(row_scale <= _EPS):
+            raise ValueError("OOD bank contains zero-length embeddings")
         # Normalise once at load so scoring is a single matmul + top-k.
         self._bank = _l2_normalize(bank.astype(np.float32, copy=False), axis=1)
         self.cfg = cfg
         self.embed_dim = int(bank.shape[1])
-        # Never ask for more neighbours than the bank holds.
-        self._k = max(1, min(int(cfg.k), self._bank.shape[0]))
+        self._k = int(cfg.k)
 
     @property
     def threshold(self) -> float:
@@ -120,6 +151,9 @@ class EmbeddingOODScorer:
                 z.shape[0], self.embed_dim,
             )
             return float("nan")
+        if not np.isfinite(z).all() or float(np.max(np.abs(z))) <= _EPS:
+            logger.warning("OOD query embedding is non-finite or zero-length — skipping OOD score")
+            return float("nan")
         z = _l2_normalize(z, axis=0)
         sims = self._bank @ z                      # (M,) cosine sims
         # Top-k similarities without a full sort (argpartition is O(M)).
@@ -134,10 +168,9 @@ class EmbeddingOODScorer:
 def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
     """Pull ``ood.embedding`` out of a parsed ``classes.json`` dict.
 
-    Returns ``None`` (no scorer) when the section is absent or malformed —
-    OOD then falls back to the MaxLogit floor path. A present-but-broken
-    section is treated as absent (logged) rather than raising, so a stale
-    bundle can never crash boot.
+    Returns ``None`` when the section is absent or malformed. The bundle loader
+    distinguishes those cases: absence is an optional capability; a declared
+    section that parses to ``None`` is a readiness error.
     """
     if not isinstance(meta, dict):
         return None
@@ -148,16 +181,32 @@ def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
     if not isinstance(emb, dict):
         return None
     try:
-        method = str(emb.get("method", "knn")).lower()
-        threshold = float(emb["threshold"])
-        embed_dim = int(emb["embed_dim"])
+        method_raw = emb.get("method", "knn")
+        metric_raw = emb.get("metric", "cosine")
+        k_raw = emb.get("k", 5)
+        threshold_raw = emb["threshold"]
+        embed_dim_raw = emb["embed_dim"]
+        bank_file_raw = emb.get("bank_file", "ood_embedding.npz")
+        if not isinstance(method_raw, str) or not isinstance(metric_raw, str):
+            raise TypeError("method and metric must be strings")
+        if isinstance(k_raw, bool) or not isinstance(k_raw, int):
+            raise TypeError("k must be an integer")
+        if (
+            isinstance(threshold_raw, bool)
+            or not isinstance(threshold_raw, (int, float))
+        ):
+            raise TypeError("threshold must be numeric")
+        if isinstance(embed_dim_raw, bool) or not isinstance(embed_dim_raw, int):
+            raise TypeError("embed_dim must be an integer")
+        if not isinstance(bank_file_raw, str):
+            raise TypeError("bank_file must be a string")
         cfg = EmbeddingOODConfig(
-            method=method,
-            metric=str(emb.get("metric", "cosine")).lower(),
-            k=int(emb.get("k", 5)),
-            threshold=threshold,
-            embed_dim=embed_dim,
-            bank_file=str(emb.get("bank_file", "ood_embedding.npz")),
+            method=method_raw.lower(),
+            metric=metric_raw.lower(),
+            k=k_raw,
+            threshold=float(threshold_raw),
+            embed_dim=embed_dim_raw,
+            bank_file=bank_file_raw,
         )
     except (KeyError, ValueError, TypeError):
         logger.warning("Malformed embedding OOD model metadata")
@@ -166,14 +215,36 @@ def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
         logger.warning("Unsupported embedding OOD method; ignoring")
         return None
     if cfg.metric != "cosine":
-        # `metric` is provenance, not a knob: EmbeddingOODScorer hard-codes
-        # cosine. Say so loudly rather than scoring cosine against a
-        # threshold that was calibrated for something else.
         logger.warning(
             "ood.embedding declares metric=%r but scoring is always cosine — "
-            "the threshold must be calibrated as a cosine distance",
+            "embedding OOD disabled to avoid applying an incompatible threshold",
             cfg.metric,
         )
+        return None
+    if cfg.k <= 0:
+        logger.warning("ood.embedding k must be positive, got %d", cfg.k)
+        return None
+    if not math.isfinite(cfg.threshold) or not 0.0 <= cfg.threshold <= 2.0:
+        logger.warning(
+            "ood.embedding threshold must be finite and in [0, 2], got %r",
+            cfg.threshold,
+        )
+        return None
+    if cfg.embed_dim <= 0:
+        logger.warning("ood.embedding embed_dim must be positive, got %d", cfg.embed_dim)
+        return None
+    bank_path = Path(cfg.bank_file)
+    if (
+        bank_path.is_absolute()
+        or len(bank_path.parts) != 1
+        or bank_path.name != cfg.bank_file
+        or bank_path.suffix.lower() != ".npz"
+    ):
+        logger.warning(
+            "ood.embedding bank_file must be a plain .npz filename inside the bundle, got %r",
+            cfg.bank_file,
+        )
+        return None
     return cfg
 
 
@@ -181,19 +252,49 @@ def load_embedding_ood(model_dir: Path | None, meta: dict) -> EmbeddingOODScorer
     """Build an :class:`EmbeddingOODScorer` from a model bundle, or ``None``.
 
     Looks for the ``ood.embedding`` config in ``meta`` (parsed ``classes.json``)
-    and the companion ``bank_file`` npz next to the weights. Any problem
-    (missing file, bad shape, dim mismatch) downgrades to ``None`` with a log
-    line — embedding OOD is a best-effort enhancement, never a boot blocker.
+    and the companion ``bank_file`` npz next to the weights. Absence of the
+    section, or an explicit JSON ``null``, returns ``None`` so MaxLogit-only
+    bundles can boot. A declared non-object, or an object that cannot be
+    parsed, raises :class:`EmbeddingOODLoadError` so artifact damage cannot
+    silently turn a three-signal policy into another policy.
     """
+    ood = meta.get("ood") if isinstance(meta, dict) else None
+    if not isinstance(ood, dict):
+        return None
+    emb = ood.get("embedding")
+    if emb is None:
+        return None
+    if not isinstance(emb, dict):
+        raise EmbeddingOODLoadError("Declared ood.embedding metadata is invalid")
     cfg = parse_embedding_ood_config(meta)
-    if cfg is None or model_dir is None:
-        return None
-    npz_path = Path(model_dir) / cfg.bank_file
+    if cfg is None:
+        raise EmbeddingOODLoadError("Declared ood.embedding metadata is invalid")
+    if model_dir is None:
+        raise EmbeddingOODLoadError("Declared ood.embedding has no model directory")
+    model_root = Path(model_dir).resolve()
+    npz_path = model_root / cfg.bank_file
     if not npz_path.exists():
-        logger.warning("Configured embedding OOD bank is missing; OOD disabled")
-        return None
+        raise EmbeddingOODLoadError(
+            f"ood.embedding configured but bank file is missing: {npz_path}"
+        )
     try:
-        with np.load(npz_path) as data:
+        # Resolve symlinks too: an untrusted sidecar may not escape the bundle
+        # with ``../`` or by pointing a filename symlink at an arbitrary host
+        # file.  The parser above already limits bank_file to one path segment.
+        resolved = npz_path.resolve(strict=True)
+        if resolved.parent != model_root:
+            raise ValueError(f"bank resolves outside model bundle: {resolved}")
+        # NPZ is a ZIP container.  Bound the expanded members before NumPy
+        # allocates them so a tiny decompression bomb cannot exhaust the host.
+        with zipfile.ZipFile(resolved) as archive:
+            expanded = sum(info.file_size for info in archive.infolist())
+        if expanded > _MAX_BANK_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                f"expanded bank is {expanded} bytes (limit {_MAX_BANK_UNCOMPRESSED_BYTES})"
+            )
+        with np.load(resolved, allow_pickle=False) as data:
+            if "bank" not in data.files:
+                raise ValueError("NPZ has no 'bank' array")
             bank = np.asarray(data["bank"], dtype=np.float32)
         if bank.ndim != 2 or bank.shape[0] == 0:
             raise ValueError(f"bank has shape {bank.shape}")
@@ -202,9 +303,12 @@ def load_embedding_ood(model_dir: Path | None, meta: dict) -> EmbeddingOODScorer
                 f"bank embed_dim {bank.shape[1]} != config embed_dim {cfg.embed_dim}"
             )
         scorer = EmbeddingOODScorer(bank, cfg)
-    except Exception:  # noqa: BLE001 — never block boot on OOD setup
-        logger.warning("Failed to load embedding OOD bank")
-        return None
+    except EmbeddingOODLoadError:
+        raise
+    except Exception as e:
+        raise EmbeddingOODLoadError(
+            f"Failed to load declared embedding OOD bank {npz_path}: {e}"
+        ) from e
     logger.info(
         "Embedding OOD loaded: method=%s metric=%s k=%d threshold=%.4f "
         "bank=%d×%d",

@@ -56,7 +56,9 @@ class PlantRepository(
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
         val roomNamesById = roomDao.getAll().associate { it.id to it.name }
         val nowMs = System.currentTimeMillis()
-        val scansByPlant = scanDao.getAllAssignedScans().groupBy { it.plantId }
+        val scansByPlant = scanDao.getAllAssignedScans()
+            .filterNot(PersistedScanAbstentionPolicy::isAbstained)
+            .groupBy { it.plantId }
         val journalByPlant = journalDao.getAllEntries().groupBy { it.plantId }
         val remindersByPlant = reminderDao.getAll().groupBy { it.plantId }
         val activePlansByPlant = treatmentPlanDao.getAllActive().associateBy { it.plantId }
@@ -77,14 +79,19 @@ class PlantRepository(
     }
 
     /** Name + thumbnail only, for the "add this scan to a plant" picker.
-     *  [getPlants] reads every scan, journal entry and reminder in the garden
-     *  and scores a health verdict per plant; a picker discards all of it. So
-     *  this stays at two queries flat regardless of garden size: the plant
-     *  rows plus one latest-photo projection over all of them. */
+     *  [getPlants] reads journal/reminder/health data a picker discards. This
+     *  still uses two flat queries, but reads assigned scan rows so legacy
+     *  abstentions cannot become a plant's fallback cover photo. */
     suspend fun getPlantsForPicker(): List<PlantPickerItem> = withContext(Dispatchers.IO) {
         val plants = plantDao.getAllPlants()
-        val latestImages = scanDao.latestImageByPlant(plants.map { it.id })
-            .associate { it.plantId to it.imagePath }
+        val latestImages = scanDao.getAllAssignedScans()
+            .asSequence()
+            .filterNot(PersistedScanAbstentionPolicy::isAbstained)
+            .groupBy { it.plantId }
+            .mapNotNull { (plantId, scans) ->
+                plantId?.let { it to scans.maxByOrNull { scan -> scan.timestamp }?.imagePath }
+            }
+            .toMap()
         plants.map { plant ->
             PlantPickerItem(
                 id = plant.id,
@@ -125,21 +132,23 @@ class PlantRepository(
         } else {
             PlantHealth.Adherence(due = 0, done = 0)
         }
-        val scanInputs = scans.map { scan ->
-            val displayedClassKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
-            val isNotAPlant = if (displayedClassKey != null) {
-                displayedClassKey == "not_a_plant"
-            } else {
-                scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-                    scan.diseaseNameRu.equals("Не растение", ignoreCase = true)
+        val scanInputs = scans
+            .filterNot(PersistedScanAbstentionPolicy::isAbstained)
+            .map { scan ->
+                val displayedClassKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
+                val isNotAPlant = if (displayedClassKey != null) {
+                    displayedClassKey == "not_a_plant"
+                } else {
+                    scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+                        scan.diseaseNameRu.equals("Не растение", ignoreCase = true)
+                }
+                PlantHealth.ScanInput(
+                    atMs = scan.timestamp,
+                    isHealthy = scan.isHealthy,
+                    confidence = scan.confidence,
+                    isNotAPlant = isNotAPlant,
+                )
             }
-            PlantHealth.ScanInput(
-                atMs = scan.timestamp,
-                isHealthy = scan.isHealthy,
-                confidence = scan.confidence,
-                isNotAPlant = isNotAPlant,
-            )
-        }
         return PlantHealth.evaluate(scanInputs, activePlanId != null, adherence, nowMs)
     }
 
@@ -293,14 +302,22 @@ class PlantRepository(
         scanDao.assignScanToPlant(scanId, plantId)
     }
 
+    /** Accepted scans only. Raw OOD/quality argmax rows remain stored for
+     * correction feedback but cannot enter plant history, photos or sharing. */
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity> = withContext(Dispatchers.IO) {
         scanDao.getScansForPlant(plantId)
+            .filterNot(PersistedScanAbstentionPolicy::isAbstained)
     }
 
-    /** Most-recent scan for a plant, or null if there have been none yet. */
+    /** Most-recent accepted scan for a plant, or null if there are none. */
     suspend fun getLatestScanForPlant(plantId: Long): ScanEntity? = withContext(Dispatchers.IO) {
-        scanDao.getScansForPlant(plantId).firstOrNull()
+        scanDao.getScansForPlant(plantId)
+            .firstOrNull { !PersistedScanAbstentionPolicy.isAbstained(it) }
     }
+
+    /** Shared guard for defensive UI filtering of already-loaded row lists. */
+    fun isAbstainedScan(scan: ScanEntity): Boolean =
+        PersistedScanAbstentionPolicy.isAbstained(scan)
 
     suspend fun getJournalEntries(plantId: Long): List<PlantJournalEntity> =
         withContext(Dispatchers.IO) {

@@ -7,9 +7,9 @@ import org.junit.Test
 
 /**
  * Pure-JVM tests for the wire models. The most important contract here is
- * that a partial / older server response degrades gracefully into safe
- * defaults rather than NPE-ing or showing 0%, so every always-expected
- * field carries a default.
+ * that partial / older JSON decodes into safe values rather than NPE-ing, and
+ * that the explicit diagnostic contract then prevents those defaults from
+ * being accepted or saved as a real HTTP diagnosis.
  *
  * Two decoders are exercised on purpose. [ktxJson] mirrors the app's Ktor
  * config and is the production HTTP path. [gson] is the *persistence* path:
@@ -20,6 +20,19 @@ import org.junit.Test
 class ModelsTest {
 
     private val gson = Gson()
+
+    private fun canonicalProbs(vararg values: Pair<String, Float>): Map<String, Float> =
+        linkedMapOf(
+            "gray_mold_botrytis" to 0f,
+            "healthy" to 0f,
+            "leaf_scorch_underwatering" to 0f,
+            "leaf_spot" to 0f,
+            "not_a_plant" to 0f,
+            "nutrient_deficiency" to 0f,
+            "pests" to 0f,
+            "powdery_mildew" to 0f,
+            "viral_disease" to 0f,
+        ).apply { putAll(values) }
 
     @Test
     fun analysisResponse_missingFields_useSafeDefaults() {
@@ -41,6 +54,9 @@ class ModelsTest {
         assertThat(r.toxicitySource).isEqualTo("unknown")
         assertThat(r.toxicToPets).isFalse()
         assertThat(r.isRepeat).isFalse()
+        assertThat(r.available).isTrue()
+        assertThat(r.isEffectivelyAbstained()).isFalse()
+        assertThat(r.diagnosticContractViolation()).isEqualTo("class_name is missing")
     }
 
     @Test
@@ -60,6 +76,131 @@ class ModelsTest {
         assertThat(r.allProbs!!["leaf_spot"]!!).isWithin(1e-4f).of(0.83f)
         assertThat(r.species?.best?.scientificName).isEqualTo("Ficus elastica")
         assertThat(r.species?.best?.displayName).isEqualTo("Rubber Plant")
+    }
+
+    @Test
+    fun analysisResponse_explicitAbstention_preservesDiagnosticClass() {
+        val json = """
+            {"class_name":"leaf_spot","confidence":0.83,
+             "all_probs":{"leaf_spot":0.83,"healthy":0.17},
+             "abstained":true,"abstention_reason":"ood",
+             "verdict_status":"abstained"}
+        """.trimIndent()
+        val r = ktxJson.decodeFromString(AnalysisResponse.serializer(), json)
+        assertThat(r.classKey).isEqualTo("leaf_spot")
+        assertThat(r.allProbs!!["leaf_spot"]).isWithin(1e-5f).of(0.83f)
+        assertThat(r.isEffectivelyAbstained()).isTrue()
+        assertThat(r.effectiveAbstentionReason()).isEqualTo(AnalysisAbstentionReasons.OOD)
+    }
+
+    @Test
+    fun analysisResponse_legacyWarningsAndNaturalNap_failClosed() {
+        val legacyOod = AnalysisResponse(
+            classKey = "leaf_spot",
+            warnings = listOf("nap_ood_gated"),
+        )
+        val legacyBlur = AnalysisResponse(
+            classKey = "not_a_plant",
+            warnings = listOf("blurry_image"),
+        )
+        val naturalNap = AnalysisResponse(classKey = "not_a_plant")
+
+        assertThat(legacyOod.effectiveAbstentionReason())
+            .isEqualTo(AnalysisAbstentionReasons.OOD)
+        assertThat(legacyBlur.effectiveAbstentionReason())
+            .isEqualTo(AnalysisAbstentionReasons.IMAGE_QUALITY)
+        assertThat(naturalNap.effectiveAbstentionReason())
+            .isEqualTo(AnalysisAbstentionReasons.NOT_A_PLANT)
+    }
+
+    @Test
+    fun analysisResponse_diagnosticContract_acceptsConsistentArgmaxAndNaturalNap() {
+        val accepted = AnalysisResponse(
+            classKey = "leaf_spot",
+            diseaseName = "Leaf Spot",
+            confidence = 0.8004f,
+            allProbs = canonicalProbs("leaf_spot" to 0.8f, "healthy" to 0.2f),
+            topK = listOf(
+                TopKEntry("leaf_spot", 0.8f),
+                TopKEntry("healthy", 0.2f),
+            ),
+        )
+        val naturalNap = AnalysisResponse(
+            classKey = "not_a_plant",
+            diseaseName = "Not a plant",
+            confidence = 0.7f,
+            allProbs = canonicalProbs("not_a_plant" to 0.7f, "healthy" to 0.3f),
+            topK = listOf(
+                TopKEntry("not_a_plant", 0.7f),
+                TopKEntry("healthy", 0.3f),
+            ),
+        )
+
+        assertThat(accepted.diagnosticContractViolation()).isNull()
+        assertThat(naturalNap.diagnosticContractViolation()).isNull()
+    }
+
+    @Test
+    fun analysisResponse_diagnosticContract_acceptsPreInferenceQualityRejection() {
+        val qualityRejected = AnalysisResponse(
+            classKey = "unknown",
+            confidence = 0f,
+            allProbs = emptyMap(),
+            topK = emptyList(),
+            warnings = listOf("blurry_image"),
+            abstained = true,
+            abstentionReason = AnalysisAbstentionReasons.IMAGE_QUALITY,
+            verdictStatus = "abstained",
+        )
+
+        assertThat(qualityRejected.diagnosticContractViolation()).isNull()
+    }
+
+    @Test
+    fun analysisResponse_diagnosticContract_rejectsContradictions() {
+        val wrongArgmax = AnalysisResponse(
+            classKey = "leaf_spot",
+            diseaseName = "Leaf Spot",
+            confidence = 0.2f,
+            allProbs = canonicalProbs("healthy" to 0.8f, "leaf_spot" to 0.2f),
+            topK = listOf(
+                TopKEntry("healthy", 0.8f),
+                TopKEntry("leaf_spot", 0.2f),
+            ),
+        )
+        val fabricatedQualityDistribution = AnalysisResponse(
+            classKey = "unknown",
+            confidence = 0f,
+            allProbs = mapOf("healthy" to 1f),
+            topK = emptyList(),
+            warnings = listOf("blurry_image"),
+        )
+        val novelButProbabilityConsistentClass = AnalysisResponse(
+            classKey = "future_disease",
+            diseaseName = "Future Disease",
+            confidence = 0.8f,
+            allProbs = linkedMapOf("future_disease" to 0.8f, "healthy" to 0.2f),
+            topK = listOf(
+                TopKEntry("future_disease", 0.8f),
+                TopKEntry("healthy", 0.2f),
+            ),
+        )
+        val partialProbabilityMap = AnalysisResponse(
+            classKey = "leaf_spot",
+            diseaseName = "Leaf Spot",
+            confidence = 1f,
+            allProbs = mapOf("leaf_spot" to 1f),
+            topK = listOf(TopKEntry("leaf_spot", 1f)),
+        )
+
+        assertThat(wrongArgmax.diagnosticContractViolation())
+            .isEqualTo("class_name is not the all_probs argmax")
+        assertThat(fabricatedQualityDistribution.diagnosticContractViolation())
+            .isEqualTo("image-quality rejection carries classifier probabilities")
+        assertThat(novelButProbabilityConsistentClass.diagnosticContractViolation())
+            .isEqualTo("class_name is not a known class key")
+        assertThat(partialProbabilityMap.diagnosticContractViolation())
+            .isEqualTo("all_probs keys do not match the canonical taxonomy")
     }
 
     private fun carePlan(species: String = "Ficus", watering: Any? = null) = CarePlanResponse(

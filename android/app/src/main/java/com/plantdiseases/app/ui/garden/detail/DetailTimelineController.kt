@@ -43,8 +43,9 @@ class DetailTimelineController(
         scans: List<ScanEntity>,
     ) {
         this.plantId = plantId
+        val acceptedScans = scans.filterNot(plantRepository::isAbstainedScan)
         timelineContainer.removeAllViews()
-        if (scans.isEmpty()) {
+        if (acceptedScans.isEmpty()) {
             timelineContainer.addView(
                 activity.emptyState(
                     R.drawable.illustration_empty_scans,
@@ -54,7 +55,7 @@ class DetailTimelineController(
             )
             return
         }
-        scans.forEach { scan -> timelineContainer.addView(scanCard(scan)) }
+        acceptedScans.forEach { scan -> timelineContainer.addView(scanCard(scan)) }
     }
 
     private fun scanCard(scan: ScanEntity): View {
@@ -138,6 +139,7 @@ class DetailTimelineController(
      *  ResultActivity if they just want to send a recent diagnosis
      *  to a friend or a forum. */
     private fun shareScan(scan: ScanEntity) {
+        if (plantRepository.isAbstainedScan(scan)) return
         val isRu = LocaleHelper.isRussian(activity)
         val caption = buildString {
             append(activity.getString(R.string.share_diagnosis_header))

@@ -161,10 +161,15 @@ def test_analyze_response_contract(client, png_bytes):
     body = r.json()
 
     required = {
-        # ``class_name`` is the canonical post-reroute key. The server records
-        # it internally as the weak training prior when consent is present;
-        # clients do not echo it through the feedback receipt API.
+        # ``class_name`` is the probability-backed diagnostic argmax. Explicit
+        # abstention fields say whether it may be presented as a diagnosis.
+        # The server records it internally as the weak training prior when
+        # consent is present; clients do not echo it through the feedback
+        # receipt API.
         "class_name",
+        "family",
+        "requested_family",
+        "family_fallback_reason",
         "disease_name",
         "disease_name_ru",
         "confidence",
@@ -179,6 +184,9 @@ def test_analyze_response_contract(client, png_bytes):
         "all_probs",
         "top_k",
         "warnings",
+        "abstained",
+        "abstention_reason",
+        "verdict_status",
         "severity",
         "prediction_set",
         "elapsed_ms",
@@ -197,6 +205,9 @@ def test_analyze_response_contract(client, png_bytes):
     assert isinstance(body["all_probs"], dict)
     assert isinstance(body["top_k"], list)
     assert isinstance(body["warnings"], list)
+    assert body["abstained"] is False
+    assert body["abstention_reason"] is None
+    assert body["verdict_status"] == "accepted"
     # top_k entries are localised — client renders them without a
     # second disease-name lookup.
     for entry in body["top_k"]:
@@ -205,6 +216,124 @@ def test_analyze_response_contract(client, png_bytes):
         "is_diseased", "detector_confidence", "regions", "primary_region",
     }
     assert isinstance(body["detection"]["regions"], list)
+
+
+def test_ood_warning_becomes_neutral_abstention_without_changing_probabilities(
+    client, png_bytes, monkeypatch,
+):
+    """Adapter regression: old pipeline warnings must fail closed end-to-end."""
+    import main as server_main
+    from tests.conftest import FakePipeline
+
+    class LegacyOodPipeline(FakePipeline):
+        def analyze(self, img):
+            result = super().analyze(img)
+            probs = {name: 0.0 for name in self.classifier.CLASS_NAMES}
+            probs.update({"leaf_spot": 0.70, "healthy": 0.20, "not_a_plant": 0.10})
+            result.update({
+                "class_name": "leaf_spot",
+                "confidence": 0.70,
+                "all_probs": probs,
+                "top_k": [
+                    {"class": "leaf_spot", "confidence": 0.70},
+                    {"class": "healthy", "confidence": 0.20},
+                    {"class": "not_a_plant", "confidence": 0.10},
+                ],
+                # No explicit fields: mirrors a cached/pre-contract result.
+                "warnings": ["nap_ood_gated"],
+                "prediction_set": {
+                    "classes": ["leaf_spot"], "coverage": 0.9, "method": "raps",
+                },
+                "detection": {
+                    **result["detection"], "is_diseased": True,
+                },
+            })
+            return result
+
+    monkeypatch.setattr(server_main, "pipeline", LegacyOodPipeline())
+    response = client.post(
+        "/api/analyze?species=Dieffenbachia",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # Diagnostic evidence remains internally coherent and available for audit.
+    assert body["class_name"] == "leaf_spot"
+    assert body["confidence"] == 0.7
+    assert body["all_probs"]["leaf_spot"] == 0.7
+    assert body["top_k"][0]["class"] == "leaf_spot"
+    # But no disease/species/toxicity/conformal claim escapes the rejection.
+    assert body["abstained"] is True
+    assert body["abstention_reason"] == "ood"
+    assert body["verdict_status"] == "abstained"
+    assert body["disease_name"] == "Unidentified Condition"
+    assert body["prevention"] == []
+    assert body["prediction_set"] is None
+    assert body["detection"]["is_diseased"] is False
+    assert body["species"] == {
+        "available": False,
+        "source": "skipped_abstained",
+        "best": None,
+        "candidates": [],
+    }
+    assert body["toxic_to_pets"] is False
+    assert body["toxic_species_list"] == []
+    assert body["toxicity_source"] == "unknown"
+
+    # The cached copy is upgraded by the same legacy-warning derivation.
+    repeated = client.post(
+        "/api/analyze?species=Dieffenbachia",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    ).json()
+    assert repeated["is_repeat"] is True
+    assert repeated["abstained"] is True
+    assert repeated["abstention_reason"] == "ood"
+    assert repeated["toxicity_source"] == "unknown"
+
+
+def test_natural_nap_keeps_nap_copy_but_is_explicitly_abstained(
+    client, png_bytes, monkeypatch,
+):
+    import main as server_main
+    from tests.conftest import FakePipeline
+
+    class NaturalNapPipeline(FakePipeline):
+        def analyze(self, img):
+            result = super().analyze(img)
+            probs = {name: 0.0 for name in self.classifier.CLASS_NAMES}
+            probs["not_a_plant"] = 1.0
+            result.update({
+                "class_name": "not_a_plant",
+                "confidence": 1.0,
+                "all_probs": probs,
+                "top_k": [{"class": "not_a_plant", "confidence": 1.0}],
+                "warnings": [],
+            })
+            return result
+
+    monkeypatch.setattr(server_main, "pipeline", NaturalNapPipeline())
+    body = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    ).json()
+    assert body["class_name"] == "not_a_plant"
+    assert body["disease_name"] != "Unidentified Condition"
+    assert body["abstained"] is True
+    assert body["abstention_reason"] == "not_a_plant"
+    assert body["species"]["source"] == "skipped_nap"
+
+
+def test_analyze_reports_actual_serving_family_on_aqua_fallback(client, png_bytes):
+    response = client.post(
+        "/api/analyze?family=aqua",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["requested_family"] == "aqua"
+    assert body["family"] == "gamma"
+    assert body["family_fallback_reason"] == "aqua_served_by_gamma"
 
 
 # ── Species fan-out ─────────────────────────────────────────────────

@@ -2,6 +2,11 @@
 # Used for linting and running the test suite in CI.
 -r requirements.txt
 pytest>=9.1.1
+# Dataset/eval audit tools: ImageHash supplies the pHash first pass; OpenCV's
+# SIFT+RANSAC is mandatory for rotated/noised capture-family detection.  Keep
+# these dev-only — production inference does not import either builder.
+ImageHash>=4.3.2
+opencv-python-headless>=4.10
 # Starlette 1.x's TestClient imports ``httpx2`` and only falls back to the
 # old ``httpx`` — with a StarletteDeprecationWarning — when it is absent, so
 # httpx2 is the client the TestClient is actually supported on now. This

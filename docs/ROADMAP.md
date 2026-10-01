@@ -139,8 +139,8 @@ The four planned pieces all exist: the Today queue (`util/CareQueue.kt` +
 `RoomDetailActivity`), and rooms (`RoomEntity`, `RoomRepository`,
 `RoomDetailActivity`, `RoomDialogs`).
 
-Room DB is at `version = 9` (`data/local/Database.kt:881`), 11 entities, with
-`MIGRATION_1_2`…`MIGRATION_8_9` registered (`:1187-1196`).
+Room DB is at `version = 9` (`data/local/Database.kt:876`), 11 entities, with
+`MIGRATION_1_2`…`MIGRATION_8_9` registered (`:1182-1190`).
 
 Still open:
 
@@ -158,9 +158,186 @@ Still open:
 
 ## Model track
 
-`MODEL_VERSION` is **2.7.3** (notebook §1). `server/models/` holds only
-`.gitkeep` + `MODEL_CARD.md` — **nothing past 2.6.8 is deployed**, and 2.6.8
-runs behind the NAP head veto, a serving change needing no new weights.
+> **2026-08-23 audit correction.** The historical experiment narrative below is
+> retained as a research trail, not as verified release evidence. The archive's
+> raw predictions contradict several headline scores (including 2.7.2's stated
+> 3/31), the 31/31 v2.6.8 number includes a runtime veto rather than raw model
+> capability, a probe mixed populations/denominators, and the 182-image private
+> set is neither OOD nor independent enough to gate a release. Do not tune or
+> ship from those numbers. Evidence-backed status and v9 requirements follow
+> in this file.
+
+`MODEL_VERSION` is now **2.7.5** (notebook §1; set 2026-09-21 for the next
+Colab run). No discovered historical archive has the notebook-bound manifest,
+complete lineage, and serving contract, so none is deployable by the strict
+current API. `plantvision_combined_v2.7.1.tar` is only the newest structurally
+complete **legacy diagnostic candidate**; v2.7.3 failed its own recorded gate
+and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
+2026-09-21 policy below; v9 is no longer a precondition.
+
+### 2026-10-01 — one served pass in §6, supplement boxes, light provenance
+
+- **§2 crash on v8 fixed.** The 2026-09-21 change made `capture_family_id`
+  optional but left the "one eval row per family" check keyed on it, so every
+  v8 row shared the family `None` and the second eval-eligible row raised
+  `independent-family violation`. The 2.7.5 run would have stopped in §2.
+  Families now route as one unit (below), and
+  `server/tests/test_notebook_supplement.py` runs the real loader on a
+  v8-shaped manifest.
+- **Stage-1 audit + end-to-end eval: one bounded pass, ON in every mode.**
+  The audit used Ultralytics on `detector.pt` and the crop eval decoded every
+  photo again at camera resolution; together with §5's TF objects and the idle
+  persistent DataLoader worker pools (one per loader, `EVAL_WORKERS` each) that
+  OOMed a `combined` run, so the end-to-end number was never produced for the
+  shipping mode. Now §6 releases the pools and the training state, then
+  streams `val_realworld` once through the shipped `detector.onnx` +
+  classifier with the server's own detector / crop / vote rules — decoded at
+  the app's 1024 px upload size (JPEG draft), two threads ahead, one photo per
+  classifier run (members and mirrors together, as `classifier.py` batches
+  them). Peak extra RAM is tens of MB. From that one pass: the Stage-1 audit
+  (no-box at 0.25, plus the share below the 0.40 gate floor), the end-to-end
+  disease F1 (`served_vote` headline, `crop_only` and `fold` alongside), and
+  the served OOD gate scored **out of sample** (fitted on `temperature_cal`).
+  The served-gate calibration uses the same streamer. The helpers are pinned
+  to `detector.py` / `pipeline.py` / `classifier.py` by
+  `test_served_gate_mirror.py`.
+- **Supplement boxes reach Stage 1.** A YOLO label file beside a photo
+  (`<class>/<name>.txt`) is read in §2 with no image decode and indexed in one
+  JSON file. The photo is stored in its EXIF-rotated frame (the one a browser
+  labelling tool shows). §3 hard-links boxed photos still in the training
+  split into the detector set, 15 % of families to detector val. The PlantDoc
+  → YOLO build reads boxes without decoding, decodes and encodes on a bounded
+  thread pool, and writes byte-identical files and the identical seeded split
+  (pinned against the old serial loop). Background negatives are hard-linked.
+  §2's PlantDoc crop pass decodes only rows that write something.
+- **Light provenance.** Nothing in the supplement's per-row record stops a run.
+  A photo with no manifest row loads train-only; a capture family with any
+  train-side member trains as a whole; a reused `immutable_source_id` is
+  skipped. `filter_supplement.py` adopts unlisted photos as QA'd `train_only`
+  rows. §2 writes `supplement_manifest_next.csv` (in the archive's
+  `analysis/`) with `first_seen_model_version` stamped on exactly the rows the
+  run trained on, so re-stamping by hand is gone. The minimum is
+  `DATASET_LABELING_PLAN.md` P0.
+
+### 2026-09-21 — study-project policy, and the 2.7.5 run is unblocked
+
+- **Licences are provenance, not a gate.** Every fetcher records the per-row
+  licence (iNat `license_code`, COCO licence id, Open Images licence key,
+  DoctorP `cc-by-nc-sa-4.0`, the supplement's `license_id`) and nothing
+  filters on it: `source_inventory.license_policy` in `model_card.json`
+  tallies what the bundle trained on. The 2026-08-25 filters would have
+  dropped ~87 % of iNat research-grade Plantae (83.0M vs 10.8M observations,
+  live API 2026-09-21) and all 1,558 DoctorP rows. Eligibility analysis of the
+  returned sources: `DATASET_LABELING_PLAN.md`, "Sources returned under the
+  2026-09-21 policy".
+- **The supplement contract is soft.** `STRICT_SUPPLEMENT_FILTER_VERDICT /
+  _LICENSE_PROVENANCE / _MODEL_PROVENANCE` default to `False`: a v8 manifest
+  loads, every absent column gets a documented fallback (sha256 source id, no
+  family, `split_hint` routing) and one warning with the count. Present
+  columns are validated as before; `bench_leak` / `phash_mismatch` still raise.
+- **The served OOD overlay is calibrated and on.** §6 now fits
+  `ood.served_gate` through the served path (Stage 1 ONNX → the
+  `serving_contract.crop` rules → whole-frame fold → min member distance / max
+  member plant logit) at `TARGET_PLANT_FPR` on `temperature_cal`, reports the
+  three-of-three gate's NAP recall and plant false-reject beside the head-only
+  rates, and `pipeline.py` applies **only** those thresholds. Closes the
+  "Served-gate calibration tool" item below; the tool route was not needed.
+- **Conformal `coverage` is honest again.** `conformal.py` advertises the
+  notebook's `target_coverage` (0.90) when the sidecar carries the
+  out-of-sample audit that backs it (`coverage_basis = audit_target`), else
+  `1 − alpha`. Closes the alpha = 0.6 item below.
+- **One blur gate on both tiers.** Android `util/BlurGate.kt` computes the
+  server's statistic (PIL luma, 320 px long edge, interior Laplacian) and uses
+  the server's 50.0 floor; the app used to score a ~1000 px decode against 100.
+  `test_blur_parity.py` and `BlurGateTest` pin both to one fixture. Aqua's
+  `not_a_plant` rejection remains the trained head alone — it has no detector,
+  so it cannot run the served gate; §6 reports its head recall in the aqua
+  metrics.
+- **Still open from this round:** the seed replicate and the augmentation
+  ablation (below); and Aqua has no classifier-side OOD signal of its own.
+  (`RUN_DETECTOR_CROP_EVAL` for combined mode closed 2026-10-01.)
+
+### 2026-09-16 review — code is done, the model is data-gated
+
+The two `model-fix-test` commits (`ec8916f`, `f002dc8`) are contract and
+provenance work: manifest-bound bundle with SHA-256 binding and one selected
+graph, per-image licence/provenance on every row, HF/Kaggle revision pinning,
+fail-closed Aqua, deterministic torch, DoctorP off by default, the served-gate
+precondition on the OOD overlay, and the v2 sentinel demoted to diagnostic.
+None of it moves capability; the branch itself concludes the next candidate
+needs v9 data. So the answer to "code or data?" is **both, in that order —
+and the code half is now mostly done**. What the review changed and what is
+still open:
+
+**Fixed on the branch (this review).**
+
+- **Train/serve geometry parity** (§4). The 2.8.0 draft trained on a
+  letterboxed full frame (`PadToSquare → Resize(IMG, IMG)`) while every eval
+  slice, both calibration splits, `classifier.py` and the Aqua client
+  centre-crop after a shorter-side resize at `EVAL_RESIZE_RATIO`. A 4:3 frame
+  reached the head ~1.4× larger at serve time than at train time, with
+  padding bars serving never produces — introduced together with the removal
+  of the only scale augmentation. Training now uses the serving transform
+  with `RandomCrop(IMG)` in place of the centre crop
+  (`serve_parity_v2_unablated`).
+- **The unseen-domain sentinel must run.** `REQUIRE_OOD_BENCHMARK` stays
+  `False` (v2 is not a gate), but `REQUIRE_OOD_DIAGNOSTIC_RUN=True` fails a
+  run that cannot download and score it, and its alerts are written into
+  `model_card.json → ood_benchmark.alerts` and `run_log.jsonl`. A non-blocking
+  check that can silently stop existing is the failure mode the original gate
+  comment warned about.
+- **CI never ran on this branch** — `model-fix-test` matched no push glob.
+  `model-*` is now in `.github/workflows/ci.yml`.
+
+- **Evaluation tooling** (fresh-eyes review of `tools/`, `bundle.py` and
+  their tests). Fixed: `build_ood_benchmark.py report()` printed healthy
+  *recall* where the docs said false-fire, so a bundle abstaining on half its
+  healthy images and one calling half of them scorched printed identical rows
+  (now recall, abstentions and a separate FALSE-FIRE row); `eval_bootstrap`
+  averaged absent disease classes in as hard zeros (a perfect model on the
+  healthy+scorch benchmark scored 1/7, and family resampling dragged every
+  thin class's CI toward 0 — now macro over the classes present, `nan`-aware
+  CIs, ties reported as `p_tie`); `None`/`NaN` capture-family IDs were pooled
+  into one pseudo-family (now rejected); `paired_eval --served` re-parsed
+  warning strings instead of using `pipeline._derive_abstention` and did not
+  count natural `not_a_plant` verdicts as coverage loss (now both);
+  `build_ood_benchmark.cluster_paths` silently dropped undecodable images
+  (now an error); `verify_bundle` accepted an embedding bank declared without
+  `bank_file` that boot then rejected (now rejected at preflight). Still open:
+  `paired_eval._load_bundle_binding` in `--argmax` mode follows symlinks and
+  accepts `size_bytes == 0` where `bundle.verify_bundle` does not — reuse the
+  latter; and `report()`/`predict_served` have no end-to-end test.
+
+**Open, code-only (no data needed), ordered by value.**
+
+- [x] **Served-gate calibration** — done in the notebook (2026-09-21, above),
+      with the crop/detector rules mirrored from `serving_contract` and pinned
+      to `pipeline.py` / `detector.py` by `test_data_invariants.py`. The
+      direction of the old error still holds: min-over-members ≤ whole-frame
+      distance, so a per-image threshold under-fires; the served fit is
+      strictly more permissive on plants at the same false-reject target.
+- [x] **Conformal `coverage` on the wire** — `conformal.py` advertises the
+      audit-backed `target_coverage` (2026-09-21, above).
+- [x] **Production-faithful eval is ON in every mode** (2026-10-01). One
+      bounded served pass feeds the Stage-1 audit, the end-to-end F1 and the
+      out-of-sample served-gate check; the first 2.7.5 log shows its
+      photos/s and the host RAM available when it started.
+- [ ] **Strict determinism is untested end to end.**
+      `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
+      §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
+      kernel. The first 2.7.5 run is the test; if it trips, prefer
+      `warn_only=True` with the warning recorded in `run_manifest.json` over
+      losing the run.
+- [ ] **The augmentation profile is unablated** (v1 letterbox and v2 parity
+      alike). One paired run at `SEED=0`, profile vs no-artifact-augs, scored
+      with `tools/eval_bootstrap.py` on capture families, settles whether the
+      sensor-artifact block earns its CPU cost.
+
+**Data (the critical path)** — the v9 protocol, the OOD benchmark v3 and the
+locked deployment-representative test set are specified in
+`DATASET_LABELING_PLAN.md` ("v9 collection protocol").
+
+### Superseded historical interpretation (do not use as a release gate)
 
 **The OOD AND-gate has been three-of-three since 2.7.2.** It fires
 `not_a_plant` only when the detector confidence is below
@@ -178,7 +355,10 @@ in-domain: the deployed 2.6.8 scores 1.000 on the 31 hibiscus clusters, the two
 measured rejects 0.097 and 0.129, against a floor of 0.70. The instrument that
 finally caught it before shipping is the **out-of-domain ship gate** in §6
 (`OOD_ARM_FLOORS = {'hibiscus': 0.70}`, `REQUIRE_OOD_BENCHMARK = True`, blocking
-since 2026-08-18): 2.7.3 raised there and never became a loadable bundle. Full
+since 2026-08-18): 2.7.3 raised there and never became a loadable bundle.
+*(Status today: `REQUIRE_OOD_BENCHMARK = False` and `REQUIRE_OOD_DIAGNOSTIC_RUN
+= True` — the sentinel must run and be recorded, its floors are advisory; see
+the 2026-09-16 section above.)* Full
 per-release numbers, the benchmark's construction and the served-vs-argmax
 caveat are in `DATASET_LABELING_PLAN.md` §6b.
 
@@ -260,15 +440,18 @@ compatible with the collection round.
 - [ ] **Domain-robust training objective** — an intervention strong enough to
       match the probe that motivated 2.7.3, rather than a sampling nudge.
 - [ ] **Report the production-faithful number.** Every headline metric scores
-      the classifier on a whole val image while production classifies a
-      **detector crop**. §6's detector-crop eval defaults ON for
-      `gamma`/`frontier`; publish both and treat the gap as a finding, not a
-      footnote.
+      the classifier on a whole val image while production classifies
+      **detector crops** and votes. Since 2026-10-01 §6 produces
+      `end_to_end.served_vote_disease_macro_f1` in every mode; publish it next
+      to the whole-image number and treat the gap as a finding, not a footnote.
 - [ ] **Build the comparison set** from the exportable production scans (2,593
       and growing) — the only never-trained, real-distribution eval that scales.
+      Specified as the locked deployment-representative test set in
+      `DATASET_LABELING_PLAN.md`; not yet carved.
 - [ ] **A second OOD arm (8–12 species).** The gate rests on one species and one
       photographic session, so a pass reads as "did not regress on the one arm
-      we can measure", not "scorch works".
+      we can measure", not "scorch works". Specified as OOD benchmark v3 in
+      `DATASET_LABELING_PLAN.md`; not yet collected.
 
 ### 2.8 — the leap
 
@@ -290,6 +473,10 @@ compatible with the collection round.
 
 ### Closed releases
 
+Per-run numbers, knob diffs, data deltas and the Drive archive for every one of
+these (plus the 2.3.1–2.6.7 runs) are in `MODEL_HISTORY.md`, read out of each
+archive's own sidecars.
+
 - **2.6.8** — shipped, still deployed. The incumbent on every axis.
 - **2.6.9** — gate-passed, lost a paired A/B vs 2.6.8. Not shipped. On the OOD
   scorch arm it is marginally the best model on record.
@@ -305,6 +492,11 @@ compatible with the collection round.
 - **2.7.3** — regime-aware sampling + regime conformal. Both falsified, both
   removed from the notebook. First release stopped by the out-of-domain gate
   before producing a bundle.
+- **2.7.5** — not yet run. First run under the 2026-09-21 study-project policy:
+  DoctorP and unfiltered iNat back in the mix, served OOD gate calibrated,
+  audit-backed conformal coverage, one blur gate on both tiers; end-to-end
+  eval and Stage-1 audit from one served pass in every mode, supplement boxes
+  into Stage 1, light provenance (2026-10-01).
 
 ---
 
@@ -326,13 +518,13 @@ None of it blocks a release.
       YOLOv8 and the datasets and then covers everything else with "runtime
       libraries remain under their own licenses". osmdroid and the RuStore
       appupdate/review SDKs are the two worth naming.
-- [ ] **`AquaClassifier`'s own docs describe a bundled asset that does not
-      exist.** Its KDoc (`util/AquaClassifier.kt:19-23`) and
-      `android/app/build.gradle.kts:384-386` both say the model loads from
-      `assets/models/aqua_classifier.tflite`; the code path is filesDir-only —
-      `AquaModelManager` stores the downloaded `.tflite` under
-      `filesDir/aqua/`, and `app/src/main/assets/` contains no model.
-      `build.gradle.kts:78-79` already states it correctly.
+- [ ] **`build.gradle.kts` still describes a bundled Aqua asset that does not
+      exist.** The comment at `android/app/build.gradle.kts:407-409` says the
+      model is provisioned at `assets/models/aqua_classifier.tflite`; the code
+      path is filesDir-only — `AquaModelManager` stores the downloaded
+      `.tflite` under `filesDir/aqua/`, and `app/src/main/assets/` contains no
+      model. `build.gradle.kts:78-79` and the `AquaClassifier` KDoc (fixed on
+      `model-fix-test`) already state it correctly.
 
 ---
 
@@ -348,22 +540,23 @@ into another change.
 
 **Server**
 
-- [ ] **Split `main.py` (5k lines) into routers.** It holds the app, five
+- [ ] **Split `main.py` (5.4k lines) into routers.** It holds the app, five
       middlewares, the limiter/ban/quota state, the metrics counters, two thread
-      pools, image validation, 16 Pydantic models, 39 handlers and the lifespan.
+      pools, image validation, 15 Pydantic models, 38 handlers and the lifespan.
       Order: extract `deps.py` (the nine hand-copied quota preambles become one
       `Depends`) → switch the ~400-line duplicated alias-import block to module
       imports → then one router group per PR, smallest first, community last.
-      Gated by one hard constraint: 24 test sites `monkeypatch.setattr` names on
-      `main`, and 11 modules `importlib.reload`, so a router doing
+      Gated by one hard constraint: tests `monkeypatch.setattr` names on
+      `main` (`conftest.py` swaps the pipeline in), and 12 test modules
+      `importlib.reload` it, so a router doing
       `from main import pipeline` binds `None` forever. `openapi.json` plus
       `test_openapi_contract.py` catch a dropped route, which is what makes the
       split safer than it looks.
-- [ ] **`analyze_image` is 376 lines**, of which ~150 are pure response
+- [ ] **`analyze_image` is 450 lines**, of which ~150 are pure response
       assembly. Extracting `build_analyze_payload()` makes the entropy guard,
       the dual-care split and the `not_a_plant` species suppression unit-testable
       without a TestClient. Best value-for-effort item on this list.
-- [ ] **Group the 16 inline Pydantic models** into `schemas.py` with shared
+- [ ] **Group the 15 inline Pydantic models** into `schemas.py` with shared
       `Annotated` field types. The same `scan_id` is `8..64` in two models and
       `1..128` in four others, and the charset check is written longhand four
       times. Standardise on the looser bound; tightening is its own decision,
@@ -372,8 +565,9 @@ into another change.
       features, and ~700 lines of bilingual product content that belongs with
       `diseases_data.py`. `community.py` (2.9k lines, 64 functions) is nine
       responsibilities behind one namespace and wants to become a package.
-- [ ] **Five hand-rolled SQLite stores** repeat the same connect/init/prune
-      boilerplate, and six near-identical `daily_*_count_for_ip_hash` functions
+- [ ] **Five hand-rolled SQLite stores** (`community`, `feedback`, `labeling`,
+      `push`, `telemetry`) repeat the same connect/init/prune boilerplate, and
+      five near-identical `daily_*_count_for_ip_hash` functions
       have silently diverged (rolling 24h vs calendar day). Schema evolution
       replays every migration on every boot with no `PRAGMA user_version`.
 - [ ] **No `response_model` on any route**, so `openapi.json` describes request
@@ -392,7 +586,7 @@ into another change.
       burns a second paid inference, and rotating between the response and
       `saveScan` loses the scan after the server has already issued its
       `scan_id`. The only outright correctness bug found.
-- [ ] **`ScanRepository` is a 1654-line god object** spanning seven bounded
+- [ ] **`ScanRepository` is a 1708-line god object** spanning seven bounded
       contexts, injected wholesale into six consumers. Split by context.
 - [ ] **XML vs imperative-Kotlin view construction.**
       `DetailExtraCardsController` and `CarePlanCardView` build whole hierarchies
@@ -402,11 +596,12 @@ into another change.
       detail-screen panel") with two call sites, and the two styles disagree on
       screen today.
 - [ ] **Gson is still a live dependency** for Room field JSON, `ResponseCache`
-      and intent payloads, so all 76 DTOs carry 401 hand-mirrored
-      `@SerializedName` annotations beside their `@SerialName`, plus a
+      and intent payloads, so the DTOs in `data/model/Models.kt` carry 389
+      hand-mirrored `@SerializedName` annotations beside their `@SerialName`, plus a
       `KSerializer<JsonObject>` bridge and six ProGuard rules. Retiring it is
       M/L but deletes all of that.
-- [ ] **`GuideDataProvider` (1638 lines) is a second localization system** —
+- [ ] **`data/GuideDataProvider.kt` (1638 lines) is a second localization
+      system** —
       78 EN/RU pairs as Kotlin strings, outside the resource framework, driving
       41 hand-written `LocaleHelper.isRussian(...)` branches. Nothing enforces
       RU parity there the way `strings.xml` gets it for free.
@@ -417,7 +612,7 @@ into another change.
       its contribution.
 - [ ] **No DAO returns a `Flow`**, so every screen re-reads on resume and
       cross-screen edits are invisible until a foreground transition. That is
-      the root cause of the ~20 `lifecycleScope.launch(start = UNDISPATCHED) {
+      the root cause of the 17 `lifecycleScope.launch(start = UNDISPATCHED) {
       withContext(NonCancellable) { … } }` sites. Migrate one screen per PR,
       additively — and only after the `AnalysisActivity` and `ScanRepository`
       items land, which give it seams to attach to.
@@ -496,7 +691,7 @@ wrong in ways tests never catch. Review the `values-ru/strings.xml` diff on
 every merge.
 
 **CI** (`.github/workflows/ci.yml`) is push-only, on `main`, `claude/**`,
-`work/**` and `codex/**`, with a `paths-filter` running the **android** and
+`work/**`, `codex/**` and `model-*`, with a `paths-filter` running the **android** and
 **server** jobs only when their trees change. Android: one Gradle invocation of
 `ktlintCheck` + `detekt` + `testDebugUnitTest` + R8 `assembleRelease`, then APK
 signing verification. Server: `ruff` + `pytest`, on Python 3.14. Dependency

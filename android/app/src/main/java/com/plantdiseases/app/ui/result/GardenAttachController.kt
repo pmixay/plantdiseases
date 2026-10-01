@@ -60,6 +60,7 @@ class GardenAttachController(
     }
 
     fun showAddToGardenDialog(scan: ScanEntity) {
+        if (scanRepository.isAbstainedScan(scan)) return
         activity.lifecycleScope.launch {
             // Name + photo picker — getPlants() would build the full garden
             // summary (journal, reminders, plans, health verdict) and throw all
@@ -127,6 +128,7 @@ class GardenAttachController(
     }
 
     private fun attachScanToPlant(scan: ScanEntity, plantId: Long) {
+        if (scanRepository.isAbstainedScan(scan)) return
         val checklistSeed = checklistSeed(scan)
         activity.lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val attachedPlantId = careRepository.attachScanWithStoredChecklist(
@@ -142,6 +144,7 @@ class GardenAttachController(
     }
 
     private fun showCreatePlantForScanDialog(scan: ScanEntity) {
+        if (scanRepository.isAbstainedScan(scan)) return
         // Suggested name: prefer the detected species' common name (people name
         // plants after the plant, not its disease); fall back to the LOCALIZED
         // disease name — the raw English diseaseName used to leak into RU here.
@@ -164,6 +167,7 @@ class GardenAttachController(
             // this outer block protects the prerequisite scan read.
             val attached = withContext(NonCancellable) {
                 val scan = scanRepository.getScanById(scanId) ?: return@withContext null
+                if (scanRepository.isAbstainedScan(scan)) return@withContext null
                 val seed = checklistSeed(scan)
                 val plantId = careRepository.attachScanWithStoredChecklist(
                     scanId = scanId,
@@ -190,7 +194,7 @@ class GardenAttachController(
      * cancel the only checklist write. The server request runs afterwards and
      * may safely enrich an untouched fallback. */
     private fun checklistSeed(scan: ScanEntity): ChecklistSeed? {
-        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isNotAPlantScan(scan)) return null
+        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isAbstainedScan(scan)) return null
         val classKey = scanRepository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val isRu = LocaleHelper.isRussian(activity)

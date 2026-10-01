@@ -6,7 +6,10 @@ on:
   # from those branches (#136, #137) reached main with no CI at all — which is
   # how four auto-fixable lint errors blocked the Android suite for two days.
   push:
-    branches: [main, account-beta-test, "claude/**", "work/**", "codex/**"]
+    # `model-*` covers the maintainer's model-work branches (e.g. model-fix-test):
+    # 9.5k lines of server/notebook changes reached that branch in 2026-08 with
+    # no CI run because its name matched none of the globs above.
+    branches: [main, account-beta-test, "claude/**", "work/**", "codex/**", "model-*"]
 
 # Push-only, deliberately — there is no `pull_request` trigger. Every branch
 # that reaches a PR here is pushed to one of the globs above first, so a PR

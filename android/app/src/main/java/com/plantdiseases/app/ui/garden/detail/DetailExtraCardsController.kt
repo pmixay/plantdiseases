@@ -96,7 +96,8 @@ class DetailExtraCardsController(
             isRu,
         ) ?: speciesHint
 
-        val latestScan = scans.maxByOrNull { it.timestamp }
+        val acceptedScans = scans.filterNot(scanRepository::isAbstainedScan)
+        val latestScan = acceptedScans.maxByOrNull { it.timestamp }
         if (latestScan == null) {
             card.showAwaitingScan(speciesDisplay) {
                 Toast.makeText(
@@ -155,7 +156,7 @@ class DetailExtraCardsController(
                     maybeStartTreatmentPlan(plant, latestScan, classKey, fallback)
                 } else {
                     card.showError(onRetry = {
-                        val replacement = buildCarePlanSlot(plant, scans)
+                        val replacement = buildCarePlanSlot(plant, acceptedScans)
                         val idx = content.indexOfChild(card)
                         if (idx >= 0) {
                             content.removeViewAt(idx)
@@ -168,8 +169,8 @@ class DetailExtraCardsController(
         return card
     }
 
-    /** Prefer the exact class key used for the displayed diagnosis after all
-     * server reroutes; only legacy scans need the human-name fallback. */
+    /** Prefer the persisted probability-backed class key; only legacy scans
+     * need the human-name fallback. */
     private fun resolveClassKey(scan: ScanEntity): String =
         scanRepository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
@@ -224,7 +225,7 @@ class DetailExtraCardsController(
         classKey: String,
         carePlan: CarePlanResponse,
     ) {
-        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isNotAPlantScan(scan)) return
+        if (scanRepository.isHealthyVerdict(scan) || scanRepository.isAbstainedScan(scan)) return
 
         activity.lifecycleScope.launch {
             val newestScanId = plantRepository.getScansForPlant(plant.id).maxByOrNull { it.timestamp }?.id
@@ -424,7 +425,10 @@ class DetailExtraCardsController(
      *  latest scan's class doesn't map to a guide article (healthy,
      *  not_a_plant, or no scan yet). */
     fun buildGuideLink(scans: List<ScanEntity>): View? {
-        val latest = scans.maxByOrNull { it.timestamp } ?: return null
+        val latest = scans
+            .filterNot(scanRepository::isAbstainedScan)
+            .maxByOrNull { it.timestamp }
+            ?: return null
         val classKey = resolveClassKey(latest)
         val guideId = guideIdForClass(classKey) ?: return null
         return MaterialCardView(activity).apply {
@@ -828,7 +832,8 @@ class DetailExtraCardsController(
      * server returns no usable sparkline.
      */
     fun buildProgressionCard(scans: List<ScanEntity>, currentPlant: PlantEntity?): View? {
-        if (scans.size < 2) return null
+        val acceptedScans = scans.filterNot(scanRepository::isAbstainedScan)
+        if (acceptedScans.size < 2) return null
         val card = MaterialCardView(activity).apply {
             radius = activity.resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
@@ -891,7 +896,7 @@ class DetailExtraCardsController(
         // Server expects oldest-first; cap to the 12 newest to keep
         // payloads bounded (Pydantic on the server doesn't, but the
         // device's network stack still has to upload them).
-        val ordered = scans.sortedBy { it.timestamp }.takeLast(12)
+        val ordered = acceptedScans.sortedBy { it.timestamp }.takeLast(12)
         val historyPayload = ordered.map { scanRepository.scanToProgressionPayload(it) }
         val newest = ordered.last()
         val plantName = currentPlant?.name
@@ -1017,6 +1022,7 @@ class DetailExtraCardsController(
      *  this doesn't touch. Fewer than 2 scans renders the honest "scan
      *  twice" empty state instead of a fake flat line. */
     fun buildHealthCard(plant: PlantEntity, scans: List<ScanEntity>): View {
+        val acceptedScans = scans.filterNot(scanRepository::isAbstainedScan)
         val card = MaterialCardView(activity).apply {
             radius = activity.resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
@@ -1092,7 +1098,11 @@ class DetailExtraCardsController(
 
         activity.lifecycleScope.launch {
             val activePlan = careRepository.activePlan(plant.id)
-            val verdict = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
+            val verdict = plantRepository.getPlantHealth(
+                plant.id,
+                acceptedScans,
+                activePlan?.plan?.id,
+            )
             accent.setBackgroundColor(activity.getColor(healthAccentColor(verdict.status)))
 
             if (verdict.score == null) {

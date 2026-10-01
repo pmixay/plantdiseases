@@ -523,6 +523,10 @@ class PlantDetailActivity : AppCompatActivity() {
         scans: List<ScanEntity>,
         journalEntries: List<PlantJournalEntity>,
     ) {
+        // Defensive second boundary: repository reads are already filtered,
+        // but a retained/legacy list must never feed a raw rejected argmax into
+        // the plant header, health, timeline, photos, guide or care surfaces.
+        val acceptedScans = scans.filterNot(plantRepository::isAbstainedScan)
         if (::tabLayout.isInitialized) {
             restoredTabIndex = tabLayout.selectedTabPosition.coerceAtLeast(0)
         }
@@ -530,12 +534,12 @@ class PlantDetailActivity : AppCompatActivity() {
         extraCards.bindPlantId(plantId)
 
         val activePlan = careRepository.activePlan(plant.id)
-        val health = plantRepository.getPlantHealth(plant.id, scans, activePlan?.plan?.id)
+        val health = plantRepository.getPlantHealth(plant.id, acceptedScans, activePlan?.plan?.id)
 
         lunarNavigationState = lunarCalendarView?.navigationState() ?: lunarNavigationState
         content.removeAllViews()
         toolbarTitle.text = plant.name
-        val summaryAnchor = header.buildHeader(plant, scans, journalEntries, health)
+        val summaryAnchor = header.buildHeader(plant, acceptedScans, journalEntries, health)
         val actionsAnchor = header.buildActionRow()
         content.addView(summaryAnchor)
         content.addView(actionsAnchor)
@@ -559,11 +563,11 @@ class PlantDetailActivity : AppCompatActivity() {
         applyRestoredTabSelection()
 
         // ── Overview ──────────────────────────────────────────────────
-        overviewContainer.addView(extraCards.buildHealthCard(plant, scans))
+        overviewContainer.addView(extraCards.buildHealthCard(plant, acceptedScans))
         extraCards.buildTreatmentPlanCard(plant)?.let { overviewContainer.addView(it) }
         overviewContainer.addView(buildAddObservationEntry())
-        extraCards.buildProgressionCard(scans, currentPlant)?.let { overviewContainer.addView(it) }
-        extraCards.buildGuideLink(scans)?.let { overviewContainer.addView(it) }
+        extraCards.buildProgressionCard(acceptedScans, currentPlant)?.let { overviewContainer.addView(it) }
+        extraCards.buildGuideLink(acceptedScans)?.let { overviewContainer.addView(it) }
         overviewContainer.addView(sectionLabel(R.string.lunar_title))
         overviewContainer.addView(
             LunarCalendarView(this).apply {
@@ -582,7 +586,7 @@ class PlantDetailActivity : AppCompatActivity() {
         )
 
         // ── Care ──────────────────────────────────────────────────────
-        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
+        val careAnchor = extraCards.buildCarePlanSlot(plant, acceptedScans)
         careContainer.addView(careAnchor)
         extraCards.buildLastWateredStrip(lastWateredAt)?.let { careContainer.addView(it) }
         extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { careContainer.addView(it) }
@@ -598,13 +602,13 @@ class PlantDetailActivity : AppCompatActivity() {
         journalContainer = tabContainer()
         historyContainer.addView(sectionLabel(R.string.plant_journal))
         historyContainer.addView(journalContainer)
-        timeline.renderTimeline(timelineContainer, plantId, scans)
+        timeline.renderTimeline(timelineContainer, plantId, acceptedScans)
         journal.renderJournal(journalContainer, plantId, journalEntries)
 
         // ── Gallery ───────────────────────────────────────────────────
         photosContainer = tabContainer()
         galleryContainer.addView(photosContainer)
-        photos.renderPhotos(photosContainer, scans, journalEntries)
+        photos.renderPhotos(photosContainer, acceptedScans, journalEntries)
 
         onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_SUMMARY, summaryAnchor)
         onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_ACTIONS, actionsAnchor)

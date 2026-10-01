@@ -118,6 +118,48 @@ def test_daily_class_cap_is_enforced(capture_store, monkeypatch):
     assert capture_store.training_counts()["total"] == 1
 
 
+def _ood_rejected_result() -> dict:
+    """Raw disease argmax rejected by the secondary OOD verdict."""
+    result = _result("leaf_spot", confidence=0.7)
+    result["warnings"] = ["nap_ood_gated"]
+    return result
+
+
+def test_ood_abstained_argmax_is_not_ingested_as_training_label(capture_store):
+    receipt = _capture(capture_store, _ood_rejected_result())
+    assert capture_store.sample_by_receipt(receipt) is None
+    assert capture_store.training_counts()["total"] == 0
+
+
+def test_analyze_ood_abstention_skips_capture_and_binds_hidden_community_claim(
+    client, capture_store, png_bytes, monkeypatch
+):
+    claims: list[str] = []
+
+    def _record_token(_token, **kwargs):
+        claims.append(kwargs["disease"])
+
+    monkeypatch.setattr(server_main, "community_record_analysis_token", _record_token)
+    monkeypatch.setattr(
+        server_main.pipeline, "analyze", lambda _image: _ood_rejected_result()
+    )
+    path = (
+        "/api/analyze?training_consent=true&"
+        f"training_consent_version={server_main.TRAINING_CONSENT_VERSION}"
+    )
+    first = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    second = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    assert first.status_code == second.status_code == 200
+    body = first.json()
+    assert body["class_name"] == "leaf_spot"  # diagnostic remains available
+    assert body["abstained"] is True
+    assert body["abstention_reason"] == "ood"
+    assert second.json()["is_repeat"] is True
+    assert capture_store.training_counts()["total"] == 0
+    # Neither the fresh nor the cached response can publish the raw argmax.
+    assert claims == ["not_a_plant", "not_a_plant"]
+
+
 def test_analyze_without_training_consent_writes_no_sample(
     client, capture_store, png_bytes, monkeypatch
 ):
