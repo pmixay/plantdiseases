@@ -331,7 +331,7 @@ dependencies {
 
     // RuStore in-app updates — installs that came from RuStore get offered new
     // builds in-place (flexible flow, util/InAppUpdateManager). Resolved from
-    // VK's artifactory (see settings.gradle.kts). On every other install
+    // RuStore's Nexus (see settings.gradle.kts). On every other install
     // (sideload, no RuStore app) the SDK fails into its failure listeners and
     // the app carries on — the usual optional-integration degradation.
     implementation("ru.rustore.sdk:appupdate:10.5.0")
