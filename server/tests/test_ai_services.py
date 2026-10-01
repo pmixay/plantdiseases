@@ -225,13 +225,14 @@ def test_call_openrouter_per_call_effort_beats_global(monkeypatch):
     assert captured["payload"]["reasoning"] == {"effort": "low"}
 
 
-def test_call_openrouter_maps_effort_the_model_rejects(monkeypatch):
-    """gpt-5.6 dropped the gpt-5.0-era "minimal" level. A config file still
-    holding it must not 400 every AI call — it maps to the nearest level the
-    configured model does accept."""
+@pytest.mark.parametrize("model", ["openai/gpt-5.6-luna", "openai/gpt-6-luna"])
+def test_call_openrouter_maps_effort_the_model_rejects(monkeypatch, model):
+    """gpt-5.6 dropped the gpt-5.0-era "minimal" level, and no gpt-6.x model
+    lists it either. A config file still holding it must not 400 every AI call
+    — it maps to the nearest level the configured model does accept."""
     import ai_services as ai
 
-    monkeypatch.setattr(ai, "OPENROUTER_MODEL", "openai/gpt-5.6-luna")
+    monkeypatch.setattr(ai, "OPENROUTER_MODEL", model)
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     ai._call_openrouter(
