@@ -210,7 +210,9 @@ def test_build_report_out_of_head_signal(populated_db: Path) -> None:
     rows = af._load_rows(populated_db, None, since_ts=None)
     ooh = af.build_report(rows)["out_of_head"]
     assert ooh["total_corrections"] == 2
-    assert ooh["out_of_head_total"] == 1
+    # Both corrected classes are in the nine-class head. The old hard-coded
+    # six-class copy counted nutrient_deficiency as out-of-head here.
+    assert ooh["out_of_head_total"] == 0
     assert ooh["by_class"]["nutrient_deficiency"] == 1
     assert ooh["by_class"]["leaf_spot"] == 1
 

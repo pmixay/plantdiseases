@@ -29,6 +29,7 @@ class ShareController(
 ) {
 
     fun share(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        if (repository.isAbstainedScan(scan)) return
         val shareText = buildString {
             append(activity.getString(R.string.share_diagnosis_header))
             append("\n\n")

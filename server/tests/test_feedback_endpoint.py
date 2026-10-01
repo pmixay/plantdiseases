@@ -321,9 +321,8 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
 
 def test_feedback_endpoint_persists_prediction_set(client, isolated_feedback_db):
     """The conformal set should land on the feedback row as compact
-    JSON. Used by the offline retraining loop to answer
-    "was the right answer inside the 90 % set?" — the diagnostic
-    that separates calibration drift from point-estimate errors.
+    JSON. Used offline for advisory set-membership error analysis beside
+    top-1; it does not turn the nominal target into measured coverage.
     """
     client.post(
         "/api/feedback",

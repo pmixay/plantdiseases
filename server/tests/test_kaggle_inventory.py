@@ -95,11 +95,11 @@ def test_augmentation_collapse_is_measured_not_stepped_over(augmented_folder):
     assert r["est_distinct_in_folder"] < 120, r
 
 
-def test_clean_folder_is_not_reported_as_contaminated(augmented_folder):
+def test_nonmatching_sample_is_not_falsely_certified_clean(augmented_folder):
     bench, work = augmented_folder
     r = ki.gate(REF, "Hibiscus_Necrosis", bench, sample=20, workdir=work)
     assert r["benchmark_hits_at_hamming6"] == 0
-    assert r["verdict"] == "clean of the benchmark"
+    assert r["verdict"] == "NO_SAMPLED_PHASH_MATCH — NOT CERTIFIED"
 
 
 def test_empty_folder_is_explicit(augmented_folder):
@@ -137,3 +137,59 @@ def test_strided_sample_reaches_the_end_of_the_folder(tmp_path, monkeypatch):
 
     r = ki.gate(REF, "F", bench, sample=60, workdir=tmp_path / "w")
     assert r["benchmark_hits_at_hamming6"] > 0, f"contaminated tail went unsampled: {r}"
+    assert r["verdict"].startswith("CONTAMINATED")
+
+
+def test_gate_refuses_an_empty_or_missing_benchmark(augmented_folder, tmp_path):
+    """No benchmark bytes is not evidence that a source is clean."""
+    _, work = augmented_folder
+    with pytest.raises(RuntimeError, match="no decodable images"):
+        ki.gate(REF, "Hibiscus_Necrosis", tmp_path / "missing", sample=10, workdir=work)
+
+
+def test_contiguous_sample_is_not_hollowed_out_by_spread(tmp_path, monkeypatch):
+    """For len≈sample, subtracting spread left a one-file/empty block."""
+    src, bench = tmp_path / "src", tmp_path / "bench"
+    _write(bench / "b.jpg", seed=999)
+    names = []
+    for i in range(61):
+        n = f"F/{i:03d}.jpg"
+        # Three originals repeated adjacently; the full block must expose this.
+        _write(src / n, seed=i // 20)
+        names.append(n)
+    monkeypatch.setattr(ki, "listing", lambda ref, hard_cap=2000: list(names))
+    monkeypatch.setattr(
+        ki, "download_file",
+        lambda ref, name, dest: (
+            dest.parent.mkdir(parents=True, exist_ok=True),
+            dest.write_bytes((src / name).read_bytes()), True,
+        )[-1],
+    )
+    monkeypatch.setattr(ki.time, "sleep", lambda *_: None)
+
+    r = ki.gate(REF, "F", bench, sample=60, workdir=tmp_path / "w")
+    assert r["block_sampled"] == 60
+    assert r["augmentation_ratio"] > 5.0
+
+
+def test_distinct_is_actual_single_linkage_not_greedy_representatives():
+    class H:
+        def __init__(self, x):
+            self.x = x
+
+        def __sub__(self, other):
+            return abs(self.x - other.x)
+
+    # 0~6 and 6~12 are edges at the radius, so all three are one component,
+    # even though the endpoints are farther apart than the radius.
+    assert ki._distinct([H(0), H(6), H(12)]) == 1
+
+
+def test_folder_filter_never_matches_a_filename_only(tmp_path, monkeypatch):
+    bench = tmp_path / "bench"
+    _write(bench / "b.jpg", seed=1)
+    monkeypatch.setattr(ki, "listing", lambda ref, hard_cap=2000: [
+        "healthy/Hibiscus_Necrosis.jpg",
+    ])
+    out = ki.gate(REF, "Hibiscus_Necrosis", bench, sample=1, workdir=tmp_path / "w")
+    assert out["verdict"] == "EMPTY"

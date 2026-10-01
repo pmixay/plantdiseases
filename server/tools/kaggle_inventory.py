@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List a Kaggle dataset's files EXHAUSTIVELY, and gate it against the benchmark.
+"""List a Kaggle dataset exhaustively and run a preliminary contamination check.
 
 Why this exists
 ---------------
@@ -11,15 +11,14 @@ folders it had never seen included an explicit ``Hibiscus_Scorch``. A negative
 result from a truncating lister is not evidence of absence, and 207 datasets'
 worth of "nothing here" was produced that way.
 
-So this tool raises rather than truncates, and it pairs the listing with the one
-gate that actually decides usability:
+So this tool raises rather than truncates, and pairs the listing with a useful
+but deliberately non-certifying check:
 
-**pHash against the OOD benchmark.** A dataset being *never trained on* does not
-make it usable — it must also not be the thing we grade with. ``aditisalvi04``
-looked like exactly the missing supply (1,200 ``Hibiscus_Scorch`` files) and
-turned out to be the benchmark's own photographs: 60/60 sampled at Hamming 0.
-Wiring it in would have destroyed the only clean eval set this project has,
-and every metric would merely have improved.
+**Sampled pHash against the diagnostic source.** A hit is sufficient to reject a
+branch, but no hit is not proof of independence: pHash misses rotations/noisy
+re-encodes, sampling misses unsampled families, and neither establishes rights,
+capture identity, or label quality. Final admission belongs to the full v9
+manifest + robust family/provenance filter.
 
 Usage
 -----
@@ -38,10 +37,12 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -65,8 +66,13 @@ def _api(path: str, tries: int = 5):
                 API + path,
                 headers={"Authorization": "Bearer " + _token(), "User-Agent": "curl/8"})
             return json.load(urllib.request.urlopen(req, timeout=90))
-        except Exception as e:                      # noqa: BLE001 — retry on 429/5xx
-            if "429" in str(e) or "50" in str(e)[:3]:
+        except urllib.error.HTTPError as e:
+            if e.code == 429 or 500 <= e.code < 600:
+                time.sleep(5 * (i + 1))
+                continue
+            raise
+        except urllib.error.URLError:
+            if i + 1 < tries:
                 time.sleep(5 * (i + 1))
                 continue
             raise
@@ -99,9 +105,15 @@ def download_file(ref: str, name: str, dest: Path) -> bool:
         req = urllib.request.Request(
             url, headers={"Authorization": "Bearer " + _token(), "User-Agent": "curl/8"})
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(urllib.request.urlopen(req, timeout=180).read())
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        tmp.write_bytes(urllib.request.urlopen(req, timeout=180).read())
+        tmp.replace(dest)
         return True
     except Exception:                               # noqa: BLE001
+        try:
+            tmp.unlink(missing_ok=True)
+        except (NameError, OSError):
+            pass
         return False
 
 
@@ -118,25 +130,47 @@ def _phash(path: Path):
 def _fetch(ref: str, names: list[str], workdir: Path) -> list[Path]:
     got = []
     for n in names:
-        dst = workdir / n.replace("/", "__")
-        if dst.exists() or download_file(ref, n, dst):
+        # Flattening with ``name.replace('/', '__')`` is not injective:
+        # ``a/b__c.jpg`` and ``a__b/c.jpg`` collide and the second sample is
+        # silently hashed as the first.  Prefix the original basename with a
+        # digest of the complete Kaggle path instead.
+        key = hashlib.sha256(n.encode("utf-8")).hexdigest()[:20]
+        dst = workdir / f"{key}_{Path(n).name}"
+        existed = dst.exists()
+        if existed or download_file(ref, n, dst):
             got.append(dst)
-        time.sleep(0.4)                             # Kaggle rate-limits hard
+        if not existed:
+            time.sleep(0.4)                         # Kaggle rate-limits hard
     return got
 
 
 def _distinct(hashes: list) -> int:
     """Single-linkage count at PHASH_MAX_HAMMING — how many photographs, not files."""
-    kept: list = []
-    for h in hashes:
-        if not any((h - k) <= PHASH_MAX_HAMMING for k in kept):
-            kept.append(h)
-    return len(kept)
+    parent = list(range(len(hashes)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        a, b = find(i), find(j)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
+    for i, h in enumerate(hashes):
+        for j in range(i):
+            if (h - hashes[j]) <= PHASH_MAX_HAMMING:
+                union(i, j)
+    return len({find(i) for i in range(len(hashes))})
 
 
 def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict:
-    """Sample a folder and pHash it against the benchmark. The verdict that
-    decides whether a source is supply or poison.
+    """Sample a folder and pHash it against the diagnostic source.
+
+    A match is a fail-closed rejection. A non-match remains uncertified and may
+    not be interpreted as source admission.
 
     Two samples, because the two questions need opposite sampling. **Contamination**
     wants coverage, so it strides evenly across the folder. **Augmentation collapse**
@@ -147,7 +181,11 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
     sample was 30 files from 30 different originals, ratio 1.0, and the number read
     as "no augmentation" when the truth was 37x.
     """
-    names = [n for n in listing(ref) if folder.lower() in n.lower()
+    if sample <= 0:
+        raise ValueError("sample must be positive")
+    needle = folder.replace("\\", "/").strip("/").casefold()
+    names = [n for n in listing(ref)
+             if needle in Path(n.replace("\\", "/")).parent.as_posix().casefold()
              and Path(n).suffix.lower() in IMG_EXTS]
     if not names:
         return {"ref": ref, "folder": folder, "verdict": "EMPTY", "files": 0}
@@ -175,12 +213,19 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
     # (often unrepresentative) first or last block.
     blk = min(sample, len(names))
     start = max(0, (len(names) - blk) // 2)
-    block = [n for n in names[start:start + blk] if n not in set(spread)]
+    # Keep the complete contiguous window, including overlap with ``spread``.
+    # Cached overlap costs no download and is essential when ``len(names)`` is
+    # close to ``sample``: subtracting the spread used to turn a 61-file folder
+    # with sample=60 into a one-file "augmentation" sample (or an empty one).
+    block = names[start:start + blk]
 
     bench_hashes = [h for h in
                     (_phash(p) for p in sorted(Path(bench).rglob("*"))
                      if p.suffix.lower() in IMG_EXTS)
                     if h is not None]
+    if not bench_hashes:
+        raise RuntimeError(
+            f"benchmark {bench} has no decodable images; contamination cannot be gated")
 
     hits, dists, clean = 0, [], []
     for p in _fetch(ref, spread, workdir):
@@ -197,15 +242,16 @@ def gate(ref: str, folder: str, bench: Path, sample: int, workdir: Path) -> dict
     block_hashes = [h for h in (_phash(p) for p in _fetch(ref, block, workdir))
                     if h is not None]
     block_distinct = _distinct(block_hashes)
-    if not block_hashes:
-        print(f"  note: folder has {len(names)} files <= sample={sample}, so the strided "
-              f"sample already covers it and there is no separate block to measure "
-              f"augmentation from. Read distinct_in_spread_sample, not augmentation_ratio.")
-
     n = len(dists)
-    verdict = ("CONTAMINATED — IS the benchmark, deny-list it" if n and hits / n > 0.5
-               else "partially contaminated — inspect" if hits
-               else "clean of the benchmark")
+    if n == 0:
+        raise RuntimeError(
+            f"none of {len(spread)} sampled files downloaded and decoded; cannot gate {ref}")
+    # One sampled match is enough to make the source unsafe. Zero sampled pHash
+    # matches is only a preliminary negative result, never certification.
+    verdict = (
+        "CONTAMINATED — sampled diagnostic overlap; deny-list leaked branch"
+        if hits else "NO_SAMPLED_PHASH_MATCH — NOT CERTIFIED"
+    )
     return {"ref": ref, "folder": folder, "files": len(names), "sampled": n,
             "benchmark_hits_at_hamming6": hits,
             "min_distance": min(dists) if dists else None,

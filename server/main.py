@@ -10,7 +10,7 @@ Stage 2:  DINOv2 ViT-S/14      — frozen backbone + LoRA + MLP head
                                  across bboxes, served via ONNX.
 
 Model families (per-bundle ``classes.json -> model_family``): ``aqua``
-(MobileNetV3-Small, distilled → TFLite INT8, on-device), ``gamma``
+(MobileNetV3-Small, distilled → TFLite float32, on-device), ``gamma``
 (production DINOv2 ViT-S/14, default), ``frontier`` (DINOv2 ViT-B/14,
 off by default — needs a GPU host). Two safety gates wrap Stage 2: a
 variance-of-Laplacian blur gate and an OOD AND-gate, with temperature
@@ -221,7 +221,16 @@ try:
     from .feedback import (
         prune_older_than as feedback_prune_older_than,
     )
-    from .pipeline import PlantDiseasePipeline
+    from .pipeline import (
+        ABSTENTION_REASON_NAP as _ABSTENTION_REASON_NAP,
+    )
+    from .pipeline import (
+        ABSTENTION_REASON_UNKNOWN as _ABSTENTION_REASON_UNKNOWN,
+    )
+    from .pipeline import (
+        PlantDiseasePipeline,
+        _derive_abstention,
+    )
     from .plant_photos import (
         get_or_fetch as plant_photo_get_or_fetch,
     )
@@ -416,7 +425,16 @@ except ImportError:
     from feedback import (
         prune_older_than as feedback_prune_older_than,
     )
-    from pipeline import PlantDiseasePipeline
+    from pipeline import (
+        ABSTENTION_REASON_NAP as _ABSTENTION_REASON_NAP,
+    )
+    from pipeline import (
+        ABSTENTION_REASON_UNKNOWN as _ABSTENTION_REASON_UNKNOWN,
+    )
+    from pipeline import (
+        PlantDiseasePipeline,
+        _derive_abstention,
+    )
     from plant_photos import (
         get_or_fetch as plant_photo_get_or_fetch,
     )
@@ -530,13 +548,10 @@ logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
-DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# PlantVision classifier. ONNX-only and architecture-neutral — it serves
-# whatever backbone+head the shipped artefact declares (classes.json
-# carries the canonical architecture + img_size). Preference order:
-# classifier_int8.onnx → classifier.onnx. This path is the anchor used to
-# locate those files + classes.json next to it (the .pth itself is not
-# loaded at serve time).
+# These anchors identify the bundle directory only. Strict verification reads
+# bundle_manifest.json and returns the exact checksummed ONNX paths; there is no
+# filename preference or graph fallback.
+DETECTOR_PATH = MODELS_DIR / "detector.onnx"
 CLASSIFIER_PATH = MODELS_DIR / "classifier.onnx"
 
 # ── Model families ───────────────────────────────────────────────────
@@ -557,10 +572,10 @@ CLASSIFIER_PATH = MODELS_DIR / "classifier.onnx"
 KNOWN_FAMILIES = ("aqua", "gamma", "frontier")
 DEFAULT_FAMILY = "gamma"
 FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
-# Frontier classifier lives in its own dir so its classes.json /
-# temperature.json / conformal.json never collide with gamma's. The
-# detector is shared (the gamma YOLOv8n crops are family-agnostic).
+# Frontier lives in its own complete manifest-bound directory so no detector,
+# classifier, taxonomy, or calibration file can collide with gamma's bundle.
 FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
+FRONTIER_DETECTOR_PATH = FRONTIER_MODELS_DIR / "detector.onnx"
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
 # ── Scan-collection trust knobs ──────────────────────────────────────
@@ -610,18 +625,17 @@ GUIDE_STATIC_DIR = Path(get_str(
 # ── Aqua on-device model hosting ─────────────────────────────────────
 # The Aqua TFLite student is served to the app so it can download + cache it
 # (and pick up updates) instead of bundling it in the APK — same rationale as
-# the guide photos. The artefact is provisioned OUT OF BAND (a trained
-# .tflite, never committed, like the server weights); when absent the manifest
-# reports available:false and the app simply falls back to the server model.
-# Drop ``aqua_classifier.tflite`` + ``classes.json`` (from notebook §5) here.
+# the guide photos. The artefact is provisioned out of band (never committed);
+# when absent the manifest reports available:false and the app falls back to
+# the server model. Publish ``aqua/aqua_classifier.tflite`` plus
+# ``aqua/classes.json`` from the same verified combined bundle here. The
+# endpoint binds both file digests and the combined-bundle identity.
 AQUA_STATIC_DIR = Path(get_str(
     "AQUA_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "aqua")))
 
-# Model weights + calibration artefacts are NOT committed to the repo and
-# are NOT auto-downloaded. Provision them out of band: drop the trained
-# files (detector.onnx, classifier.onnx, classes.json, ...) into
-# MODELS_DIR before starting the server. Boot is fail-fast — the pipeline
-# refuses to start if a required artefact is missing.
+# Model artefacts are NOT committed or auto-downloaded. Extract one complete
+# notebook bundle tree into MODELS_DIR. Boot is fail-fast on a missing/invalid
+# manifest, changed bytes, mixed runs, or a serving-contract mismatch.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 # Ceiling on the WHOLE request body, for every route and content type.
 # MAX_FILE_SIZE above only ever bound the image field of a multipart upload,
@@ -639,8 +653,9 @@ MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
 # diagnostic signal but the blur gate passes it (upscaled noise has
 # high Laplacian variance) and the detector/classifier then emit a
-# confident — and meaningless — verdict (observed live: an 8x8 noise
-# image scored viral_disease @0.72 / severity=high). Anything below
+# confident — and meaningless — verdict (before the severity fix, an 8x8
+# noise image scored viral_disease @0.72 with the old fabricated "high"
+# severity). Anything below
 # this on the short side is short-circuited to a clean 400 so the
 # client asks the user to retake instead of trusting a fake diagnosis.
 MIN_IMAGE_DIMENSION = get_int("MIN_IMAGE_DIMENSION", 48)
@@ -1447,12 +1462,13 @@ async def lifespan(app: FastAPI):
     init_community_db()
     init_telemetry_db()
     labeling.init_labeling_db()
-    # Model artefacts must already be present under MODELS_DIR (provisioned
-    # out of band). The pipeline constructor is fail-fast and aborts boot
-    # if a required weight / classes.json is missing.
+    # One complete notebook-produced bundle must already be present under
+    # MODELS_DIR. The constructor verifies its manifest, hashes, lineage and
+    # serving contract before loading the exact selected graphs.
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
+        require_bundle_manifest=True,
     )
     logger.info(
         "Pipeline initialised (classifier=%s, %d classes, family=%s)",
@@ -1460,7 +1476,8 @@ async def lifespan(app: FastAPI):
         pipeline.classifier.NUM_CLASSES,
         pipeline.classifier.model_family,
     )
-    # Frontier is opt-in. Unlike gamma, a missing/broken frontier bundle is
+    # Frontier is opt-in and carries its own fully bound detector/classifier
+    # tree. Unlike gamma, a missing/broken frontier bundle is
     # NOT fail-fast: we log and leave ``pipeline_frontier=None`` so the
     # always-on gamma path still serves. The picker / analyze gate then
     # report frontier unavailable. This keeps "enabled in config but
@@ -1468,8 +1485,9 @@ async def lifespan(app: FastAPI):
     if FRONTIER_ENABLED:
         try:
             pipeline_frontier = PlantDiseasePipeline(
-                detector_path=DETECTOR_PATH,
+                detector_path=FRONTIER_DETECTOR_PATH,
                 classifier_path=FRONTIER_CLASSIFIER_PATH,
+                require_bundle_manifest=True,
             )
             logger.info(
                 "Frontier pipeline initialised (classifier=%s, %d classes, family=%s)",
@@ -1881,6 +1899,56 @@ def _attach_dual_care(prediction_set: dict) -> None:
     ]
 
 
+def _apply_abstention_presentation(payload: dict) -> dict:
+    """Apply the public rejection contract without changing diagnostics.
+
+    ``class_name`` / ``confidence`` / ``all_probs`` / ``top_k`` remain the raw
+    probability-backed classifier diagnostics. OOD and quality rejections are
+    not accepted diagnoses, so every downstream claim (disease care, species,
+    pet toxicity, conformal set and disease flag) is neutralised. A natural
+    trained-head ``not_a_plant`` keeps its established NAP copy.
+    """
+    abstained, reason = _derive_abstention(payload)
+    payload["abstained"] = abstained
+    payload["abstention_reason"] = reason
+    payload["verdict_status"] = "abstained" if abstained else "accepted"
+    if not abstained:
+        return payload
+
+    detection = dict(payload.get("detection") or {})
+    detection["is_diseased"] = False
+    payload["detection"] = detection
+    payload["prediction_set"] = None
+    payload["is_healthy"] = False
+    payload["severity"] = "low"
+    payload["toxic_to_pets"] = False
+    payload["toxic_species_list"] = []
+    payload["toxicity_source"] = "unknown"
+    payload["species"] = {
+        "available": False,
+        "source": (
+            "skipped_nap" if reason == _ABSTENTION_REASON_NAP
+            else "skipped_abstained"
+        ),
+        "best": None,
+        "candidates": [],
+    }
+
+    if reason != _ABSTENTION_REASON_NAP:
+        neutral = DISEASES_DATABASE["unknown"]
+        payload["disease_name"] = neutral["name_en"]
+        payload["disease_name_ru"] = neutral["name_ru"]
+        payload["description"] = neutral["description_en"]
+        payload["description_ru"] = neutral["description_ru"]
+        payload["treatment"] = list(neutral["treatment_en"])
+        payload["treatment_ru"] = list(neutral["treatment_ru"])
+        # Prevention/care advice is a diagnosis-dependent claim. Keep only the
+        # explicit retake actions above until an image is accepted.
+        payload["prevention"] = []
+        payload["prevention_ru"] = []
+    return payload
+
+
 @api_router.get("/capabilities")
 async def capabilities():
     """Model-family availability for the scan-screen picker.
@@ -2124,8 +2192,8 @@ async def analyze_image(
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
     Returns bilingual (EN/RU) disease diagnosis with treatment advice,
-    detected region (with severity score) and the top-k class
-    probabilities. ``locale`` (default "en") is forwarded to PlantNet
+    detected regions, a conservative compatibility severity placeholder, and
+    the top-k class probabilities. ``locale`` (default "en") is forwarded to PlantNet
     so the species ``common_name`` is localised in the response.
 
     ``family`` selects the model tier (aqua | gamma | frontier). ``gamma``
@@ -2139,6 +2207,7 @@ async def analyze_image(
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
 
     family = _normalise_family(family)
+    requested_family = family
     # Frontier gate: short-circuit BEFORE doing any decode/inference work
     # when the family isn't available on this server. Mirrors the optional-
     # feature pattern (PlantNet / chat): HTTP 200 with ``available:false``
@@ -2156,6 +2225,21 @@ async def analyze_image(
             ),
         })
     serving_pipeline = _pipeline_for_family(family) or pipeline
+    served_family_raw = getattr(serving_pipeline.classifier, "model_family", None)
+    served_family = (
+        str(served_family_raw).strip().lower()
+        if isinstance(served_family_raw, str) and served_family_raw.strip()
+        else DEFAULT_FAMILY
+    )
+    family_fallback_reason = (
+        None
+        if served_family == requested_family
+        else (
+            "aqua_served_by_gamma"
+            if requested_family == "aqua" and served_family == "gamma"
+            else "requested_family_fallback"
+        )
+    )
 
     start_time = time.time()
 
@@ -2252,8 +2336,12 @@ async def analyze_image(
         cached_payload["is_repeat"] = True
         cached_payload["cached_at"] = cache_hit["cached_at"]
         cached_payload["elapsed_ms"] = 0
+        cached_payload["family"] = served_family
+        cached_payload["requested_family"] = requested_family
+        cached_payload["family_fallback_reason"] = family_fallback_reason
+        _apply_abstention_presentation(cached_payload)
         species_override = (species or "").strip() or None
-        if species_override:
+        if species_override and not cached_payload["abstained"]:
             overridden = lookup_pet_toxicity(species_override)
             cached_payload["toxic_to_pets"] = overridden["toxic_to_pets"]
             cached_payload["toxic_species_list"] = overridden["species_list"]
@@ -2296,10 +2384,15 @@ async def analyze_image(
     all_probs = result.get("all_probs", {})
     warnings = list(result.get("warnings", []))
     top_k = list(result.get("top_k", []))
+    abstained, abstention_reason = _derive_abstention(result)
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
-    _record_analysis(class_name, elapsed * 1000)
+    metric_class = (
+        f"abstained:{abstention_reason or _ABSTENTION_REASON_UNKNOWN}"
+        if abstained else class_name
+    )
+    _record_analysis(metric_class, elapsed * 1000)
 
     logger.info(
         "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s warnings=%s",
@@ -2330,23 +2423,22 @@ async def analyze_image(
     # is conveyed by the `warnings` array (`uncertain_healthy`,
     # `disease_suspected:<class>`) and the top-k alternatives card,
     # not by silently flipping this boolean.
-    is_healthy_effective = bool(disease_info.get("is_healthy", False))
+    is_healthy_effective = (
+        not abstained and bool(disease_info.get("is_healthy", False))
+    )
 
     # Conformal prediction set: classes the model can't rule out at the
     # configured coverage level. Annotated with bilingual names so the
-    # UI can render "leaf_spot OR viral_disease @ 90%"
+    # UI can render an advisory "leaf_spot OR viral_disease" set with its
+    # nominal target clearly distinguished from measured coverage.
     # without a second lookup table. ``None`` when calibration data
     # isn't yet available — clients must treat it as optional.
-    prediction_set = result.get("prediction_set")
+    prediction_set = None if abstained else result.get("prediction_set")
     if prediction_set is not None:
-        # ``advisory`` is True until the conformal calibration set
-        # carries ≥ 50 samples per class. Today's per-class counts
-        # (gray_mold_botrytis=5, leaf_scorch_underwatering=3,
-        # powdery_mildew=5, not_a_plant=0 — see
-        # ``server/models/model_card.json``) are too sparse for the
-        # stated 90 % coverage to be statistically meaningful. The
-        # client-facing flag tells the UI to render the set as
-        # "alternative candidates" rather than "guaranteed coverage".
+        # Calibration-row coverage is not an independent validation. Keep the
+        # set advisory until a locked, family-independent served-path test
+        # establishes coverage for this exact graph + detector/crop/vote
+        # contract; no per-class-count heuristic can substitute for that.
         prediction_set = {
             **prediction_set,
             "advisory": True,
@@ -2377,10 +2469,15 @@ async def analyze_image(
     # block in the response either way so the client can show the
     # match confidence.
     species_payload: dict | None = None
-    try:
-        species_payload = await species_task
-    except Exception:  # noqa: BLE001 — defensive; helper already swallows
-        species_payload = None
+    if abstained:
+        species_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await species_task
+    else:
+        try:
+            species_payload = await species_task
+        except Exception:  # noqa: BLE001 — defensive; helper already swallows
+            species_payload = None
 
     # PlantNet on a non-plant photo always returns a low-quality guess
     # ("Phaseolus vulgaris" because there was some green pixel noise)
@@ -2388,9 +2485,14 @@ async def analyze_image(
     # pipeline lands on ``not_a_plant`` we suppress the species block
     # entirely — the LRU cache in ``identify_species`` keeps the API
     # call from being wasted on a repeat upload of the same image.
-    if class_name == "not_a_plant":
+    if abstained:
         species_payload = {
-            "available": False, "source": "skipped_nap",
+            "available": False,
+            "source": (
+                "skipped_nap"
+                if abstention_reason == _ABSTENTION_REASON_NAP
+                else "skipped_abstained"
+            ),
             "best": None, "candidates": [],
         }
 
@@ -2400,7 +2502,7 @@ async def analyze_image(
     # ``source="unknown"`` and the client renders an "unconfirmed"
     # copy rather than falsely reassuring.
     auto_best = (species_payload or {}).get("best") or {}
-    toxicity_species = species or auto_best.get("scientific_name")
+    toxicity_species = None if abstained else (species or auto_best.get("scientific_name"))
     toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
@@ -2417,18 +2519,16 @@ async def analyze_image(
     await loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
 
     response_payload = {
-        # Canonical class key the pipeline landed on AFTER all
-        # post-processing (weak-healthy reroute, OOD gate, etc.).
-        # ``disease_name`` / ``disease_name_ru`` are the localised
-        # display strings derived from this key. Clients should echo
-        # ``class_name`` back as ``predicted_class`` on /api/feedback
-        # — argmax(all_probs) is the PRE-reroute class and would
-        # poison per-class accuracy metrics if used instead.
+        # Probability-backed classifier argmax. Rejection gates never replace
+        # it: clients use ``abstained`` / ``abstention_reason`` to decide
+        # whether this diagnostic may be presented as an accepted diagnosis.
         "class_name": class_name,
         # Which model tier actually produced this verdict. Lets the client
         # confirm it got the family it asked for (and fall back gracefully if
         # a future server downgrades the request).
-        "family": family,
+        "family": served_family,
+        "requested_family": requested_family,
+        "family_fallback_reason": family_fallback_reason,
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),
@@ -2444,6 +2544,9 @@ async def analyze_image(
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
+        "abstained": abstained,
+        "abstention_reason": abstention_reason,
+        "verdict_status": "abstained" if abstained else "accepted",
         "prediction_set": prediction_set,
         "toxic_to_pets": toxicity["toxic_to_pets"],
         "toxic_species_list": toxicity["species_list"],
@@ -2461,6 +2564,7 @@ async def analyze_image(
         # ISSUED_SCAN_ID_TTL_DAYS.
         "scan_id": scan_id,
     }
+    _apply_abstention_presentation(response_payload)
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.
@@ -2470,7 +2574,7 @@ async def analyze_image(
     # nothing; cache hits return earlier and are never double-recorded.
     # ``img.copy()`` is defensive — the task must never share pixels with
     # anything the handler might still touch.
-    if SCAN_RECORDING_ENABLED and class_name != "not_a_plant":
+    if SCAN_RECORDING_ENABLED and not response_payload["abstained"]:
         background_tasks.add_task(
             _record_scan_candidate, img.copy(), scan_id, class_name,
             confidence, list((result.get("prediction_set") or {}).get("classes") or []),
@@ -2891,12 +2995,10 @@ class FeedbackRequest(BaseModel):
     # against any future image-side analytics without the image bytes
     # leaving the device.
     image_hash: str | None = Field(default=None, min_length=32, max_length=128)
-    # Conformal prediction set the server returned with the original
-    # /api/analyse response (the classes the model couldn't rule out
-    # at the configured coverage). Persisting it on the feedback row
-    # lets us answer "was the correct answer in the 90 % set?" — a
-    # cleaner diagnostic than top1-only accuracy because it
-    # separates calibration failures from point-estimate failures.
+    # Advisory conformal prediction set returned with the original response.
+    # Persisting it supports set-membership/error analysis beside top-1. The
+    # nominal target is not claimed as measured coverage until a locked,
+    # independent served-path evaluation establishes it.
     # Capped at 16 keys / 64 chars each as a sanity guard.
     prediction_set: list[str] | None = Field(default=None, max_length=16)
 
@@ -4877,6 +4979,103 @@ def _aqua_model_sha256(path: Path, mtime: float, size: int) -> str:
     return h.hexdigest()
 
 
+def _valid_aqua_classes(meta: object) -> bool:
+    """Return whether an Aqua sidecar is installable by the Android runtime.
+
+    Keep this contract intentionally narrow and mirrored in
+    ``AquaModelManager.validClasses``.  Reporting a model as available with a
+    merely parseable sidecar causes a guaranteed client-side install failure,
+    so missing preprocessing or output semantics fail closed here.
+    """
+    if not isinstance(meta, dict):
+        return False
+    if any(
+        key in meta
+        for key in (
+            "_model_sha256",
+            "_classes_sha256",
+            "_bundle_sha256",
+            "_model_version",
+        )
+    ):
+        return False
+    names = meta.get("class_names")
+    if (
+        not isinstance(names, list)
+        or not names
+        or any(not isinstance(name, str) or not name or name.strip() != name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        return False
+    if meta.get("model_family") != "aqua":
+        return False
+    version = meta.get("model_version")
+    if not isinstance(version, str) or not version.strip():
+        return False
+
+    training = meta.get("training")
+    if not isinstance(training, dict):
+        return False
+    img_size = training.get("img_size")
+    resize_ratio = training.get("eval_resize_ratio")
+    if isinstance(img_size, bool) or not isinstance(img_size, int) or not 1 <= img_size <= 4096:
+        return False
+    if (
+        isinstance(resize_ratio, bool)
+        or not isinstance(resize_ratio, (int, float))
+        or not math.isfinite(float(resize_ratio))
+        or not 1.0 <= float(resize_ratio) <= 4.0
+    ):
+        return False
+
+    inference = meta.get("inference")
+    if not isinstance(inference, dict):
+        return False
+    if (
+        inference.get("layout") != "NHWC"
+        or inference.get("tta") != "none"
+        or inference.get("output_semantics") != "logits"
+    ):
+        return False
+
+    def _valid_triple(key: str, *, positive: bool) -> bool:
+        values = inference.get(key)
+        if not isinstance(values, list) or len(values) != 3:
+            return False
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False
+            number = float(value)
+            if not math.isfinite(number) or (positive and number <= 0.0):
+                return False
+        return True
+
+    return _valid_triple("normalize_mean", positive=False) and _valid_triple(
+        "normalize_std", positive=True,
+    )
+
+
+def _aqua_classes_sha256(meta: dict) -> str:
+    """Hash the sidecar's JSON meaning, independent of whitespace/key order."""
+    canonical = json.dumps(
+        meta,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _aqua_bundle_sha256(model_sha256: str, classes_sha256: str) -> str:
+    """Bind the model and semantic sidecar into one freshness identity."""
+    digest = hashlib.sha256()
+    digest.update(b"plantvision-aqua-bundle-v1\0")
+    digest.update(bytes.fromhex(model_sha256))
+    digest.update(bytes.fromhex(classes_sha256))
+    return digest.hexdigest()
+
+
 @api_router.get("/aqua/manifest")
 async def aqua_manifest():
     """Describe the hosted Aqua on-device model so the app can decide whether
@@ -4884,20 +5083,36 @@ async def aqua_manifest():
     — the app then just uses the server model. ``sha256`` lets the client skip
     a re-download when it already has the current bytes; ``classes`` is the
     sidecar metadata (class order, input size, normalisation) the app needs to
-    run the model."""
+    run the model.  ``bundle_sha256`` binds model bytes to the semantic
+    sidecar, so changing class order or preprocessing also forces an update."""
     model_path = AQUA_STATIC_DIR / "aqua_classifier.tflite"
     meta_path = AQUA_STATIC_DIR / "classes.json"
     if not model_path.is_file() or not meta_path.is_file():
         return {"available": False}
     try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        meta = json.loads(
+            meta_path.read_text(encoding="utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"non-standard JSON constant {value}")
+            ),
+        )
+    except (OSError, ValueError, TypeError):
+        return {"available": False}
+    if not _valid_aqua_classes(meta):
         return {"available": False}
     st = model_path.stat()
+    if st.st_size <= 0 or st.st_size > 64 * 1024 * 1024:
+        return {"available": False}
+    model_sha = _aqua_model_sha256(model_path, st.st_mtime, st.st_size)
+    classes_sha = _aqua_classes_sha256(meta)
     return {
         "available": True,
-        "version": meta.get("model_version", "unknown"),
-        "sha256": _aqua_model_sha256(model_path, st.st_mtime, st.st_size),
+        "version": meta["model_version"],
+        # ``sha256`` is retained for old clients and always means model bytes.
+        "sha256": model_sha,
+        "classes_sha256": classes_sha,
+        "bundle_sha256": _aqua_bundle_sha256(model_sha, classes_sha),
+        "bundle_schema_version": 1,
         "size_bytes": st.st_size,
         "classes": meta,
     }

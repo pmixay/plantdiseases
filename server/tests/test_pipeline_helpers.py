@@ -1,9 +1,10 @@
 """Pure-helper tests for the PlantVision pipeline.
 
-These tests only exercise the deterministic helpers (post-processing
-rules, healthy fallback, OOD reroute, severity scoring, taxonomy
-constants). They do not instantiate ``PlantDiseasePipeline`` directly
-because production startup is fail-fast and requires trained weights.
+These tests exercise deterministic helpers and model-free pipeline plumbing
+(post-processing, OOD abstention, severity contract, taxonomy
+constants). A plumbing regression allocates ``PlantDiseasePipeline`` via
+``__new__`` with complete stubs; production ``__init__`` is never called
+because startup is fail-fast and requires trained weights.
 The HTTP-level contract is covered separately in ``test_endpoints.py``
 via the ``FakePipeline`` injected by ``conftest.py``.
 """
@@ -73,23 +74,20 @@ def test_taxonomy_is_v2x_disease_only():
         )
 
 
-def test_borderline_healthy_above_floor_is_not_force_converted():
-    """THE FALSE-POSITIVE FIX. A confident-plurality healthy (at/above
-    HEALTHY_REROUTE_FLOOR) with a NEARBY disease must NOT be force-converted
-    to that disease. The old gap gate fired here and manufactured disease
-    false positives on healthy plants (top-1 healthy ~0.54 / disease ~0.40
-    flipped to the disease). Now the verdict stays healthy and the suspected
-    disease is surfaced via the soft ``uncertain_healthy`` /
-    ``disease_suspected`` warnings (and top_k) WITHOUT asserting it.
+def test_borderline_healthy_is_not_force_converted():
+    """A healthy argmax with a nearby disease must not be force-converted.
+
+    The previous gap gate manufactured disease false positives while making
+    ``class_name`` disagree with the probability argmax.  Suspicion remains
+    visible in warnings and top-k without asserting the lower-probability class.
     """
-    from pipeline import HEALTHY_REROUTE_FLOOR, _apply_postprocessing_rules
+    from pipeline import _apply_postprocessing_rules
 
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.62
     probs["leaf_spot"] = 0.46     # close behind, but healthy keeps the majority
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
-    assert probs["healthy"] >= HEALTHY_REROUTE_FLOOR   # confident plurality
     assert probs["healthy"] - probs["leaf_spot"] < 0.30  # narrow gap
 
     classification = {
@@ -112,18 +110,9 @@ def test_borderline_healthy_above_floor_is_not_force_converted():
     )
 
 
-def test_below_majority_healthy_still_reroutes_for_detection():
-    """Counterpart guard: detection efficiency is preserved. When healthy
-    drops below the majority floor and the strongest disease is competitive
-    (≥ HEALTHY_REROUTE_DISEASE_FLOOR), the hard reroute STILL fires — a
-    genuinely sick plant the model under-reads as weak healthy is surfaced
-    as the disease, just honestly low-confidence.
-    """
-    from pipeline import (
-        HEALTHY_REROUTE_DISEASE_FLOOR,
-        HEALTHY_REROUTE_FLOOR,
-        _apply_postprocessing_rules,
-    )
+def test_submajority_healthy_preserves_argmax_and_surfaces_suspicion():
+    """A diffuse softmax is uncertainty, not permission to change its argmax."""
+    from pipeline import _apply_postprocessing_rules
 
     probs = {n: 0.0 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.44       # below the majority floor
@@ -132,9 +121,6 @@ def test_below_majority_healthy_still_reroutes_for_detection():
     others = [n for n in probs if n not in ("healthy", "leaf_spot")]
     for n in others:
         probs[n] = leftover / len(others)
-    assert probs["healthy"] < HEALTHY_REROUTE_FLOOR
-    assert probs["leaf_spot"] >= HEALTHY_REROUTE_DISEASE_FLOOR
-
     classification = {
         "class_name": "healthy",
         "confidence": probs["healthy"],
@@ -143,30 +129,27 @@ def test_below_majority_healthy_still_reroutes_for_detection():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "leaf_spot", (
-        "sub-majority healthy with a competitive disease must still reroute"
-    )
-    assert "weak_healthy_rerouted" in out["warnings"]
+    assert out["class_name"] == "healthy"
+    assert out["confidence"] == pytest.approx(probs["healthy"])
+    assert out["top_k"][0]["class"] == "healthy"
+    assert "weak_healthy_rerouted" not in out["warnings"]
+    assert "uncertain_healthy" in out["warnings"]
+    assert "disease_suspected:leaf_spot" in out["warnings"]
 
 
 def test_healthy_gate_attaches_warning_when_gap_is_wide():
-    """The gap floor must NOT fire when the margin to the strongest
-    disease is wide enough — even if healthy itself is in the weak
-    (< 0.75) band. Verdict stays healthy with the soft
-    ``uncertain_healthy`` / disease-suspected warnings.
-    """
-    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
+    """Weak healthy remains healthy even when its nearest-disease gap is wide."""
+    from pipeline import _apply_postprocessing_rules
 
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
     # ~0.69 healthy, ~0.23 leaf_spot post-normalisation: gap ≈ 0.46,
-    # safely above HEALTHY_GAP_MARGIN. Healthy stays below 0.75 so
-    # the soft uncertainty warning still attaches.
+    # a wide gap. Healthy stays below 0.75 so the uncertainty warning attaches.
     probs["healthy"] = 0.70
     probs["leaf_spot"] = 0.23
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
     gap = probs["healthy"] - probs["leaf_spot"]
-    assert gap >= HEALTHY_GAP_MARGIN
+    assert gap >= 0.30
 
     classification = {
         "class_name": "healthy",
@@ -176,16 +159,16 @@ def test_healthy_gate_attaches_warning_when_gap_is_wide():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "healthy", "gate must NOT reroute on a wide gap"
+    assert out["class_name"] == "healthy", "postprocessing must preserve the argmax"
     assert "uncertain_healthy" in out["warnings"]
     assert "weak_healthy_rerouted" not in out["warnings"]
 
 
-def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
-    """When healthy is below 0.50 and a disease alternative crosses
-    ``HEALTHY_DISEASE_FLOOR``, the verdict must swap to that disease.
-    Matches the screenshot bug: 0.29 healthy / 0.24 leaf_spot /
-    0.21 gray_mold_botrytis should not be reported as a healthy plant.
+def test_diffuse_healthy_screenshot_case_keeps_probability_argmax():
+    """The 0.29/0.24 screenshot case is ambiguous, not a disease verdict.
+
+    The model's highest measured probability remains the reported class.  The
+    suspected disease still rides in warnings and ranked alternatives.
     """
     from pipeline import _apply_postprocessing_rules
 
@@ -207,24 +190,17 @@ def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "leaf_spot", (
-        "weak-healthy reroute must surface the strongest disease alternative"
-    )
-    assert "weak_healthy_rerouted" in out["warnings"]
+    assert out["class_name"] == "healthy"
+    assert out["confidence"] == pytest.approx(0.29)
+    assert out["all_probs"] == probs
+    assert [item["class"] for item in out["top_k"][:2]] == ["healthy", "leaf_spot"]
+    assert "weak_healthy_rerouted" not in out["warnings"]
+    assert "uncertain_healthy" in out["warnings"]
+    assert "disease_suspected:leaf_spot" in out["warnings"]
 
 
-def test_weak_healthy_does_not_reroute_onto_low_mass_disease():
-    """Regression: when healthy is below HEALTHY_REROUTE_FLOOR (0.65) but
-    the strongest disease has only the soft-warning floor of mass
-    (HEALTHY_DISEASE_FLOOR = 0.12, well below
-    HEALTHY_REROUTE_DISEASE_FLOOR = 0.25), the absolute_hit path must
-    NOT fire. Otherwise a 0.54 healthy gets flipped to a 0.12 disease
-    verdict the UI then has to demote with very_low_confidence — the
-    user sees `gray_mold_botrytis 12%` instead of `healthy 54%` with
-    a disease_suspected warning, which is the wrong UX. The gap_hit
-    path also stays silent here because the 0.42 gap is wider than
-    HEALTHY_GAP_MARGIN.
-    """
+def test_weak_healthy_does_not_substitute_low_mass_disease():
+    """A 0.54 healthy cannot become a 0.12 disease through postprocessing."""
     from pipeline import _apply_postprocessing_rules
 
     probs = {n: 0.0 for n in EXPECTED_CLASSES}
@@ -243,8 +219,7 @@ def test_weak_healthy_does_not_reroute_onto_low_mass_disease():
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
     assert out["class_name"] == "healthy", (
-        "must not reroute a 0.54 healthy onto a 0.12 disease — the rerouted "
-        "verdict would itself fall below VERY_LOW_CONFIDENCE_FLOOR"
+        "postprocessing cannot substitute a lower-probability disease"
     )
     assert "weak_healthy_rerouted" not in out["warnings"]
     # Soft-warning path must still surface the suspected disease.
@@ -255,18 +230,15 @@ def test_weak_healthy_does_not_reroute_onto_low_mass_disease():
 
 
 def test_weak_healthy_keeps_class_when_no_disease_alternative():
-    """If healthy is weak but every disease class is also tiny, we
-    leave the verdict alone — there's nothing better to swap to. The
-    soft ``uncertain_healthy`` / ``low_confidence`` warnings still
-    fire so the UI can demote the confidence in the card.
-    """
+    """A weak but genuine healthy argmax stays healthy with soft warnings."""
     from pipeline import _apply_postprocessing_rules
 
-    probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    probs["healthy"] = 0.40   # below the 0.50 reroute floor
-    probs["not_a_plant"] = 0.55
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
+    probs = {n: 0.0 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.40
+    probs["not_a_plant"] = 0.35
+    diseases = [n for n in probs if n not in ("healthy", "not_a_plant")]
+    for name in diseases:
+        probs[name] = 0.25 / len(diseases)
     classification = {
         "class_name": "healthy",
         "confidence": probs["healthy"],
@@ -275,7 +247,7 @@ def test_weak_healthy_keeps_class_when_no_disease_alternative():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    # No disease class hits HEALTHY_DISEASE_FLOOR — keep healthy verdict.
+    # No disease class hits HEALTHY_DISEASE_FLOOR and healthy is the argmax.
     assert out["class_name"] == "healthy"
     assert "weak_healthy_rerouted" not in out["warnings"]
 
@@ -324,7 +296,7 @@ def test_very_low_confidence_warning_fires_on_disease_under_floor():
     from pipeline import VERY_LOW_CONFIDENCE_FLOOR, _apply_postprocessing_rules
 
     # 0.31 < 0.40 — clearly below the floor. Other classes share the
-    # remaining mass uniformly so the gap-reroute can't kick in.
+    # remaining mass uniformly so it remains the measured argmax.
     probs = _uniform_probs()
     probs["gray_mold_botrytis"] = 0.31
     leftover = 1.0 - 0.31
@@ -472,24 +444,52 @@ def test_fold_whole_frame_does_not_override_a_strong_crop_majority():
     assert max(out, key=out.get) == "leaf_spot"
 
 
-def test_postprocessor_emits_nap_ood_warning():
-    """The pipeline tags an OOD-rerouted result so the UI can explain it
-    differently from a "no leaves found" NAP."""
+def test_ood_abstention_preserves_classifier_distribution_and_argmax():
+    """OOD evidence is a rejection signal, not a NAP class probability."""
     from pipeline import _apply_postprocessing_rules
 
-    probs = _uniform_probs()
-    probs["not_a_plant"] = 0.7
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
+    probs = {name: 0.0 for name in EXPECTED_CLASSES}
+    probs["leaf_spot"] = 0.70
+    probs["not_a_plant"] = 0.20
+    probs["healthy"] = 0.10
     classification = {
-        "class_name": "not_a_plant",
-        "confidence": probs["not_a_plant"],
+        "class_name": "leaf_spot",
+        "confidence": probs["leaf_spot"],
         "all_probs": probs,
         "low_confidence": False,
         "_ood_gated": True,
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "leaf_spot"
+    assert out["confidence"] == pytest.approx(0.70)
+    assert out["all_probs"] == probs
+    assert out["top_k"][0] == {"class": "leaf_spot", "confidence": 0.7}
+    assert out["_ood_gated"] is True
     assert "nap_ood_gated" in out["warnings"]
+
+
+def test_postprocessor_repairs_stale_class_and_confidence_from_probabilities():
+    """Temperature-calibrated ``all_probs`` is the source of truth."""
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {name: 0.0 for name in EXPECTED_CLASSES}
+    probs["leaf_spot"] = 0.72
+    probs["healthy"] = 0.28
+    out = _apply_postprocessing_rules(
+        {
+            # Simulate stale pre-calibration summary fields.
+            "class_name": "healthy",
+            "confidence": 0.91,
+            "all_probs": probs,
+            "low_confidence": False,
+        },
+        list(probs),
+    )
+
+    assert out["class_name"] == "leaf_spot"
+    assert out["confidence"] == pytest.approx(0.72)
+    assert out["top_k"][0]["class"] == "leaf_spot"
 
 
 def test_is_diseased_uses_disease_min_confidence():
@@ -500,6 +500,244 @@ def test_is_diseased_uses_disease_min_confidence():
     assert DISEASE_MIN_CONFIDENCE >= 0.5
     assert "healthy" in _NON_DISEASE
     assert "not_a_plant" in _NON_DISEASE
+
+
+def test_is_diseased_is_false_for_ood_abstention():
+    """A rejected frame must not enter downstream disease workflows."""
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    assert real._is_diseased(
+        {"class_name": "leaf_spot", "confidence": 0.99, "_ood_gated": True}
+    ) is False
+
+
+def test_analyze_computes_disease_flag_after_probability_canonicalisation(monkeypatch):
+    """Regression: response class and ``is_diseased`` must share one verdict.
+
+    This is model-free plumbing: the stub intentionally supplies stale summary
+    fields while its probability vector has a confident disease argmax.
+    """
+    from PIL import Image
+
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+
+    class StubClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot", "not_a_plant"]
+
+    class StubDetector:
+        @staticmethod
+        def detect(_img):
+            box = {"x": 0, "y": 0, "width": 64, "height": 64, "confidence": 0.9}
+            return {"detections": [box], "confidence": 0.9}
+
+    pipe.classifier = StubClassifier()
+    pipe.detector = StubDetector()
+    pipe.conformal = None
+    pipe._pick_primary = lambda _img, detections: (
+        detections[0],
+        {
+            "class_name": "healthy",
+            "confidence": 0.9,
+            "all_probs": {"healthy": 0.15, "leaf_spot": 0.80, "not_a_plant": 0.05},
+            "low_confidence": False,
+            "_voted_over": 1,
+        },
+    )
+    pipe._should_route_to_nap = lambda _classification, _det_conf: False
+    monkeypatch.setattr(pipeline_module, "_variance_of_laplacian", lambda _img: 999.0)
+
+    out = pipe.analyze(Image.new("RGB", (64, 64)))
+
+    assert out["class_name"] == "leaf_spot"
+    assert out["confidence"] == pytest.approx(0.80)
+    assert out["detection"]["is_diseased"] is True
+    assert out["severity"] == "low"
+    assert out["abstained"] is False
+    assert out["abstention_reason"] is None
+    assert out["verdict_status"] == "accepted"
+
+
+def test_ood_abstention_suppresses_plant_conformal_claim():
+    """RAPS coverage does not apply once the runtime rejects the frame."""
+    import pipeline as pipeline_module
+    from conformal import ConformalConfig
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+    pipe.conformal = ConformalConfig(method="aps", alpha=0.1, q_hat=0.9)
+    probs = {"healthy": 0.1, "leaf_spot": 0.8, "not_a_plant": 0.1}
+
+    assert pipe._build_prediction_set(
+        probs, "leaf_spot", rejected=True
+    ) is None
+
+
+def test_public_abstention_contract_distinguishes_ood_quality_and_natural_nap():
+    from pipeline import _derive_abstention
+
+    assert _derive_abstention({
+        "class_name": "leaf_spot", "warnings": ["nap_ood_gated"],
+    }) == (True, "ood")
+    assert _derive_abstention({
+        "class_name": "unknown", "warnings": ["blurry_image"],
+    }) == (True, "image_quality")
+    assert _derive_abstention({
+        "class_name": "not_a_plant", "warnings": [],
+    }) == (True, "not_a_plant")
+    assert _derive_abstention({
+        "class_name": "healthy", "warnings": ["uncertain_healthy"],
+    }) == (False, None)
+    assert _derive_abstention({
+        "class_name": "leaf_spot",
+        "abstention_reason": "ood",
+        "warnings": [],
+    }) == (True, "ood")
+    assert _derive_abstention({
+        "class_name": "healthy",
+        "abstained": True,
+        "verdict_status": "abstained",
+        "warnings": [],
+    }) == (True, "unknown")
+
+
+def test_blur_response_does_not_fabricate_nap_probability(monkeypatch):
+    """The pre-classifier quality gate has no softmax evidence to report."""
+    from PIL import Image
+
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+
+    class StubClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot", "not_a_plant"]
+
+    pipe.classifier = StubClassifier()
+    pipe.conformal = None
+    monkeypatch.setattr(pipeline_module, "_variance_of_laplacian", lambda _img: 0.0)
+
+    out = pipe.analyze(Image.new("RGB", (64, 64)))
+
+    assert out["class_name"] == "unknown"
+    assert out["confidence"] == 0.0
+    assert out["all_probs"] == {}
+    assert out["top_k"] == []
+    assert out["abstained"] is True
+    assert out["abstention_reason"] == "image_quality"
+    assert out["detection"]["is_diseased"] is False
+
+
+def test_ood_gate_checks_healthy_but_bypasses_natural_nap_top1():
+    """Sharp junk predicted healthy must not evade otherwise-valid OOD checks."""
+    from pipeline import _decide_nap_route
+
+    common = {
+        "class_names": ["healthy", "leaf_spot", "not_a_plant"],
+        "det_conf": 0.1,
+        "ood_score": 0.9,
+        "ood_threshold": 0.5,
+        "ml_floor": 0.0,
+        "max_logit": 0.0,
+        "head_nap": 0.10,
+        "head_mass_floor": 0.05,
+    }
+    healthy, _ = _decide_nap_route(class_name="healthy", **common)
+    natural_nap, _ = _decide_nap_route(class_name="not_a_plant", **common)
+
+    assert healthy is True
+    assert natural_nap is False
+
+
+def test_served_ood_gate_requires_exact_pipeline_calibration_contract():
+    import pipeline as pipeline_module
+
+    valid = {
+        "ood": {
+            "served_gate": {
+                "schema_version": 1,
+                "calibration_mode": "full_served_pipeline",
+                "embedding_aggregation": "min_member_distance",
+                "max_logit_aggregation": "max_member_logit",
+                "detector_confidence_floor": pipeline_module.NAP_DETECTOR_CONF_FLOOR,
+                "fold_whole_frame_vote": pipeline_module.FOLD_WHOLE_FRAME_VOTE,
+            }
+        }
+    }
+    assert pipeline_module._served_ood_gate_contract(valid)[0] is True
+    assert pipeline_module._served_ood_gate_contract({})[0] is False
+
+    stale = {
+        "ood": {"served_gate": dict(valid["ood"]["served_gate"])}
+    }
+    stale["ood"]["served_gate"]["embedding_aggregation"] = "single_image"
+    matched, reason = pipeline_module._served_ood_gate_contract(stale)
+    assert matched is False
+    assert "embedding_aggregation" in reason
+
+
+def test_pipeline_disables_secondary_ood_without_served_contract():
+    """Even firing detector/MaxLogit evidence stays advisory without binding."""
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+
+    class StubClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot", "not_a_plant"]
+
+    pipe.classifier = StubClassifier()
+    pipe._secondary_ood_gate_enabled = False
+    pipe.embedding_ood = None
+    pipe.nap_max_logit_floor = 4.0
+    pipe.nap_max_logit_scope = "plant_only"
+    pipe._max_logit_key = "plant_max_logit"
+    pipe.nap_head_mass_floor = 0.05
+    classification = {
+        "class_name": "leaf_spot",
+        "all_probs": {"healthy": 0.1, "leaf_spot": 0.8, "not_a_plant": 0.1},
+        "plant_max_logit": 1.0,
+    }
+    assert pipe._should_route_to_nap(classification, det_conf=0.0) is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "[]",
+        "{}",
+        '{"temperature": true}',
+        '{"temperature": "1.2"}',
+        '{"temperature": Infinity}',
+        '{"temperature": 0.01}',
+        '{"temperature": 12.0}',
+    ],
+)
+def test_present_invalid_temperature_sidecar_fails_readiness(tmp_path, payload):
+    from pipeline import _load_temperature
+
+    model_path = tmp_path / "classifier.onnx"
+    (tmp_path / "temperature.json").write_text(payload, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="temperature sidecar"):
+        _load_temperature(model_path)
+
+
+def test_temperature_sidecar_missing_is_noop_but_tta_mismatch_fails(tmp_path):
+    from pipeline import _load_temperature
+
+    model_path = tmp_path / "classifier.onnx"
+    assert _load_temperature(model_path, expected_tta="none") == 1.0
+
+    (tmp_path / "temperature.json").write_text(
+        '{"temperature": 1.25, "tta": "hflip"}', encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="serving uses tta"):
+        _load_temperature(model_path, expected_tta="none")
+
+    assert _load_temperature(model_path, expected_tta="hflip") == pytest.approx(1.25)
 
 
 def test_max_logit_floor_resolver_handles_null_and_explicit_values():
@@ -648,24 +886,23 @@ def test_severity_low_for_non_disease():
     ) == "low"
 
 
-def test_severity_escalates_with_area_and_margin():
-    """A widespread, confident disease must score high; a tiny faint
-    bbox must stay low."""
+def test_severity_does_not_treat_leaf_box_area_as_lesion_extent():
+    """Leaf localisation and class confidence cannot measure severity."""
     from pipeline import compute_severity
 
     big_box = {"width": 400, "height": 400}  # >35 % of a 640×640 frame
     small_box = {"width": 30, "height": 30}
 
-    high = compute_severity(
+    large_leaf = compute_severity(
         class_name="leaf_spot", confidence=0.92, healthy_prob=0.05,
         primary_box=big_box, image_size=(640, 640), is_diseased=True,
     )
-    low = compute_severity(
+    small_leaf = compute_severity(
         class_name="leaf_spot", confidence=0.66, healthy_prob=0.40,
         primary_box=small_box, image_size=(640, 640), is_diseased=True,
     )
-    assert high == "high"
-    assert low == "low"
+    assert large_leaf == "low"
+    assert small_leaf == "low"
 
 
 def test_blur_gate_rejects_uniform_image():
@@ -732,3 +969,88 @@ def test_viral_high_confidence_keeps_caveat_without_demotion():
 
     assert "viral_variegation_caveat" in out["warnings"]
     assert "low_confidence" not in out["warnings"]
+
+
+def test_served_gate_applies_served_thresholds_not_the_single_image_ones():
+    """The overlay must reject on ``ood.served_gate.embedding_threshold`` (fitted
+    on min-over-members) and never on ``ood.embedding.threshold`` (fitted one
+    image at a time). A served min distance between the two thresholds is the
+    exact case that used to be mis-gated."""
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    pipe = real.__new__(real)
+
+    class StubClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot", "not_a_plant"]
+
+    class StubBank:
+        threshold = 0.55   # single-image threshold: provenance only
+
+    pipe.classifier = StubClassifier()
+    pipe._secondary_ood_gate_enabled = True
+    pipe.embedding_ood = StubBank()
+    pipe._served_embedding_threshold = 0.70
+    pipe.nap_max_logit_floor = 0.0
+    pipe.nap_max_logit_scope = "plant_only"
+    pipe._max_logit_key = "plant_max_logit"
+    pipe.nap_head_mass_floor = 0.05
+    base = {
+        "class_name": "leaf_spot",
+        "all_probs": {"healthy": 0.2, "leaf_spot": 0.6, "not_a_plant": 0.2},
+        "max_logit": 1.0, "plant_max_logit": 1.0,
+    }
+    between = {**base, "ood_score": 0.62}   # > single-image 0.55, < served 0.70
+    beyond = {**base, "ood_score": 0.75}    # > served 0.70
+    assert pipe._should_route_to_nap(between, det_conf=0.1) is False
+    assert pipe._should_route_to_nap(beyond, det_conf=0.1) is True
+    # No served embedding threshold -> the bank is not a signal at all.
+    pipe._served_embedding_threshold = None
+    assert pipe._should_route_to_nap(beyond, det_conf=0.1) is False
+
+
+def test_served_gate_thresholds_are_resolved_strictly():
+    import pipeline as pipeline_module
+
+    resolve = pipeline_module._resolve_served_gate_thresholds
+    assert resolve({}) == (None, None)
+    assert resolve({"ood": {"served_gate": None}}) == (None, None)
+    both = {"ood": {"served_gate": {"embedding_threshold": 0.63, "max_logit_floor": 1.75}}}
+    assert resolve(both) == (0.63, 1.75)
+    only_ml = {"ood": {"served_gate": {"embedding_threshold": None, "max_logit_floor": 1.75}}}
+    assert resolve(only_ml) == (None, 1.75)
+    for bad in (True, "0.6", float("nan"), -0.1, 2.5):
+        with pytest.raises(RuntimeError):
+            resolve({"ood": {"served_gate": {"embedding_threshold": bad}}})
+    with pytest.raises(RuntimeError):
+        resolve({"ood": {"served_gate": {"max_logit_floor": -1.0}}})
+
+
+def test_pipeline_init_adopts_served_thresholds_when_contract_matches():
+    """``__init__`` must replace the single-image MaxLogit floor with the served
+    one and keep the served embedding threshold beside the bank."""
+    import pipeline as pipeline_module
+
+    meta = {
+        "ood": {
+            "max_logit_floor": 2.01,          # single-image: provenance only
+            "max_logit_scope": "plant_only",
+            "nap_head_mass_floor": 0.05,
+            "served_gate": {
+                "schema_version": 1,
+                "calibration_mode": "full_served_pipeline",
+                "embedding_aggregation": "min_member_distance",
+                "max_logit_aggregation": "max_member_logit",
+                "detector_confidence_floor": pipeline_module.NAP_DETECTOR_CONF_FLOOR,
+                "fold_whole_frame_vote": pipeline_module.FOLD_WHOLE_FRAME_VOTE,
+                "embedding_threshold": 0.68,
+                "max_logit_floor": 1.4,
+            },
+        }
+    }
+    enabled, _ = pipeline_module._served_ood_gate_contract(meta)
+    assert enabled is True
+    served_emb, served_ml = pipeline_module._resolve_served_gate_thresholds(meta)
+    assert served_emb == 0.68 and served_ml == 1.4
+    # Single-image resolver still reads the provenance value untouched.
+    assert pipeline_module._resolve_max_logit_floor(meta) == 2.01

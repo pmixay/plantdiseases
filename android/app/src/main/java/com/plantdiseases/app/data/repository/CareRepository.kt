@@ -589,6 +589,9 @@ class CareRepository(
         treatmentPlanMutex.withLock {
             database.withTransaction {
                 val scan = scanDao.getScanById(scanId) ?: return@withTransaction null
+                if (PersistedScanAbstentionPolicy.isAbstained(scan)) {
+                    return@withTransaction null
+                }
                 val plantId = existingPlantId
                     ?: scan.plantId
                     ?: newPlant?.let { draft ->

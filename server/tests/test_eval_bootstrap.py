@@ -10,6 +10,7 @@ significant.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from tools import eval_bootstrap as eb
 
@@ -186,3 +187,111 @@ def test_per_class_precision_handles_never_predicted_class_without_crashing():
     assert nap["n_predicted"] == 0
     assert nap["n_boot_valid"] == 0
     assert np.isnan(nap["point"])
+
+
+def test_paired_per_class_precision_flags_only_polluted_class():
+    rng = np.random.default_rng(19)
+    n = 800
+    y_true = rng.integers(0, 4, size=n)
+    y_a = y_true.copy()
+    y_b = y_true.copy()
+    # Add many false positives for disease_a in model B without changing the
+    # rows whose truth is disease_a.  This is a precision-only regression.
+    pollute = (rng.random(n) < 0.65) & (y_true == 2)
+    y_b[pollute] = 0
+
+    out = eb.paired_per_class_precision(
+        y_true, y_a, y_b, CLASS_NAMES, n_boot=400, seed=20)
+    da = out["classes"]["disease_a"]
+    assert da["diff_point"] > 0.0
+    assert da["diff_ci_low"] > 0.0
+    assert da["significant"] is True
+    assert out["classes"]["disease_b"]["significant"] is False
+
+
+@pytest.mark.parametrize("n_boot", [0, -1, 1.5, True])
+def test_bootstrap_rejects_invalid_iteration_count(n_boot):
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="n_boot"):
+        eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=n_boot)
+
+
+@pytest.mark.parametrize("ci", [0.0, 1.0, -0.1, 1.1])
+def test_bootstrap_rejects_invalid_ci(ci):
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="ci"):
+        eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=10, ci=ci)
+
+
+def test_capture_family_bootstrap_resamples_groups_and_marks_row_fallback():
+    y_true = np.array([0, 0, 1, 1, 2, 3])
+    y_pred = y_true.copy()
+    groups = ["capture-a", "capture-a", "capture-b", "capture-b", "c", "d"]
+    out = eb.bootstrap_macro_f1_ci(
+        y_true, y_pred, CLASS_NAMES, n_boot=30, seed=9, group_ids=groups)
+    assert out["resampling_unit"] == "capture_family"
+    assert out["n_groups"] == 4
+    assert out["independence_advisory"] is None
+
+    advisory = eb.paired_bootstrap(
+        y_true, y_pred, y_pred, CLASS_NAMES, n_boot=20, seed=10)
+    assert advisory["resampling_unit"] == "row"
+    assert "pseudo-replication" in advisory["independence_advisory"]
+
+
+def test_capture_family_ids_must_be_complete_and_aligned():
+    y = np.array([0, 1, 2, 3])
+    with pytest.raises(ValueError, match="matching"):
+        eb.bootstrap_macro_f1_ci(
+            y, y, CLASS_NAMES, n_boot=5, group_ids=["a"])
+    with pytest.raises(ValueError, match="missing"):
+        eb.bootstrap_macro_f1_ci(
+            y, y, CLASS_NAMES, n_boot=5, group_ids=["a", "b", "", "d"])
+
+
+def test_disease_macro_f1_ignores_classes_absent_from_the_slice():
+    # A benchmark holding only disease_a: a perfect model scores 1.0, not 0.5
+    # (the absent disease_b used to be averaged in as a hard zero).
+    y_true = np.array([0, 0, 0, 2, 2])
+    assert eb.disease_macro_f1(y_true, y_true, CLASS_NAMES) == 1.0
+    # No disease class at all -> undefined, and the CI refuses rather than
+    # reporting a number.
+    y_nd = np.array([2, 3, 2])
+    assert np.isnan(eb.disease_macro_f1(y_nd, y_nd, CLASS_NAMES))
+    with pytest.raises(ValueError, match="no disease class"):
+        eb.bootstrap_macro_f1_ci(y_nd, y_nd, CLASS_NAMES, n_boot=5)
+    with pytest.raises(ValueError, match="no disease class"):
+        eb.paired_bootstrap(y_nd, y_nd, y_nd, CLASS_NAMES, n_boot=5)
+
+
+def test_replicate_missing_a_thin_class_does_not_drag_ci_to_zero():
+    # Two capture families of disease_b among forty of disease_a. Family
+    # resampling drops disease_b from many replicates; a perfect model must
+    # still get a degenerate [1, 1] interval, not a CI dragged toward 0.5.
+    y_true = np.array([0] * 40 + [1] * 2 + [2] * 10)
+    groups = ([f"a{i}" for i in range(40)] + ["b0", "b1"]
+              + [f"h{i}" for i in range(10)])
+    out = eb.bootstrap_macro_f1_ci(
+        y_true, y_true, CLASS_NAMES, n_boot=200, seed=1, group_ids=groups)
+    assert out["point"] == 1.0
+    assert (out["ci_low"], out["ci_high"]) == (1.0, 1.0)
+    assert out["n_boot_effective"] == 200
+
+
+def test_missing_group_ids_are_rejected_not_pooled():
+    y = np.array([0, 1, 2, 3])
+    for bad in ([None, "a", "b", "c"],
+                [float("nan"), "a", "b", "c"],
+                ["NaN", "a", "b", "c"],
+                ["null", "a", "b", "c"]):
+        with pytest.raises(ValueError, match="missing"):
+            eb.bootstrap_macro_f1_ci(y, y, CLASS_NAMES, n_boot=5, group_ids=bad)
+
+
+def test_paired_bootstrap_reports_ties_instead_of_dropping_them():
+    y = np.array([0, 1, 0, 1, 2, 3] * 5)
+    out = eb.paired_bootstrap(y, y, y, CLASS_NAMES, n_boot=50, seed=3)
+    assert out["p_tie"] == 1.0
+    assert out["p_a_gt_b"] == 0.0 and out["p_b_gt_a"] == 0.0
+    assert out["significant"] is False
+    assert out["n_boot_effective"] == 50

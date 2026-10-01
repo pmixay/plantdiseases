@@ -20,6 +20,8 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 
@@ -80,14 +82,31 @@ CREATE INDEX IF NOT EXISTS ix_candidates_class_status ON candidates(class, statu
 """
 
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
+    """Yield a short-lived connection and always close its file handles.
+
+    ``sqlite3.Connection.__exit__`` commits or rolls back but does *not* close
+    the connection.  Relying on CPython finalisation happened to work on the
+    Linux host, but on Windows it left ``labeling.db`` locked between test runs
+    and can likewise retain WAL handles longer than a request.  Keep the same
+    transaction semantics while making the advertised short-lived-connection
+    contract explicit.
+    """
     conn = sqlite3.connect(
         str(LABELING_DB_PATH), check_same_thread=False, isolation_level=None,
     )
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.row_factory = sqlite3.Row
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _add_column_if_missing(conn, table, column, decl) -> None:

@@ -71,7 +71,7 @@ ViT-B/14, GPU). The whole bundle is produced **deterministically** by
    | Tool | Answers |
    |---|---|
    | `tools/eval_bootstrap.py` | is this A/B difference real? paired bootstrap CI — **the** answer to "did it improve" |
-   | `tools/paired_eval.py` | two bundles, one held-out set, per-class + McNemar |
+   | `tools/paired_eval.py` | two bundles, one held-out set, argmax or served, abstention/coverage, capture-family IDs → `eval_bootstrap` |
    | `tools/filter_supplement.py --root D --bench B --out R` | is a downloaded corpus what its manifest claims? benchmark leakage, duplicate clusters, blur, resolution. **Exits non-zero on leakage** |
    | `tools/kaggle_inventory.py --list REF \| --gate REF --folder F` | what is *actually* in a Kaggle dataset, and is it the benchmark? raises rather than truncating |
    | `tools/build_ood_benchmark.py` | build/score the never-trained OOD benchmark |
@@ -93,9 +93,14 @@ them even when a request doesn't mention them.
 3. **Nothing ships until BOTH gates pass — and the in-domain one is not
    enough.** In-domain (`val_realworld`): disease macro-F1 ≥ **0.70**, no
    disease class at recall 0, healthy-bias < 1.5, healthy recall ≥ 0.70.
-   Out-of-domain (§6, blocking since 2026-08-18): the never-trained OOD
-   benchmark, **per arm, never pooled** — `hibiscus` scorch recall ≥ 0.70 and
-   healthy false-fire ≤ 0.12 on the same 151 never-trained clusters.
+   Out-of-domain (§6): the never-trained OOD benchmark, **per arm, never
+   pooled** — `hibiscus` scorch recall ≥ 0.70 and healthy false-fire ≤ 0.12 on
+   the same 151 never-trained clusters. **Status since 2026-08-23:** the
+   private v2 set is a *diagnostic*, not a gate (`REQUIRE_OOD_BENCHMARK=False`
+   — its 31 scorch rows are one studio session with geometric pseudo-replicates),
+   but it must still run and land in `model_card.json` on every production run
+   (`REQUIRE_OOD_DIAGNOSTIC_RUN=True`). The blocking floor returns with a
+   family-clean v3 (`docs/DATASET_LABELING_PLAN.md`, "OOD benchmark v3").
 
    The second gate exists because the first one is satisfiable by a collapsed
    model: **2.7.0, 2.7.1 and 2.7.2 each passed in-domain while scoring ~0
@@ -200,7 +205,7 @@ ai_services.py         optional PlantNet / OpenRouter / care-plan (graceful)
 labeling.py labeling_auto.py   data-collection / labelling loop
 community.py feedback.py         nearby-scans feed · append-only training signal
 tools/eval_bootstrap.py    paired-bootstrap CIs (the trustworthy A/B)
-tools/paired_eval.py       two bundles on one held-out set (per-class + McNemar)
+tools/paired_eval.py       two bundles on one held-out set (argmax or served; feeds eval_bootstrap)
 tools/build_ood_benchmark.py   build/score the never-trained OOD benchmark
 tools/filter_supplement.py     QA a downloaded corpus on the bytes (leakage, dups, blur)
 tools/kaggle_inventory.py      uncapped Kaggle lister + benchmark-contamination gate

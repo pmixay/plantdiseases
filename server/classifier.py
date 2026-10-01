@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
@@ -87,6 +88,7 @@ DEFAULT_ARCHITECTURE = "dinov2_vits14+mlp_head"
 # conformal.json / the OOD floor MUST be re-fit with the matching TTA mode
 # (the training notebook does this from ``classes.json -> inference``).
 TTA_MODES = ("none", "hflip")
+MODEL_FAMILIES = ("aqua", "gamma", "frontier")
 
 
 class ClassifierLoadError(RuntimeError):
@@ -98,43 +100,125 @@ def _load_metadata(model_dir: Path) -> dict:
     if not meta.exists():
         return {}
     try:
-        return json.loads(meta.read_text(encoding="utf-8"))
+        parsed = json.loads(meta.read_text(encoding="utf-8"))
     except Exception as e:
-        logger.warning("Failed to read %s: %s", meta, e)
+        raise ClassifierLoadError(f"Failed to read classifier metadata {meta}: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ClassifierLoadError(
+            f"Classifier metadata {meta} must contain a JSON object, got "
+            f"{type(parsed).__name__}"
+        )
+    return parsed
+
+
+def _section(meta: dict, name: str) -> dict:
+    value = meta.get(name)
+    if value is None:
         return {}
+    if not isinstance(value, dict):
+        raise ClassifierLoadError(
+            f"classes.json -> {name} must be an object, got {type(value).__name__}"
+        )
+    return value
 
 
 def _resolve_class_names(meta: dict) -> list[str]:
-    names = meta.get("class_names") or DEFAULT_CLASS_NAMES
+    if "class_names" not in meta:
+        return list(DEFAULT_CLASS_NAMES)
+    names = meta["class_names"]
+    if not isinstance(names, list) or not names:
+        raise ClassifierLoadError("classes.json -> class_names must be a non-empty array")
+    if any(not isinstance(name, str) or not name or name != name.strip() for name in names):
+        raise ClassifierLoadError(
+            "classes.json -> class_names must contain non-empty, trimmed strings"
+        )
+    if len(set(names)) != len(names):
+        raise ClassifierLoadError("classes.json -> class_names contains duplicate keys")
     return list(names)
 
 
 def _resolve_img_size(meta: dict) -> int:
-    size = (meta.get("training") or {}).get("img_size")
-    if isinstance(size, int) and size > 0:
-        return size
-    return DEFAULT_IMG_SIZE
+    training = _section(meta, "training")
+    if "img_size" not in training:
+        return DEFAULT_IMG_SIZE
+    size = training["img_size"]
+    if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 4096:
+        raise ClassifierLoadError(
+            "classes.json -> training.img_size must be an integer in [1, 4096]"
+        )
+    return size
 
 
 def _resolve_eval_resize_ratio(meta: dict) -> float:
-    ratio = (meta.get("training") or {}).get("eval_resize_ratio")
-    if isinstance(ratio, (int, float)) and ratio >= 1.0:
-        return float(ratio)
-    return DEFAULT_EVAL_RESIZE_RATIO
+    training = _section(meta, "training")
+    if "eval_resize_ratio" not in training:
+        return DEFAULT_EVAL_RESIZE_RATIO
+    ratio = training["eval_resize_ratio"]
+    if (
+        isinstance(ratio, bool)
+        or not isinstance(ratio, (int, float))
+        or not math.isfinite(float(ratio))
+        or not 1.0 <= float(ratio) <= 4.0
+    ):
+        raise ClassifierLoadError(
+            "classes.json -> training.eval_resize_ratio must be finite and in [1, 4]"
+        )
+    return float(ratio)
 
 
 def _resolve_architecture(meta: dict) -> str:
-    arch = meta.get("architecture") or (meta.get("training") or {}).get("architecture")
+    arch = meta.get("architecture") or _section(meta, "training").get("architecture")
     if isinstance(arch, str) and arch:
         return arch
     return DEFAULT_ARCHITECTURE
 
 
 def _resolve_tta(meta: dict) -> str:
-    mode = (meta.get("inference") or {}).get("tta")
-    if isinstance(mode, str) and mode in TTA_MODES:
-        return mode
-    return "none"
+    inference = _section(meta, "inference")
+    if "tta" not in inference:
+        return "none"
+    mode = inference["tta"]
+    if not isinstance(mode, str) or mode not in TTA_MODES:
+        raise ClassifierLoadError(
+            f"classes.json -> inference.tta must be one of {TTA_MODES}, got {mode!r}"
+        )
+    return mode
+
+
+def _resolve_normalization(meta: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Resolve optional ImageNet-style RGB normalisation from the sidecar.
+
+    Historical gamma bundles omit these fields and use the built-in ImageNet
+    defaults.  When a future bundle declares them, serving must honour them;
+    silently keeping stale hard-coded values would invalidate every fitted
+    calibration artefact.
+    """
+    inference = _section(meta, "inference")
+
+    def _triple(key: str, fallback: np.ndarray, *, positive: bool) -> np.ndarray:
+        if key not in inference:
+            return fallback.copy()
+        raw = inference[key]
+        if not isinstance(raw, list) or len(raw) != 3:
+            raise ClassifierLoadError(
+                f"classes.json -> inference.{key} must be an array of three numbers"
+            )
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in raw):
+            raise ClassifierLoadError(
+                f"classes.json -> inference.{key} must contain only numbers"
+            )
+        arr = np.asarray(raw, dtype=np.float32)
+        if not np.isfinite(arr).all() or (positive and np.any(arr <= 0)):
+            qualifier = "finite positive" if positive else "finite"
+            raise ClassifierLoadError(
+                f"classes.json -> inference.{key} values must be {qualifier}"
+            )
+        return arr
+
+    return (
+        _triple("normalize_mean", NORM_MEAN, positive=False),
+        _triple("normalize_std", NORM_STD, positive=True),
+    )
 
 
 def _resolve_model_family(meta: dict) -> str:
@@ -142,27 +226,50 @@ def _resolve_model_family(meta: dict) -> str:
     ``aqua`` (light/on-device), ``gamma`` (current medium), ``frontier``
     (future high-capacity). Defaults to ``gamma`` for bundles trained before
     the field existed — the runtime stays architecture-neutral either way."""
-    fam = meta.get("model_family")
-    if isinstance(fam, str) and fam:
-        return fam
-    return "gamma"
+    if "model_family" not in meta:
+        return "gamma"
+    fam = meta["model_family"]
+    if not isinstance(fam, str) or fam not in MODEL_FAMILIES:
+        raise ClassifierLoadError(
+            f"classes.json -> model_family must be one of {MODEL_FAMILIES}, got {fam!r}"
+        )
+    return fam
 
 
-def _resolve_onnx_path(model_path: Path | None) -> Path | None:
+def _resolve_onnx_candidates(
+    model_path: Path | None,
+    *,
+    exact_model_path: bool = False,
+) -> list[Path]:
+    """Return the single historical active graph for an unmanifested bundle.
+
+    The exporter fits temperature/conformal/OOD sidecars against INT8 whenever
+    it ships. Falling back to the sibling FP32 graph after an INT8 load failure
+    would therefore combine one model with another model's calibration. Fail
+    readiness instead. A future checksum manifest selects one exact graph and
+    calibration profile explicitly; it must never encode an implicit fallback.
+    """
     if model_path is None:
-        return None
-    parent = model_path.parent
-    for candidate in ("classifier_int8.onnx", "classifier.onnx"):
-        p = parent / candidate
-        if p.exists():
-            return p
-    return None
+        return []
+    if exact_model_path:
+        path = Path(model_path)
+        return [path] if path.is_file() else []
+    int8 = model_path.parent / "classifier_int8.onnx"
+    fp32 = model_path.parent / "classifier.onnx"
+    if int8.is_file():
+        return [int8]
+    return [fp32] if fp32.is_file() else []
 
 
 class DiseaseClassifier:
     """Houseplant disease classifier (ONNX only)."""
 
-    def __init__(self, model_path: Path | None = None):
+    def __init__(
+        self,
+        model_path: Path | None = None,
+        *,
+        exact_model_path: bool = False,
+    ):
         self.backend = ""               # "onnx"
         self._onnx_session = None
         self._onnx_input_name: str = ""
@@ -172,6 +279,7 @@ class DiseaseClassifier:
         # single-output graph leaves this False and OOD falls back to the
         # MaxLogit floor.
         self._has_embedding: bool = False
+        self._embedding_dim: int | None = None
 
         meta = _load_metadata(model_path.parent) if model_path else {}
         self.meta = meta
@@ -183,6 +291,7 @@ class DiseaseClassifier:
         self.architecture = _resolve_architecture(meta)
         self.model_family = _resolve_model_family(meta)
         self.tta = _resolve_tta(meta)
+        self.norm_mean, self.norm_std = _resolve_normalization(meta)
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
@@ -199,22 +308,33 @@ class DiseaseClassifier:
             i for i, n in enumerate(self.CLASS_NAMES) if n != "not_a_plant"
         )
 
-        onnx_path = _resolve_onnx_path(model_path)
-        if onnx_path is None:
+        candidates = _resolve_onnx_candidates(
+            model_path,
+            exact_model_path=exact_model_path,
+        )
+        if not candidates:
             raise ClassifierLoadError(
                 "Cannot start without a trained classifier ONNX artefact "
                 "(classifier_int8.onnx / classifier.onnx) next to the "
                 f"configured model path {model_path}. Provision the model "
                 "files into the models directory before starting."
             )
-        try:
-            self._load_onnx(onnx_path)
-        except ClassifierLoadError:
-            raise
-        except Exception as e:
+        errors: list[str] = []
+        for onnx_path in candidates:
+            try:
+                self._load_onnx(onnx_path)
+                break
+            except Exception as e:
+                errors.append(f"{onnx_path.name}: {type(e).__name__}: {e}")
+                self._onnx_session = None
+                self._onnx_input_name = ""
+                self._has_embedding = False
+                self._embedding_dim = None
+                logger.error("Classifier candidate %s is unusable: %s", onnx_path, e)
+        else:
             raise ClassifierLoadError(
-                f"Failed to load ONNX classifier {onnx_path}: {e}"
-            ) from e
+                "No usable ONNX classifier in the bundle. " + " | ".join(errors)
+            )
 
     # ── loader ───────────────────────────────────────────────────────
 
@@ -238,16 +358,50 @@ class DiseaseClassifier:
             sess_options=opts,
             providers=["CPUExecutionProvider"],
         )
-        inp = sess.get_inputs()[0]
+        inputs = sess.get_inputs()
         outputs = sess.get_outputs()
+        if len(inputs) != 1:
+            raise ClassifierLoadError(
+                f"Classifier graph must have exactly one input, found {len(inputs)}"
+            )
+        if len(outputs) not in (1, 2):
+            raise ClassifierLoadError(
+                "Classifier graph must expose logits and optionally one embedding "
+                f"output, found {len(outputs)} outputs"
+            )
+        inp = inputs[0]
         out = outputs[0]
         # A 2-output graph ships the CLS embedding alongside the logits.
         # Output[0] stays the logits so every existing ``run(...)[0]`` call
         # site is unaffected; output[1], when present, is the embedding.
-        self._has_embedding = len(outputs) >= 2
-
-        out_dim = next((d for d in out.shape if isinstance(d, int)), None)
-        if out_dim is not None and out_dim != self.NUM_CLASSES:
+        if inp.type != "tensor(float)" or len(inp.shape) != 4:
+            raise ClassifierLoadError(
+                "Classifier input must be a rank-4 float32 NCHW tensor, got "
+                f"type={inp.type} shape={inp.shape}"
+            )
+        expected_input = (3, self.img_size, self.img_size)
+        if tuple(inp.shape[1:]) != expected_input:
+            raise ClassifierLoadError(
+                f"Classifier input shape {inp.shape} does not match metadata "
+                f"NCHW [N, {expected_input[0]}, {expected_input[1]}, {expected_input[2]}]"
+            )
+        if isinstance(inp.shape[0], int):
+            raise ClassifierLoadError(
+                "Classifier batch dimension must be dynamic: serving batches all "
+                "detector crops and hflip TTA doubles that batch"
+            )
+        if out.type != "tensor(float)" or len(out.shape) != 2:
+            raise ClassifierLoadError(
+                f"Classifier logits must be rank-2 float32, got type={out.type} "
+                f"shape={out.shape}"
+            )
+        if isinstance(out.shape[0], int):
+            raise ClassifierLoadError(
+                "Classifier logits batch dimension must be dynamic to match the "
+                "dynamic input and multi-crop serving path"
+            )
+        out_dim = out.shape[-1]
+        if not isinstance(out_dim, int) or out_dim != self.NUM_CLASSES:
             # The class set MUST match the trained head exactly. We do not
             # pad / truncate (the old ``_fit_class_names`` migration shim
             # silently mislabelled every prediction when a stale classes.json
@@ -261,17 +415,66 @@ class DiseaseClassifier:
                 f"match the trained head, in training order."
             )
 
+        self._has_embedding = len(outputs) == 2
+        if self._has_embedding:
+            emb_out = outputs[1]
+            emb_dim = emb_out.shape[-1] if len(emb_out.shape) == 2 else None
+            if (
+                emb_out.type != "tensor(float)"
+                or isinstance(emb_out.shape[0], int)
+                or not isinstance(emb_dim, int)
+                or emb_dim <= 0
+            ):
+                raise ClassifierLoadError(
+                    "Classifier embedding must be rank-2 float32 with a fixed positive "
+                    f"width, got type={emb_out.type} shape={emb_out.shape}"
+                )
+            self._embedding_dim = emb_dim
+
+        ood = _section(self.meta, "ood")
+        emb_meta = ood.get("embedding")
+        if emb_meta is not None:
+            if not isinstance(emb_meta, dict):
+                raise ClassifierLoadError("classes.json -> ood.embedding must be an object")
+            if not self._has_embedding:
+                raise ClassifierLoadError(
+                    "classes.json configures embedding OOD but the classifier graph has "
+                    "no embedding output"
+                )
+            declared_dim = emb_meta.get("embed_dim")
+            if (
+                isinstance(declared_dim, bool)
+                or not isinstance(declared_dim, int)
+                or declared_dim != self._embedding_dim
+            ):
+                raise ClassifierLoadError(
+                    f"classes.json declares OOD embed_dim={declared_dim!r}, but the "
+                    f"classifier graph emits {self._embedding_dim} values"
+                )
+
         self._onnx_session = sess
         self._onnx_input_name = inp.name
         self.backend = "onnx"
 
-        # Warm the graph once at load so the first real request doesn't
-        # eat the one-off allocation / kernel-selection cost.
-        try:
-            warm = np.zeros((1, 3, self.img_size, self.img_size), dtype=np.float32)
-            sess.run(None, {inp.name: warm})
-        except Exception as e:  # noqa: BLE001 — warmup is best-effort
-            logger.debug("Classifier ONNX warmup skipped: %s", e)
+        # Warm AND contract-test the graph.  For hflip, use batch=2: accepting
+        # batch=1 says nothing about whether the declared TTA path can run.
+        # Exercise a real multi-member batch even without hflip. The pipeline
+        # submits several detector crops (plus an optional whole-frame vote),
+        # so a graph with a nominally dynamic input but an internal batch-1
+        # reshape must fail readiness rather than the first user request.
+        warm_n = 2
+        warm = np.zeros((warm_n, 3, self.img_size, self.img_size), dtype=np.float32)
+        warm_out = sess.run(None, {inp.name: warm})
+        expected_shapes = [(warm_n, self.NUM_CLASSES)]
+        if self._has_embedding:
+            expected_shapes.append((warm_n, self._embedding_dim))
+        if [tuple(value.shape) for value in warm_out] != expected_shapes:
+            raise ClassifierLoadError(
+                f"Classifier runtime outputs {[tuple(v.shape) for v in warm_out]} do not "
+                f"match expected {expected_shapes}"
+            )
+        if not all(np.isfinite(value).all() for value in warm_out):
+            raise ClassifierLoadError("Classifier emits non-finite values on warmup input")
 
         logger.info(
             "Classifier (ONNX) loaded from %s (%d classes, img_size=%d, "
@@ -295,10 +498,13 @@ class DiseaseClassifier:
     def _to_chw(self, img: Image.Image) -> np.ndarray:
         if img.mode != "RGB":
             img = img.convert("RGB")
-        if img.size != (self.img_size, self.img_size):
-            img = self._aspect_preserving_square(img, self.img_size)
+        # Always apply Resize -> CenterCrop.  A source that already happens to
+        # be img_size square still needs the configured 1.05 centre zoom; the
+        # old size shortcut silently gave just those inputs a different eval
+        # distribution from training/calibration.
+        img = self._aspect_preserving_square(img, self.img_size)
         arr = np.asarray(img, dtype=np.float32) / 255.0
-        arr = (arr - NORM_MEAN) / NORM_STD
+        arr = (arr - self.norm_mean) / self.norm_std
         return arr.transpose(2, 0, 1)
 
     def _aspect_preserving_square(self, img: Image.Image, side: int) -> Image.Image:
@@ -318,6 +524,8 @@ class DiseaseClassifier:
         is always preserved.
         """
         w, h = img.size
+        if w <= 0 or h <= 0:
+            raise ValueError(f"Cannot preprocess an empty image with size {img.size}")
         target_short = max(side, int(side * self.eval_resize_ratio))
         scale = target_short / float(min(w, h))
         new_w = max(side, round(w * scale))
@@ -396,20 +604,26 @@ class DiseaseClassifier:
     def _format_result_from_logits(
         self, logits: np.ndarray, embedding: np.ndarray | None = None,
     ) -> dict:
+        logits32 = np.asarray(logits, dtype=np.float32).reshape(-1)
+        if logits32.shape != (self.NUM_CLASSES,):
+            raise RuntimeError(
+                f"Classifier returned {logits32.shape} logits for {self.NUM_CLASSES} classes"
+            )
+        if not np.isfinite(logits32).all():
+            # A fabricated uniform response looks usable and can become a real
+            # diagnosis downstream.  Surface an inference failure instead.
+            raise RuntimeError("Classifier returned non-finite logits")
+
         # Numerically-stable softmax (max-shift) in float32. The
         # max-shift caps `exp` arguments at 0 so float32 doesn't
         # overflow; the smallest meaningful tail (`exp(-30)`) is well
         # within float32 range (~9.4e-14).
-        logits32 = logits.astype(np.float32, copy=False)
         max_logit = float(logits32.max())
         e = np.exp(logits32 - max_logit)
         denom = float(e.sum())
         if denom <= 0 or not np.isfinite(denom):
-            # Degenerate (all -inf or NaN). Fall back to uniform so the
-            # response stays well-formed instead of poisoning downstream.
-            probs = np.full_like(logits32, 1.0 / max(len(logits32), 1))
-        else:
-            probs = e / denom
+            raise RuntimeError("Classifier softmax denominator is not finite and positive")
+        probs = e / denom
         top_idx = int(np.argmax(probs))
         top_conf = float(probs[top_idx])
         # ``low_confidence`` is set later, post-aggregation, by
@@ -417,9 +631,12 @@ class DiseaseClassifier:
         # — the per-crop value is not used anywhere downstream.
         result = {
             "class_name": self.CLASS_NAMES[top_idx],
-            "confidence": round(top_conf, 4),
+            # Keep full precision through temperature scaling, voting and OOD
+            # policy.  The API response boundary rounds for display; rounding
+            # here perturbed the very probabilities the bundle calibrated.
+            "confidence": top_conf,
             "all_probs": {
-                self.CLASS_NAMES[i]: round(float(probs[i]), 4)
+                self.CLASS_NAMES[i]: float(probs[i])
                 for i in range(self.NUM_CLASSES)
             },
             "max_logit": max_logit,
@@ -438,5 +655,13 @@ class DiseaseClassifier:
         # numpy array — the pipeline consumes it and never forwards it into
         # the JSON response, so it doesn't touch the public API contract.
         if embedding is not None:
-            result["embedding"] = np.asarray(embedding, dtype=np.float32)
+            emb = np.asarray(embedding, dtype=np.float32).reshape(-1)
+            if emb.shape == (self._embedding_dim,) and np.isfinite(emb).all():
+                result["embedding"] = emb
+            else:
+                logger.warning(
+                    "Classifier emitted unusable embedding shape=%s finite=%s; "
+                    "embedding OOD will fall back",
+                    emb.shape, bool(np.isfinite(emb).all()),
+                )
         return result

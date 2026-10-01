@@ -8,11 +8,10 @@ rem Usage:
 rem     start.bat                 start server (default port 8000)
 rem     start.bat --port 9000     custom port
 rem
-rem Models are trained in Colab via train_notebook.ipynb. Drop the
-rem resulting detector.onnx, classifier.onnx (+ optional
-rem classifier_int8.onnx) and classes.json into server\models\ before
-rem starting - the server is fail-fast and will refuse to start without
-rem trained weights.
+rem Models are trained only in Colab via train_notebook.ipynb. Extract one
+rem complete notebook-produced bundle into server\models\, including
+rem bundle_manifest.json and nested directories. Do not mix runs. Startup
+rem verifies every manifest-bound artefact before loading a model.
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
@@ -37,10 +36,9 @@ echo Usage: start.bat [--port PORT]
 echo.
 echo   --port PORT   Server port (default: 8000)
 echo.
-echo Train models in Colab via train_notebook.ipynb, then drop
-echo detector.onnx, classifier.onnx (+ optional classifier_int8.onnx)
-echo and classes.json into server\models\. The server will not start
-echo without them.
+echo Train models in Colab via train_notebook.ipynb, then extract one complete
+echo bundle into server\models\, including bundle_manifest.json and all nested
+echo paths. Do not copy loose files or combine different runs.
 exit /b 0
 
 :args_done
@@ -75,20 +73,24 @@ pip install --quiet -r requirements.txt
 if not exist "models" mkdir models
 if not exist "logs" mkdir logs
 
-rem Sanity-check trained artefacts before exec'ing uvicorn.
+rem Shallow preflight only. The lifespan verifier authoritatively validates the
+rem complete manifest, hashes, serving contract, and exact selected graph.
 set DETECTOR_PRESENT=0
-set CLASSIFIER_PRESENT=0
+set BUNDLE_MANIFEST_PRESENT=0
 if exist "models\detector.onnx"        set DETECTOR_PRESENT=1
-if exist "models\classifier.onnx"       set CLASSIFIER_PRESENT=1
-if exist "models\classifier_int8.onnx"  set CLASSIFIER_PRESENT=1
+if exist "models\bundle_manifest.json"  set BUNDLE_MANIFEST_PRESENT=1
 if "%DETECTOR_PRESENT%"=="0" goto missing_models
-if "%CLASSIFIER_PRESENT%"=="0" goto missing_models
+if "%BUNDLE_MANIFEST_PRESENT%"=="0" goto missing_models
+echo [+] Verifying immutable model bundle...
+python tools\verify_bundle.py models
+if errorlevel 1 exit /b 1
 goto start_server
 
 :missing_models
-echo [!] Trained model artefacts missing under server\models\.
-echo     Need detector.onnx AND classifier.onnx (+ optional int8).
-echo     Train in Colab via train_notebook.ipynb, then copy them in.
+echo [!] Complete model bundle missing under server\models\.
+echo     Extract one full archive produced by train_notebook.ipynb,
+echo     preserving bundle_manifest.json and all nested paths.
+echo     Do not copy loose artefacts or combine different runs.
 exit /b 1
 
 :start_server

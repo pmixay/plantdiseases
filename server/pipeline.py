@@ -16,24 +16,20 @@ Stage 2 (Classifier) — frozen DINOv2 ViT-S/14 backbone + LoRA on the
 
 Behaviour summary:
 
-* **Severity scoring** — each ``analyze`` response carries a
-  ``severity: low | medium | high`` derived from (a) the relative bbox
-  area of the diagnosed disease, (b) the disease confidence margin
-  over ``healthy`` and (c) whether the disease class is degenerative
-  (``viral_disease`` always escalates one level — incurable).
+* **Severity contract** — the current models classify a condition and the
+  detector localises a leaf; neither predicts lesion extent.  ``severity``
+  therefore stays conservatively ``low`` until a separately labelled severity
+  target exists.  In particular, leaf-box area is never presented as disease
+  area.
 * **Mean voting** across valid bboxes (one noisy edge crop can't win
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)
   before classification.
-* **Weak-healthy reroute** — when top-1 is ``healthy`` but **below a
-  majority** (``HEALTHY_REROUTE_FLOOR``) while a disease is competitive,
-  we swap to the disease so the UI doesn't reassure on an obviously-sick
-  plant. A confident-plurality ``healthy`` is **never** force-converted —
-  the suspected disease is surfaced via ``top_k`` + the soft
-  ``uncertain_healthy`` / ``disease_suspected`` warnings instead, so we
-  never manufacture a disease false positive on a healthy plant.
-  (Symmetric "weak-disease → healthy" downgrade was removed in favour of
-  an honest low-confidence flag — see the comment in ``_pick_primary``.)
+* **Probability-preserving uncertainty** — postprocessing never replaces the
+  classifier argmax with a lower-probability class.  A weak ``healthy`` result
+  remains healthy while ``top_k`` plus ``uncertain_healthy`` /
+  ``disease_suspected`` surface the competing disease.  Weak disease results
+  likewise keep their measured class and gain confidence warnings.
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
 * **OOD gating** — a three-of-three gate: low detector confidence AND a
@@ -41,9 +37,11 @@ Behaviour summary:
   ``not_a_plant`` head. The classifier-side signal is an **embedding-space
   k-NN distance** on the DINOv2 CLS vector (``ood.py``) when the bundle
   ships a bank, and falls back to a **MaxLogit** (Hendrycks 2019) floor
-  when it does not. Plain MSP is unusable for either role: it collapses
-  under temperature scaling and label smoothing. See
-  ``_should_route_to_nap`` for the full contract.
+  when it does not. A gate hit is an abstention warning, not a synthetic
+  ``not_a_plant`` probability: the calibrated classifier distribution remains
+  unchanged. Plain MSP is unusable for either role: it collapses under
+  temperature scaling and label smoothing. See ``_should_route_to_nap`` for
+  the full contract.
 
 Stage 1 owns localisation only. The disease decision remains 100 % on
 the classifier side.
@@ -53,6 +51,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from pathlib import Path
 
@@ -60,12 +59,14 @@ import numpy as np
 from PIL import Image
 
 try:
+    from .bundle import BundleLoadError, VerifiedBundle, verify_bundle
     from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
     from .config import get_bool
     from .conformal import ConformalConfig, load_conformal_config, prediction_set
     from .detector import LeafDetector
     from .ood import EmbeddingOODScorer, load_embedding_ood
 except ImportError:
+    from bundle import BundleLoadError, VerifiedBundle, verify_bundle
     from classifier import DiseaseClassifier
     from config import get_bool
     from conformal import ConformalConfig, load_conformal_config, prediction_set
@@ -91,51 +92,6 @@ HEALTHY_MARGIN = 0.10
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
 HEALTHY_DISEASE_FLOOR = 0.12
 
-# Hard reroute — swap a top-1 ``healthy`` verdict to the strongest
-# disease class ONLY when healthy is below this floor, i.e. healthy did
-# not even win a majority and the model is genuinely guessing. Above the
-# floor healthy is a confident plurality and the verdict is KEPT — the
-# suspected disease is still surfaced (top_k + the soft ``uncertain_healthy``
-# / ``disease_suspected`` warnings) WITHOUT asserting it.
-#
-# Set back to 0.50 from an over-aggressive 0.65. At 0.65 any healthy below
-# 65 % with a disease ≥ 0.25 — the COMMON real-healthy band — was force-
-# converted, manufacturing disease false positives on healthy plants (the
-# head lacks leaf-scorch / nutrient classes, so a little benign damage
-# signal leaks onto the next disease). That traded a small dead-plant catch
-# for a large healthy-precision loss — the behaviour most likely to cost
-# points with a jury. 0.50 is the principled line: healthy must win an
-# outright majority to stand as the verdict; below it the in-frame disease
-# is at least as plausible and a (then honestly low-confidence-demoted)
-# reroute is defensible. A genuinely sick plant the model reads as healthy
-# in the 0.50–0.75 band is NOT silently passed — it still gets the soft
-# disease-suspected warning + the disease in top_k, so detection signal is
-# preserved; only the false assertion is dropped.
-HEALTHY_REROUTE_FLOOR = 0.50
-
-# Second healthy-reroute gate, keyed on the *margin* between healthy and
-# the strongest disease rather than absolute confidence. It is GATED on the
-# same reroute floor (see the gap_hit guard in
-# ``_apply_postprocessing_rules``): it only fires once healthy is already
-# sub-majority, where it catches low-spread coin-flips no single disease
-# class reaches the 0.25 absolute floor for — e.g. healthy 0.29 /
-# leaf_spot 0.24. Threshold pulled from feedback-row analysis: error rows
-# had next-disease gaps of 0.06 / 0.20 / 0.42; <0.30 catches the 0.06 and
-# 0.20 cases. Companion ``HEALTHY_GAP_DISEASE_FLOOR`` keeps it from firing
-# when the strongest disease is itself just noise (e.g. 0.05).
-HEALTHY_GAP_MARGIN = 0.30
-HEALTHY_GAP_DISEASE_FLOOR = 0.10
-
-# Stricter disease floor for the *absolute_hit* reroute path. The 0.12
-# ``HEALTHY_DISEASE_FLOOR`` was designed for the soft ``uncertain_healthy``
-# warning that surfaces a suspected disease next to a confident healthy
-# verdict; reusing it for the hard reroute let a 12 % gray_mold trump a
-# 54 % healthy and produced a 12 %-confident disease verdict that the
-# UI then had to demote. The gap_hit path keeps its own floor so the
-# 0.29 / 0.24 "visibly dead plant" screenshot regression still reroutes
-# via the margin trigger.
-HEALTHY_REROUTE_DISEASE_FLOOR = 0.25
-
 # Very-low-confidence floor — applies to ANY verdict (healthy or
 # disease) and is purely a UI-demotion signal. When top-1 commits
 # below this floor the response gains a ``very_low_confidence``
@@ -147,7 +103,7 @@ VERY_LOW_CONFIDENCE_FLOOR = 0.40
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we gate community-upload eligibility
-# and severity escalation via ``_is_diseased``. (The disease verdict
+# via ``_is_diseased``. (The disease verdict
 # itself is no longer downgraded to healthy below this floor — the
 # legacy fallback was removed because it manufactured fake-healthy
 # distributions; see the comment block in ``_pick_primary``.)
@@ -167,20 +123,12 @@ DISEASE_MIN_CONFIDENCE = 0.65
 #   * the classifier's OWN ``not_a_plant`` head is not vetoing (see below)
 # The MaxLogit floor is overridable via classes.json.
 #
-# ``NAP_HEAD_MASS_FLOOR`` — the head veto. The gate used to consult the
-# detector and an embedding-distance score and *never* the one head that is
-# trained to answer exactly this question. On the never-trained ornamental
-# benchmark that is not academic: of the 13 leaf_scorch clusters the deployed
-# 2.6.8 bundle re-routes to not_a_plant, every single one had the head putting
-# ~99 % on leaf_scorch and a median 0.0018 on not_a_plant — overruled by a k-NN
-# distance that mostly measures "unfamiliar plant". Measured on the same
-# bundle, ``P(not_a_plant)`` separates the two populations almost perfectly:
-#   real not_a_plant (n=373)  p05 = 0.815, p50 = 0.978
-#   plants (n=513, in- and out-of-domain)  p95 = 0.024-0.040
-# So we refuse to fire when the head is confident the frame IS a plant. At
-# 0.05 that keeps 372 of 373 real not_a_plant images gate-eligible while
-# suppressing the gate on 98 % of plants. It is a veto, not a replacement —
-# the detector and embedding conditions still both have to fire.
+# ``NAP_HEAD_MASS_FLOOR`` is a veto: an auxiliary distance/logit heuristic must
+# not overrule a classifier head that says the frame is a plant. Historical
+# measurements previously quoted here came from the now-invalid private v2
+# regression instrument and are not release evidence. Strict production
+# bundles must declare the value explicitly, and the entire secondary overlay
+# remains off unless a matching full-served-pipeline calibration is present.
 #
 # ``ood.max_logit_scope`` selects WHICH max the floor is compared against:
 #   * ``"all_classes"`` (default, legacy bundles) — max over every logit.
@@ -195,14 +143,8 @@ NAP_HEAD_MASS_FLOOR_DEFAULT = 0.05
 MAX_LOGIT_SCOPE_DEFAULT = "all_classes"
 _MAX_LOGIT_SCOPES = ("all_classes", "plant_only")
 
-# Classes that are not "diseases" — used to compute disease scores
-# and to know when to apply the healthy fallback.
+# Classes that are not diseases — used for disease-score and verdict guards.
 _NON_DISEASE = {"healthy", "not_a_plant"}
-
-# Classes that escalate severity by one level on principle. Viral
-# infections are incurable and remain a source of spread to neighbours,
-# so any high-confidence viral verdict deserves the bump.
-_DEGENERATIVE_DISEASES = {"viral_disease"}
 
 # Viral-mosaic false-positive guard (see ``_postprocess``). Naturally
 # variegated / vividly patterned ornamental foliage (Calathea, Maranta,
@@ -214,27 +156,12 @@ _DEGENERATIVE_DISEASES = {"viral_disease"}
 # calls are mostly variegation, like the 53 % Calathea screenshot).
 VIRAL_MIN_CONFIDENCE = 0.65
 
-# Severity thresholds (relative bbox area). Calibrated against typical
-# indoor phone shots: a single leaf at arm's length covers roughly
-# 5–15% of the frame; a "the whole plant looks bad" full-frame shot
-# covers >30% via NMS-merged bboxes.
-SEVERITY_AREA_LOW = 0.06   # below this is "small / localised lesion"
-SEVERITY_AREA_HIGH = 0.18  # above this is "widespread"
-
-# Severity thresholds (disease confidence margin over healthy). Small
-# margins => the model is hedging => severity stays low even if the
-# bbox is large. Large margin => the call is confident => severity
-# escalates with area.
-SEVERITY_MARGIN_LOW = 0.20
-SEVERITY_MARGIN_HIGH = 0.45
-
 TOP_K_ALTERNATIVES = 3
 
 # ── Whole-image-vs-crop arbitration ──────────────────────────────────
 # Stage 1 crops the leaf before Stage 2 classifies it. On a leaf-centric
-# input (a phone shot already framed on one leaf) that extra crop drops
-# context and costs disease macro-F1 — measured at -0.093 vs classifying
-# the whole frame on val_realworld, which is itself a leaf-centric slice.
+# input (a phone shot already framed on one leaf) that extra crop can drop
+# context, while on a wide shot the crop can suppress room/background clutter.
 # But on a wide indoor shot the crop is exactly what rescues the leaf
 # from a room full of background, so we can't simply stop cropping.
 #
@@ -261,10 +188,18 @@ FOLD_WHOLE_FRAME_VOTE = get_bool("FOLD_WHOLE_FRAME_VOTE", True)
 # classifier-side signal both have to fire, and the not_a_plant head must
 # not veto), so without a hard blur check the pipeline cheerfully
 # returns "healthy" for a soft-focus brown smear. The 50.0 floor was
-# picked from a calibration set of real handheld phone shots: in-focus
-# leaves score 200..1500, an obviously-blurry shot scores 5..30. The
-# gate is permissive on purpose — sharp-but-low-light photos still
-# pass — and outright rejects only the unrecoverable cases.
+# a conservative compatibility threshold, not a validated v9 operating point.
+# It is intentionally permissive; v9 must lock and report a served-path quality
+# slice before changing or claiming performance for it.
+#
+# ONE STATISTIC, ONE FLOOR, BOTH TIERS. The on-device Aqua tier runs the same
+# quality gate before its classifier (android ``util/BlurGate.kt``): the same
+# ITU-R 601-2 integer luma PIL uses for ``convert("L")``, the same 320 px
+# long-edge downscale, the same interior 3x3 Laplacian and the same 50.0
+# floor. Until 2.7.5 the app scored a quarter-resolution decode (a 12 MP
+# frame at ~1000 px) against a floor of 100, so the two tiers rejected
+# different photographs. ``tests/test_blur_parity.py`` and the app's
+# ``BlurGateTest`` pin the two implementations to one synthetic fixture.
 BLUR_LAPLACIAN_FLOOR = 50.0
 # The score is computed on a downscaled grayscale copy so we don't pay
 # the cost of a full-resolution convolution per request. 320 px is
@@ -272,28 +207,190 @@ BLUR_LAPLACIAN_FLOOR = 50.0
 # that real focus differences stay separable from sensor noise.
 BLUR_DOWNSCALE = 320
 
+# Temperature is fitted with the same clamp in the training notebook.  Values
+# outside this interval cannot have been produced by that calibration step and
+# are treated as a broken sidecar rather than silently changing serving maths.
+TEMPERATURE_MIN = 0.05
+TEMPERATURE_MAX = 10.0
 
-def _load_temperature(classifier_path: Path | None) -> float:
+
+def _load_temperature(
+    classifier_path: Path | None,
+    *,
+    expected_tta: str | None = None,
+) -> float:
     """Look for ``temperature.json`` next to the classifier weights.
 
     The training notebook writes it automatically. Resolution is strictly
     bundle-relative: a per-family bundle (e.g. ``models/frontier/``) must
-    never silently inherit another family's calibration. Returns 1.0 (no-op)
-    when the file is missing or malformed.
+    never silently inherit another family's calibration. A missing file means
+    calibration is intentionally unavailable and returns 1.0 (no-op). A
+    *present* but malformed sidecar is a bundle-integrity error and fails
+    pipeline readiness; silently falling back to T=1 would make the API claim
+    calibrated probabilities while serving different maths.
     """
     if classifier_path is None:
         return 1.0
     p = Path(classifier_path).parent / "temperature.json"
+    if not p.exists():
+        return 1.0
     try:
-        if p.exists():
-            data = json.loads(p.read_text(encoding="utf-8"))
-            T = float(data.get("temperature", 1.0))
-            if T > 0:
-                logger.info("Loaded temperature T=%.3f from %s", T, p)
-                return T
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Could not load temperature from %s: %s", p, e)
-    return 1.0
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Invalid temperature sidecar {p}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid temperature sidecar {p}: root must be an object")
+    raw = data.get("temperature")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise RuntimeError(
+            f"Invalid temperature sidecar {p}: temperature must be numeric"
+        )
+    temperature = float(raw)
+    if (
+        not math.isfinite(temperature)
+        or not TEMPERATURE_MIN <= temperature <= TEMPERATURE_MAX
+    ):
+        raise RuntimeError(
+            f"Invalid temperature sidecar {p}: temperature must be finite and in "
+            f"[{TEMPERATURE_MIN}, {TEMPERATURE_MAX}], got {raw!r}"
+        )
+
+    declared_tta = data.get("tta")
+    if declared_tta is not None and not isinstance(declared_tta, str):
+        raise RuntimeError(f"Invalid temperature sidecar {p}: tta must be a string")
+    if expected_tta is not None and declared_tta is not None:
+        if declared_tta.strip().lower() != expected_tta.strip().lower():
+            raise RuntimeError(
+                f"Temperature sidecar {p} was fit with tta={declared_tta!r}, "
+                f"but serving uses tta={expected_tta!r}"
+            )
+    if data.get("serving_contract") is None:
+        logger.warning(
+            "Temperature sidecar %s has no model/preprocess serving-contract "
+            "binding; scaling is loaded but its calibration claim is advisory",
+            p,
+        )
+    logger.info("Loaded temperature T=%.3f from %s", temperature, p)
+    return temperature
+
+
+def _served_ood_gate_contract(meta: dict) -> tuple[bool, str]:
+    """Validate that an OOD threshold was calibrated as it is served.
+
+    Historical thresholds were fitted one image at a time, while serving folds
+    crop and whole-frame members and then takes the minimum embedding distance
+    / maximum MaxLogit. Applying the old threshold to that different statistic
+    has no measured operating point. The optional secondary OOD overlay is
+    therefore enabled only by an explicit, exact sidecar contract.
+    """
+    ood = meta.get("ood") if isinstance(meta, dict) else None
+    contract = ood.get("served_gate") if isinstance(ood, dict) else None
+    if not isinstance(contract, dict):
+        return False, "missing ood.served_gate object"
+
+    expected = {
+        "schema_version": 1,
+        "calibration_mode": "full_served_pipeline",
+        "embedding_aggregation": "min_member_distance",
+        "max_logit_aggregation": "max_member_logit",
+        "detector_confidence_floor": NAP_DETECTOR_CONF_FLOOR,
+        "fold_whole_frame_vote": FOLD_WHOLE_FRAME_VOTE,
+    }
+    for key, wanted in expected.items():
+        got = contract.get(key)
+        # bool is an int in Python; keep JSON types strict so true cannot stand
+        # in for schema_version=1 or detector_confidence_floor=1.
+        if isinstance(wanted, bool):
+            matches = isinstance(got, bool) and got is wanted
+        elif isinstance(wanted, (int, float)):
+            matches = (
+                not isinstance(got, bool)
+                and isinstance(got, (int, float))
+                and math.isfinite(float(got))
+                and float(got) == float(wanted)
+            )
+        else:
+            matches = isinstance(got, str) and got == wanted
+        if not matches:
+            return False, f"ood.served_gate.{key}={got!r}, expected {wanted!r}"
+    return True, "matching full-served-pipeline calibration contract"
+
+
+def _resolve_served_gate_thresholds(meta: dict) -> tuple[float | None, float | None]:
+    """Thresholds fitted on the *served* statistic (``ood.served_gate``).
+
+    Returns ``(embedding_threshold, max_logit_floor)``. Each is ``None`` when
+    the sidecar declares no served value for it (the notebook writes ``null``
+    when a signal did not separate on the served statistic). A declared value
+    must be a finite number in range; anything else fails readiness, because
+    silently falling back to the single-image threshold in ``ood.embedding``
+    is exactly the mis-calibration the served-gate contract exists to prevent.
+    """
+    ood = meta.get("ood") if isinstance(meta, dict) else None
+    gate = ood.get("served_gate") if isinstance(ood, dict) else None
+    if not isinstance(gate, dict):
+        return None, None
+    resolved: list[float | None] = []
+    for key, upper in (("embedding_threshold", 2.0), ("max_logit_floor", None)):
+        val = gate.get(key)
+        if val is None:
+            resolved.append(None)
+            continue
+        if (
+            isinstance(val, bool)
+            or not isinstance(val, (int, float))
+            or not math.isfinite(float(val))
+            or float(val) < 0.0
+            or (upper is not None and float(val) > upper)
+        ):
+            raise RuntimeError(
+                f"classes.json ood.served_gate.{key} must be null or a finite number "
+                f"in range, got {val!r}"
+            )
+        resolved.append(float(val))
+    return resolved[0], resolved[1]
+
+
+def _require_contract_value(contract: dict, dotted: str, expected) -> None:
+    """Require one serving-manifest value with strict, finite type semantics."""
+    current: object = contract
+    for key in dotted.split("."):
+        if not isinstance(current, dict) or key not in current:
+            raise BundleLoadError(f"serving_contract is missing {dotted}")
+        current = current[key]
+    if isinstance(expected, bool):
+        matches = isinstance(current, bool) and current is expected
+    elif isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        matches = (
+            not isinstance(current, bool)
+            and isinstance(current, (int, float))
+            and math.isfinite(float(current))
+            and math.isclose(float(current), float(expected), rel_tol=0.0, abs_tol=1e-6)
+        )
+    elif isinstance(expected, list):
+        matches = isinstance(current, list) and len(current) == len(expected)
+        if matches:
+            for got, wanted in zip(current, expected, strict=True):
+                if isinstance(wanted, (int, float)) and not isinstance(wanted, bool):
+                    if (
+                        isinstance(got, bool)
+                        or not isinstance(got, (int, float))
+                        or not math.isfinite(float(got))
+                        or not math.isclose(
+                            float(got), float(wanted), rel_tol=0.0, abs_tol=1e-6,
+                        )
+                    ):
+                        matches = False
+                        break
+                elif got != wanted:
+                    matches = False
+                    break
+    else:
+        matches = type(current) is type(expected) and current == expected
+    if not matches:
+        raise BundleLoadError(
+            f"serving_contract.{dotted}={current!r}, runtime requires {expected!r}"
+        )
 
 
 def _resolve_max_logit_floor(meta: dict) -> float:
@@ -325,9 +422,8 @@ def _resolve_head_mass_floor(meta: dict) -> float:
     """Read the NAP head-veto floor from classes.json ``ood`` section.
 
     Same contract as :func:`_resolve_max_logit_floor`, with one deliberate
-    difference: the default is **on**. Every bundle exported before this key
-    existed still benefits, which is the point — the measurement that motivates
-    it was taken on the deployed 2.6.8 bundle. Set
+    difference: the non-strict legacy default is **on**. Strict production
+    manifests require the key explicitly. Set
     ``ood.nap_head_mass_floor: null`` to restore the historical two-of-two gate.
     """
     if not isinstance(meta, dict):
@@ -457,14 +553,41 @@ class PlantDiseasePipeline:
         self,
         detector_path: Path,
         classifier_path: Path,
+        *,
+        require_bundle_manifest: bool = False,
     ):
+        self.verified_bundle: VerifiedBundle | None = None
+        if require_bundle_manifest:
+            self.verified_bundle = verify_bundle(classifier_path.parent)
+            classifier_path = self.verified_bundle.classifier_path
+            detector_path = self.verified_bundle.detector_path
         self.detector = LeafDetector(detector_path)
-        self.classifier = DiseaseClassifier(classifier_path)
-        self.temperature = _load_temperature(classifier_path)
+        self.classifier = DiseaseClassifier(
+            classifier_path,
+            exact_model_path=self.verified_bundle is not None,
+        )
+        self.temperature = _load_temperature(
+            classifier_path,
+            expected_tta=getattr(self.classifier, "tta", None),
+        )
         meta = getattr(self.classifier, "meta", None) or {}
+        (
+            self._secondary_ood_gate_enabled,
+            self._secondary_ood_gate_contract_reason,
+        ) = _served_ood_gate_contract(meta)
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
         self.nap_max_logit_scope = _resolve_max_logit_scope(meta)
         self.nap_head_mass_floor = _resolve_head_mass_floor(meta)
+        # The ONLY thresholds the overlay applies are the served-statistic ones
+        # from ``ood.served_gate`` (fitted in notebook §6 through detector ->
+        # crops -> whole-frame fold -> min distance / max logit). The
+        # single-image ``ood.embedding.threshold`` and ``ood.max_logit_floor``
+        # stay in the sidecar as calibration provenance and are never served.
+        self._served_embedding_threshold: float | None = None
+        if self._secondary_ood_gate_enabled:
+            served_emb, served_ml = _resolve_served_gate_thresholds(meta)
+            self._served_embedding_threshold = served_emb
+            self.nap_max_logit_floor = served_ml if served_ml is not None else 0.0
         # Which per-crop key carries the score this bundle's floor was fit on.
         self._max_logit_key = (
             "plant_max_logit"
@@ -480,19 +603,31 @@ class PlantDiseasePipeline:
         self.embedding_ood: EmbeddingOODScorer | None = load_embedding_ood(
             classifier_path.parent, meta
         )
-        if self.embedding_ood is not None:
+        if self.verified_bundle is not None:
+            self._validate_bundle_serving_contract(meta)
+        if self._served_embedding_threshold is not None and self.embedding_ood is not None:
             logger.info(
-                "OOD: embedding k-NN gate active (threshold=%.4f) — "
-                "supersedes the MaxLogit floor on the classifier side.",
+                "OOD: embedding k-NN gate active on the served statistic "
+                "(min member distance > %.4f; single-image sidecar threshold %.4f "
+                "is provenance only) — supersedes the MaxLogit floor.",
+                self._served_embedding_threshold,
                 self.embedding_ood.threshold,
             )
-        if self.embedding_ood is None and self.nap_max_logit_floor <= 0:
+        if not self._secondary_ood_gate_enabled:
             logger.warning(
-                "OOD MaxLogit gate is OFF on this model — separation_p50 in "
-                "classes.json showed NAP medians above plant medians, so the "
-                "AND-gate degrades to detector-confidence-only. NAP rejection "
-                "rests on the classifier's own not_a_plant head until a "
-                "different OOD score is calibrated.",
+                "Secondary OOD overlay is advisory/OFF: %s. Natural trained "
+                "not_a_plant predictions remain active; detector confidence "
+                "alone can never reject an image.",
+                self._secondary_ood_gate_contract_reason,
+            )
+        elif (
+            (self.embedding_ood is None or self._served_embedding_threshold is None)
+            and self.nap_max_logit_floor <= 0
+        ):
+            logger.warning(
+                "Secondary OOD overlay has a matching serving contract but no "
+                "usable classifier-side signal; it is OFF rather than "
+                "degrading to detector-only rejection.",
             )
         logger.info(
             "Pipeline ready  classifier=%s backend  T=%.3f  "
@@ -505,6 +640,62 @@ class PlantDiseasePipeline:
             else f"P(nap)<{self.nap_head_mass_floor:.2f}",
             "off" if self.conformal is None
             else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
+        )
+
+    def _validate_bundle_serving_contract(self, meta: dict) -> None:
+        """Bind manifest claims to every live preprocessing/routing lever."""
+        assert self.verified_bundle is not None
+        contract = self.verified_bundle.manifest["serving_contract"]
+        selected = self.verified_bundle.classifier_path.name
+        expected = {
+            "schema_version": 1,
+            "detector.path": "detector.onnx",
+            "detector.class_names": [self.detector.class_name],
+            "detector.img_size": self.detector.img_size,
+            "detector.min_confidence": self.detector.min_confidence,
+            "detector.nms_iou": self.detector.nms_iou,
+            "detector.max_detections": self.detector.max_detections,
+            "crop.max_crops": self._MAX_RECLASSIFY,
+            "crop.min_size_px": MIN_CROP_SIZE,
+            "crop.min_area_fraction": MIN_BBOX_AREA_FRAC,
+            "crop.padding_ratio": CROP_PADDING_RATIO,
+            "crop.fold_whole_frame_vote": FOLD_WHOLE_FRAME_VOTE,
+            "crop.member_selection": "detector_confidence_descending",
+            "crop.vote_aggregation": "equal_mean_probabilities",
+            "crop.whole_frame_vote_weight": 1.0,
+            "classifier.path": selected,
+            "classifier.img_size": self.classifier.img_size,
+            "classifier.eval_resize_ratio": self.classifier.eval_resize_ratio,
+            "classifier.resize": "shorter_side",
+            "classifier.crop": "center",
+            "classifier.normalize_mean": self.classifier.norm_mean.tolist(),
+            "classifier.normalize_std": self.classifier.norm_std.tolist(),
+            "classifier.tta": self.classifier.tta,
+            "classifier.tta_aggregation": "mean_logits",
+            "classifier.output_semantics": "logits",
+            "blur.enabled": True,
+            "blur.policy": "abstain",
+            "blur.variance_laplacian_floor": BLUR_LAPLACIAN_FLOOR,
+            "blur.downscale_max_side": BLUR_DOWNSCALE,
+            "ood.policy": "detector_and_classifier_signal_with_nap_head_veto",
+            "ood.detector_confidence_floor": NAP_DETECTOR_CONF_FLOOR,
+            "ood.classifier_signal_priority": "embedding_knn_else_max_logit",
+            "ood.embedding_aggregation": "min_member_distance",
+            "ood.max_logit_aggregation": "max_member_logit",
+            "ood.nap_head_veto": "veto_when_probability_below_configured_floor",
+            "ood.served_gate_enabled": self._secondary_ood_gate_enabled,
+            "ood.config_source": "classes.json#ood",
+        }
+        for dotted, wanted in expected.items():
+            _require_contract_value(contract, dotted, wanted)
+
+        ood = meta.get("ood") if isinstance(meta, dict) else None
+        declared_gate = ood.get("served_gate") if isinstance(ood, dict) else None
+        _require_contract_value(contract, "ood.served_gate", declared_gate)
+        logger.info(
+            "Verified immutable serving bundle manifest=%s contract=%s",
+            self.verified_bundle.manifest_sha256[:16],
+            self.verified_bundle.serving_contract_sha256[:16],
         )
 
     # ── main entry point ─────────────────────────────────────────────
@@ -521,7 +712,7 @@ class PlantDiseasePipeline:
         focus_score = _variance_of_laplacian(img)
         if focus_score < BLUR_LAPLACIAN_FLOOR:
             logger.info(
-                "Blur gate triggered: var-of-Laplacian=%.1f < %.1f → not_a_plant",
+                "Blur gate triggered: var-of-Laplacian=%.1f < %.1f → quality abstention",
                 focus_score, BLUR_LAPLACIAN_FLOOR,
             )
             return self._too_blurry_response(img, t0)
@@ -550,13 +741,11 @@ class PlantDiseasePipeline:
         # signal (embedding k-NN distance, or the MaxLogit floor when no
         # bank ships) is the classic OOD signature: the detector glommed
         # onto a plant-coloured texture and the classifier had no clean
-        # answer to give. Route to NAP — unless the not_a_plant head
-        # vetoes — rather than emitting a guessed disease.
+        # answer to give. Mark the response as an abstention — unless the
+        # not_a_plant head vetoes — without rewriting measured probabilities.
         det_conf = float(stage1.get("confidence", 0.0))
         if self._should_route_to_nap(classification, det_conf):
-            classification = self._reroute_to_nap(classification)
-
-        is_diseased = self._is_diseased(classification)
+            classification = self._mark_ood_rejected(classification)
 
         logger.info(
             "Stage 2 → class=%s  confidence=%.3f  primary_box=%s  voted_over=%d",
@@ -567,6 +756,10 @@ class PlantDiseasePipeline:
         )
 
         final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
+        # Compute the operational disease verdict from the final, canonical
+        # probability-backed result.  This also honours an OOD abstention;
+        # doing it before postprocessing allowed response fields to disagree.
+        is_diseased = self._is_diseased(final)
 
         severity = compute_severity(
             class_name=final["class_name"],
@@ -595,33 +788,19 @@ class PlantDiseasePipeline:
         img: Image.Image,
         t0: float,
     ) -> dict:
-        """Build a synthetic ``not_a_plant`` verdict for unfocused input.
+        """Build an explicit image-quality abstention for unfocused input.
 
-        We don't run the classifier when the blur gate fires — there is
-        no salvageable signal in the crop. The probs dict assigns the
-        full mass to ``not_a_plant`` so downstream metrics, severity
-        scoring and toxicity routing all behave as if the classifier
-        emitted that verdict directly. A ``blurry_image`` warning is
-        added so the client can render a "retake the photo" hint
-        instead of a generic NAP message.
+        The classifier is intentionally not run, so there is no probability
+        distribution to report. Older code invented P(not_a_plant)=1 here;
+        that looked calibrated despite having no model evidence. ``unknown``
+        plus empty diagnostics and the explicit abstention fields truthfully
+        distinguish a quality rejection from a natural trained-head NAP.
         """
-        probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
-        # Assign the full mass to not_a_plant. Defensive: if the classifier
-        # was loaded with a class set that doesn't include not_a_plant
-        # (shouldn't happen in v2.x, but keep the gate safe), fall back to
-        # the first class so class_name and confidence stay consistent
-        # rather than reporting a 0.0 confidence for a class that holds all
-        # the mass.
-        chosen = "not_a_plant" if "not_a_plant" in probs else next(iter(probs))
-        probs[chosen] = 1.0
         final = {
-            "class_name": chosen,
-            "confidence": round(float(probs[chosen]), 4),
-            "all_probs": probs,
-            "top_k": [
-                {"class": k, "confidence": round(float(v), 4)}
-                for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[:TOP_K_ALTERNATIVES]
-            ],
+            "class_name": "unknown",
+            "confidence": 0.0,
+            "all_probs": {},
+            "top_k": [],
             "warnings": ["blurry_image"],
         }
         severity = compute_severity(
@@ -665,10 +844,8 @@ class PlantDiseasePipeline:
         # 1 found nothing leaf-like), so we require a real classifier-side OOD
         # signal — without it the gate would route every no-detection input to
         # NAP, including wide real-plant shots YOLO simply failed to box.
-        if self._should_route_to_nap(
-            classification, det_conf=0.0, require_classifier_signal=True
-        ):
-            classification = self._reroute_to_nap(classification)
+        if self._should_route_to_nap(classification, det_conf=0.0):
+            classification = self._mark_ood_rejected(classification)
         final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
         is_diseased = self._is_diseased(final)
         severity = compute_severity(
@@ -704,15 +881,21 @@ class PlantDiseasePipeline:
     ) -> dict:
         elapsed = (time.perf_counter() - t0) * 1000
         img_w, img_h = image_size
+        abstained, abstention_reason = _derive_abstention(final)
         return {
             "class_name": final["class_name"],
             "confidence": final["confidence"],
             "all_probs": final["all_probs"],
             "top_k": final["top_k"],
             "warnings": final["warnings"],
+            "abstained": abstained,
+            "abstention_reason": abstention_reason,
+            "verdict_status": "abstained" if abstained else "accepted",
             "severity": severity,
             "prediction_set": self._build_prediction_set(
-                final["all_probs"], final["class_name"]
+                final["all_probs"],
+                final["class_name"],
+                rejected=abstained,
             ),
             "detection": {
                 "is_diseased": is_diseased,
@@ -733,7 +916,8 @@ class PlantDiseasePipeline:
     @staticmethod
     def _is_diseased(classification: dict) -> bool:
         return (
-            classification["class_name"] not in _NON_DISEASE
+            not classification.get("_ood_gated", False)
+            and classification["class_name"] not in _NON_DISEASE
             and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
         )
 
@@ -741,10 +925,8 @@ class PlantDiseasePipeline:
         self,
         classification: dict,
         det_conf: float,
-        *,
-        require_classifier_signal: bool = False,
     ) -> bool:
-        """Three-of-three OOD gate. We re-route to ``not_a_plant`` when the
+        """Three-of-three OOD gate. We abstain when the
         detector AND the classifier's OOD score both signal "this is not a
         leaf" AND the trained ``not_a_plant`` head does not veto:
 
@@ -771,15 +953,25 @@ class PlantDiseasePipeline:
              grew over-confident (plant/NAP MaxLogit separation ≤ 0).
           2. **MaxLogit floor** (``max_logit < ml_floor``) when no bank is
              shipped but ``ood.max_logit_floor`` is a positive number.
-          3. Otherwise no classifier signal — the gate degrades to
-             detector-confidence only (historical fallback).
+          3. Otherwise no classifier signal — the secondary overlay stays off.
 
-        ``require_classifier_signal`` is forwarded by the no-detection caller
-        (where ``det_conf`` is a synthetic 0) so the gate cannot blanket-route
-        on detector confidence alone — see ``_decide_nap_route``.
+        The entire overlay also requires ``ood.served_gate`` to state that its
+        thresholds were calibrated with the same crop/whole aggregation and
+        detector runtime, and it applies ONLY the thresholds declared there
+        (``embedding_threshold`` / ``max_logit_floor``). The one-image-at-a-time
+        thresholds in ``ood.embedding`` / ``ood.max_logit_floor`` are
+        calibration provenance and cannot reject.
         """
+        if not getattr(self, "_secondary_ood_gate_enabled", False):
+            return False
+        # Served-statistic threshold only. ``None`` (no bank, or the notebook
+        # found the embedding signal did not separate on the served statistic)
+        # hands the decision to the served MaxLogit floor, then to no signal.
+        served_threshold = getattr(self, "_served_embedding_threshold", None)
         ood_threshold = (
-            self.embedding_ood.threshold if self.embedding_ood is not None else None
+            served_threshold
+            if self.embedding_ood is not None and served_threshold is not None
+            else None
         )
         probs = classification.get("all_probs") or {}
         triggered, desc = _decide_nap_route(
@@ -791,34 +983,40 @@ class PlantDiseasePipeline:
             ml_floor=self.nap_max_logit_floor,
             max_logit=self._scoped_max_logit(classification),
             ml_scope=self.nap_max_logit_scope,
-            require_classifier_signal=require_classifier_signal,
             head_nap=probs.get("not_a_plant"),
             head_mass_floor=self.nap_head_mass_floor,
         )
         if triggered:
-            logger.info("OOD gate triggered (%s) → not_a_plant", desc)
+            logger.info("OOD gate triggered (%s) → abstain; keep classifier probabilities", desc)
         return triggered
 
     def _build_prediction_set(
-        self, probs: dict[str, float], class_name: str | None = None
+        self,
+        probs: dict[str, float],
+        class_name: str | None = None,
+        *,
+        rejected: bool = False,
     ) -> dict | None:
         """Return the conformal prediction set or ``None`` if unconfigured.
 
-        Honest UX: clients should render the *set* — "leaf_spot
-        OR viral_disease at 90 % coverage" — instead of pretending
-        the top-1 was a single confident answer. The dict is keyed by
-        ``classes`` / ``coverage`` / ``method`` so the client doesn't
-        need to know about the calibration internals.
+        Honest UX: clients should render the *set* as advisory alternatives
+        rather than pretending the top-1 was a single confident answer. The
+        ``coverage`` field is ``ConformalConfig.coverage_target``: the
+        notebook's product target when the sidecar carries the out-of-sample
+        audit that backs it, else the nominal ``1 - alpha`` (see
+        ``conformal.py``). Neither is delivered coverage measured on a locked
+        independent set. The dict is keyed by ``classes`` / ``coverage`` /
+        ``method`` so the client doesn't need to know about the calibration
+        internals.
 
-        The conformal calibration covers *plant* inputs only — the
-        ``not_a_plant`` verdict is reached through the detector + OOD
-        gate, not RAPS, so attaching a coverage-guaranteed set to a NAP
-        response would over-claim. Suppress it for those cases.
+        The conformal calibration covers accepted *plant* inputs only.
+        Attaching its coverage statement to a natural ``not_a_plant`` result
+        or an OOD-gated abstention would over-claim, so suppress it for both.
         """
         cfg = self.conformal
         if cfg is None or not probs:
             return None
-        if class_name == "not_a_plant":
+        if class_name == "not_a_plant" or rejected:
             return None
         classes = prediction_set(probs, cfg)
         return {
@@ -1009,44 +1207,24 @@ class PlantDiseasePipeline:
             key=lambda r: (disease_score(r[1]), top1_match(r[1]), area(r[0])),
             reverse=True,
         )
-        # The ranking already does the right thing when the aggregate
-        # verdict flipped to healthy: the most-diseased region still wins,
+        # The ranking also does the right thing when the aggregate verdict is
+        # healthy: the most-diseased region still wins,
         # so the result screen highlights the suspicious leaf, not a
         # picture-perfect one beside it.
         return ranked[0][0]
 
-    def _reroute_to_nap(self, classification: dict) -> dict:
-        """Rewrite an OOD-gated classification to a confident NAP verdict.
+    @staticmethod
+    def _mark_ood_rejected(classification: dict) -> dict:
+        """Mark an OOD abstention without manufacturing a class probability.
 
-        We don't invent confidence — we report ``1 - cls_msp`` (i.e. how
-        confident we are it is NOT the suspected disease), bounded so
-        the UI doesn't claim 100 % certainty about negativity either.
-        Probability mass is moved into ``not_a_plant`` and the rest is
-        renormalised so all_probs/top_k still sum to 1.
+        ``not_a_plant`` is a trained softmax class.  Detector confidence and
+        embedding distance are not probabilities for that class, so combining
+        them into a made-up NAP confidence would corrupt calibration and make
+        ``class_name`` disagree with ``all_probs``.  Explicit abstention fields
+        plus the legacy warning carry the rejection; the raw calibrated
+        distribution stays available as diagnostic evidence and for ``top_k``.
         """
-        names = list(classification.get("all_probs", {}).keys()) or self.classifier.CLASS_NAMES
-        msp = float(classification.get("confidence", 0.0))
-        nap_conf = max(min(1.0 - msp, 0.95), 0.55)
-        probs = {n: 0.0 for n in names}
-        probs["not_a_plant"] = nap_conf
-        leftover = 1.0 - nap_conf
-        original = classification.get("all_probs") or {}
-        residual_total = sum(
-            v for k, v in original.items() if k != "not_a_plant"
-        )
-        if residual_total > 0 and leftover > 0:
-            for k, v in original.items():
-                if k == "not_a_plant":
-                    continue
-                probs[k] = float(v) * (leftover / residual_total)
-        return {
-            "class_name": "not_a_plant",
-            "confidence": nap_conf,
-            "all_probs": probs,
-            "low_confidence": False,
-            "_voted_over": classification.get("_voted_over", 1),
-            "_ood_gated": True,
-        }
+        return {**classification, "_ood_gated": True}
 
     @staticmethod
     def _extract_crop(img: Image.Image, region: dict | None) -> Image.Image:
@@ -1082,7 +1260,6 @@ def _decide_nap_route(
     ml_floor: float,
     max_logit: float,
     ml_scope: str = MAX_LOGIT_SCOPE_DEFAULT,
-    require_classifier_signal: bool = False,
     head_nap: float | None = None,
     head_mass_floor: float = 0.0,
 ) -> tuple[bool, str]:
@@ -1095,23 +1272,18 @@ def _decide_nap_route(
     priority order: the embedding k-NN distance (``ood_score > ood_threshold``)
     when a bank is shipped and an embedding was produced, else the MaxLogit
     floor (``max_logit < ml_floor``) when that floor is positive, else no
-    signal at all — in which case the gate degrades to detector-only.
+    signal at all — in which case the secondary gate stays off.
 
     The head veto applies only when ``head_mass_floor`` is positive and a
     ``head_nap`` probability was supplied; a caller that has neither gets the
     historical two-of-two behaviour unchanged.
-
-    ``require_classifier_signal`` is set by the **no-detection** caller. There
-    ``det_conf`` is a synthetic ``0.0`` (Stage 1 returned nothing), so
-    ``detector_low`` is *always* True and the detector-only degradation would
-    route EVERY no-detection input — including wide real-plant shots YOLO
-    simply failed to box — to ``not_a_plant``. With the flag set we refuse to
-    fire unless a real classifier-side OOD signal is present AND positive, so a
-    bundle without an OOD signal keeps the classifier's own verdict instead of
-    blanket-rejecting.
     """
-    if class_name in _NON_DISEASE or "not_a_plant" not in class_names:
-        return False, "non-disease-or-no-nap-class"
+    # A natural not_a_plant top-1 is already an honest trained-head rejection.
+    # Healthy, however, is still a plant-content claim and must be eligible for
+    # the same OOD checks as a disease result; bypassing it let sharp junk that
+    # happened to map to healthy evade the rejection gate entirely.
+    if class_name == "not_a_plant" or "not_a_plant" not in class_names:
+        return False, "already-nap-or-no-nap-class"
 
     # Head veto first — it is the cheapest and the most decisive of the three.
     if head_mass_floor > 0 and head_nap is not None and head_nap < head_mass_floor:
@@ -1138,18 +1310,55 @@ def _decide_nap_route(
         has_signal = False
         desc = "no-classifier-signal"
 
-    if require_classifier_signal and not has_signal:
-        # No-detection path with no usable classifier-side OOD signal: keep the
-        # classifier verdict rather than blanket-route to NAP on det_conf=0.
+    if not has_signal:
+        # Detector confidence is localisation evidence, not a calibrated OOD
+        # classifier. It may participate in the AND gate but can never be the
+        # sole reason to reject an image.
         return False, (
             f"det={det_conf:.3f}<{NAP_DETECTOR_CONF_FLOOR:.2f}={detector_low}, "
-            f"{desc} (classifier signal required but absent → keep verdict)"
+            f"{desc} (classifier signal absent → keep verdict)"
         )
 
-    triggered = (detector_low and classifier_ood) if has_signal else detector_low
+    triggered = detector_low and classifier_ood
     return triggered, (
         f"det={det_conf:.3f}<{NAP_DETECTOR_CONF_FLOOR:.2f}={detector_low}, {desc}"
     )
+
+
+ABSTENTION_REASON_OOD = "ood"
+ABSTENTION_REASON_QUALITY = "image_quality"
+ABSTENTION_REASON_NAP = "not_a_plant"
+ABSTENTION_REASON_UNKNOWN = "unknown"
+
+
+def _derive_abstention(result: dict) -> tuple[bool, str | None]:
+    """Return the public abstention verdict for a pipeline or cached result.
+
+    Warning-based derivation is part of the contract so an API adapter can
+    safely upgrade cached responses written before explicit fields existed.
+    OOD and image quality take precedence over a synthetic blur response's
+    ``not_a_plant`` class; a natural trained-head NAP argmax is reported
+    separately as ``not_a_plant``. Explicit ``abstention_reason`` /
+    ``abstained`` / ``verdict_status`` fields cover adapters that already
+    normalised the contract.
+    """
+    warnings = {
+        str(item).strip().lower()
+        for item in (result.get("warnings") or [])
+        if isinstance(item, str)
+    }
+    if result.get("_ood_gated") or "nap_ood_gated" in warnings:
+        return True, ABSTENTION_REASON_OOD
+    if "blurry_image" in warnings:
+        return True, ABSTENTION_REASON_QUALITY
+    explicit_reason = result.get("abstention_reason")
+    if isinstance(explicit_reason, str) and explicit_reason.strip():
+        return True, explicit_reason.strip().lower()
+    if result.get("class_name") == "not_a_plant":
+        return True, ABSTENTION_REASON_NAP
+    if result.get("abstained") is True or result.get("verdict_status") == "abstained":
+        return True, ABSTENTION_REASON_UNKNOWN
+    return False, None
 
 
 def _fold_votes(
@@ -1165,7 +1374,7 @@ def _fold_votes(
     0 mass for it rather than dropping the class from the vote. Exposed
     for tests: it carries the whole-image-vs-crop arbitration math, so a
     confident whole-frame vote folded into a weak crop vote must pull the
-    aggregate toward the whole-frame verdict (the -0.093 recovery).
+    aggregate toward the whole-frame verdict.
     """
     sum_probs: dict[str, float] = {n: 0.0 for n in class_names}
     for probs in member_probs:
@@ -1184,43 +1393,16 @@ def compute_severity(
     image_size: tuple[int, int],
     is_diseased: bool,
 ) -> str:
-    """Heuristic severity scoring (low / medium / high)."""
-    if not is_diseased or class_name in _NON_DISEASE:
-        return "low"
+    """Return the conservative severity placeholder supported by this model.
 
-    W, H = image_size
-    img_area = max(W * H, 1)
-    if primary_box:
-        w = float(primary_box.get("width", 0))
-        h = float(primary_box.get("height", 0))
-        area_frac = max(0.0, min(1.0, (w * h) / img_area))
-    else:
-        area_frac = 0.0
-
-    margin = max(0.0, float(confidence) - float(healthy_prob))
-
-    if area_frac >= SEVERITY_AREA_HIGH:
-        area_pts = 3
-    elif area_frac >= SEVERITY_AREA_LOW:
-        area_pts = 2
-    else:
-        area_pts = 1
-
-    if margin >= SEVERITY_MARGIN_HIGH:
-        margin_pts = 3
-    elif margin >= SEVERITY_MARGIN_LOW:
-        margin_pts = 2
-    else:
-        margin_pts = 1
-
-    score = area_pts + margin_pts
-    if class_name in _DEGENERATIVE_DISEASES:
-        score += 1
-
-    if score >= 6:
-        return "high"
-    if score >= 4:
-        return "medium"
+    The detector box localises a *leaf*, not a lesion, and classifier
+    confidence estimates label certainty, not affected-area extent.  Neither
+    can identify mild/medium/severe disease without severity-labelled data.
+    Keep the existing response enum compatible by returning ``low`` rather
+    than inventing a clinical-looking level.  The otherwise-unused arguments
+    remain in the signature for API compatibility and make the missing target
+    explicit to future training work.
+    """
     return "low"
 
 
@@ -1228,19 +1410,13 @@ def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
 ) -> dict:
-    """Soft postprocessing + weak-healthy reroute.
+    """Probability-preserving postprocessing.
 
     Checks, in order:
-      * **weak-healthy reroute** — top-1 = healthy but **below a majority**
-        (``HEALTHY_REROUTE_FLOOR``) while a disease is competitive (absolute
-        or gap trigger). Only then do we swap to the strongest disease so the
-        UI doesn't say "Healthy" on what is plainly a sick plant, and attach a
-        ``weak_healthy_rerouted`` warning. A confident-plurality healthy is
-        never converted — that manufactured disease false positives — so it
-        falls through to the soft path below.
-      * ``uncertain_healthy`` — top-1 is healthy and kept (above the majority
-        floor, or no competitive disease) but confidence/margin is below the
-        soft thresholds, or a disease clears ``HEALTHY_DISEASE_FLOOR``.
+      * canonicalise ``class_name`` / ``confidence`` to the measured argmax;
+        postprocessing may warn but never substitute a lower-probability class;
+      * ``uncertain_healthy`` — top-1 is healthy but confidence/margin is below
+        the soft thresholds, or a disease clears ``HEALTHY_DISEASE_FLOOR``.
         Surfaces the suspected disease (``disease_suspected:<class>``) +
         alternatives, no class swap.
       * ``low_confidence`` — top-1 below the healthy threshold.
@@ -1251,74 +1427,14 @@ def _apply_postprocessing_rules(
 
     top1_name, top1_prob = ordered[0]
     top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
-
-    # ── Weak-healthy reroute ────────────────────────────────────────
-    # When the model labels something as healthy with sub-50% confidence
-    # while a real disease class has any meaningful mass, "healthy" is
-    # almost certainly wrong. Reroute the verdict so the UI surfaces
-    # the more likely call.
-    if top1_name == "healthy" and "healthy" in class_names:
-        worst_disease = max(
-            ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
-            key=lambda kv: kv[1],
-            default=(None, 0.0),
-        )
-        # Hard reroute fires ONLY when healthy is below the reroute floor
-        # (HEALTHY_REROUTE_FLOOR = 0.50) — i.e. healthy did not win a
-        # majority. A confident-plurality healthy is NEVER force-converted:
-        # it falls through to the soft ``uncertain_healthy`` /
-        # ``disease_suspected`` path below, which surfaces the suspected
-        # disease without asserting it. That is the false-positive fix —
-        # borderline-healthy plants are no longer manufactured into disease
-        # verdicts. Within the sub-floor band, two triggers each suffice:
-        #
-        #   * absolute — strongest disease at/above
-        #     HEALTHY_REROUTE_DISEASE_FLOOR (0.25). The 0.25 floor blocks
-        #     reroutes onto sub-quarter-confidence noise.
-        #   * gap — strongest disease has ≥ HEALTHY_GAP_DISEASE_FLOOR (0.10)
-        #     mass and trails healthy by < HEALTHY_GAP_MARGIN (0.30). Catches
-        #     the low-spread "healthy 0.29 / leaf_spot 0.24" dead-plant
-        #     coin-flip the absolute path's 0.25 disease threshold just misses.
-        absolute_hit = (
-            top1_prob < HEALTHY_REROUTE_FLOOR
-            and worst_disease[1] >= HEALTHY_REROUTE_DISEASE_FLOOR
-        )
-        gap = top1_prob - worst_disease[1] if worst_disease[0] is not None else float("inf")
-        gap_hit = (
-            worst_disease[0] is not None
-            and top1_prob < HEALTHY_REROUTE_FLOOR
-            and worst_disease[1] >= HEALTHY_GAP_DISEASE_FLOOR
-            and gap < HEALTHY_GAP_MARGIN
-        )
-        if worst_disease[0] is not None and (absolute_hit or gap_hit):
-            logger.info(
-                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f  "
-                "trigger=%s  gap=%.3f",
-                top1_prob, worst_disease[0], worst_disease[1],
-                "absolute" if absolute_hit else "gap",
-                gap,
-            )
-            classification = {
-                **classification,
-                "class_name": worst_disease[0],
-                "confidence": float(worst_disease[1]),
-            }
-            warnings.append("weak_healthy_rerouted")
-            # Re-sort the probability list around the new top-1 so the
-            # rest of this function (top_k construction, healthy-gate
-            # warning) sees the corrected verdict.
-            ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
-            ordered = sorted(
-                ordered, key=lambda kv: (kv[0] != worst_disease[0], -kv[1]),
-            )
-            # Only ``top1_name`` is read past this point — it is what makes
-            # the healthy gate below false. ``top1_prob``/``top2_prob`` are
-            # deliberately NOT refreshed: nothing reads them after a reroute
-            # (the healthy block is unreachable once top-1 is a disease).
-            top1_name = ordered[0][0]
+    classification = {
+        **classification,
+        "class_name": top1_name,
+        "confidence": float(top1_prob),
+    }
 
     top_k = [
-        {"class": name, "confidence": round(float(conf), 4)}
+        {"class": name, "confidence": float(conf)}
         for name, conf in ordered[:TOP_K_ALTERNATIVES]
     ]
 
@@ -1343,7 +1459,11 @@ def _apply_postprocessing_rules(
     if classification.get("_ood_gated"):
         warnings.append("nap_ood_gated")
 
-    if classification.get("low_confidence"):
+    # Re-evaluate after temperature scaling / vote aggregation.  The
+    # no-detection path starts from a per-image classifier result that does not
+    # carry this flag, and a stale pre-calibration flag must not override the
+    # probability source of truth.
+    if classification.get("low_confidence") or top1_prob < HEALTHY_MIN_CONFIDENCE:
         warnings.append("low_confidence")
 
     # Viral-mosaic guard — see VIRAL_MIN_CONFIDENCE. Naturally variegated
@@ -1359,20 +1479,23 @@ def _apply_postprocessing_rules(
             warnings.append("low_confidence")
 
     # Very-low-confidence floor — purely a UI hint, no class swap.
-    # The post-reroute confidence is what the user sees, so we check
-    # ``classification["confidence"]`` rather than the original
-    # ``top1_prob`` (which may have been a 0.51-healthy that got
-    # rerouted to a 0.32-disease above). Any verdict that lands below
+    # The canonical argmax confidence is what the user sees. Any verdict below
     # the floor — including a disease that the model emitted at
     # 31 % on a junk image — earns the warning so the UI can render
     # a "please retake the photo" banner.
     if float(classification["confidence"]) < VERY_LOW_CONFIDENCE_FLOOR:
         warnings.append("very_low_confidence")
 
-    return {
+    result = {
         "class_name": classification["class_name"],
-        "confidence": round(float(classification["confidence"]), 4),
+        "confidence": float(classification["confidence"]),
         "all_probs": probs,
         "top_k": top_k,
         "warnings": warnings,
     }
+    # Internal marker consumed by ``_is_diseased`` and conformal output;
+    # ``_build_response`` turns it into the explicit, versioned abstention
+    # contract while preserving these raw probability diagnostics.
+    if classification.get("_ood_gated"):
+        result["_ood_gated"] = True
+    return result
