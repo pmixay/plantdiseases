@@ -52,7 +52,8 @@ present. It is relative, not an SLA.
 Two stages, orchestrated by `server/pipeline.py`:
 
 1. **Stage 1 — YOLOv8n**, single class `plant_leaf`, trained in notebook §3
-   from PlantDoc bounding boxes with `not_a_plant` images added as
+   from PlantDoc bounding boxes plus any supplement photos that ship YOLO box
+   files (training-split photos only), with `not_a_plant` images added as
    empty-label background negatives (without them the detector fires at 0.9
    on pure noise), then **re-selected on recall** across the saved epochs
    rather than on Ultralytics' fitness. It localises the leaf so Stage 2 sees
@@ -259,7 +260,12 @@ run as a self-contained Colab upload.
   only when the drift gate passes *and* a paired bootstrap does not find INT8
   significantly worse), temperature, conformal, and classifier-side OOD
   diagnostics. The current private unseen-domain set is diagnostic-only and
-  cannot enable a served OOD overlay.
+  cannot enable a served OOD overlay. It ends with one bounded served pass over
+  `val_realworld`: shipped `detector.onnx` → server crop rules → shipped
+  classifier → mean vote, at the app's 1024 px upload size. That pass records
+  the Stage-1 audit (`stage1_detection`), the end-to-end disease F1
+  (`end_to_end`, headline `served_vote`) and the served OOD gate out of sample
+  (`served_gate_oos`) in `model_card.json`, in every training mode.
 - **§6b** bundles the run; **§7** states the evaluation contract.
 
 ## Validation contract

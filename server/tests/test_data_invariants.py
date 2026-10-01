@@ -1088,8 +1088,10 @@ def test_recipe_uses_deterministic_torch_settings():
 
 
 def test_supplement_eval_is_model_era_and_capture_family_aware():
-    """The provenance columns are honoured when present and fall back with a
-    warning when absent (v8 carries none); the strict knob is opt-in."""
+    """The provenance columns are honoured when present and fall back to
+    defaults when absent (v8 carries none); the strict knob is opt-in. Family
+    conflicts are RESOLVED by routing the family as one unit, never raised —
+    behaviour pinned in test_notebook_supplement.py."""
     src = _notebook_source()
     assert "STRICT_SUPPLEMENT_MODEL_PROVENANCE = False" in src
     assert "_SUPPLEMENT_PROVENANCE_FALLBACKS" in src
@@ -1100,7 +1102,8 @@ def test_supplement_eval_is_model_era_and_capture_family_aware():
     assert "capture_family_id" in src
     assert "elif r.get('_seen_by_eval_model')" in src
     assert "SUPPLEMENT_REQUIRED_INDEPENDENCE_METHOD = 'capture_family_id+phash_v1'" in src
-    assert "independent-family violation" in src
+    assert "SUPPLEMENT_LOAD_UNLISTED_IMAGES = True" in src
+    assert "_planned[_k] = ('supplement_train_only',) + tuple(_plan[1:])" in src
 
 
 def test_private_v2_unseen_domain_set_is_diagnostic_not_ship_gate():

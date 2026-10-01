@@ -98,8 +98,8 @@ carry one of three statuses. Each stale section also carries an inline
 | section | status | why |
 |---|---|---|
 | Supplement routing — version-aware and fail-closed | **current** | matches notebook §2 (`STRICT_SUPPLEMENT_*`, `SUPPLEMENT_EVAL_THROUGH_MODEL_VERSION`) |
-| v9 collection protocol · OOD benchmark v3 · Locked test set · Sequencing (below) | **current** | written against the code on this branch |
-| Acceptance criteria (every version) | **baseline, extended** | still true; the per-row contract is now the stricter one in P4 |
+| v9 collection protocol · OOD benchmark v3 · Locked test set · Sequencing (below) | **current** | written against the code on this branch; **P0 (2.7.5) is the minimum** — P1–P8 are the full protocol for `eval_ok` rows |
+| Acceptance criteria (every version) | **baseline, extended** | still true; the per-row contract is the light one in P0 (2.7.5), with P4 as the full record for eval rows |
 | Corpus verification — the published v8 (2026-08-17) | **bytes stand, reading superseded** | the counts (3,389 rows, 662 distinct scorch, 54 under 384 px, 5 failures) were measured on bytes and are not disputed; "the eval set is outside the training corpus" and "scorch scores 0.000 across three releases" rest on the v2 sentinel, which the audit found non-independent, and on archive predictions that contradict the headline scores |
 | Domain — houseplants → ornamentals → edibles | **policy current, numbers exploratory** | the domain line stands; the `kaggle_ornamental` ablation numbers are exploratory |
 | Version status · Source loss · 2.6.10 · v8 · stale-upload incident | **historical** | metrics are pre-audit and exploratory; the deny-list, the `REQUIRED_SOURCE_FLOORS` lesson and the `SUPPLEMENT_MIN_ROWS` guard stand in code; v8 rows carry no per-row licence/family/first-seen columns; since 2026-09-21 §2 loads them with documented fallbacks (see the study-project policy section) |
@@ -139,9 +139,50 @@ requirements.
 
 "Accepted" means two things at once: notebook §2 `fetch_kaggle_supplement`
 loads the row without raising, and a human can defend the row on rights,
-identity and label. Everything below is the minimum for both. A number marked
-**target** is a target; every other number is traceable to this file, the
-notebook or `server/tools/`.
+identity and label. **P0 is the minimum for the first; P1–P8 are what makes an
+`eval_ok` row defensible.** A number marked **target** is a target; every other
+number is traceable to this file, the notebook or `server/tools/`.
+
+### P0. Minimum to collect — read this first (2.7.5)
+
+Since 2.7.5 nothing in the per-row record stops a run: §2 fills defaults,
+resolves conflicts the safe way, and prints one `provenance, resolved without
+stopping` line with the counts. What a collection round needs:
+
+| | what | why |
+|---|---|---|
+| **required** | the photo, under `<class>/` (one of the 9 head classes) | the folder is the label |
+| rows you want **graded** | a manifest row with `split_hint=eval_ok` and `first_seen_model_version=never` | a row is graded on only when you say so; a photo with no row always trains |
+| boundary negatives | `hn_kind=boundary` | train-only at its own sampler weight |
+| several shots of one plant, one session | one shared `capture_family_id` | keeps them in one split group; a family with any training member trains as a whole |
+| boxed strata | `<name>.txt` beside `<name>.jpg`, YOLO format — the plain export of makesense.ai / CVAT / Label Studio / Roboflow | Stage 1 trains on it (§3); stored in the EXIF-rotated frame the labelling tool showed |
+| optional | `source_url`, `license_id`, `creator`, `subject_domain`, `subject_plant`, `confidence`, `immutable_source_id` | recorded to judge source quality; never gated |
+
+The round, end to end:
+
+1. Drop photos into the class folders (box files beside them where you drew boxes).
+2. Give the photos you want graded a row: `split_hint=eval_ok`,
+   `first_seen_model_version=never` (plus `capture_family_id` when a plant has
+   several shots). Leave everything else blank.
+3. `python -m server.tools.filter_supplement --root <supp> --bench <oodbench> --out <report>`.
+   It adopts every unlisted photo as a `train_only` row, QAs all of them (blur,
+   tiny, duplicates, benchmark leak — a leak is a non-zero exit), and counts the
+   rows that carry a box file. Copy `<report>.csv` over `manifest.csv`.
+4. Publish with `kaggle datasets version`.
+5. After training, the bundle's `analysis/supplement_manifest_next.csv` is that
+   manifest with `first_seen_model_version` stamped on every row the run trained
+   on (held-out rows untouched, so the holdout keeps its membership). Publish it
+   as the next revision's `manifest.csv` — that replaces re-stamping by hand.
+
+Two rules protect the comparisons and cost nothing: **never rename or move a
+published file, and never add a `capture_family_id` to a row already published**
+— the permanent holdout hashes `(source, plant_id)` and both change it.
+
+What still stops a run (each is a real defect, not paperwork): no
+`manifest.csv`; no `hn_kind` column or zero boundary rows; fewer than
+`SUPPLEMENT_MIN_ROWS` rows (a stale upload); no eval-eligible row at all; a
+`bench_leak` or `phash_mismatch` verdict; an unsafe filename, a `class` that
+disagrees with its folder, or a duplicate path.
 
 ### P1. Strata, targets and acceptance predicates
 
@@ -203,20 +244,20 @@ exports survive pHash as distinct (§8). A family id is a *claim by the
 collector* about the physical capture; pHash and SIFT+RANSAC are backstops that
 can only confirm a duplicate, never certify independence.
 
-What the notebook and `filter_supplement.py` enforce on the id:
+What the notebook does with the id (2.7.5 — resolved, never raised):
 
-- all rows of a family share `class` and `first_seen_model_version`
-  ("crosses class/first-seen contracts" raises in both);
-- at most **one** row per family is eval-eligible ("independent-family
-  violation" raises); the other frames are published either as
-  `filter_verdict` ≠ `keep` (excluded) or not at all;
-- **one `split_hint` per family**, by protocol. The notebook's leakage guard
-  keys on `(source, plant_id)` and the supplement's `source` differs between
-  `eval_ok` (`supplement`) and `train_only` (`supplement_train_only`) rows, so a
-  family with mixed hints could land on both sides of a split with no guard
-  firing. §2 now raises on such a family after its pass; mixed hints inside a
-  family are also a publish-time error (P7 step 5), so the notebook check is a
-  backstop, not the place to find out.
+- a family **routes as one unit**. Any train-side member (`hn_kind=boundary`,
+  `train_only`, or a `first_seen_model_version` ≤ `MODEL_VERSION`) makes every
+  member train-only; one already-seen member marks the whole family seen. The
+  leakage guard keys on `(source, plant_id)` and `eval_ok` / `train_only` rows
+  get different `source` tags, so this is what keeps a family off both sides
+  of a split; §2 re-checks it on what was saved;
+- a family of `eval_ok` rows stays eval **together** — one split group, so it
+  can never straddle train and eval. Prefer one eval row per family anyway: the
+  paired bootstrap resamples photos, and siblings make its interval optimistic;
+- a family may span classes (one plant, a healthy leaf and a sick one).
+  `filter_supplement.py --require-provenance` still enforces the strict
+  per-family contract for a build that wants to certify it.
 
 ### P3. Image floor
 
@@ -235,10 +276,12 @@ What the notebook and `filter_supplement.py` enforce on the id:
 
 ### P4. The per-row record a v9 row must carry
 
-`manifest.csv`, one row per published file. Columns marked *notebook* are read
-by §2 `fetch_kaggle_supplement`; since 2026-09-21 a **missing** column gets the
-fallback named in the notebook's `STRICT_SUPPLEMENT_*` note and a warning,
-while a **malformed** present value still raises. Columns marked *tool* are
+`manifest.csv`, one row per published file — or none: a photo without a row
+loads train-only (P0). Columns marked *notebook* are read by §2
+`fetch_kaggle_supplement`; since 2026-09-21 a **missing** column gets the
+fallback named in the notebook's `STRICT_SUPPLEMENT_*` note, and since 2.7.5 a
+conflict between rows resolves instead of raising (P0, P2); a **malformed**
+present value (an unparseable `first_seen_model_version`) still raises. Columns marked *tool* are
 read by `filter_supplement.py` (`--require-provenance` makes the three
 provenance columns mandatory; the default accepts a v8-shaped manifest);
 columns marked *protocol* are this document's requirement and are recorded
@@ -251,23 +294,23 @@ verbatim (the notebook ignores unknown columns).
 | `role`, `hn_kind` | notebook | `hn_kind=boundary` is forced train-only via `supplement_boundary`; a manifest with **zero** boundary rows raises; other values are recorded, not routed on |
 | `confidence` | notebook (fallback) | in [0, 1]; the routing fallback when `split_hint` is absent uses `≥ 0.80` |
 | `split_hint` | notebook | `eval_ok` or `train_only`; anything else routes train-only |
-| `filter_verdict` | notebook, tool | present on every row; v9 publishes **only `keep` rows** (P7 step 1). The notebook accepts the tool's full vocabulary (`keep / blurry / bench_leak / too_small / tiny / duplicate / dup_intra / dup_cross / missing / corrupt / phash_mismatch`), skips every non-`keep` row, and raises on any `bench_leak` or `phash_mismatch` row |
-| `filter_independence_method` | notebook, tool | exactly `capture_family_id+phash_v1` on **every** row (`SUPPLEMENT_REQUIRED_INDEPENDENCE_METHOD`); the tool writes it when provenance is present |
+| `filter_verdict` | notebook, tool | optional; the tool writes it. When the column exists, non-`keep` rows are skipped. The notebook accepts the tool's full vocabulary (`keep / blurry / bench_leak / too_small / tiny / duplicate / dup_intra / dup_cross / missing / corrupt / phash_mismatch`), skips every non-`keep` row, and raises on any `bench_leak` or `phash_mismatch` row |
+| `filter_independence_method` | notebook, tool | recorded; anything but `capture_family_id+phash_v1` prints one warning. The tool writes `legacy_phash_only_NOT_CERTIFIED` unless run with `--require-provenance` |
 | `license_id` | notebook (recorded) | free text, tallied per run; `SUPPLEMENT_KNOWN_LICENSES` supplies a URL for the ids it knows. Never gated on (2026-09-21); `unknown` when blank |
 | `license_url` | notebook (optional) | defaulted from the allowed-licence table when blank |
 | `creator` | notebook (recorded) | attribution; recommended when `license_id` starts with `cc-by` |
 | `source_url` | notebook (recorded) | Internet rows: the landing page. First-party rows: an opaque, non-resolving reference to the batch record, e.g. `plantvision://acquisition/<batch_id>/<immutable_source_id>` — never a real URL that identifies a person or device |
 | `source_item_id` | protocol | the source's own id (`observation:<id>/photo:<id>`, post id); first-party: the capture id / scan sha |
 | `attribution` | notebook (optional) | as the licence requires; defaults to `creator` |
-| `immutable_source_id` | notebook, tool | globally unique per **photograph**, never reused across rows (raises when present twice), never derived from a mutable path. Internet: `<host>:<item>:<photo>`. First-party: `scan:<sha256 of original bytes>`. Absent → `sha256:<bytes>` |
-| `capture_family_id` | notebook, tool | P2. Absent → none (the row is its own group) |
+| `immutable_source_id` | notebook, tool | globally unique per **photograph**, never derived from a mutable path; a second row with the same id is the same photo again and is skipped. Internet: `<host>:<item>:<photo>`. First-party: `scan:<sha256 of original bytes>`. Absent → `sha256:<bytes>` |
+| `capture_family_id` | notebook, tool | P2. Absent → none (the row is its own group). Never add one to an already-published row (P0) |
 | `first_seen_model_version` | notebook, tool | literal **`never`** for a row no model has trained on; otherwise the semver of the first model whose *training* split held it. The notebook routes any value **≤ `MODEL_VERSION` (2.7.5 today) train-only** whatever `split_hint` says. Absent → routed by `split_hint` alone (v8 behaviour); the permanent `HOLDOUT` carve keeps the never-trained slice |
 | `subject_domain`, `subject_plant` | notebook (recorded) | verbatim; never gated |
 | `phash` | tool | recorded at build; the tool allows ≤ 6 bits of drift |
 | `stratum` | protocol | the P1 stratum name, verbatim |
 | `acquisition_batch_id` | protocol | opaque reference to the P5 record; every row has one |
 | `verified_by`, `adjudication_status`, `adjudication_note` | protocol | P6 |
-| `bbox_x, bbox_y, bbox_w, bbox_h` | protocol | pixel coordinates in the published file for the boxed strata; **not consumed by the notebook today** — `_save_archive_member` writes `bbox=[0,0,0,0]` for every supplement row, so Stage 1 cannot train on them until §2 is extended. Publish them anyway; the detector round needs them |
+| `<name>.txt` beside the photo | notebook | **not a column**: a YOLO label file, one `cls cx cy w h` row per box, normalised 0–1 (polygon rows and a trailing confidence are accepted; pixel coordinates are dropped). Consumed since 2.7.5: §2 indexes the boxes without decoding the photo and stores a boxed photo in its EXIF-rotated frame; §3 hard-links the boxed photos still in the training split into the Stage 1 set (15 % of families to detector val). Boxed photos in a held-out split never train the detector |
 
 **Carry-over of v8 rows.** Under the 2026-09-21 policy every v8 row carries
 over as it is; the columns above are what a v9 revision *adds*, not what
@@ -278,15 +321,16 @@ exact release is unknown, the revision it was published in bounds it from
 above, and any value ≤ 2.7.5 routes it train-only, which is the safe
 direction). `SUPPLEMENT_MIN_ROWS = 3000` is comfortably met by v8's 3,389.
 
-**Post-run re-stamping.** After a run trains on v9, every row that sat in a
-*training* split of that run gets `first_seen_model_version = <that
-MODEL_VERSION>` in the next supplement revision. Rows the run held out
-(`holdout`, val, calibration) stay `never` **only if a per-row split record
-proves it**. The notebook writes `source_inventory.json` (per-source counts) and
-no per-row split manifest today, so until one exists the conservative rule is:
-stamp every published v9 row with the run's version after the run, and rely on
-the locked test set (below) — which lives outside the supplement — for
-cross-version comparison.
+**Post-run re-stamping — automatic since 2.7.5.** After a run, every row that
+sat in its *training* split needs `first_seen_model_version = <that
+MODEL_VERSION>` in the next revision. §2 now writes exactly that file:
+`models/supplement_manifest_next.csv` (shipped as
+`analysis/supplement_manifest_next.csv` in the §6b archive) is the input
+manifest with the column stamped on every row whose photo was still in
+`TRAIN_ROOT` after the splits, existing versions kept, held-out rows untouched,
+and a `train_only` row added for each unlisted photo that loaded. Publish it as
+the next revision's `manifest.csv`. A photo §3 later dedups out of training is
+stamped anyway — the safe direction (it only loses eval eligibility).
 
 ### P5. Acquisition / consent batch record (first-party rows)
 
@@ -343,12 +387,11 @@ never both (disjointness is an acquisition property, not a pHash result).
 ### P7. Exclusion checks before publish (run in this order)
 
 1. `python -m server.tools.filter_supplement --root <v9> --bench <oodbench_v3> --out <report>`
-   — refuses to run without `immutable_source_id` / `capture_family_id` /
-   `first_seen_model_version` on every row; exits non-zero on any
-   `bench_leak` (family id **or** pHash ≤ 6). Publish **only rows with
-   `filter_verdict = keep`**, and re-run the tool on the published tree so the
-   published `manifest.csv` is the tool's own output. Check the report's
-   `below_collection_floor == 0` and `orphan_files == 0`.
+   — needs only `filename` / `class`; adopts unlisted photos as `train_only`
+   rows; exits non-zero on any `bench_leak` (pHash ≤ 6, plus family id under
+   `--require-provenance`). Publish the tool's `<report>.csv` as `manifest.csv`
+   (§2 skips non-`keep` rows itself). Check `below_collection_floor` and
+   `kept_rows_with_box_file` in the report.
 2. pHash + family against **the benchmark v3, the v2 sentinel, and every dataset
    either was built from** — `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`
    (all folders) and `aditisalvi04/indoor-plant-disease-dataset` (the whole
@@ -362,12 +405,11 @@ never both (disjointness is an acquisition property, not a pHash result).
    `immutable_source_id`, or pHash ≤ 6) carries the same class and a
    `first_seen_model_version` ≤ 2.7.3; a class change is a re-adjudication and
    is noted.
-5. Family integrity: one `split_hint` per family; one `eval_ok` row per family;
-   uniform class and first-seen per family; no family id shared with any
-   benchmark manifest.
-6. Rights: `license_id` in the allowed set; `creator` on every `cc-by*` row;
-   `source_url` non-empty everywhere; no NC row; every `project-owned` row
-   resolves to a frozen P5 record.
+5. Family integrity: §2 resolves mixed families itself (P2). Still check that no
+   family id is shared with any benchmark manifest, and prefer one `eval_ok`
+   row per family.
+6. Rights: recorded, not gated (study-project policy). Fill `source_url` /
+   `license_id` / `creator` when known — they are how a bad source is traced.
 7. Report **families**, not files: per class × stratum, and `eval_ok` families
    per class. Check the row total against `SUPPLEMENT_MIN_ROWS = 3000` — a v9
    below it raises in §2, and lowering the constant is a reviewed notebook edit,
@@ -382,7 +424,9 @@ never both (disjointness is an acquisition property, not a pHash result).
 Routing precedence, from the notebook: `hn_kind=boundary` → `supplement_boundary`
 (train-only, low sampler weight) · `first_seen_model_version` ≤ `MODEL_VERSION`
 → `supplement_train_only` · `split_hint=eval_ok` → `supplement` (eval-eligible)
-· anything else → `supplement_train_only`. Rows whose `filter_verdict` is not
+· anything else → `supplement_train_only`; then a capture family with any
+train-side member routes train-only as a whole, and a photo with no manifest
+row is `supplement_train_only`. Rows whose `filter_verdict` is not
 `keep` are skipped entirely. Eval-eligible rows are then carved by the stable
 sha1 bucket over `(source, plant_id)` — `plant_id` *is* the family id for
 supplement rows — with `HOLDOUT_PERMILLE = 300` into the permanent holdout
@@ -500,10 +544,9 @@ The carve:
    non-plant / difficult-plant arm needs no plants and can be done first.
    Open the deny-list entries and the tool gaps at the same time.
 3. **In parallel, no collection needed:** adjudicate the 80 export rows and
-   carve T_v1; write the P5 record for `plantvision_export_20260806T102212Z`;
-   run the v8 rights re-derivation to learn how many v8 rows can carry over
-   (this decides whether `SUPPLEMENT_MIN_ROWS = 3000` is reachable or must be
-   a reviewed edit).
+   carve T_v1; write the P5 record for `plantvision_export_20260806T102212Z`.
+   (The v8 rights re-derivation is no longer needed: every v8 row carries over
+   under the 2026-09-21 policy, so `SUPPLEMENT_MIN_ROWS = 3000` is met.)
 4. **Then the supporting strata:** houseplant `leaf_spot` (the boundary
    partner — collect it alongside item 1, it is cheap indoors), plain-ground
    healthy, ND-regime healthy, `pests` + `gray_mold` with boxes.
@@ -544,7 +587,8 @@ arm across 8–12 species, and T_v1 — and only the full round can re-enable
 
 Recorded here because each one decides whether a v9 row is accepted. Items
 1, 2, 3, 7 and 8 were fixed on this branch the same day (notebook §2/§6,
-`tools/analyse_feedback.py`, the skill); 4, 5 and 6 remain open.
+`tools/analyse_feedback.py`, the skill); 5 and 6 closed with the 2026-09-21
+policy and 4 with 2.7.5.
 
 1. **Verdict vocabulary.** `filter_supplement.py` writes `missing`, `corrupt`,
    `tiny`, `phash_mismatch`, `blurry`, `keep`, `bench_leak`, `dup_cross`,
@@ -560,14 +604,19 @@ Recorded here because each one decides whether a v9 row is accepted. Items
    `(source, plant_id)`; `eval_ok` and `train_only` supplement rows get
    different `source` tags, so one family with mixed hints is two groups. P2
    forbids mixed hints per family at publish time. **Fixed on the notebook
-   side too:** §2 now records every source tag a family is routed to and raises
-   after the pass if a family has an `eval_ok` row and any train-side sibling.
-4. **Boxes are dropped.** `_save_archive_member` writes `bbox=[0,0,0,0]` for
-   every supplement row; the boxed strata need a §2 path that reads them.
-5. **`source_url` is mandatory for `project-owned` rows** (§2 raises on a blank
-   one), which is why P4/P5 route the opaque batch reference through it.
+   side too:** since 2.7.5 §2 routes such a family train-only as a whole (P2)
+   and re-checks after the pass that no family holds an eval row and a
+   train-side sibling. (The 2026-09-21 change that made `capture_family_id`
+   optional left a sibling check keyed on the *blank* id, so the second
+   eval-eligible v8 row would have aborted §2; that check is gone and a v8-shaped
+   manifest is now pinned by `server/tests/test_notebook_supplement.py`.)
+4. **Boxes are dropped.** **Fixed (2.7.5):** YOLO label files beside the
+   photos feed Stage 1 (P4, "`<name>.txt`").
+5. **`source_url` is mandatory for `project-owned` rows.** **Closed
+   (2026-09-21):** recorded, not required.
 6. **`SUPPLEMENT_MIN_ROWS = 3000`** was set against v8's row count; a v9 that
-   drops unlicensed v8 rows may not reach it.
+   drops unlicensed v8 rows may not reach it. **Closed (2026-09-21):** no row
+   is dropped for its licence.
 7. **`tools/analyse_feedback.py` `IN_HEAD_CLASSES`** lists six classes and says
    it mirrors `main._FEEDBACK_IN_HEAD_CLASSES`, which derives all nine from
    `classifier.DEFAULT_CLASS_NAMES`; its out-of-head share is overstated for
@@ -581,7 +630,7 @@ Recorded here because each one decides whether a v9 row is accepted. Items
 
 ## Acceptance criteria (every version)
 
-> **Baseline, extended (2026-09-16).** Still true; the manifest column list here is the v8 one. The per-row contract v9 must satisfy is P4 above, which is stricter (per-row licence, immutable source id, capture family, first-seen version, filter verdict).
+> **Baseline, extended (2026-09-16; light since 2.7.5).** Still true; the manifest column list here is the v8 one. What a v9 row must carry is P0 above; P4 is the full record for rows that will be graded on.
 
 - **Layout:** `<class>/<image>` over the 9 classes + `manifest.csv`
   (`filename, class, role, subject_domain, hn_kind, confidence, source, phash, …`).
@@ -881,7 +930,7 @@ fix recovers recall, not precision → that's the v8 job.
 
 ## v8 — the data round (shipped into 2.7.0; historical)
 
-> **Historical (audit 2026-08-23).** The routing mechanics (`split_hint`, `supplement_train_only`, boundary first) are current and described in P8. The metrics are exploratory. v8 rows carry no per-row licence, immutable source id, capture family or first-seen version, so §2 on this branch rejects a v8-shaped manifest outright; the carry-over rule is in P4.
+> **Historical (audit 2026-08-23).** The routing mechanics (`split_hint`, `supplement_train_only`, boundary first) are current and described in P8. The metrics are exploratory. v8 rows carry no per-row licence, immutable source id, capture family or first-seen version; since 2026-09-21 §2 loads them with defaults (and since 2.7.5 without the blank-family crash — see "Contract frictions" item 3). The carry-over rule is in P4.
 
 The 2.6.10 fix recovered *recall* but not *precision*, and the eval is still untrustworthy
 (71% recycled, ag-leak, sub-0.80 noise). v8 fixes the data; **2.6.11 retrains** on it (the

@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import shutil
 from pathlib import Path
 
@@ -229,13 +230,24 @@ def test_class_logit_bias_folds_before_calibration():
     assert "Recorded for traceability only" in c14
 
 
-def test_stage1_audit_runs_in_every_mode():
-    """The audit is the thing that would have caught the detector lottery. It
-    must not sit behind RUN_DETECTOR_CROP_EVAL, which is off for `combined` —
-    the mode that ships."""
-    c14 = next(s for s in _cells().values() if "_stage1_boxes = None" in s)
-    assert c14.index("_stage1_boxes = None") < c14.index("RUN_DETECTOR_CROP_EVAL =")
-    assert c14.count("_det.predict(") == 1, "the crop eval should reuse the audit's boxes"
+def test_stage1_audit_and_end_to_end_eval_run_in_every_mode():
+    """The audit is the thing that would have caught the detector lottery, and
+    the end-to-end eval is the only number that scores what users get. Both
+    run in every mode — `combined` is the mode that ships — off ONE bounded
+    served pass: no second runtime, no second decode, pools released first."""
+    c14 = next(s for s in _cells().values() if "RUN_DETECTOR_CROP_EVAL =" in s)
+    assert re.search(r"^RUN_DETECTOR_CROP_EVAL = True\b", c14, re.M), (
+        "the end-to-end eval must be ON in every mode")
+    assert "TRAIN_MODE != 'combined'" not in c14
+    # One runtime: the shipped detector.onnx through the served mirrors.
+    assert "_YOLO" not in c14 and ".predict(" not in c14, "Ultralytics is back in §6"
+    tail = c14[c14.index("STAGE1_MISS_RATIO_WARN ="):]
+    assert tail.count("_served_pass(") == 1, "the audit and the eval must share one pass"
+    assert tail.index("_release_host_memory()") < tail.index("_served_pass(")
+    # The audit reads the pass's detector confidences; it is not gated on the eval.
+    audit = tail[tail.index("# ── Readout 1"):tail.index("# ── Readout 2")]
+    assert "_best_conf < STAGE1_AUDIT_CONF" in audit
+    assert "RUN_DETECTOR_CROP_EVAL" not in audit
 
 
 def test_whole_group_moves_together(tmp_path):

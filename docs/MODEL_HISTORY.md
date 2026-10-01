@@ -348,6 +348,16 @@ contract:
 
 So: **`val_indomain` stops training, `val_realworld` gates shipping, `holdout`
 measures improvement** — and the first two are different rows in every run.
+
+**End-to-end and Stage-1 numbers changed instrument in 2.7.5.** Up to 2.7.2,
+`stage1_detection` came from Ultralytics on `detector.pt` at full camera
+resolution, and `end_to_end.disease_macro_f1` was the top box's unpadded crop
+alone (no `combined` run ever produced it). From 2.7.5 both come from one served
+pass: `detector.onnx` with the server's letterbox/NMS, padded crops, the app's
+1024 px upload size. `end_to_end.disease_macro_f1` is the served mean vote; the
+nearest older quantity is `crop_only_disease_macro_f1`, and even that one now
+uses padded crops. Read a cross-boundary delta of a few points as the
+instrument, not the model.
 To compare release A with release B on data *both* never saw:
 
 - **Holdout** — valid for any pair where both trained with the carve (2.7.2 and

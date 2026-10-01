@@ -10,11 +10,18 @@ serving pipeline would even accept them as input. This tool answers all three on
 the actual bytes, and writes a filtered manifest that carries its verdict per
 row.
 
-The training notebook now requires and honours ``filter_verdict``. It also
-requires ``immutable_source_id``, curator-assigned ``capture_family_id`` and
-``first_seen_model_version``: pHash alone demonstrably misses rotated/noised
-siblings, so this tool refuses to certify a production supplement without that
-stable provenance contract.
+The training notebook honours ``filter_verdict`` when the column is present.
+Provenance is light by default (2.7.5): only ``filename`` and ``class`` are
+required, and new photos dropped into a class folder without a manifest row are
+**adopted** as ``train_only`` rows, so they get the same QA as everything else
+and can never drain into an eval slice. ``immutable_source_id`` /
+``capture_family_id`` / ``first_seen_model_version`` are honoured when present;
+``--require-provenance`` demands them on every row and certifies the
+capture-family independence method (pHash alone misses rotated/noised siblings).
+
+Detector boxes travel as YOLO label files beside the photos
+(``<class>/<name>.txt``); this tool never rewrites the folder, so they reach
+the notebook untouched, and the report counts the kept rows that carry one.
 
 The gates, and why each one is a gate
 -------------------------------------
@@ -65,9 +72,11 @@ Usage
         --bench /path/to/oodbench \\
         --out   /path/to/report
 
-Writes ``<out>.json`` (the full report) and ``<out>.csv`` (the input manifest
-plus ``filter_verdict`` and ``cluster_id`` columns). Non-zero exit if any row
-leaks the benchmark — that is a stop-the-line condition, not a warning.
+Writes ``<out>.json`` (the full report) and ``<out>.csv`` (the input manifest,
+plus one adopted row per unlisted photo, plus ``filter_verdict`` and
+``cluster_id`` columns) — publish that CSV as the new ``manifest.csv``. Non-zero
+exit if any row leaks the benchmark — that is a stop-the-line condition, not a
+warning.
 """
 
 from __future__ import annotations
@@ -335,8 +344,40 @@ def _resolution_stats(sides: list[int]) -> dict:
 # ── main ─────────────────────────────────────────────────────────────
 
 
+def _adopt_unlisted(rows: list[dict], orphans: list[str], probes: dict[str, dict]) -> list[str]:
+    """Append a manifest row for every unlisted photo that sits in a class folder.
+
+    An adopted row is ``train_only`` under whichever routing basis the manifest
+    uses: ``split_hint=train_only`` when the column exists, else a blank
+    ``confidence`` (unparseable, so the notebook routes it train-only). A
+    manifest with neither column routes *every* listed row eval-eligible, so
+    nothing is adopted there. Provenance columns stay blank — the notebook's
+    defaults apply (own capture group, never seen, sha256 source id). Returns
+    the keys that were adopted.
+    """
+    cols = list(rows[0])
+    if "split_hint" not in cols and "confidence" not in cols:
+        return []
+    adopted = []
+    for key in orphans:
+        parts = PurePosixPath(key).parts
+        if len(parts) < 2:
+            continue                                  # no class folder to infer from
+        row = dict.fromkeys(cols, "")
+        row.update({"filename": key, "class": parts[0]})
+        if "split_hint" in cols:
+            row["split_hint"] = "train_only"
+        probe = probes.get(key) or {}
+        if "phash" in cols and probe.get("ok"):
+            row["phash"] = probe["phash"]
+        rows.append(row)
+        adopted.append(key)
+    return adopted
+
+
 def filter_bundle(root: Path, bench: Path | None, workers: int, *,
-                  require_provenance: bool = False) -> tuple[list[dict], dict]:
+                  require_provenance: bool = False,
+                  adopt_unlisted: bool = True) -> tuple[list[dict], dict]:
     """QA one supplement build on its bytes.
 
     ``require_provenance=False`` (the default since 2026-09-21) accepts a
@@ -347,6 +388,10 @@ def filter_bundle(root: Path, bench: Path | None, workers: int, *,
     ``immutable_source_id`` / ``capture_family_id`` /
     ``first_seen_model_version`` on every row and cluster on the curator's
     families; that is the v9 contract, not a precondition for running QA.
+
+    ``adopt_unlisted=True`` (default; never under ``require_provenance``) gives
+    each photo that has no manifest row a ``train_only`` row of its own, so a
+    collection round is "drop photos into class folders, run this, publish".
     """
     manifest_path = root / "manifest.csv"
     if not manifest_path.exists():
@@ -363,6 +408,11 @@ def filter_bundle(root: Path, bench: Path | None, workers: int, *,
 
     named = {r["filename"] for r in rows}
     orphans = sorted(set(probes) - named)
+    adopted = (_adopt_unlisted(rows, orphans, probes)
+               if adopt_unlisted and not require_provenance else [])
+    if adopted:
+        orphans = sorted(set(orphans) - set(adopted))
+        print(f"adopted:  {len(adopted)} unlisted photos as train_only rows", flush=True)
 
     # Per-row verdicts, cheapest first so an unusable row never reaches the
     # expensive gates and never pollutes the cluster graph.
@@ -478,6 +528,10 @@ def filter_bundle(root: Path, bench: Path | None, workers: int, *,
 
     # Report on distinct clusters, never on file counts.
     kept = [i for i, v in enumerate(verdict) if v == "keep"]
+    label_stems = {p.relative_to(root).with_suffix("").as_posix()
+                   for p in root.rglob("*.txt")}
+    boxed = sum(1 for i in kept
+                if PurePosixPath(rows[i]["filename"]).with_suffix("").as_posix() in label_stems)
     per_class: dict[str, dict] = {}
     for cls in sorted({r["class"] for r in rows}):
         idxs = [i for i, r in enumerate(rows) if r["class"] == cls]
@@ -509,6 +563,8 @@ def filter_bundle(root: Path, bench: Path | None, workers: int, *,
             "manifest_rows": len(rows),
             "files_on_disk": len(probes),
             "orphan_files": len(orphans),
+            "adopted_unlisted": len(adopted),
+            "kept_rows_with_box_file": boxed,
             "kept": len(kept),
             "dropped": len(rows) - len(kept),
             "benchmark_leaks": leaks,
@@ -536,6 +592,9 @@ def main() -> None:
     ap.add_argument("--bench", type=Path, help="OOD benchmark dir to check leakage against")
     ap.add_argument("--out", type=Path, required=True, help="output prefix (.json + .csv)")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--no-adopt-unlisted", dest="adopt_unlisted", action="store_false",
+                    help="leave photos without a manifest row out of the CSV "
+                         "(default: adopt each as a train_only row so it is QA'd)")
     ap.add_argument("--require-provenance", action="store_true",
                     help="demand immutable_source_id / capture_family_id / "
                          "first_seen_model_version on every row and cluster on the "
@@ -544,7 +603,8 @@ def main() -> None:
     args = ap.parse_args()
 
     rows, report = filter_bundle(args.root, args.bench, args.workers,
-                                 require_provenance=args.require_provenance)
+                                 require_provenance=args.require_provenance,
+                                 adopt_unlisted=args.adopt_unlisted)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.with_suffix(".json").write_text(json.dumps(report, indent=2))
@@ -562,7 +622,9 @@ def main() -> None:
               f"{s['inflation']:6.2f} {str(s['short_side_p05']):>9s} "
               f"{s['below_collection_floor']:6d}  {why}")
     print(f"\nkept {t['kept']}/{t['manifest_rows']} rows "
-          f"({t['dropped']} dropped), {t['orphan_files']} orphan files on disk")
+          f"({t['dropped']} dropped), {t['adopted_unlisted']} unlisted photos adopted "
+          f"train_only, {t['orphan_files']} orphan files left out, "
+          f"{t['kept_rows_with_box_file']} kept rows carry a YOLO box file")
     print(f"wrote {args.out.with_suffix('.json')} and {args.out.with_suffix('.csv')}")
 
     if t["benchmark_leaks"]:

@@ -371,3 +371,70 @@ def test_capture_family_merges_phash_distinct_siblings(tmp_path):
         "curator_capture_family_id")
     assert {row["filter_independence_method"] for row in rows} == {
         "capture_family_id+phash_v1"}
+
+
+def _plain_manifest(root: Path, names: list[str], cols=("filename", "class", "split_hint", "phash")):
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(cols))
+        w.writeheader()
+        for name in names:
+            row = {"filename": name, "class": name.split("/")[0], "split_hint": "eval_ok",
+                   "phash": _phash_of(root / name)}
+            w.writerow({c: row.get(c, "") for c in cols})
+
+
+def test_unlisted_photos_are_adopted_train_only_and_qad(tmp_path):
+    """Light collection: dropping photos into a class folder is a submission.
+    They must still pass every gate — a duplicate of a listed photo is caught —
+    and must never become eval rows by being adopted."""
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h0.jpg", seed=200)
+    _noise(root / "healthy/h1.jpg", seed=201)
+    _plain_manifest(root, ["healthy/h0.jpg", "healthy/h1.jpg"])
+    _noise(root / "leaf_spot/new_scan.jpg", seed=202)              # new photo
+    _copy(root / "healthy/h0.jpg", root / "healthy/h0_again.jpg")  # unlisted duplicate
+    (root / "leaf_spot/new_scan.txt").write_text("0 0.5 0.5 0.3 0.3\n")
+    _noise(root / "loose_at_root.jpg", seed=203)                   # no class folder
+
+    rows, report = fs.filter_bundle(root, None, workers=2)
+    by = {r["filename"]: r for r in rows}
+    assert by["leaf_spot/new_scan.jpg"]["split_hint"] == "train_only"
+    assert by["leaf_spot/new_scan.jpg"]["filter_verdict"] == "keep"
+    assert by["leaf_spot/new_scan.jpg"]["phash"] == _phash_of(root / "leaf_spot/new_scan.jpg")
+    assert by["healthy/h0_again.jpg"]["filter_verdict"] == "dup_intra"
+    assert "loose_at_root.jpg" not in by
+    t = report["totals"]
+    assert t["adopted_unlisted"] == 2 and t["orphan_files"] == 1
+    assert t["kept_rows_with_box_file"] == 1
+    assert {tuple(r) for r in rows} == {tuple(rows[0])}, "every row needs the same columns"
+
+
+def test_adoption_never_creates_a_routing_basis(tmp_path):
+    """Without split_hint/confidence the notebook treats every listed row as
+    eval-eligible, so adopting a photo there would PROMOTE it — not done."""
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h0.jpg", seed=300)
+    _plain_manifest(root, ["healthy/h0.jpg"], cols=("filename", "class", "phash"))
+    _noise(root / "healthy/new.jpg", seed=301)
+    rows, report = fs.filter_bundle(root, None, workers=1)
+    assert [r["filename"] for r in rows] == ["healthy/h0.jpg"]
+    assert report["totals"]["orphan_files"] == 1
+
+
+def test_confidence_basis_adopts_with_a_blank_confidence(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h0.jpg", seed=400)
+    _plain_manifest(root, ["healthy/h0.jpg"], cols=("filename", "class", "confidence"))
+    _noise(root / "healthy/new.jpg", seed=401)
+    rows, _ = fs.filter_bundle(root, None, workers=1)
+    new = next(r for r in rows if r["filename"] == "healthy/new.jpg")
+    assert new["confidence"] == "" and "split_hint" not in new
+
+
+def test_opt_out_does_not_adopt(tmp_path):
+    root = tmp_path / "supp"
+    _noise(root / "healthy/h0.jpg", seed=500)
+    _plain_manifest(root, ["healthy/h0.jpg"])
+    _noise(root / "healthy/new.jpg", seed=501)
+    rows, report = fs.filter_bundle(root, None, workers=1, adopt_unlisted=False)
+    assert len(rows) == 1 and report["totals"]["orphan_files"] == 1

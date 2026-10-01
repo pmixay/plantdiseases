@@ -160,6 +160,50 @@ complete **legacy diagnostic candidate**; v2.7.3 failed its own recorded gate
 and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
 2026-09-21 policy below; v9 is no longer a precondition.
 
+### 2026-10-01 — one served pass in §6, supplement boxes, light provenance
+
+- **§2 crash on v8 fixed.** The 2026-09-21 change made `capture_family_id`
+  optional but left the "one eval row per family" check keyed on it, so every
+  v8 row shared the family `None` and the second eval-eligible row raised
+  `independent-family violation`. The 2.7.5 run would have stopped in §2.
+  Families now route as one unit (below), and
+  `server/tests/test_notebook_supplement.py` runs the real loader on a
+  v8-shaped manifest.
+- **Stage-1 audit + end-to-end eval: one bounded pass, ON in every mode.**
+  The audit used Ultralytics on `detector.pt` and the crop eval decoded every
+  photo again at camera resolution; together with §5's TF objects and the idle
+  persistent DataLoader worker pools (one per loader, `EVAL_WORKERS` each) that
+  OOMed a `combined` run, so the end-to-end number was never produced for the
+  shipping mode. Now §6 releases the pools and the training state, then
+  streams `val_realworld` once through the shipped `detector.onnx` +
+  classifier with the server's own detector / crop / vote rules — decoded at
+  the app's 1024 px upload size (JPEG draft), two threads ahead, one photo per
+  classifier run (members and mirrors together, as `classifier.py` batches
+  them). Peak extra RAM is tens of MB. From that one pass: the Stage-1 audit
+  (no-box at 0.25, plus the share below the 0.40 gate floor), the end-to-end
+  disease F1 (`served_vote` headline, `crop_only` and `fold` alongside), and
+  the served OOD gate scored **out of sample** (fitted on `temperature_cal`).
+  The served-gate calibration uses the same streamer. The helpers are pinned
+  to `detector.py` / `pipeline.py` / `classifier.py` by
+  `test_served_gate_mirror.py`.
+- **Supplement boxes reach Stage 1.** A YOLO label file beside a photo
+  (`<class>/<name>.txt`) is read in §2 with no image decode and indexed in one
+  JSON file. The photo is stored in its EXIF-rotated frame (the one a browser
+  labelling tool shows). §3 hard-links boxed photos still in the training
+  split into the detector set, 15 % of families to detector val. The PlantDoc
+  → YOLO build reads boxes without decoding, decodes and encodes on a bounded
+  thread pool, and writes byte-identical files and the identical seeded split
+  (pinned against the old serial loop). Background negatives are hard-linked.
+  §2's PlantDoc crop pass decodes only rows that write something.
+- **Light provenance.** Nothing in the supplement's per-row record stops a run.
+  A photo with no manifest row loads train-only; a capture family with any
+  train-side member trains as a whole; a reused `immutable_source_id` is
+  skipped. `filter_supplement.py` adopts unlisted photos as QA'd `train_only`
+  rows. §2 writes `supplement_manifest_next.csv` (in the archive's
+  `analysis/`) with `first_seen_model_version` stamped on exactly the rows the
+  run trained on, so re-stamping by hand is gone. The minimum is
+  `DATASET_LABELING_PLAN.md` P0.
+
 ### 2026-09-21 — study-project policy, and the 2.7.5 run is unblocked
 
 - **Licences are provenance, not a gate.** Every fetcher records the per-row
@@ -194,9 +238,9 @@ and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
   `not_a_plant` rejection remains the trained head alone — it has no detector,
   so it cannot run the served gate; §6 reports its head recall in the aqua
   metrics.
-- **Still open from this round:** the seed replicate, the augmentation
-  ablation and `RUN_DETECTOR_CROP_EVAL` for combined mode (below); and Aqua
-  has no classifier-side OOD signal of its own.
+- **Still open from this round:** the seed replicate and the augmentation
+  ablation (below); and Aqua has no classifier-side OOD signal of its own.
+  (`RUN_DETECTOR_CROP_EVAL` for combined mode closed 2026-10-01.)
 
 ### 2026-09-16 review — code is done, the model is data-gated
 
@@ -259,12 +303,10 @@ still open:
       strictly more permissive on plants at the same false-reject target.
 - [x] **Conformal `coverage` on the wire** — `conformal.py` advertises the
       audit-backed `target_coverage` (2026-09-21, above).
-- [ ] **Production-faithful eval is OFF in the shipping mode.**
-      `RUN_DETECTOR_CROP_EVAL = (TRAIN_MODE != 'combined')` — `combined` is
-      the default, so the detector-crop macro-F1 is never produced for the
-      run that ships. The pass is now streamed in 256-image chunks after the
-      TF objects are freed, so the OOM rationale may no longer hold; confirm
-      on one Colab run with host-RAM logging, then flip the default.
+- [x] **Production-faithful eval is ON in every mode** (2026-10-01). One
+      bounded served pass feeds the Stage-1 audit, the end-to-end F1 and the
+      out-of-sample served-gate check; the first 2.7.5 log shows its
+      photos/s and the host RAM available when it started.
 - [ ] **Strict determinism is untested end to end.**
       `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
       §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
@@ -383,11 +425,10 @@ compatible with the collection round.
 - [ ] **Domain-robust training objective** — an intervention strong enough to
       match the probe that motivated 2.7.3, rather than a sampling nudge.
 - [ ] **Report the production-faithful number.** Every headline metric scores
-      the classifier on a whole val image while production classifies a
-      **detector crop**. §6's detector-crop eval defaults ON for
-      `gamma`/`frontier` and OFF for `combined`, the shipping mode (see the
-      2026-09-16 section); publish both and treat the gap as a finding, not a
-      footnote.
+      the classifier on a whole val image while production classifies
+      **detector crops** and votes. Since 2026-10-01 §6 produces
+      `end_to_end.served_vote_disease_macro_f1` in every mode; publish it next
+      to the whole-image number and treat the gap as a finding, not a footnote.
 - [ ] **Build the comparison set** from the exportable production scans (2,593
       and growing) — the only never-trained, real-distribution eval that scales.
       Specified as the locked deployment-representative test set in
@@ -438,7 +479,9 @@ archive's own sidecars.
   before producing a bundle.
 - **2.7.5** — not yet run. First run under the 2026-09-21 study-project policy:
   DoctorP and unfiltered iNat back in the mix, served OOD gate calibrated,
-  audit-backed conformal coverage, one blur gate on both tiers.
+  audit-backed conformal coverage, one blur gate on both tiers; end-to-end
+  eval and Stage-1 audit from one served pass in every mode, supplement boxes
+  into Stage 1, light provenance (2026-10-01).
 
 ---
 
