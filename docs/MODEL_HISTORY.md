@@ -31,10 +31,12 @@ numbers moved.
    pseudo-replicates, mixed served/argmax instruments). They are cited here only
    as the *reason a release was rejected*, never as a measurement.
 
-None of the fifteen archives carries `bundle_manifest.json`, `data_manifest.json`
-or `run_manifest.json`, so **none boots on the current strict server** (branch
-`model-fix-test`, `MODEL_VERSION = 2.8.0`). They remain valid as
-`tools/paired_eval.py --argmax` diagnostic inputs.
+None of the fifteen pre-2.7.5 archives carries `bundle_manifest.json`,
+`data_manifest.json` or `run_manifest.json`, so **none boots on the current
+strict server**. They remain valid as `tools/paired_eval.py --argmax
+--allow-legacy-unbound` diagnostic inputs. **2.7.5 (row 16, added 2026-10-05)
+is the first manifest-bound archive**: it passes `tools/verify_bundle.py` and
+boots the current server unmodified.
 
 ## Ledger
 
@@ -55,6 +57,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 13 | 2026-08-08 17:41 | 2.7.0 | [models-080826.tar](https://drive.google.com/file/d/1N_f4JSsCS68xUHLwA_c6MEFx3Zc5m-s6/view?usp=sharing) | 13948 | 2201 | 0.860 | 0.884 (9) | — | INT8 | 0.81 | 1.54 | 0.788 |
 | 14 | 2026-08-14 11:01 | 2.7.1 | [models-140826.tar](https://drive.google.com/file/d/1Z3VkyGSsIgFOPxoKCrRBLO_glz9tqeGu/view?usp=sharing) | 14000 | 2184 | 0.870 | 0.877 (8) | — | INT8 | 0.76 | 1.52 | 0.791 |
 | 15 | 2026-08-17 11:14 | 2.7.2 | [models-170826.tar](https://drive.google.com/file/d/14YuB8HdVtAb6z2OgDmMvUscjRoXyURIt/view?usp=sharing) | 13660 | 2116 | 0.841 | 0.870 (19) | 0.863 | INT8 | 0.82 | 1.48 | 0.761 |
+| 16 | 2026-10-05 20:24 | 2.7.5 | [plantvision_2.7.5-combined-s0-20261005T191530Z-67a8a28b.tar](https://drive.google.com/file/d/1jU2uX7Yb-N-A8Enu2f5XytUJRR-f04nv/view?usp=sharing) | 13724 | 2098 | 0.865 | 0.886 (10) | 0.897 | INT8 | 0.83 | 1.51 | 0.801 |
 
 ## Per-class recall on `val_realworld` (classifier-only argmax, hflip TTA)
 
@@ -75,6 +78,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.90 | 0.91 | 0.72 | 0.87 | 0.96 | 0.91 | 0.94 | 0.94 | 0.85 |
 | 2.7.1 (08-14) | 0.84 | 0.93 | 0.74 | 0.86 | 0.97 | 0.92 | 0.96 | 0.96 | 0.86 |
 | 2.7.2 (08-17) | 0.86 | 0.93 | 0.71 | 0.90 | 0.95 | 0.83 | 0.92 | 0.96 | 0.88 |
+| 2.7.5 (10-05) | 0.92 | 0.93 | 0.72 | 0.82 | 0.97 | 0.86 | 0.93 | 0.93 | 0.91 |
 
 ## Per-class precision on `val_realworld`
 
@@ -95,6 +99,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.86 | 0.93 | 0.76 | 0.85 | 0.98 | 0.72 | 0.94 | 0.90 | 0.90 |
 | 2.7.1 (08-14) | 0.89 | 0.92 | 0.74 | 0.85 | 0.99 | 0.75 | 0.96 | 0.95 | 0.92 |
 | 2.7.2 (08-17) | 0.84 | 0.93 | 0.70 | 0.88 | 0.99 | 0.62 | 0.98 | 0.87 | 0.88 |
+| 2.7.5 (10-05) | 0.84 | 0.90 | 0.73 | 0.89 | 0.98 | 0.77 | 0.95 | 0.93 | 0.91 |
 
 ## Eval-slice support on `val_realworld` (rows per class)
 
@@ -115,6 +120,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 82 | 621 | 107 | 236 | 516 | 77 | 266 | 112 | 184 |
 | 2.7.1 (08-14) | 89 | 620 | 107 | 229 | 519 | 77 | 266 | 102 | 175 |
 | 2.7.2 (08-17) | 69 | 615 | 90 | 232 | 495 | 65 | 265 | 93 | 192 |
+| 2.7.5 (10-05) | 88 | 581 | 90 | 233 | 489 | 65 | 265 | 91 | 196 |
 
 ## Training rows per class
 
@@ -135,6 +141,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 403 | 3737 | 1253 | 2155 | 1951 | 768 | 1032 | 1391 | 1258 |
 | 2.7.1 (08-14) | 399 | 3732 | 1254 | 2177 | 1945 | 768 | 1032 | 1420 | 1273 |
 | 2.7.2 (08-17) | 371 | 3663 | 1187 | 2133 | 1888 | 723 | 1030 | 1378 | 1287 |
+| 2.7.5 (10-05) | 388 | 3721 | 1196 | 2145 | 1853 | 725 | 1030 | 1396 | 1270 |
 
 ## Calibration / quantisation / OOD sidecars
 
@@ -155,6 +162,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.001 | False | 0.81 | 0.6 | 0.980 | 1.54 | 0.594 | 2.013 | — |
 | 2.7.1 (08-14) | -0.004 | False | 0.76 | 0.6 | 0.976 | 1.52 | 0.607 | 1.894 | — |
 | 2.7.2 (08-17) | 0.001 | False | 0.82 | 0.6 | 0.987 | 1.48 | 0.630 | 1.750 | 0.05 |
+| 2.7.5 (10-05) | 0.007 | False | 0.83 | 0.6 | 0.945 (out-of-sample, n=236) | 1.51 | 0.608 | 2.080 | 0.05 |
 
 ## Release notes — what changed, and why the numbers moved
 
@@ -280,6 +288,41 @@ the diff of `train_counts` / `source_inventory`.
 - Stopped by the then-blocking OOD gate before writing a bundle; both levers
   falsified and removed. Its in-domain numbers exist only in the Colab log.
 
+### 2.7.5 (10-05) — v8 again, first manifest-bound bundle
+- Recipe vs 2.7.2: no sampler or loss knob moved. Training geometry is the
+  serving transform with a random crop (`serve_parity_v2_unablated`, no scale
+  augmentation); the served OOD gate is fitted on the served statistic;
+  conformal advertises its audit-backed 0.90; the Aqua converter runs in its
+  own CPython 3.12 env (Colab is 3.13, torch 2.11). `cudnn_deterministic:
+  false` in the card: Ultralytics unsets determinism when `detector.train()`
+  returns, so §4/§5 ran non-deterministic (see ROADMAP).
+- Data: the same v8 corpus as 2.7.2 within ±2 % per class (train 13,724 vs
+  13,660) and **the identical 535-row holdout** (every per-class count equal).
+- rw mF1 0.865 (INT8; FP32 0.858, paired CI straddles 0), indomain 0.886 at
+  epoch 10 — top of the 0.84–0.87 band, not outside it. leaf_spot recall 0.82
+  is the lowest since 2.3.1 (13 → viral, 12 → healthy); healthy precision 0.90
+  the lowest recorded.
+- **Holdout, same rows as 2.7.2, neither trained on them:** supported disease
+  mF1 0.897 vs 0.863, accuracy 0.910 vs 0.918. Healthy precision there fell
+  0.85 → 0.784: 15 of 116 scorch, 5 nutrient and 5 powdery rows are called
+  healthy. Not yet paired-bootstrapped against 2.7.2; read the mF1 gain as
+  unconfirmed (pests n=3 and leaf_spot n=16 sit in the macro).
+- New instrument (one served pass, `detector.onnx`, 1024 px upload):
+  end-to-end `served_vote` 0.824 vs whole-image 0.865 (fold 0.846, crop-only
+  0.763); nutrient loses most (0.86 → 0.69). Stage 1 no-box at conf 0.25:
+  gray_mold 0.386, pests 0.381, scorch 0.211, healthy 0.191 — gray_mold 2.02×
+  healthy trips the warning. Served OOD gate out of sample: head-or-gate NAP
+  recall 0.967 at plant false-reject 0.011.
+- v2 sentinel (diagnostic, classifier-only argmax): hibiscus scorch **0/31**,
+  healthy false-fire 0.066. The 2.7.0 data cause is unchanged
+  (`kaggle_ornamental` still 11.3 % of draws, zero scorch).
+- Aqua FLOAT32 TFLite rw mF1 0.801 (best recorded), drift vs gamma 0.065;
+  TFLite↔ONNX parity 2.2e-5 on real photos.
+- Archive 49.3 MB: only the manifest-bound artefacts (the FP32 graph is no
+  longer bundled beside the shipped INT8 one), plus `analysis/` with
+  `supplement_manifest_next.csv` (2,286 rows stamped `first_seen_model_version
+  = 2.7.5`) — the base manifest for v9.
+
 ## Where the dataset rounds show up
 
 | round | first run | what it changed in the mix | what moved |
@@ -361,7 +404,7 @@ instrument, not the model.
 To compare release A with release B on data *both* never saw:
 
 - **Holdout** — valid for any pair where both trained with the carve (2.7.2 and
-  later). For 2.6.8 or 2.7.0/2.7.1 vs a 2.8.x candidate it is one-sided: the
+  later; 2.7.2 and 2.7.5 share the identical 535 rows). For 2.6.8 or 2.7.0/2.7.1 vs a 2.8.x candidate it is one-sided: the
   old model trained on ~70 % of it.
 - **Locked test set T** (`DATASET_LABELING_PLAN.md`, "Locked
   deployment-representative test set") — production scans adjudicated by two

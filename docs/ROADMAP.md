@@ -319,12 +319,14 @@ still open:
       bounded served pass feeds the Stage-1 audit, the end-to-end F1 and the
       out-of-sample served-gate check; the first 2.7.5 log shows its
       photos/s and the host RAM available when it started.
-- [ ] **Strict determinism is untested end to end.**
-      `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
-      §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
-      kernel. The first 2.7.5 run is the test; if it trips, prefer
-      `warn_only=True` with the warning recorded in `run_manifest.json` over
-      losing the run.
+- [ ] **Strict determinism is still untested end to end — and §3 switches it
+      off.** Ultralytics' trainer calls `unset_deterministic()` when
+      `detector.train()` returns (`use_deterministic_algorithms(False)`,
+      `cudnn.deterministic = False`, `CUBLAS_WORKSPACE_CONFIG` popped), so the
+      2.7.5 run trained §4/§5 non-deterministically and its card records
+      `cudnn_deterministic: false`. Re-assert after §3 (restore the cuBLAS env
+      var first), preferably `warn_only=True` with the warnings recorded in
+      `run_manifest.json`.
 - [ ] **The augmentation profile is unablated** (v1 letterbox and v2 parity
       alike). One paired run at `SEED=0`, profile vs no-artifact-augs, scored
       with `tools/eval_bootstrap.py` on capture families, settles whether the
@@ -489,11 +491,11 @@ archive's own sidecars.
 - **2.7.3** — regime-aware sampling + regime conformal. Both falsified, both
   removed from the notebook. First release stopped by the out-of-domain gate
   before producing a bundle.
-- **2.7.5** — not yet run. First run under the 2026-09-21 study-project policy:
-  DoctorP and unfiltered iNat back in the mix, served OOD gate calibrated,
-  audit-backed conformal coverage, one blur gate on both tiers; end-to-end
-  eval and Stage-1 audit from one served pass in every mode, supplement boxes
-  into Stage 1, light provenance (2026-10-01).
+- **2.7.5** — trained 2026-10-05 on v8; ship gate passed; the first bundle that
+  boots on the strict server. rw 0.865, holdout 0.897 (2.7.2: 0.863, same
+  rows) but holdout healthy precision 0.784 (2.7.2: 0.85), hibiscus 0/31,
+  end-to-end served 0.824, Aqua 0.801. Open before it replaces 2.6.8: a paired
+  holdout bootstrap vs 2.7.2. Numbers in `MODEL_HISTORY.md` row 16.
 
 ---
 
