@@ -168,8 +168,8 @@ and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
   `uv` (TF 2.19.0, onnx2tf 1.28.8 — the last 1.x — and their deps, all pinned);
   §5 exports the ONNX in the kernel and converts it there in a subprocess.
   TensorFlow never loads into the training kernel; verification and the §6
-  TFLite eval use `ai-edge-litert` in the kernel. §1 converts an untrained
-  MobileNetV3-Small through the whole path (FLOAT32, `[1,224,224,3] → [1,9]`,
+  TFLite eval use `ai-edge-litert` in the kernel. §1 converts §5's starting
+  point (ImageNet MobileNetV3-Small, fresh head) through the whole path (FLOAT32, `[1,224,224,3] → [1,9]`,
   parity) before any training, and §6 seals the env into `run_manifest.json`.
 
 ### 2026-10-01 — one served pass in §6, supplement boxes, light provenance
