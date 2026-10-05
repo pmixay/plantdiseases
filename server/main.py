@@ -1987,18 +1987,21 @@ async def capabilities():
     # Consolidated model/version metadata (formerly /version and /classes).
     # The int8 ship flag tells operators whether classifier_int8.onnx is genuine
     # INT8 or the FP32 ONNX renamed; defaults to false when the card is missing
-    # or malformed.
+    # or malformed. A notebook bundle (§6b) keeps the card under analysis/; older
+    # trees had it at the root.
     int8_shipped = False
     int8_artifact: str | None = None
-    try:
-        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            _int8 = (json.load(fh).get("int8") or {})
+    for _card in (MODELS_DIR / "model_card.json", MODELS_DIR / "analysis" / "model_card.json"):
+        try:
+            with open(_card, encoding="utf-8") as fh:
+                _int8 = (json.load(fh).get("int8") or {})
+        except (OSError, ValueError, AttributeError):
+            continue
         int8_shipped = bool(_int8.get("shipped", False))
         _artifact = _int8.get("shipped_artifact")
         if isinstance(_artifact, str):
             int8_artifact = _artifact
-    except (OSError, ValueError):
-        pass
+        break
 
     model: dict | None = None
     model_version: str | None = None

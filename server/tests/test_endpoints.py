@@ -89,6 +89,22 @@ def test_capabilities_int8_flag_surfaced(client):
     assert "int8_artifact" in model
 
 
+def test_capabilities_int8_flag_read_from_bundle_analysis_dir(client, tmp_path, monkeypatch):
+    """A notebook bundle (§6b) ships model_card.json under analysis/, not at the
+    models root; the flag must still reach operators instead of reading false."""
+    import json
+
+    import main as server_main
+
+    (tmp_path / "analysis").mkdir()
+    (tmp_path / "analysis" / "model_card.json").write_text(json.dumps(
+        {"int8": {"shipped": True, "shipped_artifact": "classifier_int8.onnx"}}))
+    monkeypatch.setattr(server_main, "MODELS_DIR", tmp_path)
+    model = client.get("/api/capabilities").json()["model"]
+    assert model["int8_shipped"] is True
+    assert model["int8_artifact"] == "classifier_int8.onnx"
+
+
 def test_analyze_inference_timeout_504(client, png_bytes):
     """A pipeline that takes longer than `INFERENCE_TIMEOUT` must yield
     a 504 (asyncio.wait_for path). We patch the live `pipeline.analyze`
