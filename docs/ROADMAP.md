@@ -160,6 +160,18 @@ complete **legacy diagnostic candidate**; v2.7.3 failed its own recorded gate
 and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
 2026-09-21 policy below; v9 is no longer a precondition.
 
+### 2026-10-05 — Aqua export runs on any Colab Python
+
+- Colab moved to CPython 3.13+, where TensorFlow 2.19 (the onnx2tf backend the
+  Aqua export is pinned to) has no wheel, so §1 refused every `combined` run.
+  The converter now lives in its own CPython 3.12 env that §1 provisions with
+  `uv` (TF 2.19.0, onnx2tf 1.28.8 — the last 1.x — and their deps, all pinned);
+  §5 exports the ONNX in the kernel and converts it there in a subprocess.
+  TensorFlow never loads into the training kernel; verification and the §6
+  TFLite eval use `ai-edge-litert` in the kernel. §1 converts an untrained
+  MobileNetV3-Small through the whole path (FLOAT32, `[1,224,224,3] → [1,9]`,
+  parity) before any training, and §6 seals the env into `run_manifest.json`.
+
 ### 2026-10-01 — one served pass in §6, supplement boxes, light provenance
 
 - **§2 crash on v8 fixed.** The 2026-09-21 change made `capture_family_id`

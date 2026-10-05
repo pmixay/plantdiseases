@@ -122,8 +122,9 @@ leakage guard group by **`(source, plant_id)`**. pHash it against the OOD
 benchmark *and* against the datasets that benchmark was built from before wiring
 it — see golden rule 7. Re-run §2→§7.
 
-**Switch families:** set `MODEL_FAMILY` in §1; for `aqua` confirm §5's TF
-toolchain installs. Each family writes its own `plantvision_<family>_v<ver>.tar`.
+**Switch families:** set `MODEL_FAMILY` in §1; for `aqua` (combined mode) the
+end of §1 provisions the CPython 3.12 export env (TF 2.19 + onnx2tf, via `uv`)
+and preflights a throwaway student — read that line before trusting the run. Each family writes its own `plantvision_<family>_v<ver>.tar`.
 
 **Re-run one section:** sections share state through the kernel, so a clean
 re-run is top-to-bottom. To iterate on §4/§6 only, keep the §2/§3 dataset
