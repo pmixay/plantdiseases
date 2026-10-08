@@ -322,6 +322,31 @@ the diff of `train_counts` / `source_inventory`.
   longer bundled beside the shipped INT8 one), plus `analysis/` with
   `supplement_manifest_next.csv` (2,286 rows stamped `first_seen_model_version
   = 2.7.5`) — the base manifest for v9.
+- **Paired vs 2.6.8 on never-trained photos (2026-10-08).** 1,019 iNat
+  observations created after 2.7.5's §2 fetch (2026-10-05 19:35Z; both runs
+  fetched `order_by=created_at desc`, so neither saw them), labelled with the
+  notebook's own taxon conventions: healthy 174 (the 20 houseplant genera),
+  pests 116 (scale/mealybug families; 86 `needs_id`), powdery 239
+  (*Erysiphaceae*, green-content ≥ 0.04), not_a_plant 490 (green-texture taxa
+  + Animalia). `tools/paired_eval.py --allow-legacy-unbound`, row bootstrap
+  (one photo per observation). 2.6.8 served = the current server code with no
+  fitted served gate, not its production build.
+
+  | | argmax 2.6.8 | argmax 2.7.5 | served 2.6.8 | served 2.7.5 |
+  |---|---|---|---|---|
+  | disease mF1 (pests + powdery) | 0.825 | **0.895** | 0.844 | **0.903** |
+  | Δ (2.7.5 − 2.6.8), 95 % CI | | +0.070 [+0.041, +0.101] | | +0.059 [+0.029, +0.091] |
+  | powdery recall (McNemar) | 0.661 | **0.774** (p<0.001) | 0.728 | **0.808** (p=0.001) |
+  | pests recall / precision | 0.966 / 0.767 | 0.966 / **0.875** | 0.966 / 0.752 | 0.931 / **0.900** |
+  | healthy recall | 0.914 | 0.897 | 0.885 | 0.885 |
+  | healthy → told diseased | 6.3 % | 8.0 % (p=0.51) | 9.2 % | 8.6 % |
+  | diseased → told healthy | 4.8 % | 4.2 % | 3.7 % | 3.1 % |
+  | not_a_plant rejected | 0.927 | 0.902 (p=0.06) | 0.904 | 0.914 (p=0.50) |
+
+  2.6.8 calls white powdery coatings and non-plants `pests` (18 + 17 served);
+  2.7.5 does not. No safety rate differs significantly. Not covered: scorch,
+  nutrient, leaf_spot, viral, gray_mold (no iNat source with a clean taxon
+  label) — scorch is the class the v2 sentinel and the holdout flag.
 
 ## Where the dataset rounds show up
 
