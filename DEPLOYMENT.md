@@ -172,7 +172,7 @@ the hardened unit in §5. Point every one of these at the state directory.
 | `plantnet_timeout` / `plantnet_attempts` | `10.0` / `2` | One bounded retry on a transient network fault; 401/429 are terminal. |
 | `plantnet_cache_size` / `plantnet_cache_ttl_seconds` | `256` / `604800` (7 d) | |
 | `openrouter_api_key` | *(empty)* | |
-| `openrouter_model` | `openai/gpt-5.6-luna` | Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
+| `openrouter_model` | `openai/gpt-6-luna` | Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
 | `openrouter_base_url` / `openrouter_total_timeout` | `https://openrouter.ai/api/v1` / `30.0` | Override the URL only for compatible gateways. The timeout is a per-call ceiling, retries included. |
 | `openrouter_provider_only` | `openai` | Comma-separated provider slugs; blank = OpenRouter's own routing. |
 | `openrouter_reasoning_effort` + the per-caller `species_profile_` / `species_diseases_` / `care_plan_polish_reasoning_effort` | `medium` + `high` / `medium` / `medium` | `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no field. A stale `minimal` maps to `low`. |

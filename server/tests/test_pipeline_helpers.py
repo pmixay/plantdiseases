@@ -740,6 +740,23 @@ def test_temperature_sidecar_missing_is_noop_but_tta_mismatch_fails(tmp_path):
     assert _load_temperature(model_path, expected_tta="hflip") == pytest.approx(1.25)
 
 
+def test_temperature_binding_warning_only_for_unbound_sidecars(tmp_path, caplog):
+    """A sidecar the verified bundle manifest already binds is not 'advisory';
+    the caveat is for loose trees only."""
+    import logging
+
+    from pipeline import _load_temperature
+
+    model_path = tmp_path / "classifier.onnx"
+    (tmp_path / "temperature.json").write_text('{"temperature": 0.83}', encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="pipeline"):
+        assert _load_temperature(model_path, manifest_bound=True) == pytest.approx(0.83)
+    assert "calibration claim is advisory" not in caplog.text
+    with caplog.at_level(logging.WARNING, logger="pipeline"):
+        _load_temperature(model_path)
+    assert "calibration claim is advisory" in caplog.text
+
+
 def test_max_logit_floor_resolver_handles_null_and_explicit_values():
     """`ood.max_logit_floor: null` disables the MaxLogit gate; an
     explicit float is honoured; missing keys fall back to default."""

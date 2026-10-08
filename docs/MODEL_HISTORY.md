@@ -31,10 +31,12 @@ numbers moved.
    pseudo-replicates, mixed served/argmax instruments). They are cited here only
    as the *reason a release was rejected*, never as a measurement.
 
-None of the fifteen archives carries `bundle_manifest.json`, `data_manifest.json`
-or `run_manifest.json`, so **none boots on the current strict server** (branch
-`model-fix-test`, `MODEL_VERSION = 2.8.0`). They remain valid as
-`tools/paired_eval.py --argmax` diagnostic inputs.
+None of the fifteen pre-2.7.5 archives carries `bundle_manifest.json`,
+`data_manifest.json` or `run_manifest.json`, so **none boots on the current
+strict server**. They remain valid as `tools/paired_eval.py --argmax
+--allow-legacy-unbound` diagnostic inputs. **2.7.5 (row 16, added 2026-10-05)
+is the first manifest-bound archive**: it passes `tools/verify_bundle.py` and
+boots the current server unmodified.
 
 ## Ledger
 
@@ -55,6 +57,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 13 | 2026-08-08 17:41 | 2.7.0 | [models-080826.tar](https://drive.google.com/file/d/1N_f4JSsCS68xUHLwA_c6MEFx3Zc5m-s6/view?usp=sharing) | 13948 | 2201 | 0.860 | 0.884 (9) | — | INT8 | 0.81 | 1.54 | 0.788 |
 | 14 | 2026-08-14 11:01 | 2.7.1 | [models-140826.tar](https://drive.google.com/file/d/1Z3VkyGSsIgFOPxoKCrRBLO_glz9tqeGu/view?usp=sharing) | 14000 | 2184 | 0.870 | 0.877 (8) | — | INT8 | 0.76 | 1.52 | 0.791 |
 | 15 | 2026-08-17 11:14 | 2.7.2 | [models-170826.tar](https://drive.google.com/file/d/14YuB8HdVtAb6z2OgDmMvUscjRoXyURIt/view?usp=sharing) | 13660 | 2116 | 0.841 | 0.870 (19) | 0.863 | INT8 | 0.82 | 1.48 | 0.761 |
+| 16 | 2026-10-05 20:24 | 2.7.5 | [plantvision_2.7.5-combined-s0-20261005T191530Z-67a8a28b.tar](https://drive.google.com/file/d/1jU2uX7Yb-N-A8Enu2f5XytUJRR-f04nv/view?usp=sharing) | 13724 | 2098 | 0.865 | 0.886 (10) | 0.897 | INT8 | 0.83 | 1.51 | 0.801 |
 
 ## Per-class recall on `val_realworld` (classifier-only argmax, hflip TTA)
 
@@ -75,6 +78,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.90 | 0.91 | 0.72 | 0.87 | 0.96 | 0.91 | 0.94 | 0.94 | 0.85 |
 | 2.7.1 (08-14) | 0.84 | 0.93 | 0.74 | 0.86 | 0.97 | 0.92 | 0.96 | 0.96 | 0.86 |
 | 2.7.2 (08-17) | 0.86 | 0.93 | 0.71 | 0.90 | 0.95 | 0.83 | 0.92 | 0.96 | 0.88 |
+| 2.7.5 (10-05) | 0.92 | 0.93 | 0.72 | 0.82 | 0.97 | 0.86 | 0.93 | 0.93 | 0.91 |
 
 ## Per-class precision on `val_realworld`
 
@@ -95,6 +99,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.86 | 0.93 | 0.76 | 0.85 | 0.98 | 0.72 | 0.94 | 0.90 | 0.90 |
 | 2.7.1 (08-14) | 0.89 | 0.92 | 0.74 | 0.85 | 0.99 | 0.75 | 0.96 | 0.95 | 0.92 |
 | 2.7.2 (08-17) | 0.84 | 0.93 | 0.70 | 0.88 | 0.99 | 0.62 | 0.98 | 0.87 | 0.88 |
+| 2.7.5 (10-05) | 0.84 | 0.90 | 0.73 | 0.89 | 0.98 | 0.77 | 0.95 | 0.93 | 0.91 |
 
 ## Eval-slice support on `val_realworld` (rows per class)
 
@@ -115,6 +120,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 82 | 621 | 107 | 236 | 516 | 77 | 266 | 112 | 184 |
 | 2.7.1 (08-14) | 89 | 620 | 107 | 229 | 519 | 77 | 266 | 102 | 175 |
 | 2.7.2 (08-17) | 69 | 615 | 90 | 232 | 495 | 65 | 265 | 93 | 192 |
+| 2.7.5 (10-05) | 88 | 581 | 90 | 233 | 489 | 65 | 265 | 91 | 196 |
 
 ## Training rows per class
 
@@ -135,6 +141,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 403 | 3737 | 1253 | 2155 | 1951 | 768 | 1032 | 1391 | 1258 |
 | 2.7.1 (08-14) | 399 | 3732 | 1254 | 2177 | 1945 | 768 | 1032 | 1420 | 1273 |
 | 2.7.2 (08-17) | 371 | 3663 | 1187 | 2133 | 1888 | 723 | 1030 | 1378 | 1287 |
+| 2.7.5 (10-05) | 388 | 3721 | 1196 | 2145 | 1853 | 725 | 1030 | 1396 | 1270 |
 
 ## Calibration / quantisation / OOD sidecars
 
@@ -155,6 +162,7 @@ or `run_manifest.json`, so **none boots on the current strict server** (branch
 | 2.7.0 (08-08) | 0.001 | False | 0.81 | 0.6 | 0.980 | 1.54 | 0.594 | 2.013 | — |
 | 2.7.1 (08-14) | -0.004 | False | 0.76 | 0.6 | 0.976 | 1.52 | 0.607 | 1.894 | — |
 | 2.7.2 (08-17) | 0.001 | False | 0.82 | 0.6 | 0.987 | 1.48 | 0.630 | 1.750 | 0.05 |
+| 2.7.5 (10-05) | 0.007 | False | 0.83 | 0.6 | 0.945 (out-of-sample, n=236) | 1.51 | 0.608 | 2.080 | 0.05 |
 
 ## Release notes — what changed, and why the numbers moved
 
@@ -280,6 +288,96 @@ the diff of `train_counts` / `source_inventory`.
 - Stopped by the then-blocking OOD gate before writing a bundle; both levers
   falsified and removed. Its in-domain numbers exist only in the Colab log.
 
+### 2.7.5 (10-05) — v8 again, first manifest-bound bundle
+- Recipe vs 2.7.2: no sampler or loss knob moved. Training geometry is the
+  serving transform with a random crop (`serve_parity_v2_unablated`, no scale
+  augmentation); the served OOD gate is fitted on the served statistic;
+  conformal advertises its audit-backed 0.90; the Aqua converter runs in its
+  own CPython 3.12 env (Colab is 3.13, torch 2.11). `cudnn_deterministic:
+  false` in the card: Ultralytics unsets determinism when `detector.train()`
+  returns, so §4/§5 ran non-deterministic (see ROADMAP).
+- Data: the same v8 corpus as 2.7.2 within ±2 % per class (train 13,724 vs
+  13,660) and **the identical 535-row holdout** (every per-class count equal).
+- rw mF1 0.865 (INT8; FP32 0.858, paired CI straddles 0), indomain 0.886 at
+  epoch 10 — top of the 0.84–0.87 band, not outside it. leaf_spot recall 0.82
+  is the lowest since 2.3.1 (13 → viral, 12 → healthy); healthy precision 0.90
+  the lowest recorded.
+- **Holdout, same rows as 2.7.2, neither trained on them:** supported disease
+  mF1 0.897 vs 0.863, accuracy 0.910 vs 0.918. Healthy precision there fell
+  0.85 → 0.784: 15 of 116 scorch, 5 nutrient and 5 powdery rows are called
+  healthy. Not yet paired-bootstrapped against 2.7.2; read the mF1 gain as
+  unconfirmed (pests n=3 and leaf_spot n=16 sit in the macro).
+- New instrument (one served pass, `detector.onnx`, 1024 px upload):
+  end-to-end `served_vote` 0.824 vs whole-image 0.865 (fold 0.846, crop-only
+  0.763); nutrient loses most (0.86 → 0.69). Stage 1 no-box at conf 0.25:
+  gray_mold 0.386, pests 0.381, scorch 0.211, healthy 0.191 — gray_mold 2.02×
+  healthy trips the warning. Served OOD gate out of sample: head-or-gate NAP
+  recall 0.967 at plant false-reject 0.011.
+- v2 sentinel (diagnostic, classifier-only argmax): hibiscus scorch **0/31**,
+  healthy false-fire 0.066. The 2.7.0 data cause is unchanged
+  (`kaggle_ornamental` still 11.3 % of draws, zero scorch).
+- Aqua FLOAT32 TFLite rw mF1 0.801 (best recorded), drift vs gamma 0.065;
+  TFLite↔ONNX parity 2.2e-5 on real photos.
+- Archive 49.3 MB: only the manifest-bound artefacts (the FP32 graph is no
+  longer bundled beside the shipped INT8 one), plus `analysis/` with
+  `supplement_manifest_next.csv` (2,286 rows stamped `first_seen_model_version
+  = 2.7.5`) — the base manifest for v9.
+- **Paired vs 2.6.8 on never-trained photos (2026-10-08).** 1,019 iNat
+  observations created after 2.7.5's §2 fetch (2026-10-05 19:35Z; both runs
+  fetched `order_by=created_at desc`, so neither saw them), labelled with the
+  notebook's own taxon conventions: healthy 174 (the 20 houseplant genera),
+  pests 116 (scale/mealybug families; 86 `needs_id`), powdery 239
+  (*Erysiphaceae*, green-content ≥ 0.04), not_a_plant 490 (green-texture taxa
+  + Animalia). `tools/paired_eval.py --allow-legacy-unbound`, row bootstrap
+  (one photo per observation). 2.6.8 served = the current server code with no
+  fitted served gate, not its production build.
+
+  | | argmax 2.6.8 | argmax 2.7.5 | served 2.6.8 | served 2.7.5 |
+  |---|---|---|---|---|
+  | disease mF1 (pests + powdery) | 0.825 | **0.895** | 0.844 | **0.903** |
+  | Δ (2.7.5 − 2.6.8), 95 % CI | | +0.070 [+0.041, +0.101] | | +0.059 [+0.029, +0.091] |
+  | powdery recall (McNemar) | 0.661 | **0.774** (p<0.001) | 0.728 | **0.808** (p=0.001) |
+  | pests recall / precision | 0.966 / 0.767 | 0.966 / **0.875** | 0.966 / 0.752 | 0.931 / **0.900** |
+  | healthy recall | 0.914 | 0.897 | 0.885 | 0.885 |
+  | healthy → told diseased | 6.3 % | 8.0 % (p=0.51) | 9.2 % | 8.6 % |
+  | diseased → told healthy | 4.8 % | 4.2 % | 3.7 % | 3.1 % |
+  | not_a_plant rejected | 0.927 | 0.902 (p=0.06) | 0.904 | 0.914 (p=0.50) |
+
+  2.6.8 calls white powdery coatings and non-plants `pests` (18 + 17 served);
+  2.7.5 does not. No safety rate differs significantly. Not covered: scorch,
+  nutrient, leaf_spot, viral, gray_mold (no iNat source with a clean taxon
+  label) — scorch is the class the v2 sentinel and the holdout flag.
+- **Paired vs 2.6.8 on the holdout and the v2 sentinel (2026-10-08).** The
+  holdout was rebuilt from supplement v8 with §2's routing and sha1 bucket
+  (535 rows, every per-class count equal to the run's). Its `provenance`
+  column splits it: 375 `carried_from_v5` rows existed when 2.6.8 trained
+  (it may have trained on about half of them), 160 rows (v7 / v8 / v8b /
+  `new`) entered after 2.6.8 and are unseen by both.
+
+  | | argmax 2.6.8 | argmax 2.7.5 | served 2.6.8 | served 2.7.5 |
+  |---|---|---|---|---|
+  | holdout, all 535 — disease mF1 | 0.813 | 0.898 (+0.085 [+0.002, +0.165]) | 0.766 | 0.817 (+0.051 [−0.060, +0.149]) |
+  | holdout, all 535 — accuracy | **0.940** | 0.908 (p=0.02) | **0.886** | 0.847 (p=0.02) |
+  | holdout, all — scorch recall / sick → "healthy" | 0.897 / 11 | 0.810 / 25 | 0.767 / 30 | 0.655 / 46 |
+  | **holdout, 160 unseen by both — disease mF1** | 0.773 | **0.904 (+0.131 [+0.052, +0.216])** | 0.752 | 0.852 (+0.100 [−0.018, +0.206]) |
+  | holdout, 160 unseen — scorch recall / sick → "healthy" | 29/39 / 10 | 31/39 / 10 | 26/39 / 12 | 30/39 / 12 |
+  | sentinel: hibiscus scorch recall | **31/31** | 0/31 | **31/31** | 1/31 |
+  | sentinel: healthy false-fire (healthy hibiscus) | 2.6 % (0/12) | 7.9 % (6/12), p=0.02 | 3.3 % (0/12) | 5.3 % (5/12) |
+
+  2.6.8's holdout edge exists only on rows it could have trained on; on the
+  rows neither saw, 2.7.5 is ahead or tied everywhere, the healthy lean
+  included. **The sentinel is not independent of 2.6.8.** The notebook it
+  trained with (`d356cff`, 2026-06-29) fetched
+  `pappu54/indoor-plant-disease-dataset-23-classes` — "rose / hibiscus /
+  turmeric / chrysanthemum / money-plant", with "Hibiscus scorch" named as
+  scorch supply. That source is gone (403), so its overlap with the
+  benchmark's upstream cannot be measured, but Kaggle hibiscus sets are known
+  re-uploads of it (`aditisalvi04`, Hamming 0). Read 2.6.x's 31/31 as
+  same-species (possibly same-photograph) training, and the 2.6.9 → 2.7.0
+  "cliff" as the loss of that source, not of a scorch capability. 2.7.5 has
+  never seen hibiscus (deny-listed branch), and it shows: healthy hibiscus is
+  misread too.
+
 ## Where the dataset rounds show up
 
 | round | first run | what it changed in the mix | what moved |
@@ -361,7 +459,7 @@ instrument, not the model.
 To compare release A with release B on data *both* never saw:
 
 - **Holdout** — valid for any pair where both trained with the carve (2.7.2 and
-  later). For 2.6.8 or 2.7.0/2.7.1 vs a 2.8.x candidate it is one-sided: the
+  later; 2.7.2 and 2.7.5 share the identical 535 rows). For 2.6.8 or 2.7.0/2.7.1 vs a 2.8.x candidate it is one-sided: the
   old model trained on ~70 % of it.
 - **Locked test set T** (`DATASET_LABELING_PLAN.md`, "Locked
   deployment-representative test set") — production scans adjudicated by two

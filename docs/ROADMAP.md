@@ -160,6 +160,18 @@ complete **legacy diagnostic candidate**; v2.7.3 failed its own recorded gate
 and lacks Aqua. The next candidate is a fresh GPU run on dataset v8 under the
 2026-09-21 policy below; v9 is no longer a precondition.
 
+### 2026-10-05 — Aqua export runs on any Colab Python
+
+- Colab moved to CPython 3.13+, where TensorFlow 2.19 (the onnx2tf backend the
+  Aqua export is pinned to) has no wheel, so §1 refused every `combined` run.
+  The converter now lives in its own CPython 3.12 env that §1 provisions with
+  `uv` (TF 2.19.0, onnx2tf 1.28.8 — the last 1.x — and their deps, all pinned);
+  §5 exports the ONNX in the kernel and converts it there in a subprocess.
+  TensorFlow never loads into the training kernel; verification and the §6
+  TFLite eval use `ai-edge-litert` in the kernel. §1 converts §5's starting
+  point (ImageNet MobileNetV3-Small, fresh head) through the whole path (FLOAT32, `[1,224,224,3] → [1,9]`,
+  parity) before any training, and §6 seals the env into `run_manifest.json`.
+
 ### 2026-10-01 — one served pass in §6, supplement boxes, light provenance
 
 - **§2 crash on v8 fixed.** The 2026-09-21 change made `capture_family_id`
@@ -307,12 +319,14 @@ still open:
       bounded served pass feeds the Stage-1 audit, the end-to-end F1 and the
       out-of-sample served-gate check; the first 2.7.5 log shows its
       photos/s and the host RAM available when it started.
-- [ ] **Strict determinism is untested end to end.**
-      `torch.use_deterministic_algorithms(True)` (no `warn_only`) will abort
-      §4/§5 mid-run if any op on the recipe's path has no deterministic CUDA
-      kernel. The first 2.7.5 run is the test; if it trips, prefer
-      `warn_only=True` with the warning recorded in `run_manifest.json` over
-      losing the run.
+- [ ] **Strict determinism is still untested end to end — and §3 switches it
+      off.** Ultralytics' trainer calls `unset_deterministic()` when
+      `detector.train()` returns (`use_deterministic_algorithms(False)`,
+      `cudnn.deterministic = False`, `CUBLAS_WORKSPACE_CONFIG` popped), so the
+      2.7.5 run trained §4/§5 non-deterministically and its card records
+      `cudnn_deterministic: false`. Re-assert after §3 (restore the cuBLAS env
+      var first), preferably `warn_only=True` with the warnings recorded in
+      `run_manifest.json`.
 - [ ] **The augmentation profile is unablated** (v1 letterbox and v2 parity
       alike). One paired run at `SEED=0`, profile vs no-artifact-augs, scored
       with `tools/eval_bootstrap.py` on capture families, settles whether the
@@ -477,11 +491,14 @@ archive's own sidecars.
 - **2.7.3** — regime-aware sampling + regime conformal. Both falsified, both
   removed from the notebook. First release stopped by the out-of-domain gate
   before producing a bundle.
-- **2.7.5** — not yet run. First run under the 2026-09-21 study-project policy:
-  DoctorP and unfiltered iNat back in the mix, served OOD gate calibrated,
-  audit-backed conformal coverage, one blur gate on both tiers; end-to-end
-  eval and Stage-1 audit from one served pass in every mode, supplement boxes
-  into Stage 1, light provenance (2026-10-01).
+- **2.7.5** — trained 2026-10-05 on v8; ship gate passed; the first bundle that
+  boots on the strict server. rw 0.865, holdout 0.897 (2.7.2: 0.863, same
+  rows) but holdout healthy precision 0.784 (2.7.2: 0.85), hibiscus 0/31,
+  end-to-end served 0.824, Aqua 0.801. Paired against 2.6.8 (2026-10-08) it
+  is ahead or tied on every set neither model trained on (1,019 time-split
+  iNat photos; the 160 holdout rows added after 2.6.8) and behind on hibiscus,
+  a species 2.6.8 trained on through `pappu54` — which also makes the v2
+  sentinel non-independent of 2.6.x. Numbers in `MODEL_HISTORY.md` row 16.
 
 ---
 

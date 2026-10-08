@@ -218,6 +218,7 @@ def _load_temperature(
     classifier_path: Path | None,
     *,
     expected_tta: str | None = None,
+    manifest_bound: bool = False,
 ) -> float:
     """Look for ``temperature.json`` next to the classifier weights.
 
@@ -264,7 +265,9 @@ def _load_temperature(
                 f"Temperature sidecar {p} was fit with tta={declared_tta!r}, "
                 f"but serving uses tta={expected_tta!r}"
             )
-    if data.get("serving_contract") is None:
+    # A verified bundle manifest already binds this file's bytes to the exact
+    # graph and serving contract; only an unbound sidecar needs the caveat.
+    if data.get("serving_contract") is None and not manifest_bound:
         logger.warning(
             "Temperature sidecar %s has no model/preprocess serving-contract "
             "binding; scaling is loaded but its calibration claim is advisory",
@@ -569,6 +572,7 @@ class PlantDiseasePipeline:
         self.temperature = _load_temperature(
             classifier_path,
             expected_tta=getattr(self.classifier, "tta", None),
+            manifest_bound=self.verified_bundle is not None,
         )
         meta = getattr(self.classifier, "meta", None) or {}
         (
