@@ -347,6 +347,36 @@ the diff of `train_counts` / `source_inventory`.
   2.7.5 does not. No safety rate differs significantly. Not covered: scorch,
   nutrient, leaf_spot, viral, gray_mold (no iNat source with a clean taxon
   label) — scorch is the class the v2 sentinel and the holdout flag.
+- **Paired vs 2.6.8 on the holdout and the v2 sentinel (2026-10-08).** The
+  holdout was rebuilt from supplement v8 with §2's routing and sha1 bucket
+  (535 rows, every per-class count equal to the run's). Its `provenance`
+  column splits it: 375 `carried_from_v5` rows existed when 2.6.8 trained
+  (it may have trained on about half of them), 160 rows (v7 / v8 / v8b /
+  `new`) entered after 2.6.8 and are unseen by both.
+
+  | | argmax 2.6.8 | argmax 2.7.5 | served 2.6.8 | served 2.7.5 |
+  |---|---|---|---|---|
+  | holdout, all 535 — disease mF1 | 0.813 | 0.898 (+0.085 [+0.002, +0.165]) | 0.766 | 0.817 (+0.051 [−0.060, +0.149]) |
+  | holdout, all 535 — accuracy | **0.940** | 0.908 (p=0.02) | **0.886** | 0.847 (p=0.02) |
+  | holdout, all — scorch recall / sick → "healthy" | 0.897 / 11 | 0.810 / 25 | 0.767 / 30 | 0.655 / 46 |
+  | **holdout, 160 unseen by both — disease mF1** | 0.773 | **0.904 (+0.131 [+0.052, +0.216])** | 0.752 | 0.852 (+0.100 [−0.018, +0.206]) |
+  | holdout, 160 unseen — scorch recall / sick → "healthy" | 29/39 / 10 | 31/39 / 10 | 26/39 / 12 | 30/39 / 12 |
+  | sentinel: hibiscus scorch recall | **31/31** | 0/31 | **31/31** | 1/31 |
+  | sentinel: healthy false-fire (healthy hibiscus) | 2.6 % (0/12) | 7.9 % (6/12), p=0.02 | 3.3 % (0/12) | 5.3 % (5/12) |
+
+  2.6.8's holdout edge exists only on rows it could have trained on; on the
+  rows neither saw, 2.7.5 is ahead or tied everywhere, the healthy lean
+  included. **The sentinel is not independent of 2.6.8.** The notebook it
+  trained with (`d356cff`, 2026-06-29) fetched
+  `pappu54/indoor-plant-disease-dataset-23-classes` — "rose / hibiscus /
+  turmeric / chrysanthemum / money-plant", with "Hibiscus scorch" named as
+  scorch supply. That source is gone (403), so its overlap with the
+  benchmark's upstream cannot be measured, but Kaggle hibiscus sets are known
+  re-uploads of it (`aditisalvi04`, Hamming 0). Read 2.6.x's 31/31 as
+  same-species (possibly same-photograph) training, and the 2.6.9 → 2.7.0
+  "cliff" as the loss of that source, not of a scorch capability. 2.7.5 has
+  never seen hibiscus (deny-listed branch), and it shows: healthy hibiscus is
+  misread too.
 
 ## Where the dataset rounds show up
 

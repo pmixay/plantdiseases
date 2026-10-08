@@ -494,8 +494,11 @@ archive's own sidecars.
 - **2.7.5** — trained 2026-10-05 on v8; ship gate passed; the first bundle that
   boots on the strict server. rw 0.865, holdout 0.897 (2.7.2: 0.863, same
   rows) but holdout healthy precision 0.784 (2.7.2: 0.85), hibiscus 0/31,
-  end-to-end served 0.824, Aqua 0.801. Open before it replaces 2.6.8: a paired
-  holdout bootstrap vs 2.7.2. Numbers in `MODEL_HISTORY.md` row 16.
+  end-to-end served 0.824, Aqua 0.801. Paired against 2.6.8 (2026-10-08) it
+  is ahead or tied on every set neither model trained on (1,019 time-split
+  iNat photos; the 160 holdout rows added after 2.6.8) and behind on hibiscus,
+  a species 2.6.8 trained on through `pappu54` — which also makes the v2
+  sentinel non-independent of 2.6.x. Numbers in `MODEL_HISTORY.md` row 16.
 
 ---
 
