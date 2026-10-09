@@ -24,16 +24,12 @@ Android release build. Architecture and API surface live in
 ## 1. Prerequisites
 
 - **Python 3.14.** That is what CI runs (`.github/workflows/ci.yml`) and the
-  only version tested. `server/start.sh` accepts ≥ 3.12 (the floor of the
-  locked numpy/scipy), so it will still launch on an untested interpreter —
-  pin the venv to 3.14 explicitly.
-- `pip install --require-hashes -r server/requirements.lock`. The lock is the
-  full pinned closure of `requirements.txt` for CPython 3.14 on Linux x86_64,
-  with hashes, and is what CI tests against; regenerate it with the `uv`
-  command in its header whenever `requirements.txt` changes
-  (`tests/test_requirements_lock.py` fails until you do). Serving is ONNX
-  Runtime only; no `torch` import exists anywhere in `server/`, so torch is
-  **not** a runtime dependency.
+  only version tested. `server/start.sh` requires ≥ 3.10 (the syntax floor),
+  so it will still launch on an untested interpreter — pin the venv to 3.14
+  explicitly.
+- `pip install -r server/requirements.txt`. Serving is ONNX Runtime only; no
+  `torch` import exists anywhere in `server/`, so torch is **not** a runtime
+  dependency.
 - CPU-only is fine for the `gamma` (DINOv2 ViT-S/14) default. A GPU host is
   only worth it for `frontier_enabled=true` (ViT-B/14).
 - The model bundle (§2) must be on disk before first boot.
@@ -311,38 +307,11 @@ record query strings, where older app builds put the install's pseudo-id.
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
 sudo -u plantd python3.14 -m venv /opt/plantdiseases/.venv
-sudo -u plantd /opt/plantdiseases/.venv/bin/pip install --require-hashes -r /opt/plantdiseases/server/requirements.lock
+sudo -u plantd /opt/plantdiseases/.venv/bin/pip install -r /opt/plantdiseases/server/requirements.txt
 sudo systemctl daemon-reload
 sudo systemctl enable --now plantdiseases
 journalctl -u plantdiseases -f
 ```
-
-### 5.1 Host hardening (SSH)
-
-The host's IP and an SSH user of `root` were once committed to this repo (in
-history since the admin-panel removal; no key or password ever was). Treat the
-address as public and make SSH boring:
-
-```bash
-# /etc/ssh/sshd_config.d/10-hardening.conf
-PermitRootLogin prohibit-password   # or `no` once you log in as a sudo user
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PubkeyAuthentication yes
-MaxAuthTries 3
-LoginGraceTime 20
-```
-
-```bash
-sudo sshd -t && sudo systemctl reload ssh      # validate, then apply
-sudo ufw limit OpenSSH                          # ≥ 6 connections / 30 s from one IP → dropped
-sudo ufw allow 'Nginx Full' && sudo ufw enable
-sudo apt install fail2ban                       # the default sshd jail is enough
-```
-
-Keep a second session open while reloading `sshd`, and confirm a fresh key
-login works before closing it. `ufw` is the Debian/Ubuntu front end; on other
-distributions apply the same rate limit with your firewall of choice.
 
 ## 6. Reverse proxy & TLS (nginx + Let's Encrypt)
 
@@ -542,7 +511,6 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 - [ ] All storage paths point into the state directory; it is backed up.
 - [ ] `scan_recording_enabled` matches what your privacy policy discloses.
 - [ ] Service runs as a non-root user; you know which commit is deployed.
-- [ ] SSH hardened (§5.1): keys only, no root password login, rate-limited.
 - [ ] Per-IP daily allowances (`analyze_daily_quota` and friends, §3.2) and
       `infer_max_inflight` suit your traffic; watch `daily_quota_rejections`
       and `inference_busy_rejections` in `/api/metrics` the first week.

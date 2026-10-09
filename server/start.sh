@@ -49,7 +49,7 @@ for cmd in python3 python; do
         version=$("$cmd" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "")
         major="${version%%.*}"
         minor="${version##*.}"
-        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 12 ]] || [[ "${major:-0}" -gt 3 ]]; then
+        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 10 ]] || [[ "${major:-0}" -gt 3 ]]; then
             PYTHON="$cmd"
             break
         fi
@@ -57,8 +57,8 @@ for cmd in python3 python; do
 done
 
 if [[ -z "$PYTHON" ]]; then
-    echo "ERROR: Python 3.12+ is required but was not found." >&2
-    echo "       (requirements.lock's numpy/scipy need 3.12; 3.14 is what CI tests.)" >&2
+    echo "ERROR: Python 3.10+ is required but was not found." >&2
+    echo "       (3.10 is the syntax floor; 3.14 is what CI tests.)" >&2
     echo "Install Python from https://www.python.org/downloads/" >&2
     exit 1
 fi
@@ -75,14 +75,8 @@ source venv/bin/activate
 
 pip install --quiet --upgrade pip
 
-echo "[+] Installing server dependencies (pinned, hash-checked)..."
-# requirements.lock is the full pinned closure of requirements.txt for the
-# deploy target (CPython 3.14, Linux x86_64); the header says how to rebuild it.
-if ! pip install --quiet --require-hashes -r requirements.lock; then
-    echo "[!] requirements.lock targets CPython 3.14 on Linux x86_64." >&2
-    echo "    On another interpreter: pip install -r requirements.txt (unpinned)." >&2
-    exit 1
-fi
+echo "[+] Installing server dependencies..."
+pip install --quiet -r requirements.txt
 
 mkdir -p models logs
 

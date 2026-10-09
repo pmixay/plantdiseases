@@ -16,10 +16,10 @@ that branch.
 
 | track | state |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand; RuStore refuses a versionCode it already has, so bump it if 19 is already live. |
+| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. |
 | **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
-| **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. Paid and inference endpoints now have admission control and per-IP daily allowances. |
-| **Security** | All ten August-audit findings are fixed in code. Two follow-ups remain: SSH hardening has to be applied on the host, and the legacy pseudo-id URL forms can go once builds that predate the header are gone. |
+| **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
+| **Security** | The August audit is closed in code. Open: rolling the round out (deploy order, the author-key bridge) and two follow-ups that wait on old app builds disappearing. |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
 
 ---
@@ -31,18 +31,17 @@ Each line names its section below. ★ = a human decision or human-only task.
 1. ★ **Deploy the server, then publish the app** (Security → "Rolling out
    this round"). Order matters: the new app build reads its own opinion
    counts from a route only the new server has.
-2. ★ **Apply the SSH hardening on the host** (`DEPLOYMENT.md` §5.1).
-3. **Re-assert determinism after §3** (Model track → code-only). A one-cell
+2. **Re-assert determinism after §3** (Model track → code-only). A one-cell
    notebook fix. Land it before the next Colab run, or that run is
    non-deterministic again.
-4. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
+3. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-5. **`AnalysisActivity` recreate bug** (Architecture → Android). The one
+4. **`AnalysisActivity` recreate bug** (Architecture → Android). The one
    outright Android correctness bug.
-6. **Wikipedia attribution** (App). A licensing question (CC BY-SA), not a
+5. **Wikipedia attribution** (App). A licensing question (CC BY-SA), not a
    design one.
-7. **`build_analyze_payload()` extraction** (Architecture → Server). The best
+6. **`build_analyze_payload()` extraction** (Architecture → Server). The best
    value-for-effort refactor, and it unblocks testing the response shape.
 
 ---
@@ -99,9 +98,7 @@ on the plant detail screen. Room DB `version = 9` (`data/local/Database.kt:876`)
 
 ## Security
 
-All ten findings from the August 2026 audit (49 raised, 38 verified, 22
-confirmed) are fixed in code. The fixes are in git history; `DEPLOYMENT.md`
-§3.2 documents every new config key.
+The config keys behind every limit below are in `DEPLOYMENT.md` §3.2.
 
 ### Rolling out this round
 
@@ -122,9 +119,6 @@ confirmed) are fixed in code. The fixes are in git history; `DEPLOYMENT.md`
 
 ### Open follow-ups
 
-- [ ] ★ **Apply SSH hardening on the host.** The host IP and SSH user `root`
-      are in git history (`cd4bda2`; no credentials ever were). Keys only,
-      no root password login, rate-limited: `DEPLOYMENT.md` §5.1.
 - [ ] **Retire the legacy pseudo-id URL forms** once app builds that predate
       the `X-User-Pseudo-Id` header are gone (every build before the
       security-round commit, whatever its versionName):
@@ -293,12 +287,12 @@ item below needs its own PR. Don't fold one into another change.
 **Server**
 
 - [ ] **The `/api/analyze` body is ~400 lines** (`_analyze_image_admitted`,
-      `main.py:2458-2854`; the route itself now only takes the daily
+      `main.py:2515-2917`; the route itself now only takes the daily
       allowance and an admission slot), and roughly 150 of them are response
       assembly. Extract `build_analyze_payload()`. That makes the entropy
       guard, the dual-care split and the `not_a_plant` species suppression
       unit-testable without a TestClient. Best value-for-effort item here.
-- [ ] **Split `main.py` (5,848 lines) into routers.** It holds 39 handlers on
+- [ ] **Split `main.py` (5,916 lines) into routers.** It holds 39 handlers on
       one `APIRouter`, 6 middlewares, 15 Pydantic models, 2 thread pools, the
       limiter/ban/quota and admission state, the metrics and the lifespan. `Depends` is
       used 0 times. Order of work:
@@ -351,7 +345,7 @@ item below needs its own PR. Don't fold one into another change.
       `scan_id` for. On `targetSdk` 36, Android 16 ignores orientation locks
       on large screens, so bumping from 35 brings rotation back. The only
       outright correctness bug the review found.
-- [ ] **`ScanRepository` is a 1,708-line god object** spanning seven bounded
+- [ ] **`ScanRepository` is a 1,726-line god object** spanning seven bounded
       contexts, with ~29 dependents (17 field injections, 4 EntryPoint
       lookups, 6 controllers). Split it by context.
 - [ ] **Programmatic view construction.** `DetailExtraCardsController` (1,312
