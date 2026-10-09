@@ -18,19 +18,13 @@ from app.api.errors import AccountAPIError
 from app.api.routes import router as account_router
 from app.billing.notifications import build_notification_decoder
 from app.billing.rustore import build_rustore_client
-from app.community_deletion import (
-    build_community_deletion_dispatcher,
-    build_community_nickname_dispatcher,
-)
 from app.config import Settings
 from app.db.database import Database, DatabaseHandle
 from app.db.repository import AccountRepository
 from app.providers.base import ProviderAdapter, ProviderName
 from app.providers.registry import build_provider_registry
-from app.rate_limit import InMemoryRateLimiter
 from app.security.internal import load_internal_service_token
-from app.security.push_crypto import PushTokenProtector
-from app.security.tokens import TokenService
+from app.service_factory import build_account_service
 from app.services.accounts import AccountService
 from app.services.entitlements import EntitlementService, QuotaPolicy
 from app.services.vendor_budgets import VendorBudgetService
@@ -58,22 +52,11 @@ def create_app(
     domain_entitlement_service = entitlement_service
     domain_vendor_budget_service = vendor_budget_service
     if domain_service is None and hasattr(database_handle, "session_factory"):
-        domain_service = AccountService(
-            repository=AccountRepository(database_handle.session_factory),
+        domain_service = build_account_service(
+            config,
+            database_handle=database_handle,
             providers=provider_registry,
-            token_service=TokenService.from_settings(config),
-            push_protector=PushTokenProtector.from_settings(config),
-            limiter=InMemoryRateLimiter(
-                requests=config.rate_limit_requests,
-                window_seconds=config.rate_limit_window_seconds,
-            ),
-            blocked_nicknames=config.blocked_nicknames,
-            deletion_dispatcher=build_community_deletion_dispatcher(
-                config, service_token=internal_service_token
-            ),
-            nickname_dispatcher=build_community_nickname_dispatcher(
-                config, service_token=internal_service_token
-            ),
+            internal_service_token=internal_service_token,
         )
     if domain_entitlement_service is None and hasattr(
         database_handle, "session_factory"
@@ -126,6 +109,7 @@ def create_app(
                             )
                         if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
                             operations.append(domain_service.prune_expired_private_state)
+                            operations.append(domain_service.prune_deletion_journal)
                             if domain_entitlement_service is not None:
                                 operations.append(
                                     domain_entitlement_service.prune_expired_usage

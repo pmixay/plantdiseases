@@ -347,6 +347,24 @@ def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():
     assert "ports" not in compose["services"]["beta-postgres"]
 
 
+def test_deletion_journal_is_writable_only_by_the_account_api():
+    """The journal must live outside every backed-up store and never reach the app."""
+    compose = _yaml(GERMAN_COMPOSE)
+    services = compose["services"]
+    account = services["beta-account-api"]
+
+    assert account["environment"]["ACCOUNT_DELETION_JOURNAL_DIR"] == "/run/deletion-journal"
+    assert "beta_deletion_journal:/run/deletion-journal" in account["volumes"]  # read-write
+    for name, service in services.items():
+        if name == "beta-account-api":
+            continue
+        mounts = [m if isinstance(m, str) else m.get("source", "") for m in service.get("volumes", [])]
+        assert not any("deletion_journal" in m or "deletion-journal" in m for m in mounts), name
+    assert compose["volumes"]["beta_deletion_journal"]["name"].endswith("_deletion_journal")
+    dockerfile = (REPOSITORY_ROOT / "account-server" / "Dockerfile").read_text()
+    assert "/run/deletion-journal" in dockerfile and "chmod 0700 /run/deletion-journal" in dockerfile
+
+
 def test_german_email_password_beta_is_opt_in_and_edge_restricted():
     compose = _yaml(GERMAN_COMPOSE)
     environment = _environment(GERMAN_ENV)

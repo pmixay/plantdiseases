@@ -34,6 +34,7 @@ from app.db.models import (
     Session as AccountSession,
 )
 from app.db.repository import AccountRepository
+from app.deletion_journal import DeletionJournal, JournaledDeletion, JournalError
 from app.nicknames import normalize_nickname, validate_nickname
 from app.providers.base import (
     ProviderAdapter,
@@ -121,6 +122,7 @@ class AccountService:
         notification_sink: Callable[[list[str], dict[str, str]], int] | None = None,
         deletion_dispatcher: Callable[[uuid.UUID], bool] | None = None,
         nickname_dispatcher: Callable[[uuid.UUID, str], bool] | None = None,
+        deletion_journal: DeletionJournal | None = None,
     ):
         self.repository = repository
         self.providers = dict(providers)
@@ -138,6 +140,10 @@ class AccountService:
         self.nickname_dispatcher = nickname_dispatcher or (
             lambda _actor_id, _nickname: True
         )
+        # Durable record of every deletion, written before any irreversible step so
+        # a restored older backup can have its deletions replayed. None only in
+        # unit tests and non-production deployments that have not mounted one.
+        self.deletion_journal = deletion_journal
 
     def limit_ip(self, operation: str, address: str) -> None:
         self.limiter.check(f"ip:{operation}", address)
@@ -1622,15 +1628,37 @@ class AccountService:
                     AccountDeletionJob.community_actor_id.in_(actor_ids)
                 )
             due = [
-                (job.id, job.community_actor_id, job.attempt_count)
+                (
+                    job.id,
+                    job.community_actor_id,
+                    job.attempt_count,
+                    job.account_id,
+                    job.created_at,
+                )
                 for job in transaction.scalars(statement).all()
             ]
 
         completed = 0
         retried = 0
-        for job_id, actor_id, previous_attempts in due:
+        for job_id, actor_id, previous_attempts, job_account_id, job_created_at in due:
             delivered = False
-            if actor_id is not None:
+            error_code = "community_unavailable"
+            journaled = True
+            if self.deletion_journal is not None and job_account_id is not None:
+                # Record the deletion durably BEFORE the community tombstone or the
+                # hard delete. If this fails nothing irreversible has happened and
+                # the job simply retries.
+                try:
+                    self.deletion_journal.record_deletion(
+                        account_id=job_account_id,
+                        actor_id=actor_id or uuid.UUID(int=0),
+                        requested_at=job_created_at or now,
+                    )
+                except JournalError:
+                    journaled = False
+                    error_code = "journal_unavailable"
+                    logger.warning("Deletion journal write failed; deletion will retry")
+            if journaled and actor_id is not None:
                 try:
                     delivered = bool(self.deletion_dispatcher(actor_id))
                 except Exception:  # noqa: BLE001 - fixed retry code, no payload logging
@@ -1650,7 +1678,7 @@ class AccountService:
                     delay_seconds = min(86_400, 60 * (2 ** min(attempts - 1, 10)))
                     job.state = "retry"
                     job.next_attempt_at = now + timedelta(seconds=delay_seconds)
-                    job.last_error_code = "community_unavailable"
+                    job.last_error_code = error_code
                     retried += 1
                     continue
 
@@ -1674,6 +1702,69 @@ class AccountService:
                 job.completed_at = now
                 completed += 1
         return {"completed": completed, "retried": retried}
+
+    def replay_journaled_deletion(self, entry: JournaledDeletion) -> bool:
+        """Re-apply one journaled deletion to a (possibly restored) account database.
+
+        Returns True when a live account row was found and queued for deletion;
+        False when there is nothing to delete here (already absent). Either way the
+        community tombstone is (re)delivered by the caller through
+        ``deliver_journaled_tombstone``, because the community store may have been
+        restored independently. Idempotent.
+        """
+        now = self.clock()
+        with self.repository.transaction() as transaction:
+            account = transaction.scalar(
+                select(Account).where(Account.id == entry.account_id).with_for_update()
+            )
+            if account is None:
+                return False
+            if account.state != "deletion_pending":
+                account.state = "deletion_pending"
+                account.authorization_version += 1
+                account.updated_at = now
+            sessions = transaction.scalars(
+                select(AccountSession).where(AccountSession.account_id == account.id)
+            )
+            for account_session in sessions:
+                self._revoke_session(transaction, account_session, now=now)
+            existing_job = transaction.scalar(
+                select(AccountDeletionJob).where(AccountDeletionJob.account_id == account.id)
+            )
+            if existing_job is None:
+                transaction.add(
+                    AccountDeletionJob(
+                        account_id=account.id,
+                        community_actor_id=account.community_actor_id,
+                        state="pending",
+                        attempt_count=0,
+                        next_attempt_at=now,
+                        created_at=entry.requested_at,
+                        updated_at=now,
+                    )
+                )
+            elif existing_job.state != "completed":
+                existing_job.state = "pending"
+                existing_job.next_attempt_at = now
+                existing_job.updated_at = now
+            return True
+
+    def deliver_journaled_tombstone(self, entry: JournaledDeletion) -> bool:
+        """(Re)deliver the community tombstone for a journaled deletion."""
+        try:
+            return bool(self.deletion_dispatcher(entry.actor_id))
+        except Exception:  # noqa: BLE001 - fixed result, no payload logging
+            return False
+
+    def prune_deletion_journal(self) -> int:
+        """Trim journal entries past the 30-day retention (backups live < 28 days)."""
+        if self.deletion_journal is None:
+            return 0
+        try:
+            return self.deletion_journal.prune(now=self.clock())
+        except JournalError:
+            logger.warning("Deletion journal prune failed")
+            return 0
 
     def register_push(
         self, current: CurrentAccount, *, fcm_token: str, platform: str

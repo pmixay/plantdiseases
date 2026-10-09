@@ -3777,6 +3777,29 @@ def popular_snapshot(
     }
 
 
+# Disclosed in privacy.html / release-policy-gates.json (deleted-actor marker: 30
+# days). Must outlast the longest-lived restorable backup (27 days) so a restore
+# can always be replayed against a surviving suppression record or journal entry.
+DELETED_ACTOR_MARKER_RETENTION_DAYS = 30
+
+# A marker may only expire once its physical cleanup finished: while a cleanup
+# job is pending or retrying, the marker is still the replay-suppression record.
+_EXPIRE_DELETED_ACTOR_MARKERS_SQL = (
+    "DELETE FROM community_deleted_actors WHERE requested_at < ? AND NOT EXISTS ("
+    "SELECT 1 FROM community_cleanup_jobs j "
+    "WHERE j.actor_id = community_deleted_actors.actor_id AND j.state != 'completed')"
+)
+
+
+def prune_expired_deleted_actor_markers(*, now: int | None = None) -> int:
+    """Erase deleted-actor markers older than the disclosed retention period."""
+    init_db()
+    timestamp = int(time.time() if now is None else now)
+    cutoff = timestamp - DELETED_ACTOR_MARKER_RETENTION_DAYS * 86_400
+    with _write_lock, _connect() as conn:
+        return int(conn.execute(_EXPIRE_DELETED_ACTOR_MARKERS_SQL, (cutoff,)).rowcount or 0)
+
+
 def prune_older_than(days: int) -> int:
     """Delete rows + thumbnails older than ``days`` days.
 
@@ -3796,6 +3819,10 @@ def prune_older_than(days: int) -> int:
         # Completed cleanup jobs duplicate the same actor UUID without serving
         # a retry purpose, so remove rows left by older deployments.
         conn.execute("DELETE FROM community_cleanup_jobs WHERE state = 'completed'")
+        conn.execute(
+            _EXPIRE_DELETED_ACTOR_MARKERS_SQL,
+            (int(time.time()) - DELETED_ACTOR_MARKER_RETENTION_DAYS * 86_400,),
+        )
         rows = conn.execute(
             "SELECT id, thumb_path FROM community_scans WHERE created_at < ?",
             (cutoff,),
@@ -4381,6 +4408,8 @@ __all__ = [
     "record_view",
     "region_summary",
     "request_actor_deletion",
+    "prune_expired_deleted_actor_markers",
+    "DELETED_ACTOR_MARKER_RETENTION_DAYS",
     "resolve_scan_token",
     "scan_counts",
     "scan_counts_for_actor",

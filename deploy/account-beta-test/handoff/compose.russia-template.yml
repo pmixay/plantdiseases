@@ -43,6 +43,8 @@ x-account-environment: &account-environment
   PLANTNET_ATTEMPT_COST_MICROS: "${PLANTNET_ATTEMPT_COST_MICROS:-0}"
   PLANTNET_DAILY_COST_LIMIT_MICROS: "${PLANTNET_DAILY_COST_LIMIT_MICROS:-0}"
   COMMUNITY_DELETION_URL: http://ru-app-api:8000/api/internal/account-deletions
+  # Durable deletion journal on its own volume, outside every backed-up store.
+  ACCOUNT_DELETION_JOURNAL_DIR: /run/deletion-journal
   HTTPS_PROXY: http://ru-egress-proxy:3128
   HTTP_PROXY: http://ru-egress-proxy:3128
   NO_PROXY: 127.0.0.1,localhost,ru-postgres,ru-account-api,ru-app-api
@@ -197,6 +199,7 @@ services:
       - "8000"
     volumes:
       - ${RU_ACCOUNT_SECRETS_DIR:?Set the account-owned mode-0400 secret directory}:/run/account-secrets:ro
+      - ru_deletion_journal:/run/deletion-journal
     networks:
       - ru-ingress-backend
       - ru-db
@@ -354,6 +357,7 @@ networks:
 
 volumes:
   ru_postgres: {}
+  ru_deletion_journal: {}
   ru_community: {}
   ru_thumbnails: {}
   ru_training: {}

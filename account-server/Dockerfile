@@ -20,10 +20,11 @@ COPY app ./app
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
 
-RUN mkdir -p /run/account-secrets /run/internal-token && \
+RUN mkdir -p /run/account-secrets /run/internal-token /run/deletion-journal && \
     adduser --disabled-password --gecos "" --uid 10002 accountd && \
-    chown -R accountd:accountd /app /run/account-secrets /run/internal-token && \
-    chmod 0750 /run/internal-token
+    chown -R accountd:accountd /app /run/account-secrets /run/internal-token /run/deletion-journal && \
+    chmod 0750 /run/internal-token && \
+    chmod 0700 /run/deletion-journal
 
 USER accountd
 EXPOSE 8000
