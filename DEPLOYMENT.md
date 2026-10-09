@@ -27,9 +27,13 @@ Android release build. Architecture and API surface live in
   only version tested. `server/start.sh` requires ≥ 3.10 (the syntax floor),
   so it will still launch on an untested interpreter — pin the venv to 3.14
   explicitly.
-- `pip install -r server/requirements.txt`. Serving is ONNX Runtime only; no
-  `torch` import exists anywhere in `server/`, so torch is **not** a runtime
-  dependency.
+- `pip install --require-hashes -r server/requirements.lock`. The lock is the
+  full pinned closure of `requirements.txt` for CPython 3.14 on Linux x86_64,
+  with hashes, and is what CI tests against; regenerate it with the `uv`
+  command in its header whenever `requirements.txt` changes
+  (`tests/test_requirements_lock.py` fails until you do). Serving is ONNX
+  Runtime only; no `torch` import exists anywhere in `server/`, so torch is
+  **not** a runtime dependency.
 - CPU-only is fine for the `gamma` (DINOv2 ViT-S/14) default. A GPU host is
   only worth it for `frontier_enabled=true` (ViT-B/14).
 - The model bundle (§2) must be on disk before first boot.
@@ -119,6 +123,7 @@ Defaults below are the **code** defaults.
 | `inference_timeout` | `30.0` | Seconds before `/api/analyze` returns 504. |
 | `analyze_cache_ttl_seconds` / `analyze_cache_max_entries` | `86400` / `512` | In-memory exact-bytes response dedup. |
 | `infer_workers` | `1` | Inference thread pool. With `onnx_intra_op_threads=0` one scan already uses every core; raise only if you also pin intra-op low. |
+| `infer_max_inflight` / `infer_max_inflight_per_ip` | `4 × infer_workers` / `2` | Admission control on `/api/analyze` + `/api/identify`: a request claims a slot before its upload is read, and one that finds the server (or its own IP) full gets 503 + `Retry-After: infer_busy_retry_after_seconds` (`3`). Bounds RAM to roughly that many uploads + decoded images. `0` disables a cap. |
 | `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia / FCM waits, so 20 s LLM calls don't queue DB writes behind them. |
 | `onnx_intra_op_threads` | `0` | `0` = all physical cores — the biggest CPU-latency lever. Pin lower on a shared host. |
 | `plant_photo_max_side` / `plant_photo_quality` / `popular_bundle_ttl_seconds` / `popular_placeholder_ttl_seconds` | `1000` / `80` / `1800` / `300` | Photo proxy re-encode and popular-plants bundle cache. |
@@ -134,6 +139,13 @@ Defaults below are the **code** defaults.
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
 | `community_author_key_pepper` / `community_cursor_secret` | `community-author-storage-v2` / falls back to `feedback_ip_pepper` then `community-cursor-v1` | Set both explicitly in production. |
 | `feedback_daily_quota`, `community_daily_quota`, `community_opinion_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `60`, `300`, `100` | Per hashed IP, per day. |
+| `analyze_daily_quota`, `identify_daily_quota` | `300`, `150` | Per IP, per UTC day, in memory (a restart forgets them). Past it: 429. |
+| `plantnet_daily_quota_per_ip` | `100` | PlantNet calls per IP per UTC day, shared by the analyze fan-out and `/api/identify`, so one client cannot drain the 500-a-day free tier. Past it a scan still gets its diagnosis, with `species.source: "quota"`. |
+| `chat_daily_quota` | `100` | AI Plant Doctor turns per IP per UTC day, across sessions (the per-session caps reset with each client-chosen `session_id`). Past it: `available:false`, `reason: "daily_quota"`, with a bilingual `fallback`. |
+| `care_plan_daily_quota` | `200` | LLM-polished care plans per IP per UTC day; past it the rules-based plan is served. |
+| `species_ai_daily_quota` | `400` | `/api/species-diseases` + `/api/species-profile` together, per IP per UTC day; past it `available:false`, `reason: "daily_quota"`. |
+| `community_author_daily_quota` | `10` | New Community identities (`/api/community/authors/adopt` with an unseen key) per IP per UTC day. Re-adopting a known key is free. |
+| `community_require_author_key` | `true` | Second opinions need an adopted `X-Community-Author-Key` (401 `community_identity_required` otherwise), so a client cannot vote again by changing its body pseudo-id. App builds before 1.9 never send the key; set `false` only as a bridge while they are still in use. |
 | `telemetry_enabled` / `telemetry_daily_cap_per_ip` | `true` / `200` | Anonymous client error reports (stores a hashed IP). |
 | `scan_recording_enabled` | `true` | **On by default** — persists downscaled user scan images for the labeling loop. Disclosed by the app's consent screen and bundled privacy policy; turn it off if your deployment does not make that disclosure. |
 | `scan_retention_days` / `scan_max_images` / `scan_common_keep_rate` / `scan_daily_cap_per_class` | `90` / `20000` / `0.1` / `50` | Bounds on that corpus. |
@@ -296,11 +308,38 @@ uvicorn answers 503 instead of queueing unboundedly.
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
 sudo -u plantd python3.14 -m venv /opt/plantdiseases/.venv
-sudo -u plantd /opt/plantdiseases/.venv/bin/pip install -r /opt/plantdiseases/server/requirements.txt
+sudo -u plantd /opt/plantdiseases/.venv/bin/pip install --require-hashes -r /opt/plantdiseases/server/requirements.lock
 sudo systemctl daemon-reload
 sudo systemctl enable --now plantdiseases
 journalctl -u plantdiseases -f
 ```
+
+### 5.1 Host hardening (SSH)
+
+The host's IP and an SSH user of `root` were once committed to this repo (in
+history since the admin-panel removal; no key or password ever was). Treat the
+address as public and make SSH boring:
+
+```bash
+# /etc/ssh/sshd_config.d/10-hardening.conf
+PermitRootLogin prohibit-password   # or `no` once you log in as a sudo user
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
+LoginGraceTime 20
+```
+
+```bash
+sudo sshd -t && sudo systemctl reload ssh      # validate, then apply
+sudo ufw limit OpenSSH                          # ≥ 6 connections / 30 s from one IP → dropped
+sudo ufw allow 'Nginx Full' && sudo ufw enable
+sudo apt install fail2ban                       # the default sshd jail is enough
+```
+
+Keep a second session open while reloading `sshd`, and confirm a fresh key
+login works before closing it. `ufw` is the Debian/Ubuntu front end; on other
+distributions apply the same rate limit with your firewall of choice.
 
 ## 6. Reverse proxy & TLS (nginx + Let's Encrypt)
 
@@ -312,9 +351,15 @@ server {
     return 301 https://$host$request_uri;
 }
 
+# Access log without query strings: app builds before 1.9 send the install's
+# pseudo-id (a bearer value) as `?user_pseudo_id=`. $uri drops the query.
+log_format plantdiseases '$remote_addr [$time_local] "$request_method $uri" '
+                         '$status $body_bytes_sent $request_time';
+
 server {
     listen 443 ssl http2;
     server_name plantdiseases.example.com;
+    access_log /var/log/nginx/plantdiseases.access.log plantdiseases;
 
     ssl_certificate     /etc/letsencrypt/live/plantdiseases.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/plantdiseases.example.com/privkey.pem;
@@ -487,7 +532,14 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 - [ ] A single complete model bundle is present and passes `server/tools/verify_bundle.py` (§2).
 - [ ] All storage paths point into the state directory; it is backed up.
 - [ ] `scan_recording_enabled` matches what your privacy policy discloses.
-- [ ] Service runs as a non-root user; deployed from a tagged commit.
+- [ ] Service runs as a non-root user; you know which commit is deployed.
+- [ ] SSH hardened (§5.1): keys only, no root password login, rate-limited.
+- [ ] Per-IP daily allowances (`analyze_daily_quota` and friends, §3.2) and
+      `infer_max_inflight` suit your traffic; watch `daily_quota_rejections`
+      and `inference_busy_rejections` in `/api/metrics` the first week.
+- [ ] Before publishing an app build older clients cannot be on: decide
+      `community_require_author_key` (§3.2). Builds before 1.9 cannot post
+      second opinions while it is `true`.
 - [ ] Logs rotating (`log_dir`) and shipped off-box; Prometheus scraping
       `/api/metrics/prometheus`.
 - [ ] `GET /api/health` returns 200 with `status: "ok"` **through nginx, from

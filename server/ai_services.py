@@ -62,9 +62,9 @@ logger = logging.getLogger(__name__)
 
 PLANTNET_API_KEY = get_str("PLANTNET_API_KEY", "").strip()
 PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
-# Free tier is 500 / day. We expose 5/min as a soft client cap on top
-# of the existing per-IP rate limiter to keep one deploy from burning
-# the daily budget on a single bad actor.
+# The free tier is 500 identifications a day for the whole deploy. One client
+# cannot drain it: main.py gives each IP its own daily PlantNet allowance
+# (PLANTNET_DAILY_QUOTA_PER_IP) on top of the per-IP rate limiter.
 PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 10.0)
 # One bounded retry: a single 8s attempt was the most frequent recurring
 # failure, so we retry once on a transient network fault (connect/read
@@ -667,10 +667,10 @@ def _system_prompt(task: str, *dynamic: str) -> str:
     return "\n\n".join(parts)
 
 
-def _prompt_subject(scientific_name: str, common_name: str | None) -> str:
-    """Render a client-supplied species pair as one safe line of prompt text.
+def _prompt_subject(scientific_name: str) -> str:
+    """Render a client-supplied species name as one safe line of prompt text.
 
-    Both halves reach us from a query string, so both are an injection surface —
+    The name reaches us from a query string, so it is an injection surface —
     and a poisoned answer here is not a one-off: it is written to the species
     disk cache and served to every client asking about that species for the
     next 7-30 days. Newlines are the part that matters (they are what lets an
@@ -678,16 +678,17 @@ def _prompt_subject(scientific_name: str, common_name: str | None) -> str:
     instruction), so whitespace is collapsed to single spaces, non-printables
     are dropped, and the result is length-capped. The endpoints already cap the
     raw input at 128 chars; this does not trust that.
-    """
-    def _clean(raw: str | None, limit: int) -> str:
-        if not isinstance(raw, str):
-            return ""
-        collapsed = " ".join(raw.split())
-        return "".join(ch for ch in collapsed if ch.isprintable())[:limit].strip()
 
-    name = _clean(scientific_name, 120)
-    common = _clean(common_name, 120)
-    return name + (f" (commonly known as {common})" if common else "")
+    The scientific name is the ONLY caller input that reaches these prompts,
+    because it is the only one in the cache key. A common name used to ride
+    along ("… (commonly known as X)") without being keyed, so whichever caller
+    missed the cache first chose a phrase that then shaped the shared answer
+    every other client was served.
+    """
+    if not isinstance(scientific_name, str):
+        return ""
+    collapsed = " ".join(scientific_name.split())
+    return "".join(ch for ch in collapsed if ch.isprintable())[:120].strip()
 
 
 # The chat doctor's own task block. Everything it used to restate — the
@@ -1512,7 +1513,6 @@ def _parse_species_diseases(text: str) -> list[dict]:
 def species_common_diseases(
     scientific_name: str | None,
     *,
-    common_name: str | None = None,
     lang: str = "en",
 ) -> dict:
     """Conditions a species is commonly affected by indoors (best-effort, AI).
@@ -1530,12 +1530,13 @@ def species_common_diseases(
     if not _chat_api_key_present():
         return {"available": False, "diseases": [], "source": "no_api_key"}
 
-    # ``v2`` = this generation of the answer (gpt-5.6 + medium effort + JSON
-    # schema). Without the bump, every species already in the 7-day disk cache
-    # would keep serving the OLD model's list for a week after deploy — the
-    # improvement would look like it had done nothing. Superseded entries are
-    # never read again; their JSON files are harmless and can be deleted.
-    cache_key = f"v2:{name.lower()}:{lang}"
+    # ``v3`` = this generation of the answer. Bumping the prefix retires every
+    # entry the previous one wrote: v2 answers were built from a prompt that
+    # also carried the caller's unkeyed common name (see ``_prompt_subject``),
+    # so any of them could have been shaped by one client's input. Superseded
+    # entries are never read again; their JSON files are harmless and can be
+    # deleted.
+    cache_key = f"v3:{name.lower()}:{lang}"
     cached = _SPECIES_DISEASES_CACHE.get(cache_key)
     if cached is not None:
         return {**copy.deepcopy(cached), "cached": True}
@@ -1547,7 +1548,7 @@ def species_common_diseases(
         return {**copy.deepcopy(disk_hit), "cached": True}
 
     lang_word = "Russian" if lang == "ru" else "English"
-    subject = _prompt_subject(name, common_name)
+    subject = _prompt_subject(name)
     user = f"Species: {subject}\nLanguage for name and note: {lang_word}."
     try:
         # No cache_prefix/session_id here — those two are for a growing
@@ -1989,7 +1990,6 @@ def _parse_species_profile(text: str) -> dict | None:
 def species_profile(
     scientific_name: str | None,
     *,
-    common_name: str | None = None,
     lang: str = "en",
 ) -> dict:
     """Flowering pattern + native range for a species (best-effort, AI).
@@ -2007,22 +2007,21 @@ def species_profile(
     if not _chat_api_key_present():
         return {"available": False, "source": "no_api_key"}
 
-    # Generation v4 is deliberately keyed only by scientific name. v3 refreshed
-    # older profiles that zeroed the calendar when indoor flowering was rare;
-    # v4 refreshes everything the previous model wrote, because this is the
-    # cache that would otherwise hide the whole point of the model switch — a
-    # profile is held for THIRTY days, so without the bump most species would
-    # still be serving gpt-oss's bloom calendar and country list a month after
-    # deploy. Superseded entries are never read again; their JSON files are
+    # Generation v5 is deliberately keyed only by scientific name — and the
+    # scientific name is now the only caller input in the prompt. v5 retires
+    # every v4 profile, which was built from a prompt that also carried the
+    # caller's unkeyed common name (see ``_prompt_subject``), so any of them
+    # could have been shaped by one client's input for the full THIRTY-day
+    # TTL. Superseded entries are never read again; their JSON files are
     # harmless and can be deleted.
     # The cached value is the canonical bilingual profile; locale-specific wire
     # fields are rendered from it on every request.
-    cache_key = f"v4:{name.lower()}"
+    cache_key = f"v5:{name.lower()}"
     # A profile built by the legacy adapter is NOT bilingual — that adapter
     # copies the single language the model replied in into both slots. Storing
     # it under the shared key would serve e.g. Russian text to every English
     # client for the whole 30-day TTL, so it gets a locale-scoped key instead.
-    legacy_key = f"v4:{lang}:{name.lower()}"
+    legacy_key = f"v5:{lang}:{name.lower()}"
     for key in (cache_key, legacy_key):
         cached = _SPECIES_PROFILE_CACHE.get(key)
         if cached is not None:
@@ -2035,7 +2034,7 @@ def species_profile(
             _SPECIES_PROFILE_CACHE.put(key, disk_hit)
             return {**_profile_response(disk_hit, name, lang), "cached": True}
 
-    subject = _prompt_subject(name, common_name)
+    subject = _prompt_subject(name)
     user = f"Species: {subject}"
     try:
         # Same caching shape as species_common_diseases: the shared preamble
@@ -3072,8 +3071,13 @@ def generate_care_plan(
     locale: str = "en",
     season: str | None = None,
     today: _dt.date | None = None,
+    polish: bool = True,
 ) -> dict:
     """Build a full plant care plan for the (disease, light) tuple.
+
+    ``polish=False`` skips the LLM summary and returns the rules-based
+    ``summary_md`` — the server passes it once a caller has used up its daily
+    allowance of paid calls, so the plan itself is never refused.
 
     Returns a richer, production-grade payload than the v1 endpoint:
 
@@ -3235,6 +3239,8 @@ def generate_care_plan(
     season_key = season if season in ("growing", "dormant") else _current_growing_season(today)
     plan = _apply_season(plan, season_key, locale=locale)
     plan["summary_md"] = _build_markdown_summary(plan, locale=locale)
+    if not polish:
+        return plan
     return _polish_plan_with_llm(plan, locale=locale)
 
 

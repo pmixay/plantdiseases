@@ -217,7 +217,7 @@ the diff of `train_counts` / `source_inventory`.
   train 593 → 339, NAP 1930 → 1568. gray_mold R/P 0.84/0.89 → 0.83/0.83 on
   clean foliage. Last run to carry the old stable `test` split (0.866).
 
-### 2.6.8 (06-29) — **deployed, the incumbent**
+### 2.6.8 (06-29) — the incumbent until 2.7.5
 - No knob change. Data: healthy train +652, powdery +122, viral +178, gray_mold
   +17; boundary hard-negatives sit in the eval-eligible `supplement`.
 - rw mF1 0.858, best in-domain epoch 19 (0.890); healthy R/P 0.91/0.94;
@@ -288,7 +288,7 @@ the diff of `train_counts` / `source_inventory`.
 - Stopped by the then-blocking OOD gate before writing a bundle; both levers
   falsified and removed. Its in-domain numbers exist only in the Colab log.
 
-### 2.7.5 (10-05) — v8 again, first manifest-bound bundle
+### 2.7.5 (10-05) — v8 again, first manifest-bound bundle — **deployed**
 - Recipe vs 2.7.2: no sampler or loss knob moved. Training geometry is the
   serving transform with a random crop (`serve_parity_v2_unablated`, no scale
   augmentation); the served OOD gate is fitted on the served statistic;

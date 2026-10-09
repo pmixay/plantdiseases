@@ -75,8 +75,14 @@ source venv/bin/activate
 
 pip install --quiet --upgrade pip
 
-echo "[+] Installing server dependencies..."
-pip install --quiet -r requirements.txt
+echo "[+] Installing server dependencies (pinned, hash-checked)..."
+# requirements.lock is the full pinned closure of requirements.txt for the
+# deploy target (CPython 3.14, Linux x86_64); the header says how to rebuild it.
+if ! pip install --quiet --require-hashes -r requirements.lock; then
+    echo "[!] requirements.lock targets CPython 3.14 on Linux x86_64." >&2
+    echo "    On another interpreter: pip install -r requirements.txt (unpinned)." >&2
+    exit 1
+fi
 
 mkdir -p models logs
 
@@ -104,8 +110,12 @@ echo "    API docs:  http://localhost:${PORT}/docs"
 echo "    Health:    http://localhost:${PORT}/api/health"
 echo
 
+# --limit-concurrency matches the systemd unit in DEPLOYMENT.md: past that
+# many open connections uvicorn answers 503 instead of queueing without bound.
 exec uvicorn main:app \
     --host 0.0.0.0 \
     --port "$PORT" \
     --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" \
-    --proxy-headers
+    --proxy-headers \
+    --limit-concurrency "${LIMIT_CONCURRENCY:-64}" \
+    --timeout-keep-alive 5

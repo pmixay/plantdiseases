@@ -612,6 +612,9 @@ SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
 SCAN_COMMON_KEEP_RATE = get_float("SCAN_COMMON_KEEP_RATE", 0.1)
 SCAN_DAILY_CAP_PER_CLASS = get_int("SCAN_DAILY_CAP_PER_CLASS", 50)
 SCAN_IMG_MAX_SIDE = 1024  # anonymization downscale bound (not configurable)
+# Longest edge of a stored negative-feedback image. The upload is re-encoded
+# (metadata stripped) and capped here; the app uploads at 1024 px.
+FEEDBACK_IMG_MAX_SIDE = 2048
 
 # ── Guide example photos ─────────────────────────────────────────────
 # Disease/pest example photos used by the app's guide + after-scan strip.
@@ -852,6 +855,113 @@ COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # own (looser) daily cap rather than sharing the opinion quota.
 COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 COMMUNITY_SAFETY_DAILY_QUOTA = get_int("COMMUNITY_SAFETY_DAILY_QUOTA", 100)
+
+# Daily per-IP allowances on the endpoints that cost money or a shared
+# upstream quota. The write quotas above stop spam; these stop one client
+# from running up the OpenRouter bill or draining PlantNet's 500-a-day pool
+# for everyone, which a 2 req/s bucket alone allows (~170k requests a day).
+# Sized far above any real user's day; ``0`` disables one.
+ANALYZE_DAILY_QUOTA = get_int("ANALYZE_DAILY_QUOTA", 300)
+IDENTIFY_DAILY_QUOTA = get_int("IDENTIFY_DAILY_QUOTA", 150)
+# PlantNet calls per IP, shared by the /api/analyze fan-out and /api/identify.
+# Past it a scan still gets its diagnosis, without the species block.
+PLANTNET_DAILY_QUOTA_PER_IP = get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
+# AI Plant Doctor turns per IP. The per-session caps in ai_services reset
+# with every new client-chosen session_id; this one does not.
+CHAT_DAILY_QUOTA = get_int("CHAT_DAILY_QUOTA", 100)
+# LLM-polished care plans per IP. Past it the rules-based plan is served.
+CARE_PLAN_DAILY_QUOTA = get_int("CARE_PLAN_DAILY_QUOTA", 200)
+# /api/species-diseases + /api/species-profile together, per IP. Their caches
+# key on client-chosen names, so every new string is a billable miss.
+SPECIES_AI_DAILY_QUOTA = get_int("SPECIES_AI_DAILY_QUOTA", 400)
+
+
+class _DailyQuota:
+    """Per-client counter that resets at UTC midnight.
+
+    In memory and per process, like the rate limiter: a restart forgets the
+    day's counts, which only ever errs towards serving. Once ``max_keys``
+    clients are tracked, new ones pass untracked rather than grow the map
+    without bound under IP churn — an attacker rotating addresses gets past
+    any per-IP limit anyway.
+    """
+
+    def __init__(self, name: str, limit: int, *, max_keys: int = 50_000):
+        self.name = name
+        self.limit = limit
+        self.max_keys = max_keys
+        self._lock = threading.Lock()
+        self._day = ""
+        self._counts: dict[str, int] = {}
+        self.rejections = 0
+
+    def try_consume(self, key: str) -> bool:
+        if self.limit <= 0:
+            return True
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._lock:
+            if day != self._day:
+                self._day = day
+                self._counts.clear()
+            used = self._counts.get(key, 0)
+            if used >= self.limit:
+                self.rejections += 1
+                return False
+            if used == 0 and len(self._counts) >= self.max_keys:
+                return True
+            self._counts[key] = used + 1
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self._day = ""
+            self._counts.clear()
+            self.rejections = 0
+
+
+# New durable Community identities a single IP may create per day. Adopting
+# a key is what lets a device vote, so without a cap one script could mint an
+# unlimited supply of "independent" voters; a returning device re-adopting its
+# existing key never counts.
+COMMUNITY_AUTHOR_DAILY_QUOTA = get_int("COMMUNITY_AUTHOR_DAILY_QUOTA", 10)
+# Second opinions need an adopted X-Community-Author-Key. Without one a client
+# votes under a self-chosen body pseudo-id and can vote again by changing it.
+# App builds before 1.9 never send the key, so they cannot post opinions while
+# this is on; set it false only as a temporary bridge.
+COMMUNITY_REQUIRE_AUTHOR_KEY = get_bool("COMMUNITY_REQUIRE_AUTHOR_KEY", True)
+
+_analyze_quota = _DailyQuota("analyze", ANALYZE_DAILY_QUOTA)
+_identify_quota = _DailyQuota("identify", IDENTIFY_DAILY_QUOTA)
+_plantnet_quota = _DailyQuota("plantnet", PLANTNET_DAILY_QUOTA_PER_IP)
+_chat_quota = _DailyQuota("chat", CHAT_DAILY_QUOTA)
+_care_plan_quota = _DailyQuota("care_plan", CARE_PLAN_DAILY_QUOTA)
+_species_ai_quota = _DailyQuota("species_ai", SPECIES_AI_DAILY_QUOTA)
+_community_author_quota = _DailyQuota("community_author", COMMUNITY_AUTHOR_DAILY_QUOTA)
+_DAILY_QUOTAS = (
+    _analyze_quota, _identify_quota, _plantnet_quota,
+    _chat_quota, _care_plan_quota, _species_ai_quota, _community_author_quota,
+)
+
+
+def _require_daily_quota(quota: _DailyQuota, request: Request) -> None:
+    """429 once the caller has used up ``quota`` for today (UTC).
+
+    No ``Retry-After``: the app's RetryInterceptor would sleep up to 30 s on
+    it and retry into the same refusal.
+    """
+    if not quota.try_consume(_client_ip(request)):
+        logger.warning("Daily %s quota reached for %s", quota.name, request.url.path)
+        raise HTTPException(
+            status_code=429,
+            detail="Daily limit reached for this feature. Try again tomorrow.",
+        )
+
+
+_QUOTA_UNAVAILABLE_TEXT = {
+    "en": "You've reached today's limit for this feature. It resets at midnight UTC.",
+    "ru": "Дневной лимит для этой функции исчерпан. Он обновится в полночь по UTC.",
+}
+
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
@@ -928,6 +1038,73 @@ def _get_net_executor() -> ThreadPoolExecutor:
             )
         return _net_executor
 
+# ── Inference admission control ─────────────────────────────────────
+# The inference executor's queue is unbounded, so every upload used to be
+# read (up to MAX_FILE_SIZE), decoded and queued with no ceiling: at
+# INFER_WORKERS=1 a single client staying inside its rate-limit bucket could
+# pin RAM and starve everyone else. /api/analyze and /api/identify now claim
+# a slot BEFORE they read or decode anything, and a request that finds the
+# server full gets 503 + Retry-After, which the app's RetryInterceptor
+# honours (one retry for a POST). The global cap bounds memory — each slot
+# holds at most one raw upload plus one decoded image — and the per-IP cap
+# stops one client from holding every slot. ``0`` disables either cap.
+INFER_MAX_INFLIGHT = get_int("INFER_MAX_INFLIGHT", 4 * max(1, INFER_WORKERS))
+INFER_MAX_INFLIGHT_PER_IP = get_int("INFER_MAX_INFLIGHT_PER_IP", 2)
+INFER_BUSY_RETRY_AFTER_SECONDS = get_int("INFER_BUSY_RETRY_AFTER_SECONDS", 3)
+
+_admission_lock = threading.Lock()
+_inference_inflight = 0
+_inference_inflight_by_ip: dict[str, int] = {}
+_inference_busy_rejections = 0
+
+
+def _try_admit_inference(client_ip: str) -> bool:
+    """Claim an inference slot for ``client_ip``; False when either cap is full."""
+    global _inference_inflight, _inference_busy_rejections
+    with _admission_lock:
+        per_ip = _inference_inflight_by_ip.get(client_ip, 0)
+        if (
+            (INFER_MAX_INFLIGHT > 0 and _inference_inflight >= INFER_MAX_INFLIGHT)
+            or (INFER_MAX_INFLIGHT_PER_IP > 0 and per_ip >= INFER_MAX_INFLIGHT_PER_IP)
+        ):
+            _inference_busy_rejections += 1
+            return False
+        _inference_inflight += 1
+        _inference_inflight_by_ip[client_ip] = per_ip + 1
+        return True
+
+
+def _release_inference(client_ip: str) -> None:
+    global _inference_inflight
+    with _admission_lock:
+        _inference_inflight = max(0, _inference_inflight - 1)
+        remaining = _inference_inflight_by_ip.get(client_ip, 0) - 1
+        if remaining > 0:
+            _inference_inflight_by_ip[client_ip] = remaining
+        else:
+            _inference_inflight_by_ip.pop(client_ip, None)
+
+
+@asynccontextmanager
+async def _inference_slot(request: Request):
+    """Hold one inference slot for the duration of the block, or raise 503."""
+    client_ip = _client_ip(request)
+    if not _try_admit_inference(client_ip):
+        logger.warning(
+            "Inference busy: rejected %s %s (inflight=%d)",
+            request.method, request.url.path, _inference_inflight,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Server busy — try again in a few seconds",
+            headers={"Retry-After": str(INFER_BUSY_RETRY_AFTER_SECONDS)},
+        )
+    try:
+        yield
+    finally:
+        _release_inference(client_ip)
+
+
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
 _metrics_lock = threading.Lock()
@@ -969,6 +1146,9 @@ def _snapshot_metrics() -> dict:
             "total_errors": _total_errors,
             "avg_latency_ms": round(avg, 1),
             "class_counts": dict(_class_counts),
+            "inference_inflight": _inference_inflight,
+            "inference_busy_rejections": _inference_busy_rejections,
+            "daily_quota_rejections": {q.name: q.rejections for q in _DAILY_QUOTAS},
         }
 
 
@@ -1395,6 +1575,21 @@ def _clean_trace_id(raw: str | None) -> str:
     return candidate
 
 
+_LEGACY_PSEUDO_ID_PATH = "/api/community/my-scan-opinions/"
+
+
+def _loggable_path(path: str) -> str:
+    """The request path with the legacy path-borne pseudo-id masked.
+
+    Older app builds put the caller's pseudo-id (a bearer value) in the path
+    of /api/community/my-scan-opinions/{id}; it must not land in our log.
+    Query strings are never logged at all.
+    """
+    if path.startswith(_LEGACY_PSEUDO_ID_PATH) and len(path) > len(_LEGACY_PSEUDO_ID_PATH):
+        return _LEGACY_PSEUDO_ID_PATH + "<redacted>"
+    return path
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Logs every request with method, path, status, and duration."""
 
@@ -1418,7 +1613,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             logger.info(
                 "REQUEST %s %s -> %d (%.3fs) IP=%s",
                 request.method,
-                request.url.path,
+                _loggable_path(request.url.path),
                 response.status_code,
                 elapsed,
                 _client_ip(request),
@@ -1434,7 +1629,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             logger.info(
                 "REQUEST %s %s -> %d (%.3fs) IP=%s",
                 request.method,
-                request.url.path,
+                _loggable_path(request.url.path),
                 500,
                 elapsed,
                 _client_ip(request),
@@ -1763,16 +1958,41 @@ def _sha256_hex(data: bytes) -> str:
 # ── Scan recording (anonymized model-improvement loop) ──────────────
 
 
+def _metadata_free_jpeg(img: Image.Image, *, max_side: int, quality: int) -> bytes:
+    """Re-encode a decoded PIL image as a JPEG that carries no metadata.
+
+    Pillow writes EXIF only when ``exif=`` is passed, so the output holds no
+    GPS, camera or timestamp tags whatever the upload carried. Every user
+    photo the server stores or forwards to a third party goes through this
+    (or through ``_anonymise_scan_image``, which calls it): the raw upload
+    bytes never leave the request. ``img`` should come from ``_open_image``,
+    which has already applied the EXIF orientation to the pixels.
+    """
+    img = img.convert("RGB")
+    if max(img.size) > max_side:
+        img = img.copy()
+        img.thumbnail((max_side, max_side), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)  # no exif= ⇒ metadata stripped
+    return buf.getvalue()
+
+
+# PlantNet gets the photo it identifies, never the upload bytes: the
+# re-encode drops EXIF (GPS included) before the image leaves our server.
+# 2048 px is well above what PlantNet resizes to, so identification quality
+# is unchanged; the app already uploads at 1024 px.
+PLANTNET_FORWARD_MAX_SIDE = 2048
+
+
+def _plantnet_upload_bytes(img: Image.Image) -> bytes:
+    return _metadata_free_jpeg(img, max_side=PLANTNET_FORWARD_MAX_SIDE, quality=90)
+
+
 def _anonymise_scan_image(img: Image.Image) -> tuple[bytes, str, str | None]:
     """Re-encode a decoded PIL image for labeling storage: downscale to
     ``SCAN_IMG_MAX_SIDE``, JPEG q88 WITHOUT exif — all EXIF/GPS metadata is
     dropped by construction. Returns ``(jpeg_bytes, sha256, phash)``."""
-    img = img.convert("RGB")
-    if max(img.size) > SCAN_IMG_MAX_SIDE:
-        img.thumbnail((SCAN_IMG_MAX_SIDE, SCAN_IMG_MAX_SIDE), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=88)  # no exif= ⇒ metadata stripped
-    body = buf.getvalue()
+    body = _metadata_free_jpeg(img, max_side=SCAN_IMG_MAX_SIDE, quality=88)
     return body, _sha256_hex(body), labeling.phash_bytes(body)
 
 
@@ -2093,6 +2313,12 @@ async def metrics_prometheus():
         "# HELP plantdiseases_errors_total Total error responses from /api/analyze.",
         "# TYPE plantdiseases_errors_total counter",
         f"plantdiseases_errors_total {snap['total_errors']}",
+        "# HELP plantdiseases_inference_inflight Inference requests holding an admission slot.",
+        "# TYPE plantdiseases_inference_inflight gauge",
+        f"plantdiseases_inference_inflight {snap['inference_inflight']}",
+        "# HELP plantdiseases_inference_busy_rejections_total Inference requests turned away with 503 (server full).",
+        "# TYPE plantdiseases_inference_busy_rejections_total counter",
+        f"plantdiseases_inference_busy_rejections_total {snap['inference_busy_rejections']}",
         "# HELP plantdiseases_analyze_latency_ms_avg Average analyse latency in milliseconds.",
         "# TYPE plantdiseases_analyze_latency_ms_avg gauge",
         f"plantdiseases_analyze_latency_ms_avg {snap['avg_latency_ms']}",
@@ -2115,7 +2341,7 @@ async def metrics_prometheus():
 
 
 async def _species_identify_best_effort(
-    image_bytes: bytes, *, timeout: float, lang: str = "en",
+    image: Image.Image, *, timeout: float, lang: str = "en",
 ) -> dict | None:
     """Run PlantNet identify on the default thread pool with a tight
     timeout (NOT the single-worker inference executor — there it would
@@ -2130,6 +2356,10 @@ async def _species_identify_best_effort(
 
     Never raises — every failure mode is logged at INFO and folded
     into ``None`` so the analyze response stays whole.
+
+    Takes the decoded image, not the upload bytes: PlantNet receives a
+    metadata-free re-encode (``_plantnet_upload_bytes``), so EXIF/GPS from
+    a client that did not strip it never reaches the third party.
     """
     loop = asyncio.get_running_loop()
     try:
@@ -2140,7 +2370,9 @@ async def _species_identify_best_effort(
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
                 # raises TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="auto", lang=lang),
+                lambda: identify_species(
+                    _plantnet_upload_bytes(image), organ="auto", lang=lang,
+                ),
             ),
             timeout=timeout,
         )
@@ -2185,6 +2417,7 @@ async def _species_identify_best_effort(
 
 @api_router.post("/analyze")
 async def analyze_image(
+    request: Request,
     background_tasks: BackgroundTasks,
     image: UploadFile = File(...),
     species: str | None = Query(default=None, max_length=128),
@@ -2204,7 +2437,34 @@ async def analyze_image(
     by gamma here for online parity; ``frontier`` requires the operator to
     have enabled and provisioned it (otherwise a graceful ``available:false``
     payload is returned, never a 5xx).
+
+    Admission-controlled: a request that finds the server full gets 503 +
+    ``Retry-After`` before its upload is read (see ``_inference_slot``), and
+    each IP gets ``ANALYZE_DAILY_QUOTA`` analyses a day (429 past it).
     """
+    _require_daily_quota(_analyze_quota, request)
+    async with _inference_slot(request):
+        return await _analyze_image_admitted(
+            background_tasks, image,
+            client_ip=_client_ip(request), species=species, locale=locale, family=family,
+        )
+
+
+async def _plantnet_quota_exhausted() -> dict:
+    """Species block for a scan whose IP has used up its PlantNet allowance."""
+    return {"available": False, "source": "quota", "best": None, "candidates": []}
+
+
+async def _analyze_image_admitted(
+    background_tasks: BackgroundTasks,
+    image: UploadFile,
+    *,
+    client_ip: str,
+    species: str | None,
+    locale: str,
+    family: str,
+) -> JSONResponse:
+    """The body of ``/api/analyze``, run while holding an inference slot."""
     if pipeline is None:
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
@@ -2336,6 +2596,13 @@ async def analyze_image(
         # only copies the top level — nested ``species.candidates`` /
         # ``top_k`` / ``detection.regions`` would still be aliased.
         cached_payload = copy.deepcopy(cache_hit["payload"])
+        # A fresh scan_id per response, never the cached one: a scan_id
+        # authorises /api/feedback writes for that scan, and replaying the
+        # first uploader's id would hand it to anyone who uploads the same
+        # bytes. Persisted before returning for the same reason as below.
+        replay_scan_id = uuid.uuid4().hex
+        await loop.run_in_executor(None, _persist_issued_scan_id, replay_scan_id)
+        cached_payload["scan_id"] = replay_scan_id
         cached_payload["is_repeat"] = True
         cached_payload["cached_at"] = cache_hit["cached_at"]
         cached_payload["elapsed_ms"] = 0
@@ -2361,7 +2628,9 @@ async def analyze_image(
     # hostage; the earlier 6s cap cut off attempts the upstream would
     # have completed. ``plantnet_lang`` was resolved above for the cache key.
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=10.0, lang=plantnet_lang)
+        _species_identify_best_effort(img, timeout=10.0, lang=plantnet_lang)
+        if _plantnet_quota.try_consume(client_ip)
+        else _plantnet_quota_exhausted()
     )
     try:
         result = await asyncio.wait_for(
@@ -2882,11 +3151,16 @@ class CommunityScanRequest(BaseModel):
         return cleaned or None
 
 
+# The app sends its 12 newest scans; the cap leaves room for that to grow
+# while bounding the work a single request can hand the event loop.
+PROGRESSION_MAX_HISTORY = 50
+
+
 class ProgressionRequest(BaseModel):
     """Time-ordered list of scans (oldest first) for the disease-
     progression sparkline + trend the plant-detail screen renders."""
 
-    history: list[dict]
+    history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
 
 
 # Classes the production head can actually predict. Tracks the
@@ -3108,6 +3382,7 @@ class FeedbackRequest(BaseModel):
 
 @api_router.post("/identify")
 async def identify_endpoint(
+    request: Request,
     image: UploadFile = File(...),
     organ: str = "leaf",
     locale: str = "en",
@@ -3127,7 +3402,24 @@ async def identify_endpoint(
     The same local NAP gate used by ``/api/analyze`` runs before PlantNet.
     A ``not_a_plant`` verdict returns a graceful ``available: false``
     payload and does not spend a PlantNet identification request.
+
+    Shares ``/api/analyze``'s admission control (``_inference_slot``): the NAP
+    gate runs on the same inference executor. Each IP gets
+    ``IDENTIFY_DAILY_QUOTA`` calls a day (429 past it), and its PlantNet calls
+    count against ``PLANTNET_DAILY_QUOTA_PER_IP`` (``available: false``,
+    ``source: "quota"`` past it).
     """
+    _require_daily_quota(_identify_quota, request)
+    async with _inference_slot(request):
+        return await _identify_admitted(
+            image, client_ip=_client_ip(request), organ=organ, locale=locale,
+        )
+
+
+async def _identify_admitted(
+    image: UploadFile, *, client_ip: str, organ: str, locale: str,
+) -> JSONResponse:
+    """The body of ``/api/identify``, run while holding an inference slot."""
     if pipeline is None:
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
@@ -3209,9 +3501,21 @@ async def identify_endpoint(
             "organ": organ,
         })
 
+    if not _plantnet_quota.try_consume(client_ip):
+        return JSONResponse(content={
+            "available": False,
+            "results": [],
+            "source": "quota",
+            "organ": organ,
+        })
+
+    # PlantNet gets a metadata-free re-encode of the decoded pixels, never
+    # the upload bytes, so no EXIF/GPS reaches the third party.
     result = await loop.run_in_executor(
         _get_net_executor(),
-        lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
+        lambda: identify_species(
+            _plantnet_upload_bytes(img), organ=organ, lang=plantnet_lang,
+        ),
     )
     # Deep-copy result before merging so a cache-hit return from
     # ``identify_species`` (which now also deep-copies, but defence in
@@ -3226,10 +3530,21 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     """AI Plant Doctor — OpenRouter chat completion (default model
     ``openai/gpt-oss-120b``).
 
-    Per-session turn + token caps prevent budget overrun. Per-IP rate
-    limiting from the global middleware still applies.
+    Per-session turn + token caps prevent budget overrun within a session;
+    ``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the
+    client mints ``session_id`` and a new one resets the session caps.
     """
     client_ip = _client_ip(request)
+    if not _chat_quota.try_consume(client_ip):
+        lang = "ru" if str(payload.locale or "en").lower().startswith("ru") else "en"
+        return JSONResponse(content={
+            "available": False,
+            "reply": "",
+            "reason": "daily_quota",
+            # The app shows ``fallback`` verbatim, so builds that predate
+            # this reason still tell the user what happened.
+            "fallback": _QUOTA_UNAVAILABLE_TEXT[lang],
+        })
     # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
     # before they hit chat_reply so a malicious client can't push a
     # 10 MB nested dict through the LLM context window.
@@ -3260,16 +3575,19 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
 
 
 @api_router.post("/care-plan")
-async def care_plan_endpoint(payload: CarePlanRequest):
+async def care_plan_endpoint(payload: CarePlanRequest, request: Request):
     """Build a watering / fertilising / humidity schedule for a plant.
 
     Always returns a usable rules-based plan; when an OpenRouter key
     is configured the response also includes a Markdown ``summary_md``
     polished by the LLM. Disease must be one of the known classifier
     classes (``unknown`` is normalised to a generic monitoring plan).
+    Past ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served
+    without the LLM polish.
     """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+    polish = _care_plan_quota.try_consume(_client_ip(request))
     disease = payload.disease.strip()
     if disease not in DISEASES_DATABASE and disease != "unknown":
         # Don't reject — just normalise unknown to ``unknown``. Keeps the
@@ -3283,6 +3601,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
             light=payload.light,
             locale=payload.locale,
             season=payload.season,
+            polish=polish,
         ),
     )
     toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
@@ -3341,7 +3660,9 @@ async def progression_endpoint(payload: ProgressionRequest):
     sparkline + a trend slope across the supplied history (oldest
     first). An empty list is allowed and yields a zero-padded
     baseline so the client can render an "awaiting data" state
-    without special-casing."""
+    without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
+    (422 past it), so the computation stays a few microseconds of event-loop
+    time."""
     return JSONResponse(content=compare_progression_history(payload.history))
 
 
@@ -3490,9 +3811,10 @@ async def feedback_image_upload(
     client can't spray arbitrary bytes at the corpus.
 
     Privacy note: photo storage for model improvement is disclosed in
-    the first-launch consent screen (and the feedback sheet copy); the
-    image is also anonymized (EXIF-stripped, downscaled) before it
-    reaches the collection store.
+    the first-launch consent screen (and the feedback sheet copy). What is
+    stored is a re-encode of the decoded pixels — no EXIF/GPS, longest edge
+    at most ``FEEDBACK_IMG_MAX_SIDE`` — never the upload bytes, so the
+    artefact's name and hash describe the stored file.
     """
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
@@ -3527,6 +3849,17 @@ async def feedback_image_upload(
     # upload before storing it, so the retraining corpus was writable with
     # arbitrary content by anyone holding one issued scan_id.
     _validate_image_bytes(image_bytes)
+    # Store a metadata-free re-encode, never the upload bytes: the app's
+    # stored scan file can still carry the camera's EXIF (GPS included), and
+    # an older or third-party client sends whatever it has. Decoding also
+    # turns "valid magic bytes, garbage body" into a 400 instead of an
+    # undecodable file in the retraining corpus.
+    loop = asyncio.get_running_loop()
+    img = await loop.run_in_executor(None, _open_image, image_bytes)
+    image_bytes = await loop.run_in_executor(
+        None,
+        lambda: _metadata_free_jpeg(img, max_side=FEEDBACK_IMG_MAX_SIDE, quality=90),
+    )
 
     # One image per feedback row, and the reason is the quota above.
     # ``feedback_daily_writes`` counts rows in the feedback TABLE — rows that
@@ -3539,7 +3872,8 @@ async def feedback_image_upload(
     # Binding each feedback row to a single image closes it: the number of
     # stored images can no longer exceed the number of feedback rows, which
     # IS quota-limited. A retry of the same bytes is still allowed through —
-    # filenames are ``<sha256>.<ext>``, so an identical re-upload is the same
+    # filenames are ``<sha256>.<ext>`` of the re-encode, which is
+    # deterministic for the same input, so an identical re-upload is the same
     # artefact and must stay idempotent for clients retrying after a timeout.
     existing_row = await asyncio.get_running_loop().run_in_executor(
         None,
@@ -3555,10 +3889,7 @@ async def feedback_image_upload(
 
     saved = await asyncio.get_running_loop().run_in_executor(
         None,
-        lambda: save_feedback_image(
-            image_bytes,
-            content_type=image.content_type,
-        ),
+        lambda: save_feedback_image(image_bytes, content_type="image/jpeg"),
     )
     if saved is None:
         raise HTTPException(
@@ -3588,7 +3919,6 @@ async def feedback_image_upload(
             )
             if not cls or cls not in DISEASES_DATABASE:
                 return  # nothing actionable to propose
-            img = _open_image(image_bytes)
             body, sha, ph = _anonymise_scan_image(img)
             fn = f"{sha}.jpg"
             labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
@@ -3859,6 +4189,22 @@ async def _lookup_community_author_id(key_hash: str | None) -> str | None:
     return await _community_author_id(key_hash, community_lookup_author)
 
 
+# The pseudo-id authorises reads of "my" Community state, so it is a bearer
+# value — and a URL is the one place it must not live: every proxy and access
+# log on the path records URLs. Current app builds send it in this header;
+# the query/path forms stay readable for builds that predate it.
+USER_PSEUDO_ID_HEADER = "X-User-Pseudo-Id"
+
+
+def _caller_pseudo_id(header_value: str | None, legacy_value: str | None) -> str | None:
+    """The caller's pseudo-id: the header first, the legacy URL form second."""
+    for raw in (header_value, legacy_value):
+        value = (raw or "").strip()
+        if value:
+            return value[:128]
+    return None
+
+
 class CommunityOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
     user_pseudo_id: str = Field(..., min_length=1, max_length=128)
@@ -3882,10 +4228,18 @@ async def community_opinion_submit(
 
     The suggested disease must be a known classifier class so the consensus
     tally stays clean; any free text lives only in the optional note.
+
+    Requires an adopted ``X-Community-Author-Key`` (401
+    ``community_identity_required`` otherwise) while
+    ``COMMUNITY_REQUIRE_AUTHOR_KEY`` is on: the tally dedupes on the durable
+    author, and a key-less vote would fall back to the client-chosen body
+    pseudo-id, which a script can change on every request.
     """
     disease = payload.suggested_disease.strip()
     if disease not in DISEASES_DATABASE:
         raise HTTPException(status_code=422, detail="Unknown suggested disease")
+    if COMMUNITY_REQUIRE_AUTHOR_KEY and _validate_author_key(x_community_author_key) is None:
+        raise HTTPException(status_code=401, detail="community_identity_required")
 
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
@@ -3922,6 +4276,10 @@ async def community_opinion_submit(
     # reject the request — same "don't pay for expensive work a forged/bad
     # request never earns" discipline as community_scan_upload's ordering.
     author_id = await _touch_community_author_id(x_community_author_key)
+    if author_id is None and COMMUNITY_REQUIRE_AUTHOR_KEY:
+        # A well-formed key that was never adopted: no durable author to
+        # dedupe on. The app adopts before its first Community write.
+        raise HTTPException(status_code=401, detail="community_identity_required")
     try:
         await loop.run_in_executor(
             None,
@@ -3984,6 +4342,7 @@ class CommunityAuthorAdoptRequest(BaseModel):
 @api_router.post("/community/authors/adopt")
 async def community_author_adopt(
     payload: CommunityAuthorAdoptRequest,
+    request: Request,
     x_community_author_key: str = Header(..., alias="X-Community-Author-Key"),
 ):
     """Create-or-return this device's durable forum identity.
@@ -3998,10 +4357,15 @@ async def community_author_adopt(
     Scan uploads and opinion writes attach the resolved anonymous author id,
     which prevents one device from multiplying votes by changing a body
     pseudo-id and prevents scan owners from voting on their own post that way.
+
+    Creating a NEW author counts against ``COMMUNITY_AUTHOR_DAILY_QUOTA`` for
+    the caller's IP (429 past it); re-adopting an existing key is free.
     """
     key_hash = _validate_author_key(x_community_author_key)
     if key_hash is None:  # header present but empty
         raise HTTPException(status_code=422, detail="Malformed author key")
+    if await _lookup_community_author_id(key_hash) is None:
+        _require_daily_quota(_community_author_quota, request)
     loop = asyncio.get_running_loop()
     try:
         author = await loop.run_in_executor(
@@ -4100,6 +4464,7 @@ async def community_request_opinion_cancel(payload: CommunityRequestOpinionReque
 async def community_opinions_list(
     scan_id: str,
     user_pseudo_id: str | None = None,
+    x_user_pseudo_id: str | None = Header(default=None, alias=USER_PSEUDO_ID_HEADER),
     x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """List community opinions + a consensus tally for one shared scan.
@@ -4111,7 +4476,10 @@ async def community_opinions_list(
     as not-liked / no opinion. ``X-Community-Author-Key`` is also optional
     here and, when sent, is what ``my_opinion`` actually keys on — see
     opinions_for's docstring for why the two aren't the same identity.
+    The pseudo-id belongs in ``X-User-Pseudo-Id``; the query form is read only
+    for older app builds.
     """
+    user_pseudo_id = _caller_pseudo_id(x_user_pseudo_id, user_pseudo_id)
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
@@ -4127,13 +4495,27 @@ async def community_opinions_list(
     return JSONResponse(content={"scan_id": sid, **result})
 
 
-@api_router.get("/community/my-scan-opinions/{user_pseudo_id}")
-async def community_my_scan_opinions(user_pseudo_id: str):
+@api_router.get("/community/my-scan-opinions")
+async def community_my_scan_opinions(
+    x_user_pseudo_id: str | None = Header(default=None, alias=USER_PSEUDO_ID_HEADER),
+):
     """Opinion counts on the caller's OWN shared scans. The client polls this
     on a schedule to notify the user when someone leaves a second opinion on a
-    scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
+    scan they shared (the per-scan view already exists via /opinions/{scan_id}).
+    The caller is identified by ``X-User-Pseudo-Id``."""
+    return await _my_scan_opinions(x_user_pseudo_id)
+
+
+@api_router.get("/community/my-scan-opinions/{user_pseudo_id}", deprecated=True)
+async def community_my_scan_opinions_legacy(user_pseudo_id: str):
+    """Pre-header form of ``/community/my-scan-opinions`` for app builds that
+    put the pseudo-id in the path. The request log redacts that segment."""
+    return await _my_scan_opinions(user_pseudo_id)
+
+
+async def _my_scan_opinions(user_pseudo_id: str | None) -> JSONResponse:
     uid = (user_pseudo_id or "").strip()
-    if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
+    if not uid or len(uid) > 128 or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
         raise HTTPException(status_code=422, detail="Invalid user id")
     result = await asyncio.get_running_loop().run_in_executor(
         None, lambda: community_opinion_counts_for_user(uid),
@@ -4361,6 +4743,7 @@ async def community_scan_nearby(
     scope: str | None = None,
     ranking: str | None = None,
     cursor: str | None = None,
+    x_user_pseudo_id: str | None = Header(default=None, alias=USER_PSEUDO_ID_HEADER),
     x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """List the most recent community-shared scans near the requester.
@@ -4380,7 +4763,11 @@ async def community_scan_nearby(
     combining it with ``disease`` or ``species`` is rejected with 422,
     because those widen the query into several concatenated passes whose
     concatenation has no single global ``created_at`` order to page on.
+
+    The caller's pseudo-id belongs in ``X-User-Pseudo-Id``; the
+    ``user_pseudo_id`` query form is read only for older app builds.
     """
+    user_pseudo_id = _caller_pseudo_id(x_user_pseudo_id, user_pseudo_id)
     ranking_norm = (ranking or "recent").strip().lower()
     if ranking_norm not in {"recent", "recommended"}:
         raise HTTPException(status_code=422, detail="Invalid community ranking.")
@@ -4556,6 +4943,7 @@ async def community_map(
     days: int = 30,
     user_pseudo_id: str | None = None,
     limit: int = 300,
+    x_user_pseudo_id: str | None = Header(default=None, alias=USER_PSEUDO_ID_HEADER),
     x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """Individual community scans inside a bbox — the zoomed-in map markers.
@@ -4564,6 +4952,7 @@ async def community_map(
     real scan_id), so the app can pin a marker and open the existing opinion
     sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
     signals an over-full bbox."""
+    user_pseudo_id = _caller_pseudo_id(x_user_pseudo_id, user_pseudo_id)
     box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
     if box is None:
         raise HTTPException(status_code=422, detail="Invalid bbox")
@@ -4625,10 +5014,12 @@ async def community_by_species(
     species: str | None = None,
     limit: int = 12,
     user_pseudo_id: str | None = None,
+    x_user_pseudo_id: str | None = Header(default=None, alias=USER_PSEUDO_ID_HEADER),
     x_community_author_key: str | None = Header(default=None, alias="X-Community-Author-Key"),
 ):
     """Community scans of one species (by scientific name), across all
     regions — the result screen's 'other <species> in the community' strip."""
+    user_pseudo_id = _caller_pseudo_id(x_user_pseudo_id, user_pseudo_id)
     sci = (species or "").strip()
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
@@ -4704,7 +5095,9 @@ async def species_info_endpoint(name: str, locale: str = "en"):
 
 
 @api_router.get("/species-diseases")
-async def species_diseases_endpoint(name: str, common: str = "", locale: str = "en"):
+async def species_diseases_endpoint(
+    request: Request, name: str, common: str = "", locale: str = "en",
+):
     """Common conditions a species is affected by indoors (AI, best-effort).
 
     Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
@@ -4713,15 +5106,24 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     empty. A real (``available``) result is cached server-side (in-memory +
     on disk, surviving restarts) per (species, language) and carries a long
     ``Cache-Control`` so the client/CDN reuses it too; a transient failure is
-    sent uncached so the next open retries.
+    sent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``
+    for the caller's IP the answer is ``available: false`` with
+    ``reason: "daily_quota"``.
     """
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
+    if not _species_ai_quota.try_consume(_client_ip(request)):
+        return JSONResponse(
+            content={"available": False, "diseases": [], "reason": "daily_quota"},
+            headers={"Cache-Control": "no-store"},
+        )
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    common_name = (common or "").strip()[:128] or None
+    # ``common`` is accepted for client compatibility and ignored: it is not
+    # part of the shared cache key, so it must not shape the cached answer.
+    _ = common
     data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_common_diseases(n, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}
@@ -4733,6 +5135,7 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
 
 @api_router.get("/species-profile")
 async def species_profile_endpoint(
+    request: Request,
     name: str,
     common: str = "",
     locale: str = "en",
@@ -4747,15 +5150,22 @@ async def species_profile_endpoint(
     species and carries both EN/RU text copies, so a locale switch cannot
     change the map. ``profile_version`` is a cache-busting query parameter for
     clients/CDNs; the current endpoint always serves the canonical bilingual shape.
+    Shares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.
     """
     _ = profile_version
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
+    if not _species_ai_quota.try_consume(_client_ip(request)):
+        return JSONResponse(
+            content={"available": False, "reason": "daily_quota"},
+            headers={"Cache-Control": "no-store"},
+        )
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    common_name = (common or "").strip()[:128] or None
+    # ``common`` is accepted for client compatibility and ignored, as above.
+    _ = common
     data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_profile(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_profile(n, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}

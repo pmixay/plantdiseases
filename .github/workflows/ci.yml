@@ -345,13 +345,18 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: |
-            server/requirements.txt
+            server/requirements.lock
             server/requirements-dev.txt
 
       # No `pip install --upgrade pip` first: setup-python ships a current pip
       # and the upgrade only bought a wheel download and a version check.
-      - name: Install server + dev dependencies
-        run: pip install --disable-pip-version-check -r requirements-dev.txt
+      # The runtime set comes from the hash-checked lock, so the suite runs on
+      # exactly the versions a deploy installs; the dev tools then layer on
+      # top, and pip keeps every already-satisfied pin as it is.
+      - name: Install server (locked) + dev dependencies
+        run: |
+          pip install --disable-pip-version-check --require-hashes -r requirements.lock
+          pip install --disable-pip-version-check -r requirements-dev.txt
 
       - name: Lint (ruff)
         run: ruff check .

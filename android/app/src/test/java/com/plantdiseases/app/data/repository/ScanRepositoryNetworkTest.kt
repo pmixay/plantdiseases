@@ -1,6 +1,7 @@
 package com.plantdiseases.app.data.repository
 
 import android.content.Context
+import androidx.exifinterface.media.ExifInterface
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.ChatRequest
@@ -22,7 +23,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.awt.image.BufferedImage
 import java.io.File
+import javax.imageio.ImageIO
 
 /**
  * Integration coverage of the ML-diagnosis network hop driven against a
@@ -56,7 +59,11 @@ class ScanRepositoryNetworkTest {
         CommunityPrefs.setUploadsEnabled(appContext, false)
         CommunityIdentity.clear(appContext)
         imageFile = File.createTempFile("upload", ".jpg")
-        imageFile.writeBytes(ByteArray(128) { it.toByte() })
+        // A real JPEG (written by the JVM's encoder, independent of
+        // Robolectric's Bitmap shadow): identify and feedback-image uploads
+        // decode and re-encode the file, so garbage bytes would never reach
+        // the wire.
+        ImageIO.write(BufferedImage(320, 240, BufferedImage.TYPE_INT_RGB), "jpg", imageFile)
     }
 
     @After
@@ -600,6 +607,34 @@ class ScanRepositoryNetworkTest {
         assertThat(body).contains("""name="image"""")
     }
 
+    @Test
+    fun photoUploads_reencode_soCameraExifNeverLeavesTheDevice() {
+        // What a phone camera writes: a model string and a GPS fix.
+        ExifInterface(imageFile.path).apply {
+            setAttribute(ExifInterface.TAG_MODEL, EXIF_MARKER)
+            setLatLong(55.7558, 37.6173)
+            saveAttributes()
+        }
+        assertThat(latin1(imageFile.readBytes())).contains(EXIF_MARKER) // fixture sanity
+
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":false,"results":[]}"""),
+        )
+        assertThat(runBlocking { repo.uploadFeedbackImage("scan-7", imageFile) }.isSuccess).isTrue()
+        assertThat(runBlocking { repo.identifySpecies(imageFile) }.isSuccess).isTrue()
+
+        repeat(2) {
+            val body = latin1(server.takeRequest().body.readByteArray())
+            assertThat(body).doesNotContain(EXIF_MARKER)
+            assertThat(body).doesNotContain("Exif\u0000\u0000")
+        }
+    }
+
+    private fun latin1(bytes: ByteArray) = String(bytes, Charsets.ISO_8859_1)
+
     // --- POST /api/community/scan (Ktor multipart) ---
 
     @Test
@@ -670,7 +705,9 @@ class ScanRepositoryNetworkTest {
         assertThat(req.method).isEqualTo("GET")
         assertThat(req.path).startsWith("/api/community/nearby")
         assertThat(req.path).doesNotContain("country=")
-        assertThat(req.path).contains("user_pseudo_id=u1")
+        // The pseudo-id is a bearer value: header, never the URL.
+        assertThat(req.path).doesNotContain("user_pseudo_id")
+        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("u1")
         assertThat(req.path).contains("limit=12")
         assertThat(req.path).doesNotContain("region=")
         assertThat(req.path).doesNotContain("disease=")
@@ -729,7 +766,8 @@ class ScanRepositoryNetworkTest {
         val req = server.takeRequest()
         assertThat(req.path).startsWith("/api/community/by-species")
         assertThat(req.path).contains("species=Ficus")
-        assertThat(req.path).contains("user_pseudo_id=u9")
+        assertThat(req.path).doesNotContain("user_pseudo_id")
+        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("u9")
     }
 
     @Test
@@ -763,7 +801,9 @@ class ScanRepositoryNetworkTest {
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
         assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/my-scan-opinions/user-42")
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/api/community/my-scan-opinions")
+        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("user-42")
     }
 
     // --- Community write POSTs / DELETE / push (Ktor) ---
@@ -796,6 +836,20 @@ class ScanRepositoryNetworkTest {
         assertThat(body).contains("\"scan_id\":\"sc-2\"")
         assertThat(body).contains("\"suggested_disease\":\"rust\"")
         assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
+    }
+
+    @Test
+    fun submitCommunityOpinion_withoutAdoptedKey_failsWithoutARequest() {
+        // Community off and nothing adopted: the server would answer 401.
+        val result = runBlocking {
+            repo.submitCommunityOpinion(
+                appContext,
+                CommunityOpinionRequest("sc-nokey", "u1", "healthy"),
+            )
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.CommunityIdentityUnavailableException::class.java)
+        assertThat(server.requestCount).isEqualTo(0)
     }
 
     @Test
@@ -899,5 +953,9 @@ class ScanRepositoryNetworkTest {
         assertThat(body).doesNotContain("f".repeat(64))
         assertThat(body).contains("\"seed_display_name\":\"Leafy Sage 7\"")
         assertThat(body).contains("\"legacy_pseudo_id\":\"legacy-reader-7\"")
+    }
+
+    private companion object {
+        const val EXIF_MARKER = "LeakyPhone9"
     }
 }

@@ -28,6 +28,7 @@ import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.CommunityIdentity
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.TelemetryIds
 import io.ktor.client.call.body
@@ -52,6 +53,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+
+/** The install's pseudo-id authorises reads of its own Community state, so it
+ *  travels in this header and never in a URL — proxies and access logs record
+ *  URLs. Servers that predate the header ignore it (it is optional there). */
+private const val USER_PSEUDO_ID_HEADER = "X-User-Pseudo-Id"
 
 class ScanRepository(
     private val scanDao: ScanDao,
@@ -295,7 +301,9 @@ class ScanRepository(
     ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val imageBytes = imageFile.readBytes()
+                // Re-encoded, never readBytes(): the file can still carry the
+                // camera's EXIF (GPS included) — see ImageUtils.encodeForUpload.
+                val imageBytes = ImageUtils.encodeForUpload(imageFile.path)
                 val response = apiClient.httpClient.post("api/identify") {
                     url {
                         parameters.append("organ", organ)
@@ -326,6 +334,10 @@ class ScanRepository(
                     400, 415 -> Result.failure(UnsupportedImageException())
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
+            } catch (e: ImageUtils.ImageDecodeException) {
+                Result.failure(UnsupportedImageException())
+            } catch (e: OutOfMemoryError) {
+                Result.failure(UnsupportedImageException())
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
             } catch (e: UnknownHostException) {
@@ -432,7 +444,7 @@ class ScanRepository(
             try {
                 val response = apiClient.httpClient.get("api/community/opinions/$scanId") {
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        parameter("user_pseudo_id", it)
+                        header(USER_PSEUDO_ID_HEADER, it)
                     }
                     authorKey?.let { header("X-Community-Author-Key", it) }
                 }
@@ -462,11 +474,15 @@ class ScanRepository(
         request: CommunityOpinionRequest,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
+            // The server refuses an opinion without an adopted author key (the
+            // consensus tally dedupes on it), so don't send one that can only
+            // come back 401 — adoption failed, most likely offline.
             val authorKey = adoptedCommunityKey(context)
+                ?: return@withContext Result.failure(CommunityIdentityUnavailableException())
             try {
                 val response = apiClient.httpClient.post("api/community/opinion") {
                     contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+                    header("X-Community-Author-Key", authorKey)
                     setBody(request)
                 }
                 when (response.status.value) {
@@ -654,12 +670,9 @@ class ScanRepository(
             if (!imageFile.exists()) {
                 return@withContext Result.failure(Exception("Image file missing"))
             }
-            val mime = when (imageFile.extension.lowercase()) {
-                "png" -> "image/png"
-                "webp" -> "image/webp"
-                else -> "image/jpeg"
-            }
-            val imageBytes = imageFile.readBytes()
+            // Re-encoded, never readBytes(): the file can still carry the
+            // camera's EXIF (GPS included) — see ImageUtils.encodeForUpload.
+            val imageBytes = ImageUtils.encodeForUpload(imageFile.path)
             val response = apiClient.httpClient.post("api/feedback/image") {
                 setBody(
                     MultiPartFormDataContent(
@@ -669,7 +682,7 @@ class ScanRepository(
                                 "image",
                                 imageBytes,
                                 Headers.build {
-                                    append(HttpHeaders.ContentType, mime)
+                                    append(HttpHeaders.ContentType, "image/jpeg")
                                     append(
                                         HttpHeaders.ContentDisposition,
                                         "filename=\"${imageFile.name}\"",
@@ -685,6 +698,8 @@ class ScanRepository(
             } else {
                 Result.failure(Exception("Server error: ${response.status.value}"))
             }
+        } catch (e: OutOfMemoryError) {
+            Result.failure(ImageUtils.ImageDecodeException("Out of memory re-encoding feedback image", e))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -746,6 +761,7 @@ class ScanRepository(
     ) : Exception("Analysis response violated the diagnostic contract: $violation")
     class UnsupportedImageException : Exception("Unsupported image format")
     class CommunityOpinionsLockedException : Exception("Second opinions are locked")
+    class CommunityIdentityUnavailableException : Exception("Community author key is not adopted")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
@@ -877,7 +893,9 @@ class ScanRepository(
     suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val r = apiClient.httpClient.get("api/community/my-scan-opinions/$pseudoId")
+                val r = apiClient.httpClient.get("api/community/my-scan-opinions") {
+                    header(USER_PSEUDO_ID_HEADER, pseudoId)
+                }
                 when (r.status.value) {
                     in 200..299 -> Result.success(r.body<MyScanOpinionsResponse>())
                     else -> Result.failure(Exception("Server error: ${r.status.value}"))
@@ -1445,7 +1463,7 @@ class ScanRepository(
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        parameter("user_pseudo_id", it)
+                        header(USER_PSEUDO_ID_HEADER, it)
                     }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
@@ -1489,7 +1507,7 @@ class ScanRepository(
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     parameter("days", days)
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        parameter("user_pseudo_id", it)
+                        header(USER_PSEUDO_ID_HEADER, it)
                     }
                     parameter("limit", limit)
                 }
@@ -1692,7 +1710,7 @@ class ScanRepository(
                     parameter("species", species)
                     parameter("limit", limit)
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        parameter("user_pseudo_id", it)
+                        header(USER_PSEUDO_ID_HEADER, it)
                     }
                 }
                 when (response.status.value) {

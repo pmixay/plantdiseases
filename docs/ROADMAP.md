@@ -6,8 +6,9 @@ its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
 (deploy + Android signing/FCM), `../server/models/MODEL_CARD.md`
 (version-agnostic; per-run numbers ship as `model_card.json` in each bundle).
 
-Every item below was re-verified against `main` @ `e4b4a45` on 2026-10-09.
-Line references are as of that commit.
+Every item below was re-verified against the tree on 2026-10-09, after the
+security round on `claude/epic-noether-jl9kez`. Line references are as of
+that branch.
 
 ---
 
@@ -15,10 +16,10 @@ Line references are as of that commit.
 
 | track | state |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`). Not tagged — the repo has no git tags at all. 1.9 carries the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. |
-| **Model** | **2.6.8 is deployed.** **2.7.5** (trained 2026-10-05 on dataset v8) passed its ship gate and is the first bundle that boots the current strict server. No ship decision is recorded. |
-| **Server** | 38 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. 2.6.8 is a legacy bundle with no manifest, and **a legacy bundle cannot boot the current server**. So production runs a server build from before the strict contract, and every server fix since then reaches users only once a manifest-bound bundle ships. |
-| **Security** | 10 open findings from the August audit. They are about cost, availability and privacy, not compromise. One is a privacy-policy misstatement (EXIF). |
+| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. Published to RuStore by hand. |
+| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
+| **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. Paid and inference endpoints now have admission control and per-IP daily allowances. |
+| **Security** | All ten August-audit findings are fixed in code. Two follow-ups remain: SSH hardening has to be applied on the host, and the legacy pseudo-id URL forms can go once pre-1.9 builds are gone. |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
 
 ---
@@ -27,36 +28,27 @@ Line references are as of that commit.
 
 Each line names its section below. ★ = a human decision or human-only task.
 
-1. ★ **Decide on 2.7.5** (Model track → "The 2.7.5 decision"). The current
-   server code only deploys with a manifest-bound bundle, so this decision also
-   decides when the server fixes reach users.
-2. **Fix the EXIF leak and the privacy-policy claim it contradicts**
-   (Security). The bundled policy promises something the app does not do.
-   Small change, and the best privacy return on the list.
-3. **Inference admission control** (Security). A semaphore before decode on
-   `/api/analyze` and `/api/identify`, returning 503.
-4. **Cost-abuse bundle** (Security). Per-IP daily quotas on the LLM and
-   PlantNet endpoints, `common_name` in the species cache keys, a cap on the
-   `/api/progression` list. Each is small; together they close three findings.
-5. ★ **Cut the 1.9 tag and the RuStore build.** If you ship 2.7.5, tag the
-   server commit you deploy at the same time: DEPLOYMENT.md's checklist says
-   "deployed from a tagged commit", and no tag exists yet.
-6. **Re-assert determinism after §3** (Model track → code-only). A one-cell
+1. ★ **Deploy the server, then publish the app** (Security → "Rolling out
+   this round"). Order matters: the 1.9 app reads its own opinion counts from
+   a route only the new server has.
+2. ★ **Apply the SSH hardening on the host** (`DEPLOYMENT.md` §5.1).
+3. **Re-assert determinism after §3** (Model track → code-only). A one-cell
    notebook fix. Land it before the next Colab run, or that run is
    non-deterministic again.
-7. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
+4. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-8. **`AnalysisActivity` recreate bug** (Architecture → Android). The one
+5. **`AnalysisActivity` recreate bug** (Architecture → Android). The one
    outright Android correctness bug.
-9. **`build_analyze_payload()` extraction** (Architecture → Server). The best
+6. **Wikipedia attribution** (App). A licensing question (CC BY-SA), not a
+   design one.
+7. **`build_analyze_payload()` extraction** (Architecture → Server). The best
    value-for-effort refactor, and it unblocks testing the response shape.
 
 ---
 
 ## App
 
-- [ ] ★ **Cut the 1.9 tag and the RuStore build.** Human-only.
 - [ ] **First-launch intro video.** *Externally blocked* on the user-generated
       Veo clip (vertical 9:16 macro monstera, scan-light sweep, `#16A34A`,
       ~8 s seamless loop, no text). The plan is a server-hosted clip (~3 MB,
@@ -105,90 +97,46 @@ on the plant detail screen. Room DB `version = 9` (`data/local/Database.kt:876`)
 
 ---
 
-## Security — open findings
+## Security
 
-From the August 2026 audit: 49 raised, 38 verified, 22 confirmed. The fixed
-ones are in git history. Ordered by value.
+All ten findings from the August 2026 audit (49 raised, 38 verified, 22
+confirmed) are fixed in code. The fixes are in git history; `DEPLOYMENT.md`
+§3.2 documents every new config key.
 
-- [ ] **EXIF GPS leaves the device, and the privacy policy says it cannot.**
-      `privacy_policy.html:103-104` promises "the crop step re-encodes every
-      photo before it is sent, so location tags never leave the device". That
-      holds for the main camera → `CropActivity` flow. It does not hold for
-      **plant-detail "New scan"** (system camera `PlantDetailActivity.kt:145-149`,
-      `:291-295`; gallery import `:179-187` through a raw `copyUriToFile`).
-      Those paths skip the cropper, and `AnalysisActivity.kt:367` stores the
-      unprepared file as `scan.imagePath`. Two later uploads post that file
-      raw: the negative-feedback upload (`FeedbackController.kt:200` →
-      `ScanRepository.kt:649-682`) and identify-from-a-saved-scan
-      (`ui/result/CreatePlantSheet.kt:157-167` → `ScanRepository.kt:291-321`).
-      `SpeciesIdentifyActivity` goes through the camera and cropper, so it is
-      clean. Server side, `/api/feedback/image` writes
-      the bytes verbatim (`feedback.py:393-437`), although its docstring
-      (`main.py:3492-3495`) says "EXIF-stripped". `/api/identify` forwards the
-      raw bytes to PlantNet (`main.py:3212-3214`). Fix on both ends: run
-      `ImageUtils.prepareImageForUpload` (only caller today:
-      `AnalysisActivity.kt:197`) on every upload path, and re-encode on
-      receipt before storing or forwarding.
-- [ ] **No inference admission control.** `analyze_image`
-      (`main.py:2186`) reads up to 10 MB, decodes (`:2275`) and queues on an
-      unbounded-queue `ThreadPoolExecutor(INFER_WORKERS)` (`:886`, `:916`).
-      `/api/identify` feeds the same executor (`:3162`, `:3189`). There is no
-      `Semaphore` in the server. At `INFER_WORKERS=1`, one client inside the
-      2 req/s bucket pins RAM and starves everyone else. `--limit-concurrency
-      64` is set only by DEPLOYMENT.md, not by `start.sh`. Add a semaphore
-      before decode that returns 503.
-- [ ] **No cost caps on the paid endpoints.** Per-IP daily quotas exist only
-      on writes (feedback, community, opinions, likes, safety, telemetry).
-      `/analyze`, `/identify`, `/chat`, `/care-plan`, `/species-diseases`,
-      `/species-profile` and `/progression` have none. The middleware quota
-      applies to API-key callers only (`main.py:1205-1209`). In practice:
-      - The species-diseases cache keys on the client-chosen `name`
-        (`ai_services.py:1538`), so every distinct string is a billable miss.
-        `/species-profile` has the same problem (`:2020`).
-      - `/api/chat` caps turns and tokens per `session_id`
-        (`ai_services.py:1239-1258`), and the client mints that id
-        (`ChatRequest`, `main.py:2591`). A new id resets the caps. No per-IP
-        cap exists.
-      - PlantNet has no server-side budget. The "5/min soft client cap"
-        comment at `ai_services.py:65-67` describes code that does not exist.
+### Rolling out this round
 
-      OpenRouter's monthly dollar cap bounds the worst case. PlantNet has no
-      equivalent.
-- [ ] **Prompt-cache poisoning.** `common_name` reaches the prompt through
-      `_prompt_subject` (`ai_services.py:1550`, `:670-690`) but is not part of
-      the `v2:{name}:{lang}` key (`:1538`), so one caller's `common` poisons
-      the shared answer. `species_profile` has the same bug (key `:2020` vs
-      prompt `:2038`). Put it in the key, or drop it from the prompt.
-- [ ] **Unbounded list on `/api/progression`.** `ProgressionRequest.history:
-      list[dict]` (`main.py:2885-2889`) has no `max_length`, and the endpoint
-      (`:3338-3345`) runs `compare_progression_history` on the event loop.
-      Only the ~12 MB body limit bounds it.
-- [ ] **`/api/analyze` replays another user's `scan_id`.** The dedup key is
-      `{image_sha}:{plantnet_lang}:{family}` (`main.py:2330`). A cache hit
-      returns the original `scan_id` (`:2338-2352`), which authorises
-      feedback mutations.
-- [ ] **Forgeable second opinions (half fixed).** The durable
-      `X-Community-Author-Key` exists, and the tally dedupes on
-      `COALESCE(author_id, author_pseudo_id)` (`community.py:1194-1205`). But
-      the header is still optional on the opinion endpoint (`main.py:3879`),
-      so a client that omits it votes under a self-chosen pseudo-id. The only
-      remaining bound is the 60/day per-IP opinion quota.
-- [ ] **Pseudo-id in GET URLs.** The pseudo-id is a bearer capability, and URLs
-      land in access logs. It travels as a path param on
-      `GET /api/community/my-scan-opinions/{user_pseudo_id}`
-      (`main.py:4130`, `ScanRepository.kt:880`), and as a query param on
-      opinions, nearby, map and by-species (`main.py:4102`, `:4360`, `:4557`,
-      `:4627`).
-- [ ] **No lockfile.** `server/requirements.txt` pins four packages exactly
-      (fastapi, uvicorn, python-multipart, Pillow) and gives only floors for
-      the rest (numpy, onnxruntime, requests, firebase-admin, ImageHash).
-      Starlette and httpx are unconstrained. CI turns a resolution break into
-      a red job; a lockfile actually fixes it.
-- [ ] **Host named publicly.** The host IP and SSH user `root` are in git
-      history (`cd4bda2`, removed with the admin panel in #149). No credentials
-      leaked. The action is ordinary hardening (`PermitRootLogin
-      prohibit-password`, `PasswordAuthentication no`, SSH rate-limiting).
-      DEPLOYMENT.md covers none of it today.
+- [ ] ★ **Deploy the server before publishing the app.** The app now sends
+      the install's pseudo-id in `X-User-Pseudo-Id`. It polls its opinion
+      counts at `GET /api/community/my-scan-opinions` (no path id), which
+      only the new server has. A new app against the old server loses that
+      poll and the "hide my own scans" filter until the server is updated.
+- [ ] ★ **`community_require_author_key` (default `true`).** Second opinions
+      now need an adopted author key. App builds before 1.9 never send one,
+      so they cannot post opinions on the new server: they get a generic
+      error. Set the key `false` only as a bridge while 1.8 installs are
+      still common.
+- [ ] ★ **Watch the new limits the first week.** `/api/metrics` reports
+      `daily_quota_rejections` (per allowance) and
+      `inference_busy_rejections`. Defaults are sized well above a real
+      user's day; raise any that real traffic hits.
+
+### Open follow-ups
+
+- [ ] ★ **Apply SSH hardening on the host.** The host IP and SSH user `root`
+      are in git history (`cd4bda2`; no credentials ever were). Keys only,
+      no root password login, rate-limited: `DEPLOYMENT.md` §5.1.
+- [ ] **Retire the legacy pseudo-id URL forms** once pre-1.9 builds are gone:
+      the deprecated `GET /api/community/my-scan-opinions/{user_pseudo_id}`
+      route and the `user_pseudo_id` query fallback on opinions, nearby, map
+      and by-species (`_caller_pseudo_id`, `server/main.py`). Until then the
+      request log redacts the path form, and `DEPLOYMENT.md` §6 gives nginx a
+      query-free access log.
+- [ ] **Likes and views still accept a key-less pseudo-id.** The same
+      forgery class as opinions, at lower stakes: a script can inflate a
+      post's like or view count by changing the body pseudo-id. Likes are
+      bounded by the per-IP like quota (300/day); views only by the rate
+      limiter. Requiring the key here also locks pre-1.9 builds out, so do it
+      with the URL-form retirement above.
 
 ---
 
@@ -198,37 +146,27 @@ ones are in git history. Ordered by value.
 ViT-S/14 plus the distilled Aqua MobileNetV3-Small. Per-run numbers and the
 release-comparison rules are in `MODEL_HISTORY.md`. Use them, not this file.
 
-### ★ The 2.7.5 decision
+### 2.7.5 in production — what to watch
 
-All of this is in `MODEL_HISTORY.md`, row 16 and the 2.7.5 notes.
+The evidence is in `MODEL_HISTORY.md`, row 16 and the 2.7.5 notes. On photos
+neither model trained on, 2.7.5 beats 2.6.8: served disease mF1 +0.059
+[+0.029, +0.091] on 1,019 iNat photos, and +0.131 argmax on the 160 unseen
+holdout rows. Its known weakness is the healthy lean. Holdout healthy
+precision is 0.784, and 15 of its 25 wrong "healthy" calls are scorch.
+Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
+comparison set yet.
 
-**For shipping:**
-- On 1,019 never-trained iNat photos, served disease mF1 is +0.059
-  [+0.029, +0.091] over 2.6.8. Powdery recall goes 0.73 → 0.81, and pests
-  precision goes 0.75 → 0.90.
-- On the 160 holdout rows neither model saw, argmax mF1 is +0.131
-  [+0.052, +0.216]. Served it is +0.100, but that CI straddles 0.
-- No safety rate differs significantly.
-- Aqua scores 0.801. 2.6.8's Aqua INT8 was degenerate (0.011).
-- It has a calibrated served OOD gate and honest conformal coverage.
-- It is the only bundle that boots the current server.
-
-**Against:**
-- 2.6.8 beats it on the full 535-row holdout: accuracy 0.940 vs 0.908
-  (p=0.02), scorch recall 0.897 vs 0.810, and diseased → "healthy" 11 vs 25.
-  The edge comes from the 375 older rows 2.6.8 may have trained on.
-- Holdout healthy precision is 0.784: 25 of its 116 "healthy" calls are sick
-  plants, 15 of them scorch.
-- Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
-  comparison set at all.
-- On the v2 sentinel, 2.7.5 scores 0/31 vs 31/31 and misreads more healthy
-  hibiscus (7.9 % vs 2.6 %, p=0.02). This is weak evidence. 2.6.x trained on
-  hibiscus through `pappu54`, and 2.7.5 has never seen the species, so the
-  sentinel measures same-species training more than scorch skill.
-
-**Cheap evidence before deciding (no GPU):** pair 2.7.5 against 2.7.2 on the
-shared 535-row holdout with `tools/eval_bootstrap.py`. Neither model trained on
-it, and the row-16 mF1 gain is still unconfirmed.
+- [ ] **Watch feedback that corrects "healthy" to scorch**
+      (`server/tools/analyse_feedback.py` over the feedback store). That is
+      where the holdout says 2.7.5 errs, and production feedback is the only
+      real-distribution signal until T exists.
+- [ ] **Confirm the holdout gain against 2.7.2.** Pair 2.7.5 against 2.7.2
+      on the shared 535-row holdout with `tools/eval_bootstrap.py` (no GPU).
+      Neither model trained on it, and row 16 still reads the mF1 gain as
+      unconfirmed.
+- [ ] **Bump `MODEL_VERSION`** (notebook §1, still `2.7.5`) before the next
+      Colab run, so its bundle and `first_seen_model_version` stamps do not
+      collide with the deployed one.
 
 ### Open — code only (no data needed)
 
@@ -273,13 +211,14 @@ the order). Not started.
       still mostly green. Judge each one against `leaf_spot` exemplars:
       scorch↔`leaf_spot` is the boundary that fails, while scorch↔healthy
       already probes at 0.95. On 2.7.5's holdout, scorch is the class most
-      often called healthy (15 of the 25 wrong "healthy" calls). Boxes matter because Stage 1 returns no box on 0.386 of
-      gray_mold, 0.381 of pests and 0.211 of scorch, against 0.191 for
-      healthy (2.7.5 served pass). A run is worth doing at ≥ 200 scorch and
+      often called healthy (15 of the 25 wrong "healthy" calls). Boxes
+      matter because Stage 1 returns no box on 0.386 of gray_mold, 0.381 of
+      pests and 0.211 of scorch, against 0.191 for healthy (2.7.5 served
+      pass). A run is worth doing at ≥ 200 scorch and
       ≥ 100 houseplant `leaf_spot` families.
 - [ ] ★ **Locked test set T_v1.** Adjudicate the 80 export rows. This needs
-      no collection. T is the only slice that can be fair to 2.6.8 and to a
-      new candidate alike, and it must be carved before any export row
+      no collection. T is the only slice that can be fair to the deployed
+      model and to a new candidate alike, and it must be carved before any export row
       enters a supplement.
 - [ ] ★ **OOD benchmark v3**: 8–12 species, plus a non-plant /
       difficult-plant arm. The non-plant arm needs no plants and can go first.
@@ -309,7 +248,8 @@ collection round.
 Each of these was run as a single knob and measured. Re-proposing one costs a
 run and returns nothing. The notebook's §1 falsification record points here.
 The scorch numbers were measured on the v2 hibiscus arm, which is a regression
-alarm, not an independent instrument (see 2.7.5 above). Each verdict still
+alarm, not an independent instrument: 2.6.x trained on hibiscus through
+`pappu54` (`MODEL_HISTORY.md`, 2.7.5 notes). Each verdict still
 stands on its own evidence.
 
 | lever | verdict | evidence |
@@ -350,14 +290,15 @@ item below needs its own PR. Don't fold one into another change.
 
 **Server**
 
-- [ ] **`analyze_image` is ~400 lines** (`main.py:2187-2585`), and roughly 150
-      of them are response assembly. Extract `build_analyze_payload()`. That
-      makes the entropy guard, the dual-care split and the `not_a_plant`
-      species suppression unit-testable without a TestClient. Best
-      value-for-effort item here.
-- [ ] **Split `main.py` (5,438 lines) into routers.** It holds 38 handlers on
+- [ ] **The `/api/analyze` body is ~400 lines** (`_analyze_image_admitted`,
+      `main.py:2458-2854`; the route itself now only takes the daily
+      allowance and an admission slot), and roughly 150 of them are response
+      assembly. Extract `build_analyze_payload()`. That makes the entropy
+      guard, the dual-care split and the `not_a_plant` species suppression
+      unit-testable without a TestClient. Best value-for-effort item here.
+- [ ] **Split `main.py` (5,848 lines) into routers.** It holds 39 handlers on
       one `APIRouter`, 6 middlewares, 15 Pydantic models, 2 thread pools, the
-      limiter/ban/quota state, the metrics and the lifespan. `Depends` is
+      limiter/ban/quota and admission state, the metrics and the lifespan. `Depends` is
       used 0 times. Order of work:
       1. Extract `deps.py` so the hand-copied quota preambles become one
          `Depends`.
@@ -382,7 +323,7 @@ item below needs its own PR. Don't fold one into another change.
       methods. The ~30-key `/api/analyze` payload can change without failing
       CI while a frozen APK parses it. Cheapest first step: assert the
       response keys in the contract test.
-- [ ] **`ai_services.py` (3,453 lines) is three modules**: transport, five
+- [ ] **`ai_services.py` (3,459 lines) is three modules**: transport, five
       features, and ~700 lines of bilingual content that belongs with
       `diseases_data.py`. `community.py` (2,892 lines, 62 functions) wants to
       become a package.

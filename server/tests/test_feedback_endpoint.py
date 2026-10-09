@@ -12,9 +12,25 @@ are exercised separately:
 
 from __future__ import annotations
 
+import hashlib
+import io
 import sqlite3
 
 import pytest
+from PIL import Image
+
+
+def _jpeg_with_gps(color=(40, 140, 60), size=(320, 240)) -> bytes:
+    """A real JPEG whose EXIF carries a GPS block and a camera model —
+    the metadata a phone camera writes and the server must never store."""
+    exif = Image.Exif()
+    exif[0x0110] = "LeakyPhone 9"  # Model
+    exif[0x8825] = {  # GPSInfo IFD
+        1: "N", 2: (55.0, 45.0, 21.0), 3: "E", 4: (37.0, 37.0, 4.0),
+    }
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="JPEG", exif=exif.tobytes())
+    return buf.getvalue()
 
 
 @pytest.fixture
@@ -193,8 +209,9 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
     client, isolated_feedback_db, tmp_path, monkeypatch,
 ):
     """``/api/feedback/image`` should:
-      * land the bytes under FEEDBACK_IMG_DIR with the sha256 as
-        filename
+      * store a metadata-free re-encode under FEEDBACK_IMG_DIR, named by
+        the sha256 of the stored bytes
+      * never store the upload's EXIF (GPS included)
       * backfill ``image_path`` on the most recent matching feedback row
     """
     import feedback as fb
@@ -213,19 +230,27 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
             "corrected_class": "leaf_spot",
         },
     )
-    img_bytes = b"\xff\xd8\xff\xe0fake-jpeg-bytes-for-test"
+    img_bytes = _jpeg_with_gps()
+    assert Image.open(io.BytesIO(img_bytes)).getexif().get_ifd(0x8825)  # fixture sanity
     r = client.post(
         "/api/feedback/image",
         data={"scan_id": "scan-imgupload1"},
         files={"image": ("plant.jpg", img_bytes, "image/jpeg")},
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True
     assert body["filename"].endswith(".jpg")
-    # File on disk with the same bytes.
     stored = img_dir / body["filename"]
-    assert stored.read_bytes() == img_bytes
+    stored_bytes = stored.read_bytes()
+    # A re-encode, not the upload: same pixels, no metadata at all.
+    assert stored_bytes != img_bytes
+    assert body["hash"] == hashlib.sha256(stored_bytes).hexdigest()
+    assert body["filename"] == f"{body['hash']}.jpg"
+    with Image.open(stored) as reloaded:
+        assert reloaded.size == (320, 240)
+        assert not reloaded.getexif()
+        assert "exif" not in reloaded.info
     # Feedback row updated with image_path.
     with sqlite3.connect(isolated_feedback_db) as conn:
         (image_path,) = conn.execute(
@@ -292,7 +317,7 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
             "corrected_class": "leaf_spot",
         },
     )
-    first = b"\xff\xd8\xff\xe0first-image-bytes"
+    first = _jpeg_with_gps(color=(40, 140, 60))
     r1 = client.post(
         "/api/feedback/image",
         data={"scan_id": "scan-imgonce1"},
@@ -313,7 +338,7 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
     r3 = client.post(
         "/api/feedback/image",
         data={"scan_id": "scan-imgonce1"},
-        files={"image": ("b.jpg", b"\xff\xd8\xff\xe0second-image-bytes", "image/jpeg")},
+        files={"image": ("b.jpg", _jpeg_with_gps(color=(200, 60, 30)), "image/jpeg")},
     )
     assert r3.status_code == 409, r3.text
     assert len(list(img_dir.glob("*"))) == 1

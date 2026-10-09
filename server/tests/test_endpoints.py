@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import io
+
+import pytest
+from PIL import Image
+
 
 def test_health_contract(client):
     from classifier import DEFAULT_CLASS_NAMES
@@ -474,7 +479,7 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         captured["organ"] = organ
         captured["lang"] = lang
-        captured["bytes_len"] = len(image_bytes)
+        captured["is_jpeg"] = image_bytes[:3] == b"\xff\xd8\xff"
         return {"available": False, "results": [], "source": "no_api_key"}
 
     monkeypatch.setattr(server_main, "identify_species", fake_identify)
@@ -486,7 +491,8 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     assert r.status_code == 200, r.text
     assert captured["organ"] == "flower"
     assert captured["lang"] == "ru"
-    assert captured["bytes_len"] == len(png_bytes)
+    # PlantNet gets a metadata-free JPEG re-encode, never the upload bytes.
+    assert captured["is_jpeg"] is True
     assert r.json()["organ"] == "flower"
 
 
@@ -545,7 +551,7 @@ def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
         calls["plantnet"] = int(calls["plantnet"]) + 1
         calls["organ"] = organ
         calls["lang"] = lang
-        calls["bytes_len"] = len(image_bytes)
+        calls["forwarded_jpeg"] = image_bytes[:3] == b"\xff\xd8\xff"
         return {
             "available": True,
             "results": [
@@ -578,8 +584,43 @@ def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
         "image_size": (64, 64),
         "organ": "flower",
         "lang": "ru",
-        "bytes_len": len(png_bytes),
+        "forwarded_jpeg": True,
     }
+
+
+def _jpeg_with_gps(size=(96, 96)) -> bytes:
+    exif = Image.Exif()
+    exif[0x0110] = "LeakyPhone 9"  # Model
+    exif[0x8825] = {1: "N", 2: (55.0, 45.0, 21.0), 3: "E", 4: (37.0, 37.0, 4.0)}
+    buf = io.BytesIO()
+    Image.new("RGB", size, (40, 140, 60)).save(buf, format="JPEG", exif=exif.tobytes())
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("route", ["/api/identify", "/api/analyze"])
+def test_plantnet_never_receives_upload_exif(client, monkeypatch, route):
+    """EXIF (GPS above all) in an upload must not reach PlantNet. Both the
+    identify proxy and the analyze fan-out forward a re-encode of the
+    decoded pixels, not the client's bytes."""
+    import main as server_main
+
+    forwarded: list[bytes] = []
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        forwarded.append(image_bytes)
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    upload = _jpeg_with_gps()
+    assert Image.open(io.BytesIO(upload)).getexif().get_ifd(0x8825)  # fixture sanity
+    r = client.post(route, files={"image": ("leaf.jpg", upload, "image/jpeg")})
+    assert r.status_code == 200, r.text
+    assert len(forwarded) == 1
+    assert forwarded[0] != upload
+    with Image.open(io.BytesIO(forwarded[0])) as sent:
+        assert sent.size == (96, 96)
+        assert not sent.getexif()
+        assert "exif" not in sent.info
 
 
 def test_analyze_response_carries_issued_scan_id(client, png_bytes):
@@ -596,6 +637,31 @@ def test_analyze_response_carries_issued_scan_id(client, png_bytes):
     scan_id = r.json().get("scan_id")
     assert isinstance(scan_id, str) and len(scan_id) >= 16
     assert fb.is_scan_id_issued(scan_id)
+
+
+def test_repeat_upload_gets_its_own_scan_id(client, png_bytes):
+    """The same-photo cache must not replay the first uploader's scan_id:
+    that id authorises /api/feedback writes for the scan. Each response gets
+    a fresh, issued id."""
+    import feedback as fb
+
+    first = client.post("/api/analyze", files={"image": ("a.png", png_bytes, "image/png")})
+    second = client.post("/api/analyze", files={"image": ("b.png", png_bytes, "image/png")})
+    assert first.status_code == 200 and second.status_code == 200
+    assert second.json()["is_repeat"] is True
+    assert second.json()["scan_id"] != first.json()["scan_id"]
+    assert fb.is_scan_id_issued(second.json()["scan_id"])
+    # The cached entry itself still carries the original id; only copies change.
+    third = client.post("/api/analyze", files={"image": ("c.png", png_bytes, "image/png")})
+    assert third.json()["scan_id"] not in {first.json()["scan_id"], second.json()["scan_id"]}
+
+
+def test_progression_history_is_capped(client):
+    entry = {"class_name": "leaf_spot", "confidence": 0.8, "severity": "medium"}
+    ok = client.post("/api/progression", json={"history": [entry] * 12})
+    assert ok.status_code == 200, ok.text
+    too_long = client.post("/api/progression", json={"history": [entry] * 51})
+    assert too_long.status_code == 422, too_long.text
 
 
 def test_feedback_rejects_unissued_scan_id(client, png_bytes):
