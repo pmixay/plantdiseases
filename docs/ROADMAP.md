@@ -16,10 +16,10 @@ that branch.
 
 | track | state |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. Published to RuStore by hand. |
+| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand; RuStore refuses a versionCode it already has, so bump it if 19 is already live. |
 | **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
 | **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. Paid and inference endpoints now have admission control and per-IP daily allowances. |
-| **Security** | All ten August-audit findings are fixed in code. Two follow-ups remain: SSH hardening has to be applied on the host, and the legacy pseudo-id URL forms can go once pre-1.9 builds are gone. |
+| **Security** | All ten August-audit findings are fixed in code. Two follow-ups remain: SSH hardening has to be applied on the host, and the legacy pseudo-id URL forms can go once builds that predate the header are gone. |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
 
 ---
@@ -29,8 +29,8 @@ that branch.
 Each line names its section below. ★ = a human decision or human-only task.
 
 1. ★ **Deploy the server, then publish the app** (Security → "Rolling out
-   this round"). Order matters: the 1.9 app reads its own opinion counts from
-   a route only the new server has.
+   this round"). Order matters: the new app build reads its own opinion
+   counts from a route only the new server has.
 2. ★ **Apply the SSH hardening on the host** (`DEPLOYMENT.md` §5.1).
 3. **Re-assert determinism after §3** (Model track → code-only). A one-cell
    notebook fix. Land it before the next Colab run, or that run is
@@ -125,18 +125,20 @@ confirmed) are fixed in code. The fixes are in git history; `DEPLOYMENT.md`
 - [ ] ★ **Apply SSH hardening on the host.** The host IP and SSH user `root`
       are in git history (`cd4bda2`; no credentials ever were). Keys only,
       no root password login, rate-limited: `DEPLOYMENT.md` §5.1.
-- [ ] **Retire the legacy pseudo-id URL forms** once pre-1.9 builds are gone:
+- [ ] **Retire the legacy pseudo-id URL forms** once app builds that predate
+      the `X-User-Pseudo-Id` header are gone (every build before the
+      security-round commit, whatever its versionName):
       the deprecated `GET /api/community/my-scan-opinions/{user_pseudo_id}`
       route and the `user_pseudo_id` query fallback on opinions, nearby, map
       and by-species (`_caller_pseudo_id`, `server/main.py`). Until then the
-      request log redacts the path form, and `DEPLOYMENT.md` §6 gives nginx a
-      query-free access log.
+      request log redacts the path form, uvicorn's access log is off, and
+      `DEPLOYMENT.md` §6 gives nginx an access log with neither form in it.
 - [ ] **Likes and views still accept a key-less pseudo-id.** The same
       forgery class as opinions, at lower stakes: a script can inflate a
       post's like or view count by changing the body pseudo-id. Likes are
       bounded by the per-IP like quota (300/day); views only by the rate
-      limiter. Requiring the key here also locks pre-1.9 builds out, so do it
-      with the URL-form retirement above.
+      limiter. Requiring the key here also locks builds before 1.9 out, so do
+      it with the URL-form retirement above.
 
 ---
 

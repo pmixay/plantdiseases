@@ -876,23 +876,42 @@ CARE_PLAN_DAILY_QUOTA = get_int("CARE_PLAN_DAILY_QUOTA", 200)
 SPECIES_AI_DAILY_QUOTA = get_int("SPECIES_AI_DAILY_QUOTA", 400)
 
 
+def _client_key(client_ip: str) -> str:
+    """The identity the per-client allowances and in-flight caps count.
+
+    An IPv4 address as-is; an IPv6 address by its /64, because one host
+    routinely holds a whole /64 and could otherwise mint a fresh identity per
+    request. (Carrier NAT runs the other way — many users behind one IPv4 —
+    which is why every per-IP default here sits far above one user's day.)
+    """
+    try:
+        addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return client_ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return client_ip
+
+
 class _DailyQuota:
     """Per-client counter that resets at UTC midnight.
 
     In memory and per process, like the rate limiter: a restart forgets the
     day's counts, which only ever errs towards serving. Once ``max_keys``
-    clients are tracked, new ones pass untracked rather than grow the map
-    without bound under IP churn — an attacker rotating addresses gets past
-    any per-IP limit anyway.
+    clients are tracked, new ones pass untracked (logged once a day) rather
+    than grow the map without bound; clients already tracked stay limited.
+    Reaching the ceiling takes that many distinct IPv4 addresses or IPv6
+    /64s in one day — a botnet, which no per-IP limit stops anyway.
     """
 
-    def __init__(self, name: str, limit: int, *, max_keys: int = 50_000):
+    def __init__(self, name: str, limit: int, *, max_keys: int = 200_000):
         self.name = name
         self.limit = limit
         self.max_keys = max_keys
         self._lock = threading.Lock()
         self._day = ""
         self._counts: dict[str, int] = {}
+        self._full_logged = False
         self.rejections = 0
 
     def try_consume(self, key: str) -> bool:
@@ -903,11 +922,18 @@ class _DailyQuota:
             if day != self._day:
                 self._day = day
                 self._counts.clear()
+                self._full_logged = False
             used = self._counts.get(key, 0)
             if used >= self.limit:
                 self.rejections += 1
                 return False
             if used == 0 and len(self._counts) >= self.max_keys:
+                if not self._full_logged:
+                    self._full_logged = True
+                    logger.warning(
+                        "Daily %s quota is tracking %d clients; new ones pass "
+                        "untracked until UTC midnight", self.name, self.max_keys,
+                    )
                 return True
             self._counts[key] = used + 1
             return True
@@ -916,6 +942,7 @@ class _DailyQuota:
         with self._lock:
             self._day = ""
             self._counts.clear()
+            self._full_logged = False
             self.rejections = 0
 
 
@@ -946,10 +973,11 @@ _DAILY_QUOTAS = (
 def _require_daily_quota(quota: _DailyQuota, request: Request) -> None:
     """429 once the caller has used up ``quota`` for today (UTC).
 
-    No ``Retry-After``: the app's RetryInterceptor would sleep up to 30 s on
-    it and retry into the same refusal.
+    No ``Retry-After``: the app's RetryInterceptor retries a refused POST once
+    either way, and with the header it would sleep up to 30 s first only to
+    hit the same refusal; without it the retry comes after a 1 s backoff.
     """
-    if not quota.try_consume(_client_ip(request)):
+    if not quota.try_consume(_client_key(_client_ip(request))):
         logger.warning("Daily %s quota reached for %s", quota.name, request.url.path)
         raise HTTPException(
             status_code=429,
@@ -1085,10 +1113,30 @@ def _release_inference(client_ip: str) -> None:
             _inference_inflight_by_ip.pop(client_ip, None)
 
 
+class _InferenceSlot:
+    """A claimed admission slot. ``release()`` is idempotent, so a handler can
+    give the slot back as soon as its inference is done — before it waits on
+    PlantNet — and the context manager's own release becomes a no-op."""
+
+    def __init__(self, key: str):
+        self._key = key
+        self._held = True
+
+    def release(self) -> None:
+        if self._held:
+            self._held = False
+            _release_inference(self._key)
+
+
 @asynccontextmanager
 async def _inference_slot(request: Request):
-    """Hold one inference slot for the duration of the block, or raise 503."""
-    client_ip = _client_ip(request)
+    """Hold one inference slot for the block (or until ``release()``), or 503.
+
+    The slot covers reading, decoding and inference only. Handlers release it
+    before any wait on an external service, so a slow upstream cannot turn
+    into 503s for everyone while the inference executor sits idle.
+    """
+    client_ip = _client_key(_client_ip(request))
     if not _try_admit_inference(client_ip):
         logger.warning(
             "Inference busy: rejected %s %s (inflight=%d)",
@@ -1099,10 +1147,11 @@ async def _inference_slot(request: Request):
             detail="Server busy — try again in a few seconds",
             headers={"Retry-After": str(INFER_BUSY_RETRY_AFTER_SECONDS)},
         )
+    slot = _InferenceSlot(client_ip)
     try:
-        yield
+        yield slot
     finally:
-        _release_inference(client_ip)
+        slot.release()
 
 
 # ── Thread-safe server metrics ──────────────────────────────────────
@@ -1583,7 +1632,9 @@ def _loggable_path(path: str) -> str:
 
     Older app builds put the caller's pseudo-id (a bearer value) in the path
     of /api/community/my-scan-opinions/{id}; it must not land in our log.
-    Query strings are never logged at all.
+    This app's log lines never include query strings, and the shipped
+    launchers run uvicorn with ``--no-access-log`` so its own request line
+    (which would) is off too.
     """
     if path.startswith(_LEGACY_PSEUDO_ID_PATH) and len(path) > len(_LEGACY_PSEUDO_ID_PATH):
         return _LEGACY_PSEUDO_ID_PATH + "<redacted>"
@@ -1818,7 +1869,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     logger.exception(
         "UNHANDLED %s %s trace=%s: %s",
         request.method,
-        request.url.path,
+        _loggable_path(request.url.path),
         trace_id,
         exc.__class__.__name__,
     )
@@ -1968,9 +2019,12 @@ def _metadata_free_jpeg(img: Image.Image, *, max_side: int, quality: int) -> byt
     bytes never leave the request. ``img`` should come from ``_open_image``,
     which has already applied the EXIF orientation to the pixels.
     """
-    img = img.convert("RGB")
+    img = img.convert("RGB")  # always a new image object, safe to mutate
+    # Pillow's JPEG writer falls back to ``info`` for what ``save`` is not
+    # given — a COM comment survives decode → transpose → convert and would
+    # be written back. Nothing from the upload's metadata may ride along.
+    img.info = {}
     if max(img.size) > max_side:
-        img = img.copy()
         img.thumbnail((max_side, max_side), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)  # no exif= ⇒ metadata stripped
@@ -2442,11 +2496,14 @@ async def analyze_image(
     ``Retry-After`` before its upload is read (see ``_inference_slot``), and
     each IP gets ``ANALYZE_DAILY_QUOTA`` analyses a day (429 past it).
     """
-    _require_daily_quota(_analyze_quota, request)
-    async with _inference_slot(request):
+    async with _inference_slot(request) as slot:
+        # Taken once admitted, so a busy 503 (and the app's retry of it)
+        # does not spend the caller's allowance.
+        _require_daily_quota(_analyze_quota, request)
         return await _analyze_image_admitted(
-            background_tasks, image,
-            client_ip=_client_ip(request), species=species, locale=locale, family=family,
+            background_tasks, image, slot,
+            client_ip=_client_key(_client_ip(request)),
+            species=species, locale=locale, family=family,
         )
 
 
@@ -2458,6 +2515,7 @@ async def _plantnet_quota_exhausted() -> dict:
 async def _analyze_image_admitted(
     background_tasks: BackgroundTasks,
     image: UploadFile,
+    slot: _InferenceSlot,
     *,
     client_ip: str,
     species: str | None,
@@ -2650,6 +2708,8 @@ async def _analyze_image_admitted(
         _record_error()
         logger.exception("Inference crashed: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
+    # Inference is done: give the slot back before waiting on PlantNet.
+    slot.release()
 
     class_name = result["class_name"]
     confidence = result["confidence"]
@@ -2840,7 +2900,10 @@ async def _analyze_image_admitted(
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.
-    _analyze_cache_put(cache_key, response_payload)
+    # Not when this caller's PlantNet allowance blanked the species block: the
+    # cache would replay that blank to everyone uploading the same bytes.
+    if (species_payload or {}).get("source") != "quota":
+        _analyze_cache_put(cache_key, response_payload)
     # Record the scan (anonymized) for the model-improvement loop. Runs
     # AFTER the response is sent (BackgroundTasks) so it costs the user
     # nothing; cache hits return earlier and are never double-recorded.
@@ -3409,15 +3472,15 @@ async def identify_endpoint(
     count against ``PLANTNET_DAILY_QUOTA_PER_IP`` (``available: false``,
     ``source: "quota"`` past it).
     """
-    _require_daily_quota(_identify_quota, request)
-    async with _inference_slot(request):
+    async with _inference_slot(request) as slot:
+        _require_daily_quota(_identify_quota, request)
         return await _identify_admitted(
-            image, client_ip=_client_ip(request), organ=organ, locale=locale,
+            image, slot, client_ip=_client_key(_client_ip(request)), organ=organ, locale=locale,
         )
 
 
 async def _identify_admitted(
-    image: UploadFile, *, client_ip: str, organ: str, locale: str,
+    image: UploadFile, slot: _InferenceSlot, *, client_ip: str, organ: str, locale: str,
 ) -> JSONResponse:
     """The body of ``/api/identify``, run while holding an inference slot."""
     if pipeline is None:
@@ -3493,6 +3556,8 @@ async def _identify_admitted(
         logger.exception("NAP filter crashed for /api/identify: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
 
+    # The NAP gate was the only inference here; PlantNet waits slot-free.
+    slot.release()
     if nap_result.get("class_name") == "not_a_plant":
         return JSONResponse(content={
             "available": False,
@@ -3535,7 +3600,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     client mints ``session_id`` and a new one resets the session caps.
     """
     client_ip = _client_ip(request)
-    if not _chat_quota.try_consume(client_ip):
+    if not _chat_quota.try_consume(_client_key(client_ip)):
         lang = "ru" if str(payload.locale or "en").lower().startswith("ru") else "en"
         return JSONResponse(content={
             "available": False,
@@ -3587,7 +3652,7 @@ async def care_plan_endpoint(payload: CarePlanRequest, request: Request):
     """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
-    polish = _care_plan_quota.try_consume(_client_ip(request))
+    polish = _care_plan_quota.try_consume(_client_key(_client_ip(request)))
     disease = payload.disease.strip()
     if disease not in DISEASES_DATABASE and disease != "unknown":
         # Don't reject — just normalise unknown to ``unknown``. Keeps the
@@ -3841,6 +3906,35 @@ async def feedback_image_upload(
             detail="Unknown scan_id — please re-scan before sending feedback.",
         )
 
+    # One image per feedback row, and the reason is the quota above.
+    # ``feedback_daily_writes`` counts rows in the feedback TABLE — rows that
+    # /api/feedback creates and this endpoint never does. So the guard at the
+    # top of this function reads a counter its own traffic cannot advance:
+    # one legitimate correction (count 1, quota 200) was enough to then POST
+    # unlimited DISTINCT images here, each up to MAX_FILE_SIZE, held back only
+    # by the 2 req/s bucket. That is ~8 MB/s of attacker-chosen disk, forever.
+    #
+    # Binding each feedback row to a single image closes it: the number of
+    # stored images can no longer exceed the number of feedback rows, which
+    # IS quota-limited. Checked BEFORE the upload is read or decoded, so a
+    # repeat costs one indexed lookup rather than a full decode and re-encode.
+    # A filled slot answers 200 with the stored artefact and stores nothing:
+    # that is the idempotent answer a client retrying after a timeout needs,
+    # and the stored image is not an artefact this endpoint can tell apart
+    # from the retry's bytes without decoding them.
+    existing_row = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: feedback_latest_for_scan(scan_id_clean),
+    )
+    existing_image = (existing_row or {}).get("image_path") or ""
+    if existing_image:
+        return JSONResponse(content={
+            "ok": True,
+            "filename": existing_image,
+            "hash": existing_image.split(".", 1)[0],
+            "already_attached": True,
+        })
+
     # Hard size cap (same as /api/analyze) — the bare ``image.read()``
     # used here previously pulled the whole body into RAM with no ceiling.
     image_bytes = await _read_upload(image)
@@ -3860,32 +3954,6 @@ async def feedback_image_upload(
         None,
         lambda: _metadata_free_jpeg(img, max_side=FEEDBACK_IMG_MAX_SIDE, quality=90),
     )
-
-    # One image per feedback row, and the reason is the quota above.
-    # ``feedback_daily_writes`` counts rows in the feedback TABLE — rows that
-    # /api/feedback creates and this endpoint never does. So the guard at the
-    # top of this function reads a counter its own traffic cannot advance:
-    # one legitimate correction (count 1, quota 200) was enough to then POST
-    # unlimited DISTINCT images here, each up to MAX_FILE_SIZE, held back only
-    # by the 2 req/s bucket. That is ~8 MB/s of attacker-chosen disk, forever.
-    #
-    # Binding each feedback row to a single image closes it: the number of
-    # stored images can no longer exceed the number of feedback rows, which
-    # IS quota-limited. A retry of the same bytes is still allowed through —
-    # filenames are ``<sha256>.<ext>`` of the re-encode, which is
-    # deterministic for the same input, so an identical re-upload is the same
-    # artefact and must stay idempotent for clients retrying after a timeout.
-    existing_row = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_latest_for_scan(scan_id_clean),
-    )
-    existing_image = (existing_row or {}).get("image_path") or ""
-    digest = hashlib.sha256(image_bytes).hexdigest()
-    if existing_image and not existing_image.startswith(digest):
-        raise HTTPException(
-            status_code=409,
-            detail="This scan already has a feedback image.",
-        )
 
     saved = await asyncio.get_running_loop().run_in_executor(
         None,
@@ -5113,7 +5181,7 @@ async def species_diseases_endpoint(
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
-    if not _species_ai_quota.try_consume(_client_ip(request)):
+    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
         return JSONResponse(
             content={"available": False, "diseases": [], "reason": "daily_quota"},
             headers={"Cache-Control": "no-store"},
@@ -5156,7 +5224,7 @@ async def species_profile_endpoint(
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
-    if not _species_ai_quota.try_consume(_client_ip(request)):
+    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
         return JSONResponse(
             content={"available": False, "reason": "daily_quota"},
             headers={"Cache-Control": "no-store"},

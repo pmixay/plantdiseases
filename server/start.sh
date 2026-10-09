@@ -49,7 +49,7 @@ for cmd in python3 python; do
         version=$("$cmd" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "")
         major="${version%%.*}"
         minor="${version##*.}"
-        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 10 ]] || [[ "${major:-0}" -gt 3 ]]; then
+        if [[ "${major:-0}" -eq 3 && "${minor:-0}" -ge 12 ]] || [[ "${major:-0}" -gt 3 ]]; then
             PYTHON="$cmd"
             break
         fi
@@ -57,8 +57,8 @@ for cmd in python3 python; do
 done
 
 if [[ -z "$PYTHON" ]]; then
-    echo "ERROR: Python 3.10+ is required but was not found." >&2
-    echo "       (3.10 is the syntax floor; 3.14 is what CI tests.)" >&2
+    echo "ERROR: Python 3.12+ is required but was not found." >&2
+    echo "       (requirements.lock's numpy/scipy need 3.12; 3.14 is what CI tests.)" >&2
     echo "Install Python from https://www.python.org/downloads/" >&2
     exit 1
 fi
@@ -112,10 +112,14 @@ echo
 
 # --limit-concurrency matches the systemd unit in DEPLOYMENT.md: past that
 # many open connections uvicorn answers 503 instead of queueing without bound.
+# --no-access-log: RequestLoggingMiddleware already logs every request, and
+# uvicorn's own line would record query strings (older app builds put the
+# install's pseudo-id there).
 exec uvicorn main:app \
     --host 0.0.0.0 \
     --port "$PORT" \
     --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" \
     --proxy-headers \
     --limit-concurrency "${LIMIT_CONCURRENCY:-64}" \
-    --timeout-keep-alive 5
+    --timeout-keep-alive 5 \
+    --no-access-log

@@ -147,3 +147,28 @@ def test_quota_rejections_reach_metrics(client, m, monkeypatch):
         client.get("/api/species-profile", params={"name": "Ficus elastica"})
     body = client.get("/api/metrics").json()
     assert body["daily_quota_rejections"]["species_ai"] == 2
+
+
+def test_a_quota_blanked_species_block_is_not_cached_for_everyone(client, m, monkeypatch):
+    """The analyze cache is shared by everyone uploading the same bytes; a
+    species block blanked by one caller's PlantNet allowance must not be
+    replayed to the next."""
+    calls: list[str] = []
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        calls.append(organ)
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(m, "identify_species", fake_identify)
+    monkeypatch.setattr(m._plantnet_quota, "limit", 1)
+    first_photo = _png((40, 150, 60))
+    client.post("/api/analyze", files={"image": ("a.png", _png((90, 90, 90)), "image/png")})
+
+    blanked = client.post("/api/analyze", files={"image": ("b.png", first_photo, "image/png")})
+    assert blanked.json()["species"]["source"] == "quota"
+
+    m._plantnet_quota.reset()
+    again = client.post("/api/analyze", files={"image": ("b.png", first_photo, "image/png")})
+    assert again.json()["is_repeat"] is False
+    assert again.json()["species"]["source"] != "quota"
+    assert len(calls) == 2

@@ -100,3 +100,42 @@ def test_busy_rejections_reach_metrics(client, admission, png_bytes):
     assert body["inference_inflight"] == 3
     prom = client.get("/api/metrics/prometheus").text
     assert "plantdiseases_inference_busy_rejections_total 1" in prom
+
+
+@pytest.mark.parametrize("route", ROUTES)
+def test_no_slot_is_held_while_waiting_on_plantnet(client, admission, png_bytes, route, monkeypatch):
+    """The slot covers read/decode/inference only. A slow PlantNet must not
+    hold it, or an upstream stall turns into 503s while inference sits idle."""
+    m = admission
+    seen: list[int] = []
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        seen.append(m._inference_inflight)
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(m, "identify_species", fake_identify)
+    r = client.post(route, files={"image": ("leaf.png", png_bytes, "image/png")})
+    assert r.status_code == 200, r.text
+    assert seen == [0]
+
+
+def test_busy_503_does_not_spend_the_daily_quota(client, admission, png_bytes, monkeypatch):
+    m = admission
+    monkeypatch.setattr(m._analyze_quota, "limit", 1)
+    for ip in ("x", "y", "z"):
+        m._try_admit_inference(ip)
+    busy = client.post("/api/analyze", files={"image": ("leaf.png", png_bytes, "image/png")})
+    assert busy.status_code == 503
+    for ip in ("x", "y", "z"):
+        m._release_inference(ip)
+
+    ok = client.post("/api/analyze", files={"image": ("leaf.png", png_bytes, "image/png")})
+    assert ok.status_code == 200, ok.text
+
+
+def test_ipv6_clients_are_counted_per_64(admission):
+    m = admission
+    assert m._client_key("2001:db8:1:2:aaaa::1") == m._client_key("2001:db8:1:2:ffff::9")
+    assert m._client_key("2001:db8:1:2::1") != m._client_key("2001:db8:1:3::1")
+    assert m._client_key("203.0.113.7") == "203.0.113.7"
+    assert m._client_key("testclient") == "testclient"

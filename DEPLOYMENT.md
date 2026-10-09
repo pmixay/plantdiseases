@@ -24,9 +24,9 @@ Android release build. Architecture and API surface live in
 ## 1. Prerequisites
 
 - **Python 3.14.** That is what CI runs (`.github/workflows/ci.yml`) and the
-  only version tested. `server/start.sh` requires ≥ 3.10 (the syntax floor),
-  so it will still launch on an untested interpreter — pin the venv to 3.14
-  explicitly.
+  only version tested. `server/start.sh` accepts ≥ 3.12 (the floor of the
+  locked numpy/scipy), so it will still launch on an untested interpreter —
+  pin the venv to 3.14 explicitly.
 - `pip install --require-hashes -r server/requirements.lock`. The lock is the
   full pinned closure of `requirements.txt` for CPython 3.14 on Linux x86_64,
   with hashes, and is what CI tests against; regenerate it with the `uv`
@@ -123,7 +123,7 @@ Defaults below are the **code** defaults.
 | `inference_timeout` | `30.0` | Seconds before `/api/analyze` returns 504. |
 | `analyze_cache_ttl_seconds` / `analyze_cache_max_entries` | `86400` / `512` | In-memory exact-bytes response dedup. |
 | `infer_workers` | `1` | Inference thread pool. With `onnx_intra_op_threads=0` one scan already uses every core; raise only if you also pin intra-op low. |
-| `infer_max_inflight` / `infer_max_inflight_per_ip` | `4 × infer_workers` / `2` | Admission control on `/api/analyze` + `/api/identify`: a request claims a slot before its upload is read, and one that finds the server (or its own IP) full gets 503 + `Retry-After: infer_busy_retry_after_seconds` (`3`). Bounds RAM to roughly that many uploads + decoded images. `0` disables a cap. |
+| `infer_max_inflight` / `infer_max_inflight_per_ip` | `4 × infer_workers` / `2` | Admission control on `/api/analyze` + `/api/identify`: a request claims a slot before its upload is copied into memory or decoded (FastAPI has already spooled the multipart body to disk by then), holds it through inference only — never while waiting on PlantNet — and one that finds the server (or its own IP, an IPv6 /64) full gets 503 + `Retry-After: infer_busy_retry_after_seconds` (`3`). Bounds RAM to roughly that many in-memory uploads + decoded images. `0` disables a cap. If you set it in `config.json`, scale it with `infer_workers` yourself. |
 | `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia / FCM waits, so 20 s LLM calls don't queue DB writes behind them. |
 | `onnx_intra_op_threads` | `0` | `0` = all physical cores — the biggest CPU-latency lever. Pin lower on a shared host. |
 | `plant_photo_max_side` / `plant_photo_quality` / `popular_bundle_ttl_seconds` / `popular_placeholder_ttl_seconds` | `1000` / `80` / `1800` / `300` | Photo proxy re-encode and popular-plants bundle cache. |
@@ -139,7 +139,7 @@ Defaults below are the **code** defaults.
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
 | `community_author_key_pepper` / `community_cursor_secret` | `community-author-storage-v2` / falls back to `feedback_ip_pepper` then `community-cursor-v1` | Set both explicitly in production. |
 | `feedback_daily_quota`, `community_daily_quota`, `community_opinion_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `60`, `300`, `100` | Per hashed IP, per day. |
-| `analyze_daily_quota`, `identify_daily_quota` | `300`, `150` | Per IP, per UTC day, in memory (a restart forgets them). Past it: 429. |
+| `analyze_daily_quota`, `identify_daily_quota` | `300`, `150` | Per IP (IPv6 by /64), per UTC day, in memory (a restart forgets them), taken only once a request is admitted. Past it: 429. Every per-IP allowance below counts the same way; carrier NAT puts many users behind one IPv4, which is why the defaults sit far above one user's day. |
 | `plantnet_daily_quota_per_ip` | `100` | PlantNet calls per IP per UTC day, shared by the analyze fan-out and `/api/identify`, so one client cannot drain the 500-a-day free tier. Past it a scan still gets its diagnosis, with `species.source: "quota"`. |
 | `chat_daily_quota` | `100` | AI Plant Doctor turns per IP per UTC day, across sessions (the per-session caps reset with each client-chosen `session_id`). Past it: `available:false`, `reason: "daily_quota"`, with a bilingual `fallback`. |
 | `care_plan_daily_quota` | `200` | LLM-polished care plans per IP per UTC day; past it the rules-based plan is served. |
@@ -275,7 +275,7 @@ Environment=FCM_CREDENTIALS_FILE=/var/lib/plantdiseases/fcm-service-account.json
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
           --forwarded-allow-ips 127.0.0.1 --proxy-headers \
-          --limit-concurrency 64 --timeout-keep-alive 5
+          --limit-concurrency 64 --timeout-keep-alive 5 --no-access-log
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes
@@ -303,7 +303,10 @@ Two things this unit is doing that are easy to get wrong:
   `infer_workers > 1`.
 
 `--limit-concurrency 64` caps simultaneously-accepted connections — past that
-uvicorn answers 503 instead of queueing unboundedly.
+uvicorn answers 503 instead of queueing unboundedly. `--no-access-log` drops
+uvicorn's own request line: the app already logs every request (method, path
+without query string, status, duration, client IP), and uvicorn's line would
+record query strings, where older app builds put the install's pseudo-id.
 
 ```bash
 sudo useradd --system --home /opt/plantdiseases plantd
@@ -351,9 +354,15 @@ server {
     return 301 https://$host$request_uri;
 }
 
-# Access log without query strings: app builds before 1.9 send the install's
-# pseudo-id (a bearer value) as `?user_pseudo_id=`. $uri drops the query.
-log_format plantdiseases '$remote_addr [$time_local] "$request_method $uri" '
+# Access log without the install's pseudo-id (a bearer value). App builds that
+# predate the X-User-Pseudo-Id header send it as `?user_pseudo_id=` — $uri
+# drops the query — and in the path of /api/community/my-scan-opinions/<id>,
+# which the map masks.
+map $uri $plantdiseases_log_uri {
+    ~^/api/community/my-scan-opinions/.  /api/community/my-scan-opinions/<redacted>;
+    default                              $uri;
+}
+log_format plantdiseases '$remote_addr [$time_local] "$request_method $plantdiseases_log_uri" '
                          '$status $body_bytes_sent $request_time';
 
 server {
@@ -537,9 +546,9 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 - [ ] Per-IP daily allowances (`analyze_daily_quota` and friends, §3.2) and
       `infer_max_inflight` suit your traffic; watch `daily_quota_rejections`
       and `inference_busy_rejections` in `/api/metrics` the first week.
-- [ ] Before publishing an app build older clients cannot be on: decide
-      `community_require_author_key` (§3.2). Builds before 1.9 cannot post
-      second opinions while it is `true`.
+- [ ] Decide `community_require_author_key` (§3.2): app builds that never
+      send `X-Community-Author-Key` (before 1.9) cannot post second opinions
+      while it is `true`.
 - [ ] Logs rotating (`log_dir`) and shipped off-box; Prometheus scraping
       `/api/metrics/prometheus`.
 - [ ] `GET /api/health` returns 200 with `status: "ok"` **through nginx, from

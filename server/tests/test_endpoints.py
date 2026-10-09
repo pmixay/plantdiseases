@@ -593,7 +593,9 @@ def _jpeg_with_gps(size=(96, 96)) -> bytes:
     exif[0x0110] = "LeakyPhone 9"  # Model
     exif[0x8825] = {1: "N", 2: (55.0, 45.0, 21.0), 3: "E", 4: (37.0, 37.0, 4.0)}
     buf = io.BytesIO()
-    Image.new("RGB", size, (40, 140, 60)).save(buf, format="JPEG", exif=exif.tobytes())
+    Image.new("RGB", size, (40, 140, 60)).save(
+        buf, format="JPEG", exif=exif.tobytes(), comment=b"GPS 55.7558N 37.6173E home",
+    )
     return buf.getvalue()
 
 
@@ -621,6 +623,7 @@ def test_plantnet_never_receives_upload_exif(client, monkeypatch, route):
         assert sent.size == (96, 96)
         assert not sent.getexif()
         assert "exif" not in sent.info
+        assert "comment" not in sent.info  # a JPEG COM segment is metadata too
 
 
 def test_analyze_response_carries_issued_scan_id(client, png_bytes):

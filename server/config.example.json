@@ -21,7 +21,6 @@
     "inference_timeout": 30.0,
     "rate_limit_rps": 1.0,
     "infer_workers": 1,
-    "infer_max_inflight": 4,
     "infer_max_inflight_per_ip": 2,
     "net_workers": 16,
     "onnx_intra_op_threads": 0,

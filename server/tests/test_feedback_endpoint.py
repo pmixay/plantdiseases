@@ -29,7 +29,9 @@ def _jpeg_with_gps(color=(40, 140, 60), size=(320, 240)) -> bytes:
         1: "N", 2: (55.0, 45.0, 21.0), 3: "E", 4: (37.0, 37.0, 4.0),
     }
     buf = io.BytesIO()
-    Image.new("RGB", size, color).save(buf, format="JPEG", exif=exif.tobytes())
+    Image.new("RGB", size, color).save(
+        buf, format="JPEG", exif=exif.tobytes(), comment=b"GPS 55.7558N 37.6173E home",
+    )
     return buf.getvalue()
 
 
@@ -251,6 +253,8 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
         assert reloaded.size == (320, 240)
         assert not reloaded.getexif()
         assert "exif" not in reloaded.info
+        assert "comment" not in reloaded.info
+    assert b"GPS 55" not in stored_bytes
     # Feedback row updated with image_path.
     with sqlite3.connect(isolated_feedback_db) as conn:
         (image_path,) = conn.execute(
@@ -296,14 +300,16 @@ def test_feedback_image_rejects_non_image_bytes(
 def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
     client, isolated_feedback_db, tmp_path, monkeypatch,
 ):
-    """A second, DIFFERENT image for the same scan_id is refused.
+    """Once a feedback row has its image, later uploads store nothing.
 
     The per-IP daily quota counts feedback ROWS, which this endpoint never
     creates — so without this bound one issued scan_id could store unlimited
-    distinct images. Re-uploading the SAME bytes must still succeed, because
-    clients retry after a timeout and the artefact is content-addressed.
+    distinct images. A retry after a timeout must still succeed, so a filled
+    slot answers 200 with the stored artefact — without decoding the upload,
+    which would otherwise let one row buy unlimited decodes.
     """
     import feedback as fb
+    import main as server_main
 
     img_dir = tmp_path / "feedback_imgs_once"
     monkeypatch.setenv("FEEDBACK_IMG_DIR", str(img_dir))
@@ -325,6 +331,12 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
     )
     assert r1.status_code == 200, r1.text
 
+    decodes: list[int] = []
+    real_open = server_main._open_image
+    monkeypatch.setattr(
+        server_main, "_open_image", lambda b: decodes.append(1) or real_open(b),
+    )
+
     # Same bytes again — an idempotent retry, still fine.
     r2 = client.post(
         "/api/feedback/image",
@@ -333,15 +345,18 @@ def test_feedback_image_is_one_per_row_but_retry_is_idempotent(
     )
     assert r2.status_code == 200, r2.text
     assert r2.json()["filename"] == r1.json()["filename"]
+    assert r2.json()["already_attached"] is True
 
-    # Different bytes — this is the disk-fill vector, and it is refused.
+    # Different bytes — the disk-fill vector: nothing is stored or decoded.
     r3 = client.post(
         "/api/feedback/image",
         data={"scan_id": "scan-imgonce1"},
         files={"image": ("b.jpg", _jpeg_with_gps(color=(200, 60, 30)), "image/jpeg")},
     )
-    assert r3.status_code == 409, r3.text
+    assert r3.status_code == 200, r3.text
+    assert r3.json()["filename"] == r1.json()["filename"]
     assert len(list(img_dir.glob("*"))) == 1
+    assert decodes == []
 
 
 def test_feedback_endpoint_persists_prediction_set(client, isolated_feedback_db):

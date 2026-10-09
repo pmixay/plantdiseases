@@ -722,6 +722,9 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
     except Exception as exc:  # noqa: BLE001 — any decode failure is a rejection, not a 500
         logger.info("Community thumb rejected (decode error: %s): scan_id=%s", exc, scan_id[:16])
         return None
+    # ``info`` carries a JPEG COM comment through convert(), and Pillow would
+    # write it back; drop every upload-side metadata field before saving.
+    img.info = {}
     if max(img.size) > _THUMB_LONG_EDGE:
         img.thumbnail((_THUMB_LONG_EDGE, _THUMB_LONG_EDGE), Image.LANCZOS)
     buf = io.BytesIO()
