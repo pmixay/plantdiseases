@@ -35,7 +35,7 @@
   "ai": {
     "openrouter_api_key": "",
     "openrouter_api_key_file": "",
-    "openrouter_model": "openai/gpt-5.6-luna",
+    "openrouter_model": "openai/gpt-6-luna",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "openrouter_provider_only": "openai",
     "_provider_note": "Only an explicit test/development environment accepts openrouter_api_key. In production-like environments leave it blank and use an absolute owner-only openrouter_api_key_file; simultaneous/direct secrets fail closed. Comma-separated OpenRouter provider slugs this model may be routed to; blank lets OpenRouter route freely. Every request requires supported parameters, data_collection=deny, and a zero-data-retention endpoint. The configured model/provider/region and an aggregate cost ceiling remain release gates; see DEPLOYMENT.md and the PRO operations runbook.",

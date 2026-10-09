@@ -98,14 +98,14 @@ PLANTNET_CACHE_TTL_SECONDS = get_int("PLANTNET_CACHE_TTL_SECONDS", 7 * 24 * 3600
 
 # OpenRouter chat backend (single provider so one key gates many models).
 OPENROUTER_API_KEY = get_secret("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-5.6-luna").strip()
+OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-6-luna").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 # The 20 s budget was sized for gpt-oss pinned at the shortest possible trace.
 # Every call now runs at medium-or-higher effort, so the budget has to cover a
 # real reasoning pass plus a retry. It is a ceiling, not a target — a cached
 # species/care-plan answer never reaches OpenRouter at all.
 OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 30.0)
-# Reasoning effort. The default model (openai/gpt-5.6-luna) is a reasoning
+# Reasoning effort. The default model (openai/gpt-6-luna) is a reasoning
 # model whose hidden trace still bills against max_tokens — but unlike gpt-oss
 # it treats effort as a CEILING rather than a floor: on a prompt it judges easy
 # it may spend no reasoning tokens at all, even at a high setting. That inverts
@@ -121,17 +121,20 @@ OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 30.0)
 # factual content (care plans, species botany) where an under-thought answer is
 # WRONG data, not merely terse data — and wrong data is what the disk caches
 # then serve for the next 7-30 days.
-# gpt-5.6 accepts max/xhigh/high/medium/low/none. It does NOT accept "minimal"
-# (a gpt-5.0-era level), so `_normalise_effort` maps a stale "minimal" left in
-# a config file onto "low" instead of letting the provider 400 the request.
+# gpt-5.6 and gpt-6 accept max/xhigh/high/medium/low/none. Neither accepts
+# "minimal" (a gpt-5.0-era level), so `_normalise_effort` maps a stale
+# "minimal" left in a config file onto "low" instead of letting the provider
+# 400 the request.
 # Set OPENROUTER_REASONING_EFFORT to "omit" to send no reasoning field at all
 # (let the model use its own default).
 OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "medium").strip().lower()
 
 # Provider routing. One OpenRouter model id is served by several providers at
-# wildly different prices — for openai/gpt-5.6-luna, OpenAI's own endpoint is
-# $0.10/M input against Bedrock's $0.22/M and Azure's $1.00/M, a 10x spread for
-# identical output.
+# different prices and capabilities — for openai/gpt-6-luna (OpenRouter,
+# 2026-10-01) OpenAI's own endpoint is $0.10/M input / $0.50/M output, Azure's
+# regional and Bedrock's endpoints $0.11/$0.55, the "fast" tier double — and
+# Bedrock does not support `response_format` at all. On gpt-5.6-luna the same
+# spread once reached 10x (Azure $1.00/M).
 #
 # Leaving it to OpenRouter does NOT mean "it picks the best one". Default
 # routing is price-weighted load BALANCING (inverse-square of price, among
@@ -162,8 +165,9 @@ OPENROUTER_PROVIDER_ONLY = get_str("OPENROUTER_PROVIDER_ONLY", "openai").strip()
 # https://developers.openai.com/api/docs/guides/prompt-caching).
 # Every call in this module re-sends a long block of fixed instructions and
 # pays full input price for it. Caching makes the provider re-read that prefix
-# from ITS cache instead — on gpt-5.6 a cached read is 0.1x input price
-# ($0.01/M against $0.10/M) — so only the request-specific tail is paid in full.
+# from ITS cache instead — on gpt-5.6 and gpt-6 a cached read is 0.1x input
+# price (gpt-6-luna: $0.01/M against $0.10/M) — so only the request-specific
+# tail is paid in full.
 #
 # gpt-5.6 changed both sides of that trade, and the first move to it left the
 # measured hit ratio at a flat 0.0:
@@ -972,12 +976,13 @@ _OPENROUTER_REASONING_EFFORTS = frozenset(
     {"max", "xhigh", "high", "medium", "low", "minimal", "none"}
 )
 # ...but the level set is per-model, and gpt-5.6 dropped the gpt-5.0-era
-# "minimal". Sending it would 400 the whole request, taking the feature down
-# with it, so an effort the configured model can't accept is mapped onto the
-# nearest one it can. Keyed by model prefix rather than exact id so the
+# "minimal" (no gpt-6.x model lists it either). Sending it would 400 the whole
+# request, taking the feature down with it, so an effort the configured model
+# can't accept is mapped onto the nearest one it can. Keyed by model prefix rather than exact id so the
 # terra/sol/luna and -pro variants are all covered.
 _EFFORT_ALIASES: dict[str, dict[str, str]] = {
     "openai/gpt-5.": {"minimal": "low"},
+    "openai/gpt-6": {"minimal": "low"},
 }
 
 
