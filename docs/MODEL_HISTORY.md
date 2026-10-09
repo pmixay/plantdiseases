@@ -406,8 +406,9 @@ why the collection target moved to first-party v9.
   always holds top-1, α = 0.6 still audits at 0.98 coverage with sets of 1.5 —
   but `server/conformal.py` reports `coverage = 1 − alpha`, so any 2.7.x bundle
   makes `/api/analyze` advertise **`coverage: 0.4`** while `conformal.json`
-  carries `target_coverage: 0.9`. Either clamp the grid to α ≤ 1 − target or
-  export and serve `target_coverage`. Not yet fixed on `model-fix-test`.
+  carries `target_coverage: 0.9`. **Fixed 2026-09-21:** `conformal.py` now
+  advertises `target_coverage` when the sidecar carries the out-of-sample
+  audit that backs it (`coverage_basis = audit_target`), else `1 − alpha`.
 - **INT8 has never been significantly worse except once** (2.6.0 on 06-19,
   drift 0.014, CI excluded 0 → FP32 shipped) and was significantly *better*
   once (2.6.9). Every other run: |drift| ≤ 0.011, CI straddles 0. The drift
@@ -470,9 +471,10 @@ To compare release A with release B on data *both* never saw:
   candidates** — §2 on this branch routes any row first seen at or before the
   candidate's version to `supplement_train_only`, so v9 rows stamped `never`
   or `> both` are eval-fair to both.
-- **OOD sentinel v2** — never trained by any model, but one species, one
-  session, ≥ 11 pseudo-replicates and no non-plant arm; a regression alarm,
-  not a comparison instrument, until v3 exists.
+- **OOD sentinel v2** — never trained by 2.7.x, but 2.6.x trained on the same
+  species (possibly the same photographs) through `pappu54` (2.7.5 notes
+  above); one species, one session, ≥ 11 pseudo-replicates and no non-plant
+  arm. A regression alarm, not a comparison instrument, until v3 exists.
 
 The mechanics: score both bundles served (`tools/paired_eval.py --served
 --manifest`), then `tools/eval_bootstrap.py` with the capture family as the

@@ -485,7 +485,7 @@ carried over from v2.
 ## Locked deployment-representative test set — carve rule
 
 The only never-trained, real-distribution eval that scales is production scans
-(ROADMAP: "2,593 and growing"; the 2026-08-06 export holds 2,727 image files).
+(2,593 counted in the August roadmap; the 2026-08-06 export holds 2,727 image files).
 The carve:
 
 1. **Source.** `tools/export_data.py` archive → `labeling.db` `candidates` rows
@@ -577,7 +577,7 @@ arm across 8–12 species, and T_v1 — and only the full round can re-enable
 - **Which v8 rows have a recoverable licence** — unknowable without the rows.
 - **Whether a P5 record exists** for the 2026-08-06 export; the handoff says it
   must be attached, the repo holds none.
-- **Production counts** — ROADMAP's 2,593 scans and the export's 2,727 files are
+- **Production counts** — the August roadmap's 2,593 scans and the export's 2,727 files are
   different quantities from different dates; neither is checkable here.
 - **The 19-of-31 / 3-of-31 morphology-vs-framing split** and every §1–§7 number
   were scored on v2 rows the audit found non-independent; the plan uses their
