@@ -536,10 +536,21 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "RuStore processes checkout and payment details" in privacy
     assert "Deleting a PlantDiseases account does not cancel the RuStore subscription" in privacy
     assert "Publishing a scan or submitting an opinion requires sign-in" in privacy
-    assert "It currently has no automatic expiry" in privacy
+    assert "It currently has no automatic expiry" not in privacy
+    assert "It is kept for 30 days after deletion and then erased" in privacy
     assert "Do not post identifiers, tokens or account details in a public issue" in privacy
 
     gates = json.loads(RELEASE_POLICY_GATES.read_text(encoding="utf-8"))
+    tombstone = gates["deleted_actor_tombstone"]
+    assert tombstone["status"] == "approved"
+    assert tombstone["mode"] == "fixed_days"
+    assert tombstone["retention_days"] == 30
+    assert tombstone["legal_basis"] is None
+    assert tombstone["policy_marker_id"] == "deleted-actor-tombstone-policy"
+    assert tombstone["decision_reference"].startswith("https://github.com/pmixay/plantdiseases/blob/")
+    assert tombstone["approved_at_utc"].endswith("Z")
+    assert "30" in tombstone["disclosure_en"] and "30" in tombstone["disclosure_ru"]
+    assert tombstone["disclosure_en"] != tombstone["disclosure_ru"]
     contact = gates["private_contact"]
     assert contact["status"] == "approved"
     assert contact["uri"] == "mailto:gavel8980@gmail.com"
@@ -552,21 +563,13 @@ def test_privacy_and_signing_gates_match_account_release():
     assert gates == {
         "schema_version": 2,
         "private_contact": contact,
-        "deleted_actor_tombstone": {
-            "status": "blocked",
-            "mode": None,
-            "retention_days": None,
-            "legal_basis": None,
-            "policy_marker_id": "deleted-actor-tombstone-policy",
-            "disclosure_en": None,
-            "disclosure_ru": None,
-            "decision_reference": None,
-            "approved_at_utc": None,
-        },
+        "deleted_actor_tombstone": tombstone,
     }
     assert '<meta name="plantdiseases-release-policy-schema" content="2">' in privacy
     assert 'id="deleted-actor-tombstone-policy"' in privacy
-    assert 'data-policy-status="blocked"' in privacy
+    assert 'data-policy-status="approved"' in privacy
+    assert 'data-retention-mode="fixed_days"' in privacy
+    assert 'data-retention-days="30"' in privacy
 
     workflow = ANDROID_RELEASE_WORKFLOW.read_text(encoding="utf-8")
     assert "&& secrets.PRODUCTION_" not in workflow
