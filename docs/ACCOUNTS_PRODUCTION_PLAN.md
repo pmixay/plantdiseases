@@ -78,14 +78,14 @@ Email/password stays off in production: production settings reject it until its 
 |---|---|---|---|---|
 | 0 | Open the beta to the test phone | Confirm the tester's public IP(s) | Add exact `/32`/`/128` entries to the nginx allowlist, reload, re-probe | done (owner VPN) |
 | 1 | Android build and tests | Connect the phone (USB debugging) | PC: ktlint, detekt, all five unit-test variants, all four CI APK builds, staging install and live device smoke passed; all 9 instrumented tests passed after fixing their Hilt host, permission dialog and locale/view assertions | build/unit/device/instrumented checks passed |
-| 2 | Real Yandex login | Sign in on the phone (only you can) | Real beta signup, profile, cold-start session restore, signed-in app read and logout/cold-start guest state passed; deletion and production real-provider checks remain pending | beta login/logout passed; remaining checks pending |
+| 2 | Real Yandex login | Sign in on the phone (only you can); confirm deletion of the staging profile | Real beta signup, profile, cold-start session restore, signed-in app read, logout/cold-start guest state and real re-login to the same profile passed. The staging deletion dialog is prepared; deletion and production real-provider checks remain pending | beta login/logout/re-login passed; awaiting deletion confirmation |
 | 3 | Production hostname | Done: reuse `pdis.arbuz.lol` | none | done |
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
 | 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | CI passed on `55eafcf`; conflicts with main resolved at `aab7795` (server ruff and 1003 tests passed). Device test repairs at `88267b2`; verify CI on the final head | awaiting owner approval and final-head CI |
 | 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
-| 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and public URL variables per [DEPLOYMENT.md](../DEPLOYMENT.md); approve main merge | The workflow is absent from main; GitHub currently has no environment or public variables, and the PC account has write access without admin access. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore | blocked on owner setup/main merge |
+| 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md); approve main merge | The workflow is absent from main, and the protected environment is missing. The PC account has write access without admin access; it configured and read back the four public repository API URL variables. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore | blocked on owner environment setup/main merge |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
 | 9 | RuStore listing | Console clicks and APK upload | Release notes, checklist, privacy page check | pending |
 | 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring with alerts on failed backups and `journal_unavailable` deletion retries | in progress |
@@ -117,4 +117,6 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Tester IP(s); support contact; GitHub signing secrets and variables; RuStore console access; confirmation before the step 4 switch.
+Confirmation for the real staging account deletion; production real-provider phone test; owner approval of PR #182;
+protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
+tester allowlist, support contact and step 4 switch are already approved and configured.

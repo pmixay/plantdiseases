@@ -99,7 +99,7 @@
   "community_upload_participation": "Remains disabled; browsing does not enable sharing.",
   "github_ci": "Separate from this local verification; inspect the pushed commit CI before protected signing.",
   "follow_up": {
-    "recorded_at_utc": "2026-10-09T16:31:20.286267+00:00",
+    "recorded_at_utc": "2026-10-09T16:39:54.445775+00:00",
     "android_test_fix_commit": "88267b28df209c79cdefe0074ea6f786bbb8d459",
     "main_merge_commit": "aab7795c6bb0f6d1d7a0b859390e5cd06e170398",
     "merged_main_commit": "e4b4a456b196f456bc1275cf706971fb2766ad54",
@@ -141,7 +141,13 @@
       "guest_after_logout": true,
       "guest_after_cold_start": true
     },
-    "after_logout": "Yandex re-login opened; waiting for the owner to complete it before preparing account deletion.",
+    "after_logout": {
+      "owner_completed_real_yandex_sign_in": true,
+      "cold_start_profile_restored": true,
+      "same_nickname": true,
+      "variant": "debug",
+      "account_environment": "staging"
+    },
     "production_public_checks": {
       "https://pdis.arbuz.lol/api/health": 200,
       "https://pdis.arbuz.lol/api/capabilities": 200,
@@ -168,9 +174,15 @@
       "merge_conflicts_resolved": true,
       "workflow_exists_on_main": false,
       "android_signing_environment_exists": false,
-      "repository_variables_configured": false,
+      "repository_variables_configured": true,
       "connected_github_account_has_admin_permission": false,
-      "needs_owner": "Approve main merge and configure the protected android-signing environment/public variables per DEPLOYMENT.md. Permanent signing keys stay with the owner/GitHub."
+      "needs_owner": "Approve main merge and configure the protected android-signing environment, its reviewers, secrets and approved variables per DEPLOYMENT.md. The four public repository API URL variables are configured and read back. Permanent signing keys stay with the owner/GitHub.",
+      "repository_url_variables": {
+        "STAGING_APP_API_BASE_URL": "https://pdis.arbuz.lol/plantdisease-test/",
+        "STAGING_ACCOUNT_API_BASE_URL": "https://pdis.arbuz.lol/plantdisease-test/id/",
+        "PRODUCTION_APP_API_BASE_URL": "https://pdis.arbuz.lol/",
+        "PRODUCTION_ACCOUNT_API_BASE_URL": "https://pdis.arbuz.lol/id/"
+      }
     },
     "private_device_backup": {
       "verified_readable": true,
@@ -178,6 +190,17 @@
       "bytes": 14902784,
       "location": "Outside Git, owner-only PC directory",
       "android_keystore_keys_exported": false
+    },
+    "staging_deletion": {
+      "status": "awaiting owner confirmation",
+      "confirmation_dialog_prepared": true,
+      "reauthentication_or_deletion_triggered": false,
+      "existing_local_counts": {
+        "scans": 0,
+        "plants": 0,
+        "plant_reminders": 0,
+        "plant_journal": 0
+      }
     }
   }
 }
