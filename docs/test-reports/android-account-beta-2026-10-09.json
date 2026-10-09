@@ -1,0 +1,101 @@
+{
+  "recorded_at_utc": "2026-10-09T15:36:30.360120+00:00",
+  "branch": "account-beta-test",
+  "tested_code_commit": "3e6d346c5cf5360d5b044601a5b4b32271826c30",
+  "remote_base_commit": "72501f8e55d20adb1697379f3598af95b8a5565b",
+  "change": "Extract species metadata lookup and persistent cache policy into SpeciesRepository. Keep the public ScanRepository API and all cache keys, TTLs and failure handling unchanged.",
+  "lint": {
+    "ktlintCheck": "passed",
+    "detekt": "passed",
+    "detekt_findings": 0,
+    "original_failure": "LargeClass: ScanRepository 1333/1300",
+    "thresholds_and_baselines_changed": false
+  },
+  "verification_command": "EMAIL_PASSWORD_AUTH_ENABLED=false ./gradlew ktlintCheck detekt testDebugUnitTest testStagingUnitTest testReleaseUnitTest testRecoveryProductionUnitTest testRecoveryStagingUnitTest assembleRelease assembleStaging assembleRecoveryProduction assembleRecoveryStaging --build-cache --configuration-cache --max-workers=2 --console=plain",
+  "unit_tests": {
+    "testDebugUnitTest": {
+      "tests": 577,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "testRecoveryProductionUnitTest": {
+      "tests": 576,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "testRecoveryStagingUnitTest": {
+      "tests": 576,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "testReleaseUnitTest": {
+      "tests": 581,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "testStagingUnitTest": {
+      "tests": 577,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "total_unit_tests": 2887,
+  "new_cache_regressions_per_variant": 6,
+  "apk_builds": {
+    "release": "passed",
+    "staging": "passed",
+    "recoveryProduction": "passed",
+    "recoveryStaging": "passed"
+  },
+  "device_smoke": {
+    "device_model": "Samsung SM-M556E",
+    "package": "com.plantdiseases.app",
+    "variant": "staging",
+    "version_name": "1.9",
+    "version_code": 19,
+    "apk_sha256": "eb11f10dac8c165447a958fc69d107b324f099bac272d1aa54f2310f9fded9b4",
+    "signing_certificate_sha256": "9E:76:5F:18:77:F8:33:5F:5A:77:BF:76:EC:75:8B:2E:ED:CA:EA:85:FF:BE:2F:66:03:A6:E6:60:F5:5A:D2:53",
+    "signing_identity": "Local Android debug certificate; owner added it to Yandex for this test. Permanent release signing was not used.",
+    "application_api": "https://pdis.arbuz.lol/plantdisease-test/",
+    "account_api": "https://pdis.arbuz.lol/plantdisease-test/id/",
+    "synthetic_auth_enabled": false,
+    "email_password_auth_enabled": false,
+    "latest_privacy_asset_matches_source": true,
+    "installed_preserving_data": true,
+    "cold_start_account_checks": {
+      "tv_provider_name": true,
+      "et_nickname": true,
+      "btn_logout": true,
+      "provider_is_yandex": true,
+      "signup_form_absent": true,
+      "same_nickname": true
+    },
+    "community_checks": {
+      "worldwide_selected": true,
+      "community_empty_response": true
+    },
+    "community_evidence": "The live-only worldwide feed returned its successful empty state while signed in. Reviewed client code sends a bearer without guest fallback; server code validates it through account authentication/introspection. No bearer was captured or logged.",
+    "final_phone_state": "Signed in, account profile open"
+  },
+  "original_real_provider_test": {
+    "code_commit": "03bc2359bf220c9878fed751441916fa063a6347",
+    "apk_sha256": "15315b2723cf62c3aa067a688affe240cdb660e52689096015773d7eaadef4f0",
+    "owner_completed_real_yandex_sign_in": true,
+    "owner_completed_nickname_signup": true,
+    "profile_and_session_restore_passed": true,
+    "note": "Fresh provider login was performed at this earlier revision. The APK above revalidated the existing real session after updating."
+  },
+  "not_exercised": [
+    "Instrumented Android test suite",
+    "Logout, account deletion, scan uploads and community writes",
+    "Notification polling and paid features",
+    "Production endpoints and permanently signed APK"
+  ],
+  "community_upload_participation": "Remains disabled; browsing does not enable sharing.",
+  "github_ci": "Separate from this local verification; inspect the pushed commit CI before protected signing."
+}

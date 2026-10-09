@@ -30,10 +30,16 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   the application code; see `deploy/production-vds/`.
 - The app-to-account trust boundary passed on the repo's synthetic mock-provider stack and on the production stack with
   secret-free checks. It has **not** been run with a real Yandex token.
-- **Known CI failure (Android, predates this work):** `:app:detekt` fails with `LargeClass` on
-  `android/.../ScanRepository.kt` (1849 lines against the threshold of 1300; `main` has 1708). The deployed SHA `03bc2359` was
-  already red; the last fully green commit is `f539b05` (2026-09-22). The signing workflow requires successful CI for the exact
-  commit, so this must be fixed (split the class, or deliberately re-pin the threshold) before step 7.
+- **Android detekt failure fixed locally:** `3e6d346` extracts species metadata and cache policy from
+  `ScanRepository` into `SpeciesRepository`. The original finding counted 1333 lines against the unchanged 1300 limit
+  (1849 was the whole source-file length). Both `ktlintCheck` and `detekt` pass, all five unit-test variants pass
+  (2887 tests), and release/staging/both recovery APKs build. See the
+  [Android beta verification report](test-reports/android-account-beta-2026-10-09.json).
+  The signing workflow still requires successful GitHub CI for the exact commit before step 7.
+- **Real beta Yandex flow passed on the phone:** the owner completed sign-in and nickname/signup confirmation
+  on the locally signed staging APK at `03bc2359`. Cold-start session restore and the signed-in live Community read
+  also passed after the Android fix. This uses the local debug certificate added to Yandex by the owner;
+  production endpoints and the permanently signed APK still need their own real-provider test.
 
 
 ## Release gates in plain words
@@ -71,13 +77,13 @@ Email/password stays off in production: production settings reject it until its 
 | # | Step | Owner: you | Owner: agents | State |
 |---|---|---|---|---|
 | 0 | Open the beta to the test phone | Confirm the tester's public IP(s) | Add exact `/32`/`/128` entries to the nginx allowlist, reload, re-probe | done (owner VPN) |
-| 1 | Android build and tests | Connect the phone (USB debugging) | PC agent: ktlint, detekt (**currently red**: `LargeClass` on `ScanRepository.kt`, see Where things stand), unit tests, staging APK, `adb install`, instrumented tests against `/plantdisease-test/` | pending |
-| 2 | Real Yandex login | Sign in on the phone (only you can) | PC agent watches logcat; VDS agent watches exchange, confirm, refresh, logout, deletion | pending |
+| 1 | Android build and tests | Connect the phone (USB debugging) | PC: ktlint, detekt, all five unit-test variants, all four CI APK builds, staging install and live device smoke passed; instrumented suite remains pending | local build/unit/device smoke passed |
+| 2 | Real Yandex login | Sign in on the phone (only you can) | Real beta signup, profile, cold-start session restore and signed-in app read passed; logout/deletion and production real-provider checks remain pending | beta login passed; remaining checks pending |
 | 3 | Production hostname | Done: reuse `pdis.arbuz.lol` | none | done |
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
-| 6 | Merge to `main` | Review and approve the PR | Apply the tooling fixes, open the PR (needs your GitHub login), fix CI (including the Android detekt `LargeClass` failure above) | pending |
+| 6 | Merge to `main` | Review and approve the PR | Android detekt fix applied and verified locally; verify GitHub CI on the exact branch commit and open the PR | pending |
 | 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
 | 7 | Signed release build | Keystore secrets, required reviewers, `PRODUCTION_*` URLs, cutover switch set to true | Trigger the protected workflow; verify APK digest, certificate fingerprint, endpoints. Agents never handle the keystore | pending |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
