@@ -998,6 +998,15 @@
     <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
          specific species is referenced. -->
     <string name="species_info_more">Подробнее об этом виде</string>
+    <!-- Атрибуция Википедии (кнопка «i» на карточке вида и на экране вида). -->
+    <string name="wikipedia_attribution_content_description">Источник и лицензия описания</string>
+    <string name="wikipedia_attribution_title">Об этом описании</string>
+    <string name="wikipedia_attribution_body_article">Описание и фото взяты из статьи Википедии «%1$s». Тексты Википедии доступны по лицензии Creative Commons «С указанием авторства — С сохранением условий» 4.0 (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_body">Описание и фото взяты из Википедии. Тексты Википедии доступны по лицензии Creative Commons «С указанием авторства — С сохранением условий» 4.0 (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_photos">Фотографии взяты с Викисклада; у каждой своя лицензия, указанная на странице файла.</string>
+    <string name="wikipedia_attribution_translated">Текст переведён автоматически: статьи на вашем языке пока нет.</string>
+    <string name="wikipedia_attribution_licence">Лицензия</string>
+    <string name="wikipedia_attribution_close">Закрыть</string>
     <string name="species_info_expand">Показать полное описание</string>
     <string name="species_info_collapse">Скрыть полное описание</string>
     <!-- Spoken for the description toggle: species name, then the action. -->

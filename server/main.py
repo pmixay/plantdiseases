@@ -2469,6 +2469,176 @@ async def _species_identify_best_effort(
     }
 
 
+def build_analyze_payload(
+    result: dict,
+    *,
+    scan_id: str,
+    species_payload: dict | None,
+    species_override: str | None,
+    served_family: str,
+    requested_family: str,
+    family_fallback_reason: str | None,
+) -> dict:
+    """Assemble the ``/api/analyze`` response from one pipeline ``result``.
+
+    Pure — no I/O, no awaits — so the response shape (the bilingual top-k, the
+    advisory conformal set and its dual care cards, the abstention-driven
+    species suppression, the toxicity fall-through and the abstention
+    presentation) is unit-testable without a TestClient. The handler keeps
+    everything that talks to the outside world: inference, the PlantNet wait,
+    minting and persisting ``scan_id``, the cache and the scan recording.
+
+    ``species_payload`` is the resolved PlantNet block (``None`` when the
+    handler cancelled it); ``species_override`` is the ``?species=`` hint,
+    which drives the toxicity lookup only.
+    """
+    class_name = result["class_name"]
+    confidence = result["confidence"]
+    all_probs = result.get("all_probs", {})
+    warnings = list(result.get("warnings", []))
+    top_k = list(result.get("top_k", []))
+    abstained, abstention_reason = _derive_abstention(result)
+    disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
+
+    rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
+
+    detection = result["detection"]
+
+    # Annotate top_k with the bilingual display name so the client can
+    # render "Leaf mould - 6%" (or its RU variant) without a second
+    # lookup table.
+    top_k_localised = []
+    for entry in top_k:
+        cls = entry.get("class", "")
+        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+        top_k_localised.append({
+            "class": cls,
+            "confidence": entry.get("confidence", 0.0),
+            "name_en": info.get("name_en", cls.replace("_", " ").title()),
+            "name_ru": info.get("name_ru", cls),
+            "is_healthy": bool(info.get("is_healthy", False)),
+        })
+
+    # `is_healthy` mirrors the displayed class name so the client's
+    # status badge can never contradict the diagnosis text. Uncertainty
+    # is conveyed by the `warnings` array (`uncertain_healthy`,
+    # `disease_suspected:<class>`) and the top-k alternatives card,
+    # not by silently flipping this boolean.
+    is_healthy_effective = (
+        not abstained and bool(disease_info.get("is_healthy", False))
+    )
+
+    # Conformal prediction set: classes the model can't rule out at the
+    # configured coverage level. Annotated with bilingual names so the
+    # UI can render an advisory "leaf_spot OR viral_disease" set with its
+    # nominal target clearly distinguished from measured coverage.
+    # without a second lookup table. ``None`` when calibration data
+    # isn't yet available — clients must treat it as optional.
+    prediction_set = None if abstained else result.get("prediction_set")
+    if prediction_set is not None:
+        # Calibration-row coverage is not an independent validation. Keep the
+        # set advisory until a locked, family-independent served-path test
+        # establishes coverage for this exact graph + detector/crop/vote
+        # contract; no per-class-count heuristic can substitute for that.
+        prediction_set = {
+            **prediction_set,
+            "advisory": True,
+            "items": [
+                {
+                    "class": cls,
+                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_en", cls.replace("_", " ").title()
+                    ),
+                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_ru", cls
+                    ),
+                }
+                for cls in prediction_set["classes"]
+            ],
+        }
+        # Dual care cards (P0(b), kept-both taxonomy): when the set can't
+        # separate the two physiological-stress classes, their care advice
+        # diverges enough ("water me" vs "feed me") that we surface BOTH
+        # full care cards rather than only the top-1's.
+        _attach_dual_care(prediction_set)
+
+    # PlantNet on a non-plant photo always returns a low-quality guess
+    # ("Phaseolus vulgaris" because there was some green pixel noise)
+    # which is actively misleading on the result screen. When the
+    # pipeline lands on ``not_a_plant`` we suppress the species block
+    # entirely — the LRU cache in ``identify_species`` keeps the API
+    # call from being wasted on a repeat upload of the same image.
+    if abstained:
+        species_payload = {
+            "available": False,
+            "source": (
+                "skipped_nap"
+                if abstention_reason == _ABSTENTION_REASON_NAP
+                else "skipped_abstained"
+            ),
+            "best": None, "candidates": [],
+        }
+
+    # Pet-toxicity surface — resolves from the explicit ``species``
+    # query param when supplied, otherwise falls back to the auto-
+    # detected best match. Without either we return
+    # ``source="unknown"`` and the client renders an "unconfirmed"
+    # copy rather than falsely reassuring.
+    auto_best = (species_payload or {}).get("best") or {}
+    toxicity_species = None if abstained else (species_override or auto_best.get("scientific_name"))
+    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
+        "toxic_to_pets": False, "species_list": [], "source": "unknown",
+    }
+
+    response_payload = {
+        # Probability-backed classifier argmax. Rejection gates never replace
+        # it: clients use ``abstained`` / ``abstention_reason`` to decide
+        # whether this diagnostic may be presented as an accepted diagnosis.
+        "class_name": class_name,
+        # Which model tier actually produced this verdict. Lets the client
+        # confirm it got the family it asked for (and fall back gracefully if
+        # a future server downgrades the request).
+        "family": served_family,
+        "requested_family": requested_family,
+        "family_fallback_reason": family_fallback_reason,
+        "disease_name": disease_info["name_en"],
+        "disease_name_ru": disease_info["name_ru"],
+        "confidence": round(confidence, 3),
+        "description": disease_info["description_en"],
+        "description_ru": disease_info["description_ru"],
+        "treatment": disease_info["treatment_en"],
+        "treatment_ru": disease_info["treatment_ru"],
+        "prevention": disease_info["prevention_en"],
+        "prevention_ru": disease_info["prevention_ru"],
+        "is_healthy": is_healthy_effective,
+        "detection": detection,
+        "severity": result.get("severity", "low"),
+        "all_probs": rounded_probs,
+        "top_k": top_k_localised,
+        "warnings": warnings,
+        "abstained": abstained,
+        "abstention_reason": abstention_reason,
+        "verdict_status": "abstained" if abstained else "accepted",
+        "prediction_set": prediction_set,
+        "toxic_to_pets": toxicity["toxic_to_pets"],
+        "toxic_species_list": toxicity["species_list"],
+        "toxicity_source": toxicity["source"],
+        "species": species_payload,
+        "elapsed_ms": result["elapsed_ms"],
+        "server_version": APP_VERSION,
+        # Set to true only when the response is replayed from the
+        # SHA-256 cache above; first-time scans get false here.
+        "is_repeat": False,
+        # Server-minted scan_id for this response. Clients should
+        # send this same string back on /api/feedback so the gate
+        # in main.py can confirm the feedback ties to a real scan
+        # we ran. Stored in the issued_scan_ids table; expires after
+        # ISSUED_SCAN_ID_TTL_DAYS.
+        "scan_id": scan_id,
+    }
+    return _apply_abstention_presentation(response_payload)
+
+
 @api_router.post("/analyze")
 async def analyze_image(
     request: Request,
@@ -2713,11 +2883,8 @@ async def _analyze_image_admitted(
 
     class_name = result["class_name"]
     confidence = result["confidence"]
-    all_probs = result.get("all_probs", {})
     warnings = list(result.get("warnings", []))
-    top_k = list(result.get("top_k", []))
     abstained, abstention_reason = _derive_abstention(result)
-    disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
     metric_class = (
@@ -2730,68 +2897,6 @@ async def _analyze_image_admitted(
         "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s warnings=%s",
         class_name, confidence, elapsed, fname, warnings,
     )
-
-    rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
-
-    detection = result["detection"]
-
-    # Annotate top_k with the bilingual display name so the client can
-    # render "Leaf mould - 6%" (or its RU variant) without a second
-    # lookup table.
-    top_k_localised = []
-    for entry in top_k:
-        cls = entry.get("class", "")
-        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
-        top_k_localised.append({
-            "class": cls,
-            "confidence": entry.get("confidence", 0.0),
-            "name_en": info.get("name_en", cls.replace("_", " ").title()),
-            "name_ru": info.get("name_ru", cls),
-            "is_healthy": bool(info.get("is_healthy", False)),
-        })
-
-    # `is_healthy` mirrors the displayed class name so the client's
-    # status badge can never contradict the diagnosis text. Uncertainty
-    # is conveyed by the `warnings` array (`uncertain_healthy`,
-    # `disease_suspected:<class>`) and the top-k alternatives card,
-    # not by silently flipping this boolean.
-    is_healthy_effective = (
-        not abstained and bool(disease_info.get("is_healthy", False))
-    )
-
-    # Conformal prediction set: classes the model can't rule out at the
-    # configured coverage level. Annotated with bilingual names so the
-    # UI can render an advisory "leaf_spot OR viral_disease" set with its
-    # nominal target clearly distinguished from measured coverage.
-    # without a second lookup table. ``None`` when calibration data
-    # isn't yet available — clients must treat it as optional.
-    prediction_set = None if abstained else result.get("prediction_set")
-    if prediction_set is not None:
-        # Calibration-row coverage is not an independent validation. Keep the
-        # set advisory until a locked, family-independent served-path test
-        # establishes coverage for this exact graph + detector/crop/vote
-        # contract; no per-class-count heuristic can substitute for that.
-        prediction_set = {
-            **prediction_set,
-            "advisory": True,
-            "items": [
-                {
-                    "class": cls,
-                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_en", cls.replace("_", " ").title()
-                    ),
-                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_ru", cls
-                    ),
-                }
-                for cls in prediction_set["classes"]
-            ],
-        }
-        # Dual care cards (P0(b), kept-both taxonomy): when the set can't
-        # separate the two physiological-stress classes, their care advice
-        # diverges enough ("water me" vs "feed me") that we surface BOTH
-        # full care cards rather than only the top-1's.
-        _attach_dual_care(prediction_set)
 
     # Resolve the species fan-out. We started it in parallel with the
     # disease pipeline so this normally returns immediately. If the
@@ -2811,34 +2916,6 @@ async def _analyze_image_admitted(
         except Exception:  # noqa: BLE001 — defensive; helper already swallows
             species_payload = None
 
-    # PlantNet on a non-plant photo always returns a low-quality guess
-    # ("Phaseolus vulgaris" because there was some green pixel noise)
-    # which is actively misleading on the result screen. When the
-    # pipeline lands on ``not_a_plant`` we suppress the species block
-    # entirely — the LRU cache in ``identify_species`` keeps the API
-    # call from being wasted on a repeat upload of the same image.
-    if abstained:
-        species_payload = {
-            "available": False,
-            "source": (
-                "skipped_nap"
-                if abstention_reason == _ABSTENTION_REASON_NAP
-                else "skipped_abstained"
-            ),
-            "best": None, "candidates": [],
-        }
-
-    # Pet-toxicity surface — resolves from the explicit ``species``
-    # query param when supplied, otherwise falls back to the auto-
-    # detected best match. Without either we return
-    # ``source="unknown"`` and the client renders an "unconfirmed"
-    # copy rather than falsely reassuring.
-    auto_best = (species_payload or {}).get("best") or {}
-    toxicity_species = None if abstained else (species or auto_best.get("scientific_name"))
-    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
-        "toxic_to_pets": False, "species_list": [], "source": "unknown",
-    }
-
     # Mint the scan_id (it must ride in the response) and persist it to the
     # issued-ids log BEFORE returning. This previously ran fire-and-forget on
     # the executor to shave a SQLite round-trip off the response path, but
@@ -2850,53 +2927,15 @@ async def _analyze_image_admitted(
     scan_id = uuid.uuid4().hex
     await loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
 
-    response_payload = {
-        # Probability-backed classifier argmax. Rejection gates never replace
-        # it: clients use ``abstained`` / ``abstention_reason`` to decide
-        # whether this diagnostic may be presented as an accepted diagnosis.
-        "class_name": class_name,
-        # Which model tier actually produced this verdict. Lets the client
-        # confirm it got the family it asked for (and fall back gracefully if
-        # a future server downgrades the request).
-        "family": served_family,
-        "requested_family": requested_family,
-        "family_fallback_reason": family_fallback_reason,
-        "disease_name": disease_info["name_en"],
-        "disease_name_ru": disease_info["name_ru"],
-        "confidence": round(confidence, 3),
-        "description": disease_info["description_en"],
-        "description_ru": disease_info["description_ru"],
-        "treatment": disease_info["treatment_en"],
-        "treatment_ru": disease_info["treatment_ru"],
-        "prevention": disease_info["prevention_en"],
-        "prevention_ru": disease_info["prevention_ru"],
-        "is_healthy": is_healthy_effective,
-        "detection": detection,
-        "severity": result.get("severity", "low"),
-        "all_probs": rounded_probs,
-        "top_k": top_k_localised,
-        "warnings": warnings,
-        "abstained": abstained,
-        "abstention_reason": abstention_reason,
-        "verdict_status": "abstained" if abstained else "accepted",
-        "prediction_set": prediction_set,
-        "toxic_to_pets": toxicity["toxic_to_pets"],
-        "toxic_species_list": toxicity["species_list"],
-        "toxicity_source": toxicity["source"],
-        "species": species_payload,
-        "elapsed_ms": result["elapsed_ms"],
-        "server_version": APP_VERSION,
-        # Set to true only when the response is replayed from the
-        # SHA-256 cache above; first-time scans get false here.
-        "is_repeat": False,
-        # Server-minted scan_id for this response. Clients should
-        # send this same string back on /api/feedback so the gate
-        # in main.py can confirm the feedback ties to a real scan
-        # we ran. Stored in the issued_scan_ids table; expires after
-        # ISSUED_SCAN_ID_TTL_DAYS.
-        "scan_id": scan_id,
-    }
-    _apply_abstention_presentation(response_payload)
+    response_payload = build_analyze_payload(
+        result,
+        scan_id=scan_id,
+        species_payload=species_payload,
+        species_override=species,
+        served_family=served_family,
+        requested_family=requested_family,
+        family_fallback_reason=family_fallback_reason,
+    )
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.

@@ -279,19 +279,41 @@
                                     app:tint="?attr/colorPrimary" />
                             </LinearLayout>
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_wikipedia"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="wrap_content"
+                            <!-- "Read on Wikipedia" plus the "i" for the attribution
+                                 (source article + CC BY-SA licence) the extract above
+                                 is reused under. -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xs"
-                                android:text="@string/identify_wikipedia"
-                                android:visibility="gone"
-                                app:icon="@drawable/ic_world_map"
-                                app:iconGravity="textStart"
-                                app:iconPadding="@dimen/space_sm"
-                                app:iconSize="18dp"
-                                app:iconTint="?attr/colorPrimary" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btn_wikipedia"
+                                    style="@style/Widget.Material3.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/identify_wikipedia"
+                                    android:visibility="gone"
+                                    app:icon="@drawable/ic_world_map"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="@dimen/space_sm"
+                                    app:iconSize="18dp"
+                                    app:iconTint="?attr/colorPrimary" />
+
+                                <ImageButton
+                                    android:id="@+id/btn_wikipedia_attribution"
+                                    android:layout_width="@dimen/species_info_touch_target"
+                                    android:layout_height="@dimen/species_info_touch_target"
+                                    android:background="?attr/selectableItemBackgroundBorderless"
+                                    android:contentDescription="@string/wikipedia_attribution_content_description"
+                                    android:padding="@dimen/space_sm"
+                                    android:scaleType="centerInside"
+                                    android:src="@drawable/ic_info_outline"
+                                    android:visibility="gone"
+                                    app:tint="?attr/colorOnSurfaceVariant" />
+                            </LinearLayout>
 
                         </LinearLayout>
 

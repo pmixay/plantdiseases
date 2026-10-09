@@ -295,7 +295,9 @@ the diff of `train_counts` / `source_inventory`.
   conformal advertises its audit-backed 0.90; the Aqua converter runs in its
   own CPython 3.12 env (Colab is 3.13, torch 2.11). `cudnn_deterministic:
   false` in the card: Ultralytics unsets determinism when `detector.train()`
-  returns, so §4/§5 ran non-deterministic (see ROADMAP).
+  returns, so §4/§5 ran non-deterministic. Since 2026-10-09 the notebook
+  re-asserts it at the top of §4, §5 and §6 (`assert_determinism`) and seals
+  the training-time state into `run_manifest.json → determinism`.
 - Data: the same v8 corpus as 2.7.2 within ±2 % per class (train 13,724 vs
   13,660) and **the identical 535-row holdout** (every per-class count equal).
 - rw mF1 0.865 (INT8; FP32 0.858, paired CI straddles 0), indomain 0.886 at

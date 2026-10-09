@@ -31,18 +31,15 @@ Each line names its section below. ★ = a human decision or human-only task.
 1. ★ **Deploy the server, then publish the app** (Security → "Rolling out
    this round"). Order matters: the new app build reads its own opinion
    counts from a route only the new server has.
-2. **Re-assert determinism after §3** (Model track → code-only). A one-cell
-   notebook fix. Land it before the next Colab run, or that run is
-   non-deterministic again.
-3. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
+2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-4. **`AnalysisActivity` recreate bug** (Architecture → Android). The one
-   outright Android correctness bug.
-5. **Wikipedia attribution** (App). A licensing question (CC BY-SA), not a
-   design one.
-6. **`build_analyze_payload()` extraction** (Architecture → Server). The best
-   value-for-effort refactor, and it unblocks testing the response shape.
+3. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
+   in production"). A one-line notebook change.
+4. ★ **Review the health heuristic** (Garden). One threshold does nothing
+   today, and a wrong "declining" verdict is worse than none.
+5. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
+   Server). The next server refactor in line.
 
 ---
 
@@ -56,13 +53,6 @@ Each line names its section below. ★ = a human decision or human-only task.
       page with no Lottie (`ui/onboarding/OnboardingActivity.kt`), so the
       old "existing Lottie as offline fallback" plan no longer applies. Pick
       a new fallback, such as a static frame.
-- [ ] **Wikipedia attribution.** `SpeciesInfoCardView` renders a Wikipedia
-      extract with no source line (`ui/common/SpeciesInfoCardView.kt:207-211`).
-      `SpeciesDetailActivity` only has a "Read on Wikipedia" button. CC BY-SA
-      makes this a licensing question, not a design one. Related: the app
-      deserializes `SpeciesInfoResponse.source` and `.translated`
-      (`data/model/Models.kt:856-867`) and never reads either, so a
-      machine-translated RU extract is shown unmarked.
 - [ ] **No test drives the real map hit-test.** `MapCanvasView` is still
       `private` (`ui/widget/WorldMapView.kt:228`), and the hit test
       (`onTouchEvent` → `hitRegion.contains`, `:368-392`, EVEN_ODD regions at
@@ -166,14 +156,6 @@ comparison set yet.
 
 ### Open — code only (no data needed)
 
-- [ ] **Strict determinism is switched off by §3.** Ultralytics calls
-      `unset_deterministic()` when `detector.train()` returns (§3 cell 8),
-      and nothing re-asserts it. §1 cell 2 is the only place
-      `use_deterministic_algorithms(True)` / `CUBLAS_WORKSPACE_CONFIG` are
-      set, so 2.7.5 trained §4/§5 non-deterministically. Re-assert after §3
-      (restore the cuBLAS env var first), preferably with `warn_only=True`.
-      Record the warnings, the algorithm flag and the env var in
-      `run_manifest.json`, since §6 records only the cudnn flags today.
 - [ ] **The augmentation profile is unablated.** `TRAIN_AUGMENTATION_PROFILE`
       (§4 cell 10, `serve_parity_v2_unablated`, `efficacy_status: not
       established`) has no off switch. `sensor_artifact_p = 0` disables the
@@ -286,13 +268,7 @@ item below needs its own PR. Don't fold one into another change.
 
 **Server**
 
-- [ ] **The `/api/analyze` body is ~400 lines** (`_analyze_image_admitted`,
-      `main.py:2515-2917`; the route itself now only takes the daily
-      allowance and an admission slot), and roughly 150 of them are response
-      assembly. Extract `build_analyze_payload()`. That makes the entropy
-      guard, the dual-care split and the `not_a_plant` species suppression
-      unit-testable without a TestClient. Best value-for-effort item here.
-- [ ] **Split `main.py` (5,916 lines) into routers.** It holds 39 handlers on
+- [ ] **Split `main.py` (5,955 lines) into routers.** It holds 39 handlers on
       one `APIRouter`, 6 middlewares, 15 Pydantic models, 2 thread pools, the
       limiter/ban/quota and admission state, the metrics and the lifespan. `Depends` is
       used 0 times. Order of work:
@@ -316,9 +292,9 @@ item below needs its own PR. Don't fold one into another change.
       client mints these ids.
 - [ ] **No `response_model` on any route.** So `openapi.json` describes
       request bodies only, and the 35-line contract test compares paths and
-      methods. The ~30-key `/api/analyze` payload can change without failing
-      CI while a frozen APK parses it. Cheapest first step: assert the
-      response keys in the contract test.
+      methods. `/api/analyze` is covered: `tests/test_analyze_payload.py` pins
+      its key set through `build_analyze_payload()`. Every other response a
+      frozen APK parses can still change without failing CI.
 - [ ] **`ai_services.py` (3,459 lines) is three modules**: transport, five
       features, and ~700 lines of bilingual content that belongs with
       `diseases_data.py`. `community.py` (2,892 lines, 62 functions) wants to
@@ -335,16 +311,6 @@ item below needs its own PR. Don't fold one into another change.
 
 **Android**
 
-- [ ] **`AnalysisActivity` re-runs a paid inference on recreate.** Rotation is
-      locked (`screenOrientation="portrait"`, `AndroidManifest.xml:60-63`),
-      but night mode, locale, font scale and multi-window resizes still
-      recreate it. `onCreate` calls `checkBlurAndAnalyze()` unconditionally
-      (`ui/analysis/AnalysisActivity.kt:103`), and the server round-trip plus
-      the Room write run in `lifecycleScope` (`:166`). A recreate between the
-      response and `saveScan` loses a scan the server already issued a
-      `scan_id` for. On `targetSdk` 36, Android 16 ignores orientation locks
-      on large screens, so bumping from 35 brings rotation back. The only
-      outright correctness bug the review found.
 - [ ] **`ScanRepository` is a 1,726-line god object** spanning seven bounded
       contexts, with ~29 dependents (17 field injections, 4 EntryPoint
       lookups, 6 controllers). Split it by context.
@@ -370,7 +336,7 @@ item below needs its own PR. Don't fold one into another change.
       inside `NonCancellable`. The odd one out,
       `GardenAttachController.attachScanToPlant` (`ui/result/GardenAttachController.kt:133`),
       can lose the attach if the activity finishes mid-write. Migrate one
-      screen per PR, after the `AnalysisActivity` and `ScanRepository` items.
+      screen per PR, after the `ScanRepository` split.
 - [ ] **Ratchet the detekt thresholds down** as the splits land: LongMethod
       210, LargeClass 1300 (`android/config/detekt/detekt.yml`). Its
       "worst today" comment (ScanRepository at 1,165) is stale.
