@@ -40,8 +40,8 @@ the marker is still the replay-suppression record and is kept.
 ## Operator procedure (this deployment)
 
 All commands run from the release directory with the project's Compose wrapper (`compose`).
-**These shell steps are a procedure; they have not been exercised on the live stack yet** (the
-code and the tests below have). A live restore drill is the remaining acceptance step.
+These steps were exercised end to end by the restore drill below, on a disposable stack. They have
+not been run against the live beta, which uses real-provider sign-in and so cannot host a drill.
 
 Backup (one epoch for all stores):
 
@@ -76,7 +76,24 @@ Restore (fresh target, same epoch for every store):
 * Marker expiry: older than 30 days *and* cleanup finished; younger or still pending is kept.
 * Settings: production requires `ACCOUNT_DELETION_JOURNAL_DIR`.
 
+## Restore drill result
+
+Run 2026-10-09 on a disposable mock-provider stack built from branch commit `dc8f1c6`
+(real PostgreSQL `pg_dump`/`pg_restore`, SQLite online backup, the journal volume, and the replay
+command inside the containers; the live beta and `main` were not touched). **15 of 15 checks passed:**
+
+1. two accounts with public scans; epoch barrier; PostgreSQL dump + community SQLite backup + journal copy;
+2. account A deleted after the backup (gone, scan hidden, journaled);
+3. the older stores restored: **the deleted account, its public scan and its old session came back**;
+4. `replay --epoch` reported 1 deletion queued, 1 tombstone delivered, 0 failures, 0 waiting;
+5. A gone again with its old session rejected, B and B's scan untouched;
+6. a second replay changed nothing; an unknown epoch was refused with exit code 2.
+
+Not covered by the drill: community media files (thumbnails) are not part of the snapshot, the age
+encryption wrapper (exercised separately by `backup-test.sh`), and the real-provider beta stack
+(it cannot create test accounts). The drill harness lives with the operator tooling, not in this repository.
+
 ## Status of the production stop
 
-The workflow stop is **still in place**. Lift it in the commit that follows (a) the owner
-accepting this design and (b) a passing live restore drill on the deployed stack.
+The workflow stop is **still in place**. The restore drill above passed; lift the stop in the
+commit that follows the owner accepting this design.
