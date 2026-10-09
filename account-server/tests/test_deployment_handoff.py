@@ -540,15 +540,18 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "Do not post identifiers, tokens or account details in a public issue" in privacy
 
     gates = json.loads(RELEASE_POLICY_GATES.read_text(encoding="utf-8"))
+    contact = gates["private_contact"]
+    assert contact["status"] == "approved"
+    assert contact["uri"] == "mailto:gavel8980@gmail.com"
+    assert contact["policy_link_id"] == "privacy-private-contact"
+    assert contact["decision_reference"].startswith("https://github.com/pmixay/plantdiseases/blob/")
+    assert contact["approved_at_utc"].endswith("Z")
+    assert 'id="privacy-private-contact"' in privacy
+    assert 'href="mailto:gavel8980@gmail.com"' in privacy
+    assert 'data-policy-purpose="privacy-and-deletion"' in privacy
     assert gates == {
         "schema_version": 2,
-        "private_contact": {
-            "status": "blocked",
-            "uri": None,
-            "policy_link_id": "privacy-private-contact",
-            "decision_reference": None,
-            "approved_at_utc": None,
-        },
+        "private_contact": contact,
         "deleted_actor_tombstone": {
             "status": "blocked",
             "mode": None,

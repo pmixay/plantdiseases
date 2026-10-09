@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
   "private_contact": {
-    "status": "blocked",
-    "uri": null,
+    "status": "approved",
+    "uri": "mailto:gavel8980@gmail.com",
     "policy_link_id": "privacy-private-contact",
-    "decision_reference": null,
-    "approved_at_utc": null
+    "decision_reference": "https://github.com/pmixay/plantdiseases/blob/df06e304247d47bc8c578a6d0b1264dbfc4ce4c2/docs/ACCOUNTS_PRODUCTION_PLAN.md",
+    "approved_at_utc": "2026-10-09T12:24:59Z"
   },
   "deleted_actor_tombstone": {
     "status": "blocked",
