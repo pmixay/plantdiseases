@@ -511,12 +511,6 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 - [ ] All storage paths point into the state directory; it is backed up.
 - [ ] `scan_recording_enabled` matches what your privacy policy discloses.
 - [ ] Service runs as a non-root user; you know which commit is deployed.
-- [ ] Per-IP daily allowances (`analyze_daily_quota` and friends, §3.2) and
-      `infer_max_inflight` suit your traffic; watch `daily_quota_rejections`
-      and `inference_busy_rejections` in `/api/metrics` the first week.
-- [ ] Decide `community_require_author_key` (§3.2): app builds that never
-      send `X-Community-Author-Key` (before 1.9) cannot post second opinions
-      while it is `true`.
 - [ ] Logs rotating (`log_dir`) and shipped off-box; Prometheus scraping
       `/api/metrics/prometheus`.
 - [ ] `GET /api/health` returns 200 with `status: "ok"` **through nginx, from

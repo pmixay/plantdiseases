@@ -19,7 +19,7 @@ that branch.
 | **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. |
 | **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
 | **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
-| **Security** | The August audit is closed in code. Open: rolling the round out (deploy order, the author-key bridge) and two follow-ups that wait on old app builds disappearing. |
+| **Security** | The August audit is closed in code. Second opinions need the author key 1.9 sends, so older builds can no longer post them (decided). One follow-up is open: likes and views. |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
 
 ---
@@ -28,37 +28,15 @@ that branch.
 
 Each line names its section below. ★ = a human decision or human-only task.
 
-1. ★ **Deploy the server, then publish the app** (Security → "Rolling out
-   this round"). Order matters: the new app build reads its own opinion
-   counts from a route only the new server has.
-2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
+1. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-3. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
+2. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
    in production"). A one-line notebook change.
-4. ★ **Review the health heuristic** (Garden). One threshold does nothing
+3. ★ **Review the health heuristic** (Garden). One threshold does nothing
    today, and a wrong "declining" verdict is worse than none.
-5. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
+4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
    Server). The next server refactor in line.
-
----
-
-## App
-
-- [ ] **First-launch intro video.** *Externally blocked* on the user-generated
-      Veo clip (vertical 9:16 macro monstera, scan-light sweep, `#16A34A`,
-      ~8 s seamless loop, no text). The plan is a server-hosted clip (~3 MB,
-      background download, an `/api/aqua`-style manifest) above the consent
-      page. Nothing exists in the tree yet. Onboarding is now a single consent
-      page with no Lottie (`ui/onboarding/OnboardingActivity.kt`), so the
-      old "existing Lottie as offline fallback" plan no longer applies. Pick
-      a new fallback, such as a static frame.
-- [ ] **No test drives the real map hit-test.** `MapCanvasView` is still
-      `private` (`ui/widget/WorldMapView.kt:228`), and the hit test
-      (`onTouchEvent` → `hitRegion.contains`, `:368-392`, EVEN_ODD regions at
-      `:420-433`) is untested. Make the class internal and dispatch a
-      `MotionEvent`. Also fix `WorldMapGeometryTest.kt:10-11`, whose KDoc
-      claims `WorldMapViewTest` drives the hit test end to end. It does not.
 
 ---
 
@@ -78,51 +56,19 @@ on the plant detail screen. Room DB `version = 9` (`data/local/Database.kt:876`)
       (`:83-84`), so `SCORE_WATCH_MIN` does nothing and a declining plant is
       indistinguishable from a borderline one at the status level. Either
       drop the constant or give the low band its own status.
-- [ ] **Room-level care defaults.** `RoomEntity.baselineLux`
-      (`Database.kt:591`) is reserved for this and read by nothing. Its KDoc
-      says the Light Meter seeds it, but nothing writes it, and
-      `LightMeterActivity` has no room link. There is no humidity field. Rooms
-      group and filter today; nothing derives care from them.
 
 ---
 
 ## Security
 
-The config keys behind every limit below are in `DEPLOYMENT.md` §3.2.
+The config keys behind every limit are in `DEPLOYMENT.md` §3.2.
 
-### Rolling out this round
-
-- [ ] ★ **Deploy the server before publishing the app.** The app now sends
-      the install's pseudo-id in `X-User-Pseudo-Id`. It polls its opinion
-      counts at `GET /api/community/my-scan-opinions` (no path id), which
-      only the new server has. A new app against the old server loses that
-      poll and the "hide my own scans" filter until the server is updated.
-- [ ] ★ **`community_require_author_key` (default `true`).** Second opinions
-      now need an adopted author key. App builds before 1.9 never send one,
-      so they cannot post opinions on the new server: they get a generic
-      error. Set the key `false` only as a bridge while 1.8 installs are
-      still common.
-- [ ] ★ **Watch the new limits the first week.** `/api/metrics` reports
-      `daily_quota_rejections` (per allowance) and
-      `inference_busy_rejections`. Defaults are sized well above a real
-      user's day; raise any that real traffic hits.
-
-### Open follow-ups
-
-- [ ] **Retire the legacy pseudo-id URL forms** once app builds that predate
-      the `X-User-Pseudo-Id` header are gone (every build before the
-      security-round commit, whatever its versionName):
-      the deprecated `GET /api/community/my-scan-opinions/{user_pseudo_id}`
-      route and the `user_pseudo_id` query fallback on opinions, nearby, map
-      and by-species (`_caller_pseudo_id`, `server/main.py`). Until then the
-      request log redacts the path form, uvicorn's access log is off, and
-      `DEPLOYMENT.md` §6 gives nginx an access log with neither form in it.
 - [ ] **Likes and views still accept a key-less pseudo-id.** The same
       forgery class as opinions, at lower stakes: a script can inflate a
       post's like or view count by changing the body pseudo-id. Likes are
       bounded by the per-IP like quota (300/day); views only by the rate
-      limiter. Requiring the key here also locks builds before 1.9 out, so do
-      it with the URL-form retirement above.
+      limiter. Requiring the key here would also lock builds before 1.9 out
+      of liking, as it already does for second opinions.
 
 ---
 
@@ -400,6 +346,12 @@ None of it blocks a release.
   creates a persistent anonymous per-device handle only after Community
   opt-in or an explicit one-scan share. Account linkage stays deferred. The
   handle and same-device linkability are disclosed in `privacy_policy.html`.
+- **Second opinions need the author key.** `community_require_author_key`
+  stays `true`: app builds before 1.9 cannot post second opinions. The
+  legacy pseudo-id URL forms stay for those builds, and the per-IP daily
+  allowances keep their defaults.
+- **Not planned:** a first-launch intro video, and room-level care defaults
+  (`RoomEntity.baselineLux` stays an unused column, so no migration).
 - **The data loop is local.** Collect and judge offline → Kaggle supplement →
   the notebook pulls it.
 
