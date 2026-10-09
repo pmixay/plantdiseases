@@ -57,7 +57,7 @@ import javax.inject.Inject
  * is its own screen ([CareCalendarActivity], opened from the button at the
  * top of this one); the lunar calendar is per-plant and lives on the plant
  * detail screen only. The scaffold is ``fragment_garden.xml``; room rows
- * come from ``item_room_card.xml``. See docs/ROADMAP.md "Garden refactor".
+ * come from ``item_room_card.xml``.
  */
 @AndroidEntryPoint
 class GardenFragment : Fragment() {

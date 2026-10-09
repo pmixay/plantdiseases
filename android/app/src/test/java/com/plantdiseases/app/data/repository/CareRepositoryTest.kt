@@ -10,6 +10,7 @@ import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.PlantReminderEntity
 import com.plantdiseases.app.data.local.PlantReminderEventEntity
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.local.TreatmentPlanEntity
 import com.plantdiseases.app.data.model.CarePlanCheckpoint
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.util.CareQueue
@@ -608,7 +609,7 @@ class CareRepositoryTest {
         val healthFromRawRows = plantRepository.getPlantHealth(
             plantId,
             db.scanDao().getScansForPlant(plantId),
-            activePlanId = null,
+            activePlan = null,
             nowMs = now,
         )
 
@@ -621,6 +622,73 @@ class CareRepositoryTest {
         assertThat(picker.thumbnailSource).isEqualTo("file://accepted.jpg")
         assertThat(healthFromRawRows.scanCount).isEqualTo(1)
         assertThat(healthFromRawRows.status).isEqualTo(PlantHealth.Status.UNKNOWN)
+    }
+
+    @Test
+    fun plantHealth_adherenceCountsOnlyRemindersSinceThePlanStarted() = runBlocking {
+        val now = System.currentTimeMillis()
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        db.scanDao().insert(diseaseScan(plantId).copy(timestamp = now - 2 * CareSchedule.DAY_MS))
+        db.scanDao().insert(
+            diseaseScan(plantId).copy(
+                diseaseName = "Healthy",
+                diseaseNameRu = "Здоровое растение",
+                isHealthy = true,
+                timestamp = now,
+            ),
+        )
+        val reminderId = db.plantReminderDao().upsert(
+            PlantReminderEntity(
+                plantId = plantId,
+                type = "watering",
+                intervalDays = 3,
+                enabled = true,
+                createdAt = now - 20 * CareSchedule.DAY_MS,
+            )
+        )
+        // Watering kept up before the diagnosis: inside the 30-day adherence
+        // window, but none of it is treatment.
+        listOf(12L, 9L, 6L, 3L).forEach { daysAgo ->
+            db.plantReminderEventDao().insert(
+                PlantReminderEventEntity(
+                    reminderId = reminderId,
+                    plantId = plantId,
+                    type = "watering",
+                    firedAt = now - daysAgo * CareSchedule.DAY_MS,
+                    action = "done",
+                    doneAt = now - daysAgo * CareSchedule.DAY_MS,
+                )
+            )
+        }
+        val plan = TreatmentPlanEntity(
+            plantId = plantId,
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+            startedAt = now - CareSchedule.DAY_MS,
+        )
+        val planId = db.treatmentPlanDao().insert(plan)
+        val scans = db.scanDao().getScansForPlant(plantId)
+
+        val brandNewPlan = plantRepository.getPlantHealth(plantId, scans, plan.copy(id = planId), now)
+
+        assertThat(brandNewPlan.score).isNotNull()
+        assertThat(brandNewPlan.status).isEqualTo(PlantHealth.Status.TREATMENT)
+
+        db.plantReminderEventDao().insert(
+            PlantReminderEventEntity(
+                reminderId = reminderId,
+                plantId = plantId,
+                type = "watering",
+                firedAt = now - CareSchedule.DAY_MS / 2,
+                action = "done",
+                doneAt = now - CareSchedule.DAY_MS / 2,
+            )
+        )
+
+        val keptUpDuringPlan = plantRepository.getPlantHealth(plantId, scans, plan.copy(id = planId), now)
+
+        assertThat(keptUpDuringPlan.status).isEqualTo(PlantHealth.Status.RECOVERING)
     }
 
     private fun recurringView(

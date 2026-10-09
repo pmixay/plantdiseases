@@ -33,29 +33,20 @@ Each line names its section below. ★ = a human decision or human-only task.
    adjudicate the 80 export rows and carve T_v1.
 2. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
    in production"). A one-line notebook change.
-3. ★ **Review the health heuristic** (Garden). One threshold does nothing
-   today, and a wrong "declining" verdict is worse than none.
-4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
+3. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
    Server). The next server refactor in line.
 
 ---
 
-## Garden refactor — follow-ups
+## Garden
 
-The Garden tab is one surface: the do-today queue over room cards, each room
-holding a plant collection. The care month grid is its own screen
-(`ui/garden/care/CareCalendarActivity`), and the lunar calendar is per-plant,
-on the plant detail screen. Room DB `version = 9` (`data/local/Database.kt:876`),
-`MIGRATION_1_2`…`MIGRATION_8_9` registered (`:1182-1191`).
-
-- [ ] ★ **Human gate: the health heuristic.** The plant header and the Garden
-      card accent read `util/PlantHealth.kt`. A wrong "needs attention"
-      verdict is worse than none. Check the thresholds (`:41-48`, all in one
-      block) against real scan histories. One defect to settle during the
-      review: `score >= SCORE_WATCH_MIN` and `else` both return `WATCH`
-      (`:83-84`), so `SCORE_WATCH_MIN` does nothing and a declining plant is
-      indistinguishable from a borderline one at the status level. Either
-      drop the constant or give the low band its own status.
+- [ ] ★ **Check the health thresholds against real scan histories.** The
+      verdict logic in `util/PlantHealth.kt` was reviewed and fixed on
+      2026-10-09 (only the last 60 days count, `POOR` needs two confident
+      disease readings, a ±10-point band is noise, one label/colour map in
+      `ui/garden/PlantHealthUi.kt`). The numbers in its tunables block are
+      still reasoned rather than measured. Compare them with a few real
+      plants' scan histories before trusting a red "Poor condition".
 
 ---
 
@@ -304,11 +295,6 @@ None of it blocks a release.
       the same file says.
 - [ ] **Notebook header is two versions stale.** Cell 0 is titled
       "PlantVision 2.6" and says "v2.5 continues maximising gamma".
-- [ ] **Code comments cite this file by old section names.** `Database.kt:590`
-      cites "ROADMAP §4", and the `PlantHealth` KDoc quotes a line this file
-      no longer carries. The Garden references resolve to "Garden refactor —
-      follow-ups" above. Point the stragglers there when the code is next
-      touched.
 
 ---
 
