@@ -48,7 +48,7 @@ Items 2-4 are checked by machine in `.github/workflows/android-release.yml`.
    is kept (it stops removed content from reappearing on cleanup replay or backup restore), with matching English and
    Russian disclosures in the policy: **30 days, approved 2026-10-09.** The server does not enforce the expiry yet; that
    is part of step 6a.
-4. **Production hard stop** in the signing workflow: the `production` channel cannot be built until a *deletion
+4. **Production hard stop** (lifted 2026-10-09) in the signing workflow: the `production` channel could not be built until a *deletion
    replay journal* and a coordinated *backup epoch* exist and are restore-tested. Purpose: restoring an old
    backup must never bring back an account or content that was deleted after the backup was taken. Recovery
    channels stay buildable. This is engineering work, not a form to fill in (step 6a).
@@ -78,11 +78,11 @@ Email/password stays off in production: production settings reject it until its 
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
 | 6 | Merge to `main` | Review and approve the PR | Apply the tooling fixes, open the PR (needs your GitHub login), fix CI (including the Android detekt `LargeClass` failure above) | pending |
-| 6a | Deletion replay journal + backup epoch | Review the design in [DELETION_JOURNAL_AND_BACKUP_EPOCH.md](DELETION_JOURNAL_AND_BACKUP_EPOCH.md) | Implemented on `account-beta-test` (journal, epochs, replay CLI, 30-day marker expiry; account 334 and server 1000 tests green, restore simulated on SQLite and PostgreSQL). Restore drill passed 15/15 on a disposable stack. Remaining: your review, then remove the workflow stop in the same reviewed commit | **in review** |
+| 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
 | 7 | Signed release build | Keystore secrets, required reviewers, `PRODUCTION_*` URLs, cutover switch set to true | Trigger the protected workflow; verify APK digest, certificate fingerprint, endpoints. Agents never handle the keystore | pending |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
 | 9 | RuStore listing | Console clicks and APK upload | Release notes, checklist, privacy page check | pending |
-| 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring | in progress |
+| 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring with alerts on failed backups and `journal_unavailable` deletion retries | in progress |
 
 Only the owner can: supply the support contact, hold the keystore and GitHub secrets, do the logins,
 and click through Yandex, GitHub and RuStore consoles.

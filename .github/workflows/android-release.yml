@@ -274,14 +274,9 @@ jobs:
             echo "::error::Real-provider distribution is blocked by deploy/account-beta-test/release-policy-gates.json"
             blocked=true
           fi
-          # This is intentionally a code-level stop, not a prose grep or an
-          # operator-controlled boolean. Remove it only in the reviewed commit
-          # that implements and restore-tests the deferred deletion journal
-          # and coordinated cross-store backup epoch.
-          if [ "${{ inputs.channel }}" = production ]; then
-            echo "::error::Production distribution is blocked until the deferred backup epoch and deletion replay journal are owned, implemented, and restore-tested"
-            blocked=true
-          fi
+          # The former production stop (deletion replay journal + backup epoch)
+          # was lifted after the design in docs/DELETION_JOURNAL_AND_BACKUP_EPOCH.md
+          # was implemented, restore-drilled and approved by the owner (2026-10-09).
           if [ "$blocked" = true ]; then
             exit 1
           fi

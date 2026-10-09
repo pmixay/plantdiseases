@@ -37,30 +37,36 @@ the marker is still the replay-suppression record and is kept.
   off-host copy of the journal if that matters.
 * Existing restore caveat unchanged: restore into a fresh target, never in place.
 
-## Operator procedure (this deployment)
+## Operator procedure (production on the VDS)
 
-All commands run from the release directory with the project's Compose wrapper (`compose`).
-These steps were exercised end to end by the restore drill below, on a disposable stack. They have
-not been run against the live beta, which uses real-provider sign-in and so cannot host a drill.
+All commands use the production Compose wrapper `/opt/pd-account-prod/deploy/compose.sh` (below: `compose`) and the
+service `prod-account-api`. The steps were exercised end to end by the restore drill below, on a disposable stack.
 
-Backup (one epoch for all stores):
+Backup (automated daily by `deploy/production-vds/backup.sh` and its systemd timer):
 
-1. `EPOCH=$(compose exec -T beta-account-api python -m app.deletion_replay begin-epoch)`
-2. Dump PostgreSQL (the encrypted dump + restore check in `backup-test.sh`).
-3. Snapshot the community SQLite database with SQLite's online backup API (not a file copy):
-   run `sqlite3.connect(path).backup(...)` inside the app container and stream the result out.
+1. `EPOCH=$(compose exec -T prod-account-api python -m app.deletion_replay begin-epoch)`
+2. Dump PostgreSQL with the read-only `account_backup` role.
+3. Snapshot the community SQLite database with SQLite's online backup API (not a file copy), written to the
+   application data volume and streamed out.
 4. Copy `/run/deletion-journal/journal.jsonl` out of the account container.
-5. Store all three artifacts under the name `…-$EPOCH-…` (encrypted) and record `$EPOCH`.
+5. Encrypt all three artifacts, name them `…-$EPOCH-…`, restore-check the dump in a temporary database.
 
-Restore (fresh target, same epoch for every store):
+**Retention applies to every copy.** The guarantee holds only while no restorable backup is older than the
+journal (30 days). Backups are pruned after 27 days on the host; any off-host copy must be deleted on the same
+schedule. A copy older than that must not be restored, because deletions recorded before its journal window would
+come back.
 
-1. Restore PostgreSQL and the community database from the artifacts of one `$EPOCH`.
+Restore (fresh target, same epoch for every store, **service closed until replay succeeds**):
+
+1. Close public access first: point the `/` and `/id/` locations at the maintenance response (or roll nginx back),
+   so no restored session can be used before the replay has run.
+2. Restore PostgreSQL and the community database from the artifacts of one `$EPOCH`.
    If the live journal volume survived, keep it; otherwise restore the journal snapshot.
-2. Start the account and application services.
-3. `compose exec -T beta-account-api python -m app.deletion_replay replay --epoch "$EPOCH"`
-4. Require `tombstones_failed: 0` and `deletion_jobs_waiting_retry: 0` (exit code 0). Exit 3 means
+3. Start the account and application services (reachable only on loopback while closed).
+4. `compose exec -T prod-account-api python -m app.deletion_replay replay --epoch "$EPOCH"`
+5. Require `tombstones_failed: 0` and `deletion_jobs_waiting_retry: 0` (exit code 0). Exit 3 means
    incomplete: rerun after the cause (usually the app being down) is fixed.
-5. Only then reopen the service.
+6. Only then reopen public access.
 
 ## What is tested
 
@@ -95,5 +101,7 @@ encryption wrapper (exercised separately by `backup-test.sh`), and the real-prov
 
 ## Status of the production stop
 
-The workflow stop is **still in place**. The restore drill above passed; lift the stop in the
-commit that follows the owner accepting this design.
+Lifted on 2026-10-09 after the owner approved this design. The review asked for the closed-service restore step,
+the retention rule for off-host copies, alerting on `journal_unavailable` and failed backups (tracked in plan step 10),
+and a backup snapshot path that is not limited by the container's small `/tmp`; all but alerting are done in the
+same change.

@@ -626,8 +626,10 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "distinct English and Russian tombstone disclosures are required" in workflow
     assert "both tombstone disclosures must contain the legal-basis reference" in workflow
     assert "tombstone JSON and bilingual policy marker do not match exactly" in workflow
-    assert "Production distribution is blocked until the deferred backup epoch" in workflow
-    assert 'if [ "${{ inputs.channel }}" = production ]; then' in workflow
+    # The production stop was lifted with the deletion journal + backup epoch;
+    # production must not be re-blocked by a leftover channel-specific stop.
+    assert "Production distribution is blocked until the deferred backup epoch" not in workflow
+    assert "docs/DELETION_JOURNAL_AND_BACKUP_EPOCH.md" in workflow
     assert "grep -Fq '**Deferred decision:**" not in workflow
     assert "refs/heads/account-beta-test" not in workflow
     assert "Every signing channel must use trusted workflow code from protected main" in workflow

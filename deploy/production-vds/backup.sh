@@ -22,11 +22,16 @@ base="$OUT/plantdisease-prod-$EPOCH"
 "$C" exec -T -e PGPASSWORD prod-postgres pg_dump -h 127.0.0.1 -U account_backup -d plantdisease -Fc --no-owner \
     | age -r "$REC" > "$base.pg.dump.age"
 # 2. Community SQLite via the online backup API (never a plain file copy)
+# The snapshot is written to the community volume (not the container's small /tmp) and streamed in chunks.
 "$C" exec -T prod-app-api python -c "
-import os, sqlite3, sys
-src = sqlite3.connect('/data/community/community.db'); dst = sqlite3.connect('/tmp/community.snap')
-src.backup(dst); dst.close(); src.close()
-sys.stdout.buffer.write(open('/tmp/community.snap', 'rb').read()); os.remove('/tmp/community.snap')" \
+import os, shutil, sqlite3, sys
+snap = '/data/community/.backup-snapshot.db'
+try:
+    src = sqlite3.connect('/data/community/community.db'); dst = sqlite3.connect(snap)
+    src.backup(dst); dst.close(); src.close()
+    with open(snap, 'rb') as f: shutil.copyfileobj(f, sys.stdout.buffer, 1 << 20)
+finally:
+    if os.path.exists(snap): os.remove(snap)" \
     | age -r "$REC" > "$base.community.db.age"
 # 3. Deletion journal
 "$C" exec -T prod-account-api cat /run/deletion-journal/journal.jsonl | age -r "$REC" > "$base.journal.age"

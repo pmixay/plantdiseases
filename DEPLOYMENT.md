@@ -579,9 +579,11 @@ next mandatory normal release must use versionCode 21 or higher.
 
 Real-provider staging and production are intentionally blocked while the
 committed privacy policy still contains the private-contact or deleted-actor
-retention placeholder. Production is additionally blocked while the handoff
-records the cross-store backup epoch and durable deletion replay journal as a
-deferred decision. The two recovery channels stay available during these holds.
+retention placeholder. The former production-only stop for the cross-store
+backup epoch and durable deletion replay journal was lifted on 2026-10-09 once
+they were implemented and restore-drilled (see
+`docs/DELETION_JOURNAL_AND_BACKUP_EPOCH.md`). The two recovery channels stay
+available during any hold.
 An approval changes `release-policy-gates.json` schema 2 and the matching
 structured markers in `privacy.html`: the contact must be an exact visible
 `mailto:` or HTTPS link, and the English/Russian tombstone disclosures must
