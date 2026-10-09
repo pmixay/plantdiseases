@@ -897,8 +897,5 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("androidx.fragment:fragment-testing:1.9.0")
-    // Provides the empty host Activity that launchFragmentInContainer needs,
-    // merged into the debug app manifest.
-    debugImplementation("androidx.fragment:fragment-testing-manifest:1.9.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
 }
