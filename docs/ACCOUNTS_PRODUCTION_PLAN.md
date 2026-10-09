@@ -1,10 +1,10 @@
 # Accounts: from beta to RuStore release
 
 Status: working plan, written 2026-10-09 after the German-VDS beta was deployed and verified.
-It supersedes the Russian-VDS / German-worker split described in
-[RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md](RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md) and
-[ACCOUNT_BETA_HANDOFF.md](ACCOUNT_BETA_HANDOFF.md); those files are kept until they are
-deliberately retired.
+It supersedes the Russian-VDS / German-worker split that earlier handoff documents described
+(`RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md`, `ACCOUNT_BETA_HANDOFF.md` and four other beta narrative
+docs); those files were removed and remain in git history. The RU/DE `handoff/` templates under
+`deploy/account-beta-test/` are still present and are not part of this plan.
 
 ## Decisions
 

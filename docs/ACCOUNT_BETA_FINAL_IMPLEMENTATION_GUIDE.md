@@ -16,8 +16,8 @@ staging artifact. Read
 [ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md)
 before creating or registering any key.
 
-The infrastructure transfer and day-two operations procedure is in
-[RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md](RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md).
+The release plan (steps, root-route switch, rollback) is in
+[ACCOUNTS_PRODUCTION_PLAN.md](ACCOUNTS_PRODUCTION_PLAN.md).
 
 ## What was implemented
 
@@ -318,9 +318,9 @@ token, nickname, provider profile, FCM value, or image body.
 
 ## Authoritative supporting documents
 
-- Detailed implementation/handoff: [ACCOUNT_BETA_HANDOFF.md](ACCOUNT_BETA_HANDOFF.md)
-- Acceptance evidence: [ACCOUNT_BETA_TEST_REPORT.md](ACCOUNT_BETA_TEST_REPORT.md)
-- Schema: [ACCOUNT_BETA_SCHEMA.md](ACCOUNT_BETA_SCHEMA.md)
+- Release plan: [ACCOUNTS_PRODUCTION_PLAN.md](ACCOUNTS_PRODUCTION_PLAN.md)
+- Schema: Alembic revisions in `account-server/migrations/versions/` (head
+  `0010_billing_lifecycle_quota_policy`) and the API contract `account-server/openapi.json`
 - Email/password production HOLD:
   [EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md](EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
 - PlantDiseases PRO/RuStore operations:

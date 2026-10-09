@@ -262,8 +262,8 @@ drop only that database before rerunning the check.
 
 - `../../docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md` is the concise
   implementation, build, synthetic-test, and real-SDK test entry point.
-- `../../docs/RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md` defines source promotion,
-  staged transfer, cutover, and concurrent main/Russian/German maintenance.
+- `../../docs/ACCOUNTS_PRODUCTION_PLAN.md` defines the release steps, the root-route
+  switch, and rollback for taking accounts from this beta to production.
 - `../../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md` defines the production
   HOLD on the controlled 0007 email/password beta. German staging defaults it
   off and requires an explicit, edge-restricted tester exercise; the Russian
