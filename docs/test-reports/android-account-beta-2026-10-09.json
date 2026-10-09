@@ -91,15 +91,14 @@
     "note": "Fresh provider login was performed at this earlier revision. The APK above revalidated the existing real session after updating."
   },
   "not_exercised": [
-    "Real account deletion on the phone",
-    "Production real-provider signup, session restore, logout and deletion",
+    "Production real account deletion on the phone",
     "Permanently signed APK on the phone",
-    "Scan uploads, community writes, notification polling and paid features"
+    "Scan uploads, community posts/likes, notification polling and paid features"
   ],
   "community_upload_participation": "Remains disabled; browsing does not enable sharing.",
   "github_ci": "Separate from this local verification; inspect the pushed commit CI before protected signing.",
   "follow_up": {
-    "recorded_at_utc": "2026-10-09T16:39:54.445775+00:00",
+    "recorded_at_utc": "2026-10-09T17:16:38.173550+00:00",
     "android_test_fix_commit": "88267b28df209c79cdefe0074ea6f786bbb8d459",
     "main_merge_commit": "aab7795c6bb0f6d1d7a0b859390e5cd06e170398",
     "merged_main_commit": "e4b4a456b196f456bc1275cf706971fb2766ad54",
@@ -167,7 +166,7 @@
       "sha256": "cf825ccd9e4807fbc0f6fdfb1969fb5718688bddd5019cee614a8dbedcb79800",
       "signer": "Local debug certificate; not the permanent app certificate.",
       "built": true,
-      "installed": false
+      "installed": true
     },
     "permanent_signing_prerequisites": {
       "pr": "https://github.com/pmixay/plantdiseases/pull/182",
@@ -192,15 +191,92 @@
       "android_keystore_keys_exported": false
     },
     "staging_deletion": {
-      "status": "awaiting owner confirmation",
-      "confirmation_dialog_prepared": true,
-      "reauthentication_or_deletion_triggered": false,
-      "existing_local_counts": {
-        "scans": 0,
-        "plants": 0,
-        "plant_reminders": 0,
-        "plant_journal": 0
-      }
+      "recorded_at_utc": "2026-10-09T16:59:09.027325+00:00",
+      "owner_reported_deletion_complete": true,
+      "guest_after_cold_start": true,
+      "authenticated_profile_absent": true,
+      "owner_confirmed_same_yandex_identity_requires_new_signup": true,
+      "post_login_device_state": {
+        "signed_in": true,
+        "yandex_linked": true,
+        "guest_login_visible": false,
+        "signup_needed": false
+      },
+      "agent_observed_new_signup_screen": false,
+      "local_data_comparison": {
+        "local_data_unchanged": true,
+        "local_counts_after_deletion": {
+          "scans": 0,
+          "plants": 0,
+          "plant_reminders": 0,
+          "plant_journal": 0
+        }
+      },
+      "limitations": [
+        "Populated local scan/garden/reminder retention was not tested; these tables were empty.",
+        "Database cleanup, deletion journal/outbox completion and rejection of a captured old bearer were not inspected from this PC."
+      ],
+      "status": "passed: owner completed real deletion; cold start stayed signed out; owner confirmed a new signup was required",
+      "new_staging_profile_created_after_deletion": true
+    },
+    "production_phone_checks": {
+      "installed": true,
+      "sha256": "cf825ccd9e4807fbc0f6fdfb1969fb5718688bddd5019cee614a8dbedcb79800",
+      "signer": "local debug certificate",
+      "app_api": "https://pdis.arbuz.lol/",
+      "account_api": "https://pdis.arbuz.lol/id/",
+      "initial_account_state": {
+        "signed_in": false,
+        "yandex_linked": false,
+        "guest_login_visible": true,
+        "signup_needed": false
+      },
+      "owner_completed_real_yandex_sign_in_and_signup": true,
+      "profile_after_login": {
+        "signed_in": true,
+        "yandex_linked": true,
+        "guest_login_visible": false,
+        "signup_needed": false
+      },
+      "cold_start_profile": {
+        "signed_in": true,
+        "yandex_linked": true,
+        "guest_login_visible": false,
+        "signup_needed": false,
+        "same_nickname": true
+      },
+      "signed_in_community": {
+        "worldwide_selected": true,
+        "successful_empty_state": false,
+        "feed_list_visible": true,
+        "error_state": false
+      },
+      "logout": {
+        "guest_after_logout": true,
+        "guest_after_cold_start": true
+      },
+      "relogin_after_logout": {
+        "signed_in": true,
+        "yandex_linked": true,
+        "guest_login_visible": false,
+        "signup_needed": false,
+        "same_nickname": true
+      },
+      "deletion_preparation": {
+        "dialog_open": true,
+        "confirmation_is_reauth_and_delete": true,
+        "deletion_triggered_by_agent": false
+      },
+      "status": "Signup, profile restore, authenticated Community read, logout and re-login passed; awaiting production profile deletion approval.",
+      "signed_in_community_evidence": "The live-only worldwide feed returned a populated list while signed in. Client code sends the account bearer and does not fall back to guest on authentication failure; server code validates the bearer through account authentication/introspection. No bearer was captured."
+    },
+    "current_phone_state": "Production profile deletion dialog open; awaiting owner approval.",
+    "ci_signing_fix": {
+      "commit": "b2e842b4a800fe3e6a676cca527f60427d961fa3",
+      "change": "Remove RELEASE_* signing password/key aliases and the stale signing step output from ordinary Android CI. Keep permanent signing in the protected checkout-free signing job.",
+      "deployment_contract_tests": 19,
+      "failures": 0,
+      "ruff": "passed"
     }
   }
 }

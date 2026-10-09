@@ -29,7 +29,9 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   launch. Daily encrypted backups with the deletion-journal epoch run from a systemd timer. The VDS operator files are not part of
   the application code; see `deploy/production-vds/`.
 - The app-to-account trust boundary passed on the repo's synthetic mock-provider stack and on the production stack with
-  secret-free checks. It has **not** been run with a real Yandex token.
+  secret-free checks. The production pair also passed real Yandex signup, profile/cold-start restore, a signed-in live
+  Community read, logout/cold-start guest state and re-login on the locally signed production-configured APK.
+  The production deletion dialog is prepared and awaiting owner approval.
 - **Android detekt failure fixed locally:** `3e6d346` extracts species metadata and cache policy from
   `ScanRepository` into `SpeciesRepository`. The original finding counted 1333 lines against the unchanged 1300 limit
   (1849 was the whole source-file length). Both `ktlintCheck` and `detekt` pass, all five unit-test variants pass
@@ -38,8 +40,15 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   The signing workflow still requires successful GitHub CI for the exact commit before step 7.
 - **Real beta Yandex flow passed on the phone:** the owner completed sign-in and nickname/signup confirmation
   on the locally signed staging APK at `03bc2359`. Cold-start session restore and the signed-in live Community read
-  also passed after the Android fix. This uses the local debug certificate added to Yandex by the owner;
-  production endpoints and the permanently signed APK still need their own real-provider test.
+  also passed after the Android fix. Logout stayed signed out after a cold restart. The owner then completed
+  real staging deletion: the phone stayed signed out after another cold restart, and the same Yandex identity
+  required a new signup. The owner completed that new staging signup. These checks use the local debug certificate
+  added to Yandex by the owner. The production-configured local APK also passed signup, restore, signed-in Community
+  read, logout and re-login. Production deletion is pending owner approval; the permanently signed APK still needs
+  its own real-provider test.
+- **Ordinary CI signing references removed:** `b2e842b` removes the release-signing passwords/alias and stale signing
+  step output from the compilation/test job. A deployment contract prevents `RELEASE_*` inputs and a signing
+  environment in that job; all 19 deployment contract tests and Ruff passed.
 
 
 ## Release gates in plain words
@@ -78,7 +87,7 @@ Email/password stays off in production: production settings reject it until its 
 |---|---|---|---|---|
 | 0 | Open the beta to the test phone | Confirm the tester's public IP(s) | Add exact `/32`/`/128` entries to the nginx allowlist, reload, re-probe | done (owner VPN) |
 | 1 | Android build and tests | Connect the phone (USB debugging) | PC: ktlint, detekt, all five unit-test variants, all four CI APK builds, staging install and live device smoke passed; all 9 instrumented tests passed after fixing their Hilt host, permission dialog and locale/view assertions | build/unit/device/instrumented checks passed |
-| 2 | Real Yandex login | Sign in on the phone (only you can); confirm deletion of the staging profile | Real beta signup, profile, cold-start session restore, signed-in app read, logout/cold-start guest state and real re-login to the same profile passed. The staging deletion dialog is prepared; deletion and production real-provider checks remain pending | beta login/logout/re-login passed; awaiting deletion confirmation |
+| 2 | Real Yandex login | Confirm deletion of the newly created production test profile | Real beta signup, restore, signed-in app read, logout, re-login and deletion passed; after deletion, Yandex required a new signup. The local production APK passed signup, restore, signed-in live Community read, logout and re-login. Production deletion is prepared | beta checks passed; awaiting production deletion approval |
 | 3 | Production hostname | Done: reuse `pdis.arbuz.lol` | none | done |
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
@@ -117,6 +126,6 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Confirmation for the real staging account deletion; production real-provider phone test; owner approval of PR #182;
+Production test profile deletion approval; owner approval of PR #182;
 protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
 tester allowlist, support contact and step 4 switch are already approved and configured.
