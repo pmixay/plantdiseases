@@ -233,12 +233,6 @@ jobs:
       # signing live in the separately protected android-release workflow.
       - name: Lint, test release variants, and assemble non-distributable APKs
         env:
-          RELEASE_STORE_FILE: ${{ steps.signing.outputs.configured == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
-          # Scoped to this step: the Gradle build is the only thing that needs
-          # to read them (app/build.gradle.kts signProp/fcmProp).
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           # FCM client config (optional). Unset ⇒ push stays dormant and the
           # client falls back to polling (PushManager.isConfigured).
           FCM_APP_ID: ${{ secrets.FCM_APP_ID }}
@@ -252,8 +246,8 @@ jobs:
         # restores none ("Calculating task graph as no cached configuration is
         # available" on every build). Caching it would mean handing
         # gradle/actions a `cache-encryption-key`, and a config-cache entry can
-        # capture values read during configuration — including the signing
-        # properties — so that key cannot live in the workflow. Kept because
+        # capture values read during configuration, so that key cannot live
+        # in the workflow. Kept because
         # Gradle 10 makes the config cache mandatory and this is what catches
         # an incompatible change on the commit that introduces it.
         run: >-

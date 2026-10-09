@@ -806,6 +806,13 @@ def test_private_repository_android_ci_uses_github_basic_gradle_cache():
     assert setup["with"] == {"cache-provider": "basic"}
 
 
+def test_android_ci_does_not_receive_release_signing_secrets():
+    workflow = _yaml(CI_WORKFLOW)
+    workflow_text = json.dumps(workflow)
+    assert "RELEASE_" not in workflow_text
+    assert "environment" not in workflow["jobs"]["android"]
+
+
 def test_database_role_provisioning_is_idempotent_and_url_safe():
     for path, bootstrap in (
         (GERMAN_ROLE_INIT, "beta_account"),
