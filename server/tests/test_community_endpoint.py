@@ -6,6 +6,7 @@ indirection, so no two tests can step on each other's rows.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import sqlite3
 
@@ -77,6 +78,14 @@ def _adopt_author(client, key: str, pseudo: str, name: str = "Test grower"):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def _author_headers(client, pseudo: str) -> dict[str, str]:
+    """An adopted author key standing in for ``pseudo``: second opinions
+    require one (COMMUNITY_REQUIRE_AUTHOR_KEY)."""
+    key = hashlib.sha256(f"author:{pseudo}".encode()).hexdigest()
+    _adopt_author(client, key, pseudo)
+    return {"X-Community-Author-Key": key}
 
 
 def _png_bytes() -> bytes:
@@ -1029,6 +1038,7 @@ def test_feed_token_round_trip_for_opinions_and_views(client, isolated_community
     # Viewer posts an opinion + view against the token.
     r = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-1"),
         json={
             "scan_id": token,
             "user_pseudo_id": "pseudo-viewer-1",
@@ -1080,6 +1090,7 @@ def test_opinion_write_and_push_only_when_owner_requested(client, isolated_commu
 
     locked = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-9"),
         json={
             "scan_id": "nudgeoff0001",
             "user_pseudo_id": "pseudo-viewer-9",
@@ -1090,6 +1101,7 @@ def test_opinion_write_and_push_only_when_owner_requested(client, isolated_commu
     assert locked.json()["detail"] == "opinions_locked"
     open_reply = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-9"),
         json={
             "scan_id": "nudgeon00001",
             "user_pseudo_id": "pseudo-viewer-9",
@@ -1116,6 +1128,7 @@ def test_cancelled_request_locks_new_replies_but_keeps_thread_readable(
     _request_opinion(client, "lockedcancel1", "pseudo-owner-lock")
     first = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-one"),
         json={
             "scan_id": "lockedcancel1",
             "user_pseudo_id": "pseudo-viewer-one",
@@ -1131,6 +1144,7 @@ def test_cancelled_request_locks_new_replies_but_keeps_thread_readable(
 
     locked = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-two"),
         json={
             "scan_id": "lockedcancel1",
             "user_pseudo_id": "pseudo-viewer-two",
@@ -1165,6 +1179,7 @@ def test_expired_request_is_locked_at_write_time(client, isolated_community):
         )
     reply = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-exp"),
         json={
             "scan_id": "lockedexpire1",
             "user_pseudo_id": "pseudo-viewer-exp",
@@ -1178,6 +1193,7 @@ def test_expired_request_is_locked_at_write_time(client, isolated_community):
 def test_opinion_on_unknown_scan_rejected(client, isolated_community):
     r = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-1"),
         json={
             "scan_id": "neverssharedscan1",
             "user_pseudo_id": "pseudo-viewer-1",
@@ -1209,6 +1225,7 @@ def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
     # A fresh opinion lands fine.
     fresh = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-1"),
         json={
             "scan_id": token,
             "user_pseudo_id": "pseudo-viewer-1",
@@ -1226,6 +1243,7 @@ def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
         )
     r = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-viewer-2"),
         json={
             "scan_id": token,
             "user_pseudo_id": "pseudo-viewer-2",
@@ -1233,6 +1251,101 @@ def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
         },
     )
     assert r.status_code == 410, r.text
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"X-Community-Author-Key": "a" * 64}],  # missing / well-formed but never adopted
+)
+def test_opinion_requires_an_adopted_author_key(client, isolated_community, headers):
+    """Without a durable author the tally would fall back to the body
+    pseudo-id, which a client can change on every vote."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="needskey00001", user_pseudo_id="pseudo-owner-key",
+            region="Paris", country="FR", disease="leaf_spot",
+        ),
+    )
+    _request_opinion(client, "needskey00001", "pseudo-owner-key")
+    r = client.post(
+        "/api/community/opinion",
+        headers=headers,
+        json={
+            "scan_id": "needskey00001",
+            "user_pseudo_id": "pseudo-forger",
+            "suggested_disease": "healthy",
+        },
+    )
+    assert r.status_code == 401, r.text
+    assert r.json()["detail"] == "community_identity_required"
+    assert client.get("/api/community/opinions/needskey00001").json()["opinions"] == []
+
+
+def test_new_author_adoptions_are_capped_per_ip(client, isolated_community, monkeypatch):
+    """Minting identities is what makes votes forgeable, so new authors are
+    capped per IP per day; re-adopting an existing key never counts."""
+    import main as server_main
+
+    monkeypatch.setattr(server_main._community_author_quota, "limit", 2)
+    keys = [hashlib.sha256(f"k{i}".encode()).hexdigest() for i in range(3)]
+    _adopt_author(client, keys[0], "p0")
+    _adopt_author(client, keys[1], "p1")
+    for _ in range(3):
+        _adopt_author(client, keys[0], "p0")  # idempotent re-adopt: free
+    third = client.post(
+        "/api/community/authors/adopt",
+        headers={"X-Community-Author-Key": keys[2]},
+        json={"seed_display_name": "p2", "legacy_pseudo_id": "p2"},
+    )
+    assert third.status_code == 429, third.text
+
+
+def test_pseudo_id_header_replaces_the_url_forms(client, isolated_community):
+    """The pseudo-id is a bearer value, so current clients send it in
+    X-User-Pseudo-Id; the legacy URL forms keep working for older builds."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="headerpid0001", user_pseudo_id="pseudo-header-1",
+            region="Paris", country="FR", disease="leaf_spot",
+        ),
+    )
+    via_header = client.get(
+        "/api/community/nearby",
+        params={"country": "FR"},
+        headers={"X-User-Pseudo-Id": "pseudo-header-1"},
+    ).json()["items"]
+    via_query = client.get(
+        "/api/community/nearby",
+        params={"country": "FR", "user_pseudo_id": "pseudo-header-1"},
+    ).json()["items"]
+    anonymous = client.get("/api/community/nearby", params={"country": "FR"}).json()["items"]
+    # Own scans are excluded from the caller's feed, whichever way it is identified.
+    assert via_header == via_query == []
+    assert len(anonymous) == 1
+
+    mine = client.get(
+        "/api/community/my-scan-opinions",
+        headers={"X-User-Pseudo-Id": "pseudo-header-1"},
+    )
+    legacy = client.get("/api/community/my-scan-opinions/pseudo-header-1")
+    assert mine.status_code == 200, mine.text
+    assert mine.json() == legacy.json()
+    assert client.get("/api/community/my-scan-opinions").status_code == 422
+
+
+def test_request_log_redacts_the_legacy_path_pseudo_id():
+    import main as server_main
+
+    assert (
+        server_main._loggable_path("/api/community/my-scan-opinions/secret-pid")
+        == "/api/community/my-scan-opinions/<redacted>"
+    )
+    assert server_main._loggable_path("/api/community/my-scan-opinions") == (
+        "/api/community/my-scan-opinions"
+    )
+    assert server_main._loggable_path("/api/analyze") == "/api/analyze"
 
 
 def test_opinion_consensus_dedupes_on_author_key_not_body_pseudo_id(client, isolated_community):
@@ -1619,6 +1732,7 @@ def test_consensus_counts_latest_pick_per_author(client, isolated_community):
     for disease in ("powdery_mildew", "healthy"):
         r = client.post(
             "/api/community/opinion",
+            headers=_author_headers(client, "pseudo-flip-flop"),
             json={
                 "scan_id": "consensusscan1",
                 "user_pseudo_id": "pseudo-flip-flop",
@@ -1764,6 +1878,7 @@ def test_report_dedupes_and_block_hides_author_scans_and_replies(
     _request_opinion(client, "safetytarget1", "pseudo-owner-safe")
     reply = client.post(
         "/api/community/opinion",
+        headers=_author_headers(client, "pseudo-reply-author"),
         json={
             "scan_id": "safetytarget1",
             "user_pseudo_id": "pseudo-reply-author",
@@ -1890,8 +2005,10 @@ def test_durable_block_rejects_cached_token_write_after_pseudo_rotation(
 
 
 def test_adoption_backfills_legacy_block_and_report_identities(
-    client, isolated_community,
+    client, isolated_community, monkeypatch,
 ):
+    import main as server_main
+
     db_path, _ = isolated_community
     client.post(
         "/api/community/scan",
@@ -1904,6 +2021,9 @@ def test_adoption_backfills_legacy_block_and_report_identities(
         ),
     )
     _request_opinion(client, "legacyblock001", "legacy-owner")
+    # A key-less opinion from before adoption (an older app build, written
+    # while the COMMUNITY_REQUIRE_AUTHOR_KEY bridge was off).
+    monkeypatch.setattr(server_main, "COMMUNITY_REQUIRE_AUTHOR_KEY", False)
     reply = client.post(
         "/api/community/opinion",
         json={
@@ -1912,6 +2032,7 @@ def test_adoption_backfills_legacy_block_and_report_identities(
             "suggested_disease": "healthy",
         },
     ).json()
+    monkeypatch.setattr(server_main, "COMMUNITY_REQUIRE_AUTHOR_KEY", True)
     opinion_id = reply["opinions"][0]["content_id"]
     client.post(
         "/api/community/safety/report",

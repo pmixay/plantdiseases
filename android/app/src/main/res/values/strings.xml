@@ -413,7 +413,7 @@
     <string name="plant_room">Room (optional)</string>
     <string name="plant_room_unassigned">Unassigned</string>
 
-    <!-- Garden refactor — Rooms (see docs/ROADMAP.md "Garden refactor") -->
+    <!-- Garden refactor — Rooms -->
     <string name="garden_care_calendar">Care calendar</string>
     <string name="garden_subtitle_combined">%1$s · %2$s</string>
     <string name="room_add">Add room</string>
@@ -437,8 +437,10 @@
     <string name="plant_status_healthy">Healthy</string>
     <string name="plant_status_treatment">Treatment</string>
     <string name="plant_status_watch">Watch</string>
+    <string name="plant_status_poor">Poor condition</string>
     <string name="plant_status_recovering">Recovering</string>
     <string name="plant_status_no_scans">No scans yet</string>
+    <string name="plant_status_need_scans">Too few recent scans</string>
 
     <!-- Garden refactor — plant profile: Overview / Care / History / Gallery -->
     <string name="plant_tab_overview">Overview</string>
@@ -448,8 +450,16 @@
     <string name="plant_health_title">Health</string>
     <string name="plant_health_header_status">Health · %1$s</string>
     <string name="plant_health_header_score">Health · %1$s · %2$d%%</string>
-    <string name="plant_health_delta_week">%1$s this week</string>
-    <string name="plant_health_need_scans">Scan this plant twice to see its health trend</string>
+    <!-- %1$s is the signed change (e.g. "-12%"), %2$d the days between the two compared scans (7 or more). -->
+    <plurals name="plant_health_delta_days">
+        <item quantity="one">%1$s over %2$d day</item>
+        <item quantity="other">%1$s over %2$d days</item>
+    </plurals>
+    <!-- %d is PlantHealth.MIN_SCANS_FOR_SCORE. -->
+    <plurals name="plant_health_need_recent_scans">
+        <item quantity="one">It takes %d recent scan to show a health trend</item>
+        <item quantity="other">It takes %d recent scans to show a health trend</item>
+    </plurals>
     <string name="treatment_plan_current">Current treatment plan</string>
     <string name="treatment_step_of">Step %1$d of %2$d</string>
     <string name="treatment_step_done">Done · %1$s</string>
@@ -1003,6 +1013,15 @@
     <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
          specific species is referenced. -->
     <string name="species_info_more">More about this species</string>
+    <!-- Wikipedia attribution ("i" button on the species card and the species screen). -->
+    <string name="wikipedia_attribution_content_description">Description source and licence</string>
+    <string name="wikipedia_attribution_title">About this description</string>
+    <string name="wikipedia_attribution_body_article">The description and photo come from the Wikipedia article “%1$s”. Wikipedia text is available under the Creative Commons Attribution-ShareAlike 4.0 licence (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_body">The description and photo come from Wikipedia. Wikipedia text is available under the Creative Commons Attribution-ShareAlike 4.0 licence (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_photos">Photos come from Wikimedia Commons; each one is under the licence shown on its file page.</string>
+    <string name="wikipedia_attribution_translated">This text was machine-translated because the article doesn\'t exist in your language yet.</string>
+    <string name="wikipedia_attribution_licence">Licence</string>
+    <string name="wikipedia_attribution_close">Close</string>
     <string name="species_info_expand">Show full description</string>
     <string name="species_info_collapse">Hide full description</string>
     <!-- Spoken for the description toggle: species name, then the action. -->

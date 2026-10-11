@@ -489,8 +489,8 @@ class PlantDetailActivity : AppCompatActivity() {
         }
     }
 
-    /** Overview / Care / History / Gallery — see docs/ROADMAP.md "Garden
-     *  refactor" §Plant profile. History deliberately stacks Timeline
+    /** Overview / Care / History / Gallery, the Garden refactor's plant
+     *  profile. History deliberately stacks Timeline
      *  then Journal rather than a single chronologically-interleaved
      *  feed: the two controllers keep their own independent rendering,
      *  which is far lower-risk than rewriting both to emit into one
@@ -511,7 +511,7 @@ class PlantDetailActivity : AppCompatActivity() {
         extraCards.bindPlantId(plantId)
 
         val activePlan = careRepository.activePlan(plant.id)
-        val health = plantRepository.getPlantHealth(plant.id, acceptedScans, activePlan?.plan?.id)
+        val health = plantRepository.getPlantHealth(plant.id, acceptedScans, activePlan?.plan)
 
         lunarNavigationState = lunarCalendarView?.navigationState() ?: lunarNavigationState
         content.removeAllViews()
@@ -540,7 +540,7 @@ class PlantDetailActivity : AppCompatActivity() {
         applyRestoredTabSelection()
 
         // ── Overview ──────────────────────────────────────────────────
-        overviewContainer.addView(extraCards.buildHealthCard(plant, acceptedScans))
+        overviewContainer.addView(extraCards.buildHealthCard(health))
         extraCards.buildTreatmentPlanCard(plant)?.let { overviewContainer.addView(it) }
         overviewContainer.addView(buildAddObservationEntry())
         extraCards.buildProgressionCard(acceptedScans, currentPlant)?.let { overviewContainer.addView(it) }

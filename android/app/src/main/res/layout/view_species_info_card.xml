@@ -2,9 +2,9 @@
 <!--
     Contents of the universal species-info card (SpeciesInfoCardView).
 
-    Deliberately minimal: a Wikipedia lead photo, the species name, the
-    Wikipedia description, and a single "more about this species" action that
-    opens the full species screen. Everything richer — care, toxicity,
+    Deliberately minimal: a Wikipedia lead photo, the species name (with an
+    "i" for the Wikipedia attribution), the Wikipedia description, and a single
+    "more about this species" action that opens the full species screen. Everything richer — care, toxicity,
     flowering, native range, common problems — lives on that screen, not here,
     so this card stays the same height wherever it is embedded.
 
@@ -34,13 +34,36 @@
             android:scaleType="centerCrop"
             android:src="@drawable/ic_plant_placeholder" />
 
-        <TextView
-            android:id="@+id/species_info_name"
+        <!-- The "i" opens the Wikipedia attribution (source article + CC BY-SA
+             licence); shown only once Wikipedia content is on the card. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
-            android:textColor="?attr/colorOnSurface"
-            tools:text="Monstera" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/species_info_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface"
+                tools:text="Monstera" />
+
+            <ImageButton
+                android:id="@+id/species_info_attribution"
+                android:layout_width="@dimen/species_info_touch_target"
+                android:layout_height="@dimen/species_info_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/wikipedia_attribution_content_description"
+                android:padding="@dimen/space_sm"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_info_outline"
+                android:visibility="gone"
+                app:tint="?attr/colorOnSurfaceVariant"
+                tools:visibility="visible" />
+        </LinearLayout>
 
         <!-- Hidden when the binomial is missing, or when it would just repeat
              the name above (common for species with no common name). -->

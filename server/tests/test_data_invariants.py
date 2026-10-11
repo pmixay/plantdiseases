@@ -1084,7 +1084,7 @@ def test_recipe_uses_deterministic_torch_settings():
     assert "CUBLAS_WORKSPACE_CONFIG" in src
     assert "torch.backends.cudnn.benchmark = False" in src
     assert "torch.backends.cudnn.deterministic = True" in src
-    assert "torch.use_deterministic_algorithms(True)" in src
+    assert "torch.use_deterministic_algorithms(True, warn_only=True)" in src
 
 
 def test_supplement_eval_is_model_era_and_capture_family_aware():

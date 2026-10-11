@@ -23,6 +23,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.garden.DoctorChatSheet
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
+import com.plantdiseases.app.ui.garden.PlantHealthUi
 import com.plantdiseases.app.ui.garden.ReminderScheduleSheet
 import com.plantdiseases.app.ui.garden.SparklineView
 import com.plantdiseases.app.util.Haptics
@@ -1014,13 +1015,16 @@ class DetailExtraCardsController(
 
     // ─── Health card (Garden refactor Overview tab) ─────────────────────
 
-    /** Score + weekly delta + dated sparkline, derived from
-     *  [PlantRepository.getPlantHealth] — never the network-driven
-     *  progression card's comparison, a separate, already-shipped feature
-     *  this doesn't touch. Fewer than 2 scans renders the honest "scan
-     *  twice" empty state instead of a fake flat line. */
-    fun buildHealthCard(plant: PlantEntity, scans: List<ScanEntity>): View {
-        val acceptedScans = scans.filterNot(scanRepository::isAbstainedScan)
+    /** Score + delta chip + dated sparkline for [verdict] — the same
+     *  verdict the header pill shows, computed once by the caller from
+     *  [PlantRepository.getPlantHealth], so the two can't disagree. This is
+     *  never the network-driven progression card's comparison, a separate
+     *  feature this doesn't touch. Without a score (too few recent scans)
+     *  it renders the honest "scan again" empty state instead of a fake
+     *  flat line. The status itself is carried by colour here, so the score
+     *  also gets a spoken label. */
+    fun buildHealthCard(verdict: PlantHealth.Verdict): View {
+        val statusColor = activity.getColor(PlantHealthUi.colorRes(verdict.status))
         val card = MaterialCardView(activity).apply {
             radius = activity.resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
@@ -1034,7 +1038,7 @@ class DetailExtraCardsController(
         }
         val accent = View(activity).apply {
             layoutParams = LinearLayout.LayoutParams(3.dp(), LinearLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(activity.getColor(R.color.on_surface_secondary))
+            setBackgroundColor(statusColor)
         }
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -1057,89 +1061,75 @@ class DetailExtraCardsController(
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val scoreText = TextView(activity).apply {
-            textSize = 24f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        }
         titleRow.addView(title)
-        titleRow.addView(scoreText)
         body.addView(titleRow)
 
-        val deltaChip = TextView(activity).apply {
-            textSize = 12f
-            setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
-            background = activity.getDrawable(R.drawable.bg_plant_stat_pill)
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 6.dp() }
-        }
-        body.addView(deltaChip)
-
-        val sparkline = SparklineView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 64.dp())
-                .apply { topMargin = 10.dp() }
-        }
-        val emptyHint = TextView(activity).apply {
-            textSize = 13f
-            setTextColor(activity.getColor(R.color.on_surface_secondary))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 10.dp() }
-            visibility = View.GONE
-        }
-        body.addView(sparkline)
-        body.addView(emptyHint)
-
-        activity.lifecycleScope.launch {
-            val activePlan = careRepository.activePlan(plant.id)
-            val verdict = plantRepository.getPlantHealth(
-                plant.id,
-                acceptedScans,
-                activePlan?.plan?.id,
-            )
-            accent.setBackgroundColor(activity.getColor(healthAccentColor(verdict.status)))
-
-            if (verdict.score == null) {
-                scoreText.visibility = View.GONE
-                sparkline.visibility = View.GONE
-                emptyHint.visibility = View.VISIBLE
-                emptyHint.text = activity.getString(R.string.plant_health_need_scans)
-                return@launch
-            }
-            scoreText.text = "${verdict.score}%"
-            scoreText.setTextColor(activity.getColor(healthAccentColor(verdict.status)))
-            sparkline.setData(
-                verdict.series.map { (it.score / 100f).coerceIn(0f, 1f) },
-                trend = when {
-                    verdict.weekDelta == null -> "baseline"
-                    verdict.weekDelta > 0 -> "improving"
-                    verdict.weekDelta < 0 -> "worsening"
-                    else -> "stable"
+        val score = verdict.score
+        if (score == null) {
+            body.addView(
+                TextView(activity).apply {
+                    text = activity.resources.getQuantityString(
+                        R.plurals.plant_health_need_recent_scans,
+                        PlantHealth.MIN_SCANS_FOR_SCORE,
+                        PlantHealth.MIN_SCANS_FOR_SCORE,
+                    )
+                    textSize = 13f
+                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setLineSpacing(3.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 10.dp() }
                 },
             )
-            if (verdict.weekDelta != null) {
-                val sign = if (verdict.weekDelta >= 0) "+" else ""
-                deltaChip.text = activity.getString(
-                    R.string.plant_health_delta_week,
-                    "$sign${verdict.weekDelta}%",
-                )
-                val deltaColor = if (verdict.weekDelta >= 0) R.color.healthy_green else R.color.disease_red
-                deltaChip.setTextColor(activity.getColor(deltaColor))
-                deltaChip.visibility = View.VISIBLE
-            }
+            return card
         }
-        return card
-    }
 
-    private fun healthAccentColor(status: PlantHealth.Status): Int = when (status) {
-        PlantHealth.Status.HEALTHY, PlantHealth.Status.RECOVERING -> R.color.healthy_green
-        PlantHealth.Status.TREATMENT -> R.color.disease_red
-        PlantHealth.Status.WATCH -> R.color.warning_amber
-        PlantHealth.Status.UNKNOWN -> R.color.on_surface_secondary
+        val statusLabel = activity.getString(PlantHealthUi.labelRes(verdict))
+        titleRow.addView(
+            TextView(activity).apply {
+                text = "$score%"
+                contentDescription = "$statusLabel, $score%"
+                textSize = 24f
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setTextColor(statusColor)
+            },
+        )
+
+        val weekDelta = verdict.weekDelta
+        val weekDeltaDays = verdict.weekDeltaDays
+        val trend = verdict.trend
+        if (weekDelta != null && weekDeltaDays != null && trend != null) {
+            val sign = if (weekDelta >= 0) "+" else ""
+            body.addView(
+                TextView(activity).apply {
+                    text = activity.resources.getQuantityString(
+                        R.plurals.plant_health_delta_days,
+                        weekDeltaDays,
+                        "$sign$weekDelta%",
+                        weekDeltaDays,
+                    )
+                    textSize = 12f
+                    setTextColor(activity.getColor(PlantHealthUi.trendColorRes(trend)))
+                    setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
+                    background = activity.getDrawable(R.drawable.bg_plant_stat_pill)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 6.dp() }
+                },
+            )
+        }
+
+        val sparklineTrend = PlantHealthUi.sparklineTrend(trend)
+        body.addView(
+            SparklineView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 64.dp())
+                    .apply { topMargin = 10.dp() }
+                setData(verdict.series.map { (it.score / 100f).coerceIn(0f, 1f) }, sparklineTrend)
+            },
+        )
+        return card
     }
 
     // ─── Treatment plan card (Garden refactor Overview tab) ─────────────
@@ -1156,7 +1146,7 @@ class DetailExtraCardsController(
      *  card's very existence depends on a DB read (is there a plan at
      *  all), so the caller awaits this before deciding whether
      *  to add anything to the tab, rather than adding a shell and
-     *  filling it in asynchronously the way buildHealthCard does. */
+     *  filling it in asynchronously. */
     suspend fun buildTreatmentPlanCard(plant: PlantEntity): View? {
         val planWithSteps = careRepository.activeOrRecentlyCompletedPlan(plant.id) ?: return null
         val plan = planWithSteps.plan

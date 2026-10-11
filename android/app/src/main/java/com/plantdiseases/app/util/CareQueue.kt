@@ -2,8 +2,7 @@ package com.plantdiseases.app.util
 
 /**
  * Aggregates recurring reminders and treatment-plan steps into one dated
- * queue — the "Today" care hub ROADMAP §Garden refactor
- * describes. Pure Kotlin: no Room entities, no Android imports. The
+ * queue — the Garden tab's "Today" care hub. Pure Kotlin: no Room entities, no Android imports. The
  * repository layer (CareRepository) maps DAO rows into the *Input types
  * below and back out again; this object only does the projection math,
  * mirroring the existing CareSchedule.kt precedent.

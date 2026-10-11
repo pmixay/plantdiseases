@@ -575,8 +575,8 @@ interface PlantJournalDao {
 //
 // A plant's location. First-class rather than the free-text `plants.room`
 // column: the Garden refactor makes rooms creatable/renameable/deletable
-// objects that own a plant collection and (later) a light baseline, none of
-// which a plain string column supports without a rewrite on every rename.
+// objects that own a plant collection, which a plain string column does not
+// support without a rewrite on every rename.
 
 @Entity(tableName = "rooms", indices = [Index(value = ["name"], unique = true)])
 data class RoomEntity(
@@ -585,9 +585,9 @@ data class RoomEntity(
     /** RoomPresets key (living/bedroom/kitchen/office/balcony/bathroom/other).
      *  Drives the room card icon; NULL renders the generic ic_room. */
     @ColumnInfo(name = "icon") val icon: String? = null,
-    /** Optional per-room light baseline in lux, seeded by the Light Meter.
-     *  NULL until measured. Not read by anything yet — reserved for the
-     *  room-level care defaults ROADMAP §4 describes. */
+    /** Optional per-room light baseline in lux. Nothing writes or reads it:
+     *  room-level care defaults were dropped, and the column stays only so
+     *  existing databases need no migration. Always NULL today. */
     @ColumnInfo(name = "baseline_lux") val baselineLux: Int? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,

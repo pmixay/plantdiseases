@@ -21,6 +21,7 @@
     "inference_timeout": 30.0,
     "rate_limit_rps": 1.0,
     "infer_workers": 1,
+    "infer_max_inflight_per_ip": 2,
     "net_workers": 16,
     "onnx_intra_op_threads": 0,
     "fold_whole_frame_vote": true,
@@ -60,6 +61,8 @@
     "_community_author_key_pepper_note": "Stable server-side transform for account-free Community author credentials at rest. Set the same value on every replica and do not rotate it without a key-migration plan; changing it makes existing device handles unreachable. It is intentionally independent from the rotatable IP privacy pepper.",
     "_feedback_ip_pepper_note": "Secret used to pepper the SHA-256 of a client IP before it is stored (feedback / community / telemetry client_ip_hash). IPv4 is only a 32-bit space, so a hash with a known or empty pepper enumerates back to the raw IP in seconds \u2014 it MUST be a high-entropy per-deployment secret. Leave blank and the server generates one on first use and persists it beside the feedback DB as .ip_hash_pepper; set it explicitly to control rotation or to share one pepper across replicas.",
     "require_api_key": false,
+    "_community_require_author_key_note": "Second opinions need an adopted X-Community-Author-Key. App builds before 1.9 never send one; set false only as a bridge while they are in use.",
+    "community_require_author_key": true,
     "api_keys": {
       "key_dev_abc123": {
         "rate_limit_rps": 2.0,

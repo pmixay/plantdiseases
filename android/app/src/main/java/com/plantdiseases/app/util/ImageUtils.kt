@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -83,7 +84,28 @@ object ImageUtils {
     }
 
     /**
-     * Compress and resize image for upload.
+     * Compress and resize image for upload, written to a cache file.
+     *
+     * Same output as [encodeForUpload] (no EXIF, upright, longest edge at
+     * most [maxSize]); throws the same way.
+     */
+    @Throws(ImageDecodeException::class)
+    fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
+        val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
+        outputFile.writeBytes(encodeForUpload(imagePath, maxSize))
+        return outputFile
+    }
+
+    /**
+     * Re-encode the photo at [imagePath] as an upright JPEG whose longest
+     * edge is at most [maxSize], and return the bytes.
+     *
+     * Every upload of a user photo goes through this (or
+     * [prepareImageForUpload]), never `File.readBytes()`: decoding to a
+     * Bitmap drops every EXIF tag, so GPS coordinates, camera model and
+     * timestamps cannot leave the device. A file on disk may still carry
+     * them — the plant-detail capture and gallery-import paths skip the
+     * cropper, which is the step that re-encodes in the main camera flow.
      *
      * Performs two-pass decoding (bounds first, then downsample) and
      * always recycles intermediate bitmaps. Throws [ImageDecodeException]
@@ -91,7 +113,7 @@ object ImageUtils {
      * genuinely cannot fit the image — callers should catch both.
      */
     @Throws(ImageDecodeException::class)
-    fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
+    fun encodeForUpload(imagePath: String, maxSize: Int = 1024): ByteArray {
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(imagePath, boundsOpts)
         val rawW = boundsOpts.outWidth
@@ -142,11 +164,9 @@ object ImageUtils {
             }
             scaled = out
 
-            val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
-            FileOutputStream(outputFile).use { stream ->
-                out.compress(Bitmap.CompressFormat.JPEG, 85, stream)
-            }
-            return outputFile
+            val stream = ByteArrayOutputStream()
+            out.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            return stream.toByteArray()
         } finally {
             scaled?.let { if (it !== rotated) it.recycle() }
             rotated?.let { if (it !== original) it.recycle() }

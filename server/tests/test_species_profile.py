@@ -288,7 +288,7 @@ def test_structured_success_and_cache(monkeypatch):
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
-    out = ai_services.species_profile("Ficus elastica", common_name="Rubber plant", lang="en")
+    out = ai_services.species_profile("Ficus elastica", lang="en")
     assert out["available"] is True
     assert out["species"] == "Ficus elastica"
     assert out["flowering"]["monthly_intensity"] == [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0]
