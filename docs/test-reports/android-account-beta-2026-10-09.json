@@ -91,7 +91,6 @@
     "note": "Fresh provider login was performed at this earlier revision. The APK above revalidated the existing real session after updating."
   },
   "not_exercised": [
-    "Production real account deletion on the phone",
     "Permanently signed APK on the phone",
     "Scan uploads, community posts/likes, notification polling and paid features"
   ],
@@ -181,7 +180,8 @@
         "STAGING_ACCOUNT_API_BASE_URL": "https://pdis.arbuz.lol/plantdisease-test/id/",
         "PRODUCTION_APP_API_BASE_URL": "https://pdis.arbuz.lol/",
         "PRODUCTION_ACCOUNT_API_BASE_URL": "https://pdis.arbuz.lol/id/"
-      }
+      },
+      "merge_conflicts_resolved_as_of_main_commit": "e4b4a456b196f456bc1275cf706971fb2766ad54"
     },
     "private_device_backup": {
       "verified_readable": true,
@@ -267,10 +267,10 @@
         "confirmation_is_reauth_and_delete": true,
         "deletion_triggered_by_agent": false
       },
-      "status": "Signup, profile restore, authenticated Community read, logout and re-login passed; awaiting production profile deletion approval.",
+      "status": "Signup, profile restore, authenticated Community read, logout and re-login passed on 2026-10-09. Production deletion completed by the owner that day and verified on phone and VDS on 2026-10-12; see the linked follow-up report.",
       "signed_in_community_evidence": "The live-only worldwide feed returned a populated list while signed in. Client code sends the account bearer and does not fall back to guest on authentication failure; server code validates the bearer through account authentication/introspection. No bearer was captured."
     },
-    "current_phone_state": "Production profile deletion dialog open; awaiting owner approval.",
+    "current_phone_state": "As of 2026-10-12: fresh production profile signed in and Yandex linked, also after a cold restart. The original deleted profile remains absent.",
     "ci_signing_fix": {
       "commit": "b2e842b4a800fe3e6a676cca527f60427d961fa3",
       "change": "Remove RELEASE_* signing password/key aliases and the stale signing step output from ordinary Android CI. Keep permanent signing in the protected checkout-free signing job.",
@@ -278,5 +278,6 @@
       "failures": 0,
       "ruff": "passed"
     }
-  }
+  },
+  "production_follow_up_report": "android-account-production-2026-10-12.json"
 }

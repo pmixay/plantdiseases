@@ -1,6 +1,6 @@
 # Accounts: from beta to RuStore release
 
-Status: working plan, written 2026-10-09 after the German-VDS beta was deployed and verified.
+Status: working plan, written 2026-10-09 and updated 2026-10-12 after production deletion verification.
 It supersedes the Russian-VDS / German-worker split that earlier handoff documents described
 (`RU_DE_MAIN_TRANSFER_AND_OPERATIONS.md`, `ACCOUNT_BETA_HANDOFF.md` and four other beta narrative
 docs); those files were removed and remain in git history. The RU/DE `handoff/` templates under
@@ -31,7 +31,12 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
 - The app-to-account trust boundary passed on the repo's synthetic mock-provider stack and on the production stack with
   secret-free checks. The production pair also passed real Yandex signup, profile/cold-start restore, a signed-in live
   Community read, logout/cold-start guest state and re-login on the locally signed production-configured APK.
-  The production deletion dialog is prepared and awaiting owner approval.
+  Production deletion was completed by the owner on 2026-10-09 and verified from the PC and VDS on
+  2026-10-12: the phone stayed signed out after a cold start and Yandex required a fresh signup;
+  the original profile and identities are absent, the deletion job is complete and the journal contains the deletion.
+  The app marker exists under the deployed 30-day retention policy. The first daily backup after deletion
+  (2026-10-10) and the latest backup (2026-10-12) both contain the deletion and their matching epochs.
+  The latest encrypted artifact checksums and scheduled backup/restore check also passed.
 - **Android detekt failure fixed locally:** `3e6d346` extracts species metadata and cache policy from
   `ScanRepository` into `SpeciesRepository`. The original finding counted 1333 lines against the unchanged 1300 limit
   (1849 was the whole source-file length). Both `ktlintCheck` and `detekt` pass, all five unit-test variants pass
@@ -44,11 +49,18 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   real staging deletion: the phone stayed signed out after another cold restart, and the same Yandex identity
   required a new signup. The owner completed that new staging signup. These checks use the local debug certificate
   added to Yandex by the owner. The production-configured local APK also passed signup, restore, signed-in Community
-  read, logout and re-login. Production deletion is pending owner approval; the permanently signed APK still needs
-  its own real-provider test.
+  read, logout, re-login and deletion. The owner created a fresh production profile after the 2026-10-12
+  new-signup check; it restored after a cold restart, and the original deleted profile remains absent.
+  See the [production deletion follow-up](test-reports/android-account-production-2026-10-12.json).
+  The permanently signed APK still needs
+  its own real-provider test. No fresh deletion or deployment was performed during the 2026-10-12 verification.
 - **Ordinary CI signing references removed:** `b2e842b` removes the release-signing passwords/alias and stale signing
   step output from the compilation/test job. A deployment contract prevents `RELEASE_*` inputs and a signing
   environment in that job; all 19 deployment contract tests and Ruff passed.
+- **GitHub CI passed on `3f13385`:** all four jobs, including Android build/lint and both server suites,
+  succeeded in [run 37965210687](https://github.com/pmixay/plantdiseases/actions/runs/37965210687).
+  Main has since advanced to `73cfb24`, and PR #182 now reports conflicts. The earlier merge at `aab7795`
+  resolved conflicts with the then-current main (`e4b4a45`); it does not cover the newer main changes.
 
 
 ## Release gates in plain words
@@ -61,8 +73,9 @@ Items 2-4 are checked by machine in `.github/workflows/android-release.yml`.
    link in `privacy.html` and the in-app policy): **approved 2026-10-09**.
 3. **Deleted-account marker retention** is decided: how long the minimal pseudonymous marker of a deleted account
    is kept (it stops removed content from reappearing on cleanup replay or backup restore), with matching English and
-   Russian disclosures in the policy: **30 days, approved 2026-10-09.** The server does not enforce the expiry yet; that
-   is part of step 6a.
+   Russian disclosures in the policy: **30 days, approved 2026-10-09.** The deployed app's retention constant
+   and the original account's marker were checked on 2026-10-12. The marker's calculated policy expiry is
+   2026-11-08; natural expiry of this particular marker has not yet elapsed.
 4. **Production hard stop** (lifted 2026-10-09) in the signing workflow: the `production` channel could not be built until a *deletion
    replay journal* and a coordinated *backup epoch* exist and are restore-tested. Purpose: restoring an old
    backup must never bring back an account or content that was deleted after the backup was taken. Recovery
@@ -87,20 +100,21 @@ Email/password stays off in production: production settings reject it until its 
 |---|---|---|---|---|
 | 0 | Open the beta to the test phone | Confirm the tester's public IP(s) | Add exact `/32`/`/128` entries to the nginx allowlist, reload, re-probe | done (owner VPN) |
 | 1 | Android build and tests | Connect the phone (USB debugging) | PC: ktlint, detekt, all five unit-test variants, all four CI APK builds, staging install and live device smoke passed; all 9 instrumented tests passed after fixing their Hilt host, permission dialog and locale/view assertions | build/unit/device/instrumented checks passed |
-| 2 | Real Yandex login | Confirm deletion of the newly created production test profile | Real beta signup, restore, signed-in app read, logout, re-login and deletion passed; after deletion, Yandex required a new signup. The local production APK passed signup, restore, signed-in live Community read, logout and re-login. Production deletion is prepared | beta checks passed; awaiting production deletion approval |
+| 2 | Real Yandex login | Completed both real-provider tests and production deletion | Beta and local production APK signup, restore, signed-in app read, logout, re-login and deletion passed. Production deletion was verified on the phone and VDS, including its journal, marker and subsequent encrypted backups. The owner created a fresh production profile | beta and production checks passed with the local certificate |
 | 3 | Production hostname | Done: reuse `pdis.arbuz.lol` | none | done |
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
-| 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | CI passed on `55eafcf`; conflicts with main resolved at `aab7795` (server ruff and 1003 tests passed). Device test repairs at `88267b2`; verify CI on the final head | awaiting owner approval and final-head CI |
+| 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; new conflicts with `main@73cfb24` require resolution and validation before merging | new main conflicts; owner approval and final-head CI still required |
 | 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
 | 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md); approve main merge | The workflow is absent from main, and the protected environment is missing. The PC account has write access without admin access; it configured and read back the four public repository API URL variables. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore | blocked on owner environment setup/main merge |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
 | 9 | RuStore listing | Console clicks and APK upload | Release notes, checklist, privacy page check | pending |
 | 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring with alerts on failed backups and `journal_unavailable` deletion retries | in progress |
 
-Only the owner can: supply the support contact, hold the keystore and GitHub secrets, do the logins,
-and click through Yandex, GitHub and RuStore consoles.
+The owner supplies the support contact, holds the keystore and GitHub secrets, and approves protected
+signing and publication. Agents may drive the connected phone and complete authorized login/consent
+clicks; the owner supplies any required private credentials or verification codes.
 
 ## What taking over `/` means (step 4)
 
@@ -126,6 +140,6 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Production test profile deletion approval; owner approval of PR #182;
+Owner approval of PR #182 after its new main conflicts are resolved;
 protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
 tester allowlist, support contact and step 4 switch are already approved and configured.
