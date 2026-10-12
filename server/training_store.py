@@ -188,7 +188,11 @@ def _connect(*, read_only: bool = False) -> Iterator[sqlite3.Connection]:
 
 def init_db() -> None:
     global _initialised
-    with _init_lock:
+    # ``_write_lock`` first, like every writer. Creating a database file
+    # switches it to WAL, and that fails at once with "database is locked" (the
+    # busy timeout is not consulted) if another connection is being set up on
+    # the same file, e.g. a prune job that outlived the lifespan that started it.
+    with _write_lock, _init_lock:
         if _initialised:
             return
         TRAINING_DB_PATH.parent.mkdir(parents=True, exist_ok=True)

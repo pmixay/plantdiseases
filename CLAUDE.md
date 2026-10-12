@@ -63,7 +63,10 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   labeling/telemetry DBs and `AI_CACHE_DIR` to tmp dirs, neutralises the rate limiter
   in the `client` fixture (use `rate_limited_client` when you want it on), and clears
   `main._analyze_cache` per test — the image fixtures hash stably, so the same-photo
-  dedup cache leaks verdicts between tests otherwise. Adding pipeline behaviour means
+  dedup cache leaks verdicts between tests otherwise. An autouse fixture also empties
+  the per-IP daily quotas (`main._DAILY_QUOTAS`) and the inference admission slots
+  before every test: the whole suite posts from one TestClient peer, so a quota test
+  lowers one `_DailyQuota.limit` with monkeypatch. Adding pipeline behaviour means
   keeping `FakePipeline`'s response shape in sync, or patching `main.pipeline`.
 - Run server modules as a flat package from `server/` (`uvicorn main:app`) — imports
   resolve both flat (`server/`) and as `server.*` (repo root) via a try/except in `main.py`.

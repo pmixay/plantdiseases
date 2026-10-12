@@ -101,4 +101,4 @@ echo     Health:    http://localhost:%PORT%/api/health
 echo.
 
 if not defined FORWARDED_ALLOW_IPS set FORWARDED_ALLOW_IPS=127.0.0.1
-uvicorn main:app --host 0.0.0.0 --port %PORT% --forwarded-allow-ips %FORWARDED_ALLOW_IPS% --proxy-headers
+uvicorn main:app --host 0.0.0.0 --port %PORT% --forwarded-allow-ips %FORWARDED_ALLOW_IPS% --proxy-headers --limit-concurrency 64 --timeout-keep-alive 5 --no-access-log

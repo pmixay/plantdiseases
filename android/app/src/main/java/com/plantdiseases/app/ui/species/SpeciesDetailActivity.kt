@@ -39,6 +39,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
+import com.plantdiseases.app.ui.common.WikipediaAttribution
 import com.plantdiseases.app.ui.common.bulletRow
 import com.plantdiseases.app.ui.common.cardColumn
 import com.plantdiseases.app.ui.common.cardHeading
@@ -610,6 +611,17 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     binding.btnWikipedia.setOnClickListener {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     }
+                }
+                // CC BY-SA: the extract and photos above carry their source
+                // and licence one tap away.
+                binding.btnWikipediaAttribution.visibility = View.VISIBLE
+                binding.btnWikipediaAttribution.setOnClickListener {
+                    WikipediaAttribution.show(
+                        this@SpeciesDetailActivity,
+                        info.title,
+                        info.pageUrl,
+                        info.translated,
+                    )
                 }
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)

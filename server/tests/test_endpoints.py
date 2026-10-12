@@ -6,6 +6,7 @@ import hashlib
 import io
 import sqlite3
 
+import pytest
 from PIL import Image
 
 
@@ -768,6 +769,44 @@ def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
     assert int(calls["bytes_len"]) > 0
 
 
+def _jpeg_with_gps(size=(96, 96)) -> bytes:
+    exif = Image.Exif()
+    exif[0x0110] = "LeakyPhone 9"  # Model
+    exif[0x8825] = {1: "N", 2: (55.0, 45.0, 21.0), 3: "E", 4: (37.0, 37.0, 4.0)}
+    buf = io.BytesIO()
+    Image.new("RGB", size, (40, 140, 60)).save(
+        buf, format="JPEG", exif=exif.tobytes(), comment=b"GPS 55.7558N 37.6173E home",
+    )
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("route", ["/api/identify", "/api/analyze"])
+def test_plantnet_never_receives_upload_exif(client, monkeypatch, route):
+    """EXIF (GPS above all) in an upload must not reach PlantNet. Both the
+    identify proxy and the analyze fan-out forward a re-encode of the
+    decoded pixels, not the client's bytes."""
+    import main as server_main
+
+    forwarded: list[bytes] = []
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        forwarded.append(image_bytes)
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    upload = _jpeg_with_gps()
+    assert Image.open(io.BytesIO(upload)).getexif().get_ifd(0x8825)  # fixture sanity
+    r = client.post(route, files={"image": ("leaf.jpg", upload, "image/jpeg")})
+    assert r.status_code == 200, r.text
+    assert len(forwarded) == 1
+    assert forwarded[0] != upload
+    with Image.open(io.BytesIO(forwarded[0])) as sent:
+        assert sent.size == (96, 96)
+        assert not sent.getexif()
+        assert "exif" not in sent.info
+        assert "comment" not in sent.info  # a JPEG COM segment is metadata too
+
+
 def test_analyze_response_issues_separate_community_and_feedback_tokens(
     client, png_bytes
 ):
@@ -847,6 +886,14 @@ def test_analyze_omits_unpersisted_publication_capability_on_cache_miss_and_hit(
     assert second.json()["is_repeat"] is True
     assert isinstance(first.json()["feedback_receipt"], str)
     assert isinstance(second.json()["feedback_receipt"], str)
+
+
+def test_progression_history_is_capped(client):
+    entry = {"class_name": "leaf_spot", "confidence": 0.8, "severity": "medium"}
+    ok = client.post("/api/progression", json={"history": [entry] * 12})
+    assert ok.status_code == 200, ok.text
+    too_long = client.post("/api/progression", json={"history": [entry] * 51})
+    assert too_long.status_code == 422, too_long.text
 
 
 def test_feedback_rejects_legacy_scan_id_payload(client, png_bytes):

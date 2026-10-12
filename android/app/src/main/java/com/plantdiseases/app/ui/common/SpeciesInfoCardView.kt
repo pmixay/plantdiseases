@@ -3,6 +3,7 @@ package com.plantdiseases.app.ui.common
 import android.content.Context
 import android.util.AttributeSet
 import android.view.LayoutInflater
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -33,9 +34,11 @@ import com.google.android.material.R as MaterialR
  *
  * It shows only what identifies the plant: the Wikipedia lead photo, the
  * species name, the Wikipedia description, and a "more about this species"
- * action opening [SpeciesDetailActivity]. Care, toxicity, flowering, native
- * range and common problems deliberately live on that screen alone, so this
- * card is the same height on every surface it is embedded in.
+ * action opening [SpeciesDetailActivity]. Once Wikipedia content is shown, an
+ * "i" beside the name opens its attribution ([WikipediaAttribution]). Care,
+ * toxicity, flowering, native range and common problems deliberately live on
+ * that screen alone, so this card is the same height on every surface it is
+ * embedded in.
  *
  * Bind is safe to call repeatedly: every call resets the card to its empty
  * state first, so a recycled host never shows the previous species' photo.
@@ -65,6 +68,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
     private val expandLabel: TextView
     private val expandChevron: ImageView
     private val moreButton: MaterialButton
+    private val attributionButton: ImageButton
 
     /** Guards against a stale response from a previous [bind] landing last. */
     private var bindToken = 0
@@ -95,6 +99,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
         expandLabel = findViewById(R.id.species_info_expand_label)
         expandChevron = findViewById(R.id.species_info_expand_chevron)
         moreButton = findViewById(R.id.species_info_more)
+        attributionButton = findViewById(R.id.species_info_attribution)
 
         expandRow.setOnClickListener { setExpanded(descriptionView.maxLines == collapsedLines) }
     }
@@ -157,6 +162,8 @@ class SpeciesInfoCardView @JvmOverloads constructor(
         expandRow.isVisible = false
         moreButton.isVisible = false
         moreButton.setOnClickListener(null)
+        attributionButton.isVisible = false
+        attributionButton.setOnClickListener(null)
         setExpanded(expanded = false)
     }
 
@@ -208,6 +215,15 @@ class SpeciesInfoCardView @JvmOverloads constructor(
                 descriptionView.text = extract
                 descriptionView.isVisible = true
                 revealToggleIfClipped()
+            }
+
+            // CC BY-SA: whatever Wikipedia content is on the card carries
+            // its source and licence one tap away.
+            if (photo.isVisible || descriptionView.isVisible) {
+                attributionButton.isVisible = true
+                attributionButton.setOnClickListener {
+                    WikipediaAttribution.show(context, info.title, info.pageUrl, info.translated)
+                }
             }
         }
     }

@@ -217,7 +217,7 @@ the diff of `train_counts` / `source_inventory`.
   train 593 → 339, NAP 1930 → 1568. gray_mold R/P 0.84/0.89 → 0.83/0.83 on
   clean foliage. Last run to carry the old stable `test` split (0.866).
 
-### 2.6.8 (06-29) — **deployed, the incumbent**
+### 2.6.8 (06-29) — the incumbent until 2.7.5
 - No knob change. Data: healthy train +652, powdery +122, viral +178, gray_mold
   +17; boundary hard-negatives sit in the eval-eligible `supplement`.
 - rw mF1 0.858, best in-domain epoch 19 (0.890); healthy R/P 0.91/0.94;
@@ -288,14 +288,16 @@ the diff of `train_counts` / `source_inventory`.
 - Stopped by the then-blocking OOD gate before writing a bundle; both levers
   falsified and removed. Its in-domain numbers exist only in the Colab log.
 
-### 2.7.5 (10-05) — v8 again, first manifest-bound bundle
+### 2.7.5 (10-05) — v8 again, first manifest-bound bundle — **deployed**
 - Recipe vs 2.7.2: no sampler or loss knob moved. Training geometry is the
   serving transform with a random crop (`serve_parity_v2_unablated`, no scale
   augmentation); the served OOD gate is fitted on the served statistic;
   conformal advertises its audit-backed 0.90; the Aqua converter runs in its
   own CPython 3.12 env (Colab is 3.13, torch 2.11). `cudnn_deterministic:
   false` in the card: Ultralytics unsets determinism when `detector.train()`
-  returns, so §4/§5 ran non-deterministic (see ROADMAP).
+  returns, so §4/§5 ran non-deterministic. Since 2026-10-09 the notebook
+  re-asserts it at the top of §4, §5 and §6 (`assert_determinism`) and seals
+  the training-time state into `run_manifest.json → determinism`.
 - Data: the same v8 corpus as 2.7.2 within ±2 % per class (train 13,724 vs
   13,660) and **the identical 535-row holdout** (every per-class count equal).
 - rw mF1 0.865 (INT8; FP32 0.858, paired CI straddles 0), indomain 0.886 at
@@ -406,8 +408,9 @@ why the collection target moved to first-party v9.
   always holds top-1, α = 0.6 still audits at 0.98 coverage with sets of 1.5 —
   but `server/conformal.py` reports `coverage = 1 − alpha`, so any 2.7.x bundle
   makes `/api/analyze` advertise **`coverage: 0.4`** while `conformal.json`
-  carries `target_coverage: 0.9`. Either clamp the grid to α ≤ 1 − target or
-  export and serve `target_coverage`. Not yet fixed on `model-fix-test`.
+  carries `target_coverage: 0.9`. **Fixed 2026-09-21:** `conformal.py` now
+  advertises `target_coverage` when the sidecar carries the out-of-sample
+  audit that backs it (`coverage_basis = audit_target`), else `1 − alpha`.
 - **INT8 has never been significantly worse except once** (2.6.0 on 06-19,
   drift 0.014, CI excluded 0 → FP32 shipped) and was significantly *better*
   once (2.6.9). Every other run: |drift| ≤ 0.011, CI straddles 0. The drift
@@ -470,9 +473,10 @@ To compare release A with release B on data *both* never saw:
   candidates** — §2 on this branch routes any row first seen at or before the
   candidate's version to `supplement_train_only`, so v9 rows stamped `never`
   or `> both` are eval-fair to both.
-- **OOD sentinel v2** — never trained by any model, but one species, one
-  session, ≥ 11 pseudo-replicates and no non-plant arm; a regression alarm,
-  not a comparison instrument, until v3 exists.
+- **OOD sentinel v2** — never trained by 2.7.x, but 2.6.x trained on the same
+  species (possibly the same photographs) through `pappu54` (2.7.5 notes
+  above); one species, one session, ≥ 11 pseudo-replicates and no non-plant
+  arm. A regression alarm, not a comparison instrument, until v3 exists.
 
 The mechanics: score both bundles served (`tools/paired_eval.py --served
 --manifest`), then `tools/eval_bootstrap.py` with the capture family as the

@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.ui.garden.PlantHealthUi
 import com.plantdiseases.app.ui.garden.ReminderScheduleSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
@@ -154,15 +155,7 @@ class DetailHeaderController(
                 ).apply { topMargin = 4.dp() }
             },
         )
-        val healthLabel = activity.getString(
-            when (health.status) {
-                PlantHealth.Status.HEALTHY -> R.string.plant_status_healthy
-                PlantHealth.Status.WATCH -> R.string.plant_status_watch
-                PlantHealth.Status.TREATMENT -> R.string.plant_status_treatment
-                PlantHealth.Status.RECOVERING -> R.string.plant_status_recovering
-                PlantHealth.Status.UNKNOWN -> R.string.plant_status_no_scans
-            },
-        )
+        val healthLabel = activity.getString(PlantHealthUi.labelRes(health))
         body.addView(
             TextView(activity).apply {
                 text = health.score?.let { score ->
@@ -351,8 +344,8 @@ class DetailHeaderController(
             .show()
     }
 
-    /** Overview / Care / History / Gallery — Garden refactor's plant-profile
-     *  restructure (docs/ROADMAP.md). Replaces the old Timeline / Photos /
+    /** Overview / Care / History / Gallery — the Garden refactor's
+     *  plant-profile restructure. Replaces the old Timeline / Photos /
      *  Journal set; History now carries what Timeline + Journal used to
      *  cover, Gallery is the renamed Photos tab. */
     fun buildTabs(

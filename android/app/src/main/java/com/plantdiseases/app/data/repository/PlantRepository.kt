@@ -16,6 +16,7 @@ import com.plantdiseases.app.data.local.RoomDao
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.local.TreatmentPlanDao
+import com.plantdiseases.app.data.local.TreatmentPlanEntity
 import com.plantdiseases.app.data.local.TreatmentStepDao
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
@@ -47,9 +48,9 @@ class PlantRepository(
      *  replace, and `groupBy` preserves encounter order, so the
      *  `firstOrNull()`/`maxByOrNull()` below still see exactly what they did.
      *
-     *  The one query still made per plant is the adherence read inside
+     *  The queries still made per plant are the adherence reads inside
      *  [getPlantHealth], and only for plants with an active treatment plan —
-     *  usually none. That one deliberately stays per-plant: it is
+     *  usually none. The reminder-event read deliberately stays per-plant: it is
      *  `recentForPlant(limit = 50)`, and a batched `IN (…)` would apply that
      *  50-row cap across the whole garden rather than per plant, silently
      *  truncating the window for every plant but the busiest. */
@@ -73,7 +74,7 @@ class PlantRepository(
                 lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal),
                 roomName = plant.roomId?.let { roomNamesById[it] },
-                health = getPlantHealth(plant.id, scans, activePlansByPlant[plant.id]?.id, nowMs),
+                health = getPlantHealth(plant.id, scans, activePlansByPlant[plant.id], nowMs),
             )
         }
     }
@@ -101,29 +102,36 @@ class PlantRepository(
         }
     }
 
-    /** Care adherence over the last [ADHERENCE_WINDOW_DAYS] days, from the
-     *  already-logged reminder-firing history — cheaper than re-projecting
-     *  CareQueue for every plant in the garden list, and only actually
-     *  consulted when there's an active treatment plan (PlantHealth.evaluate
-     *  ignores it otherwise). "Fired" reminders are the ones that were due;
-     *  "done" ones were kept up with. */
-    /** Public so the plant-detail health card (DetailExtraCardsController)
-     *  can compute the same verdict for a single plant instead of
-     *  duplicating the scoring + adherence logic a second time. */
+    /** The [PlantHealth.Verdict] for one plant — the garden list and the
+     *  plant-detail screen (header + health card) both read it from here, so
+     *  the scoring and adherence logic exist once.
+     *
+     *  Abstained scans (blur, OOD, not-a-plant) are dropped before scoring.
+     *  Adherence is only read when there's an active treatment plan
+     *  (PlantHealth.evaluate ignores it otherwise): the plan's due checklist
+     *  steps plus reminder firings since the plan started (at most the last
+     *  [ADHERENCE_WINDOW_DAYS] days), from the already-logged history —
+     *  cheaper than re-projecting CareQueue for every plant in the garden
+     *  list. "Fired" reminders are the ones that were due; "done" ones were
+     *  kept up with. */
     suspend fun getPlantHealth(
         plantId: Long,
         scans: List<ScanEntity>,
-        activePlanId: Long?,
+        activePlan: TreatmentPlanEntity?,
         nowMs: Long = System.currentTimeMillis(),
     ): PlantHealth.Verdict {
-        val adherence = if (activePlanId != null) {
-            val cutoff = nowMs - ADHERENCE_WINDOW_DAYS * CareSchedule.DAY_MS
+        val adherence = if (activePlan != null) {
+            // Only reminders that fell due while this plan has been running:
+            // care logged before the diagnosis says nothing about keeping up
+            // with the treatment, and counting it let a brand-new plan look
+            // fully kept up before a single treatment step was done.
+            val cutoff = maxOf(nowMs - ADHERENCE_WINDOW_DAYS * CareSchedule.DAY_MS, activePlan.startedAt)
             val events = reminderEventDao.recentForPlant(plantId, limit = 50)
                 .filter { it.firedAt >= cutoff }
             // The scan-derived treatment checklist is the primary active-plan
             // adherence signal. Reminder events remain additive so scheduled
             // watering/fertilising done during treatment also counts.
-            val dueSteps = treatmentStepDao.getForPlan(activePlanId)
+            val dueSteps = treatmentStepDao.getForPlan(activePlan.id)
                 .filter { it.dueAt <= nowMs && it.status != "skipped" }
             PlantHealth.Adherence(
                 due = events.size + dueSteps.size,
@@ -149,7 +157,7 @@ class PlantRepository(
                     isNotAPlant = isNotAPlant,
                 )
             }
-        return PlantHealth.evaluate(scanInputs, activePlanId != null, adherence, nowMs)
+        return PlantHealth.evaluate(scanInputs, activePlan != null, adherence, nowMs)
     }
 
     /** Compute the soonest reminder due-time across all enabled reminders
@@ -586,6 +594,7 @@ class PlantRepository(
             status = PlantHealth.Status.UNKNOWN,
             score = null,
             weekDelta = null,
+            weekDeltaDays = null,
             series = emptyList(),
             scanCount = 0,
         ),

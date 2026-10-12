@@ -77,7 +77,7 @@
     "/api/analyze": {
       "post": {
         "summary": "Analyze Image",
-        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected regions, a conservative compatibility severity placeholder, and\nthe top-k class probabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.\n\n``family`` selects the model tier (aqua | gamma | frontier). ``gamma``\nis the default; ``aqua`` is normally answered on-device but is served\nby gamma here for online parity; ``frontier`` requires the operator to\nhave enabled and provisioned it (otherwise a graceful ``available:false``\npayload is returned, never a 5xx).",
+        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected regions, a conservative compatibility severity placeholder, and\nthe top-k class probabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.\n\n``family`` selects the model tier (aqua | gamma | frontier). ``gamma``\nis the default; ``aqua`` is normally answered on-device but is served\nby gamma here for online parity; ``frontier`` requires the operator to\nhave enabled and provisioned it (otherwise a graceful ``available:false``\npayload is returned, never a 5xx).\n\nAdmission-controlled: a request that finds the server full gets 503 +\n``Retry-After`` before its upload is read (see ``_inference_slot``), and\neach IP gets ``ANALYZE_DAILY_QUOTA`` analyses a day (429 past it).",
         "operationId": "analyze_image_api_analyze_post",
         "parameters": [
           {
@@ -182,7 +182,7 @@
     "/api/identify": {
       "post": {
         "summary": "Identify Endpoint",
-        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").\n\nThe same local NAP gate used by ``/api/analyze`` runs before PlantNet.\nA ``not_a_plant`` verdict returns a graceful ``available: false``\npayload and does not spend a PlantNet identification request.",
+        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").\n\nThe same local NAP gate used by ``/api/analyze`` runs before PlantNet.\nA ``not_a_plant`` verdict returns a graceful ``available: false``\npayload and does not spend a PlantNet identification request.\n\nShares ``/api/analyze``'s admission control (``_inference_slot``): the NAP\ngate runs on the same inference executor. Each IP gets\n``IDENTIFY_DAILY_QUOTA`` calls a day (429 past it), and its PlantNet calls\ncount against ``PLANTNET_DAILY_QUOTA_PER_IP`` (``available: false``,\n``source: \"quota\"`` past it).",
         "operationId": "identify_endpoint_api_identify_post",
         "parameters": [
           {
@@ -241,7 +241,7 @@
     "/api/chat": {
       "post": {
         "summary": "Chat Endpoint",
-        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun. Per-IP rate\nlimiting from the global middleware still applies.",
+        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun within a session;\n``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the\nclient mints ``session_id`` and a new one resets the session caps.",
         "operationId": "chat_endpoint_api_chat_post",
         "requestBody": {
           "content": {
@@ -278,7 +278,7 @@
     "/api/care-plan": {
       "post": {
         "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).",
+        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.",
         "operationId": "care_plan_endpoint_api_care_plan_post",
         "requestBody": {
           "content": {
@@ -352,7 +352,7 @@
     "/api/progression": {
       "post": {
         "summary": "Progression Endpoint",
-        "description": "Disease-progression analysis. Returns a 5-point severity\nsparkline + a trend slope across the supplied history (oldest\nfirst). An empty list is allowed and yields a zero-padded\nbaseline so the client can render an \"awaiting data\" state\nwithout special-casing.",
+        "description": "Disease-progression analysis. Returns a 5-point severity\nsparkline + a trend slope across the supplied history (oldest\nfirst). An empty list is allowed and yields a zero-padded\nbaseline so the client can render an \"awaiting data\" state\nwithout special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries\n(422 past it), so the computation stays a few microseconds of event-loop\ntime.",
         "operationId": "progression_endpoint_api_progression_post",
         "requestBody": {
           "content": {
@@ -1519,7 +1519,7 @@
     "/api/species-diseases": {
       "get": {
         "summary": "Species Diseases Endpoint",
-        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries.",
+        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``\nfor the caller's IP the answer is ``available: false`` with\n``reason: \"daily_quota\"``.",
         "operationId": "species_diseases_endpoint_api_species_diseases_get",
         "parameters": [
           {
@@ -1577,7 +1577,7 @@
     "/api/species-profile": {
       "get": {
         "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.\nShares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.",
         "operationId": "species_profile_endpoint_api_species_profile_get",
         "parameters": [
           {
@@ -2445,6 +2445,7 @@
               "type": "object"
             },
             "type": "array",
+            "maxItems": 50,
             "title": "History"
           }
         },

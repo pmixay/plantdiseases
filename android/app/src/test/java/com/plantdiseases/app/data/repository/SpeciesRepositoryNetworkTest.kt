@@ -79,7 +79,7 @@ class SpeciesRepositoryNetworkTest {
     fun speciesDiseases_cacheOnlyReadNeverFetchesAndRecognizesExistingKey() = runBlocking {
         assertThat(repository.cachedSpeciesDiseases("Ficus elastica", "en")).isNull()
         val cached = SpeciesDiseasesResponse(available = true, species = "Ficus elastica")
-        ResponseCache.put("species_diseases:v2:ficus elastica|en", cached, ResponseCache.TTL_SPECIES_MS)
+        ResponseCache.put("species_diseases:v3:ficus elastica|en", cached, ResponseCache.TTL_SPECIES_MS)
 
         assertThat(repository.cachedSpeciesDiseases(" Ficus elastica ", "en")).isEqualTo(cached)
         assertThat(repository.cachedSpeciesDiseases("Ficus elastica", "ru")).isNull()
@@ -104,7 +104,7 @@ class SpeciesRepositoryNetworkTest {
     @Test
     fun speciesProfile_reusesBilingualDiskCacheAfterLanguageSwitch() = runBlocking {
         val cached = SpeciesProfileResponse(available = true, species = "Ficus elastica")
-        ResponseCache.put("species_profile:v4:ficus elastica", cached, ResponseCache.TTL_SPECIES_MS)
+        ResponseCache.put("species_profile:v5:ficus elastica", cached, ResponseCache.TTL_SPECIES_MS)
 
         assertThat(repository.fetchSpeciesProfile(" Ficus elastica ", null, "ru").getOrThrow())
             .isEqualTo(cached)

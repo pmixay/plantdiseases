@@ -558,8 +558,10 @@
     <string name="plant_status_healthy">Здорово</string>
     <string name="plant_status_treatment">Лечение</string>
     <string name="plant_status_watch">Наблюдение</string>
+    <string name="plant_status_poor">Плохое состояние</string>
     <string name="plant_status_recovering">Восстановление</string>
     <string name="plant_status_no_scans">Сканов пока нет</string>
+    <string name="plant_status_need_scans">Мало свежих сканов</string>
 
     <!-- Garden refactor — plant profile -->
     <string name="plant_tab_overview">Обзор</string>
@@ -569,8 +571,18 @@
     <string name="plant_health_title">Здоровье</string>
     <string name="plant_health_header_status">Здоровье · %1$s</string>
     <string name="plant_health_header_score">Здоровье · %1$s · %2$d%%</string>
-    <string name="plant_health_delta_week">%1$s за неделю</string>
-    <string name="plant_health_need_scans">Отсканируйте растение дважды, чтобы увидеть динамику здоровья</string>
+    <plurals name="plant_health_delta_days">
+        <item quantity="one">%1$s за %2$d день</item>
+        <item quantity="few">%1$s за %2$d дня</item>
+        <item quantity="many">%1$s за %2$d дней</item>
+        <item quantity="other">%1$s за %2$d дня</item>
+    </plurals>
+    <plurals name="plant_health_need_recent_scans">
+        <item quantity="one">Чтобы увидеть динамику здоровья, нужен %d свежий скан</item>
+        <item quantity="few">Чтобы увидеть динамику здоровья, нужны %d свежих скана</item>
+        <item quantity="many">Чтобы увидеть динамику здоровья, нужно %d свежих сканов</item>
+        <item quantity="other">Чтобы увидеть динамику здоровья, нужно %d свежего скана</item>
+    </plurals>
     <string name="treatment_plan_current">Текущий план лечения</string>
     <string name="treatment_step_of">Шаг %1$d из %2$d</string>
     <string name="treatment_step_done">Выполнено · %1$s</string>
@@ -1127,6 +1139,15 @@
     <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
          specific species is referenced. -->
     <string name="species_info_more">Подробнее об этом виде</string>
+    <!-- Атрибуция Википедии (кнопка «i» на карточке вида и на экране вида). -->
+    <string name="wikipedia_attribution_content_description">Источник и лицензия описания</string>
+    <string name="wikipedia_attribution_title">Об этом описании</string>
+    <string name="wikipedia_attribution_body_article">Описание и фото взяты из статьи Википедии «%1$s». Тексты Википедии доступны по лицензии Creative Commons «С указанием авторства — С сохранением условий» 4.0 (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_body">Описание и фото взяты из Википедии. Тексты Википедии доступны по лицензии Creative Commons «С указанием авторства — С сохранением условий» 4.0 (CC BY-SA 4.0).</string>
+    <string name="wikipedia_attribution_photos">Фотографии взяты с Викисклада; у каждой своя лицензия, указанная на странице файла.</string>
+    <string name="wikipedia_attribution_translated">Текст переведён автоматически: статьи на вашем языке пока нет.</string>
+    <string name="wikipedia_attribution_licence">Лицензия</string>
+    <string name="wikipedia_attribution_close">Закрыть</string>
     <string name="species_info_expand">Показать полное описание</string>
     <string name="species_info_collapse">Скрыть полное описание</string>
     <!-- Spoken for the description toggle: species name, then the action. -->

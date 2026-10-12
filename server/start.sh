@@ -104,8 +104,16 @@ echo "    API docs:  http://localhost:${PORT}/docs"
 echo "    Health:    http://localhost:${PORT}/api/health"
 echo
 
+# --limit-concurrency matches the systemd unit in DEPLOYMENT.md: past that
+# many open connections uvicorn answers 503 instead of queueing without bound.
+# --no-access-log: RequestLoggingMiddleware already logs every request, and
+# uvicorn's own line would record query strings (older app builds put the
+# install's pseudo-id there).
 exec uvicorn main:app \
     --host 0.0.0.0 \
     --port "$PORT" \
     --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" \
-    --proxy-headers
+    --proxy-headers \
+    --limit-concurrency "${LIMIT_CONCURRENCY:-64}" \
+    --timeout-keep-alive 5 \
+    --no-access-log

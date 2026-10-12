@@ -1447,6 +1447,128 @@ def _consume_daily_write(operation: str, address: str, limit: int) -> bool:
             return False
         _daily_write_counts[key] = count + 1
         return True
+
+# Daily per-IP allowances on the endpoints that cost money or a shared
+# upstream quota. The write quotas above stop spam; these stop one client
+# from running up the OpenRouter bill or draining PlantNet's 500-a-day pool
+# for everyone, which a 2 req/s bucket alone allows (~170k requests a day).
+# Sized far above any real user's day; ``0`` disables one.
+ANALYZE_DAILY_QUOTA = get_int("ANALYZE_DAILY_QUOTA", 300)
+IDENTIFY_DAILY_QUOTA = get_int("IDENTIFY_DAILY_QUOTA", 150)
+# PlantNet calls per IP, shared by the /api/analyze fan-out and /api/identify.
+# Past it a scan still gets its diagnosis, without the species block.
+PLANTNET_DAILY_QUOTA_PER_IP = get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
+# AI Plant Doctor turns per IP. The per-session caps in ai_services reset
+# with every new client-chosen session_id; this one does not.
+CHAT_DAILY_QUOTA = get_int("CHAT_DAILY_QUOTA", 100)
+# LLM-polished care plans per IP. Past it the rules-based plan is served.
+CARE_PLAN_DAILY_QUOTA = get_int("CARE_PLAN_DAILY_QUOTA", 200)
+# /api/species-diseases + /api/species-profile together, per IP. Their caches
+# key on client-chosen names, so every new string is a billable miss.
+SPECIES_AI_DAILY_QUOTA = get_int("SPECIES_AI_DAILY_QUOTA", 400)
+
+
+def _client_key(client_ip: str) -> str:
+    """The identity the per-client allowances and in-flight caps count.
+
+    An IPv4 address as-is; an IPv6 address by its /64, because one host
+    routinely holds a whole /64 and could otherwise mint a fresh identity per
+    request. (Carrier NAT runs the other way — many users behind one IPv4 —
+    which is why every per-IP default here sits far above one user's day.)
+    """
+    try:
+        addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return client_ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return client_ip
+
+
+class _DailyQuota:
+    """Per-client counter that resets at UTC midnight.
+
+    In memory and per process, like the rate limiter: a restart forgets the
+    day's counts, which only ever errs towards serving. Once ``max_keys``
+    clients are tracked, new ones pass untracked (logged once a day) rather
+    than grow the map without bound; clients already tracked stay limited.
+    Reaching the ceiling takes that many distinct IPv4 addresses or IPv6
+    /64s in one day — a botnet, which no per-IP limit stops anyway.
+    """
+
+    def __init__(self, name: str, limit: int, *, max_keys: int = 200_000):
+        self.name = name
+        self.limit = limit
+        self.max_keys = max_keys
+        self._lock = threading.Lock()
+        self._day = ""
+        self._counts: dict[str, int] = {}
+        self._full_logged = False
+        self.rejections = 0
+
+    def try_consume(self, key: str) -> bool:
+        if self.limit <= 0:
+            return True
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._lock:
+            if day != self._day:
+                self._day = day
+                self._counts.clear()
+                self._full_logged = False
+            used = self._counts.get(key, 0)
+            if used >= self.limit:
+                self.rejections += 1
+                return False
+            if used == 0 and len(self._counts) >= self.max_keys:
+                if not self._full_logged:
+                    self._full_logged = True
+                    logger.warning(
+                        "Daily %s quota is tracking %d clients; new ones pass "
+                        "untracked until UTC midnight", self.name, self.max_keys,
+                    )
+                return True
+            self._counts[key] = used + 1
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self._day = ""
+            self._counts.clear()
+            self._full_logged = False
+            self.rejections = 0
+
+
+_analyze_quota = _DailyQuota("analyze", ANALYZE_DAILY_QUOTA)
+_identify_quota = _DailyQuota("identify", IDENTIFY_DAILY_QUOTA)
+_plantnet_quota = _DailyQuota("plantnet", PLANTNET_DAILY_QUOTA_PER_IP)
+_chat_quota = _DailyQuota("chat", CHAT_DAILY_QUOTA)
+_care_plan_quota = _DailyQuota("care_plan", CARE_PLAN_DAILY_QUOTA)
+_species_ai_quota = _DailyQuota("species_ai", SPECIES_AI_DAILY_QUOTA)
+_DAILY_QUOTAS = (
+    _analyze_quota, _identify_quota, _plantnet_quota,
+    _chat_quota, _care_plan_quota, _species_ai_quota,
+)
+
+
+def _require_daily_quota(quota: _DailyQuota, request: Request) -> None:
+    """429 once the caller has used up ``quota`` for today (UTC).
+
+    No ``Retry-After``: the app's RetryInterceptor retries a refused POST once
+    either way, and with the header it would sleep up to 30 s first only to
+    hit the same refusal; without it the retry comes after a 1 s backoff.
+    """
+    if not quota.try_consume(_client_key(_client_ip(request))):
+        logger.warning("Daily %s quota reached for %s", quota.name, request.url.path)
+        raise HTTPException(
+            status_code=429,
+            detail="Daily limit reached for this feature. Try again tomorrow.",
+        )
+
+
+_QUOTA_UNAVAILABLE_TEXT = {
+    "en": "You've reached today's limit for this feature. It resets at midnight UTC.",
+    "ru": "Дневной лимит для этой функции исчерпан. Он обновится в полночь по UTC.",
+}
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
@@ -1526,6 +1648,94 @@ def _get_net_executor() -> ThreadPoolExecutor:
             )
         return _net_executor
 
+# ── Inference admission control ─────────────────────────────────────
+# The inference executor's queue is unbounded, so every upload used to be
+# read (up to MAX_FILE_SIZE), decoded and queued with no ceiling: at
+# INFER_WORKERS=1 a single client staying inside its rate-limit bucket could
+# pin RAM and starve everyone else. /api/analyze and /api/identify now claim
+# a slot BEFORE they read or decode anything, and a request that finds the
+# server full gets 503 + Retry-After, which the app's RetryInterceptor
+# honours (one retry for a POST). The global cap bounds memory — each slot
+# holds at most one raw upload plus one decoded image — and the per-IP cap
+# stops one client from holding every slot. ``0`` disables either cap.
+INFER_MAX_INFLIGHT = get_int("INFER_MAX_INFLIGHT", 4 * max(1, INFER_WORKERS))
+INFER_MAX_INFLIGHT_PER_IP = get_int("INFER_MAX_INFLIGHT_PER_IP", 2)
+INFER_BUSY_RETRY_AFTER_SECONDS = get_int("INFER_BUSY_RETRY_AFTER_SECONDS", 3)
+
+_admission_lock = threading.Lock()
+_inference_inflight = 0
+_inference_inflight_by_ip: dict[str, int] = {}
+_inference_busy_rejections = 0
+
+
+def _try_admit_inference(client_ip: str) -> bool:
+    """Claim an inference slot for ``client_ip``; False when either cap is full."""
+    global _inference_inflight, _inference_busy_rejections
+    with _admission_lock:
+        per_ip = _inference_inflight_by_ip.get(client_ip, 0)
+        if (
+            (INFER_MAX_INFLIGHT > 0 and _inference_inflight >= INFER_MAX_INFLIGHT)
+            or (INFER_MAX_INFLIGHT_PER_IP > 0 and per_ip >= INFER_MAX_INFLIGHT_PER_IP)
+        ):
+            _inference_busy_rejections += 1
+            return False
+        _inference_inflight += 1
+        _inference_inflight_by_ip[client_ip] = per_ip + 1
+        return True
+
+
+def _release_inference(client_ip: str) -> None:
+    global _inference_inflight
+    with _admission_lock:
+        _inference_inflight = max(0, _inference_inflight - 1)
+        remaining = _inference_inflight_by_ip.get(client_ip, 0) - 1
+        if remaining > 0:
+            _inference_inflight_by_ip[client_ip] = remaining
+        else:
+            _inference_inflight_by_ip.pop(client_ip, None)
+
+
+class _InferenceSlot:
+    """A claimed admission slot. ``release()`` is idempotent, so a handler can
+    give the slot back as soon as its inference is done — before it waits on
+    PlantNet — and the context manager's own release becomes a no-op."""
+
+    def __init__(self, key: str):
+        self._key = key
+        self._held = True
+
+    def release(self) -> None:
+        if self._held:
+            self._held = False
+            _release_inference(self._key)
+
+
+@asynccontextmanager
+async def _inference_slot(request: Request):
+    """Hold one inference slot for the block (or until ``release()``), or 503.
+
+    The slot covers reading, decoding and inference only. Handlers release it
+    before any wait on an external service, so a slow upstream cannot turn
+    into 503s for everyone while the inference executor sits idle.
+    """
+    client_ip = _client_key(_client_ip(request))
+    if not _try_admit_inference(client_ip):
+        logger.warning(
+            "Inference busy: rejected %s %s (inflight=%d)",
+            request.method, request.url.path, _inference_inflight,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Server busy — try again in a few seconds",
+            headers={"Retry-After": str(INFER_BUSY_RETRY_AFTER_SECONDS)},
+        )
+    slot = _InferenceSlot(client_ip)
+    try:
+        yield slot
+    finally:
+        slot.release()
+
+
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
 _metrics_lock = threading.Lock()
@@ -1567,6 +1777,9 @@ def _snapshot_metrics() -> dict:
             "total_errors": _total_errors,
             "avg_latency_ms": round(avg, 1),
             "class_counts": dict(_class_counts),
+            "inference_inflight": _inference_inflight,
+            "inference_busy_rejections": _inference_busy_rejections,
+            "daily_quota_rejections": {q.name: q.rejections for q in _DAILY_QUOTAS},
         }
 
 
@@ -2808,6 +3021,12 @@ async def metrics_prometheus():
         "# HELP plantdiseases_errors_total Total error responses from /api/analyze.",
         "# TYPE plantdiseases_errors_total counter",
         f"plantdiseases_errors_total {snap['total_errors']}",
+        "# HELP plantdiseases_inference_inflight Inference requests holding an admission slot.",
+        "# TYPE plantdiseases_inference_inflight gauge",
+        f"plantdiseases_inference_inflight {snap['inference_inflight']}",
+        "# HELP plantdiseases_inference_busy_rejections_total Inference requests turned away with 503 (server full).",
+        "# TYPE plantdiseases_inference_busy_rejections_total counter",
+        f"plantdiseases_inference_busy_rejections_total {snap['inference_busy_rejections']}",
         "# HELP plantdiseases_analyze_latency_ms_avg Average analyse latency in milliseconds.",
         "# TYPE plantdiseases_analyze_latency_ms_avg gauge",
         f"plantdiseases_analyze_latency_ms_avg {snap['avg_latency_ms']}",
@@ -2875,6 +3094,10 @@ async def _species_identify_best_effort(
 
     Never raises — every failure mode is logged at INFO and folded
     into ``None`` so the analyze response stays whole.
+
+    Takes the decoded image, not the upload bytes: PlantNet receives a
+    metadata-free re-encode (``_plantnet_upload_bytes``), so EXIF/GPS from
+    a client that did not strip it never reaches the third party.
     """
     loop = asyncio.get_running_loop()
     try:
@@ -2946,6 +3169,176 @@ async def _species_identify_best_effort(
     return shaped
 
 
+def build_analyze_payload(
+    result: dict,
+    *,
+    scan_id: str | None,
+    species_payload: dict | None,
+    species_override: str | None,
+    served_family: str,
+    requested_family: str,
+    family_fallback_reason: str | None,
+) -> dict:
+    """Assemble the ``/api/analyze`` response from one pipeline ``result``.
+
+    Pure — no I/O, no awaits — so the response shape (the bilingual top-k, the
+    advisory conformal set and its dual care cards, the abstention-driven
+    species suppression, the toxicity fall-through and the abstention
+    presentation) is unit-testable without a TestClient. The handler keeps
+    everything that talks to the outside world: inference, the PlantNet wait,
+    minting the per-response tokens, the cache and the scan recording.
+    ``scan_id`` is omitted from the payload when ``None``.
+
+    ``species_payload`` is the resolved PlantNet block (``None`` when the
+    handler cancelled it); ``species_override`` is the ``?species=`` hint,
+    which drives the toxicity lookup only.
+    """
+    class_name = result["class_name"]
+    confidence = result["confidence"]
+    all_probs = result.get("all_probs", {})
+    warnings = list(result.get("warnings", []))
+    top_k = list(result.get("top_k", []))
+    abstained, abstention_reason = _derive_abstention(result)
+    disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
+
+    rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
+
+    detection = result["detection"]
+
+    # Annotate top_k with the bilingual display name so the client can
+    # render "Leaf mould - 6%" (or its RU variant) without a second
+    # lookup table.
+    top_k_localised = []
+    for entry in top_k:
+        cls = entry.get("class", "")
+        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+        top_k_localised.append({
+            "class": cls,
+            "confidence": entry.get("confidence", 0.0),
+            "name_en": info.get("name_en", cls.replace("_", " ").title()),
+            "name_ru": info.get("name_ru", cls),
+            "is_healthy": bool(info.get("is_healthy", False)),
+        })
+
+    # `is_healthy` mirrors the displayed class name so the client's
+    # status badge can never contradict the diagnosis text. Uncertainty
+    # is conveyed by the `warnings` array (`uncertain_healthy`,
+    # `disease_suspected:<class>`) and the top-k alternatives card,
+    # not by silently flipping this boolean.
+    is_healthy_effective = (
+        not abstained and bool(disease_info.get("is_healthy", False))
+    )
+
+    # Conformal prediction set: classes the model can't rule out at the
+    # configured coverage level. Annotated with bilingual names so the
+    # UI can render an advisory "leaf_spot OR viral_disease" set with its
+    # nominal target clearly distinguished from measured coverage.
+    # without a second lookup table. ``None`` when calibration data
+    # isn't yet available — clients must treat it as optional.
+    prediction_set = None if abstained else result.get("prediction_set")
+    if prediction_set is not None:
+        # Calibration-row coverage is not an independent validation. Keep the
+        # set advisory until a locked, family-independent served-path test
+        # establishes coverage for this exact graph + detector/crop/vote
+        # contract; no per-class-count heuristic can substitute for that.
+        prediction_set = {
+            **prediction_set,
+            "advisory": True,
+            "items": [
+                {
+                    "class": cls,
+                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_en", cls.replace("_", " ").title()
+                    ),
+                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_ru", cls
+                    ),
+                }
+                for cls in prediction_set["classes"]
+            ],
+        }
+        # Dual care cards (P0(b), kept-both taxonomy): when the set can't
+        # separate the two physiological-stress classes, their care advice
+        # diverges enough ("water me" vs "feed me") that we surface BOTH
+        # full care cards rather than only the top-1's.
+        _attach_dual_care(prediction_set)
+
+    # PlantNet on a non-plant photo always returns a low-quality guess
+    # ("Phaseolus vulgaris" because there was some green pixel noise)
+    # which is actively misleading on the result screen. When the
+    # pipeline lands on ``not_a_plant`` we suppress the species block
+    # entirely — the LRU cache in ``identify_species`` keeps the API
+    # call from being wasted on a repeat upload of the same image.
+    if abstained:
+        species_payload = {
+            "available": False,
+            "source": (
+                "skipped_nap"
+                if abstention_reason == _ABSTENTION_REASON_NAP
+                else "skipped_abstained"
+            ),
+            "best": None, "candidates": [],
+        }
+
+    # Pet-toxicity surface — resolves from the explicit ``species``
+    # query param when supplied, otherwise falls back to the auto-
+    # detected best match. Without either we return
+    # ``source="unknown"`` and the client renders an "unconfirmed"
+    # copy rather than falsely reassuring.
+    auto_best = (species_payload or {}).get("best") or {}
+    toxicity_species = None if abstained else (species_override or auto_best.get("scientific_name"))
+    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
+        "toxic_to_pets": False, "species_list": [], "source": "unknown",
+    }
+
+    response_payload = {
+        # Probability-backed classifier argmax. Rejection gates never replace
+        # it: clients use ``abstained`` / ``abstention_reason`` to decide
+        # whether this diagnostic may be presented as an accepted diagnosis.
+        "class_name": class_name,
+        # Which model tier actually produced this verdict. Lets the client
+        # confirm it got the family it asked for (and fall back gracefully if
+        # a future server downgrades the request).
+        "family": served_family,
+        "requested_family": requested_family,
+        "family_fallback_reason": family_fallback_reason,
+        "disease_name": disease_info["name_en"],
+        "disease_name_ru": disease_info["name_ru"],
+        "confidence": round(confidence, 3),
+        "description": disease_info["description_en"],
+        "description_ru": disease_info["description_ru"],
+        "treatment": disease_info["treatment_en"],
+        "treatment_ru": disease_info["treatment_ru"],
+        "prevention": disease_info["prevention_en"],
+        "prevention_ru": disease_info["prevention_ru"],
+        "is_healthy": is_healthy_effective,
+        "detection": detection,
+        "severity": result.get("severity", "low"),
+        "all_probs": rounded_probs,
+        "top_k": top_k_localised,
+        "warnings": warnings,
+        "abstained": abstained,
+        "abstention_reason": abstention_reason,
+        "verdict_status": "abstained" if abstained else "accepted",
+        "prediction_set": prediction_set,
+        "toxic_to_pets": toxicity["toxic_to_pets"],
+        "toxic_species_list": toxicity["species_list"],
+        "toxicity_source": toxicity["source"],
+        "species": species_payload,
+        "elapsed_ms": result["elapsed_ms"],
+        "server_version": APP_VERSION,
+        # Set to true only when the response is replayed from the
+        # SHA-256 cache above; first-time scans get false here.
+        "is_repeat": False,
+    }
+    if scan_id is not None:
+        # Server-minted token for this one response. The handler passes None
+        # for the cacheable payload and adds its own capabilities afterwards,
+        # so a token is never replayed from the diagnosis cache.
+        response_payload["scan_id"] = scan_id
+    return _apply_abstention_presentation(response_payload)
+
+
 @api_router.post("/analyze")
 async def analyze_image(
     request: Request,
@@ -2970,7 +3363,43 @@ async def analyze_image(
     by gamma here for online parity; ``frontier`` requires the operator to
     have enabled and provisioned it (otherwise a graceful ``available:false``
     payload is returned, never a 5xx).
+
+    Admission-controlled: a request that finds the server full gets 503 +
+    ``Retry-After`` before its upload is read (see ``_inference_slot``), and
+    each IP gets ``ANALYZE_DAILY_QUOTA`` analyses a day (429 past it).
     """
+    async with _inference_slot(request) as slot:
+        # Taken once admitted, so a busy 503 (and the app's retry of it)
+        # does not spend the caller's allowance.
+        _require_daily_quota(_analyze_quota, request)
+        return await _analyze_image_admitted(
+            request, background_tasks, image, slot,
+            client_ip=_client_key(_client_ip(request)),
+            species=species, locale=locale, family=family,
+            training_consent=training_consent,
+            training_consent_version=training_consent_version,
+        )
+
+
+async def _plantnet_quota_exhausted() -> dict:
+    """Species block for a scan whose IP has used up its PlantNet allowance."""
+    return {"available": False, "source": "quota", "best": None, "candidates": []}
+
+
+async def _analyze_image_admitted(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    image: UploadFile,
+    slot: _InferenceSlot,
+    *,
+    client_ip: str,
+    species: str | None,
+    locale: str,
+    family: str,
+    training_consent: bool,
+    training_consent_version: str | None,
+) -> JSONResponse:
+    """The body of ``/api/analyze``, run while holding an inference slot."""
     if pipeline is None:
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
@@ -3191,7 +3620,12 @@ async def analyze_image(
             lang=plantnet_lang,
         ),
     )
-    if cached_species is None and plantnet_configured():
+    if cached_species is None and not _plantnet_quota.try_consume(client_ip):
+        # This IP has used its daily PlantNet allowance: the scan still gets
+        # its diagnosis, without the species block. A cache hit costs no
+        # lookup and is never counted.
+        species_payload = await _plantnet_quota_exhausted()
+    elif cached_species is None and plantnet_configured():
         species_payload = await _authorize_optional_species_lookup(request)
         species_authorized = species_payload is None
     if species_payload is None:
@@ -3227,14 +3661,12 @@ async def analyze_image(
         _record_error()
         logger.error("Inference failed")
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
+    # Inference is done: give the slot back before waiting on PlantNet.
+    slot.release()
 
     class_name = result["class_name"]
     confidence = result["confidence"]
-    all_probs = result.get("all_probs", {})
-    warnings = list(result.get("warnings", []))
-    top_k = list(result.get("top_k", []))
     abstained, abstention_reason = _derive_abstention(result)
-    disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
     metric_class = (
@@ -3244,68 +3676,6 @@ async def analyze_image(
     _record_analysis(metric_class, elapsed * 1000)
 
     logger.info("Analysis completed")
-
-    rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
-
-    detection = result["detection"]
-
-    # Annotate top_k with the bilingual display name so the client can
-    # render "Leaf mould - 6%" (or its RU variant) without a second
-    # lookup table.
-    top_k_localised = []
-    for entry in top_k:
-        cls = entry.get("class", "")
-        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
-        top_k_localised.append({
-            "class": cls,
-            "confidence": entry.get("confidence", 0.0),
-            "name_en": info.get("name_en", cls.replace("_", " ").title()),
-            "name_ru": info.get("name_ru", cls),
-            "is_healthy": bool(info.get("is_healthy", False)),
-        })
-
-    # `is_healthy` mirrors the displayed class name so the client's
-    # status badge can never contradict the diagnosis text. Uncertainty
-    # is conveyed by the `warnings` array (`uncertain_healthy`,
-    # `disease_suspected:<class>`) and the top-k alternatives card,
-    # not by silently flipping this boolean.
-    is_healthy_effective = (
-        not abstained and bool(disease_info.get("is_healthy", False))
-    )
-
-    # Conformal prediction set: classes the model can't rule out at the
-    # configured coverage level. Annotated with bilingual names so the
-    # UI can render an advisory "leaf_spot OR viral_disease" set with its
-    # nominal target clearly distinguished from measured coverage.
-    # without a second lookup table. ``None`` when calibration data
-    # isn't yet available — clients must treat it as optional.
-    prediction_set = None if abstained else result.get("prediction_set")
-    if prediction_set is not None:
-        # Calibration-row coverage is not an independent validation. Keep the
-        # set advisory until a locked, family-independent served-path test
-        # establishes coverage for this exact graph + detector/crop/vote
-        # contract; no per-class-count heuristic can substitute for that.
-        prediction_set = {
-            **prediction_set,
-            "advisory": True,
-            "items": [
-                {
-                    "class": cls,
-                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_en", cls.replace("_", " ").title()
-                    ),
-                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_ru", cls
-                    ),
-                }
-                for cls in prediction_set["classes"]
-            ],
-        }
-        # Dual care cards (P0(b), kept-both taxonomy): when the set can't
-        # separate the two physiological-stress classes, their care advice
-        # diverges enough ("water me" vs "feed me") that we surface BOTH
-        # full care cards rather than only the top-1's.
-        _attach_dual_care(prediction_set)
 
     # Resolve the species fan-out. We started it in parallel with the
     # disease pipeline so this normally returns immediately. If the
@@ -3339,33 +3709,20 @@ async def analyze_image(
     if isinstance(species_payload, dict):
         species_payload.pop("_upstream_attempted", None)
 
-    # PlantNet on a non-plant photo always returns a low-quality guess
-    # ("Phaseolus vulgaris" because there was some green pixel noise)
-    # which is actively misleading on the result screen. When the
-    # pipeline lands on ``not_a_plant`` we suppress the species block
-    # entirely — the LRU cache in ``identify_species`` keeps the API
-    # call from being wasted on a repeat upload of the same image.
-    if abstained:
-        species_payload = {
-            "available": False,
-            "source": (
-                "skipped_nap"
-                if abstention_reason == _ABSTENTION_REASON_NAP
-                else "skipped_abstained"
-            ),
-            "best": None, "candidates": [],
-        }
-
-    # Pet-toxicity surface — resolves from the explicit ``species``
-    # query param when supplied, otherwise falls back to the auto-
-    # detected best match. Without either we return
-    # ``source="unknown"`` and the client renders an "unconfirmed"
-    # copy rather than falsely reassuring.
-    auto_best = (species_payload or {}).get("best") or {}
-    toxicity_species = None if abstained else (species or auto_best.get("scientific_name"))
-    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
-        "toxic_to_pets": False, "species_list": [], "source": "unknown",
-    }
+    # The shared builder applies the abstention species suppression, the
+    # toxicity lookup and the response shape. ``scan_id=None`` keeps the
+    # cacheable payload free of per-response capabilities; they are minted
+    # below from the species block the builder settled on.
+    cached_response_payload = build_analyze_payload(
+        result,
+        scan_id=None,
+        species_payload=species_payload,
+        species_override=species,
+        served_family=served_family,
+        requested_family=requested_family,
+        family_fallback_reason=family_fallback_reason,
+    )
+    auto_best = (cached_response_payload["species"] or {}).get("best") or {}
 
     capture_pending = bool(
         TRAINING_CAPTURE_ENABLED
@@ -3383,55 +3740,13 @@ async def analyze_image(
         species_score=auto_best.get("score"),
         image_sha256=image_sha,
     )
-
-    cached_response_payload = {
-        # Probability-backed classifier argmax. Rejection gates never replace
-        # it: clients use ``abstained`` / ``abstention_reason`` to decide
-        # whether this diagnostic may be presented as an accepted diagnosis.
-        # Training capture records it internally as a weak prior; feedback
-        # clients send only the unrelated receipt plus structured
-        # correctness/correction fields.
-        "class_name": class_name,
-        # Which model tier actually produced this verdict. Lets the client
-        # confirm it got the family it asked for (and fall back gracefully if
-        # a future server downgrades the request).
-        "family": served_family,
-        "requested_family": requested_family,
-        "family_fallback_reason": family_fallback_reason,
-        "disease_name": disease_info["name_en"],
-        "disease_name_ru": disease_info["name_ru"],
-        "confidence": round(confidence, 3),
-        "description": disease_info["description_en"],
-        "description_ru": disease_info["description_ru"],
-        "treatment": disease_info["treatment_en"],
-        "treatment_ru": disease_info["treatment_ru"],
-        "prevention": disease_info["prevention_en"],
-        "prevention_ru": disease_info["prevention_ru"],
-        "is_healthy": is_healthy_effective,
-        "detection": detection,
-        "severity": result.get("severity", "low"),
-        "all_probs": rounded_probs,
-        "top_k": top_k_localised,
-        "warnings": warnings,
-        "abstained": abstained,
-        "abstention_reason": abstention_reason,
-        "verdict_status": "abstained" if abstained else "accepted",
-        "prediction_set": prediction_set,
-        "toxic_to_pets": toxicity["toxic_to_pets"],
-        "toxic_species_list": toxicity["species_list"],
-        "toxicity_source": toxicity["source"],
-        "species": species_payload,
-        "elapsed_ms": result["elapsed_ms"],
-        "server_version": APP_VERSION,
-        # Set to true only when the response is replayed from the
-        # SHA-256 cache above; first-time scans get false here.
-        "is_repeat": False,
-    }
-    _apply_abstention_presentation(cached_response_payload)
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.
-    _analyze_cache_put(cache_key, cached_response_payload)
+    # Not when this caller's PlantNet allowance blanked the species block: the
+    # cache would replay that blank to everyone uploading the same bytes.
+    if (cached_response_payload.get("species") or {}).get("source") != "quota":
+        _analyze_cache_put(cache_key, cached_response_payload)
     response_payload = {
         **cached_response_payload,
         # This server-minted token is accepted only by community publication.
@@ -3741,11 +4056,16 @@ class CommunityScanRequest(BaseModel):
         return cleaned or None
 
 
+# The app sends its 12 newest scans; the cap leaves room for that to grow
+# while bounding the work a single request can hand the event loop.
+PROGRESSION_MAX_HISTORY = 50
+
+
 class ProgressionRequest(BaseModel):
     """Time-ordered list of scans (oldest first) for the disease-
     progression sparkline + trend the plant-detail screen renders."""
 
-    history: list[dict]
+    history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
 
 
 # Classes the production head can actually predict. Tracks the
@@ -3875,7 +4195,31 @@ async def identify_endpoint(
     The same local NAP gate used by ``/api/analyze`` runs before PlantNet.
     A ``not_a_plant`` verdict returns a graceful ``available: false``
     payload and does not spend a PlantNet identification request.
+
+    Shares ``/api/analyze``'s admission control (``_inference_slot``): the NAP
+    gate runs on the same inference executor. Each IP gets
+    ``IDENTIFY_DAILY_QUOTA`` calls a day (429 past it), and its PlantNet calls
+    count against ``PLANTNET_DAILY_QUOTA_PER_IP`` (``available: false``,
+    ``source: "quota"`` past it).
     """
+    async with _inference_slot(request) as slot:
+        _require_daily_quota(_identify_quota, request)
+        return await _identify_admitted(
+            request, image, slot,
+            client_ip=_client_key(_client_ip(request)), organ=organ, locale=locale,
+        )
+
+
+async def _identify_admitted(
+    request: Request,
+    image: UploadFile,
+    slot: _InferenceSlot,
+    *,
+    client_ip: str,
+    organ: str,
+    locale: str,
+) -> JSONResponse:
+    """The body of ``/api/identify``, run while holding an inference slot."""
     if pipeline is None:
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
@@ -3949,6 +4293,8 @@ async def identify_endpoint(
         logger.exception("NAP filter crashed for /api/identify: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
 
+    # The NAP gate was the only inference here; PlantNet waits slot-free.
+    slot.release()
     if nap_result.get("class_name") == "not_a_plant":
         return JSONResponse(content={
             "available": False,
@@ -3982,9 +4328,19 @@ async def identify_endpoint(
         ),
     )
     identification_authorized = False
-    if cached_result is None and plantnet_configured():
-        await _authorize_metered_feature(request, feature="plant_identification")
-        identification_authorized = True
+    if cached_result is None:
+        # Per-IP allowance on PlantNet lookups (a cache hit spends none),
+        # checked before the account's metered budget is touched.
+        if not _plantnet_quota.try_consume(client_ip):
+            return JSONResponse(content={
+                "available": False,
+                "results": [],
+                "source": "quota",
+                "organ": organ,
+            })
+        if plantnet_configured():
+            await _authorize_metered_feature(request, feature="plant_identification")
+            identification_authorized = True
     try:
         result = cached_result
         if result is None:
@@ -4026,9 +4382,20 @@ async def chat_endpoint(request: Request, payload: ChatRequest):
     """AI Plant Doctor — OpenRouter chat completion (default model
     ``openai/gpt-5.6-luna``).
 
-    Per-session turn + token caps prevent budget overrun. Per-IP rate
-    limiting from the global middleware still applies.
+    Per-session turn + token caps prevent budget overrun within a session;
+    ``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the
+    client mints ``session_id`` and a new one resets the session caps.
     """
+    if not _chat_quota.try_consume(_client_key(_client_ip(request))):
+        lang = "ru" if str(payload.locale or "en").lower().startswith("ru") else "en"
+        return JSONResponse(content={
+            "available": False,
+            "reply": "",
+            "reason": "daily_quota",
+            # The app shows ``fallback`` verbatim, so builds that predate
+            # this reason still tell the user what happened.
+            "fallback": _QUOTA_UNAVAILABLE_TEXT[lang],
+        })
     # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
     # before they hit chat_reply so a malicious client can't push a
     # 10 MB nested dict through the LLM context window.
@@ -4062,9 +4429,12 @@ async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
     is configured the response also includes a Markdown ``summary_md``
     polished by the LLM. Disease must be one of the known classifier
     classes (``unknown`` is normalised to a generic monitoring plan).
+    Past ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served
+    without the LLM polish.
     """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+    polish = _care_plan_quota.try_consume(_client_key(_client_ip(request)))
     disease = payload.disease.strip()
     if disease not in DISEASES_DATABASE and disease != "unknown":
         # Don't reject — just normalise unknown to ``unknown``. Keeps the
@@ -4079,6 +4449,7 @@ async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
             light=payload.light,
             locale=payload.locale,
             season=payload.season,
+            polish=polish,
         ),
     )
     toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
@@ -4137,7 +4508,9 @@ async def progression_endpoint(payload: ProgressionRequest):
     sparkline + a trend slope across the supplied history (oldest
     first). An empty list is allowed and yields a zero-padded
     baseline so the client can render an "awaiting data" state
-    without special-casing."""
+    without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
+    (422 past it), so the computation stays a few microseconds of event-loop
+    time."""
     return JSONResponse(content=compare_progression_history(payload.history))
 
 
@@ -5455,7 +5828,9 @@ async def species_info_endpoint(name: str, locale: str = "en"):
 
 
 @api_router.get("/species-diseases")
-async def species_diseases_endpoint(name: str, common: str = "", locale: str = "en"):
+async def species_diseases_endpoint(
+    request: Request, name: str, common: str = "", locale: str = "en",
+):
     """Common conditions a species is affected by indoors (AI, best-effort).
 
     Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
@@ -5464,15 +5839,24 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     empty. A real (``available``) result is cached server-side (in-memory +
     on disk, surviving restarts) per (species, language) and carries a long
     ``Cache-Control`` so the client/CDN reuses it too; a transient failure is
-    sent uncached so the next open retries.
+    sent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``
+    for the caller's IP the answer is ``available: false`` with
+    ``reason: "daily_quota"``.
     """
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
+    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
+        return JSONResponse(
+            content={"available": False, "diseases": [], "reason": "daily_quota"},
+            headers={"Cache-Control": "no-store"},
+        )
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    common_name = (common or "").strip()[:128] or None
+    # ``common`` is accepted for client compatibility and ignored: it is not
+    # part of the shared cache key, so it must not shape the cached answer.
+    _ = common
     data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_common_diseases(n, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}
@@ -5484,6 +5868,7 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
 
 @api_router.get("/species-profile")
 async def species_profile_endpoint(
+    request: Request,
     name: str,
     common: str = "",
     locale: str = "en",
@@ -5498,15 +5883,22 @@ async def species_profile_endpoint(
     species and carries both EN/RU text copies, so a locale switch cannot
     change the map. ``profile_version`` is a cache-busting query parameter for
     clients/CDNs; the current endpoint always serves the canonical bilingual shape.
+    Shares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.
     """
     _ = profile_version
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
+    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
+        return JSONResponse(
+            content={"available": False, "reason": "daily_quota"},
+            headers={"Cache-Control": "no-store"},
+        )
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    common_name = (common or "").strip()[:128] or None
+    # ``common`` is accepted for client compatibility and ignored, as above.
+    _ = common
     data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_profile(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_profile(n, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}

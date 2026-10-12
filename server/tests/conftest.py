@@ -112,6 +112,24 @@ class _AccountAwareTestClientMixin:
         return super().request(method, url, headers=headers, **kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _reset_abuse_counters():
+    """Start every test with empty daily quotas and no held inference slots.
+
+    The suite posts hundreds of scans from one TestClient peer, so the
+    per-IP daily quotas would otherwise trip partway through the run.
+    """
+    import main as server_main
+
+    for quota in server_main._DAILY_QUOTAS:
+        quota.reset()
+    with server_main._admission_lock:
+        server_main._inference_inflight = 0
+        server_main._inference_inflight_by_ip.clear()
+        server_main._inference_busy_rejections = 0
+    yield
+
+
 def _encode_image(img: Image.Image, fmt: str) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format=fmt)

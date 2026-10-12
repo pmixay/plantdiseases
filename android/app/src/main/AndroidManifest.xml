@@ -110,7 +110,21 @@
         <activity
             android:name=".ui.analysis.AnalysisActivity"
             android:exported="false"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            android:configChanges="uiMode|locale|layoutDirection|fontScale|density|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation">
+            <!--
+                Unlike MainActivity, this screen handles configuration
+                changes itself instead of being recreated. Its only job is
+                one paid server analysis plus the Room write of the scan
+                the server issued an id for; a recreate (night mode,
+                language, font scale, a multi-window resize, or rotation on
+                a large screen, where Android 16 ignores the portrait lock)
+                cancelled lifecycleScope mid-flight and onCreate started a
+                second analysis, losing the first scan if the response had
+                already landed. The cost is a few seconds on the old theme
+                or language; the result screen it opens starts fresh.
+            -->
+        </activity>
 
         <activity
             android:name=".ui.result.ResultActivity"

@@ -38,7 +38,7 @@ import javax.inject.Inject
  * [UNASSIGNED_ID], the Unassigned bucket). Reuses item_plant_card.xml —
  * the Garden tab no longer renders plant rows directly, so this screen is
  * their only remaining home; extended with a chevron (Garden refactor
- * Phase 6, see docs/ROADMAP.md "Garden refactor").
+ * phase 6).
  */
 @AndroidEntryPoint
 class RoomDetailActivity : AppCompatActivity() {
@@ -185,7 +185,7 @@ class RoomDetailActivity : AppCompatActivity() {
 
         row.plantName.text = plant.name
         row.plantSubtitle.text = healthSummaryLine(summary.health)
-        row.plantSubtitle.setTextColor(getColor(badgeColorFor(summary.health.status)))
+        row.plantSubtitle.setTextColor(getColor(PlantHealthUi.colorRes(summary.health.status)))
 
         row.plantCard.setOnClickListener {
             Haptics.tick(this)
@@ -209,34 +209,20 @@ class RoomDetailActivity : AppCompatActivity() {
         }
         dot.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(getColor(badgeColorFor(status)))
+            setColor(getColor(PlantHealthUi.colorRes(status)))
             setStroke(2.dpPx(), getColor(R.color.surface))
         }
         dot.visibility = View.VISIBLE
     }
 
-    /** Short "label · N%" line for the plant row — the room's subtitle now
-     *  leads with health instead of repeating the plant's own name. UNKNOWN
-     *  (no scans yet) has no score, so it falls back to just the label
-     *  ("No scans yet") rather than a blank line. */
+    /** Short "label · N%" line for the plant row — the room's subtitle
+     *  leads with health instead of repeating the plant's own name. Without
+     *  a score (too few recent scans) it falls back to just the label
+     *  ("No scans yet", "Too few recent scans", "Treatment") rather than a
+     *  blank line. */
     private fun healthSummaryLine(health: PlantHealth.Verdict): String {
-        val label = getString(badgeLabelFor(health.status))
+        val label = getString(PlantHealthUi.labelRes(health))
         return health.score?.let { "$label · $it%" } ?: label
-    }
-
-    private fun badgeLabelFor(status: PlantHealth.Status): Int = when (status) {
-        PlantHealth.Status.HEALTHY -> R.string.plant_status_healthy
-        PlantHealth.Status.TREATMENT -> R.string.plant_status_treatment
-        PlantHealth.Status.WATCH -> R.string.plant_status_watch
-        PlantHealth.Status.RECOVERING -> R.string.plant_status_recovering
-        PlantHealth.Status.UNKNOWN -> R.string.plant_status_no_scans
-    }
-
-    private fun badgeColorFor(status: PlantHealth.Status): Int = when (status) {
-        PlantHealth.Status.HEALTHY, PlantHealth.Status.RECOVERING -> R.color.healthy_green
-        PlantHealth.Status.TREATMENT -> R.color.disease_red
-        PlantHealth.Status.WATCH -> R.color.warning_amber
-        PlantHealth.Status.UNKNOWN -> R.color.on_surface_secondary
     }
 
     private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {

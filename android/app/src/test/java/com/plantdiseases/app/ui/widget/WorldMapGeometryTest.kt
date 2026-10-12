@@ -8,7 +8,7 @@ import org.junit.Test
  * circular longitude fit behind [WorldMapProjection.fit], the per-ring
  * antimeridian unwrap used while building each country Path, and the label
  * normalizer behind the country lookup. The hit test itself is Region-based
- * and is driven end-to-end in [WorldMapViewTest].
+ * and is driven end to end by real taps in [WorldMapTapTest].
  */
 class WorldMapGeometryTest {
 

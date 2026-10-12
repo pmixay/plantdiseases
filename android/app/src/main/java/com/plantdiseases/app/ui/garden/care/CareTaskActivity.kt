@@ -37,7 +37,7 @@ import java.util.Date
  * Task detail — serves both [com.plantdiseases.app.util.CareQueue.CareTask]
  * kinds (recurring occurrence, treatment step). Sections render only when they have content: a plain watering
  * reminder has no products/recommendations/step-progress and must not
- * show empty headers for them (see docs/ROADMAP.md "Garden refactor").
+ * show empty headers for them.
  */
 @AndroidEntryPoint
 class CareTaskActivity : AppCompatActivity() {
