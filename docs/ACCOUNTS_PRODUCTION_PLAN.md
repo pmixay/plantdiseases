@@ -16,6 +16,8 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
 | 4 | Private data/deletion and support contact: `mailto:gavel8980@gmail.com`, approved by the owner on 2026-10-09 (used for the privacy policy link and `release-policy-gates.json`). | 2026-10-09 |
 | 5 | Beta tester access: the owner's VPN egress address (laptop and phone) is on the nginx allowlist; the address is deliberately not recorded in the repo. | 2026-10-09 |
 | 6 | Deleted-account marker retention: **fixed 30 days** after deletion, then erased. The marker is the minimal pseudonymous record that stops removed content from reappearing when cleanup is replayed or a backup is restored; 30 days outlasts the 4-week backup window. The server must enforce this expiry before release (step 6a). Approved by the owner 2026-10-09. | 2026-10-09 |
+| 7 | First release stores all data (accounts, PostgreSQL, app API) on the German VDS; there is no Russian server. The privacy policy (hosted and in-app) states this and no longer describes a Russian server forwarding photos to a German worker. Whether this is acceptable for the RuStore audience remains the owner's responsibility. | 2026-10-13 |
+| 8 | AI model: the cheapest, `openai/gpt-6-luna` (the code default; production is rebuilt without pinning the older `gpt-5.6-luna`). AI spend is to be capped; the per-account quota numbers are not decided yet. | 2026-10-13 |
 
 ## Where things stand
 
@@ -105,7 +107,7 @@ Email/password stays off in production: production settings reject it until its 
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
-| 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; new conflicts with `main@73cfb24` require resolution and validation before merging | new main conflicts; owner approval and final-head CI still required |
+| 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; the conflicts with `main@73cfb24` (#185) were resolved in `5135c89` and all four CI jobs passed on that head | mergeable; final-head CI required before merging |
 | 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
 | 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md); approve main merge | The workflow is absent from main, and the protected environment is missing. The PC account has write access without admin access; it configured and read back the four public repository API URL variables. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore | blocked on owner environment setup/main merge |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
@@ -140,6 +142,6 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Owner approval of PR #182 after its new main conflicts are resolved;
+Merge of PR #182 after final-head CI;
 protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
 tester allowlist, support contact and step 4 switch are already approved and configured.
