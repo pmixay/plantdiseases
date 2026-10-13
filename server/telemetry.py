@@ -1,5 +1,5 @@
 """
-Client error/problem telemetry store for PlantVision.
+Client error/problem telemetry store for PlantDiseases.
 
 Append-only SQLite at ``server/telemetry.db``. Each row is one client-side
 *problem* — a handled error (analyze timeout, network failure, image decode,

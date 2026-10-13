@@ -1,9 +1,10 @@
 ---
 name: houseplant-disease-ml
 description: >-
-  ML-specialist playbook for the PlantVision houseplant-disease-detection
-  project (the `plantdiseases` repo) and houseplant-disease vision ML in
-  general — Python + Jupyter focused. Use this WHENEVER the task touches: the
+  ML-specialist playbook for PlantVision, the recognition system of the
+  PlantDiseases houseplant-disease-detection project (the `plantdiseases`
+  repo), and houseplant-disease vision ML in general — Python + Jupyter
+  focused. Use this WHENEVER the task touches: the
   training notebook (`server/train_notebook.ipynb`, §1–§7); the two-stage
   pipeline (YOLOv8n leaf detector → frozen DINOv2 ViT-S/14 + LoRA + MLP head);
   the model families (aqua / gamma / frontier); training, evaluation,
@@ -19,8 +20,9 @@ description: >-
 
 # Houseplant disease detection — ML specialist
 
-A repo-anchored playbook for working as the ML engineer on **PlantVision**
-(the `plantdiseases` repo). It's built around this project's concrete files,
+A repo-anchored playbook for working as the ML engineer on **PlantVision**, the
+recognition system inside the **PlantDiseases** project (the `plantdiseases`
+repo). It's built around this project's concrete files,
 constants, and conventions, but the *methodology* (group-aware splits,
 calibration discipline, paired-bootstrap ship gates, honest-uncertainty gating)
 transfers to houseplant-disease vision ML generally. Scope is **server-side

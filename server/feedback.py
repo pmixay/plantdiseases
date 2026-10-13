@@ -1,5 +1,5 @@
 """
-User-feedback store for PlantVision diagnoses.
+User-feedback store for PlantDiseases diagnoses.
 
 Append-only SQLite at ``server/feedback.db``. Each row captures a single
 "was this diagnosis correct?" signal from the client, optionally with

@@ -11,8 +11,12 @@ Two deliverables, each with its own toolchain:
 | `server/` | Python, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 
-**Naming:** **PlantDiseases** is the app/repo, **PlantVision** the ML pipeline/brand —
-both appear in code and docs and mean the same project.
+**Naming:** **PlantDiseases** is the whole project — the Android app, the repo, the
+server and the docs. **PlantVision** is only the internal name of the recognition
+system (the two-stage pipeline, its calibration/OOD layers, the model bundles, the
+model card and ledger). Machine-bound identifiers keep the old spelling — don't rename
+`classifier_name: "plantvision"`, `plantvision_*.tar` / `plantvision_export_*` names or
+the `plantvision-aqua-bundle-v1` digest tag.
 
 **Privacy policy:** `android/app/src/main/assets/privacy_policy.html`, shown by
 `ui/legal/PrivacyPolicyActivity` (a WebView over that one local asset) from the

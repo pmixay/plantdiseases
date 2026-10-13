@@ -1,4 +1,4 @@
-# PlantVision — roadmap
+# PlantDiseases — roadmap
 
 **Open work only.** Finished work lives in git history; every model run, with
 its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
