@@ -549,10 +549,17 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "retained for model improvement only if you separately consent" in privacy
     assert "сохраняется для улучшения моделей только если вы отдельно дали" in privacy
     assert "account-service endpoint scope, including its base path" in privacy
-    assert "register with an email address and password" in privacy
-    assert "non-reversible keyed lookup fingerprint" in privacy
-    assert "RuStore processes checkout and payment details" in privacy
-    assert "Deleting a PlantDiseases account does not cancel the RuStore subscription" in privacy
+    # The first release is Yandex-only with push and billing off (plan decision 3);
+    # the policy must not offer or describe sign-in methods or services that are not live.
+    assert "You can sign in with Yandex ID. We store" in privacy
+    for not_live in (
+        "VK ID",
+        "email address and password",
+        "Argon2id",
+        "Firebase Cloud Messaging",
+        "RuStore",
+    ):
+        assert not_live not in privacy, f"policy still describes {not_live}"
     assert "Publishing a scan or submitting an opinion requires sign-in" in privacy
     assert "It currently has no automatic expiry" not in privacy
     assert "It is kept for 30 days after deletion and then erased" in privacy
