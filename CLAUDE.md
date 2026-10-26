@@ -4,12 +4,15 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Repository layout
 
-Two deliverables, each with its own toolchain:
+Two deliverables, each with its own toolchain, plus supporting dirs:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
+| `site/` | Static HTML | One-page project site: a single self-contained `index.html`, served by any static host. Its figures are copied by hand from the docs — `site/README.md` says which. |
+| `docs/` | Markdown, SVG | Roadmap, model ledger, labeling plan; `docs/assets/` holds the README's images. |
+| `.claude/skills/` | Markdown, Python | The project's ML skill (see "ML work" below). |
 
 **Naming:** **PlantDiseases** is the whole project — the Android app, the repo, the
 server and the docs. **PlantVision** is only the internal name of the recognition
@@ -26,7 +29,10 @@ is actually running.
 
 ## Where documentation lives
 
-`README.md` — product overview, the class table, the API table, the model tiers ·
+`README.md` — the project's front page (visual: hero, class gallery, pipeline diagram
+under `docs/assets/`) plus the product overview, class table, API table and model tiers.
+`docs/assets/*.svg` come from `docs/assets/generate_assets.py` (edit that, not the SVGs) · `site/README.md` —
+how the one-page site is built and which docs its numbers come from ·
 `DEPLOYMENT.md` — production config, proxy/service setup, Android release signing +
 FCM · `docs/ROADMAP.md` — model status, release history, in-flight feature work,
 documentation debt · `docs/MODEL_HISTORY.md` — per-bundle ledger of every archived
@@ -60,11 +66,12 @@ ruff check .                          # lint (config in pyproject.toml)
 pytest tests -q                       # full suite (no model weights needed — see below)
 pytest tests/test_endpoints.py -q     # single file
 pytest tests/test_endpoints.py::test_name -q   # single test
-./start.sh                            # venv + CPU torch + uvicorn (PORT env or --port; default 8000)
+./start.sh                            # venv + requirements.txt + uvicorn (PORT env or --port; default 8000); refuses to start without a bundle
 ```
 - The suite **needs no trained weights**: `tests/conftest.py` swaps a `FakePipeline`
-  into both `main` and `pipeline` before the FastAPI lifespan runs, redirects the
-  labeling/telemetry DBs and `AI_CACHE_DIR` to tmp dirs, neutralises the rate limiter
+  into both `main` and `pipeline` before the FastAPI lifespan runs, redirects every
+  on-disk store (labeling, feedback, community, photo cache, telemetry) and
+  `AI_CACHE_DIR` to tmp dirs, neutralises the rate limiter
   in the `client` fixture (use `rate_limited_client` when you want it on), and clears
   `main._analyze_cache` per test — the image fixtures hash stably, so the same-photo
   dedup cache leaks verdicts between tests otherwise. An autouse fixture also empties
@@ -91,34 +98,25 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 
 ### CI (`.github/workflows/ci.yml`)
 Push-only on `main`, `claude/**`, `work/**`, `codex/**`, `model-*`; there is deliberately no
-`pull_request` trigger (rationale in the workflow header). A `paths-filter` job gates
-the **android** job on `android/**` and the **server** job on `server/**`, each plus
-the workflow file. It gates **per branch, not per push**: with no `base` input
-paths-filter diffs `origin/main...origin/<branch>`, so once any commit on a branch
-touches `android/**`, every later push on that branch runs the android job — a
-docs-only one included. Only a branch whose *entire* diff against main is root files
-or `docs/**` runs neither job. (On `main` the compared branch is the one pushed, so
-there it falls back to `github.event.before` and does gate per push.)
+`pull_request` trigger. A new automation branch prefix must be added to that list in the
+same commit, or its PRs merge unbuilt (rationale in the `ci.yml` header). A
+`paths-filter` job gates the **android** job on `android/**` and the **server** job on
+`server/**`, each plus the workflow file. It gates **per branch, not per push**: with no
+`base` input paths-filter diffs `origin/main...origin/<branch>`, so once any commit on a
+branch touches `android/**`, every later push on that branch runs the android job — a
+docs-only one included. Only a branch whose *entire* diff against main is root files,
+`site/**` or `docs/**` runs neither job. (On `main` it falls back to
+`github.event.before`, so it gates per push there.)
 Server job: `ruff check .` then `pytest tests -q`. Android job: one Gradle invocation
 of `ktlintCheck detekt testDebugUnitTest assembleRelease`, then an APK signing/FCM
 verification step.
 
-**Where the Android minutes go**, from a `--profile` run of a cold build — worth reading
-before trying to speed it up, because the plain-console task headers mislead. Gradle
-overlaps this work as async workers (task time summed to 15m44 against a 9m33 build),
-so R8 and the tests run *concurrently* and R8 is the tail: `minifyReleaseWithR8` 5m08,
-`testDebugUnitTest` 2m34, `compileDebugKotlin` and `compileReleaseKotlin` 1m58 each,
-KSP 43s/37s. Two support pieces are easy to undo by accident: `maxParallelForks` in
-`app/build.gradle.kts` (little wall clock in a full invocation, where it competes with
-R8 for the runner's two cores, but a large win whenever the test task *is* the critical
-path — a cache-served release variant, or `./gradlew testDebugUnitTest` alone) and the
-`~/.m2/repository/org/robolectric` cache step (Robolectric fetches 338 MB of
-`android-all` jars at test runtime through its own Maven resolver, which the
-Gradle-home cache does not cover).
-
-Expect ~1.5 min when a push changes no Android source (main's build cache serves
-almost every task) and ~8-10 min when it does. `gradle/actions/setup-gradle` only
-*writes* that cache on `main`; branches read it.
+Two Android CI support pieces are easy to undo by accident: `maxParallelForks` in
+`app/build.gradle.kts` (parallel unit-test forks) and the `~/.m2/repository/org/robolectric`
+cache step (Robolectric resolves its `android-all` jars through its own Maven resolver,
+which the Gradle-home cache does not cover). The Gradle cache is written only on
+`main`; branches read it. Timings drift — measure with `--profile` instead of trusting
+a number written here.
 
 ## ML work — use the bundled skill
 
@@ -177,10 +175,16 @@ stack, request validation, metrics — and wires everything together):
 - `bundle.py` / `pipeline.py` / `detector.py` / `classifier.py` / `ood.py` / `conformal.py` — fail-closed artefact contract + inference + calibration
 - `ai_services.py` — PlantNet species ID, OpenRouter chat doctor, care plans, progression (all **optional**, graceful without keys)
 - `diseases_data.py` / `symptoms.py` / `species_info.py` — bilingual (EN/RU) content databases + no-photo symptom triage
-- `feedback.py` (append-only training-signal store + per-class accuracy) / `labeling.py` / `labeling_auto.py` — the data loop; `tools/` has offline eval + data export
+- `feedback.py` (append-only training-signal store + per-class accuracy) / `labeling.py` / `labeling_auto.py` — the data loop
 - `community.py` — nearby-scans feed + second-opinion features
 - `push.py` — FCM push (lazy/no-op without credentials) · `telemetry.py` — anonymous error reports (`TELEMETRY_*` keys; stores a hashed client IP)
 - `plant_photos.py` / `popular_plants.py` / `countries.py` — photo proxy/cache, popular-plants bundle, country lookups · `config.py` — config loader (see Conventions)
+- `tools/` — offline helpers, never imported by the server: `verify_bundle` (boot preflight),
+  `export_data` + `analyse_feedback` (feedback/training-data export and analysis),
+  `paired_eval` → `eval_bootstrap` (paired model A/B), `build_ood_benchmark`,
+  `filter_supplement` + `kaggle_inventory` (supplement-data QA)
+- `openapi.json` — the checked-in API contract; `tests/test_openapi_contract.py` fails
+  when the app's generated spec drifts from it, so an API change updates it in the same commit
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, analysis,
 result, garden, gallery, guide, community, species, …) over `data/` (`repository/`,
@@ -218,7 +222,7 @@ detail screen only.
   `train_notebook.ipynb` (§6/§6b); the Aqua TFLite model and disease-guide
   photos are provisioned out of band in `server/static/`.
 - **Config precedence** (`config.py`): `server/config.json` (gitignored; copy from
-  `config.example.json`) **wins over** the same-named env var **wins over** the
+  `config.example.json`; `PLANTDISEASES_CONFIG` points at another file) **wins over** the same-named env var **wins over** the
   default. Blank handling is asymmetric — a blank value in `config.json` counts as
   unset (so the empty `""` secrets in `config.example.json` let an env var win), but a
   **blank env var does not**: it wins as an empty string and shadows the default —
@@ -254,8 +258,8 @@ detail screen only.
   hand-build old-shaped DBs and let Room's `onValidateSchema` assert
   (`app/src/test/java/com/plantdiseases/app/data/local/Migration6To7Test.kt`). Every
   migration is hand-written and registered; destructive fallback is the last resort.
-- **Robolectric has no `robolectric.properties`** — every Robolectric test annotates
-  `@Config(sdk = [33])` itself; a new test omitting it runs on a different SDK and can
+- **Robolectric has no `robolectric.properties`** — Robolectric tests annotate
+  `@Config(sdk = [33])` themselves; a new test omitting it runs on a different SDK and can
   behave differently.
 - **`/api/feedback` accepts labels the head does not predict.** The allowlist is
   `_FEEDBACK_OUT_OF_HEAD_CLASSES` in `main.py`, incl. `is_a_plant` — the app's
