@@ -61,8 +61,10 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   environment in that job; all 19 deployment contract tests and Ruff passed.
 - **GitHub CI passed on `3f13385`:** all four jobs, including Android build/lint and both server suites,
   succeeded in [run 37965210687](https://github.com/pmixay/plantdiseases/actions/runs/37965210687).
-  Main has since advanced to `73cfb24`, and PR #182 now reports conflicts. The earlier merge at `aab7795`
-  resolved conflicts with the then-current main (`e4b4a45`); it does not cover the newer main changes.
+  The later conflicts with `main@73cfb24` (#185) were resolved in `5135c89`, and CI passed on head `6069ec0`.
+- **Merged to `main` (2026-10-27):** PR #182 was squash-merged as `2dc681b`. `account-beta-test` is kept because this
+  plan, and the production deployment (`305f1ad`), reference commits on it. Follow-on docs sync: `CLAUDE.md` and
+  `README.md` now describe the account service, `training_store.py` and the protected signing workflow.
 
 
 ## Release gates in plain words
@@ -107,9 +109,9 @@ Email/password stays off in production: production settings reject it until its 
 | 4 | Production backend on this VDS | Said yes (2026-10-09) | Built beside the old service, compared (same capabilities and scan result), legacy data copied (4 scans, 3 push tokens), nginx switched with a rollback script; `/id/` stays VPN-only until launch | **done** |
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
-| 6 | Merge to `main` | Review and approve [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; the conflicts with `main@73cfb24` (#185) were resolved in `5135c89` and all four CI jobs passed on that head | mergeable; final-head CI required before merging |
+| 6 | Merge to `main` | Reviewed and approved [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; the conflicts with `main@73cfb24` (#185) were resolved in `5135c89` and all four CI jobs passed on that head | **done** (squash-merged as `2dc681b`, 2026-10-27) |
 | 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
-| 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md); approve main merge | The workflow is absent from main, and the protected environment is missing. The PC account has write access without admin access; it configured and read back the four public repository API URL variables. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore. Findings 2026-10-13: the permanent key already exists as repository-level secrets (created 2026-06-09) and signs the current CI `app-release-apk`; its certificate SHA-256 is `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367` (the `RELEASE_CERT_SHA256` value). GitHub never shows secret values, so the four secrets must be re-entered in the environment from the original keystore. The production channel also needs the three `PRODUCTION_RUSTORE_*` repository variables (RuStore Console app ID, `plantdiseases_pro_monthly`, `plantdiseases_pro_yearly`) even though server billing stays off | blocked on owner environment setup/main merge |
+| 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md) | The workflow is on `main` since the 2026-10-27 merge; as of 2026-10-13 the protected environment was missing (not re-checked). The PC account has write access without admin access; it configured and read back the four public repository API URL variables. Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore. Findings 2026-10-13: the permanent key already exists as repository-level secrets (created 2026-06-09) and signs the current CI `app-release-apk`; its certificate SHA-256 is `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367` (the `RELEASE_CERT_SHA256` value). GitHub never shows secret values, so the four secrets must be re-entered in the environment from the original keystore. The production channel also needs the three `PRODUCTION_RUSTORE_*` repository variables (RuStore Console app ID, `plantdiseases_pro_monthly`, `plantdiseases_pro_yearly`) even though server billing stays off | blocked on owner environment setup |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
 | 9 | RuStore listing | Console clicks and APK upload | Release notes, checklist, privacy page check | pending |
 | 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring with alerts on failed backups and `journal_unavailable` deletion retries | in progress |
@@ -142,6 +144,5 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Merge of PR #182 after final-head CI;
-protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
+Protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
 tester allowlist, support contact and step 4 switch are already approved and configured.

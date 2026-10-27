@@ -18,7 +18,7 @@ that branch.
 
 | track | state |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. On the account-system staging branch; the permanent signing identity still needs owner confirmation. |
+| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. The account system is merged to `main` (#182, `2dc681b`); the permanent signing identity still needs owner confirmation. |
 | **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
 | **Server** | 40 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
 | **Security** | The August audit is closed in code. Accounts replace the anonymous Community author key and pseudo-id (writes derive the actor from the verified account bearer), so the key-less likes/views and pseudo-id-in-URL findings no longer exist. Open: the cost-cap release gate and host hardening (Security). |
@@ -30,9 +30,8 @@ that branch.
 
 Each line names its section below. ★ = a human decision or human-only task.
 
-1. ★ **Ship accounts to RuStore** — follow `ACCOUNTS_PRODUCTION_PLAN.md`: merge
-   the account branch to `main`, set up the protected `android-signing`
-   environment, check the signed APK on a phone, then the RuStore listing. Cut
+1. ★ **Ship accounts to RuStore** — follow `ACCOUNTS_PRODUCTION_PLAN.md`: set up
+   the protected `android-signing` environment, check the signed APK on a phone, then the RuStore listing. Cut
    the 1.9 tag and the RuStore build only after the permanent signing/provider
    and real account-system gates pass.
 2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It

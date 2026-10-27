@@ -228,7 +228,7 @@ All routes are mounted under `/api`. A curated highlights table follows;
 |---|---|---|
 | `GET`  | `/api/health`              | Liveness + uptime + class count |
 | `GET`  | `/api/capabilities`        | Per-family availability (aqua / gamma / frontier) **plus** consolidated server version, model architecture, and bilingual class metadata (this folds in the former `/api/version` & `/api/classes`) |
-| `GET`  | `/api/metrics`             | JSON counters (requests, errors, latency, feedback per-class accuracy) |
+| `GET`  | `/api/metrics`             | JSON counters (requests, errors, latency) |
 | `GET`  | `/api/metrics/prometheus`  | Prometheus text exposition (v0.0.4) |
 
 **Diagnosis**
@@ -283,20 +283,24 @@ Content criteria and the private operator workflow are documented in
 ```
 plantdiseases/
 ├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Hilt DI)
+├── account-server/         FastAPI account service (sign-in, sessions, deletion, PRO entitlements) + PostgreSQL
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
 │   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
 │   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
-│   ├── feedback.py         Append-only feedback store + metrics
+│   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
+│   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes PRO quotas
 │   ├── conformal.py        RAPS prediction sets
 │   ├── diseases_data.py    Bilingual disease database
 │   ├── train_notebook.ipynb End-to-end training recipe
 │   └── models/             MODEL_CARD.md + .gitkeep (weights provisioned out of band)
-├── docs/                   ROADMAP.md (live model status), DATASET_LABELING_PLAN.md
-├── .github/workflows/      ci.yml — push-only CI (ruff + pytest; ktlint + detekt
-│                           + unit tests + assembleRelease)
+├── deploy/                 Compose, nginx and operator scripts for the account stack
+├── docs/                   ROADMAP.md (live model status), ACCOUNTS_PRODUCTION_PLAN.md, DATASET_LABELING_PLAN.md
+├── .github/workflows/      ci.yml — push-only CI (ruff + pytest for server and account
+│                           service; ktlint + detekt + unit tests + CI-only APK builds);
+│                           android-release.yml — manual protected signing
 ├── DEPLOYMENT.md           Production deployment guide
 ├── CLAUDE.md               Working notes for agents in this repo
 └── README.md               You are here
@@ -318,6 +322,9 @@ plantdiseases/
   recipe (group-aware splits + leakage guard, the three families, Aqua KD → TFLite,
   calibration + ONNX export).
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — current model status + what's next.
+- [`docs/ACCOUNTS_PRODUCTION_PLAN.md`](docs/ACCOUNTS_PRODUCTION_PLAN.md) — accounts decisions,
+  release gates and the path to RuStore; [`account-server/README.md`](account-server/README.md)
+  is the service's contract.
 - [`docs/DATASET_LABELING_PLAN.md`](docs/DATASET_LABELING_PLAN.md) — the offline
   data-collection + judging loop.
 
