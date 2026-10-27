@@ -22,9 +22,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnNextLayout
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.R
+import com.plantdiseases.app.billing.EntitlementPolicy
+import com.plantdiseases.app.billing.EntitlementRepository
+import com.plantdiseases.app.billing.ProFeature
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
@@ -42,6 +47,7 @@ import com.plantdiseases.app.ui.garden.detail.dp
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.LunarCalendarView
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
@@ -107,6 +113,9 @@ class PlantDetailActivity : AppCompatActivity() {
 
     @Inject
     lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var entitlementRepository: EntitlementRepository
 
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
@@ -392,11 +401,25 @@ class PlantDetailActivity : AppCompatActivity() {
         loadPlant()
     }
 
+    override fun onResume() {
+        super.onResume()
+        entitlementRepository.refreshInBackground()
+    }
+
     private fun buildLayout() {
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityPlantDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                entitlementRepository.state.collect { state ->
+                    lunarCalendarView?.setProAccess(
+                        EntitlementPolicy.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
+                    ) { startActivity(ProActivity.intent(this@PlantDetailActivity)) }
+                }
+            }
+        }
 
         content = binding.detailContent
         toolbar = binding.detailToolbar
@@ -549,6 +572,9 @@ class PlantDetailActivity : AppCompatActivity() {
         overviewContainer.addView(
             LunarCalendarView(this).apply {
                 setSpecies(plant.scientificName, plant.commonName ?: plant.species)
+                setProAccess(entitlementRepository.allows(ProFeature.LUNAR_FULL_CALENDAR)) {
+                    startActivity(ProActivity.intent(this@PlantDetailActivity))
+                }
                 lunarNavigationState?.let { state -> restoreNavigationState(state) }
                 onRequestScrollTo = { target ->
                     val rect = android.graphics.Rect()

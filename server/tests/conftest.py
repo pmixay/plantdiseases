@@ -14,11 +14,14 @@ list so all contract tests still bite.
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import shutil
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -47,6 +50,66 @@ os.environ.setdefault("AI_CACHE_DIR", _AI_CACHE_TMPDIR)
 def _cleanup_ai_cache_tmpdir():
     yield
     shutil.rmtree(_AI_CACHE_TMPDIR, ignore_errors=True)
+
+
+def _test_access_token(identity: str, nickname: str | None = None) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps([identity, nickname or "Test Fern"], ensure_ascii=False).encode("utf-8")
+    ).rstrip(b"=").decode("ascii")
+    return f"test.{encoded}.signature"
+
+
+class _TestAccountAuthenticator:
+    def authenticate(self, token: str):
+        from account_auth import AccountAuthenticationError, AccountPrincipal
+
+        try:
+            prefix, encoded, signature = token.split(".")
+            if prefix != "test":
+                raise ValueError
+            if signature != "signature":
+                raise ValueError
+            identity, nickname = json.loads(
+                base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+            )
+            actor = uuid.uuid5(uuid.NAMESPACE_URL, f"test-account:{identity}")
+            session = uuid.uuid5(uuid.NAMESPACE_URL, f"test-session:{identity}")
+            return AccountPrincipal(
+                session_id=str(session),
+                actor_id=str(actor),
+                nickname=str(nickname),
+                authorization_version=1,
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise AccountAuthenticationError from None
+
+
+class _AccountAwareTestClientMixin:
+    """Translate legacy test identity fields into signed-test principals.
+
+    Production handlers never inspect these fields; this adapter keeps older
+    endpoint fixtures readable while exercising the new claim-derived path.
+    """
+
+    def request(self, method, url, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        request_path = str(url).split("?", 1)[0]
+        if (
+            request_path.startswith("/api/community/")
+            and not any(name.lower() == "authorization" for name in headers)
+        ):
+            data = kwargs.get("data") if isinstance(kwargs.get("data"), dict) else {}
+            body = kwargs.get("json") if isinstance(kwargs.get("json"), dict) else {}
+            params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}
+            identity = (
+                data.get("user_pseudo_id")
+                or body.get("user_pseudo_id")
+                or params.get("user_pseudo_id")
+                or "default-account"
+            )
+            nickname = data.get("nickname") or body.get("nickname") or "Test Fern"
+            headers["Authorization"] = f"Bearer {_test_access_token(str(identity), str(nickname))}"
+        return super().request(method, url, headers=headers, **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +170,9 @@ class _FakeDetector:
     model = None
     input_name = ""
 
+    def detect(self, _img: Image.Image) -> dict:
+        return {"detections": [], "confidence": 0.0, "primary_box": None}
+
 
 class FakePipeline:
     """Minimal stand-in for ``PlantDiseasePipeline`` used in tests.
@@ -152,20 +218,21 @@ class FakePipeline:
 @pytest.fixture(autouse=True, scope="session")
 def _stub_pipeline_for_lifespan(tmp_path_factory):
     """Replace ``PlantDiseasePipeline`` with the fake before lifespan runs, and
-    keep every on-disk store hermetic: point the labeling, feedback, community,
-    photo-cache and telemetry DBs/dirs at session tmp dirs so tests never write
-    into ``server/``.
+    keep every persistent service hermetic: point its DB/directories at session
+    temp paths so tests never write into ``server/`` or depend on the network.
 
-    Redirection is done twice on purpose. The module globals are what the
-    ``_connect()`` helpers read at call time, and the matching env vars are what
-    a per-test ``importlib.reload`` re-reads — without them a reloaded module
-    would snap back to ``server/feedback.db`` mid-suite.
+    The production lifespan also warms curated Wikimedia photos.  That is a
+    useful best-effort optimisation in a deployed service, but it would make
+    the local suite depend on external HTTP and can extend ``TestClient``
+    shutdown while worker calls time out. Replacing only that warm-up coroutine
+    keeps HTTP contract tests deterministic while leaving production untouched.
     """
     import community
-    import feedback
-    import labeling
     import main as server_main
     import pipeline as pipeline_module
+    import push
+    import telemetry
+    import training_store
 
     # Keep a handle on the real class before it is shadowed. Swapping in the
     # fake makes the genuine pipeline unreachable for the whole session, so a
@@ -175,42 +242,38 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     pipeline_module._RealPipelineForTests = pipeline_module.PlantDiseasePipeline
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
+    server_main.account_authenticator = _TestAccountAuthenticator()
 
-    lab_dir = tmp_path_factory.mktemp("labeling")
-    labeling.LABELING_DB_PATH = lab_dir / "labeling.db"
-    labeling.LABELING_IMG_DIR = lab_dir / "images"
-    labeling._initialised = False
+    state_dir = tmp_path_factory.mktemp("server-state")
 
-    # /api/analyze records every issued scan_id, which also mints
-    # ``.ip_hash_pepper`` beside the feedback DB — both landed in the working
-    # tree before this redirect.
-    fb_dir = tmp_path_factory.mktemp("feedback")
-    feedback.FEEDBACK_DB_PATH = fb_dir / "feedback.db"
-    feedback.FEEDBACK_IMG_DIR = fb_dir / "images"
-    feedback._initialised = False
-    os.environ["FEEDBACK_DB_PATH"] = str(feedback.FEEDBACK_DB_PATH)
-    os.environ["FEEDBACK_IMG_DIR"] = str(feedback.FEEDBACK_IMG_DIR)
+    training_store.TRAINING_DB_PATH = state_dir / "training.db"
+    training_store.TRAINING_IMAGE_DIR = state_dir / "training-images"
+    training_store._initialised = False
 
-    comm_dir = tmp_path_factory.mktemp("community")
-    community.COMMUNITY_DB_PATH = comm_dir / "community.db"
-    community.COMMUNITY_THUMB_DIR = comm_dir / "thumbs"
+    community.COMMUNITY_DB_PATH = state_dir / "community.db"
+    community.COMMUNITY_THUMB_DIR = state_dir / "community-thumbs"
     community._initialised = False
-    os.environ["COMMUNITY_DB_PATH"] = str(community.COMMUNITY_DB_PATH)
-    os.environ["COMMUNITY_THUMB_DIR"] = str(community.COMMUNITY_THUMB_DIR)
-    # main.py imported the thumb dir by value at module load, so the /api route
-    # that serves thumbnails needs its own copy re-pointed too.
+    # main imports this path by value for the thumbnail response endpoint.
     server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
 
-    # Same story for the proxied-photo cache: a route that fetches one creates
-    # ``server/plant_photo_cache/`` in the working tree.
+    # Same story for the proxied-photo cache: a route that fetches one would
+    # otherwise create ``server/plant_photo_cache/`` in the working tree. The
+    # env var matters because a per-test ``importlib.reload`` re-reads it.
     import plant_photos
-    photo_dir = tmp_path_factory.mktemp("plant-photos")
-    plant_photos.PHOTO_CACHE_DIR = photo_dir
-    os.environ["PLANT_PHOTO_CACHE_DIR"] = str(photo_dir)
+    plant_photos.PHOTO_CACHE_DIR = state_dir / "plant-photos"
+    os.environ["PLANT_PHOTO_CACHE_DIR"] = str(plant_photos.PHOTO_CACHE_DIR)
 
-    import telemetry
-    telemetry.TELEMETRY_DB_PATH = tmp_path_factory.mktemp("telemetry") / "telemetry.db"
+    telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
+
+    push.PUSH_DB_PATH = state_dir / "push.db"
+    push._initialised = False
+
+    async def _skip_external_warmup() -> None:
+        return None
+
+    server_main._warm_placeholder_images = _skip_external_warmup
+    server_main._daily_write_counts.clear()
     yield
 
 
@@ -238,9 +301,12 @@ def client():
     """
     from fastapi.testclient import TestClient
 
+    class AccountAwareTestClient(_AccountAwareTestClientMixin, TestClient):
+        pass
+
     import main as server_main
 
-    with TestClient(server_main.app) as c:
+    with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
             mw.rate = float("inf")
@@ -254,6 +320,12 @@ def client():
         # are already isolated by ``client`` being function-scoped.
         with server_main._analyze_cache_lock:
             server_main._analyze_cache.clear()
+        with server_main._guest_feature_lock:
+            server_main._guest_feature_counts.clear()
+            server_main._guest_feature_receipts.clear()
+        with server_main._quota_lock:
+            server_main._in_memory_quotas.clear()
+            server_main._api_key_feature_receipts.clear()
         yield c
 
 
@@ -267,15 +339,24 @@ def rate_limited_client():
     """
     from fastapi.testclient import TestClient
 
+    class AccountAwareTestClient(_AccountAwareTestClientMixin, TestClient):
+        pass
+
     import main as server_main
 
-    with TestClient(server_main.app) as c:
+    with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
             mw.rate = 1.0
             mw.capacity = 1.0
             with mw._lock:
                 mw._buckets.clear()
+        with server_main._guest_feature_lock:
+            server_main._guest_feature_counts.clear()
+            server_main._guest_feature_receipts.clear()
+        with server_main._quota_lock:
+            server_main._in_memory_quotas.clear()
+            server_main._api_key_feature_receipts.clear()
         yield c
         if mw is not None:
             with mw._lock:

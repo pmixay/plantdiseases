@@ -25,6 +25,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
@@ -36,13 +37,14 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
-import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.enableWhileOnline
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -86,6 +88,12 @@ class ResultActivity : AppCompatActivity() {
     @Inject
     lateinit var communityUploader: CommunityUploader
 
+    @Inject
+    lateinit var authRepository: AuthRepository
+
+    @Inject
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
+
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
@@ -106,7 +114,15 @@ class ResultActivity : AppCompatActivity() {
     private val carePlan by lazy {
         CarePlanController(this, binding, scanRepository, plantRepository, reviewManager)
     }
-    private val feedback by lazy { FeedbackController(this, binding, scanRepository, reviewManager) }
+    private val feedback by lazy {
+        FeedbackController(
+            this,
+            binding,
+            scanRepository,
+            privacyConsentPrefs,
+            reviewManager,
+        )
+    }
     private val gardenAttach by lazy {
         GardenAttachController(
             this,
@@ -124,6 +140,7 @@ class ResultActivity : AppCompatActivity() {
             binding,
             scanRepository,
             communityUploader,
+            authRepository,
             connectivity,
             ::ensureNotificationPermission,
             ::requestCommunityOptIn,
@@ -568,8 +585,8 @@ class ResultActivity : AppCompatActivity() {
             // has none, so it's hidden rather than offering an action that
             // can't post. NAP gets a dedicated single-action variant: a
             // wrongly-rejected plant photo is high-value retraining signal,
-            // so the card offers "This is a plant" (+ optional note) instead
-            // of the yes/no pair.
+            // so the card offers a structured "This is a plant" correction
+            // instead of the yes/no pair.
             if (isAbstained) {
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE

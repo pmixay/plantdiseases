@@ -7,6 +7,7 @@ import com.plantdiseases.app.data.model.Detection
 import com.plantdiseases.app.data.model.DetectionRegion
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.testutil.FakeScanDao
+import com.plantdiseases.app.util.FeedbackReceiptStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
@@ -22,11 +23,17 @@ class ScanRepositoryTest {
 
     private lateinit var dao: FakeScanDao
     private lateinit var repo: ScanRepository
+    private lateinit var receiptStore: FakeReceiptStore
 
     @Before
     fun setup() {
         dao = FakeScanDao()
-        repo = ScanRepository(dao, PlantApiClient("http://localhost/"))
+        receiptStore = FakeReceiptStore()
+        repo = ScanRepository(
+            dao,
+            PlantApiClient("http://localhost/"),
+            feedbackReceiptStore = receiptStore,
+        )
     }
 
     private fun scan(
@@ -189,8 +196,47 @@ class ScanRepositoryTest {
     @Test
     fun saveScan_fallsBackToRandomScanIdWhenServerOmitsIt() = runBlocking {
         repo.saveScan("/p.jpg", AnalysisResponse(diseaseName = "Leaf Spot", scanId = null))
-        // A UUID was minted so feedback still has a stable key.
+        // A local opaque capability slot remains available for legacy/community code.
         assertThat(dao.lastInserted!!.clientScanId).isNotEmpty()
+    }
+
+    @Test
+    fun feedbackReceiptIsStoredByLocalRowAndConsumedOnce() = runBlocking {
+        repo.saveScan(
+            "/p.jpg",
+            AnalysisResponse(
+                diseaseName = "Leaf Spot",
+                scanId = "community-capability",
+                feedbackReceipt = "r".repeat(43),
+            ),
+        )
+        val scan = requireNotNull(dao.lastInserted)
+
+        assertThat(receiptStore.values.keys).containsExactly(scan.id.toString())
+        assertThat(receiptStore.values.keys).doesNotContain("community-capability")
+        assertThat(repo.feedbackReceipt(scan)).isEqualTo("r".repeat(43))
+
+        repo.consumeFeedbackReceipt(scan)
+        assertThat(repo.feedbackReceipt(scan)).isNull()
+    }
+
+    @Test
+    fun deletingLocalHistoryAlsoDeletesFeedbackCapabilities() = runBlocking {
+        repo.saveScan(
+            "/p.jpg",
+            AnalysisResponse(diseaseName = "Leaf Spot", feedbackReceipt = "a".repeat(43)),
+        )
+        val first = requireNotNull(dao.lastInserted)
+        repo.deleteScan(first.id)
+        assertThat(receiptStore.values).isEmpty()
+
+        repo.saveScan(
+            "/q.jpg",
+            AnalysisResponse(diseaseName = "Healthy", feedbackReceipt = "b".repeat(43)),
+        )
+        assertThat(receiptStore.values).isNotEmpty()
+        repo.clearAll()
+        assertThat(receiptStore.values).isEmpty()
     }
 
     @Test
@@ -282,5 +328,23 @@ class ScanRepositoryTest {
         val history = repo.getAllScans()
         assertThat(history).hasSize(1)
         assertThat(history.single().diseaseName).isEqualTo("Healthy")
+    }
+
+    private class FakeReceiptStore : FeedbackReceiptStore {
+        val values = mutableMapOf<String, String>()
+
+        override fun put(scanToken: String, receipt: String) {
+            values[scanToken] = receipt
+        }
+
+        override fun get(scanToken: String): String? = values[scanToken]
+
+        override fun remove(scanToken: String) {
+            values.remove(scanToken)
+        }
+
+        override fun clear() {
+            values.clear()
+        }
     }
 }

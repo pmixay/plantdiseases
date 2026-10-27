@@ -1,0 +1,14 @@
+# Build overlay for the production images (operator-owned, outside Git).
+# Only prod-account-api carries the account build; the migrate service reuses
+# the same tag, which avoids the parallel-build "image already exists" race.
+services:
+  prod-account-api:
+    image: ${PROD_ACCOUNT_IMAGE}
+    build:
+      context: ${RELEASE}/account-server
+      dockerfile: Dockerfile
+  prod-app-api:
+    image: ${PROD_APP_IMAGE}
+    build:
+      context: ${RELEASE}/server
+      dockerfile: Dockerfile

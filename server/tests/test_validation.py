@@ -58,39 +58,50 @@ def test_webp_passes_magic_check(client):
     )
 
 
-def test_safe_filename_strips_control_characters():
-    """Unit-test the helper directly so we don't depend on pytest's
-    log-capture interacting with FastAPI's lifespan."""
-    import main as server_main
-
-    # \r\n\t\v\f\x00 must all collapse to spaces.
-    assert server_main._safe_filename("evil\nFAKE LINE: bad\r\n") == "evil FAKE LINE: bad  "
-    # None / empty are tagged.
-    assert server_main._safe_filename(None) == "<no-filename>"
-    assert server_main._safe_filename("") == "<no-filename>"
-    # Long filenames are truncated.
-    assert len(server_main._safe_filename("x" * 500)) == 80
-
-
-def test_filename_with_newline_doesnt_appear_verbatim_in_log_lines(client, png_bytes,
-                                                                   caplog):
-    """End-to-end: a newline-bearing filename must not survive into the
-    plantdiseases logger output (otherwise log injection)."""
+def test_original_filename_never_appears_in_application_logs(client, png_bytes, caplog):
+    """Client filenames are unnecessary user-derived data, even sanitized."""
     import logging
 
     caplog.set_level(logging.INFO, logger="plantdiseases")
+    sentinel = "PRIVATE_FILENAME_SENTINEL_9E0A"
     r = _post_image(
         client, png_bytes,
-        "evil\nFAKE INJECTED LINE\r\nstill bad",
+        f"{sentinel}\nFAKE INJECTED LINE.jpg",
         "image/png",
     )
     assert r.status_code == 200
-    rendered = "\n".join(rec.getMessage() for rec in caplog.records)
-    # No literal newline + injected text in the rendered log output.
-    assert "evil\nFAKE INJECTED LINE" not in rendered, (
-        "User-controlled filename leaked newline into a log line — "
-        "regression of the log-injection guard"
+    rendered = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "plantdiseases"
     )
+    assert sentinel not in rendered
+    assert "FAKE INJECTED LINE" not in rendered
+
+
+def test_decode_exception_text_never_appears_in_logs_or_response(
+    client, png_bytes, caplog, monkeypatch,
+):
+    import logging
+
+    import main as server_main
+
+    sentinel = "PRIVATE_EXCEPTION_PATH_/camera/owner_4F2C"
+
+    def fail_decode(_contents):
+        raise ValueError(sentinel)
+
+    monkeypatch.setattr(server_main, "_open_image", fail_decode)
+    caplog.set_level(logging.INFO, logger="plantdiseases")
+    response = _post_image(client, png_bytes, "scan.jpg", "image/png")
+    assert response.status_code == 400
+    rendered = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "plantdiseases"
+    )
+    assert sentinel not in rendered
+    assert sentinel not in response.text
 
 
 def test_unsupported_content_type_rejected(client, png_bytes):

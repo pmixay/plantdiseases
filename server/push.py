@@ -137,8 +137,8 @@ def _ensure_fcm() -> bool:
         cred = credentials.Certificate(FCM_CREDENTIALS_FILE)
         _fcm_app = firebase_admin.initialize_app(cred, name="plantdiseases-push")
         _fcm_ready = True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("FCM init failed (%s); push disabled", exc)
+    except Exception:  # noqa: BLE001 - credential/provider details stay private
+        logger.warning("FCM initialization failed; push disabled")
         _fcm_ready = False
     return _fcm_ready
 
@@ -192,7 +192,7 @@ def send_opinion_push(
             if exc.__class__.__name__ in ("UnregisteredError", "SenderIdMismatchError"):
                 stale.append(tok)
             else:
-                logger.debug("FCM send failed for a token: %s", exc)
+                logger.debug("FCM send failed for a token")
     if stale:
         _delete_tokens(stale)
     return sent

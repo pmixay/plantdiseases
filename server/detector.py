@@ -326,8 +326,8 @@ class LeafDetector:
         if not np.isfinite(warm).all():
             raise DetectorLoadError("Detector emits non-finite values on warmup input")
         logger.info(
-            "ONNX YOLOv8 detector loaded from %s (img=%d conf=%.3f nms=%.3f max=%d)",
-            path, self.img_size, self.min_confidence, self.nms_iou, self.max_detections,
+            "ONNX YOLOv8 detector loaded (img=%d conf=%.3f nms=%.3f max=%d)",
+            self.img_size, self.min_confidence, self.nms_iou, self.max_detections,
         )
 
     # ── public API ───────────────────────────────────────────────────

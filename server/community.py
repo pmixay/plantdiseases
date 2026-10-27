@@ -3,8 +3,9 @@ Community scan corpus for "similar scans near you".
 
 Append-only SQLite at ``server/community.db``. Each row captures one
 shared scan: the disease verdict, the auto-detected species, the
-user's coarse-region string (city or admin region — never raw GPS),
-the user's per-install pseudo-id, and an optional thumbnail path. The
+user's coarse-region string (city or admin region — never raw GPS), a signed
+account-era actor (or an unlinked legacy pseudo-id), and an optional thumbnail
+path. The
 store is intentionally write-mostly + retention-bounded — there is no
 update path, only an explicit prune by age.
 
@@ -16,10 +17,12 @@ Privacy posture
 ---------------
 * No precise location lands here. The opted-in Android client sends a
   city and coordinates rounded to roughly 1 km for the nearby radius.
-* `client_ip_hash` mirrors the feedback store: peppered SHA-256, 64
-  bits, used for abuse-rate windows only.
-* Thumbnails are 512px JPEGs uploaded by the client. The user can opt
-  out from the Android app; uploads stay off until explicit consent.
+* ``client_ip_hash`` is a nullable legacy column only. Account-era writes leave
+  it NULL; abuse limiting uses the live connection address in memory.
+* Optional thumbnails are decoded, orientation-normalized, resized, and
+  re-encoded as fresh 512px RGB JPEGs without source metadata or filenames.
+  The user can opt out from the Android app; uploads stay off until
+  explicit consent.
 """
 
 from __future__ import annotations
@@ -32,10 +35,12 @@ import hmac
 import io
 import logging
 import math
+import os
 import secrets
 import sqlite3
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -45,11 +50,9 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 try:
     from .config import get_str  # type: ignore[import-not-found]
     from .countries import to_iso_alpha2
-    from .feedback import hash_client_ip
 except ImportError:
     from config import get_str
     from countries import to_iso_alpha2
-    from feedback import hash_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +77,10 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS community_scans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id         TEXT    NOT NULL,
-    user_pseudo_id  TEXT    NOT NULL,
+    -- Legacy install identity is nullable. Account-era rows use only the
+    -- server-signed actor id; the two identities are never linked/claimed.
+    user_pseudo_id  TEXT,
+    account_actor_id TEXT,
     country         TEXT,
     -- ``region`` holds the city (the display locality); ``city`` mirrors it.
     -- lat/lon are the device's COARSE location rounded to ~1 km (never precise
@@ -115,11 +121,12 @@ CREATE INDEX IF NOT EXISTS ix_community_species_lower   ON community_scans(speci
 CREATE TABLE IF NOT EXISTS community_opinions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id           TEXT    NOT NULL,
-    author_pseudo_id  TEXT    NOT NULL,
+    author_pseudo_id  TEXT,
+    account_actor_id  TEXT,
+    public_id         TEXT,
     suggested_disease TEXT    NOT NULL,
     note              TEXT,
     nickname          TEXT,
-    public_id         TEXT,
     client_ip_hash    TEXT,
     created_at        INTEGER NOT NULL
 );
@@ -128,17 +135,18 @@ CREATE INDEX IF NOT EXISTS ix_opinions_author ON community_opinions(author_pseud
 
 CREATE TABLE IF NOT EXISTS community_opinion_requests (
     scan_id        TEXT    PRIMARY KEY,
-    user_pseudo_id TEXT    NOT NULL,
+    user_pseudo_id TEXT,
+    account_actor_id TEXT,
     created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_opinion_requests_user ON community_opinion_requests(user_pseudo_id);
 
 CREATE TABLE IF NOT EXISTS community_scan_views (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id          TEXT    NOT NULL,
-    viewer_pseudo_id TEXT    NOT NULL,
-    viewer_author_id TEXT,
-    created_at       INTEGER NOT NULL,
-    PRIMARY KEY (scan_id, viewer_pseudo_id)
+    viewer_pseudo_id TEXT,
+    account_actor_id TEXT,
+    created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_views_viewer_pseudo
     ON community_scan_views(viewer_pseudo_id);
@@ -209,6 +217,106 @@ CREATE TABLE IF NOT EXISTS community_authors (
     status           TEXT    NOT NULL DEFAULT 'active'
 );
 CREATE INDEX IF NOT EXISTS ix_authors_legacy_pseudo ON community_authors(legacy_pseudo_id);
+
+-- Account-bound likes. Kept separate from the legacy per-install
+-- ``community_likes`` table so a signed actor's like is keyed on the actor and
+-- survives an install change; like_counts() unions the two.
+CREATE TABLE IF NOT EXISTS community_account_likes (
+    scan_id          TEXT    NOT NULL,
+    account_actor_id TEXT    NOT NULL,
+    liked            INTEGER NOT NULL DEFAULT 1,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, account_actor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_account_likes_scan
+    ON community_account_likes(scan_id);
+
+-- Account-bound safety controls.  Clients submit only public content tokens;
+-- the HTTP layer resolves the target author server-side, so an attacker cannot
+-- spoof another account id into a report or block.  Reports intentionally keep
+-- no free-form reporter text or content snapshot.
+CREATE TABLE IF NOT EXISTS community_content_reports (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_actor_id TEXT    NOT NULL,
+    target_type       TEXT    NOT NULL CHECK(target_type IN ('scan', 'opinion')),
+    target_scan_id    TEXT    NOT NULL,
+    target_opinion_id INTEGER NOT NULL DEFAULT 0,
+    target_actor_id   TEXT,
+    reason            TEXT    NOT NULL,
+    state             TEXT    NOT NULL DEFAULT 'pending'
+                              CHECK(state IN ('pending', 'dismissed', 'removed')),
+    created_at        INTEGER NOT NULL,
+    resolved_at       INTEGER,
+    UNIQUE(reporter_actor_id, target_type, target_scan_id, target_opinion_id)
+);
+CREATE INDEX IF NOT EXISTS ix_community_reports_queue
+    ON community_content_reports(state, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_reports_reporter
+    ON community_content_reports(reporter_actor_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_reports_target_actor
+    ON community_content_reports(target_actor_id);
+
+CREATE TABLE IF NOT EXISTS community_actor_blocks (
+    public_id         TEXT    NOT NULL UNIQUE,
+    blocker_actor_id  TEXT    NOT NULL,
+    blocked_actor_id  TEXT    NOT NULL,
+    blocked_nickname  TEXT,
+    created_at        INTEGER NOT NULL,
+    PRIMARY KEY(blocker_actor_id, blocked_actor_id),
+    CHECK(blocker_actor_id != blocked_actor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_community_actor_blocks_blocked
+    ON community_actor_blocks(blocked_actor_id);
+
+CREATE TABLE IF NOT EXISTS community_deleted_actors (
+    actor_id       TEXT PRIMARY KEY,
+    requested_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS community_cleanup_jobs (
+    actor_id        TEXT PRIMARY KEY,
+    state           TEXT NOT NULL DEFAULT 'pending',
+    attempt_count   INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    last_error_code TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    completed_at    INTEGER
+);
+
+-- Short-lived proof that an analysis token was minted by this server. It is
+-- used only to authorize a later community publication; feedback receipts are
+-- separate and are deliberately never accepted by community APIs.
+CREATE TABLE IF NOT EXISTS community_analysis_tokens (
+    token             TEXT PRIMARY KEY,
+    expires_at        INTEGER NOT NULL,
+    disease           TEXT,
+    confidence        REAL,
+    species           TEXT,
+    species_score     REAL,
+    image_binding     TEXT,
+    claimed_actor_id  TEXT,
+    claimed_at        INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_expiry
+    ON community_analysis_tokens(expires_at);
+"""
+
+_IDENTITY_INDEXES = """
+CREATE INDEX IF NOT EXISTS ix_community_actor ON community_scans(account_actor_id);
+CREATE INDEX IF NOT EXISTS ix_opinions_actor ON community_opinions(account_actor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_opinions_public_id
+    ON community_opinions(public_id)
+    WHERE public_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_opinion_requests_actor ON community_opinion_requests(account_actor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_views_legacy_identity
+    ON community_scan_views(scan_id, viewer_pseudo_id)
+    WHERE viewer_pseudo_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_views_account_identity
+    ON community_scan_views(scan_id, account_actor_id)
+    WHERE account_actor_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_cleanup_jobs_due
+    ON community_cleanup_jobs(state, next_attempt_at);
 """
 
 _write_lock = threading.RLock()
@@ -216,20 +324,53 @@ _init_lock = threading.Lock()
 _initialised = False
 
 
-# ── Public scan tokens ────────────────────────────────────────────────
-# The real ``scan_id`` is the server-issued id from /api/analyze — the
-# SAME value that authorises /api/feedback writes. Exposing it verbatim
-# in the community feed let any feed reader post feedback (and attach
-# images) against other people's scans, partially defeating the
-# anti-poisoning gate. Viewer-facing feed rows therefore carry a
-# deterministic one-way PUBLIC token instead; the opinion / view
-# endpoints accept either form and resolve the token back to the real
-# id server-side, so existing app builds keep working unchanged.
-_PUBLIC_TOKEN_PREFIX = "cs"
+class AnalysisTokenUnknownError(ValueError):
+    """The publication capability was not issued here or has expired."""
 
-# Public identifiers rotate every 30 days so a user's community activity can't
-# be linked across windows; a scan older than this also stops accepting new
-# opinions (its public handle has rotated).
+
+class AnalysisTokenConflictError(ValueError):
+    """The capability or scan id is already bound to another publication."""
+
+
+class AnalysisImageMismatchError(ValueError):
+    """The community image is not the exact upload that was analysed."""
+
+
+class OpinionTargetUnavailableError(ValueError):
+    """The target scan no longer exists or no longer accepts opinions."""
+
+
+# ── Public scan tokens ────────────────────────────────────────────────
+# The stored ``scan_id`` is a server-issued community publication capability,
+# never a feedback receipt. Viewer-facing feed rows carry a stable per-scan,
+# deterministic one-way PUBLIC token so the publication capability itself is
+# never exposed. It does not link different scans by the same actor. The token
+# stays stable for the row's lifetime while age checks make old scans read-only.
+# Opinion/view endpoints accept either form for installed-client compatibility,
+# while safety mutations below deliberately require the opaque public form.
+_PUBLIC_TOKEN_PREFIX = "cs"
+_PUBLIC_OPINION_TOKEN_PREFIX = "co"
+_PUBLIC_BLOCK_TOKEN_PREFIX = "cb"
+_PUBLIC_ACCOUNT_AUTHOR_PREFIX = "ca"
+
+# Fixed report taxonomy: no free-form reporter text is retained, which keeps
+# the moderation store bounded and avoids turning it into a new PII channel.
+COMMUNITY_REPORT_REASONS = frozenset({
+    "sexual_content",
+    "violence_or_threats",
+    "hate_or_harassment",
+    "illegal_or_dangerous",
+    "spam_or_misleading",
+    "privacy_or_impersonation",
+    "other_rules_violation",
+})
+COMMUNITY_REPORT_DAILY_LIMIT = 20
+COMMUNITY_BLOCK_LIMIT = 500
+COMMUNITY_REPORT_RETENTION_DAYS = 180
+
+# Anonymous display identifiers rotate every 30 days so activity cannot be
+# linked across windows. Independently, an older scan stops accepting new
+# opinions while its public read link remains stable for the retention window.
 IDENTITY_ROTATION_DAYS = 30
 _IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
 
@@ -310,7 +451,9 @@ def resolve_scan_token(token: str | None) -> str:
     init_db()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT scan_id FROM community_scans WHERE public_id = ? LIMIT 1",
+            "SELECT scan_id FROM community_scans WHERE public_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
             (tok,),
         ).fetchone()
     return str(row[0]) if row else tok
@@ -324,14 +467,92 @@ def scan_exists(scan_id: str) -> bool:
     init_db()
     with _connect() as conn:
         return conn.execute(
-            "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1", (sid,),
+            "SELECT 1 FROM community_scans WHERE scan_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1", (sid,),
+        ).fetchone() is not None
+
+
+def record_analysis_token(
+    token: str,
+    *,
+    disease: str,
+    confidence: float | None,
+    species: str | None,
+    species_score: float | None,
+    image_sha256: str,
+    ttl_days: int = 30,
+) -> None:
+    """Persist immutable server-derived claims for a publication capability."""
+    value = (token or "").strip()
+    if not value or len(value) > 128:
+        raise ValueError("invalid analysis token")
+    disease_value = (disease or "").strip()
+    if not disease_value or len(disease_value) > 256:
+        raise ValueError("invalid analysis disease")
+    confidence_value = float(confidence) if confidence is not None else None
+    species_value = (species or "").strip() or None
+    species_score_value = float(species_score) if species_score is not None else None
+    image_sha256_value = (image_sha256 or "").strip().lower()
+    if confidence_value is not None and (
+        not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0
+    ):
+        raise ValueError("invalid analysis confidence")
+    if species_value is not None and len(species_value) > 256:
+        raise ValueError("invalid analysis species")
+    if species_score_value is not None and (
+        not math.isfinite(species_score_value) or not 0.0 <= species_score_value <= 1.0
+    ):
+        raise ValueError("invalid analysis species score")
+    if len(image_sha256_value) != 64:
+        raise ValueError("invalid analysis image digest")
+    try:
+        bytes.fromhex(image_sha256_value)
+    except ValueError as exc:
+        raise ValueError("invalid analysis image digest") from exc
+    # Salt the exact-byte digest with the random capability so identical
+    # photos do not create a reusable, cross-token fingerprint in SQLite.
+    image_binding = hashlib.sha256(
+        value.encode("utf-8") + b"\0" + bytes.fromhex(image_sha256_value)
+    ).hexdigest()
+    init_db()
+    expires_at = int(time.time()) + max(1, min(int(ttl_days), 90)) * 86_400
+    with _write_lock, _connect() as connection:
+        connection.execute(
+            "INSERT INTO community_analysis_tokens ("
+            "token, expires_at, disease, confidence, species, species_score, image_binding"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                value,
+                expires_at,
+                disease_value,
+                confidence_value,
+                species_value,
+                species_score_value,
+                image_binding,
+            ),
+        )
+
+
+def is_analysis_token_issued(token: str) -> bool:
+    """Whether a token is current and eligible for community publication."""
+    value = (token or "").strip()
+    if not value:
+        return False
+    init_db()
+    with _connect() as connection:
+        return connection.execute(
+            "SELECT 1 FROM community_analysis_tokens "
+            "WHERE token = ? AND expires_at > ? AND disease IS NOT NULL "
+            "AND image_binding IS NOT NULL LIMIT 1",
+            (value, int(time.time())),
         ).fetchone() is not None
 
 
 def opinion_open(scan_id: str) -> bool:
     """True when a shared scan still accepts opinions — it exists AND is newer
-    than ``IDENTITY_ROTATION_DAYS``. Old scans go read-only (their public handle
-    has rotated), so the community can't keep weighing in on stale photos."""
+    than ``max_age_days``. Old scans go read-only so the community cannot keep
+    weighing in on stale photos; their public read link remains stable."""
     sid = (scan_id or "").strip()
     if not sid:
         return False
@@ -339,7 +560,9 @@ def opinion_open(scan_id: str) -> bool:
     cutoff = int(time.time()) - IDENTITY_ROTATION_DAYS * 86_400
     with _connect() as conn:
         return conn.execute(
-            "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? LIMIT 1",
+            "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
             (sid, cutoff),
         ).fetchone() is not None
 
@@ -355,8 +578,15 @@ _HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
 _FEED_COLUMNS = (
     "scan_id, country, region, city, lat, lon, disease, confidence, "
     "species, species_score, thumb_path, locale, created_at, wants_opinion, "
-    "user_pseudo_id, nickname"
+    "user_pseudo_id, nickname, account_actor_id"
 )
+
+
+# How many columns ``_FEED_COLUMNS`` projects. The ranked feed appends its
+# cursor/score/engagement columns after these, so every slice below is taken
+# relative to this rather than a literal that silently rots when a column is
+# added.
+_FEED_COLUMN_COUNT = len([c for c in _FEED_COLUMNS.split(",") if c.strip()])
 
 
 def _qualified_feed_columns(alias: str) -> str:
@@ -443,7 +673,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
-def _hidden_clause() -> str:
+def _hidden_clause(table_alias: str = "") -> str:
     """SQL fragment + placeholders for the hidden-disease filter.
 
     Returns a string starting with " AND " so callers can append
@@ -451,8 +681,231 @@ def _hidden_clause() -> str:
     unaliased ``disease`` column; the aliased joins build their own
     disease filters instead.
     """
+    if table_alias not in {"", "s"}:
+        raise ValueError("invalid SQL table alias")
+    prefix = f"{table_alias}." if table_alias else ""
     placeholders = ", ".join(["?"] * len(_HIDDEN_COMMUNITY_DISEASES))
-    return f" AND disease NOT IN ({placeholders})"
+    # SQL identifiers are allowlisted above; only the number of bound
+    # placeholders is generated dynamically.
+    return (
+        f" AND {prefix}disease NOT IN ({placeholders})"  # nosec B608
+        f" AND ({prefix}account_actor_id IS NULL OR {prefix}account_actor_id "
+        "NOT IN (SELECT actor_id FROM community_deleted_actors))"
+    )
+
+
+def _normalise_actor_id(value: str | None) -> str | None:
+    try:
+        return str(uuid.UUID((value or "").strip()))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def public_account_author_token(account_actor_id: str | None) -> str | None:
+    """Stable, opaque community handle for one verified account actor.
+
+    Internal account UUIDs never cross the public API.  Unlike legacy install
+    aliases, an account profile must remain addressable across retention
+    windows, so this token intentionally does not rotate.
+    """
+    actor = _normalise_actor_id(account_actor_id)
+    if actor is None:
+        return None
+    digest = hashlib.sha256(
+        f"community-account-author-v1|{actor}".encode("utf-8")
+    ).hexdigest()
+    return _PUBLIC_ACCOUNT_AUTHOR_PREFIX + digest[:30]
+
+
+def resolve_public_account_author_token(token: str | None) -> str | None:
+    """Resolve an opaque account-author token without exposing account ids."""
+    value = (token or "").strip()
+    if not (value.startswith(_PUBLIC_ACCOUNT_AUTHOR_PREFIX) and len(value) == 32):
+        return None
+    init_db()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT account_actor_id FROM community_scans "
+            "WHERE account_actor_id IS NOT NULL "
+            "AND account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors) "
+            "UNION SELECT account_actor_id FROM community_opinions "
+            "WHERE account_actor_id IS NOT NULL "
+            "AND account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors)"
+        ).fetchall()
+    for row in rows:
+        actor = str(row[0])
+        if public_account_author_token(actor) == value:
+            return actor
+    return None
+
+
+def public_account_profile(
+    author_token: str,
+    *,
+    viewer_account_actor_id: str | None = None,
+    limit: int = 30,
+) -> dict | None:
+    """Return a privacy-safe community profile and its recent scan cards."""
+    actor = resolve_public_account_author_token(author_token)
+    if actor is None:
+        return None
+    viewer = _normalise_actor_id(viewer_account_actor_id)
+    bounded_limit = max(1, min(int(limit), 50))
+    with _connect() as conn:
+        if _actor_is_deleted(conn, actor):
+            return None
+        if viewer is not None and viewer != actor and _actors_blocked(conn, viewer, actor):
+            return None
+        activity = conn.execute(
+            "SELECT nickname, created_at FROM ("
+            " SELECT nickname, created_at FROM community_scans WHERE account_actor_id = ?"
+            " UNION ALL "
+            " SELECT nickname, created_at FROM community_opinions WHERE account_actor_id = ?"
+            ") WHERE nickname IS NOT NULL AND TRIM(nickname) != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (actor, actor),
+        ).fetchone()
+        bounds = conn.execute(
+            "SELECT MIN(created_at), MAX(created_at) FROM ("
+            " SELECT created_at FROM community_scans WHERE account_actor_id = ?"
+            " UNION ALL "
+            " SELECT created_at FROM community_opinions WHERE account_actor_id = ?"
+            ")",
+            (actor, actor),
+        ).fetchone()
+        scan_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?",
+                (actor,),
+            ).fetchone()[0]
+        )
+        received_like_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM community_likes l JOIN community_scans s "
+                "ON s.scan_id = l.scan_id WHERE s.account_actor_id = ? AND l.liked = 1",
+                (actor,),
+            ).fetchone()[0]
+        ) + int(
+            conn.execute(
+                "SELECT COUNT(*) FROM community_account_likes l "
+                "JOIN community_scans s ON s.scan_id = l.scan_id "
+                "WHERE s.account_actor_id = ? AND l.liked = 1 "
+                "AND l.account_actor_id NOT IN "
+                "(SELECT actor_id FROM community_deleted_actors)",
+                (actor,),
+            ).fetchone()[0]
+        )
+        opinion_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM community_opinions WHERE account_actor_id = ?",
+                (actor,),
+            ).fetchone()[0]
+        )
+        rows = conn.execute(
+            f"SELECT {_FEED_COLUMNS} FROM community_scans "  # nosec B608
+            "WHERE account_actor_id = ?"
+            + _hidden_clause()
+            + " ORDER BY created_at DESC LIMIT ?",
+            (actor, *_HIDDEN_COMMUNITY_DISEASES, bounded_limit),
+        ).fetchall()
+    if bounds is None or bounds[0] is None:
+        return None
+
+    items = [_row_to_dict(row) for row in rows]
+    real_ids = [str(item["scan_id"]) for item in items]
+    counts = like_counts(real_ids)
+    liked = (
+        liked_scan_ids(None, real_ids, account_actor_id=viewer)
+        if viewer is not None
+        else set()
+    )
+    for item in items:
+        real_id = str(item["scan_id"])
+        item["scan_id"] = item.pop("public_id")
+        item["like_count"] = counts.get(real_id, 0)
+        item["liked_by_me"] = real_id in liked
+        item["distance_km"] = None
+        item.pop("lat", None)
+        item.pop("lon", None)
+
+    return {
+        "author_token": public_account_author_token(actor),
+        "nickname": str(activity[0]) if activity else None,
+        "joined_at": int(bounds[0]),
+        "last_active_at": int(bounds[1]),
+        "scan_count": scan_count,
+        "opinion_count": opinion_count,
+        "like_count": received_like_count,
+        "is_me": viewer == actor,
+        "items": items,
+    }
+
+
+def _blocked_actor_clause(
+    viewer_account_actor_id: str | None,
+    *,
+    actor_column: str = "account_actor_id",
+) -> tuple[str, tuple[str, str]]:
+    """SQL predicate hiding either side of a block relationship.
+
+    Blocking is deliberately mutual for visibility and interaction: the
+    blocker no longer sees the blocked actor, and the blocked actor cannot use
+    public feeds to follow or interact with the blocker.
+    """
+    allowed_columns = {
+        "account_actor_id",
+        "s.account_actor_id",
+        "v.account_actor_id",
+        "o.account_actor_id",
+        "o2.account_actor_id",
+    }
+    if actor_column not in allowed_columns:
+        raise ValueError("invalid SQL actor column")
+    viewer = _normalise_actor_id(viewer_account_actor_id)
+    if viewer is None:
+        return "", ()
+    # The only interpolated identifier is selected from allowed_columns.
+    return (
+        " AND (" + actor_column + " IS NULL OR NOT EXISTS ("  # nosec B608
+        "SELECT 1 FROM community_actor_blocks b WHERE "
+        "(b.blocker_actor_id = ? AND b.blocked_actor_id = " + actor_column + ") OR "
+        "(b.blocker_actor_id = " + actor_column + " AND b.blocked_actor_id = ?)"
+        "))",
+        (viewer, viewer),
+    )
+
+
+def _identity(
+    legacy_id: str | None,
+    account_actor_id: str | None,
+) -> tuple[str | None, str | None]:
+    legacy = (legacy_id or "").strip() or None
+    actor = (account_actor_id or "").strip() or None
+    if (legacy is None) == (actor is None):
+        raise ValueError("exactly one community identity is required")
+    if actor is not None:
+        actor = str(uuid.UUID(actor))
+    return legacy, actor
+
+
+def _identity_predicate(
+    legacy_column: str,
+    actor_column: str,
+    legacy_id: str | None,
+    account_actor_id: str | None,
+) -> tuple[str, tuple[str]]:
+    legacy, actor = _identity(legacy_id, account_actor_id)
+    if actor is not None:
+        return f"{actor_column} = ?", (actor,)
+    return f"{legacy_column} = ?", (legacy or "",)
+
+
+def _actor_is_deleted(conn: sqlite3.Connection, actor_id: str | None) -> bool:
+    if actor_id is None:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM community_deleted_actors WHERE actor_id = ?", (actor_id,)
+    ).fetchone() is not None
 
 
 @contextmanager
@@ -490,6 +943,111 @@ def _add_column_if_missing(
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
+_IDENTITY_TABLE_DEFINITIONS = {
+    "community_scans": """
+        CREATE TABLE community_scans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id TEXT NOT NULL,
+            user_pseudo_id TEXT,
+            account_actor_id TEXT,
+            country TEXT,
+            region TEXT NOT NULL,
+            city TEXT,
+            lat REAL,
+            lon REAL,
+            disease TEXT NOT NULL,
+            confidence REAL,
+            species TEXT,
+            species_lower TEXT,
+            species_score REAL,
+            thumb_path TEXT,
+            locale TEXT,
+            nickname TEXT,
+            client_ip_hash TEXT,
+            wants_opinion INTEGER NOT NULL DEFAULT 0,
+            public_id TEXT,
+            created_at INTEGER NOT NULL
+        )
+    """,
+    "community_opinions": """
+        CREATE TABLE community_opinions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id TEXT NOT NULL,
+            author_pseudo_id TEXT,
+            account_actor_id TEXT,
+            public_id TEXT,
+            suggested_disease TEXT NOT NULL,
+            note TEXT,
+            nickname TEXT,
+            client_ip_hash TEXT,
+            created_at INTEGER NOT NULL
+        )
+    """,
+    "community_opinion_requests": """
+        CREATE TABLE community_opinion_requests (
+            scan_id TEXT PRIMARY KEY,
+            user_pseudo_id TEXT,
+            account_actor_id TEXT,
+            created_at INTEGER NOT NULL
+        )
+    """,
+    "community_scan_views": """
+        CREATE TABLE community_scan_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id TEXT NOT NULL,
+            viewer_pseudo_id TEXT,
+            account_actor_id TEXT,
+            created_at INTEGER NOT NULL
+        )
+    """,
+}
+
+
+def _migrate_legacy_identity_columns(conn: sqlite3.Connection) -> None:
+    """Make legacy pseudo-id columns nullable without claiming old rows.
+
+    SQLite cannot drop a NOT NULL constraint in place, so each affected table
+    is transactionally rebuilt. Only columns with the same name are copied;
+    newly introduced account actor columns remain NULL for every legacy row.
+    """
+    legacy_identity = {
+        "community_scans": "user_pseudo_id",
+        "community_opinions": "author_pseudo_id",
+        "community_opinion_requests": "user_pseudo_id",
+        "community_scan_views": "viewer_pseudo_id",
+    }
+    for table, identity_column in legacy_identity.items():
+        info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if not info:
+            continue
+        identity = next((column for column in info if column[1] == identity_column), None)
+        if identity is None or not bool(identity[3]):
+            continue
+        old_table = f"{table}_legacy_identity_migration"
+        target_columns = [row[1] for row in conn.execute(
+            f"PRAGMA table_info({table})"
+        ).fetchall()]
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(f"ALTER TABLE {table} RENAME TO {old_table}")
+            conn.execute(_IDENTITY_TABLE_DEFINITIONS[table])
+            new_columns = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            copied = [column for column in target_columns if column in new_columns]
+            names = ", ".join(copied)
+            # Every identifier comes from the fixed migration definitions.
+            conn.execute(
+                f"INSERT INTO {table} ({names}) SELECT {names} FROM {old_table}"  # nosec B608
+            )
+            conn.execute(f"DROP TABLE {old_table}")
+            conn.execute("COMMIT")
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+
+
 def init_db() -> None:
     """Create the schema + thumb dir if missing. Idempotent."""
     global _initialised
@@ -514,23 +1072,37 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "nickname", "TEXT")
             _add_column_if_missing(conn, "community_opinions", "nickname", "TEXT")
             _add_column_if_missing(conn, "community_opinions", "public_id", "TEXT")
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_opinions_public_id "
-                "ON community_opinions(public_id) WHERE public_id IS NOT NULL"
+            _add_column_if_missing(conn, "community_scans", "account_actor_id", "TEXT")
+            _add_column_if_missing(conn, "community_opinions", "account_actor_id", "TEXT")
+            _add_column_if_missing(
+                conn, "community_opinion_requests", "account_actor_id", "TEXT"
             )
-            for (opinion_id,) in conn.execute(
-                "SELECT id FROM community_opinions WHERE public_id IS NULL"
-            ).fetchall():
-                conn.execute(
-                    "UPDATE community_opinions SET public_id = ? WHERE id = ?",
-                    (public_opinion_token(int(opinion_id)), int(opinion_id)),
-                )
+            _add_column_if_missing(conn, "community_scan_views", "account_actor_id", "TEXT")
             # "Wants a second opinion" flag — set after upload by the
             # scanner via /api/community/request-opinion. Older rows
             # default to 0 (no request).
             _add_column_if_missing(conn, "community_scans", "wants_opinion", "INTEGER NOT NULL DEFAULT 0")
             # Public viewer-facing token (see ``public_scan_token``).
             _add_column_if_missing(conn, "community_scans", "public_id", "TEXT")
+            # Publication capabilities originally stored only an expiry. New
+            # rows bind the model verdict and exact analyzed image immutably;
+            # legacy rows retain NULL claims and are no longer publishable.
+            _add_column_if_missing(conn, "community_analysis_tokens", "disease", "TEXT")
+            _add_column_if_missing(conn, "community_analysis_tokens", "confidence", "REAL")
+            _add_column_if_missing(conn, "community_analysis_tokens", "species", "TEXT")
+            _add_column_if_missing(conn, "community_analysis_tokens", "species_score", "REAL")
+            _add_column_if_missing(conn, "community_analysis_tokens", "image_binding", "TEXT")
+            _add_column_if_missing(
+                conn, "community_analysis_tokens", "claimed_actor_id", "TEXT"
+            )
+            _add_column_if_missing(conn, "community_analysis_tokens", "claimed_at", "INTEGER")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_community_analysis_tokens_actor "
+                "ON community_analysis_tokens(claimed_actor_id)"
+            )
+            _migrate_legacy_identity_columns(conn)
+            conn.executescript(_SCHEMA)
+            conn.executescript(_IDENTITY_INDEXES)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_community_public_id "
                 "ON community_scans(public_id)"
@@ -618,9 +1190,10 @@ def init_db() -> None:
                     (_stored_author_key(str(old_key)), str(author_id)),
                 )
             _backfill_public_ids(conn)
+            _backfill_opinion_public_ids(conn)
             _canonicalize_countries(conn)
         _initialised = True
-        logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+        logger.info("Community DB ready")
 
 
 def _canonicalize_countries(conn: sqlite3.Connection) -> None:
@@ -655,8 +1228,7 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
 
     Computes ``public_id`` for every legacy row, and renames legacy
     thumbnails from ``<scan_id>_<digest>.jpg`` to the token-prefixed
-    form — the filename rode through the feed and leaked the real
-    (feedback-authorising) scan_id just as much as the id field did.
+    form so the publication capability does not ride through the feed.
     """
     rows = conn.execute(
         "SELECT id, scan_id, thumb_path FROM community_scans "
@@ -679,32 +1251,69 @@ def _backfill_public_ids(conn: sqlite3.Connection) -> None:
         logger.info("Community: backfilled public ids for %d legacy rows", len(rows))
 
 
+def _backfill_opinion_public_ids(conn: sqlite3.Connection) -> None:
+    """Give pre-safety-release opinions opaque viewer-facing identifiers."""
+    rows = conn.execute(
+        "SELECT id, scan_id FROM community_opinions WHERE public_id IS NULL"
+    ).fetchall()
+    for opinion_id, _scan_id in rows:
+        conn.execute(
+            "UPDATE community_opinions SET public_id = ? WHERE id = ?",
+            (public_opinion_token(int(opinion_id)), int(opinion_id)),
+        )
+    if rows:
+        logger.info(
+            "Community: backfilled public ids for %d legacy opinions", len(rows)
+        )
+
+
 # Matches the client's own CommunityUploader.makeThumbnail (THUMB_LONG_EDGE /
-# THUMB_QUALITY) — the honest client already produces exactly this, so a
-# legitimate upload is unaffected; only a modified client sending something
-# larger, EXIF-laden or non-JPEG actually gets clamped.
+# THUMB_QUALITY) — an honest client already produces exactly this; only a
+# modified client sending something larger or EXIF-laden gets clamped.
 _THUMB_LONG_EDGE = 512
 _THUMB_QUALITY = 78
 
 
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
-    """Decode, downscale and re-encode a 512px JPEG thumbnail under
-    COMMUNITY_THUMB_DIR, dropping EXIF (including GPS) by construction.
-
-    Returns the relative file path (suitable for storage in the
-    ``thumb_path`` column) or ``None`` when the bytes are missing,
-    oversized, or don't decode as an image. The upload endpoint already
-    magic-byte-gates to JPEG/PNG/WebP before this runs, but that only
-    checks the header — decoding here is what actually enforces the
-    512px/no-EXIF contract this filename and its callers depend on,
-    rather than trusting an already-honest client to have done it.
-    """
+    """Decode and persist a fresh, metadata-free 512px RGB JPEG."""
     if not image_bytes:
         return None
     if len(image_bytes) > COMMUNITY_MAX_THUMB_BYTES:
-        logger.info(
-            "Community thumb rejected (oversized: %d bytes)", len(image_bytes)
+        logger.info("Community thumbnail rejected as oversized")
+        return None
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as opened:
+            width, height = opened.size
+            if (
+                width < 32
+                or height < 32
+                or width > 8_192
+                or height > 8_192
+                or width * height > 20_000_000
+            ):
+                return None
+            opened.load()
+            image = ImageOps.exif_transpose(opened).convert("RGB")
+    except (Image.DecompressionBombError, OSError, UnidentifiedImageError, ValueError):
+        return None
+    if max(image.size) > 512:
+        image.thumbnail((512, 512), Image.Resampling.LANCZOS)
+    clean = Image.new("RGB", image.size)
+    clean.paste(image)
+    encoded = io.BytesIO()
+    try:
+        clean.save(
+            encoded,
+            format="JPEG",
+            quality=85,
+            optimize=True,
+            progressive=False,
+            subsampling=2,
         )
+    except (OSError, ValueError):
+        return None
+    body = encoded.getvalue()
+    if len(body) > COMMUNITY_MAX_THUMB_BYTES:
         return None
     try:
         img = Image.open(io.BytesIO(image_bytes))
@@ -732,18 +1341,22 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
     encoded = buf.getvalue()
     # Hash-prefix the filename so two scans with the same scan_id (a
     # mis-behaved client) can't collide. Truncate to 24 hex chars —
-    # plenty of collision resistance for a per-pseudo-id namespace.
+    # plenty of collision resistance for this bounded corpus.
     # Named by the PUBLIC token, not the raw scan_id: the filename is
     # served to every feed reader via ``thumb_path`` and must not leak
-    # the feedback-authorising id. Hashed on the RE-ENCODED bytes, not the
-    # upload, so an identical re-upload still dedupes to the same file.
-    digest = hashlib.sha256(encoded).hexdigest()[:24]
+    # the publication capability.
+    digest = hashlib.sha256(body).hexdigest()[:24]
     filename = f"{public_scan_token(scan_id)}_{digest}.jpg"
     target = COMMUNITY_THUMB_DIR / filename
+    temporary = COMMUNITY_THUMB_DIR / f".{filename}.tmp"
     try:
-        target.write_bytes(encoded)
-    except OSError as exc:
-        logger.warning("Failed to write community thumb %s: %s", target, exc)
+        COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(body)
+        temporary.chmod(0o600)
+        os.replace(temporary, target)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        logger.warning("Failed to write community thumbnail")
         return None
     return filename
 
@@ -751,7 +1364,8 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
 def record_scan(
     *,
     scan_id: str,
-    user_pseudo_id: str,
+    user_pseudo_id: str | None = None,
+    account_actor_id: str | None = None,
     country: str,
     region: str = "",
     city: str | None = None,
@@ -774,8 +1388,11 @@ def record_scan(
     generated plant-vibe handle shown in the feed.
     """
     init_db()
+    legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
     now = int(time.time())
-    ip_hash = hash_client_ip(client_ip)
+    # The connection address may be used by the in-memory HTTP limiter, but it
+    # is never persisted on account-era community rows.
+    ip_hash = None
     # Canonicalize the country bucket to an ISO alpha-2 code at the write so
     # the corpus never splits one country across code / name / localized-name
     # representations (the HTTP layer already canonicalizes, but a direct
@@ -784,6 +1401,8 @@ def record_scan(
     region_value = region or ""
     species_lower = species.lower() if species else None
     with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor_id):
+            raise ValueError("deleted account actor")
         # Dedup by scan_id. The community upload is fire-and-forget and a
         # "request a second opinion" tap can also trigger an on-demand
         # upload, so the same scan can be offered twice; we never want
@@ -808,22 +1427,27 @@ def record_scan(
         # Honour a second-opinion request that arrived BEFORE this upload
         # landed (the durable request store decouples the two orderings).
         # Expired requests don't count — the ask has lapsed by then.
+        identity_sql, identity_params = _identity_predicate(
+            "user_pseudo_id", "account_actor_id", legacy_id, actor_id
+        )
+        # identity_sql is generated exclusively from fixed identity columns.
         pending = conn.execute(
-            "SELECT 1 FROM community_opinion_requests "
-            "WHERE scan_id = ? AND user_pseudo_id = ? AND created_at >= ? LIMIT 1",
-            (scan_id, user_pseudo_id, now - _OPINION_REQUEST_TTL_S),
+            "SELECT 1 FROM community_opinion_requests "  # nosec B608
+            f"WHERE scan_id = ? AND {identity_sql} AND created_at >= ? LIMIT 1",
+            (scan_id, *identity_params, now - _OPINION_REQUEST_TTL_S),
         ).fetchone()
         wants_opinion = 1 if pending else 0
         cur = conn.execute(
             "INSERT INTO community_scans ("
-            "  scan_id, user_pseudo_id, country, region, city, lat, lon, "
+            "  scan_id, user_pseudo_id, account_actor_id, country, region, city, lat, lon, "
             "  disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
             "  nickname, author_id, client_ip_hash, wants_opinion, public_id, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
-                user_pseudo_id,
+                legacy_id,
+                actor_id,
                 country,
                 region_value,
                 city,
@@ -847,12 +1471,182 @@ def record_scan(
         return int(cur.lastrowid or 0)
 
 
-def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
+def record_analysis_scan(
+    *,
+    scan_id: str,
+    account_actor_id: str,
+    country: str,
+    region: str = "",
+    city: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    image_bytes: bytes | None = None,
+    locale: str | None = None,
+    nickname: str | None = None,
+    client_disease: str | None = None,
+    client_confidence: float | None = None,
+    client_species: str | None = None,
+    client_species_score: float | None = None,
+) -> int:
+    """Publish one server analysis with its immutable stored verdict.
+
+    The uploaded image must be byte-for-byte identical to the upload analysed
+    when the capability was issued. Claiming the capability and inserting the
+    scan share one SQLite transaction. A database failure therefore leaves the
+    capability retryable; after success, only the same signed actor receives
+    the existing row id.
+    The ``client_*`` diagnosis fields remain accepted for wire/backward test
+    compatibility but are deliberately ignored in favor of the stored claims.
+    """
+    del client_disease, client_confidence, client_species, client_species_score
+    init_db()
+    token = (scan_id or "").strip()
+    if not token or len(token) > 128:
+        raise AnalysisTokenUnknownError("unknown analysis token")
+    if not image_bytes:
+        raise AnalysisImageMismatchError("analysis image is required")
+    image_binding = hashlib.sha256(
+        token.encode("utf-8") + b"\0" + hashlib.sha256(image_bytes).digest()
+    ).hexdigest()
+    _legacy_id, actor_id = _identity(None, account_actor_id)
+    assert actor_id is not None
+    now = int(time.time())
+    country_value = to_iso_alpha2(country)
+    region_value = region or ""
+    thumb_path: str | None = None
+
+    with _write_lock, _connect() as conn:
+        try:
+            # Serialize token claims and scan-id collision checks even when
+            # multiple application threads/processes reach SQLite together.
+            conn.execute("BEGIN IMMEDIATE")
+            if _actor_is_deleted(conn, actor_id):
+                raise ValueError("deleted account actor")
+            if actor_id is not None:
+                owner_row = conn.execute(
+                    "SELECT account_actor_id FROM community_scans "
+                    "WHERE scan_id = ? LIMIT 1",
+                    (scan_id,),
+                ).fetchone()
+                owner_actor = (
+                    str(owner_row[0]) if owner_row and owner_row[0] else None
+                )
+                if owner_actor and owner_actor != actor_id:
+                    blocked = conn.execute(
+                        "SELECT 1 FROM community_actor_blocks WHERE "
+                        "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+                        "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+                        (actor_id, owner_actor, owner_actor, actor_id),
+                    ).fetchone()
+                    if blocked is not None:
+                        raise ValueError("blocked_interaction")
+            claim = conn.execute(
+                "SELECT expires_at, disease, confidence, species, species_score, image_binding, "
+                "claimed_actor_id FROM community_analysis_tokens WHERE token = ?",
+                (token,),
+            ).fetchone()
+            if (
+                claim is None
+                or int(claim[0]) <= now
+                or claim[1] is None
+                or claim[5] is None
+            ):
+                raise AnalysisTokenUnknownError("unknown analysis token")
+            if image_binding != str(claim[5]).lower():
+                raise AnalysisImageMismatchError("analysis image does not match")
+
+            existing_rows = conn.execute(
+                "SELECT id, account_actor_id FROM community_scans "
+                "WHERE scan_id = ? LIMIT 2",
+                (token,),
+            ).fetchall()
+            claimed_actor = str(claim[6]) if claim[6] is not None else None
+            if claimed_actor is not None:
+                if (
+                    claimed_actor != actor_id
+                    or len(existing_rows) != 1
+                    or existing_rows[0][1] != actor_id
+                ):
+                    raise AnalysisTokenConflictError("analysis token already claimed")
+                conn.execute("COMMIT")
+                return int(existing_rows[0][0])
+
+            # An unclaimed token must not adopt an unrelated/pre-existing row,
+            # even if that row happens to have the same actor id.
+            if existing_rows:
+                raise AnalysisTokenConflictError("scan id collision")
+
+            disease = str(claim[1])
+            confidence = float(claim[2]) if claim[2] is not None else None
+            species = str(claim[3]) if claim[3] is not None else None
+            species_score = float(claim[4]) if claim[4] is not None else None
+            species_lower = species.lower() if species else None
+            thumb_path = _save_thumbnail(token, image_bytes) if image_bytes else None
+            identity_sql, identity_params = _identity_predicate(
+                "user_pseudo_id", "account_actor_id", None, actor_id
+            )
+            pending = conn.execute(
+                "SELECT 1 FROM community_opinion_requests "
+                f"WHERE scan_id = ? AND {identity_sql} AND created_at >= ? LIMIT 1",
+                (token, *identity_params, now - _OPINION_REQUEST_TTL_S),
+            ).fetchone()
+            cur = conn.execute(
+                "INSERT INTO community_scans ("
+                "scan_id, user_pseudo_id, account_actor_id, country, region, city, lat, lon, "
+                "disease, confidence, species, species_lower, species_score, thumb_path, "
+                "locale, nickname, client_ip_hash, wants_opinion, public_id, created_at"
+                ") VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                (
+                    token,
+                    actor_id,
+                    country_value,
+                    region_value,
+                    city,
+                    lat,
+                    lon,
+                    disease,
+                    confidence,
+                    species,
+                    species_lower,
+                    species_score,
+                    thumb_path,
+                    locale,
+                    (nickname or None),
+                    1 if pending else 0,
+                    public_scan_token(token),
+                    now,
+                ),
+            )
+            claimed = conn.execute(
+                "UPDATE community_analysis_tokens "
+                "SET claimed_actor_id = ?, claimed_at = ? "
+                "WHERE token = ? AND claimed_actor_id IS NULL",
+                (actor_id, now, token),
+            ).rowcount
+            if claimed != 1:
+                raise AnalysisTokenConflictError("analysis token already claimed")
+            conn.execute("COMMIT")
+            return int(cur.lastrowid or 0)
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            if thumb_path:
+                with contextlib.suppress(OSError):
+                    (COMMUNITY_THUMB_DIR / thumb_path).unlink(missing_ok=True)
+            raise
+
+
+def set_wants_opinion(
+    scan_id: str,
+    user_pseudo_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
+) -> bool:
     """Durably record that the scan's owner wants a community second opinion.
 
-    Owner-scoped: a user can only flag their own scan (the request is
-    keyed by ``user_pseudo_id`` and the scan-row update matches on it
-    too). The intent is written to ``community_opinion_requests`` FIRST,
+    Owner-scoped: a caller can only flag a scan with the same selected
+    legacy-or-account identity. The intent is written to
+    ``community_opinion_requests`` FIRST,
     so it survives even when the community upload hasn't landed yet — the
     flag is then materialised onto the scan row either here (if it
     already exists) or by :func:`record_scan` when the upload arrives.
@@ -862,75 +1656,88 @@ def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
     Re-requesting refreshes ``created_at``, restarting the
     ``OPINION_REQUEST_TTL_HOURS`` auto-expiry window.
 
-    Returns ``True`` once the intent is recorded (i.e. for any non-blank
-    id pair). The caller can therefore trust the "waiting" state.
+    Returns ``True`` once an owner-matching intent is recorded. A request for
+    an already-shared row owned by another identity returns ``False``.
     """
     init_db()
-    if not scan_id or not user_pseudo_id:
+    if not scan_id:
+        return False
+    try:
+        legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
+    except ValueError:
         return False
     now = int(time.time())
     with _write_lock, _connect() as conn:
-        owner = conn.execute(
-            "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ? LIMIT 1",
-            (scan_id,),
-        ).fetchone()
-        # Once the scan exists its stored owner is authoritative. Previously a
-        # different pseudo could overwrite the one-row request and thereby
-        # unlock opinions on someone else's scan.
-        if owner is not None and str(owner[0]) != user_pseudo_id:
+        if _actor_is_deleted(conn, actor_id):
             return False
-        pending = conn.execute(
-            "SELECT user_pseudo_id FROM community_opinion_requests WHERE scan_id = ?",
+        owner_sql, owner_params = _identity_predicate(
+            "user_pseudo_id", "account_actor_id", legacy_id, actor_id
+        )
+        existing_owner = conn.execute(
+            "SELECT user_pseudo_id, account_actor_id FROM community_scans "
+            "WHERE scan_id = ? LIMIT 1",
             (scan_id,),
         ).fetchone()
-        # Before upload there is no owner row to prove a replacement. Preserve
-        # the first pending intent; the eventual upload only materialises it
-        # when its pseudo matches.
-        if owner is None and pending is not None and str(pending[0]) != user_pseudo_id:
+        if existing_owner is not None and not (
+            existing_owner[0] == legacy_id and existing_owner[1] == actor_id
+        ):
             return False
         # Durable record of intent (idempotent — one request per scan).
         conn.execute(
             "INSERT INTO community_opinion_requests "
-            "(scan_id, user_pseudo_id, created_at) VALUES (?, ?, ?) "
+            "(scan_id, user_pseudo_id, account_actor_id, created_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(scan_id) DO UPDATE SET "
             "  user_pseudo_id = excluded.user_pseudo_id, "
+            "  account_actor_id = excluded.account_actor_id, "
             "  created_at = excluded.created_at",
-            (scan_id, user_pseudo_id, now),
+            (scan_id, legacy_id, actor_id, now),
         )
         # Materialise onto the scan row if the upload has already landed.
         conn.execute(
-            "UPDATE community_scans SET wants_opinion = 1 "
-            "WHERE scan_id = ? AND user_pseudo_id = ?",
-            (scan_id, user_pseudo_id),
+            "UPDATE community_scans SET wants_opinion = 1 "  # nosec B608
+            f"WHERE scan_id = ? AND {owner_sql}",
+            (scan_id, *owner_params),
         )
         return True
 
 
-def clear_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
+def clear_wants_opinion(
+    scan_id: str,
+    user_pseudo_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
+) -> bool:
     """Withdraw the owner's open second-opinion request on their own scan.
 
     Owner-scoped like :func:`set_wants_opinion`: both the durable request
-    row and the materialised scan-row flag are only touched when
-    ``user_pseudo_id`` matches. Opinions already left stay visible — this
+    row and the materialised scan-row flag are only touched when the selected
+    identity matches. Opinions already left stay visible — this
     only stops the "wants opinion" badge and further notifications.
 
     Returns ``True`` when an open request was actually removed.
     """
     init_db()
     sid = (scan_id or "").strip()
-    pid = (user_pseudo_id or "").strip()
-    if not sid or not pid:
+    if not sid:
         return False
+    try:
+        legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
+    except ValueError:
+        return False
+    owner_sql, owner_params = _identity_predicate(
+        "user_pseudo_id", "account_actor_id", legacy_id, actor_id
+    )
     with _write_lock, _connect() as conn:
+        # owner_sql uses fixed identity columns and all values remain bound.
         cleared = conn.execute(
-            "DELETE FROM community_opinion_requests "
-            "WHERE scan_id = ? AND user_pseudo_id = ?",
-            (sid, pid),
+            "DELETE FROM community_opinion_requests "  # nosec B608
+            f"WHERE scan_id = ? AND {owner_sql}",
+            (sid, *owner_params),
         ).rowcount
         conn.execute(
-            "UPDATE community_scans SET wants_opinion = 0 "
-            "WHERE scan_id = ? AND user_pseudo_id = ?",
-            (sid, pid),
+            "UPDATE community_scans SET wants_opinion = 0 "  # nosec B608
+            f"WHERE scan_id = ? AND {owner_sql}",
+            (sid, *owner_params),
         )
     return bool(cleared)
 
@@ -969,163 +1776,117 @@ def _sweep_expired_requests() -> None:
         expire_stale_opinion_requests(int(now))
 
 
-def record_opinion(
+def record_opinion_with_status(
     *,
     scan_id: str,
-    author_pseudo_id: str,
+    author_pseudo_id: str | None = None,
+    account_actor_id: str | None = None,
     suggested_disease: str,
-    author_id: str | None = None,
     note: str | None = None,
     nickname: str | None = None,
     client_ip: str | None = None,
-) -> int:
-    """Append one community 'second opinion' (comment) on a shared scan.
-    Returns the new row id.
+    legacy_author_id: str | None = None,
+) -> tuple[int, bool]:
+    """Append a forum comment and return ``(row_id, created)`` atomically.
 
-    UNGATED: it performs none of the active-request / ownership / block
-    checks. Nothing in the HTTP layer calls it —
-    ``/api/community/opinion`` goes through
-    :func:`record_requested_opinion`, which is the authority. This form
-    survives only as a test-seeding helper for the read paths; new callers
-    must use :func:`record_requested_opinion`.
-
-    An author may post more than once on the same scan — the thread is a
-    running comment list, not a single vote slot. ``opinions_for`` folds
-    repeat authors down to their latest pick for the consensus tally so a
-    talkative commenter can't inflate it; the comment list itself keeps
-    every row.
-
-    ``author_id`` is the durable identity resolved from
-    ``X-Community-Author-Key`` (NULL for a caller with no adopted identity —
-    an old app build, or a malformed/missing header). When present it's what
-    the consensus tally dedupes on instead of ``author_pseudo_id``, which the
-    client chooses and can vary per request — see ``opinions_for``."""
-    init_db()
-    now = int(time.time())
-    ip_hash = hash_client_ip(client_ip)
-    note_clean = (note or "").strip()[:500] or None
-    nick_clean = (nickname or "").strip()[:48] or None
-    with _write_lock, _connect() as conn:
-        cur = conn.execute(
-            "INSERT INTO community_opinions ("
-            "  scan_id, author_pseudo_id, author_id, suggested_disease, note, "
-            "  nickname, client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (scan_id, author_pseudo_id, author_id, suggested_disease, note_clean,
-             nick_clean, ip_hash, now),
-        )
-        row_id = int(cur.lastrowid or 0)
-        conn.execute(
-            "UPDATE community_opinions SET public_id = ? WHERE id = ?",
-            (public_opinion_token(row_id), row_id),
-        )
-        return row_id
-
-
-def record_requested_opinion(
-    *,
-    scan_id: str,
-    author_pseudo_id: str,
-    suggested_disease: str,
-    author_id: str | None = None,
-    note: str | None = None,
-    nickname: str | None = None,
-    client_ip: str | None = None,
-) -> int:
-    """Atomically add an opinion only while the owner's request is live.
-
-    The HTTP layer performs friendly early validation, but this transaction is
-    the authority: a request can be cancelled or expire between an endpoint
-    check and the insert. Existing opinions remain readable after closing; only
-    new mutations are refused. The owner is also excluded from their own
-    consensus so a direct client cannot bias the result.
+    Community V2 keeps the complete conversation.  Consensus is deduplicated
+    separately to each author's latest diagnosis, so repeated comments cannot
+    inflate a vote while the thread still reads naturally.
     """
     init_db()
-    sid = (scan_id or "").strip()
-    pseudo = (author_pseudo_id or "").strip()
-    if not sid or not pseudo:
-        raise OpinionLockedError("opinion request is not active")
+    legacy_id, actor_id = _identity(author_pseudo_id, account_actor_id)
     now = int(time.time())
-    cutoff = now - _OPINION_REQUEST_TTL_S
+    ip_hash = None
     note_clean = (note or "").strip()[:500] or None
     nick_clean = (nickname or "").strip()[:48] or None
     with _write_lock, _connect() as conn:
+        # The endpoint's existence/owner/freshness checks happen before this
+        # call and can race account cleanup or retention pruning. Acquire a
+        # database-wide write reservation before repeating the target check,
+        # then keep it through the insert. This works across app processes;
+        # the in-process RLock alone cannot close that boundary.
         conn.execute("BEGIN IMMEDIATE")
         try:
+            cutoff = now - _IDENTITY_ROTATION_S
             target = conn.execute(
-                "SELECT user_pseudo_id, created_at, author_id FROM community_scans "
-                "WHERE scan_id = ? LIMIT 1",
-                (sid,),
+                "SELECT account_actor_id FROM community_scans "
+                "WHERE scan_id = ? AND created_at >= ? "
+                "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+                "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+                (scan_id, cutoff),
             ).fetchone()
-            if target is None or int(target[1]) < now - _IDENTITY_ROTATION_S:
-                raise OpinionLockedError("opinion target is missing or stale")
-            same_durable_author = bool(
-                author_id and target[2] and str(author_id) == str(target[2])
-            )
-            if str(target[0]) == pseudo or same_durable_author:
-                raise OpinionOwnerError("owners cannot opine on their own scan")
-            blocked = conn.execute(
-                "SELECT 1 FROM community_blocks WHERE "
-                "(blocker_pseudo_id = ? AND blocked_pseudo_id = ?) OR "
-                "(blocker_pseudo_id = ? AND blocked_pseudo_id = ?) OR "
-                "(blocker_author_id = ? AND blocked_author_id = ?) OR "
-                "(blocker_author_id = ? AND blocked_author_id = ?) LIMIT 1",
-                (
-                    str(target[0]),
-                    pseudo,
-                    pseudo,
-                    str(target[0]),
-                    target[2],
-                    author_id,
-                    author_id,
-                    target[2],
-                ),
-            ).fetchone()
-            if blocked is not None:
-                # Use the same externally indistinguishable locked response as
-                # a closed thread: a cached public token must not let either
-                # side of a block keep mutating or notifying the other.
-                raise OpinionLockedError("opinion interaction is blocked")
-            active = conn.execute(
-                "SELECT 1 FROM community_opinion_requests "
-                "WHERE scan_id = ? AND user_pseudo_id = ? "
-                "AND created_at >= ? LIMIT 1",
-                (sid, str(target[0]), cutoff),
-            ).fetchone()
-            if active is None:
-                raise OpinionLockedError("opinion request is not active")
+            if target is None:
+                raise OpinionTargetUnavailableError(
+                    "opinion target is absent, deleted, or stale"
+                )
+            if _actor_is_deleted(conn, actor_id):
+                raise ValueError("deleted account actor")
+            owner_actor = str(target[0]) if target[0] else None
+            if (
+                actor_id is not None
+                and owner_actor is not None
+                and owner_actor != actor_id
+                and _actors_blocked(conn, actor_id, owner_actor)
+            ):
+                raise ValueError("blocked_interaction")
             cur = conn.execute(
                 "INSERT INTO community_opinions ("
-                "  scan_id, author_pseudo_id, author_id, suggested_disease, note, "
-                "  nickname, client_ip_hash, created_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "  scan_id, author_pseudo_id, account_actor_id, author_id, "
+                "  suggested_disease, note, nickname, client_ip_hash, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    sid,
-                    pseudo,
-                    author_id,
+                    scan_id,
+                    legacy_id,
+                    actor_id,
+                    (legacy_author_id or "").strip() or None,
                     suggested_disease,
                     note_clean,
                     nick_clean,
-                    hash_client_ip(client_ip),
+                    ip_hash,
                     now,
                 ),
             )
-            row_id = int(cur.lastrowid or 0)
+            opinion_id = int(cur.lastrowid or 0)
             conn.execute(
                 "UPDATE community_opinions SET public_id = ? WHERE id = ?",
-                (public_opinion_token(row_id), row_id),
+                (public_opinion_token(opinion_id), opinion_id),
             )
             conn.execute("COMMIT")
-            return row_id
+            return opinion_id, True
         except Exception:
-            with contextlib.suppress(sqlite3.OperationalError):
-                conn.execute("ROLLBACK")
+            conn.execute("ROLLBACK")
             raise
 
 
+def record_opinion(
+    *,
+    scan_id: str,
+    author_pseudo_id: str | None = None,
+    account_actor_id: str | None = None,
+    suggested_disease: str,
+    note: str | None = None,
+    nickname: str | None = None,
+    client_ip: str | None = None,
+) -> int:
+    """Backward-compatible row-id-only opinion writer."""
+    row_id, _created = record_opinion_with_status(
+        scan_id=scan_id,
+        author_pseudo_id=author_pseudo_id,
+        account_actor_id=account_actor_id,
+        suggested_disease=suggested_disease,
+        note=note,
+        nickname=nickname,
+        client_ip=client_ip,
+    )
+    return row_id
+
 def opinions_for(
-    scan_id: str, *, limit: int = 50, user_pseudo_id: str | None = None,
+    scan_id: str,
+    *,
+    limit: int = 50,
+    user_pseudo_id: str | None = None,
     author_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> dict:
     """Opinions for one scan plus a per-disease consensus tally.
 
@@ -1140,19 +1901,12 @@ def opinions_for(
     MOST RECENT pick first (a window-function dedupe, not a plain
     GROUP BY) so a repeat commenter contributes one vote, not one per post.
 
-    The dedupe key is ``COALESCE(author_id, author_pseudo_id)``: author_id
-    is the durable identity resolved from X-Community-Author-Key, and
-    author_pseudo_id is the client-chosen legacy id that key exists to stop
-    being forgeable — a caller who varies the pseudo id per request no
-    longer counts as a fresh voter each time once they have a real
-    author_id. Rows written before the identity existed have a NULL
-    author_id and fall back to the legacy id, so nothing needs a backfill.
+    Account rows dedupe by the verified account actor. Legacy rows fall back
+    to their durable author id or install pseudo-id only for compatibility.
 
     ``my_opinion`` is the caller's own most recent pick under that same
     coalesced identity (``author_id`` if the caller resolved one this
-    request, else ``user_pseudo_id``) — None if they haven't voted. Reuses
-    the tally's identity logic rather than a second, potentially
-    inconsistent notion of "who is this".
+    request, else the legacy identity) — None if they haven't voted.
 
     Also carries ``wants_opinion`` (is there a live, non-expired request?)
     plus ``opinion_requested_at`` (epoch seconds of that request, else
@@ -1163,60 +1917,93 @@ def opinions_for(
     _sweep_expired_requests()
     limit = max(1, min(int(limit), 100))
     request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
-    my_key = (author_id or user_pseudo_id or "").strip() or None
+    viewer = _normalise_actor_id(viewer_account_actor_id)
+    legacy_key = (author_id or user_pseudo_id or "").strip() or None
     with _connect() as conn:
-        blocked_clause = ""
-        blocked_params: tuple[str, ...] = ()
-        viewer_pseudo = (user_pseudo_id or "").strip()
-        if viewer_pseudo:
-            blocked_clause = (
-                " AND author_pseudo_id NOT IN ("
-                "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-                "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-                ")"
-            )
-            blocked_params = (viewer_pseudo, viewer_pseudo)
-        durable_viewer = (author_id or "").strip()
-        if durable_viewer:
-            blocked_clause += (
-                " AND (author_id IS NULL OR author_id NOT IN ("
-                "SELECT blocked_author_id FROM community_blocks "
-                "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-                "UNION SELECT blocker_author_id FROM community_blocks "
-                "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-            )
-            blocked_params = (*blocked_params, durable_viewer, durable_viewer)
+        scan_owner = conn.execute(
+            "SELECT account_actor_id FROM community_scans WHERE scan_id = ? LIMIT 1",
+            (scan_id,),
+        ).fetchone()
+        if scan_owner is None or (
+            scan_owner[0] is not None
+            and _actor_is_deleted(conn, str(scan_owner[0]))
+        ):
+            return {
+                "opinions": [],
+                "consensus": [],
+                "my_opinion": None,
+                "views": 0,
+                "wants_opinion": False,
+                "opinion_requested_at": None,
+                "like_count": 0,
+                "liked_by_me": False,
+            }
+        if (
+            viewer is not None
+            and scan_owner is not None
+            and scan_owner[0] is not None
+            and str(scan_owner[0]) != viewer
+            and _actors_blocked(conn, viewer, str(scan_owner[0]))
+        ):
+            return {
+                "opinions": [],
+                "consensus": [],
+                "my_opinion": None,
+                "views": 0,
+                "wants_opinion": False,
+                "opinion_requested_at": None,
+                "like_count": 0,
+                "liked_by_me": False,
+            }
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        # blocked_clause contains only allowlisted columns and bound actor IDs.
         rows = conn.execute(
-            "SELECT suggested_disease, note, created_at, nickname, public_id, "
-            "author_pseudo_id, author_id "
+            "SELECT suggested_disease, note, created_at, nickname, public_id, "  # nosec B608
+            "account_actor_id, author_id, author_pseudo_id "
             "FROM community_opinions WHERE scan_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) "
             + blocked_clause
             + " ORDER BY created_at DESC LIMIT ?",
             (scan_id, *blocked_params, limit),
         ).fetchall()
         tally = conn.execute(
-            "SELECT suggested_disease, COUNT(*) AS n FROM ("
-            "  SELECT suggested_disease,"
-            "         ROW_NUMBER() OVER ("
-            "           PARTITION BY COALESCE(author_id, author_pseudo_id)"
-            "           ORDER BY created_at DESC, id DESC"
-            "         ) AS rn"
-            "  FROM community_opinions WHERE scan_id = ?"
+            "SELECT suggested_disease, COUNT(*) AS n FROM ("  # nosec B608
+            "  SELECT suggested_disease, ROW_NUMBER() OVER ("
+            "    PARTITION BY CASE "
+            "      WHEN account_actor_id IS NOT NULL THEN 'account:' || account_actor_id "
+            "      WHEN author_id IS NOT NULL THEN 'author:' || author_id "
+            "      WHEN author_pseudo_id IS NOT NULL THEN 'legacy:' || author_pseudo_id "
+            "      ELSE 'row:' || id END "
+            "    ORDER BY created_at DESC, id DESC"
+            "  ) AS rn FROM community_opinions WHERE scan_id = ? "
+            "  AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "  (SELECT actor_id FROM community_deleted_actors)) "
             + blocked_clause
             + ") WHERE rn = 1 GROUP BY suggested_disease ORDER BY n DESC",
             (scan_id, *blocked_params),
         ).fetchall()
-        my_row = conn.execute(
-            "SELECT suggested_disease FROM community_opinions "
-            "WHERE scan_id = ? AND COALESCE(author_id, author_pseudo_id) = ? "
-            "ORDER BY created_at DESC, id DESC LIMIT 1",
-            (scan_id, my_key),
-        ).fetchone() if my_key else None
+        if viewer is not None:
+            my_row = conn.execute(
+                "SELECT suggested_disease FROM community_opinions "
+                "WHERE scan_id = ? AND account_actor_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (scan_id, viewer),
+            ).fetchone()
+        elif legacy_key is not None:
+            my_row = conn.execute(
+                "SELECT suggested_disease FROM community_opinions "
+                "WHERE scan_id = ? AND COALESCE(author_id, author_pseudo_id) = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (scan_id, legacy_key),
+            ).fetchone()
+        else:
+            my_row = None
         request_row = conn.execute(
-            "SELECT r.created_at FROM community_opinion_requests r "
-            "JOIN community_scans s ON s.scan_id = r.scan_id "
-            "AND s.user_pseudo_id = r.user_pseudo_id "
-            "WHERE r.scan_id = ? AND r.created_at >= ? LIMIT 1",
+            "SELECT created_at FROM community_opinion_requests "
+            "WHERE scan_id = ? AND created_at >= ? LIMIT 1",
             (scan_id, request_cutoff),
         ).fetchone()
     opinions = [
@@ -1227,14 +2014,23 @@ def opinions_for(
             "nickname": r[3] or None,
             "content_id": r[4] or None,
             "is_mine": bool(
-                (viewer_pseudo and str(r[5]) == viewer_pseudo)
-                or (durable_viewer and r[6] and str(r[6]) == durable_viewer)
+                (viewer is not None and r[5] == viewer)
+                or (viewer is None and legacy_key and (r[6] or r[7]) == legacy_key)
+            ),
+            "author_token": (
+                public_account_author_token(r[5])
+                if r[5]
+                else _author_token(r[6] or r[7])
             ),
         }
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
-    uid = (user_pseudo_id or "").strip()
+    liked = liked_scan_ids(
+        user_pseudo_id,
+        [scan_id],
+        account_actor_id=viewer,
+    )
     return {
         "opinions": opinions,
         "consensus": consensus,
@@ -1243,8 +2039,7 @@ def opinions_for(
         "wants_opinion": request_row is not None,
         "opinion_requested_at": int(request_row[0]) if request_row else None,
         "like_count": like_counts([scan_id]).get(scan_id, 0),
-        "liked_by_me": bool(uid or author_id)
-        and scan_id in liked_scan_ids(uid, [scan_id], author_id=author_id),
+        "liked_by_me": scan_id in liked,
     }
 
 
@@ -1328,6 +2123,87 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     }
 
 
+def opinion_counts_for_actor(account_actor_id: str, *, limit: int = 200) -> dict:
+    """Private opinion/view summary for scans owned by one signed actor."""
+    init_db()
+    _sweep_expired_requests()
+    try:
+        actor = str(uuid.UUID(account_actor_id))
+    except (TypeError, ValueError, AttributeError):
+        return {"scans": [], "total_opinions": 0, "total_views": 0}
+    limit = max(1, min(int(limit), 500))
+    request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
+    with _connect() as conn:
+        if _actor_is_deleted(conn, actor):
+            return {"scans": [], "total_opinions": 0, "total_views": 0}
+        view_block_clause, view_block_params = _blocked_actor_clause(
+            actor, actor_column="v.account_actor_id"
+        )
+        latest_block_clause, latest_block_params = _blocked_actor_clause(
+            actor, actor_column="o2.account_actor_id"
+        )
+        opinion_block_clause, opinion_block_params = _blocked_actor_clause(
+            actor, actor_column="o.account_actor_id"
+        )
+        # Each appended block predicate uses an allowlisted actor column and
+        # bound actor IDs; the rest of this query is fixed server SQL.
+        rows = conn.execute(
+            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "  # nosec B608
+            "  (SELECT COUNT(*) FROM community_scan_views v "
+            "     WHERE v.scan_id = s.scan_id "
+            "       AND (v.account_actor_id IS NULL OR v.account_actor_id NOT IN "
+            "            (SELECT actor_id FROM community_deleted_actors))"
+            + view_block_clause
+            + ") AS views, "  # nosec B608
+            "  (SELECT o2.nickname FROM community_opinions o2 "
+            "     WHERE o2.scan_id = s.scan_id "
+            "       AND (o2.account_actor_id IS NULL OR o2.account_actor_id != s.account_actor_id) "
+            "       AND (o2.account_actor_id IS NULL OR o2.account_actor_id NOT IN "
+            "            (SELECT actor_id FROM community_deleted_actors))"
+            + latest_block_clause
+            + " "  # nosec B608
+            "     ORDER BY o2.created_at DESC LIMIT 1) AS latest_nick "
+            "FROM community_scans s "
+            "JOIN community_opinions o ON o.scan_id = s.scan_id "
+            "  AND (o.account_actor_id IS NULL OR o.account_actor_id != s.account_actor_id) "
+            "  AND (o.account_actor_id IS NULL OR o.account_actor_id NOT IN "
+            "       (SELECT actor_id FROM community_deleted_actors))"
+            + opinion_block_clause
+            + " "  # nosec B608
+            "WHERE s.account_actor_id = ? "
+            "  AND EXISTS (SELECT 1 FROM community_opinion_requests r "
+            "              WHERE r.scan_id = s.scan_id AND r.account_actor_id = ? "
+            "                AND r.created_at >= ?) "
+            "GROUP BY s.scan_id, s.disease "
+            "ORDER BY latest DESC LIMIT ?",
+            (
+                *view_block_params,
+                *latest_block_params,
+                *opinion_block_params,
+                actor,
+                actor,
+                request_cutoff,
+                limit,
+            ),
+        ).fetchall()
+    scans = [
+        {
+            "scan_id": str(row[0]),
+            "disease": str(row[1]),
+            "opinion_count": int(row[2]),
+            "latest_at": int(row[3]),
+            "view_count": int(row[4]),
+            "latest_nickname": row[5] or None,
+        }
+        for row in rows
+    ]
+    return {
+        "scans": scans,
+        "total_opinions": sum(scan["opinion_count"] for scan in scans),
+        "total_views": sum(scan["view_count"] for scan in scans),
+    }
+
+
 def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
     """Opinions submitted from one IP hash in the last 24h (abuse cap)."""
     if not ip_hash:
@@ -1342,7 +2218,9 @@ def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
         ).fetchone()[0])
 
 
-def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
+def opinion_counts(
+    scan_ids: list[str], *, viewer_account_actor_id: str | None = None
+) -> dict[str, int]:
     """Map each scan_id to its number of community opinions (zeros omitted)."""
     ids = [s for s in scan_ids if s]
     if not ids:
@@ -1350,10 +2228,18 @@ def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
     init_db()
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        # Only the count-derived placeholder list is dynamic; values are bound.
         rows = conn.execute(
-            "SELECT scan_id, COUNT(*) FROM community_opinions "
-            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
-            tuple(ids),
+            "SELECT scan_id, COUNT(*) FROM community_opinions "  # nosec B608
+            f"WHERE scan_id IN ({placeholders}) "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors))"
+            + blocked_clause
+            + " GROUP BY scan_id",
+            (*ids, *blocked_params),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
 
@@ -1370,6 +2256,381 @@ def owner_of(scan_id: str) -> str | None:
             "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?", (sid,),
         ).fetchone()
     return str(row[0]) if row else None
+
+
+def account_owner_of(scan_id: str) -> str | None:
+    """Signed actor that owns a new account-era scan; legacy rows return None."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return None
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT account_actor_id FROM community_scans WHERE scan_id = ? "
+            "AND account_actor_id IS NOT NULL AND account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors) LIMIT 1",
+            (sid,),
+        ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _actors_blocked(
+    conn: sqlite3.Connection, first_actor_id: str, second_actor_id: str
+) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM community_actor_blocks WHERE "
+        "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+        "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+        (first_actor_id, second_actor_id, second_actor_id, first_actor_id),
+    ).fetchone() is not None
+
+
+def _safety_target(
+    conn: sqlite3.Connection, target_type: str, target_id: str
+) -> tuple[str, int, str | None, str | None] | None:
+    """Resolve a public content token to internal ownership.
+
+    Returns ``(scan_id, opinion_id_or_zero, actor_id, nickname)``.  Actor ids
+    never cross the HTTP boundary; callers use them only to bind the safety
+    mutation to the actual stored author.
+    """
+    kind = (target_type or "").strip().lower()
+    token = (target_id or "").strip()
+    if not token or len(token) > 128:
+        return None
+    if kind == "scan":
+        if len(token) != 32 or not token.startswith(_PUBLIC_TOKEN_PREFIX):
+            return None
+        row = conn.execute(
+            "SELECT scan_id, account_actor_id, nickname FROM community_scans "
+            "WHERE public_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (token,),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row[0]), 0, (str(row[1]) if row[1] else None), row[2] or None
+    if kind == "opinion":
+        if len(token) != 32 or not token.startswith(_PUBLIC_OPINION_TOKEN_PREFIX):
+            return None
+        row = conn.execute(
+            "SELECT o.scan_id, o.id, o.account_actor_id, o.nickname "
+            "FROM community_opinions o "
+            "JOIN community_scans s ON s.scan_id = o.scan_id "
+            "WHERE o.public_id = ? "
+            "AND (o.account_actor_id IS NULL OR o.account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) "
+            "AND (s.account_actor_id IS NULL OR s.account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (token,),
+        ).fetchone()
+        if row is None:
+            return None
+        return (
+            str(row[0]),
+            int(row[1]),
+            (str(row[2]) if row[2] else None),
+            row[3] or None,
+        )
+    return None
+
+
+def record_content_report(
+    *,
+    reporter_actor_id: str,
+    target_type: str,
+    target_id: str,
+    reason: str,
+    now: int | None = None,
+) -> bool:
+    """Queue an idempotent, account-bound report.
+
+    Returns ``True`` for a newly queued report and ``False`` when this account
+    already reported the same target.  The client cannot select the target
+    actor, and no free-form text is accepted or stored.
+    """
+    init_db()
+    reporter = _normalise_actor_id(reporter_actor_id)
+    reason_clean = (reason or "").strip().lower()
+    kind = (target_type or "").strip().lower()
+    if reporter is None:
+        raise ValueError("invalid_actor")
+    if reason_clean not in COMMUNITY_REPORT_REASONS:
+        raise ValueError("invalid_reason")
+    timestamp = int(time.time() if now is None else now)
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _actor_is_deleted(conn, reporter):
+                raise ValueError("deleted account actor")
+            target = _safety_target(conn, kind, target_id)
+            if target is None:
+                raise ValueError("target_not_found")
+            scan_id, opinion_id, target_actor, _nickname = target
+            if target_actor == reporter:
+                raise ValueError("self_target")
+            existing = conn.execute(
+                "SELECT 1 FROM community_content_reports "
+                "WHERE reporter_actor_id = ? AND target_type = ? "
+                "AND target_scan_id = ? AND target_opinion_id = ? LIMIT 1",
+                (reporter, kind, scan_id, opinion_id),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("COMMIT")
+                return False
+            recent = int(conn.execute(
+                "SELECT COUNT(*) FROM community_content_reports "
+                "WHERE reporter_actor_id = ? AND created_at >= ?",
+                (reporter, timestamp - 86_400),
+            ).fetchone()[0])
+            if recent >= COMMUNITY_REPORT_DAILY_LIMIT:
+                raise ValueError("report_limit")
+            conn.execute(
+                "INSERT INTO community_content_reports ("
+                "reporter_actor_id, target_type, target_scan_id, "
+                "target_opinion_id, target_actor_id, reason, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    reporter,
+                    kind,
+                    scan_id,
+                    opinion_id,
+                    target_actor,
+                    reason_clean,
+                    timestamp,
+                ),
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+
+
+def block_content_author(
+    *,
+    blocker_actor_id: str,
+    target_type: str,
+    target_id: str,
+    now: int | None = None,
+) -> dict:
+    """Block the verified author of a public content token."""
+    init_db()
+    blocker = _normalise_actor_id(blocker_actor_id)
+    if blocker is None:
+        raise ValueError("invalid_actor")
+    timestamp = int(time.time() if now is None else now)
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _actor_is_deleted(conn, blocker):
+                raise ValueError("deleted account actor")
+            target = _safety_target(conn, target_type, target_id)
+            if target is None:
+                raise ValueError("target_not_found")
+            _scan_id, _opinion_id, target_actor, nickname = target
+            if target_actor is None:
+                raise ValueError("target_not_blockable")
+            if target_actor == blocker:
+                raise ValueError("self_target")
+            existing = conn.execute(
+                "SELECT public_id, blocked_nickname, created_at "
+                "FROM community_actor_blocks WHERE blocker_actor_id = ? "
+                "AND blocked_actor_id = ? LIMIT 1",
+                (blocker, target_actor),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("COMMIT")
+                return {
+                    "created": False,
+                    "block_id": str(existing[0]),
+                    "nickname": existing[1] or nickname,
+                    "created_at": int(existing[2]),
+                }
+            count = int(conn.execute(
+                "SELECT COUNT(*) FROM community_actor_blocks "
+                "WHERE blocker_actor_id = ?",
+                (blocker,),
+            ).fetchone()[0])
+            if count >= COMMUNITY_BLOCK_LIMIT:
+                raise ValueError("block_limit")
+            public_id = _PUBLIC_BLOCK_TOKEN_PREFIX + uuid.uuid4().hex[:30]
+            conn.execute(
+                "INSERT INTO community_actor_blocks ("
+                "public_id, blocker_actor_id, blocked_actor_id, "
+                "blocked_nickname, created_at) VALUES (?, ?, ?, ?, ?)",
+                (public_id, blocker, target_actor, nickname, timestamp),
+            )
+            conn.execute("COMMIT")
+            return {
+                "created": True,
+                "block_id": public_id,
+                "nickname": nickname,
+                "created_at": timestamp,
+            }
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+
+
+def actor_blocks(account_actor_id: str, *, limit: int = COMMUNITY_BLOCK_LIMIT) -> list[dict]:
+    """Opaque block-management list for one signed actor."""
+    init_db()
+    actor = _normalise_actor_id(account_actor_id)
+    if actor is None:
+        return []
+    bounded_limit = max(1, min(int(limit), COMMUNITY_BLOCK_LIMIT))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT public_id, blocked_nickname, created_at "
+            "FROM community_actor_blocks WHERE blocker_actor_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (actor, bounded_limit),
+        ).fetchall()
+    return [
+        {
+            "block_id": str(row[0]),
+            "nickname": row[1] or None,
+            "created_at": int(row[2]),
+        }
+        for row in rows
+    ]
+
+
+def unblock_actor(account_actor_id: str, block_id: str) -> bool:
+    """Remove only the caller-owned block selected by its opaque id."""
+    init_db()
+    actor = _normalise_actor_id(account_actor_id)
+    public_id = (block_id or "").strip()
+    if (
+        actor is None
+        or not public_id.startswith(_PUBLIC_BLOCK_TOKEN_PREFIX)
+        or len(public_id) != 32
+    ):
+        return False
+    with _write_lock, _connect() as conn:
+        deleted = conn.execute(
+            "DELETE FROM community_actor_blocks "
+            "WHERE blocker_actor_id = ? AND public_id = ?",
+            (actor, public_id),
+        ).rowcount
+    return int(deleted or 0) > 0
+
+
+def pending_content_reports(*, limit: int = 100) -> list[dict]:
+    """Local-operator moderation queue; never wired to a public route."""
+    init_db()
+    bounded_limit = max(1, min(int(limit), 500))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT r.id, r.target_type, r.reason, r.created_at, "
+            "r.target_scan_id, r.target_opinion_id, "
+            "COALESCE(o.nickname, s.nickname), s.disease, o.note "
+            "FROM community_content_reports r "
+            "LEFT JOIN community_scans s ON s.scan_id = r.target_scan_id "
+            "LEFT JOIN community_opinions o ON o.id = r.target_opinion_id "
+            "WHERE r.state = 'pending' ORDER BY r.created_at LIMIT ?",
+            (bounded_limit,),
+        ).fetchall()
+    return [
+        {
+            "report_id": int(row[0]),
+            "target_type": str(row[1]),
+            "reason": str(row[2]),
+            "created_at": int(row[3]),
+            "scan_id": str(row[4]),
+            "opinion_id": int(row[5]),
+            "nickname": row[6] or None,
+            "disease": row[7] or None,
+            "note": row[8] or None,
+        }
+        for row in rows
+    ]
+
+
+def moderate_content_report(
+    report_id: int, action: str, *, now: int | None = None
+) -> bool:
+    """Resolve a queued report from the local operator tool.
+
+    Supported actions are ``dismiss`` and ``remove_content``.  Removing a scan
+    also removes its thumbnail, replies, requests, and views transactionally;
+    other reports for the same removed content are resolved at the same time.
+    """
+    init_db()
+    resolution = (action or "").strip().lower()
+    if resolution not in {"dismiss", "remove_content"}:
+        raise ValueError("invalid_action")
+    timestamp = int(time.time() if now is None else now)
+    thumb_path: str | None = None
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT target_type, target_scan_id, target_opinion_id "
+                "FROM community_content_reports WHERE id = ? "
+                "AND state = 'pending' LIMIT 1",
+                (int(report_id),),
+            ).fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return False
+            target_type, scan_id, opinion_id = str(row[0]), str(row[1]), int(row[2])
+            next_state = "dismissed"
+            if resolution == "remove_content":
+                next_state = "removed"
+                if target_type == "scan":
+                    thumb = conn.execute(
+                        "SELECT thumb_path FROM community_scans "
+                        "WHERE scan_id = ? LIMIT 1",
+                        (scan_id,),
+                    ).fetchone()
+                    thumb_path = str(thumb[0]) if thumb and thumb[0] else None
+                    for table in (
+                        "community_opinions",
+                        "community_opinion_requests",
+                        "community_scan_views",
+                    ):
+                        # table comes from the fixed tuple immediately above.
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id = ?",  # nosec B608
+                            (scan_id,),
+                        )
+                    conn.execute(
+                        "DELETE FROM community_scans WHERE scan_id = ?", (scan_id,)
+                    )
+                    conn.execute(
+                        "UPDATE community_content_reports SET state = 'removed', "
+                        "resolved_at = ? WHERE target_scan_id = ? AND state = 'pending'",
+                        (timestamp, scan_id),
+                    )
+                else:
+                    conn.execute(
+                        "DELETE FROM community_opinions WHERE id = ?", (opinion_id,)
+                    )
+                    conn.execute(
+                        "UPDATE community_content_reports SET state = 'removed', "
+                        "resolved_at = ? WHERE target_type = 'opinion' "
+                        "AND target_opinion_id = ? AND state = 'pending'",
+                        (timestamp, opinion_id),
+                    )
+            conn.execute(
+                "UPDATE community_content_reports SET state = ?, resolved_at = ? "
+                "WHERE id = ?",
+                (next_state, timestamp, int(report_id)),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+    if thumb_path:
+        with contextlib.suppress(OSError):
+            (COMMUNITY_THUMB_DIR / thumb_path).unlink(missing_ok=True)
+    return True
 
 
 def wants_opinion(scan_id: str) -> bool:
@@ -1393,82 +2654,119 @@ def wants_opinion(scan_id: str) -> bool:
         row = conn.execute(
             "SELECT 1 FROM community_opinion_requests r "
             "JOIN community_scans s ON s.scan_id = r.scan_id "
-            "AND s.user_pseudo_id = r.user_pseudo_id "
+            "AND ((r.account_actor_id IS NOT NULL AND r.account_actor_id = s.account_actor_id) "
+            "     OR (r.account_actor_id IS NULL AND r.user_pseudo_id = s.user_pseudo_id)) "
             "WHERE r.scan_id = ? AND r.created_at >= ? LIMIT 1",
             (sid, cutoff),
         ).fetchone()
     return row is not None
 
 
+def record_view(
+    scan_id: str,
+    viewer_pseudo_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
+) -> bool:
+    """Record that the selected legacy-or-account actor opened ``scan_id``.
+
+    Deduped per viewer by partial unique identity indexes, so a
+    given user only ever counts once no matter how many times they reopen the
+    scan. A scan owner viewing their OWN scan never counts. Returns True only
+    when a NEW view row was inserted (the count actually grew)."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return False
+    try:
+        legacy_id, actor_id = _identity(viewer_pseudo_id, account_actor_id)
+    except ValueError:
+        return False
+    init_db()
+    with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor_id):
+            return False
+        owner = conn.execute(
+            "SELECT user_pseudo_id, account_actor_id FROM community_scans "
+            "WHERE scan_id = ? AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors))",
+            (sid,),
+        ).fetchone()
+        # Only count views on a scan that exists and isn't the viewer's own.
+        if owner is None or (owner[0] == legacy_id and owner[1] == actor_id):
+            return False
+        if actor_id is not None and owner[1] is not None:
+            blocked = conn.execute(
+                "SELECT 1 FROM community_actor_blocks WHERE "
+                "(blocker_actor_id = ? AND blocked_actor_id = ?) OR "
+                "(blocker_actor_id = ? AND blocked_actor_id = ?) LIMIT 1",
+                (actor_id, owner[1], owner[1], actor_id),
+            ).fetchone()
+            if blocked is not None:
+                return False
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, account_actor_id, created_at) VALUES (?, ?, ?, ?)",
+            (sid, legacy_id, actor_id, int(time.time())),
+        )
+        return int(cur.rowcount or 0) > 0
+
+
 def record_views(
     tokens: list[str],
-    viewer_pseudo_id: str,
-    viewer_author_id: str | None = None,
+    viewer_pseudo_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
 ) -> int:
-    """Record deduplicated views for a batch of scans (feed impressions).
+    """Batch form of :func:`record_view` for feed-impression reporting.
 
     Takes RAW client tokens — public tokens and real scan_ids mix freely in
     one batch, exactly as :func:`resolve_scan_token` tolerates them — and
     resolves, filters and inserts the whole batch under ONE connection and
-    ONE lock acquisition instead of one of each per id. Unknown scans and the
-    viewer's own scans never count. New clients dedupe on the server-issued durable
-    ``viewer_author_id`` even if a caller varies its body pseudo id; legacy
-    clients retain the old pseudo-id fallback. Returns the number of NEW views.
+    ONE lock acquisition instead of one of each per id. Semantics per id are
+    identical to :func:`record_view`: unknown scans and the viewer's own
+    scans never count, and a repeat view is deduped by the primary key.
+    Returns the number of NEW view rows.
     """
     ids = list(dict.fromkeys((t or "").strip() for t in (tokens or []) if (t or "").strip()))
-    vid = (viewer_pseudo_id or "").strip()
-    durable = (viewer_author_id or "").strip() or None
-    if not ids or not vid:
+    if not ids:
+        return 0
+    try:
+        legacy_id, actor_id = _identity(viewer_pseudo_id, account_actor_id)
+    except ValueError:
         return 0
     init_db()
     now = int(time.time())
     placeholders = ",".join("?" * len(ids))
     with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor_id):
+            return 0
         rows = conn.execute(
-            "SELECT scan_id, user_pseudo_id, author_id FROM community_scans "
+            "SELECT scan_id, user_pseudo_id, account_actor_id FROM community_scans "
             f"WHERE public_id IN ({placeholders}) OR scan_id IN ({placeholders})",
             (*ids, *ids),
         ).fetchall()
         # Dedupe on the REAL scan_id: one batch can carry both forms of the
-        # same scan (and legacy rows may repeat a scan_id). Ownership is also
-        # durable once both sides have adopted, so changing a pseudo id cannot
-        # turn viewing one's own post into engagement.
+        # same scan (and legacy rows may repeat a scan_id).
         targets = {
-            str(r[0])
-            for r in rows
-            if str(r[1]) != vid
-            and not (durable and r[2] and str(r[2]) == durable)
+            str(row[0])
+            for row in rows
+            if not (actor_id is not None and row[2] is None)
+            and not (row[1] == legacy_id and row[2] == actor_id)
+            and not (
+                actor_id is not None
+                and row[2] is not None
+                and _actors_blocked(conn, actor_id, str(row[2]))
+            )
         }
         if not targets:
             return 0
-        counted = 0
-        for sid in sorted(targets):
-            if durable:
-                if conn.execute(
-                    "SELECT 1 FROM community_scan_views "
-                    "WHERE scan_id = ? AND viewer_author_id = ? LIMIT 1",
-                    (sid, durable),
-                ).fetchone():
-                    continue
-                # Adopt an existing legacy row in place. It was already a
-                # counted view, so this upgrades identity without growing the
-                # metric.
-                upgraded = conn.execute(
-                    "UPDATE community_scan_views SET viewer_author_id = ? "
-                    "WHERE scan_id = ? AND viewer_pseudo_id = ? "
-                    "AND viewer_author_id IS NULL",
-                    (durable, sid, vid),
-                ).rowcount
-                if upgraded:
-                    continue
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO community_scan_views "
-                "(scan_id, viewer_pseudo_id, viewer_author_id, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (sid, vid, durable, now),
-            )
-            counted += int(cur.rowcount or 0)
-        return counted
+        cur = conn.executemany(
+            "INSERT OR IGNORE INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, account_actor_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            [(sid, legacy_id, actor_id, now) for sid in sorted(targets)],
+        )
+        return int(cur.rowcount or 0)
 
 
 def view_counts(scan_ids: list[str]) -> dict[str, int]:
@@ -1479,11 +2777,12 @@ def view_counts(scan_ids: list[str]) -> dict[str, int]:
     init_db()
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
+        # Only the count-derived placeholder list is dynamic; values are bound.
         rows = conn.execute(
-            "SELECT scan_id, COUNT(DISTINCT CASE "
-            "WHEN viewer_author_id IS NOT NULL THEN 'a:' || viewer_author_id "
-            "ELSE 'p:' || viewer_pseudo_id END) FROM community_scan_views "
-            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            "SELECT scan_id, COUNT(*) FROM community_scan_views "  # nosec B608
+            f"WHERE scan_id IN ({placeholders}) "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) GROUP BY scan_id",
             tuple(ids),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
@@ -1496,80 +2795,89 @@ def view_count_for(scan_id: str) -> int:
         return 0
     init_db()
     with _connect() as conn:
+        visible = conn.execute(
+            "SELECT 1 FROM community_scans WHERE scan_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (sid,),
+        ).fetchone()
+        if visible is None:
+            return 0
         return int(conn.execute(
-            "SELECT COUNT(DISTINCT CASE "
-            "WHEN viewer_author_id IS NOT NULL THEN 'a:' || viewer_author_id "
-            "ELSE 'p:' || viewer_pseudo_id END) "
-            "FROM community_scan_views WHERE scan_id = ?",
+            "SELECT COUNT(*) FROM community_scan_views WHERE scan_id = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors))",
             (sid,),
         ).fetchone()[0])
 
 
 def set_like(
     scan_id: str,
-    user_pseudo_id: str,
-    liked: bool,
+    user_pseudo_id: str | None = None,
+    liked: bool = True,
     client_ip: str | None = None,
-    author_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
 ) -> bool:
-    """Like or unlike a shared scan on behalf of one anonymous install.
+    """Like or unlike a shared scan for one legacy or verified account actor.
 
-    Mirrors ``record_views``: a scan owner can't like their own scan. The
-    durable author id is authoritative for current clients, preventing a
-    changed body pseudo id from minting an extra like; the legacy composite
-    primary key remains the compatibility fallback.
+    Mirrors ``record_view``: a scan owner can't like their own scan, and the
+    (scan_id, user_pseudo_id) primary key means a repeat like is a no-op, not
+    a second row. Returns the resulting liked state (mainly useful when the
+    caller raced itself; the state, not a delta, is the source of truth).
 
     Unliking flips ``liked`` to 0 instead of deleting the row, and re-liking
     keeps the ORIGINAL ``created_at``: the daily like quota counts rows in a
     24h window, so deleting (or re-stamping) would let a toggle loop hand the
     quota back to itself indefinitely."""
     sid = (scan_id or "").strip()
-    uid = (user_pseudo_id or "").strip()
-    durable = (author_id or "").strip() or None
-    if not sid or not uid:
+    if not sid:
+        return False
+    try:
+        legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
+    except ValueError:
         return False
     init_db()
     with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor_id):
+            return False
         owner = conn.execute(
-            "SELECT user_pseudo_id, author_id FROM community_scans WHERE scan_id = ?",
+            "SELECT user_pseudo_id, account_actor_id FROM community_scans "
+            "WHERE scan_id = ? AND (account_actor_id IS NULL OR account_actor_id "
+            "NOT IN (SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
             (sid,),
         ).fetchone()
+        if owner is None or (owner[0] == legacy_id and owner[1] == actor_id):
+            return False
         if (
-            owner is None
-            or str(owner[0]) == uid
-            or (durable and owner[1] and str(owner[1]) == durable)
+            actor_id is not None
+            and owner[1] is not None
+            and _actors_blocked(conn, actor_id, str(owner[1]))
         ):
             return False
-        if durable:
-            durable_row = conn.execute(
-                "SELECT 1 FROM community_likes "
-                "WHERE scan_id = ? AND author_id = ? LIMIT 1",
-                (sid, durable),
-            ).fetchone()
-            if durable_row:
-                conn.execute(
-                    "UPDATE community_likes SET liked = ? "
-                    "WHERE scan_id = ? AND author_id = ?",
-                    (int(bool(liked)), sid, durable),
-                )
-                return bool(liked)
-            # Upgrade this pseudo's legacy row before considering an insert.
-            # Its original timestamp is deliberately retained for quota
-            # accounting, just like an unlike/re-like toggle.
-            upgraded = conn.execute(
-                "UPDATE community_likes SET author_id = ?, liked = ? "
-                "WHERE scan_id = ? AND user_pseudo_id = ? AND author_id IS NULL",
-                (durable, int(bool(liked)), sid, uid),
-            ).rowcount
-            if upgraded:
-                return bool(liked)
-        if liked:
+        if actor_id is not None and liked:
+            conn.execute(
+                "INSERT INTO community_account_likes "
+                "(scan_id, account_actor_id, liked, created_at) VALUES (?, ?, 1, ?) "
+                "ON CONFLICT(scan_id, account_actor_id) DO UPDATE SET liked = 1",
+                (sid, actor_id, int(time.time())),
+            )
+        elif actor_id is not None:
+            conn.execute(
+                "UPDATE community_account_likes SET liked = 0 "
+                "WHERE scan_id = ? AND account_actor_id = ?",
+                (sid, actor_id),
+            )
+        elif liked:
             conn.execute(
                 "INSERT INTO community_likes "
-                "(scan_id, user_pseudo_id, author_id, client_ip_hash, liked, created_at) "
-                "VALUES (?, ?, ?, ?, 1, ?) "
+                "(scan_id, user_pseudo_id, client_ip_hash, liked, created_at) "
+                "VALUES (?, ?, ?, 1, ?) "
                 "ON CONFLICT(scan_id, user_pseudo_id) DO UPDATE SET liked = 1",
-                (sid, uid, durable, hash_client_ip(client_ip), int(time.time())),
+                # This branch exists only for internal migration/test
+                # compatibility. Public writes are account-bound and their
+                # in-memory quota needs no persistent IP-derived identifier.
+                (sid, legacy_id, None, int(time.time())),
             )
         else:
             # UPDATE, not INSERT: unliking something never liked stays a
@@ -1577,7 +2885,7 @@ def set_like(
             conn.execute(
                 "UPDATE community_likes SET liked = 0 "
                 "WHERE scan_id = ? AND user_pseudo_id = ?",
-                (sid, uid),
+                (sid, legacy_id),
             )
         return bool(liked)
 
@@ -1592,35 +2900,50 @@ def like_counts(scan_ids: list[str]) -> dict[str, int]:
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT scan_id, COUNT(DISTINCT CASE "
-            "WHEN author_id IS NOT NULL THEN 'a:' || author_id "
-            "ELSE 'p:' || user_pseudo_id END) FROM community_likes "
-            f"WHERE scan_id IN ({placeholders}) AND liked = 1 GROUP BY scan_id",
-            tuple(ids),
+            "SELECT scan_id, SUM(n) FROM ("  # nosec B608
+            " SELECT scan_id, COUNT(*) AS n FROM community_likes "
+            f" WHERE scan_id IN ({placeholders}) AND liked = 1 GROUP BY scan_id "
+            " UNION ALL SELECT scan_id, COUNT(*) AS n FROM community_account_likes "
+            f" WHERE scan_id IN ({placeholders}) AND liked = 1 "
+            " AND account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors) "
+            " GROUP BY scan_id"
+            ") GROUP BY scan_id",
+            (*ids, *ids),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
 
 
 def liked_scan_ids(
-    user_pseudo_id: str,
+    user_pseudo_id: str | None,
     scan_ids: list[str],
-    author_id: str | None = None,
+    *,
+    account_actor_id: str | None = None,
 ) -> set[str]:
     """Which of ``scan_ids`` this user has already liked."""
-    uid = (user_pseudo_id or "").strip()
-    durable = (author_id or "").strip() or None
     ids = [s for s in scan_ids if s]
-    if not (uid or durable) or not ids:
+    if not ids:
+        return set()
+    try:
+        legacy_id, actor_id = _identity(user_pseudo_id, account_actor_id)
+    except ValueError:
         return set()
     init_db()
     placeholders = ",".join("?" * len(ids))
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT scan_id FROM community_likes "
-            f"WHERE (user_pseudo_id = ? OR author_id = ?) "
-            f"AND liked = 1 AND scan_id IN ({placeholders})",
-            (uid, durable, *ids),
-        ).fetchall()
+        if actor_id is not None:
+            rows = conn.execute(
+                "SELECT scan_id FROM community_account_likes "
+                f"WHERE account_actor_id = ? AND liked = 1 "
+                f"AND scan_id IN ({placeholders})",
+                (actor_id, *ids),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT scan_id FROM community_likes "
+                f"WHERE user_pseudo_id = ? AND liked = 1 "
+                f"AND scan_id IN ({placeholders})",
+                (legacy_id, *ids),
+            ).fetchall()
     return {str(r[0]) for r in rows}
 
 
@@ -1654,90 +2977,6 @@ def _content_author(
         str(row[2] or token),
         (str(row[3]) if row[3] else None),
     )
-
-
-def report_content(
-    *,
-    reporter_pseudo_id: str,
-    reporter_author_id: str | None = None,
-    target_type: str,
-    target_id: str,
-    reason: str,
-    client_ip: str | None = None,
-) -> bool:
-    """Record one deduplicated anonymous moderation report.
-
-    Target authors are resolved server-side from opaque public tokens. Returning
-    ``False`` means the target is unknown or belongs to the reporter; repeated
-    reports from the same install are successful no-ops rather than extra rows.
-    """
-    reporter = (reporter_pseudo_id or "").strip()
-    durable = (reporter_author_id or "").strip() or None
-    kind = (target_type or "").strip().lower()
-    token = (target_id or "").strip()
-    why = (reason or "").strip()[:64]
-    if not reporter or not token or not why or kind not in {"scan", "opinion"}:
-        return False
-    init_db()
-    with _write_lock, _connect() as conn:
-        target = _content_author(conn, kind, token)
-        if target is None or target[0] == reporter or (
-            durable and target[3] and durable == target[3]
-        ):
-            return False
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO community_reports ("
-            "reporter_pseudo_id, reporter_author_id, target_type, target_id, "
-            "reason, client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                reporter,
-                durable,
-                kind,
-                target[2],
-                why,
-                hash_client_ip(client_ip),
-                int(time.time()),
-            ),
-        )
-        return int(cur.rowcount or 0) > 0
-
-
-def block_content_author(
-    *, blocker_pseudo_id: str, target_type: str, target_id: str,
-    blocker_author_id: str | None = None, client_ip: str | None = None,
-) -> dict | None:
-    """Block the server-resolved author of a public scan or reply token."""
-    blocker = (blocker_pseudo_id or "").strip()
-    durable = (blocker_author_id or "").strip() or None
-    kind = (target_type or "").strip().lower()
-    token = (target_id or "").strip()
-    if not blocker or not token or kind not in {"scan", "opinion"}:
-        return None
-    init_db()
-    with _write_lock, _connect() as conn:
-        target = _content_author(conn, kind, token)
-        if target is None or target[0] == blocker or (
-            durable and target[3] and durable == target[3]
-        ):
-            return None
-        conn.execute(
-            "INSERT OR IGNORE INTO community_blocks "
-            "(blocker_pseudo_id, blocked_pseudo_id, blocker_author_id, "
-            " blocked_author_id, client_ip_hash, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                blocker,
-                target[0],
-                durable,
-                target[3],
-                hash_client_ip(client_ip),
-                int(time.time()),
-            ),
-        )
-        # Do not return the anonymous storage identity. The public contract
-        # only confirms the state change; resolution stays server-side.
-        return {"blocked": True, "nickname": target[1]}
 
 
 def daily_safety_count_for_ip_hash(ip_hash: str | None) -> int:
@@ -1797,12 +3036,38 @@ def scan_counts(scan_ids: list[str]) -> dict[str, dict]:
     }
 
 
+def scan_counts_for_actor(account_actor_id: str, scan_ids: list[str]) -> dict[str, dict]:
+    """Counts only for ids owned by the signed actor (unknown ids are omitted)."""
+    try:
+        actor = str(uuid.UUID(account_actor_id))
+    except (TypeError, ValueError, AttributeError):
+        return {}
+    ids = [scan_id for scan_id in scan_ids if scan_id]
+    if not ids:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        owned = [
+            str(row[0])
+            # Only the count-derived placeholder list is dynamic; values are bound.
+            for row in conn.execute(
+                "SELECT scan_id FROM community_scans WHERE account_actor_id = ? "  # nosec B608
+                f"AND scan_id IN ({placeholders}) AND account_actor_id NOT IN "
+                "(SELECT actor_id FROM community_deleted_actors)",
+                (actor, *ids),
+            ).fetchall()
+        ]
+    return scan_counts(owned)
+
+
 def scans_by_species(
     scientific: str,
     *,
     limit: int = 12,
     exclude_user_pseudo_id: str | None = None,
-    viewer_author_id: str | None = None,
+    exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> list[dict]:
     """Community scans of one species (by scientific name), newest first,
     across all regions — for the result screen's 'other <species> in the
@@ -1817,31 +3082,21 @@ def scans_by_species(
     if exclude_user_pseudo_id:
         extra += " AND user_pseudo_id != ?"
         params.append(exclude_user_pseudo_id)
-        extra += (
-            " AND user_pseudo_id NOT IN ("
-            "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-            "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-            ")"
-        )
-        params.extend((exclude_user_pseudo_id, exclude_user_pseudo_id))
-    durable_viewer = (viewer_author_id or "").strip()
-    if durable_viewer:
-        extra += " AND (author_id IS NULL OR author_id != ?)"
-        params.append(durable_viewer)
-        extra += (
-            " AND (author_id IS NULL OR author_id NOT IN ("
-            "SELECT blocked_author_id FROM community_blocks "
-            "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-            "UNION SELECT blocker_author_id FROM community_blocks "
-            "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-        )
-        params.extend((durable_viewer, durable_viewer))
+    if exclude_account_actor_id:
+        extra += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
+        params.append(exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    extra += blocked_clause
+    params.extend(blocked_params)
     if _HIDDEN_COMMUNITY_DISEASES:
         extra += _hidden_clause()
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
+        # _FEED_COLUMNS and all clauses are fixed server-owned SQL.
         rows = conn.execute(
-            f"SELECT {_FEED_COLUMNS} "
+            f"SELECT {_FEED_COLUMNS} "  # nosec B608
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
@@ -1864,7 +3119,8 @@ def recommended_scans(
     radius_km: float = NEARBY_RADIUS_KM,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
-    viewer_author_id: str | None = None,
+    exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
     scope: str = "nearby",
     cursor: tuple[int, int, int] | None = None,
 ) -> list[dict]:
@@ -1904,28 +3160,24 @@ def recommended_scans(
         return []
 
     viewer = (exclude_user_pseudo_id or "").strip()
-    durable_viewer = (viewer_author_id or "").strip()
     if viewer:
         where.append("s.user_pseudo_id != ?")
         params.append(viewer)
-        where.append(
-            "s.user_pseudo_id NOT IN ("
-            "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-            "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-            ")"
-        )
-        params.extend((viewer, viewer))
-    if durable_viewer:
-        where.append("(s.author_id IS NULL OR s.author_id != ?)")
-        params.append(durable_viewer)
-        where.append(
-            "(s.author_id IS NULL OR s.author_id NOT IN ("
-            "SELECT blocked_author_id FROM community_blocks "
-            "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-            "UNION SELECT blocker_author_id FROM community_blocks "
-            "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-        )
-        params.extend((durable_viewer, durable_viewer))
+    if exclude_account_actor_id:
+        where.append("(s.account_actor_id IS NULL OR s.account_actor_id != ?)")
+        params.append(exclude_account_actor_id)
+    # Same mutual-block and deleted-actor predicates the recent feed applies —
+    # the ranked ordering must not become a way around either.
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id, actor_column="s.account_actor_id"
+    )
+    if blocked_clause:
+        where.append(blocked_clause.removeprefix(" AND "))
+        params.extend(blocked_params)
+    where.append(
+        "(s.account_actor_id IS NULL OR s.account_actor_id NOT IN "
+        "(SELECT actor_id FROM community_deleted_actors))"
+    )
     if _HIDDEN_COMMUNITY_DISEASES:
         where.append(
             "s.disease NOT IN ("
@@ -1988,7 +3240,10 @@ def recommended_scans(
             LEFT JOIN view_counts_cte vc ON vc.scan_id = s.scan_id
             LEFT JOIN community_opinion_requests req
               ON req.scan_id = s.scan_id
-             AND req.user_pseudo_id = s.user_pseudo_id
+             AND ((req.account_actor_id IS NOT NULL
+                   AND req.account_actor_id = s.account_actor_id)
+               OR (req.account_actor_id IS NULL
+                   AND req.user_pseudo_id = s.user_pseudo_id))
              AND req.created_at >= ?
             WHERE {' AND '.join(where)}
         )
@@ -2006,13 +3261,14 @@ def recommended_scans(
 
     rows: list[dict] = []
     for raw in raw_rows:
-        row = _row_to_dict(raw[:16])
-        row_id = int(raw[16])
-        score = int(raw[17])
-        row["opinion_count"] = int(raw[18])
-        row["like_count"] = int(raw[19])
-        row["view_count"] = int(raw[20])
-        row["wants_opinion"] = bool(raw[21])
+        n = _FEED_COLUMN_COUNT
+        row = _row_to_dict(raw[:n])
+        row_id = int(raw[n])
+        score = int(raw[n + 1])
+        row["opinion_count"] = int(raw[n + 2])
+        row["like_count"] = int(raw[n + 3])
+        row["view_count"] = int(raw[n + 4])
+        row["wants_opinion"] = bool(raw[n + 5])
         row["recommendation_score"] = score
         row["recommendation_reason"] = (
             "needs_opinion"
@@ -2034,10 +3290,10 @@ def recommended_scans(
         rows.append(row)
 
     liked = liked_scan_ids(
-        viewer,
+        viewer or None,
         [r["scan_id"] for r in rows],
-        author_id=durable_viewer,
-    ) if (viewer or durable_viewer) else set()
+        account_actor_id=viewer_account_actor_id,
+    ) if (viewer or viewer_account_actor_id) else set()
     for row in rows:
         row["liked_by_me"] = row["scan_id"] in liked
     return rows
@@ -2053,7 +3309,8 @@ def nearby_scans(
     species: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
-    viewer_author_id: str | None = None,
+    exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
     scope: str = "nearby",
     cursor: tuple[int, int] | None = None,
 ) -> list[dict]:
@@ -2100,25 +3357,14 @@ def nearby_scans(
         if exclude_user_pseudo_id:
             common += " AND user_pseudo_id != ?"
             cparams.append(exclude_user_pseudo_id)
-            common += (
-                " AND user_pseudo_id NOT IN ("
-                "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-                "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-                ")"
-            )
-            cparams.extend((exclude_user_pseudo_id, exclude_user_pseudo_id))
-        durable_viewer = (viewer_author_id or "").strip()
-        if durable_viewer:
-            common += " AND (author_id IS NULL OR author_id != ?)"
-            cparams.append(durable_viewer)
-            common += (
-                " AND (author_id IS NULL OR author_id NOT IN ("
-                "SELECT blocked_author_id FROM community_blocks "
-                "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-                "UNION SELECT blocker_author_id FROM community_blocks "
-                "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-            )
-            cparams.extend((durable_viewer, durable_viewer))
+        if exclude_account_actor_id:
+            common += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
+            cparams.append(exclude_account_actor_id)
+        blocked_clause, blocked_params = _blocked_actor_clause(
+            viewer_account_actor_id
+        )
+        common += blocked_clause
+        cparams.extend(blocked_params)
         if _HIDDEN_COMMUNITY_DISEASES:
             common += _hidden_clause()
             cparams.extend(_HIDDEN_COMMUNITY_DISEASES)
@@ -2154,13 +3400,17 @@ def nearby_scans(
             # Over-fetch when we'll refine the box to a true circle so the
             # post-filter still has ~limit rows to offer.
             take = limit * 3 if refine else limit
+            # The column list and clauses are fixed; all request values are bound.
             sql = (
-                f"SELECT {_FEED_COLUMNS}, id FROM community_scans WHERE 1=1"
+                f"SELECT {_FEED_COLUMNS}, id FROM community_scans WHERE 1=1"  # nosec B608
                 + geo_clause + common + dz_clause
                 + " ORDER BY created_at DESC, id DESC LIMIT ?"
             )
             rows = [
-                {**_row_to_dict(r[:16]), "_cursor_row_id": int(r[16])}
+                {
+                    **_row_to_dict(r[:_FEED_COLUMN_COUNT]),
+                    "_cursor_row_id": int(r[_FEED_COLUMN_COUNT]),
+                }
                 for r in conn.execute(
                     sql, (*geo_params, *cparams, *dz_params, take),
                 ).fetchall()
@@ -2209,9 +3459,10 @@ def nearby_scans(
             liked_scan_ids(
                 exclude_user_pseudo_id or "",
                 result_ids,
-                author_id=durable_viewer,
+                account_actor_id=viewer_account_actor_id,
             )
-            if (exclude_user_pseudo_id or durable_viewer) else set()
+            if exclude_user_pseudo_id or viewer_account_actor_id
+            else set()
         )
         for row in result:
             row["like_count"] = counts.get(row["scan_id"], 0)
@@ -2229,7 +3480,8 @@ def map_scans(
     days: int = 30,
     limit: int = 300,
     exclude_user_pseudo_id: str | None = None,
-    viewer_author_id: str | None = None,
+    exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> dict:
     """Individual shared scans inside a bbox — the zoomed-in map markers.
 
@@ -2251,33 +3503,23 @@ def map_scans(
     if exclude_user_pseudo_id:
         clause += " AND user_pseudo_id != ?"
         params.append(exclude_user_pseudo_id)
-        clause += (
-            " AND user_pseudo_id NOT IN ("
-            "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-            "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-            ")"
-        )
-        params.extend((exclude_user_pseudo_id, exclude_user_pseudo_id))
-    durable_viewer = (viewer_author_id or "").strip()
-    if durable_viewer:
-        clause += " AND (author_id IS NULL OR author_id != ?)"
-        params.append(durable_viewer)
-        clause += (
-            " AND (author_id IS NULL OR author_id NOT IN ("
-            "SELECT blocked_author_id FROM community_blocks "
-            "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-            "UNION SELECT blocker_author_id FROM community_blocks "
-            "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-        )
-        params.extend((durable_viewer, durable_viewer))
+    if exclude_account_actor_id:
+        clause += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
+        params.append(exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    clause += blocked_clause
+    params.extend(blocked_params)
     if disease:
         clause += " AND disease = ?"
         params.append(disease)
     clause += _hidden_clause()
     params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
+        # The column list and clauses are fixed or allowlisted; values are bound.
         rows = conn.execute(
-            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"  # nosec B608
             + clause
             + " ORDER BY created_at DESC LIMIT ?",
             (*params, limit + 1),
@@ -2293,9 +3535,10 @@ def map_scans(
         liked_scan_ids(
             exclude_user_pseudo_id or "",
             item_ids,
-            author_id=durable_viewer,
+            account_actor_id=viewer_account_actor_id,
         )
-        if (exclude_user_pseudo_id or durable_viewer) else set()
+        if exclude_user_pseudo_id or viewer_account_actor_id
+        else set()
     )
     for item in items:
         item["like_count"] = counts.get(item["scan_id"], 0)
@@ -2351,8 +3594,9 @@ def density_grid(
     # SQLite CAST(.. AS INTEGER) truncates toward zero — wrong floor for negative
     # (W/S) coords — so floor with ROUND(z/cell - 0.5) to bucket on a stable grid.
     with _connect() as conn:
+        # The optional disease clause is fixed and all request values are bound.
         rows = conn.execute(
-            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"
+            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"  # nosec B608
             "       CAST(ROUND(lon/? - 0.5) AS INTEGER) AS ilon, COUNT(*) AS n "
             "FROM community_scans "
             "WHERE lat IS NOT NULL AND lon IS NOT NULL "
@@ -2381,7 +3625,8 @@ def region_summary(
     region: str | None = None,
     *,
     exclude_user_pseudo_id: str | None = None,
-    viewer_author_id: str | None = None,
+    exclude_account_actor_id: str | None = None,
+    viewer_account_actor_id: str | None = None,
 ) -> dict:
     """Aggregate the corpus for one country (or country+region)."""
     init_db()
@@ -2392,52 +3637,35 @@ def region_summary(
     exclude_clause = ""
     exclude_params: tuple = ()
     if exclude_user_pseudo_id:
-        exclude_clause = (
-            " AND user_pseudo_id != ?"
-            " AND user_pseudo_id NOT IN ("
-            "SELECT blocked_pseudo_id FROM community_blocks WHERE blocker_pseudo_id = ? "
-            "UNION SELECT blocker_pseudo_id FROM community_blocks WHERE blocked_pseudo_id = ?"
-            ")"
-        )
-        exclude_params = (
-            exclude_user_pseudo_id,
-            exclude_user_pseudo_id,
-            exclude_user_pseudo_id,
-        )
-    durable_viewer = (viewer_author_id or "").strip()
-    if durable_viewer:
-        exclude_clause += (
-            " AND (author_id IS NULL OR author_id != ?)"
-            " AND (author_id IS NULL OR author_id NOT IN ("
-            "SELECT blocked_author_id FROM community_blocks "
-            "WHERE blocker_author_id = ? AND blocked_author_id IS NOT NULL "
-            "UNION SELECT blocker_author_id FROM community_blocks "
-            "WHERE blocked_author_id = ? AND blocker_author_id IS NOT NULL))"
-        )
-        exclude_params = (
-            *exclude_params,
-            durable_viewer,
-            durable_viewer,
-            durable_viewer,
-        )
+        exclude_clause = " AND user_pseudo_id != ?"
+        exclude_params = (exclude_user_pseudo_id,)
+    if exclude_account_actor_id:
+        exclude_clause += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
+        exclude_params = (*exclude_params, exclude_account_actor_id)
+    blocked_clause, blocked_params = _blocked_actor_clause(
+        viewer_account_actor_id
+    )
+    exclude_clause += blocked_clause
+    exclude_params = (*exclude_params, *blocked_params)
     if _HIDDEN_COMMUNITY_DISEASES:
         exclude_clause += _hidden_clause()
         exclude_params = (*exclude_params, *_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         if region_clean:
+            # exclude_clause is assembled from fixed predicates; values are bound.
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ?" + exclude_clause,
                 (country, region_clean, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ? AND created_at >= ?"
                 + exclude_clause,
                 (country, region_clean, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region = ? AND created_at >= ?"
                 + exclude_clause
                 + " GROUP BY disease ORDER BY n DESC LIMIT 3",
@@ -2446,23 +3674,23 @@ def region_summary(
             top_region_rows: list[tuple] = []
         else:
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans WHERE country = ?"
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?"  # nosec B608
                 + exclude_clause,
                 (country, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
+                "SELECT COUNT(*) FROM community_scans "  # nosec B608
                 "WHERE country = ? AND created_at >= ?" + exclude_clause,
                 (country, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND created_at >= ?" + exclude_clause
                 + " GROUP BY disease ORDER BY n DESC LIMIT 3",
                 (country, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows = conn.execute(
-                "SELECT region, COUNT(*) AS n FROM community_scans "
+                "SELECT region, COUNT(*) AS n FROM community_scans "  # nosec B608
                 "WHERE country = ? AND region != '' AND created_at >= ?"
                 + exclude_clause
                 + " GROUP BY region ORDER BY n DESC LIMIT 3",
@@ -2516,20 +3744,21 @@ def popular_snapshot(
         params = (country_clean,)
     hidden_clause = _hidden_clause()
     with _connect() as conn:
+        # where/hidden_clause use fixed predicates and allowlisted identifiers.
         total = int(conn.execute(
-            "SELECT COUNT(*) FROM community_scans WHERE 1=1"
+            "SELECT COUNT(*) FROM community_scans WHERE 1=1"  # nosec B608
             + where + hidden_clause,
             (*params, *_HIDDEN_COMMUNITY_DISEASES),
         ).fetchone()[0])
         species_rows = conn.execute(
-            "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
+            "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE species_lower IS NOT NULL AND species_lower != ''"
             + where + hidden_clause
             + " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
             (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
         ).fetchall()
         disease_rows = conn.execute(
-            "SELECT disease, COUNT(*) AS n FROM community_scans "
+            "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE 1=1" + where + hidden_clause
             + " GROUP BY disease ORDER BY n DESC LIMIT ?",
             (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
@@ -2551,6 +3780,29 @@ def popular_snapshot(
     }
 
 
+# Disclosed in privacy.html / release-policy-gates.json (deleted-actor marker: 30
+# days). Must outlast the longest-lived restorable backup (27 days) so a restore
+# can always be replayed against a surviving suppression record or journal entry.
+DELETED_ACTOR_MARKER_RETENTION_DAYS = 30
+
+# A marker may only expire once its physical cleanup finished: while a cleanup
+# job is pending or retrying, the marker is still the replay-suppression record.
+_EXPIRE_DELETED_ACTOR_MARKERS_SQL = (
+    "DELETE FROM community_deleted_actors WHERE requested_at < ? AND NOT EXISTS ("
+    "SELECT 1 FROM community_cleanup_jobs j "
+    "WHERE j.actor_id = community_deleted_actors.actor_id AND j.state != 'completed')"
+)
+
+
+def prune_expired_deleted_actor_markers(*, now: int | None = None) -> int:
+    """Erase deleted-actor markers older than the disclosed retention period."""
+    init_db()
+    timestamp = int(time.time() if now is None else now)
+    cutoff = timestamp - DELETED_ACTOR_MARKER_RETENTION_DAYS * 86_400
+    with _write_lock, _connect() as conn:
+        return int(conn.execute(_EXPIRE_DELETED_ACTOR_MARKERS_SQL, (cutoff,)).rowcount or 0)
+
+
 def prune_older_than(days: int) -> int:
     """Delete rows + thumbnails older than ``days`` days.
 
@@ -2562,61 +3814,291 @@ def prune_older_than(days: int) -> int:
         return 0
     cutoff = int(time.time()) - days * 86_400
     with _write_lock, _connect() as conn:
+        conn.execute(
+            "DELETE FROM community_analysis_tokens WHERE expires_at <= ?",
+            (int(time.time()),),
+        )
+        # The durable deletion tombstone is the sole replay-suppression record.
+        # Completed cleanup jobs duplicate the same actor UUID without serving
+        # a retry purpose, so remove rows left by older deployments.
+        conn.execute("DELETE FROM community_cleanup_jobs WHERE state = 'completed'")
+        conn.execute(
+            _EXPIRE_DELETED_ACTOR_MARKERS_SQL,
+            (int(time.time()) - DELETED_ACTOR_MARKER_RETENTION_DAYS * 86_400,),
+        )
         rows = conn.execute(
-            "SELECT thumb_path FROM community_scans WHERE created_at < ?",
+            "SELECT id, thumb_path FROM community_scans WHERE created_at < ?",
             (cutoff,),
         ).fetchall()
-        deleted = conn.execute(
-            "DELETE FROM community_scans WHERE created_at < ?",
-            (cutoff,),
-        ).rowcount
-        # Sweep companion-table rows that have aged past retention AND no
-        # longer reference a live scan — without this, opinions / views /
-        # requests outlive the scan they belong to indefinitely (unbounded
-        # growth + data retained past the stated window). The age guard
-        # keeps a request or opinion that legitimately arrived BEFORE its
-        # scan upload (the supported ordering) from being swept early.
-        for table in (
-            "community_opinions",
-            "community_scan_views",
-            "community_likes",
-            "community_opinion_requests",
-        ):
-            conn.execute(
-                f"DELETE FROM {table} WHERE created_at < ? AND scan_id NOT IN "
-                "(SELECT scan_id FROM community_scans)",
-                (cutoff,),
+        removable: list[int] = []
+        # Keep the path discoverable in SQLite until its file is gone. If an
+        # unlink fails, retaining the row lets the next retention/account-
+        # deletion pass retry instead of orphaning private media forever.
+        for row_id, thumb_path in rows:
+            if thumb_path:
+                try:
+                    (COMMUNITY_THUMB_DIR / str(thumb_path)).unlink(missing_ok=True)
+                except OSError:
+                    continue
+            removable.append(int(row_id))
+        # Coordinate each scan removal with all of its companion rows. This
+        # transaction shares the same SQLite write reservation as the opinion
+        # writer, so whichever operation wins leaves a consistent result.
+        deleted = 0
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for row_id in removable:
+                row = conn.execute(
+                    "SELECT scan_id FROM community_scans "
+                    "WHERE id = ? AND created_at < ?",
+                    (row_id, cutoff),
+                ).fetchone()
+                if row is None:
+                    continue
+                scan_id = str(row[0])
+                removed = int(
+                    conn.execute(
+                        "DELETE FROM community_scans WHERE id = ? AND created_at < ?",
+                        (row_id, cutoff),
+                    ).rowcount
+                    or 0
+                )
+                deleted += removed
+                if removed and conn.execute(
+                    "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1",
+                    (scan_id,),
+                ).fetchone() is None:
+                    # Delete every companion for the scan, including one that
+                    # raced in immediately before this transaction. A writer
+                    # that starts later waits for COMMIT and then rejects the
+                    # absent target in its own BEGIN IMMEDIATE transaction.
+                    for table in (
+                        "community_opinions",
+                        "community_scan_views",
+                        "community_likes",
+                        "community_opinion_requests",
+                    ):
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id = ?",
+                            (scan_id,),
+                        )
+            # Sweep old orphan rows left by historical versions. The age guard
+            # retains a fresh request that legitimately arrives before upload.
+            for table in (
+                "community_opinions",
+                "community_scan_views",
+                "community_likes",
+                "community_opinion_requests",
+            ):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE created_at < ? AND scan_id NOT IN "
+                    "(SELECT scan_id FROM community_scans)",
+                    (cutoff,),
+                )
+            report_cutoff = (
+                int(time.time()) - COMMUNITY_REPORT_RETENTION_DAYS * 86_400
             )
-        conn.execute("DELETE FROM community_reports WHERE created_at < ?", (cutoff,))
-        conn.execute("DELETE FROM community_blocks WHERE created_at < ?", (cutoff,))
-        # Durable author rows are on the same retention clock as everything
-        # else here. ``last_seen_at`` is refreshed on every adopt, and the app
-        # only adopts on a real community write, so a row past the cutoff means
-        # the device has shared nothing in the retention window — by which
-        # point its own community_scans are being deleted by the statements
-        # above. That, not the legacy clause, is what makes the row safe to
-        # drop. The legacy clause only protects rows written by OLDER clients,
-        # which still send legacy_pseudo_id, so a later backfill can join them;
-        # current clients send none, so those rows take the IS NULL arm. Scan
-        # uploads and opinions now carry author_id, so both live-reference
-        # checks are required before the durable row can be removed.
-        conn.execute(
-            "DELETE FROM community_authors WHERE last_seen_at < ? "
-            "AND author_id NOT IN (SELECT author_id FROM community_scans "
-            "                      WHERE author_id IS NOT NULL) "
-            "AND author_id NOT IN (SELECT author_id FROM community_opinions "
-            "                      WHERE author_id IS NOT NULL) "
-            "AND (legacy_pseudo_id IS NULL OR legacy_pseudo_id NOT IN "
-            "(SELECT user_pseudo_id FROM community_scans))",
-            (cutoff,),
-        )
-    for row in rows:
-        thumb = row[0]
-        if not thumb:
-            continue
-        with contextlib.suppress(OSError):
-            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
+            conn.execute(
+                "DELETE FROM community_content_reports WHERE created_at < ?",
+                (report_cutoff,),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     return int(deleted or 0)
+
+
+def thumbnail_is_visible(filename: str) -> bool:
+    """Whether a thumbnail belongs to a currently visible community row."""
+    name = (filename or "").strip()
+    if not name:
+        return False
+    init_db()
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM community_scans WHERE thumb_path = ? "
+            "AND (account_actor_id IS NULL OR account_actor_id NOT IN "
+            "(SELECT actor_id FROM community_deleted_actors)) LIMIT 1",
+            (name,),
+        ).fetchone() is not None
+
+
+def request_actor_deletion(account_actor_id: str, *, now: int | None = None) -> bool:
+    """Tombstone an actor immediately and enqueue idempotent physical cleanup."""
+    init_db()
+    try:
+        actor = str(uuid.UUID(account_actor_id))
+    except (TypeError, ValueError, AttributeError):
+        return False
+    timestamp = int(time.time() if now is None else now)
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO community_deleted_actors (actor_id, requested_at) "
+                "VALUES (?, ?)",
+                (actor, timestamp),
+            )
+            # Claimed publication capabilities contain the private account
+            # actor link. Erase those rows in the same transaction as the
+            # tombstone so the account service can treat acceptance as the
+            # privacy boundary; never touch unrelated unclaimed capabilities.
+            conn.execute(
+                "DELETE FROM community_analysis_tokens WHERE claimed_actor_id = ?",
+                (actor,),
+            )
+            conn.execute(
+                "INSERT INTO community_cleanup_jobs "
+                "(actor_id, state, attempt_count, next_attempt_at, created_at, updated_at) "
+                "VALUES (?, 'pending', 0, ?, ?, ?) "
+                "ON CONFLICT(actor_id) DO UPDATE SET "
+                "state = CASE WHEN state = 'completed' THEN state ELSE 'pending' END, "
+                "next_attempt_at = CASE WHEN state = 'completed' THEN next_attempt_at ELSE excluded.next_attempt_at END, "
+                "updated_at = excluded.updated_at",
+                (actor, timestamp, timestamp, timestamp),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return True
+
+
+def update_actor_nickname(account_actor_id: str, nickname: str) -> int:
+    """Replace denormalized historical nicknames for one stable account actor."""
+    init_db()
+    try:
+        actor = str(uuid.UUID(account_actor_id))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+    cleaned = (nickname or "").strip()[:48]
+    if not cleaned:
+        return 0
+    with _write_lock, _connect() as conn:
+        if _actor_is_deleted(conn, actor):
+            return 0
+        scans = conn.execute(
+            "UPDATE community_scans SET nickname = ? WHERE account_actor_id = ?",
+            (cleaned, actor),
+        ).rowcount
+        opinions = conn.execute(
+            "UPDATE community_opinions SET nickname = ? WHERE account_actor_id = ?",
+            (cleaned, actor),
+        ).rowcount
+    return int(scans or 0) + int(opinions or 0)
+
+
+def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str, int]:
+    """Remove tombstoned actor content, retrying transient filesystem failures."""
+    init_db()
+    timestamp = int(time.time() if now is None else now)
+    bounded_limit = max(1, min(int(limit), 100))
+    with _connect() as conn:
+        jobs = conn.execute(
+            "SELECT actor_id, attempt_count FROM community_cleanup_jobs "
+            "WHERE state IN ('pending', 'retry') AND next_attempt_at <= ? "
+            "ORDER BY next_attempt_at, created_at LIMIT ?",
+            (timestamp, bounded_limit),
+        ).fetchall()
+    completed = 0
+    retried = 0
+    for actor, attempt_count in jobs:
+        with _connect() as conn:
+            thumbs = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT thumb_path FROM community_scans "
+                    "WHERE account_actor_id = ? AND thumb_path IS NOT NULL",
+                    (actor,),
+                ).fetchall()
+            ]
+        filesystem_failed = False
+        for thumb in thumbs:
+            try:
+                (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
+            except OSError:
+                filesystem_failed = True
+        if filesystem_failed:
+            attempts = int(attempt_count) + 1
+            delay = min(86_400, 60 * (2 ** min(attempts - 1, 10)))
+            with _write_lock, _connect() as conn:
+                conn.execute(
+                    "UPDATE community_cleanup_jobs SET state = 'retry', "
+                    "attempt_count = ?, next_attempt_at = ?, last_error_code = 'thumbnail_io', "
+                    "updated_at = ? WHERE actor_id = ?",
+                    (attempts, timestamp + delay, timestamp, actor),
+                )
+            retried += 1
+            continue
+
+        with _write_lock, _connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                scan_ids = [
+                    str(row[0])
+                    for row in conn.execute(
+                        "SELECT scan_id FROM community_scans WHERE account_actor_id = ?",
+                        (actor,),
+                    ).fetchall()
+                ]
+                if scan_ids:
+                    placeholders = ",".join("?" * len(scan_ids))
+                    for table in (
+                        "community_opinions",
+                        "community_opinion_requests",
+                        "community_scan_views",
+                    ):
+                        # table is fixed and placeholders are count-derived.
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id IN ({placeholders})",  # nosec B608
+                            tuple(scan_ids),
+                        )
+                    conn.execute(
+                        "DELETE FROM community_content_reports "  # nosec B608
+                        f"WHERE target_scan_id IN ({placeholders})",
+                        tuple(scan_ids),
+                    )
+                conn.execute(
+                    "DELETE FROM community_content_reports "
+                    "WHERE reporter_actor_id = ? OR target_actor_id = ?",
+                    (actor, actor),
+                )
+                conn.execute(
+                    "DELETE FROM community_actor_blocks "
+                    "WHERE blocker_actor_id = ? OR blocked_actor_id = ?",
+                    (actor, actor),
+                )
+                conn.execute(
+                    "DELETE FROM community_opinions WHERE account_actor_id = ?", (actor,)
+                )
+                conn.execute(
+                    "DELETE FROM community_opinion_requests WHERE account_actor_id = ?",
+                    (actor,),
+                )
+                conn.execute(
+                    "DELETE FROM community_scan_views WHERE account_actor_id = ?", (actor,)
+                )
+                conn.execute(
+                    "DELETE FROM community_scans WHERE account_actor_id = ?", (actor,)
+                )
+                conn.execute(
+                    "DELETE FROM community_analysis_tokens WHERE claimed_actor_id = ?",
+                    (actor,),
+                )
+                # community_deleted_actors is the durable suppression marker.
+                # Once physical cleanup succeeds this retry row has no further
+                # purpose and would only duplicate the deleted actor UUID.
+                conn.execute(
+                    "DELETE FROM community_cleanup_jobs WHERE actor_id = ?",
+                    (actor,),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        completed += 1
+    return {"completed": completed, "retried": retried}
 
 
 def _author_token(user_pseudo_id: str | None) -> str | None:
@@ -2847,7 +4329,9 @@ def _row_to_dict(row: tuple) -> dict:
         "wants_opinion": bool(row[13]) if len(row) > 13 else False,
         # One-way, stable per author so the client can show a
         # consistent (but anonymous) avatar — never the raw pseudo id.
-        "author_token": _author_token(row[14]) if len(row) > 14 else None,
+        "author_token": _author_token(
+            (row[16] if len(row) > 16 else None) or (row[14] if len(row) > 14 else None)
+        ),
         # Author's generated plant-vibe handle (community display name); the
         # client also derives the avatar monogram/colour from it on-device.
         "nickname": (row[15] if len(row) > 15 else None) or None,
@@ -2893,3 +4377,50 @@ def stats_snapshot() -> dict:
         "regions": int(region_count),
     }
 
+
+__all__ = [
+    "AnalysisTokenConflictError",
+    "AnalysisImageMismatchError",
+    "AnalysisTokenUnknownError",
+    "COMMUNITY_DB_PATH",
+    "COMMUNITY_THUMB_DIR",
+    "OPINION_REQUEST_TTL_HOURS",
+    "account_owner_of",
+    "clear_wants_opinion",
+    "daily_write_count_for_ip_hash",
+    "expire_stale_opinion_requests",
+    "density_grid",
+    "init_db",
+    "map_scans",
+    "nearby_scans",
+    "opinion_counts",
+    "opinion_counts_for_user",
+    "opinion_counts_for_actor",
+    "opinion_open",
+    "opinions_for",
+    "owner_of",
+    "popular_snapshot",
+    "process_cleanup_jobs",
+    "prune_older_than",
+    "public_scan_token",
+    "record_analysis_scan",
+    "record_analysis_token",
+    "record_opinion",
+    "record_opinion_with_status",
+    "record_scan",
+    "record_view",
+    "region_summary",
+    "request_actor_deletion",
+    "prune_expired_deleted_actor_markers",
+    "DELETED_ACTOR_MARKER_RETENTION_DAYS",
+    "resolve_scan_token",
+    "scan_counts",
+    "scan_counts_for_actor",
+    "scan_exists",
+    "scans_by_species",
+    "set_wants_opinion",
+    "stats_snapshot",
+    "thumbnail_is_visible",
+    "update_actor_nickname",
+    "wants_opinion",
+]

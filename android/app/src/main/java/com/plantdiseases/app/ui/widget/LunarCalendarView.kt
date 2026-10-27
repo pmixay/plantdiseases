@@ -46,6 +46,8 @@ class LunarCalendarView @JvmOverloads constructor(
     private var selected: LocalDate = anchor
     private var category: PlantCategory = PlantCategory.FOLIAGE
     private var hasRendered = false
+    private var hasProAccess = false
+    private var requestPro: () -> Unit = {}
 
     /** One plant in [setAggregate]'s garden-wide view. */
     data class AggregateEntry(val label: String, val category: PlantCategory)
@@ -84,7 +86,13 @@ class LunarCalendarView @JvmOverloads constructor(
     private val avoidTasks: LinearLayout
     private val categoryBreakdown: LinearLayout
     private val legend: LinearLayout
+    private val monthPreview: View
+    private val monthGate: ProLockedOverlayView
+    private val recommendationsPreview: View
+    private val recommendationsGate: ProLockedOverlayView
+    private val upcomingFrame: View
     private val upcomingCard: View
+    private val upcomingGate: ProLockedOverlayView
     private val upcomingList: LinearLayout
 
     init {
@@ -108,7 +116,13 @@ class LunarCalendarView @JvmOverloads constructor(
         avoidTasks = findViewById(R.id.lunar_avoid_tasks)
         categoryBreakdown = findViewById(R.id.lunar_category_breakdown)
         legend = findViewById(R.id.lunar_legend)
+        monthPreview = findViewById(R.id.lunar_month_preview)
+        monthGate = findViewById(R.id.lunar_month_gate)
+        recommendationsPreview = findViewById(R.id.lunar_recommendations_preview)
+        recommendationsGate = findViewById(R.id.lunar_recommendations_gate)
+        upcomingFrame = findViewById(R.id.lunar_upcoming_frame)
         upcomingCard = findViewById(R.id.lunar_upcoming_card)
+        upcomingGate = findViewById(R.id.lunar_upcoming_gate)
         upcomingList = findViewById(R.id.lunar_upcoming_list)
 
         prevBtn.setOnClickListener {
@@ -123,6 +137,24 @@ class LunarCalendarView @JvmOverloads constructor(
         }
 
         renderAll()
+        applyProAccess()
+    }
+
+    /** Keeps today's phase visible while gating richer month navigation. */
+    fun setProAccess(enabled: Boolean, onRequestPro: () -> Unit) {
+        hasProAccess = enabled
+        requestPro = onRequestPro
+        applyProAccess()
+    }
+
+    private fun applyProAccess() {
+        monthGate.bindPreview(monthPreview, locked = !hasProAccess, onUnlock = requestPro)
+        recommendationsGate.bindPreview(
+            recommendationsPreview,
+            locked = !hasProAccess,
+            onUnlock = requestPro,
+        )
+        upcomingGate.bindPreview(upcomingCard, locked = !hasProAccess, onUnlock = requestPro)
     }
 
     /** Free-text species in, category out — see [PlantCategoryClassifier]. Safe
@@ -428,10 +460,10 @@ class LunarCalendarView @JvmOverloads constructor(
 
     private fun renderUpcoming() {
         if (aggregateEntries != null) {
-            upcomingCard.visibility = View.GONE
+            upcomingFrame.visibility = View.GONE
             return
         }
-        upcomingCard.visibility = View.VISIBLE
+        upcomingFrame.visibility = View.VISIBLE
         upcomingList.removeAllViews()
         LunarCalendar.upcomingFavourable(anchor, 4, category).forEach { info ->
             val row = LayoutInflater.from(context)
@@ -443,6 +475,7 @@ class LunarCalendarView @JvmOverloads constructor(
             row.setOnClickListener { selectDate(info.date, scrollToPanel = true) }
             upcomingList.addView(row)
         }
+        applyProAccess()
     }
 
     // ── Formatting / resource lookups ───────────────────────────

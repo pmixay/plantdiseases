@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.crop
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.view.MotionEvent
 import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -83,5 +84,38 @@ class CropImageViewTest {
         view.rotate90()
         assertThat(view.rotationValue()).isEqualTo(90)
         assertThat(view.getCroppedBitmap()).isNotNull()
+    }
+
+    @Test
+    fun circularMode_previewsAndExportsTheSameSquareAvatarArea() {
+        val view = laidOutView(300, 300)
+        view.setCircularCrop(true)
+        val source = Bitmap.createBitmap(120, 80, Bitmap.Config.ARGB_8888)
+        view.setBitmap(source)
+
+        val normalized = view.cropRectNormalized()
+        assertThat(normalized[0]).isWithin(0.01f).of(1f / 6f)
+        assertThat(normalized[1]).isWithin(0.01f).of(0f)
+        assertThat(normalized[2]).isWithin(0.01f).of(5f / 6f)
+        assertThat(normalized[3]).isWithin(0.01f).of(1f)
+
+        val cropped = view.getCroppedBitmap()!!
+        assertThat(cropped.width).isEqualTo(80)
+        assertThat(cropped.height).isEqualTo(80)
+    }
+
+    @Test
+    fun circularMode_resizeHandleKeepsTheExportSquare() {
+        val view = laidOutView(300, 300)
+        view.setCircularCrop(true)
+        view.setBitmap(Bitmap.createBitmap(120, 80, Bitmap.Config.ARGB_8888))
+
+        view.onTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 250f, 150f, 0))
+        view.onTouchEvent(MotionEvent.obtain(0, 16, MotionEvent.ACTION_MOVE, 200f, 150f, 0))
+        view.onTouchEvent(MotionEvent.obtain(0, 32, MotionEvent.ACTION_UP, 200f, 150f, 0))
+
+        val cropped = view.getCroppedBitmap()!!
+        assertThat(cropped.width).isEqualTo(cropped.height)
+        assertThat(cropped.width).isLessThan(80)
     }
 }

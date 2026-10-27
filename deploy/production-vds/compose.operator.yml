@@ -1,0 +1,26 @@
+# Operator overlay (outside Git). Adds a one-shot, network-less key provisioning
+# service. It is only ever started explicitly with `compose.sh run --rm prod-keys-provision`;
+# the repo's ENVIRONMENT=test key generator is deliberately not used.
+services:
+  prod-keys-provision:
+    profiles: ["provision-keys"]
+    image: ${PROD_ACCOUNT_IMAGE:?Set the account image}
+    environment:
+      PYTHONPATH: /app
+    entrypoint: ["python", "/provision/provision_keys.py"]
+    network_mode: none
+    volumes:
+      - prod_account_keys:/run/account-secrets
+      - prod_internal_token:/run/internal-token
+      - /opt/pd-account-prod/deploy/provision_keys.py:/provision/provision_keys.py:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

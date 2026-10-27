@@ -33,6 +33,7 @@ import com.plantdiseases.app.util.ThumbLoader
  */
 class NearbyScansAdapter(
     private val onOpen: (CommunityScanItem) -> Unit,
+    private val onAuthor: (CommunityScanItem) -> Unit,
     private val onLike: (CommunityScanItem) -> Unit,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
 
@@ -125,6 +126,9 @@ class NearbyScansAdapter(
                 if (nick != null) Avatars.monogramForNick(nick) else Avatars.monogramFor(item.authorToken)
             avatar.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
+            val openAuthor = View.OnClickListener { onAuthor(item) }
+            avatar.setOnClickListener(openAuthor)
+            label.setOnClickListener(openAuthor)
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
             // Always show all three counts, zero included — hiding a count at
@@ -154,12 +158,12 @@ class NearbyScansAdapter(
             photo.setOnClickListener(open)
             commentsRow.setOnClickListener(open)
 
-            // ServerConfig.baseUrl ends with `/`; relative path appended.
+            // ServerConfig.appBaseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
             val url = if (thumb.isNullOrBlank()) {
                 null
             } else {
-                "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+                "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
             }
             ThumbLoader.load(shimmer, photo, url)
         }

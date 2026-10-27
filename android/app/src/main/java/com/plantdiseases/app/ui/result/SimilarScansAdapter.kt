@@ -26,6 +26,7 @@ import com.plantdiseases.app.util.ThumbLoader
 class SimilarScansAdapter(
     private val displayName: (String) -> String,
     private val onClick: (CommunityScanItem) -> Unit = {},
+    private val onAuthorClick: (CommunityScanItem) -> Unit = {},
     // Preview mode: render each cell as a compact "mini scan result" — diagnosis
     // + detected species — instead of the publisher nickname / distance / opinion
     // affordances. Used by the species card's "others' scans" strip.
@@ -76,6 +77,19 @@ class SimilarScansAdapter(
                 // Publisher nick; fall back to the disease label for old rows that
                 // predate nicknames so the line is never empty.
                 label.text = item.nickname?.takeIf { it.isNotBlank() } ?: displayName(item.disease)
+                val hasProfile = item.authorToken
+                    ?.let { it.startsWith("ca") && it.length == 32 } == true
+                label.isClickable = hasProfile
+                label.isFocusable = hasProfile
+                label.setOnClickListener(
+                    if (hasProfile) {
+                        View.OnClickListener {
+                            onAuthorClick(item)
+                        }
+                    } else {
+                        null
+                    }
+                )
                 // Distance only — no place name. Hidden when the feed had no
                 // location anchor (country/worldwide scope) so we never show a
                 // misleading "0 km" or an empty line.
@@ -96,12 +110,12 @@ class SimilarScansAdapter(
                 }
             }
 
-            // ServerConfig.baseUrl ends with `/`; relative path appended.
+            // ServerConfig.appBaseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
             val url = if (thumb.isNullOrBlank()) {
                 null
             } else {
-                "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+                "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
             }
             ThumbLoader.load(shimmer, image, url)
         }

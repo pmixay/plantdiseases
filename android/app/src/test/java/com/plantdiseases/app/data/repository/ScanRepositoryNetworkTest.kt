@@ -1,31 +1,31 @@
 package com.plantdiseases.app.data.repository
 
-import android.content.Context
-import androidx.exifinterface.media.ExifInterface
-import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthenticationRequiredException
+import com.plantdiseases.app.auth.InstallationIdProvider
+import com.plantdiseases.app.auth.RefreshTokenVault
+import com.plantdiseases.app.data.account.AuthProvider
+import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
+import com.plantdiseases.app.data.model.ErrorReport
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.testutil.FakeAccountApi
 import com.plantdiseases.app.testutil.FakeScanDao
-import com.plantdiseases.app.util.CommunityIdentity
-import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.SanitizedImage
+import com.plantdiseases.app.util.UploadImageSanitizer
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-import java.awt.image.BufferedImage
 import java.io.File
-import javax.imageio.ImageIO
+import java.util.UUID
 
 /**
  * Integration coverage of the ML-diagnosis network hop driven against a
@@ -39,55 +39,41 @@ import javax.imageio.ImageIO
  * `application/json`, so success mocks declare it explicitly — the real
  * server already sends it; Gson never required it.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
 class ScanRepositoryNetworkTest {
 
     private lateinit var server: MockWebServer
     private lateinit var repo: ScanRepository
     private lateinit var client: PlantApiClient
     private lateinit var imageFile: File
-    private lateinit var appContext: Context
+    private lateinit var accountApi: FakeAccountApi
+    private lateinit var authRepository: AuthRepository
+    private val sanitizedBytes = "only-sanitized-pixels".encodeToByteArray()
 
     @Before
     fun setup() {
         server = MockWebServer()
         server.start()
         client = PlantApiClient(server.url("/").toString())
-        repo = ScanRepository(FakeScanDao(), client)
-        appContext = ApplicationProvider.getApplicationContext()
-        CommunityPrefs.setUploadsEnabled(appContext, false)
-        CommunityIdentity.clear(appContext)
-        imageFile = File.createTempFile("upload", ".jpg")
-        // A real JPEG (written by the JVM's encoder, independent of
-        // Robolectric's Bitmap shadow): identify and feedback-image uploads
-        // decode and re-encode the file, so garbage bytes would never reach
-        // the wire.
-        ImageIO.write(BufferedImage(320, 240, BufferedImage.TYPE_INT_RGB), "jpg", imageFile)
+        accountApi = FakeAccountApi()
+        authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
+        runBlocking { authRepository.signIn(AuthProvider.YANDEX, "synthetic-provider-token") }
+        repo = ScanRepository(
+            FakeScanDao(),
+            client,
+            imageSanitizer = object : UploadImageSanitizer {
+                override fun sanitize(source: File, maxDimension: Int, quality: Int) =
+                    SanitizedImage(sanitizedBytes, width = 12, height = 8)
+            },
+            authRepository = authRepository,
+        )
+        imageFile = File.createTempFile("PRIVATE-original-name", ".jpg")
+        imageFile.writeBytes(ByteArray(128) { it.toByte() })
     }
 
     @After
     fun teardown() {
         server.shutdown()
         imageFile.delete()
-    }
-
-    private fun enqueueCommunityAdopt() {
-        CommunityPrefs.enable(appContext)
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"ok":true,"author_id":"au_test","display_name":"Leafy Sage 7","created_at":1,"last_seen_at":1,"status":"active"}""",
-                ),
-        )
-    }
-
-    private fun takeAndAssertCommunityAdopt() {
-        val adopt = server.takeRequest()
-        assertThat(adopt.path).isEqualTo("/api/community/authors/adopt")
-        assertThat(adopt.body.readUtf8())
-            .contains("\"legacy_pseudo_id\":\"${TelemetryIds.userPseudoId(appContext)}\"")
     }
 
     private fun validAnalysisBody(): String =
@@ -117,7 +103,61 @@ class ScanRepositoryNetworkTest {
         assertThat(request.method).isEqualTo("POST")
         assertThat(request.path).startsWith("/api/analyze")
         assertThat(request.path).contains("locale=en")
+        assertThat(request.path).contains("training_consent=false")
         assertThat(request.getHeader("Content-Type")).contains("multipart/form-data")
+        assertMeteredHeaders(request)
+        val body = request.body.readUtf8()
+        assertThat(body).contains("filename=\"scan.jpg\"")
+        assertThat(body).contains("only-sanitized-pixels")
+        assertThat(body).doesNotContain("PRIVATE-original-name")
+    }
+
+    @Test
+    fun analyze_explicitTrainingConsentSendsCurrentVersionWithSanitizedBytes() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease_name":"Leaf Spot"}"""),
+        )
+
+        runBlocking {
+            repo.analyzeImage(
+                imageFile,
+                trainingConsent = true,
+                trainingConsentVersion = "model-improvement-v1",
+            )
+        }
+
+        val request = server.takeRequest()
+        assertThat(request.path).contains("training_consent=true")
+        assertThat(request.path).contains("training_consent_version=model-improvement-v1")
+        assertThat(request.body.readUtf8()).contains("only-sanitized-pixels")
+    }
+
+    @Test
+    fun telemetry_postsOnlyMinimizedVersionedContract() {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val report = ErrorReport(
+            telemetryConsent = true,
+            telemetryConsentVersion = "telemetry-errors-v1",
+            stage = "analyze",
+            kind = "timeout",
+            fatal = false,
+            httpStatus = 504,
+            family = "gamma",
+            appVersion = "1.8",
+            androidApi = 33,
+            breadcrumbs = listOf("scanner_opened"),
+        )
+
+        runBlocking { repo.reportError(report) }
+
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"telemetry_consent\":true")
+        assertThat(body).contains("\"telemetry_consent_version\":\"telemetry-errors-v1\"")
+        assertThat(body).doesNotContain("message")
+        assertThat(body).doesNotContain("installation")
+        assertThat(body).doesNotContain("device_model")
     }
 
     @Test
@@ -247,21 +287,133 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun analyze_429_mapsToRateLimit() {
-        // POST retries an explicit 429 once, so enqueue two.
-        server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.RateLimitException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_quotaTagged429_mapsToQuotaExhausted() {
+        val denied = MockResponse().setResponseCode(429)
+            .setHeader("X-PlantDiseases-Plan", "free")
+            .setHeader("X-Quota-Limit", "5")
+            .setHeader("X-Quota-Remaining", "0")
+            .setHeader("X-Quota-Reset-At", "2026-08-27T00:00:00Z")
+        server.enqueue(denied)
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        val error = result.exceptionOrNull()
+        assertThat(error).isInstanceOf(ScanRepository.QuotaExhaustedException::class.java)
+        error as ScanRepository.QuotaExhaustedException
+        assertThat(error.plan).isEqualTo("free")
+        assertThat(error.limit).isEqualTo(5)
+        assertThat(error.remaining).isEqualTo(0)
+        assertThat(error.resetAt).isEqualTo("2026-08-27T00:00:00Z")
+        val request = server.takeRequest()
+        assertThat(UUID.fromString(checkNotNull(request.getHeader("X-Idempotency-Key")))).isNotNull()
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_402_mapsToProRequired() {
+        server.enqueue(
+            MockResponse().setResponseCode(402)
+                .setHeader("X-PlantDiseases-Plan", "free")
+                .setHeader("X-Quota-Limit", "0")
+                .setHeader("X-Quota-Remaining", "0")
+                .setHeader("X-Quota-Reset-At", "2026-08-27T00:00:00Z"),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile, family = "frontier") }
+
+        val error = result.exceptionOrNull()
+        assertThat(error).isInstanceOf(ScanRepository.ProRequiredException::class.java)
+        error as ScanRepository.ProRequiredException
+        assertThat(error.plan).isEqualTo("free")
+        assertThat(error.limit).isEqualTo(0)
+    }
+
+    @Test
+    fun signedAnalyze_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(validAnalysisBody()),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        val first = server.takeRequest()
+        val retry = server.takeRequest()
+        assertThat(first.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(retry.getHeader("Authorization")).isEqualTo("Bearer access-2")
+        assertThat(first.getHeader("X-Idempotency-Key"))
+            .isEqualTo(retry.getHeader("X-Idempotency-Key"))
+    }
+
+    @Test
+    fun guestAnalyze_omitsBearerButStillSendsIdempotencyKey() {
+        val guestRepository = ScanRepository(
+            FakeScanDao(),
+            client,
+            imageSanitizer = object : UploadImageSanitizer {
+                override fun sanitize(source: File, maxDimension: Int, quality: Int) =
+                    SanitizedImage(sanitizedBytes, width = 12, height = 8)
+            },
+            authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(validAnalysisBody()),
+        )
+
+        val result = runBlocking { guestRepository.analyzeImage(imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        val request = server.takeRequest()
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(UUID.fromString(checkNotNull(request.getHeader("X-Idempotency-Key")))).isNotNull()
     }
 
     @Test
     fun analyze_503_mapsToServerStarting() {
         server.enqueue(MockResponse().setResponseCode(503))
-        server.enqueue(MockResponse().setResponseCode(503))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.ServerStartingException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun analyze_consumedOperation409IsNotReplayed() {
+        server.enqueue(
+            MockResponse().setResponseCode(409)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"detail":"operation_already_consumed"}"""),
+        )
+
+        val result = runBlocking { repo.analyzeImage(imageFile) }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("409")
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun appTransportDisablesImplicitConnectionRetries() {
+        val field = PlantApiClient::class.java.getDeclaredField("client")
+            .apply { isAccessible = true }
+        val transport = field.get(client) as okhttp3.OkHttpClient
+
+        assertThat(transport.retryOnConnectionFailure).isFalse()
     }
 
     @Test
@@ -358,27 +510,27 @@ class ScanRepositoryNetworkTest {
     // --- POST /api/feedback (Ktor) ---
 
     @Test
-    fun feedback_success_parsesIdAndPostsJsonBody() {
+    fun feedback_success_parsesReceiptResultAndPostsStrictJsonBody() {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"id":42}"""),
+                .setBody("""{"ok":true,"updated":true}"""),
         )
 
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(scanId = "scan-1", correct = true))
+            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
         }
 
         assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.id).isEqualTo(42L)
+        assertThat(result.getOrNull()?.updated).isTrue()
 
         val request = server.takeRequest()
         assertThat(request.method).isEqualTo("POST")
         assertThat(request.path).isEqualTo("/api/feedback")
         val sent = request.body.readUtf8()
-        assertThat(sent).contains("\"scan_id\":\"scan-1\"")
-        // explicitNulls is NOT set on the wired client, but optional null fields
-        // simply serialize as null — the key presence isn't asserted here.
+        assertThat(sent).contains("\"feedback_receipt\":\"${"x".repeat(43)}\"")
+        assertThat(sent).doesNotContain("scan_id")
+        assertThat(sent).doesNotContain("note")
         assertThat(sent).contains("\"correct\":true")
     }
 
@@ -388,7 +540,7 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(scanId = "s", correct = false))
+            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = false))
         }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.RateLimitException::class.java)
@@ -399,7 +551,7 @@ class ScanRepositoryNetworkTest {
         // 422 isn't retried, so a single response.
         server.enqueue(MockResponse().setResponseCode(422))
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(scanId = "s", correct = true))
+            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
         }
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()?.message).contains("Invalid feedback payload")
@@ -453,6 +605,42 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("locale=ru")
     }
 
+    // --- POST /api/care-plan (via ScanRepository.fetchCarePlan) ---
+
+    @Test
+    fun repositoryCarePlan_sendsAccountAndIdempotencyHeaders() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease":"quota-header-test","watering_days":7}"""),
+        )
+
+        val result = runBlocking {
+            repo.fetchCarePlan(CarePlanRequest(disease = "quota-header-test-${UUID.randomUUID()}"))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertMeteredHeaders(server.takeRequest())
+    }
+
+    @Test
+    fun repositoryCarePlan_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease":"retry-care-plan","watering_days":7}"""),
+        )
+
+        val result = runBlocking {
+            repo.fetchCarePlan(CarePlanRequest(disease = "retry-care-plan-${UUID.randomUUID()}"))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
+    }
+
     // --- POST /api/chat (Ktor, Map<String,Any?> diagnosis via AnyMapSerializer) ---
 
     @Test
@@ -477,13 +665,12 @@ class ScanRepositoryNetworkTest {
 
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.reply).isEqualTo("Water less.")
-        // `session` is deliberately not modelled (nothing renders the quota),
-        // so the extra key must decode away instead of throwing.
-        assertThat(result.getOrNull()?.available).isTrue()
+        assertThat(result.getOrNull()?.session?.sessionId).isEqualTo("s1")
 
         val sent = server.takeRequest()
         assertThat(sent.method).isEqualTo("POST")
         assertThat(sent.path).isEqualTo("/api/chat")
+        assertMeteredHeaders(sent)
         val body = sent.body.readUtf8()
         // diagnosis must be a real nested JSON object, not a toString() blob.
         assertThat(body).contains("\"diagnosis\":{")
@@ -494,13 +681,28 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
+    fun chat_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":true,"reply":"ok"}"""),
+        )
+
+        val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
+    }
+
+    @Test
     fun chat_429_mapsToRateLimit() {
-        // POST retries an explicit 429 once.
-        server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
         assertThat(result.exceptionOrNull())
             .isInstanceOf(ScanRepository.RateLimitException::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
     }
 
     // --- POST /api/progression (Ktor, List<Map<String,Any?>> via AnyMapListSerializer) ---
@@ -557,25 +759,23 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("organ=leaf")
         assertThat(req.path).contains("locale=ru")
         assertThat(req.getHeader("Content-Type")).contains("multipart/form-data")
+        assertMeteredHeaders(req)
     }
 
     @Test
-    fun identify_napRejection_preservesServerMarker() {
+    fun identify_refreshRetryKeepsLogicalRequestId() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"available":false,"results":[],"source":"skipped_nap","organ":"auto"}""",
-                ),
+                .setBody("""{"available":false,"results":[]}"""),
         )
 
-        val result = runBlocking { repo.identifySpecies(imageFile, organ = "auto") }
+        val result = runBlocking { repo.identifySpecies(imageFile) }
 
         assertThat(result.isSuccess).isTrue()
-        val response = result.getOrThrow()
-        assertThat(response.available).isFalse()
-        assertThat(response.results).isEmpty()
-        assertThat(response.wasRejectedAsNotAPlant).isTrue()
+        assertRefreshRetryReusesLogicalRequestId()
     }
 
     @Test
@@ -589,57 +789,34 @@ class ScanRepositoryNetworkTest {
     // --- POST /api/feedback/image (Ktor multipart) ---
 
     @Test
-    fun uploadFeedbackImage_success_postsScanIdAndImageParts() {
+    fun uploadFeedbackImage_success_postsReceiptAndSanitizedImageParts() {
         server.enqueue(MockResponse().setResponseCode(200))
-        val result = runBlocking { repo.uploadFeedbackImage("scan-7", imageFile) }
+        val request = FeedbackRequest(
+            feedbackReceipt = "r".repeat(43),
+            correct = false,
+            correctedClass = "leaf_spot",
+            reason = "wrong_class",
+        )
+        val result = runBlocking { repo.uploadFeedbackImage(request, imageFile) }
 
         assertThat(result.isSuccess).isTrue()
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/feedback/image")
         val body = req.body.readUtf8()
-        // multipart carries the scan_id text part and the image part.
-        // Ktor 3 quotes Content-Disposition parameter values — name="scan_id" —
-        // where Ktor 2 emitted them bare. The quoted form is what RFC 7578
-        // specifies, so this follows the fix rather than working around it.
-        assertThat(body).contains("""name="scan_id"""")
-        assertThat(body).contains("scan-7")
+        assertThat(body).contains("""name="feedback_receipt"""")
+        assertThat(body).contains("r".repeat(43))
+        assertThat(body).doesNotContain("""name="scan_id"""")
         assertThat(body).contains("""name="image"""")
+        assertThat(body).contains("filename=\"scan.jpg\"")
+        assertThat(body).contains("only-sanitized-pixels")
+        assertThat(body).doesNotContain("PRIVATE-original-name")
     }
-
-    @Test
-    fun photoUploads_reencode_soCameraExifNeverLeavesTheDevice() {
-        // What a phone camera writes: a model string and a GPS fix.
-        ExifInterface(imageFile.path).apply {
-            setAttribute(ExifInterface.TAG_MODEL, EXIF_MARKER)
-            setLatLong(55.7558, 37.6173)
-            saveAttributes()
-        }
-        assertThat(latin1(imageFile.readBytes())).contains(EXIF_MARKER) // fixture sanity
-
-        server.enqueue(MockResponse().setResponseCode(200))
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"available":false,"results":[]}"""),
-        )
-        assertThat(runBlocking { repo.uploadFeedbackImage("scan-7", imageFile) }.isSuccess).isTrue()
-        assertThat(runBlocking { repo.identifySpecies(imageFile) }.isSuccess).isTrue()
-
-        repeat(2) {
-            val body = latin1(server.takeRequest().body.readByteArray())
-            assertThat(body).doesNotContain(EXIF_MARKER)
-            assertThat(body).doesNotContain("Exif\u0000\u0000")
-        }
-    }
-
-    private fun latin1(bytes: ByteArray) = String(bytes, Charsets.ISO_8859_1)
 
     // --- POST /api/community/scan (Ktor multipart) ---
 
     @Test
     fun uploadCommunityScan_success_sendsRequiredPartsOmitsBlankOptionals() {
-        enqueueCommunityAdopt()
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -648,31 +825,31 @@ class ScanRepositoryNetworkTest {
         val result = runBlocking {
             repo.uploadCommunityScan(
                 scanId = "sc-1",
-                userPseudoId = "u-1",
                 region = "", // blank → omitted
                 disease = "leaf_spot",
                 confidence = 0.8f,
                 species = null, // null → omitted
-                context = appContext,
+                analysisImage = SanitizedImage(sanitizedBytes, 12, 8),
             )
         }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.id).isEqualTo(99L)
 
-        takeAndAssertCommunityAdopt()
         val req = server.takeRequest()
         assertThat(req.path).isEqualTo("/api/community/scan")
-        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
         val body = req.body.readUtf8()
-        // Quoted parameter values — see the note in the feedback-image test.
-        // The doesNotContain assertions have to move with them: against a Ktor
-        // 3 body the bare `name=region` never appears whether or not the part
-        // was sent, so leaving them unquoted would make them pass vacuously
-        // and stop pinning the omit-blanks behaviour they exist for.
+        // Ktor 3 quotes Content-Disposition parameter values. Keep every
+        // privacy omission assertion quoted too, or it could pass vacuously.
         assertThat(body).contains("""name="scan_id"""")
+        assertThat(body).doesNotContain("user_pseudo_id")
+        assertThat(body).doesNotContain("nickname")
         assertThat(body).doesNotContain("""name="country"""")
         assertThat(body).contains("""name="confidence"""")
+        assertThat(body).contains("filename=\"scan.jpg\"")
+        assertThat(body).contains("only-sanitized-pixels")
+        assertThat(body).doesNotContain("PRIVATE-original-name")
         // blank region / null species must NOT be sent.
         assertThat(body).doesNotContain("""name="region"""")
         assertThat(body).doesNotContain("""name="species"""")
@@ -694,7 +871,6 @@ class ScanRepositoryNetworkTest {
             repo.communityNearby(
                 region = "", // blank → omitted
                 disease = null, // null → omitted
-                userPseudoId = "u1",
             )
         }
         assertThat(result.isSuccess).isTrue()
@@ -705,54 +881,11 @@ class ScanRepositoryNetworkTest {
         assertThat(req.method).isEqualTo("GET")
         assertThat(req.path).startsWith("/api/community/nearby")
         assertThat(req.path).doesNotContain("country=")
-        // The pseudo-id is a bearer value: header, never the URL.
         assertThat(req.path).doesNotContain("user_pseudo_id")
-        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("u1")
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
         assertThat(req.path).contains("limit=12")
         assertThat(req.path).doesNotContain("region=")
         assertThat(req.path).doesNotContain("disease=")
-    }
-
-    @Test
-    fun communityNearby_recommendedRoundTripsOpaqueCursor() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"items":[],"ranking":"recommended","next_cursor":"r1.next.signature"}"""),
-        )
-        val result = runBlocking {
-            repo.communityNearby(
-                disease = null,
-                userPseudoId = "reader",
-                ranking = "recommended",
-                cursor = "r1.previous.signature",
-            )
-        }
-        assertThat(result.getOrNull()?.ranking).isEqualTo("recommended")
-        assertThat(result.getOrNull()?.nextCursor).isEqualTo("r1.next.signature")
-        val path = server.takeRequest().path.orEmpty()
-        assertThat(path).contains("ranking=recommended")
-        assertThat(path).contains("cursor=r1.previous.signature")
-    }
-
-    @Test
-    fun communityNearby_recentRequestsNewestFirstRanking() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"items":[],"ranking":"recent"}"""),
-        )
-
-        val result = runBlocking {
-            repo.communityNearby(
-                disease = null,
-                userPseudoId = "reader",
-                ranking = "recent",
-            )
-        }
-
-        assertThat(result.getOrThrow().ranking).isEqualTo("recent")
-        assertThat(server.takeRequest().path.orEmpty()).contains("ranking=recent")
     }
 
     @Test
@@ -762,12 +895,12 @@ class ScanRepositoryNetworkTest {
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{"items":[]}"""),
         )
-        runBlocking { repo.communityScansBySpecies("Ficus elastica", userPseudoId = "u9") }
+        runBlocking { repo.communityScansBySpecies("Ficus elastica") }
         val req = server.takeRequest()
         assertThat(req.path).startsWith("/api/community/by-species")
         assertThat(req.path).contains("species=Ficus")
         assertThat(req.path).doesNotContain("user_pseudo_id")
-        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("u9")
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
@@ -784,7 +917,9 @@ class ScanRepositoryNetworkTest {
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.views).isEqualTo(4)
         assertThat(result.getOrNull()?.opinions?.get(0)?.suggestedDisease).isEqualTo("rust")
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/opinions/sc-9")
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/opinions/sc-9")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
@@ -797,20 +932,34 @@ class ScanRepositoryNetworkTest {
                         """"total_opinions":3,"total_views":10}""",
                 ),
         )
-        val result = runBlocking { repo.fetchMyScanOpinions("user-42") }
+        val result = runBlocking { repo.fetchMyScanOpinions() }
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
         assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
-        val req = server.takeRequest()
-        assertThat(req.path).isEqualTo("/api/community/my-scan-opinions")
-        assertThat(req.getHeader("X-User-Pseudo-Id")).isEqualTo("user-42")
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/my-scan-opinions")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     // --- Community write POSTs / DELETE / push (Ktor) ---
 
     @Test
+    fun submitCommunityOpinion_423_mapsToLockedException() {
+        server.enqueue(MockResponse().setResponseCode(423))
+        val result = runBlocking {
+            repo.submitCommunityOpinion(
+                CommunityOpinionRequest(
+                    scanId = "sc-locked",
+                    suggestedDisease = "healthy",
+                ),
+            )
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
+    }
+
+    @Test
     fun submitCommunityOpinion_success_postsBodyAndParses() {
-        enqueueCommunityAdopt()
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -818,80 +967,148 @@ class ScanRepositoryNetworkTest {
         )
         val result = runBlocking {
             repo.submitCommunityOpinion(
-                appContext,
                 CommunityOpinionRequest(
                     scanId = "sc-2",
-                    userPseudoId = "u1",
                     suggestedDisease = "rust",
                 ),
             )
         }
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.ok).isTrue()
-        takeAndAssertCommunityAdopt()
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/community/opinion")
         val body = req.body.readUtf8()
         assertThat(body).contains("\"scan_id\":\"sc-2\"")
         assertThat(body).contains("\"suggested_disease\":\"rust\"")
-        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
+        assertThat(body).doesNotContain("user_pseudo_id")
+        assertThat(body).doesNotContain("nickname")
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
-    fun submitCommunityOpinion_withoutAdoptedKey_failsWithoutARequest() {
-        // Community off and nothing adopted: the server would answer 401.
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                appContext,
-                CommunityOpinionRequest("sc-nokey", "u1", "healthy"),
-            )
-        }
-        assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.CommunityIdentityUnavailableException::class.java)
-        assertThat(server.requestCount).isEqualTo(0)
-    }
-
-    @Test
-    fun submitCommunityOpinion_423_mapsToLockedException() {
-        enqueueCommunityAdopt()
-        server.enqueue(MockResponse().setResponseCode(423))
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                appContext,
-                CommunityOpinionRequest("sc-locked", "u1", "healthy"),
-            )
-        }
-        assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
-        takeAndAssertCommunityAdopt()
-    }
-
-    @Test
-    fun communitySafety_postsReportAndBlockTargets() {
+    fun communitySafety_reportAndBlockNeverSendActorIds() {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{"ok":true,"created":true}"""),
         )
-        val report = runBlocking {
-            repo.reportCommunityContent("reader", "opinion", "co123", "spam_or_misleading")
-        }
-        assertThat(report.getOrNull()?.created).isTrue()
-        val reportRequest = server.takeRequest()
-        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
-        assertThat(reportRequest.body.readUtf8()).contains("\"target_id\":\"co123\"")
-
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"blocked":true}"""),
+                .setBody(
+                    """{"ok":true,"created":true,"block_id":"cb123456789012345678901234567890"}""",
+                ),
         )
-        val block = runBlocking {
-            repo.blockCommunityAuthor("reader", "scan", "cs123")
+
+        val reported = runBlocking {
+            repo.reportCommunityContent("opinion", "co-public", "hate_or_harassment")
         }
-        assertThat(block.getOrNull()?.blocked).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/safety/block")
+        val blocked = runBlocking { repo.blockCommunityAuthor("scan", "cs-public") }
+
+        assertThat(reported.getOrNull()).isTrue()
+        assertThat(blocked.getOrNull()?.blockId).startsWith("cb")
+        val reportRequest = server.takeRequest()
+        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
+        assertThat(reportRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val reportBody = reportRequest.body.readUtf8()
+        assertThat(reportBody).contains("\"target_type\":\"opinion\"")
+        assertThat(reportBody).contains("\"target_id\":\"co-public\"")
+        assertThat(reportBody).contains("\"reason\":\"hate_or_harassment\"")
+        assertThat(reportBody).doesNotContain("actor_id")
+
+        val blockRequest = server.takeRequest()
+        assertThat(blockRequest.path).isEqualTo("/api/community/safety/block")
+        assertThat(blockRequest.body.readUtf8()).doesNotContain("actor_id")
+    }
+
+    @Test
+    fun communitySafety_listsAndRemovesOnlyOpaqueBlockId() {
+        val blockId = "cb123456789012345678901234567890"
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"items":[{"block_id":"$blockId","nickname":"Fern","created_at":9}]}""",
+                ),
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val listed = runBlocking { repo.communityBlocks() }
+        val removed = runBlocking { repo.unblockCommunityAuthor(blockId) }
+
+        assertThat(listed.getOrNull()?.single()?.nickname).isEqualTo("Fern")
+        assertThat(removed.isSuccess).isTrue()
+        val listRequest = server.takeRequest()
+        assertThat(listRequest.path).isEqualTo("/api/community/safety/blocks")
+        assertThat(listRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val deleteRequest = server.takeRequest()
+        assertThat(deleteRequest.method).isEqualTo("DELETE")
+        assertThat(deleteRequest.path).isEqualTo("/api/community/safety/blocks/$blockId")
+        assertThat(deleteRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
+    }
+
+    @Test
+    fun guestCommunityReadStaysPublicWithoutBearer() {
+        val guestRepository = ScanRepository(
+            FakeScanDao(),
+            client,
+            authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[]}"""),
+        )
+
+        assertThat(
+            runBlocking { guestRepository.communityNearby(disease = null) }.isSuccess,
+        ).isTrue()
+        assertThat(server.takeRequest().getHeader("Authorization")).isNull()
+    }
+
+    @Test
+    fun signedCommunityReadRefreshesAndRetriesBearer() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[]}"""),
+        )
+
+        val result = runBlocking { repo.communityNearby(disease = null) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-2")
+    }
+
+    @Test
+    fun signedCommunityReadIsNeverFollowedToRedirectTarget() {
+        val redirectTarget = MockWebServer()
+        redirectTarget.start()
+        try {
+            redirectTarget.enqueue(
+                MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"items":[]}"""),
+            )
+            server.enqueue(
+                MockResponse().setResponseCode(302)
+                    .setHeader("Location", redirectTarget.url("/capture")),
+            )
+
+            val result = runBlocking { repo.communityNearby(disease = null) }
+
+            assertThat(result.isFailure).isTrue()
+            assertThat(server.takeRequest().getHeader("Authorization"))
+                .isEqualTo("Bearer access-1")
+            assertThat(redirectTarget.requestCount).isEqualTo(0)
+        } finally {
+            redirectTarget.shutdown()
+        }
     }
 
     @Test
@@ -901,61 +1118,133 @@ class ScanRepositoryNetworkTest {
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{"ok":true,"flagged":true}"""),
         )
-        val result = runBlocking { repo.requestSecondOpinion("sc-3", "u2") }
+        val result = runBlocking { repo.requestSecondOpinion("sc-3") }
         assertThat(result.getOrNull()).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/api/community/request-opinion")
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/request-opinion")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(request.body.readUtf8()).doesNotContain("user_pseudo_id")
+    }
+
+    @Test
+    fun getCommunityScanCounts_success_parsesCountMap() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
+        )
+        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
+        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
+        assertThat(counts["sc-1"]?.views).isEqualTo(7)
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/scan-counts")
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
+    }
+
+    @Test
+    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
+        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
+        assertThat(counts).isEmpty()
+        assertThat(server.requestCount).isEqualTo(0)
     }
 
     @Test
     fun recordCommunityView_firesPostWithBody() {
-        enqueueCommunityAdopt()
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-        runBlocking { repo.recordCommunityView("sc-5", "viewer-1", appContext) }
-        takeAndAssertCommunityAdopt()
+        runBlocking { repo.recordCommunityView("sc-5") }
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/community/view")
-        assertThat(req.getHeader("X-Community-Author-Key")).hasLength(64)
-        assertThat(req.body.readUtf8()).contains("\"scan_id\":\"sc-5\"")
+        val body = req.body.readUtf8()
+        assertThat(body).contains("\"scan_id\":\"sc-5\"")
+        assertThat(body).doesNotContain("user_pseudo_id")
+        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
     }
 
     @Test
-    fun registerPushToken_firesPostWithBody() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-        runBlocking { repo.registerPushToken("u-7", "fcm-token-xyz") }
-        val req = server.takeRequest()
-        assertThat(req.method).isEqualTo("POST")
-        assertThat(req.path).isEqualTo("/api/push/register")
-        assertThat(req.body.readUtf8()).contains("\"token\":\"fcm-token-xyz\"")
+    fun guestCommunityMutationFailsBeforeNetwork() {
+        val guestAuth = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
+        runBlocking { guestAuth.restore() }
+        val guestRepository = ScanRepository(
+            FakeScanDao(),
+            client,
+            authRepository = guestAuth,
+        )
+
+        val result = runBlocking {
+            guestRepository.submitCommunityOpinion(
+                CommunityOpinionRequest("scan-public", "leaf_spot"),
+            )
+        }
+
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(AuthenticationRequiredException::class.java)
+        assertThat(server.requestCount).isEqualTo(0)
     }
 
     @Test
-    fun adoptCommunityAuthor_sendsKeyAsHeaderNotInBody() {
+    fun protectedCommunityCallRefreshesOnceAndRetriesWithNewBearer() {
+        accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"ok":true,"author_id":"au_abc123","display_name":"Leafy Sage 7",
-                       "created_at":1,"last_seen_at":1,"status":"active"}""",
-                ),
+                .setBody("""{"scan_id":"s","ok":true,"opinions":[]}"""),
         )
-        val result = runBlocking {
-            repo.adoptCommunityAuthor("f".repeat(64), "Leafy Sage 7", "legacy-reader-7")
-        }
-        assertThat(result.getOrNull()?.authorId).isEqualTo("au_abc123")
 
-        val req = server.takeRequest()
-        assertThat(req.method).isEqualTo("POST")
-        assertThat(req.path).isEqualTo("/api/community/authors/adopt")
-        // The key travels as a header — never in the JSON body, never in the URL.
-        assertThat(req.getHeader("X-Community-Author-Key")).isEqualTo("f".repeat(64))
-        val body = req.body.readUtf8()
-        assertThat(body).doesNotContain("f".repeat(64))
-        assertThat(body).contains("\"seed_display_name\":\"Leafy Sage 7\"")
-        assertThat(body).contains("\"legacy_pseudo_id\":\"legacy-reader-7\"")
+        val result = runBlocking {
+            repo.submitCommunityOpinion(CommunityOpinionRequest("s", "leaf_spot"))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer access-2")
     }
 
-    private companion object {
-        const val EXIF_MARKER = "LeakyPhone9"
+    private fun assertMeteredHeaders(request: okhttp3.mockwebserver.RecordedRequest) {
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        val requestId = request.getHeader("X-Idempotency-Key")
+        assertThat(requestId).isNotNull()
+        assertThat(UUID.fromString(checkNotNull(requestId))).isNotNull()
+    }
+
+    private fun assertRefreshRetryReusesLogicalRequestId() {
+        assertThat(accountApi.refreshCalls).isEqualTo(1)
+        val first = server.takeRequest()
+        val retry = server.takeRequest()
+        assertThat(first.getHeader("Authorization")).isEqualTo("Bearer access-1")
+        assertThat(retry.getHeader("Authorization")).isEqualTo("Bearer access-2")
+        assertThat(first.getHeader("X-Idempotency-Key"))
+            .isEqualTo(retry.getHeader("X-Idempotency-Key"))
+    }
+
+    private class FakeVault : RefreshTokenVault {
+        private var token: String? = null
+        private var pendingRotationId: String? = null
+
+        override fun read(): String? = token
+
+        override fun prepareRefresh(): com.plantdiseases.app.auth.PreparedRefresh? = token?.let {
+            val rotationId = pendingRotationId
+                ?: "00000000-0000-4000-8000-000000000010".also { id -> pendingRotationId = id }
+            com.plantdiseases.app.auth.PreparedRefresh(it, rotationId)
+        }
+
+        override fun write(token: String) {
+            this.token = token
+            pendingRotationId = null
+        }
+
+        override fun clear() {
+            token = null
+            pendingRotationId = null
+        }
+    }
+
+    private object FakeInstallationId : InstallationIdProvider {
+        override fun get(): String = "00000000-0000-4000-8000-000000000099"
+
+        override fun rotate() = Unit
     }
 }

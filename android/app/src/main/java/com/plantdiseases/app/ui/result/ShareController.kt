@@ -55,8 +55,8 @@ class ShareController(
         activity.lifecycleScope.launch {
             val shareFile = try {
                 withContext(Dispatchers.IO) { createShareableImage(scan) }
-            } catch (e: Exception) {
-                Log.w(TAG, "Share image composition failed, falling back to text-only", e)
+            } catch (_: Exception) {
+                Log.w(TAG, "Share image composition failed; using text only")
                 null
             }
 
@@ -67,8 +67,8 @@ class ShareController(
 
             val imageUri = try {
                 FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", shareFile)
-            } catch (e: IllegalArgumentException) {
-                Log.w(TAG, "FileProvider URI failed, falling back to text-only", e)
+            } catch (_: IllegalArgumentException) {
+                Log.w(TAG, "Share URI failed; using text only")
                 launchShareTextOnly(shareText)
                 return@launch
             }
@@ -102,7 +102,7 @@ class ShareController(
         val rawW = boundsOpts.outWidth
         val rawH = boundsOpts.outHeight
         if (rawW <= 0 || rawH <= 0) {
-            throw ImageUtils.ImageDecodeException("Source image cannot be decoded: ${scan.imagePath}")
+            throw ImageUtils.ImageDecodeException("Source image cannot be decoded")
         }
         var inSampleSize = 1
         while (rawW / (inSampleSize * 2) >= maxDim && rawH / (inSampleSize * 2) >= maxDim) {
@@ -113,7 +113,7 @@ class ShareController(
             inMutable = true
         }
         val result = BitmapFactory.decodeFile(scan.imagePath, decodeOpts)
-            ?: throw ImageUtils.ImageDecodeException("Failed to decode image: ${scan.imagePath}")
+            ?: throw ImageUtils.ImageDecodeException("Failed to decode image")
 
         val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
             val ratio = maxDim.toFloat() / maxOf(result.width, result.height)

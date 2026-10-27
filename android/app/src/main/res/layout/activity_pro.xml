@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:title="@string/pro_title"
+        app:navigationIcon="@drawable/ic_back" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/content_gutter"
+            android:paddingTop="@dimen/space_md"
+            android:paddingBottom="@dimen/space_3xl">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_hero_card"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/space_2xl">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="@drawable/bg_glass_circle"
+                    android:contentDescription="@null"
+                    android:padding="14dp"
+                    android:src="@drawable/ic_moon"
+                    app:tint="@color/on_hero" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:fontFamily="sans-serif-black"
+                    android:gravity="center"
+                    android:letterSpacing="0.08"
+                    android:text="@string/pro_eyebrow"
+                    android:textColor="@color/on_hero_secondary"
+                    android:textSize="@dimen/text_caption" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:fontFamily="sans-serif-black"
+                    android:gravity="center"
+                    android:letterSpacing="-0.02"
+                    android:text="@string/pro_hero_title"
+                    android:textColor="@color/on_hero"
+                    android:textSize="28sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:gravity="center"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/pro_hero_body"
+                    android:textColor="@color/on_hero_secondary"
+                    android:textSize="@dimen/text_body" />
+
+                <TextView
+                    android:id="@+id/tv_plan_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:background="@drawable/bg_glass_dark_pill"
+                    android:fontFamily="sans-serif-medium"
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:paddingVertical="@dimen/space_sm"
+                    android:text="@string/pro_status_checking"
+                    android:textColor="@color/on_hero"
+                    android:textSize="@dimen/text_body_sm" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/pro_benefits_title"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:drawablePadding="@dimen/space_sm"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/pro_benefit_lunar"
+                        android:textColor="@color/on_surface"
+                        app:drawableStartCompat="@drawable/ic_check"
+                        app:drawableTint="@color/primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="32dp"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/pro_benefit_lunar_body"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:drawablePadding="@dimen/space_sm"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/pro_benefit_models"
+                        android:textColor="@color/on_surface"
+                        app:drawableStartCompat="@drawable/ic_check"
+                        app:drawableTint="@color/primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="32dp"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/pro_benefit_models_body"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:drawablePadding="@dimen/space_sm"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/pro_benefit_care"
+                        android:textColor="@color/on_surface"
+                        app:drawableStartCompat="@drawable/ic_check"
+                        app:drawableTint="@color/primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="32dp"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/pro_benefit_care_body"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:id="@+id/tv_choose_plan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xl"
+                android:text="@string/pro_choose_plan"
+                android:textAppearance="@style/TextAppearance.App.Headline" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_monthly"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/pro_monthly"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+                    <TextView
+                        android:id="@+id/tv_monthly_description"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm"
+                        android:visibility="gone"
+                        tools:text="Monthly subscription" />
+                    <TextView
+                        android:id="@+id/tv_monthly_price"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:fontFamily="sans-serif-black"
+                        android:text="@string/pro_price_loading"
+                        android:textColor="@color/primary"
+                        android:textSize="24sp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_monthly"
+                        style="@style/App.Button.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:enabled="false"
+                        android:text="@string/pro_subscribe" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_yearly"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/pro_yearly"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+                    <TextView
+                        android:id="@+id/tv_yearly_description"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm"
+                        android:visibility="gone"
+                        tools:text="Annual subscription" />
+                    <TextView
+                        android:id="@+id/tv_yearly_price"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:fontFamily="sans-serif-black"
+                        android:text="@string/pro_price_loading"
+                        android:textColor="@color/primary"
+                        android:textSize="24sp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_yearly"
+                        style="@style/App.Button.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:enabled="false"
+                        android:text="@string/pro_subscribe" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <ProgressBar
+                android:id="@+id/progress"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/space_lg"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tv_billing_message"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:gravity="center"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_sign_in"
+                style="@style/App.Button.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/pro_sign_in"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_restore"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/pro_restore" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_refresh"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/pro_refresh" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_manage_subscription"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/pro_manage_subscription"
+                android:visibility="gone" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:gravity="center"
+                android:lineSpacingExtra="2dp"
+                android:text="@string/pro_renewal_disclosure"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_caption" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

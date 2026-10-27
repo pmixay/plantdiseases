@@ -96,8 +96,8 @@ def test_empty_for_user_with_no_opinions(comm):
 
 
 def test_endpoint_returns_counts(client):
-    # The endpoint validates the id and returns the (empty, in the test DB) shape.
-    r = client.get("/api/community/my-scan-opinions/test-user-123")
+    # Ownership is derived from the access token; no stable id rides in the URL.
+    r = client.get("/api/community/my-scan-opinions")
     assert r.status_code == 200, r.text
     body = r.json()
     assert "scans" in body and "total_opinions" in body

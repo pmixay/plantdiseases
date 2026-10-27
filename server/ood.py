@@ -208,11 +208,11 @@ def parse_embedding_ood_config(meta: dict) -> EmbeddingOODConfig | None:
             embed_dim=embed_dim_raw,
             bank_file=bank_file_raw,
         )
-    except (KeyError, ValueError, TypeError) as e:
-        logger.warning("Malformed ood.embedding section in classes.json: %s", e)
+    except (KeyError, ValueError, TypeError):
+        logger.warning("Malformed embedding OOD model metadata")
         return None
     if cfg.method != "knn":
-        logger.warning("Unsupported ood.embedding method %r — ignoring", cfg.method)
+        logger.warning("Unsupported embedding OOD method; ignoring")
         return None
     if cfg.metric != "cosine":
         logger.warning(
@@ -311,8 +311,8 @@ def load_embedding_ood(model_dir: Path | None, meta: dict) -> EmbeddingOODScorer
         ) from e
     logger.info(
         "Embedding OOD loaded: method=%s metric=%s k=%d threshold=%.4f "
-        "bank=%d×%d from %s",
+        "bank=%d×%d",
         cfg.method, cfg.metric, scorer._k, cfg.threshold,
-        bank.shape[0], bank.shape[1], npz_path,
+        bank.shape[0], bank.shape[1],
     )
     return scorer

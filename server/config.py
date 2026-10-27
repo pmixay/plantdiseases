@@ -9,7 +9,9 @@ primary, documented configuration channel is the file.
 
 The config file is JSON so we don't take a YAML dependency. A
 ``config.example.json`` is committed; the operator copies it to
-``config.json`` and fills in secrets there.
+``config.json`` for non-secret settings. Direct secrets are accepted only in
+an explicitly declared test/development environment; production-like
+deployments use owner-only secret files.
 
 Lookup order for any key:
   1. ``config.json`` (if present and contains the key)
@@ -22,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -33,18 +36,18 @@ _CONFIG_PATH = Path(os.getenv("PLANTDISEASES_CONFIG", _CONFIG_DIR / "config.json
 
 def _load_file() -> dict[str, Any]:
     if not _CONFIG_PATH.exists():
-        logger.info("No config.json at %s — falling back to env vars / defaults", _CONFIG_PATH)
+        logger.info("No server config file; using environment and safe defaults")
         return {}
     try:
         with _CONFIG_PATH.open("r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
-            logger.error("config.json must be a JSON object; got %s", type(data).__name__)
+            logger.error("Server config must be a JSON object; using safe defaults")
             return {}
-        logger.info("Loaded server config from %s", _CONFIG_PATH)
+        logger.info("Loaded server config")
         return _flatten(data)
-    except Exception as e:  # noqa: BLE001
-        logger.error("Failed to parse %s: %s — ignoring", _CONFIG_PATH, e)
+    except Exception:  # noqa: BLE001 - config contents and paths stay out of logs
+        logger.error("Failed to parse server config; using safe defaults")
         return {}
 
 
@@ -103,7 +106,7 @@ def get(key: str, default: Any = None, cast: type | None = None) -> Any:
             raise ValueError(f"unrecognised boolean: {raw!r}")
         return cast(raw)
     except (TypeError, ValueError):
-        logger.warning("Bad value for %s=%r; using default %r", key, raw, default)
+        logger.warning("Invalid server configuration value; using safe default")
         return default
 
 
@@ -159,3 +162,70 @@ def onnx_intra_op_threads() -> int:
     sessions (classifier and detector) must agree on the key and default.
     """
     return get_int("ONNX_INTRA_OP_THREADS", 0)
+
+
+def get_secret(key: str, *, max_bytes: int = 8192) -> str:
+    """Load a bounded service secret without making production env-readable.
+
+    ``${key}_FILE`` is the production channel. A direct value remains useful
+    for hermetic tests and local development, but production rejects it. Any
+    ambiguity or unsafe file shape fails closed without logging a value/path.
+    """
+
+    direct = get_str(key, "").strip()
+    file_value = get_str(f"{key}_FILE", "").strip()
+    environment = get_str("ENVIRONMENT", "").strip().lower()
+    if direct and file_value:
+        logger.error("Secret has both direct and file configuration; disabling integration")
+        return ""
+    if direct:
+        if environment not in {"test", "development"}:
+            logger.error("Direct secret configuration is forbidden in this environment")
+            return ""
+        if len(direct.encode("utf-8")) > max_bytes or any(
+            character.isspace() for character in direct
+        ):
+            logger.error("Secret value has an invalid shape; disabling integration")
+            return ""
+        return direct
+    if not file_value:
+        return ""
+
+    path = Path(file_value)
+    descriptor = -1
+    try:
+        if not path.is_absolute():
+            raise ValueError
+        before_open = path.lstat()
+        if (
+            stat.S_ISLNK(before_open.st_mode)
+            or not stat.S_ISREG(before_open.st_mode)
+        ):
+            raise ValueError
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        file_stat = os.fstat(descriptor)
+        if (
+            file_stat.st_dev != before_open.st_dev
+            or file_stat.st_ino != before_open.st_ino
+            or not stat.S_ISREG(file_stat.st_mode)
+            or stat.S_IMODE(file_stat.st_mode) & 0o077
+            or file_stat.st_size <= 0
+            or file_stat.st_size > max_bytes
+        ):
+            raise ValueError
+        with os.fdopen(descriptor, "rb", closefd=True) as secret_stream:
+            descriptor = -1
+            raw = secret_stream.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            raise ValueError
+        value = raw.decode("utf-8").strip()
+        if not value or any(character.isspace() for character in value):
+            raise ValueError
+        return value
+    except (OSError, UnicodeError, ValueError):
+        logger.error("Secret file is unavailable or unsafe; disabling integration")
+        return ""
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)

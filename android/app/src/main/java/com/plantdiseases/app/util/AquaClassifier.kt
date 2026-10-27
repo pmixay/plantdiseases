@@ -152,8 +152,8 @@ class AquaClassifier private constructor(
                     interpreter.close()
                     throw e
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Aqua model unavailable: ${e.message}")
+            } catch (_: Exception) {
+                Log.w(TAG, "Aqua model unavailable")
                 null
             }
         }
@@ -264,9 +264,9 @@ class AquaClassifier private constructor(
                     val upright = applyExifOrientation(decoded, orientation)
                     if (upright !== decoded) decoded.recycle()
                     return upright
-                } catch (e: OutOfMemoryError) {
+                } catch (_: OutOfMemoryError) {
                     decoded?.recycle()
-                    Log.w(TAG, "OOM decoding for inference at sample=$sample; retrying smaller", e)
+                    Log.w(TAG, "Inference decode OOM; retrying smaller")
                     sample *= 2
                 }
             }

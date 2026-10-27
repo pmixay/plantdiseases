@@ -16,9 +16,11 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.di.appEntryPoint
+import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.runBlocking
 import org.hamcrest.Matchers.containsString
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 
 /**
@@ -29,6 +31,15 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class ResultActivityTest {
+
+    @Before
+    fun removeInterruptedTestScans() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<PlantDiseasesApp>()
+        val repository = appEntryPoint(app).scanRepository()
+        listOf("ui-test-1", "ui-test-legacy-ood").forEach { clientScanId ->
+            repository.getScanByClientScanId(clientScanId)?.let { repository.deleteScan(it.id) }
+        }
+    }
 
     @Test
     fun rendersStoredDiagnosisName() {
@@ -54,11 +65,15 @@ class ResultActivityTest {
         val intent = Intent(app, ResultActivity::class.java)
             .putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
 
-        ActivityScenario.launch<ResultActivity>(intent).use {
-            onView(withText("Leaf Spot")).check(matches(isDisplayed()))
+        try {
+            ActivityScenario.launch<ResultActivity>(intent).use {
+                val expectedName = if (LocaleHelper.isRussian(app)) "Пятнистость листьев" else "Leaf Spot"
+                onView(withId(R.id.tv_disease_name)).check(matches(withText(expectedName)))
+                onView(withId(R.id.tv_disease_name)).check(matches(isDisplayed()))
+            }
+        } finally {
+            runBlocking { scanRepository.deleteScan(scanId) }
         }
-
-        runBlocking { scanRepository.deleteScan(scanId) }
     }
 
     @Test
@@ -95,9 +110,11 @@ class ResultActivityTest {
 
         try {
             ActivityScenario.launch<ResultActivity>(intent).use {
-                onView(withText(R.string.inconclusive_diagnosis_name)).check(matches(isDisplayed()))
-                onView(withText(R.string.inconclusive_result_body)).check(matches(isDisplayed()))
+                onView(withId(R.id.tv_disease_name)).check(matches(withText(R.string.inconclusive_diagnosis_name)))
+                onView(withId(R.id.tv_disease_name)).check(matches(isDisplayed()))
+                onView(withId(R.id.tv_description)).check(matches(withText(R.string.inconclusive_result_body)))
                 onView(withText("Leaf Spot")).check(doesNotExist())
+                onView(withText("Пятнистость листьев")).check(doesNotExist())
                 onView(withText(containsString("83%"))).check(doesNotExist())
                 onView(withText("Disease-specific treatment must not render")).check(doesNotExist())
 

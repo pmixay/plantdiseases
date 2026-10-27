@@ -322,8 +322,8 @@ object AquaModelManager {
                 .onFailure { Log.w(TAG, "Could not prune old Aqua bundles: ${it.message}") }
             Log.i(TAG, "Aqua model installed (version=$version, bundle=$bundleSha)")
             true
-        } catch (e: Exception) {
-            Log.w(TAG, "Aqua model install failed: ${e.message}")
+        } catch (_: Exception) {
+            Log.w(TAG, "Aqua model install failed")
             if (!activated) finalDir?.deleteRecursively()
             false
         } finally {

@@ -1,9 +1,8 @@
 """Regression tests for ``main._client_ip`` — the spoofable-identity fix.
 
-``_client_ip`` is the identity every abuse control in the server is keyed on:
-the rate-limiter bucket (``RateLimitMiddleware``), the request log, and the
-hashed ``client_ip`` recorded with feedback, community opinions and telemetry.
-If a client can choose the value, none of those bind.
+``_client_ip`` is the transient identity used by in-process abuse controls such
+as ``RateLimitMiddleware`` and daily write caps. Neither the address nor its
+hash is persisted by feedback, account-era community writes, or telemetry.
 
 The bug this file pins down: the reference nginx config in DEPLOYMENT.md sets
 

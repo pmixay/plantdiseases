@@ -24,6 +24,7 @@ import com.plantdiseases.app.data.model.isEffectivelyAbstained
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.AquaInference
@@ -32,6 +33,7 @@ import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.TelemetryReporter
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,9 @@ class AnalysisActivity : AppCompatActivity() {
 
     @Inject
     lateinit var careRepository: CareRepository
+
+    @Inject
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
     private var imagePath: String = ""
 
     // When set (≥0), the resulting scan is auto-attached to this plant after
@@ -164,159 +169,138 @@ class AnalysisActivity : AppCompatActivity() {
         binding.progressBar.playAnimation()
 
         lifecycleScope.launch {
-            // Prepared lazily, only on the server path, so a successful
-            // on-device Aqua scan doesn't pay for a decode+resize+re-encode it
-            // never sends. Nullable so the finally deletes only what we made.
-            var uploadFile: File? = null
-            try {
-                val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
-                val family = forcedFamily ?: ModelFamilyPrefs.selected(this@AnalysisActivity)
-                TelemetryReporter.crumb("analyze_start:${family.id}")
+            val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
+            val family = forcedFamily ?: ModelFamilyPrefs.selected(this@AnalysisActivity)
+            TelemetryReporter.crumb("analyze_started_${family.id}")
 
-                // Aqua runs fully on-device when its TFLite model is installed —
-                // no network, minimal result. The picker only offers Aqua once
-                // the model is present, so a missing model simply falls through
-                // to the server (tagged family=aqua).
-                if (family == ModelFamily.AQUA && AquaClassifier.isAvailable(this@AnalysisActivity)) {
-                    val response = runAquaOnDevice(
-                        imagePath,
-                        imageQualityRejected = blurQaFailed,
-                    )
-                    if (response != null) {
-                        proceedWithResult(imagePath, response)
-                        return@launch
-                    }
-                    // Inference failed — fall through to the server.
-                }
-
-                // Server path: prepare the upload now. Decode + resize +
-                // re-encode is CPU/IO heavy and allocates several bitmaps —
-                // keep it off the main thread.
-                uploadFile = try {
-                    withContext(Dispatchers.IO) {
-                        ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
-                    }
-                } catch (e: ImageUtils.ImageDecodeException) {
-                    Log.w(TAG, "Image decode failed", e)
-                    TelemetryReporter.report("image_prepare", "decode_fail", message = e.message)
-                    showError(getString(R.string.image_decode_error_title), getString(R.string.image_decode_error_detail))
-                    return@launch
-                } catch (e: OutOfMemoryError) {
-                    Log.e(TAG, "Out of memory preparing upload", e)
-                    TelemetryReporter.report("image_prepare", "oom")
-                    showError(getString(R.string.image_too_large_title), getString(R.string.image_too_large_detail))
-                    return@launch
-                } catch (e: Exception) {
-                    Log.e(TAG, "Unexpected failure preparing upload", e)
-                    TelemetryReporter.report("image_prepare", "error", message = e.message)
-                    showError(getString(R.string.analysis_error), e.localizedMessage ?: getString(R.string.unknown_error))
-                    return@launch
-                }
-
-                val result = scanRepository.analyzeImage(
-                    uploadFile,
-                    locale = locale,
-                    family = family.id,
+            // Aqua runs fully on-device when its TFLite model is installed —
+            // no network, minimal result. The picker only offers Aqua once
+            // the model is present, so a missing model simply falls through
+            // to the server (tagged family=aqua).
+            if (family == ModelFamily.AQUA && AquaClassifier.isAvailable(this@AnalysisActivity)) {
+                val response = runAquaOnDevice(
+                    imagePath,
+                    imageQualityRejected = blurQaFailed,
                 )
-
-                result.onSuccess { response ->
+                if (response != null) {
                     proceedWithResult(imagePath, response)
-                }.onFailure { error ->
-                    when (error) {
-                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
-                            TelemetryReporter.report("analyze", "timeout", family = family.id)
+                    return@launch
+                }
+                // Inference failed — fall through to the server.
+            }
+
+            // The repository owns the sole upload sanitizer. Passing the kept
+            // local file here prevents a second transform and guarantees the
+            // exact sanitized bytes are shared by inference and later flows.
+            val result = scanRepository.analyzeImage(
+                File(imagePath),
+                locale = locale,
+                family = family.id,
+                trainingConsent = privacyConsentPrefs.trainingEnabled,
+                trainingConsentVersion = privacyConsentPrefs.trainingConsentVersion,
+            )
+
+            result.onSuccess { response ->
+                proceedWithResult(imagePath, response)
+            }.onFailure { error ->
+                when (error) {
+                    is ImageUtils.ImageDecodeException -> {
+                        TelemetryReporter.report("image_prepare", "decode_failed")
+                        showError(
+                            getString(R.string.image_decode_error_title),
+                            getString(R.string.image_decode_error_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
+                        TelemetryReporter.report("analyze", "timeout", family = family.id)
+                        showError(
+                            getString(R.string.server_not_responding),
+                            getString(R.string.server_not_responding_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
+                        // Offline — but if the on-device Aqua model is
+                        // installed, answer with it instead of failing.
+                        // (Had Aqua been the selected family we'd have run
+                        // it above; reaching here means a server family was
+                        // picked while offline, e.g. the default gamma.)
+                        // Don't silently fall back to Aqua when the user
+                        // explicitly forced a server family (the "improve
+                        // online" upgrade) — that would just reproduce the
+                        // offline result they're trying to replace.
+                        val offline = if (
+                            forcedFamily == null &&
+                            AquaClassifier.isAvailable(this@AnalysisActivity)
+                        ) {
+                            runAquaOnDevice(
+                                imagePath,
+                                imageQualityRejected = blurQaFailed,
+                            )
+                        } else {
+                            null
+                        }
+                        if (offline != null) {
+                            proceedWithResult(imagePath, offline)
+                        } else {
+                            // A real failure only when we couldn't recover
+                            // offline (forced-server upgrade, or no Aqua model).
+                            TelemetryReporter.report("analyze", "no_network", family = family.id)
                             showError(
-                                getString(R.string.server_not_responding),
-                                getString(R.string.server_not_responding_detail),
-                            )
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
-                            // Offline — but if the on-device Aqua model is
-                            // installed, answer with it instead of failing.
-                            // (Had Aqua been the selected family we'd have run
-                            // it above; reaching here means a server family was
-                            // picked while offline, e.g. the default gamma.)
-                            // Don't silently fall back to Aqua when the user
-                            // explicitly forced a server family (the "improve
-                            // online" upgrade) — that would just reproduce the
-                            // offline result they're trying to replace.
-                            val offline = if (
-                                forcedFamily == null &&
-                                AquaClassifier.isAvailable(this@AnalysisActivity)
-                            ) {
-                                runAquaOnDevice(
-                                    imagePath,
-                                    imageQualityRejected = blurQaFailed,
-                                )
-                            } else {
-                                null
-                            }
-                            if (offline != null) {
-                                proceedWithResult(imagePath, offline)
-                            } else {
-                                // A real failure only when we couldn't recover
-                                // offline (forced-server upgrade, or no Aqua model).
-                                TelemetryReporter.report("analyze", "no_network", family = family.id)
-                                showError(
-                                    getString(R.string.no_network),
-                                    getString(R.string.no_network_detail),
-                                )
-                            }
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
-                            TelemetryReporter.report("analyze", "rate_limited", family = family.id)
-                            showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException -> {
-                            TelemetryReporter.report("analyze", "server_starting", family = family.id)
-                            showError(
-                                getString(R.string.server_starting),
-                                getString(R.string.server_starting_detail),
-                            )
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.ModelUnavailableException -> {
-                            TelemetryReporter.report(
-                                "analyze",
-                                "model_unavailable",
-                                family = error.family,
-                                message = error.reason,
-                            )
-                            showError(
-                                getString(R.string.model_unavailable_title),
-                                getString(R.string.model_unavailable_detail),
-                            )
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException -> {
-                            TelemetryReporter.report("analyze", "unsupported_image", family = family.id)
-                            showError(
-                                getString(R.string.unsupported_image_title),
-                                getString(R.string.unsupported_image_detail),
-                            )
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.InvalidAnalysisResponseException -> {
-                            TelemetryReporter.report(
-                                "analyze",
-                                "invalid_envelope",
-                                family = family.id,
-                                message = error.violation,
-                            )
-                            showError(
-                                getString(R.string.analysis_contract_error_title),
-                                getString(R.string.analysis_contract_error_detail),
-                            )
-                        }
-                        else -> {
-                            Log.w(TAG, "Analysis failed", error)
-                            TelemetryReporter.report("analyze", "error", family = family.id, message = error.message ?: error.javaClass.simpleName)
-                            showError(
-                                getString(R.string.analysis_error),
-                                error.localizedMessage ?: getString(R.string.unknown_error)
+                                getString(R.string.no_network),
+                                getString(R.string.no_network_detail),
                             )
                         }
                     }
+                    is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
+                        TelemetryReporter.report("analyze", "rate_limited", family = family.id)
+                        showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ProRequiredException,
+                    is com.plantdiseases.app.data.repository.ScanRepository.QuotaExhaustedException -> {
+                        TelemetryReporter.report("analyze", "quota_denied", family = family.id)
+                        showError(
+                            getString(MeteredAccessUi.title(error)),
+                            getString(MeteredAccessUi.message(error)),
+                        )
+                        MeteredAccessUi.showDialog(this@AnalysisActivity, error)
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException -> {
+                        TelemetryReporter.report("analyze", "server_starting", family = family.id)
+                        showError(
+                            getString(R.string.server_starting),
+                            getString(R.string.server_starting_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.ModelUnavailableException -> {
+                        TelemetryReporter.report("analyze", "model_unavailable", family = error.family)
+                        showError(
+                            getString(R.string.model_unavailable_title),
+                            getString(R.string.model_unavailable_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException -> {
+                        TelemetryReporter.report("analyze", "unsupported_image", family = family.id)
+                        showError(
+                            getString(R.string.unsupported_image_title),
+                            getString(R.string.unsupported_image_detail),
+                        )
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.InvalidAnalysisResponseException -> {
+                        TelemetryReporter.report("analyze", "invalid_envelope", family = family.id)
+                        showError(
+                            getString(R.string.analysis_contract_error_title),
+                            getString(R.string.analysis_contract_error_detail),
+                        )
+                    }
+                    else -> {
+                        Log.w(TAG, "Analysis failed with an unclassified error")
+                        TelemetryReporter.report("analyze", "internal_error", family = family.id)
+                        showError(
+                            getString(R.string.analysis_error),
+                            getString(R.string.unknown_error),
+                        )
+                    }
                 }
-            } finally {
-                uploadFile?.let { f -> runCatching { f.delete() } }
             }
         }
     }
@@ -327,14 +311,8 @@ class AnalysisActivity : AppCompatActivity() {
         imagePath: String,
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ) {
-        val violation = response.diagnosticContractViolation()
-        if (violation != null) {
-            TelemetryReporter.report(
-                "analyze",
-                "invalid_envelope",
-                family = response.family,
-                message = violation,
-            )
+        if (response.diagnosticContractViolation() != null) {
+            TelemetryReporter.report("analyze", "invalid_envelope", family = response.family)
             showError(
                 getString(R.string.analysis_contract_error_title),
                 getString(R.string.analysis_contract_error_detail),
@@ -475,28 +453,22 @@ class AnalysisActivity : AppCompatActivity() {
                     bitmap.recycle()
                 }
                 val response = AquaInference.buildResponse(probs)
-                val violation = response.diagnosticContractViolation()
-                if (violation != null) {
-                    Log.w(TAG, "Aqua envelope violated diagnostic contract: $violation")
-                    TelemetryReporter.report(
-                        "aqua_inference",
-                        "invalid_envelope",
-                        family = "aqua",
-                        message = violation,
-                    )
+                if (response.diagnosticContractViolation() != null) {
+                    Log.w(TAG, "Aqua envelope violated diagnostic contract")
+                    TelemetryReporter.report("aqua_inference", "invalid_envelope", family = "aqua")
                     return@withContext null
                 }
                 response
-            } catch (e: OutOfMemoryError) {
+            } catch (_: OutOfMemoryError) {
                 // OutOfMemoryError is an Error, not an Exception — without this
                 // clause a decode/inference OOM escapes and crashes the app
                 // instead of falling back to the (OOM-guarded) server path.
-                Log.w(TAG, "Aqua on-device OOM; falling back to server", e)
-                TelemetryReporter.report("aqua_inference", "oom", family = "aqua")
+                Log.w(TAG, "Aqua on-device OOM; falling back to server")
+                TelemetryReporter.report("aqua_inference", "out_of_memory", family = "aqua")
                 null
-            } catch (e: Exception) {
-                Log.w(TAG, "Aqua on-device inference failed", e)
-                TelemetryReporter.report("aqua_inference", "error", family = "aqua", message = e.message)
+            } catch (_: Exception) {
+                Log.w(TAG, "Aqua on-device inference failed")
+                TelemetryReporter.report("aqua_inference", "internal_error", family = "aqua")
                 null
             } finally {
                 classifier?.close()

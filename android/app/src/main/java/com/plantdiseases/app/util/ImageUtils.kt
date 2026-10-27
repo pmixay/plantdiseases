@@ -10,7 +10,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -25,8 +24,8 @@ object ImageUtils {
 
     /**
      * Thrown when an image on disk cannot be decoded (corrupt, wrong format,
-     * truncated download, etc.). The message is human-friendly so the UI can
-     * surface it directly.
+     * truncated download, etc.). UI maps the type to a fixed localized message
+     * and never displays the exception text.
      */
     class ImageDecodeException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -77,100 +76,29 @@ object ImageUtils {
                 null,
             )
             true
-        } catch (e: Exception) {
-            Log.w(TAG, "Gallery save failed", e)
+        } catch (_: Exception) {
+            Log.w(TAG, "Gallery save failed")
             false
         }
     }
 
-    /**
-     * Compress and resize image for upload, written to a cache file.
-     *
-     * Same output as [encodeForUpload] (no EXIF, upright, longest edge at
-     * most [maxSize]); throws the same way.
-     */
+    /** Compatibility wrapper for non-network callers that still need a file.
+     * All upload paths use [UploadImageSanitizer] directly; this wrapper uses
+     * the same metadata-stripping implementation so it cannot become a weaker
+     * second encoding path. */
     @Throws(ImageDecodeException::class)
     fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
-        val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
-        outputFile.writeBytes(encodeForUpload(imagePath, maxSize))
-        return outputFile
-    }
-
-    /**
-     * Re-encode the photo at [imagePath] as an upright JPEG whose longest
-     * edge is at most [maxSize], and return the bytes.
-     *
-     * Every upload of a user photo goes through this (or
-     * [prepareImageForUpload]), never `File.readBytes()`: decoding to a
-     * Bitmap drops every EXIF tag, so GPS coordinates, camera model and
-     * timestamps cannot leave the device. A file on disk may still carry
-     * them — the plant-detail capture and gallery-import paths skip the
-     * cropper, which is the step that re-encodes in the main camera flow.
-     *
-     * Performs two-pass decoding (bounds first, then downsample) and
-     * always recycles intermediate bitmaps. Throws [ImageDecodeException]
-     * on unreadable files and [OutOfMemoryError] upstream if the device
-     * genuinely cannot fit the image — callers should catch both.
-     */
-    @Throws(ImageDecodeException::class)
-    fun encodeForUpload(imagePath: String, maxSize: Int = 1024): ByteArray {
-        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(imagePath, boundsOpts)
-        val rawW = boundsOpts.outWidth
-        val rawH = boundsOpts.outHeight
-        if (rawW <= 0 || rawH <= 0) {
-            throw ImageDecodeException("Image file is empty or corrupt: $imagePath")
-        }
-
-        var inSampleSize = 1
-        if (rawW > maxSize || rawH > maxSize) {
-            val halfW = rawW / 2
-            val halfH = rawH / 2
-            while (halfW / inSampleSize >= maxSize || halfH / inSampleSize >= maxSize) {
-                inSampleSize *= 2
-            }
-        }
-        val decodeOpts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
-        val original = BitmapFactory.decodeFile(imagePath, decodeOpts)
-            ?: throw ImageDecodeException("Failed to decode image: $imagePath")
-
-        // Track every intermediate bitmap so the finally can recycle them
-        // even when rotation or scaling throws OutOfMemoryError partway
-        // through. The previous structure only armed the recycle guard
-        // *after* rotateIfNeeded(), so an OOM inside it leaked `original`.
-        // Nullable trackers used only by the finally block; the non-null
-        // `rot` / `out` locals below keep the hot path smart-cast clean.
-        var rotated: Bitmap? = null
-        var scaled: Bitmap? = null
+        val sanitized = DefaultUploadImageSanitizer.sanitize(
+            File(imagePath),
+            maxDimension = maxSize,
+        )
+        val outputFile = File.createTempFile("sanitized_upload_", ".jpg", context.cacheDir)
         try {
-            val rot = try {
-                rotateIfNeeded(imagePath, original)
-            } catch (e: IOException) {
-                Log.w(TAG, "EXIF read failed, using unrotated bitmap", e)
-                original
-            }
-            rotated = rot
-
-            val ratio = maxSize.toFloat() / maxOf(rot.width, rot.height)
-            val out = if (ratio < 1f) {
-                Bitmap.createScaledBitmap(
-                    rot,
-                    (rot.width * ratio).toInt().coerceAtLeast(1),
-                    (rot.height * ratio).toInt().coerceAtLeast(1),
-                    true
-                )
-            } else {
-                rot
-            }
-            scaled = out
-
-            val stream = ByteArrayOutputStream()
-            out.compress(Bitmap.CompressFormat.JPEG, 85, stream)
-            return stream.toByteArray()
-        } finally {
-            scaled?.let { if (it !== rotated) it.recycle() }
-            rotated?.let { if (it !== original) it.recycle() }
-            original.recycle()
+            FileOutputStream(outputFile).use { it.write(sanitized.bytes) }
+            return outputFile
+        } catch (failure: Exception) {
+            outputFile.delete()
+            throw failure
         }
     }
 
@@ -200,8 +128,8 @@ object ImageUtils {
             // Preserve the original orientation tag — re-encoding strips EXIF.
             val orientation = try {
                 ExifInterface(imagePath).getAttribute(ExifInterface.TAG_ORIENTATION)
-            } catch (e: IOException) {
-                Log.w(TAG, "EXIF read failed before crop downscale", e)
+            } catch (_: IOException) {
+                Log.w(TAG, "EXIF read failed before crop downscale")
                 null
             }
 
@@ -228,8 +156,8 @@ object ImageUtils {
                             BitmapFactory.Options().apply { inSampleSize = s },
                         )
                         break
-                    } catch (e: OutOfMemoryError) {
-                        Log.w(TAG, "OOM in crop downscale at sample=$s; retrying smaller", e)
+                    } catch (_: OutOfMemoryError) {
+                        Log.w(TAG, "OOM in crop downscale; retrying smaller")
                         s *= 2
                     }
                 }
@@ -264,14 +192,14 @@ object ImageUtils {
                         setAttribute(ExifInterface.TAG_ORIENTATION, orientation)
                         saveAttributes()
                     }
-                } catch (e: IOException) {
-                    Log.w(TAG, "EXIF orientation re-write failed after crop downscale", e)
+                } catch (_: IOException) {
+                    Log.w(TAG, "EXIF orientation re-write failed after crop downscale")
                 }
             }
-        } catch (e: IOException) {
-            Log.w(TAG, "downscaleForCropInPlace failed for $imagePath", e)
-        } catch (e: OutOfMemoryError) {
-            Log.w(TAG, "downscaleForCropInPlace OOM for $imagePath", e)
+        } catch (_: IOException) {
+            Log.w(TAG, "Crop downscale failed")
+        } catch (_: OutOfMemoryError) {
+            Log.w(TAG, "Crop downscale ran out of memory")
         }
     }
 
@@ -290,15 +218,15 @@ object ImageUtils {
                     input.copyTo(output)
                 }
             } ?: run {
-                Log.w(TAG, "copyUriToFile: null input stream for $uri")
+                Log.w(TAG, "Image import returned no stream")
                 return null
             }
             file
-        } catch (e: IOException) {
-            Log.w(TAG, "copyUriToFile failed for $uri", e)
+        } catch (_: IOException) {
+            Log.w(TAG, "Image import failed")
             null
-        } catch (e: SecurityException) {
-            Log.w(TAG, "copyUriToFile: permission denied for $uri", e)
+        } catch (_: SecurityException) {
+            Log.w(TAG, "Image import permission denied")
             null
         }
     }
@@ -313,7 +241,7 @@ object ImageUtils {
 
     /** Apply an EXIF [orientation] to [bitmap], returning a new upright bitmap
      *  (or the original when no transform is needed). */
-    private fun applyExifOrientation(orientation: Int, bitmap: Bitmap): Bitmap {
+    internal fun applyExifOrientation(orientation: Int, bitmap: Bitmap): Bitmap {
         val matrix = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
@@ -363,11 +291,11 @@ object ImageUtils {
             val upright = applyExifOrientation(orientation, decoded)
             if (upright !== decoded) decoded.recycle()
             upright
-        } catch (e: IOException) {
-            Log.w(TAG, "decodeUpright failed for $uri", e)
+        } catch (_: IOException) {
+            Log.w(TAG, "Image decode failed")
             null
-        } catch (e: OutOfMemoryError) {
-            Log.w(TAG, "decodeUpright OOM for $uri", e)
+        } catch (_: OutOfMemoryError) {
+            Log.w(TAG, "Image decode ran out of memory")
             null
         }
     }
@@ -433,11 +361,11 @@ object ImageUtils {
             }
         }
         digest.digest().joinToString("") { "%02x".format(it) }
-    } catch (e: IOException) {
-        Log.w(TAG, "sha256Hex failed for ${file.path}", e)
+    } catch (_: IOException) {
+        Log.w(TAG, "Local image hash failed")
         null
-    } catch (e: SecurityException) {
-        Log.w(TAG, "sha256Hex: permission denied for ${file.path}", e)
+    } catch (_: SecurityException) {
+        Log.w(TAG, "Local image hash permission denied")
         null
     }
 

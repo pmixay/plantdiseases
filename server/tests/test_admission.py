@@ -7,6 +7,8 @@ that finds the server full (globally, or for its own IP) gets 503 with a
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 ROUTES = ["/api/analyze", "/api/identify"]
@@ -110,6 +112,12 @@ def test_no_slot_is_held_while_waiting_on_plantnet(client, admission, png_bytes,
     seen: list[int] = []
 
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        # /api/analyze starts PlantNet beside inference, so wait for the handler
+        # to finish inference and hand the slot back before sampling it; if the
+        # slot were held across the PlantNet wait this would time out at 1.
+        deadline = time.monotonic() + 3.0
+        while m._inference_inflight and time.monotonic() < deadline:
+            time.sleep(0.01)
         seen.append(m._inference_inflight)
         return {"available": False, "results": [], "source": "no_api_key"}
 

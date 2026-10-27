@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.garden.buildRoomPickerRow
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.SpeciesIdentity
@@ -197,8 +198,13 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                         )
                     }
                     candidateChips.visibility = View.VISIBLE
-                }.onFailure {
-                    statusText.text = getString(R.string.species_suggest_unavailable_body)
+                }.onFailure { error ->
+                    statusText.text = if (MeteredAccessUi.handles(error)) {
+                        MeteredAccessUi.showDialog(requireContext(), error)
+                        getString(MeteredAccessUi.message(error))
+                    } else {
+                        getString(R.string.species_suggest_unavailable_body)
+                    }
                 }
             }
         }
@@ -263,6 +269,8 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         "no_api_key" -> R.string.species_suggest_unavailable_no_key
         "auth_failed" -> R.string.species_suggest_unavailable_auth_failed
         "rate_limited" -> R.string.species_suggest_unavailable_rate_limited
+        "budget_exhausted" -> R.string.species_suggest_unavailable_budget_exhausted
+        "budget_unavailable" -> R.string.species_suggest_unavailable_budget_unavailable
         else -> R.string.species_suggest_unavailable_body
     }
 

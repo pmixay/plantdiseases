@@ -1,0 +1,390 @@
+name: ${COMPOSE_PROJECT_NAME:?Set the dedicated German beta Compose project name}
+
+x-beta-logging: &beta-logging
+  driver: local
+  options:
+    max-size: 5m
+    max-file: "3"
+
+x-account-environment: &account-environment
+  ENVIRONMENT: staging
+  AUTH_PROVIDER_MODE: remote
+  # Providers are independent; the account service requires at least one.
+  YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID:-}
+  EMAIL_PASSWORD_AUTH_ENABLED: "${EMAIL_PASSWORD_AUTH_ENABLED:-false}"
+  PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
+  ACCOUNT_ROOT_PATH: /plantdisease-test/id
+  ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
+  ACCOUNT_AUDIENCE: plantdiseases-app
+  ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+  RUSTORE_LIFECYCLE_ENABLED: "${RUSTORE_LIFECYCLE_ENABLED:-false}"
+  RUSTORE_CHECKOUT_ENABLED: "${RUSTORE_CHECKOUT_ENABLED:-false}"
+  RUSTORE_APPLICATION_ID: "${RUSTORE_APPLICATION_ID:-}"
+  RUSTORE_KEY_ID: "${RUSTORE_KEY_ID:-}"
+  RUSTORE_PRIVATE_KEY_FILE: /run/rustore-secrets/private-key.b64
+  RUSTORE_NOTIFICATION_KEY_FILE: /run/rustore-secrets/notification-key.b64
+  RUSTORE_PACKAGE_NAME: com.plantdiseases.app
+  RUSTORE_SUBSCRIPTION_PRODUCTS: plantdiseases_pro_monthly,plantdiseases_pro_yearly
+  RUSTORE_ALLOW_SANDBOX: "${RUSTORE_ALLOW_SANDBOX:-false}"
+  RUSTORE_NOTIFICATION_KEY_EPOCH: "${RUSTORE_NOTIFICATION_KEY_EPOCH:-staging-v1}"
+  RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "${RUSTORE_NOTIFICATION_MAX_ATTEMPTS:-8}"
+  RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "${RUSTORE_NOTIFICATION_MAX_AGE_HOURS:-168}"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-08-v1}"
+  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5}"
+  ENTITLEMENT_PRO_DAILY_LIMITS: "${ENTITLEMENT_PRO_DAILY_LIMITS:-gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20}"
+  COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
+  # Durable deletion journal on its own volume, outside every backed-up store.
+  ACCOUNT_DELETION_JOURNAL_DIR: /run/deletion-journal
+  CORS_ORIGINS: ""
+
+services:
+  beta-postgres:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    environment:
+      POSTGRES_DB: plantdisease_beta
+      # Keep the original bootstrap role name so an existing beta volume can
+      # be upgraded in place. This superuser is never used by an API.
+      POSTGRES_USER: beta_account
+      POSTGRES_PASSWORD: ${BETA_POSTGRES_ADMIN_PASSWORD:?Set the beta bootstrap password}
+      BETA_POSTGRES_RUNTIME_PASSWORD: ${BETA_POSTGRES_RUNTIME_PASSWORD:?Set the beta runtime password}
+      BETA_POSTGRES_MIGRATOR_PASSWORD: ${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set the beta migrator password}
+      BETA_POSTGRES_BACKUP_PASSWORD: ${BETA_POSTGRES_BACKUP_PASSWORD:?Set the beta backup password}
+      PGDATA: /var/lib/postgresql/18/docker
+    expose:
+      - "5432"
+    volumes:
+      - beta_postgres:/var/lib/postgresql
+      - type: bind
+        source: ./postgres-init
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+    networks:
+      - beta-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beta_account -d plantdisease_beta"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging: *beta-logging
+
+  # docker-entrypoint-initdb.d runs only for a fresh volume. This explicit,
+  # idempotent pass also provisions least-privilege roles and transfers the
+  # existing beta_account-owned schema before every Alembic migration.
+  beta-account-role-upgrade:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    entrypoint: ["/bin/sh", "/role-init/10-account-roles.sh"]
+    environment:
+      PGHOST: beta-postgres
+      PGPORT: "5432"
+      PGPASSWORD: ${BETA_POSTGRES_ADMIN_PASSWORD:?Set the existing beta bootstrap password}
+      POSTGRES_DB: plantdisease_beta
+      POSTGRES_USER: beta_account
+      BETA_POSTGRES_RUNTIME_PASSWORD: ${BETA_POSTGRES_RUNTIME_PASSWORD:?Set a 64-hex runtime password}
+      BETA_POSTGRES_MIGRATOR_PASSWORD: ${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set a 64-hex migrator password}
+      BETA_POSTGRES_BACKUP_PASSWORD: ${BETA_POSTGRES_BACKUP_PASSWORD:?Set a 64-hex backup password}
+    depends_on:
+      beta-postgres:
+        condition: service_healthy
+    volumes:
+      - ./postgres-init:/role-init:ro
+    networks:
+      - beta-private
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 32
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-account-keygen:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment:
+      ENVIRONMENT: test
+    command:
+      - python
+      - -m
+      - app.generate_test_keys
+      - /run/account-secrets
+      - --internal-token-directory
+      - /run/internal-token
+    network_mode: none
+    volumes:
+      - beta_account_keys:/run/account-secrets
+      - beta_internal_token:/run/internal-token
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-account-migrate:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account_migrator:${BETA_POSTGRES_MIGRATOR_PASSWORD:?Set the beta migrator password}@beta-postgres/plantdisease_beta
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        python -m alembic upgrade head
+        python /role-contract/converge-runtime-grants.py --contract german-beta
+    depends_on:
+      beta-account-role-upgrade:
+        condition: service_completed_successfully
+      beta-account-keygen:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
+      - type: bind
+        source: ${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore beta secret directory}
+        target: /run/rustore-secrets
+        read_only: true
+      - ./converge-runtime-grants.py:/role-contract/converge-runtime-grants.py:ro
+    networks:
+      - beta-private
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-account-api:
+    image: ${BETA_ACCOUNT_IMAGE:?Set an immutable account image with an sha256 digest}
+    environment:
+      <<: *account-environment
+      ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account_runtime:${BETA_POSTGRES_RUNTIME_PASSWORD:?Set the beta runtime password}@beta-postgres/plantdisease_beta
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - ${BETA_FORWARDED_ALLOW_IPS:?Set the exact trusted Docker proxy peer IPs}
+      - --proxy-headers
+      - --no-access-log
+      - --limit-concurrency
+      - "64"
+      - --timeout-keep-alive
+      - "5"
+    depends_on:
+      beta-account-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
+      - beta_deletion_journal:/run/deletion-journal
+      - type: bind
+        source: ${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore beta secret directory}
+        target: /run/rustore-secrets
+        read_only: true
+    ports:
+      - name: account-api
+        target: 8000
+        published: ${ACCOUNT_API_PORT:?Set the dedicated account loopback port}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - beta-private
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+  beta-app-api:
+    image: ${BETA_APP_IMAGE:?Set an immutable application image with an sha256 digest}
+    environment:
+      ENVIRONMENT: staging
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "false"
+      ACCOUNT_FEATURE_EXPECTED: "true"
+      APP_ROOT_PATH: /plantdisease-test
+      POPULAR_WARM_ENABLED: "false"
+      FRONTIER_ENABLED: "false"
+      TRAINING_CAPTURE_ENABLED: "false"
+      TRAINING_CONSENT_VERSION: model-improvement-v1
+      TELEMETRY_ENABLED: "false"
+      TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
+      ACCOUNT_API_BASE_URL: http://beta-account-api:8000/
+      ACCOUNT_ISSUER: https://pdis.arbuz.lol/plantdisease-test/id
+      ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_INTERNAL_BASE_URL: http://beta-account-api:8000
+      ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
+      # Push is intentionally disabled for this beta; owner updates are polled.
+      ACCOUNT_NOTIFICATION_URL: ""
+      INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+      MODELS_DIR: /app/models
+      AQUA_STATIC_DIR: /app/models/aqua
+      ONNX_INTRA_OP_THREADS: "1"
+      INFER_WORKERS: "1"
+      LOG_DIR: /data/logs
+      COMMUNITY_DB_PATH: /data/community/community-beta.db
+      COMMUNITY_THUMB_DIR: /data/community-thumbs
+      TRAINING_DB_PATH: /data/training/training-beta.db
+      TRAINING_IMAGE_DIR: /data/training-images
+      TELEMETRY_DB_PATH: /data/telemetry/telemetry-beta.db
+      PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
+      AI_CACHE_DIR: /data/app-cache/ai
+      PLANTNET_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      FCM_CREDENTIALS_FILE: ""
+      CORS_ORIGINS: ""
+      TRUSTED_PROXIES: ${BETA_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
+      RATE_LIMIT_RPS: "25"
+      RATE_LIMIT_BURST: "40"
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - ${BETA_FORWARDED_ALLOW_IPS:?Set the exact trusted Docker proxy peer IPs}
+      - --proxy-headers
+      - --no-access-log
+      - --limit-concurrency
+      - "32"
+      - --timeout-keep-alive
+      - "5"
+    depends_on:
+      beta-account-api:
+        condition: service_healthy
+    ports:
+      - name: app-api
+        target: 8000
+        published: ${APP_API_PORT:?Set the dedicated application loopback port}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ${BETA_MODELS_DIR:?Set the absolute host directory containing the PlantVision model bundle}
+        target: /app/models
+        read_only: true
+      - beta_internal_token:/run/internal-token:ro
+      - beta_app_data:/app/data
+      - beta_community:/data/community
+      - beta_thumbnails:/data/community-thumbs
+      - beta_training:/data/training
+      - beta_training_images:/data/training-images
+      - beta_telemetry:/data/telemetry
+      - beta_app_cache:/data/app-cache
+      - beta_app_logs:/data/logs
+    networks:
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: 1.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "10002"
+    cap_drop:
+      - ALL
+    logging: *beta-logging
+
+networks:
+  beta-private:
+    internal: true
+  beta-edge:
+    ipam:
+      config:
+        - subnet: ${BETA_EDGE_SUBNET:?Set the dedicated non-conflicting beta edge subnet}
+          gateway: ${BETA_EDGE_GATEWAY:?Set the beta edge gateway address}
+
+volumes:
+  beta_postgres:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_postgres
+  beta_account_keys:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_account_keys
+  beta_internal_token:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_internal_token
+  beta_deletion_journal:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_deletion_journal
+  beta_app_data:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_data
+  beta_community:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_community
+  beta_thumbnails:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_thumbnails
+  beta_training:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_training
+  beta_training_images:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_training_images
+  beta_telemetry:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_telemetry
+  beta_app_cache:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_cache
+  beta_app_logs:
+    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_logs
