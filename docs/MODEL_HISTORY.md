@@ -307,8 +307,8 @@ the diff of `train_counts` / `source_inventory`.
 - **Holdout, same rows as 2.7.2, neither trained on them:** supported disease
   mF1 0.897 vs 0.863, accuracy 0.910 vs 0.918. Healthy precision there fell
   0.85 → 0.784: 15 of 116 scorch, 5 nutrient and 5 powdery rows are called
-  healthy. Not yet paired-bootstrapped against 2.7.2; read the mF1 gain as
-  unconfirmed (pests n=3 and leaf_spot n=16 sit in the macro).
+  healthy. Paired-bootstrapped against 2.7.2 on 2026-10-27 (below): the mF1
+  gain is **not confirmed** (pests n=3 and leaf_spot n=16 sit in the macro).
 - New instrument (one served pass, `detector.onnx`, 1024 px upload):
   end-to-end `served_vote` 0.824 vs whole-image 0.865 (fold 0.846, crop-only
   0.763); nutrient loses most (0.86 → 0.69). Stage 1 no-box at conf 0.25:
@@ -379,6 +379,39 @@ the diff of `train_counts` / `source_inventory`.
   "cliff" as the loss of that source, not of a scorch capability. 2.7.5 has
   never seen hibiscus (deny-listed branch), and it shows: healthy hibiscus is
   misread too.
+
+- **Paired vs 2.7.2 on the shared holdout (2026-10-27).** Both models were
+  scored on the identical 535 rows neither trained on, row bootstrap (5,000
+  resamples, one row = one resample unit; the v8 manifest has no capture-family
+  IDs, so the CIs do not control pseudo-replication and are optimistic). The
+  tree was rebuilt from the Kaggle supplement v8 manifest with §2's routing
+  (`eval_ok`, not boundary, `sha1(source|plant_id) % 1000 < 300`): 535 rows,
+  every per-class count equal to 2.7.2's (scorch 116, NAP 112, healthy 99,
+  nutrient 80, powdery 55, gray_mold 54, leaf_spot 16, pests 3, viral 0), saved
+  as RGB JPEG q92 like the notebook does. Check on the rebuild: its whole-image
+  argmax reads 2.7.5 at mF1 0.904 / accuracy 0.916 against this row's 0.897 /
+  0.910. 2.7.2 is an unbound legacy bundle (`--allow-legacy-unbound`) with no
+  fitted served gate, so its served pass runs with the OOD overlay off.
+
+  | | served 2.7.2 | served 2.7.5 | argmax 2.7.2 | argmax 2.7.5 |
+  |---|---|---|---|---|
+  | disease mF1 [95 % CI] | 0.788 [0.712, 0.855] | 0.841 [0.767, 0.894] | 0.882 [0.811, 0.933] | 0.904 [0.831, 0.951] |
+  | Δ (2.7.5 − 2.7.2), 95 % CI | | +0.054 [−0.031, +0.137] | | +0.022 [−0.059, +0.104] |
+  | accuracy (McNemar) | 0.851 | 0.839 (34 vs 28, p=0.53) | 0.914 | 0.916 (18 vs 19, p=1.0) |
+  | scorch recall / scorch → "healthy" | 0.655 / 21 | 0.629 / 31 | 0.836 / 9 | 0.828 / 14 |
+  | sick → "healthy" (of 324) | 39 | 49 | 18 | 22 |
+  | healthy precision (served) | 0.701 | 0.662 (Δ −0.039 [−0.097, +0.015]) | | |
+  | leaf_spot precision (n=16 true) | 0.452 | 0.652 (Δ +0.201 [+0.024, +0.388]) | | |
+
+  **Read:** no significant difference on any aggregate. The mF1 point
+  estimates favour 2.7.5 but both CIs straddle 0, and accuracy is flat. The one
+  significant per-class move is leaf_spot precision, on 16 true rows. The
+  healthy lean is not better: scorch → "healthy" rises 21 → 31 served and
+  9 → 14 argmax (per-class recall CIs include 0). So 2.7.5's lead over 2.6.8
+  on never-trained photos stands, but its gain over 2.7.2 on the holdout does
+  not. The 2026-10-08 served 2.7.5 holdout figures above (mF1 0.817, scorch
+  0.655 / 46) differ from this run's (0.841, 0.629 / 49) by a few rows; the
+  two evals did not use the same files.
 
 ## Where the dataset rounds show up
 

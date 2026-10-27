@@ -31,9 +31,9 @@ Each line names its section below. ★ = a human decision or human-only task.
 1. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-2. **Confirm the 2.7.5 holdout gain on Colab** (Model track → "2.7.5 in
-   production"). Pair 2.7.5 against 2.7.2 on the shared 535-row holdout. No
-   training, one short session.
+2. **Add the augmentation-profile off switch** (Model track → "Open — code
+   only"), then spend one paired Colab run on it. The 2.7.5-vs-2.7.2 holdout
+   check is done and reads as a tie.
 3. **Close the likes/views key gap** (Security). Small, and the one open
    security item.
 4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
@@ -84,23 +84,19 @@ neither model trained on, 2.7.5 beats 2.6.8: served disease mF1 +0.059
 holdout rows. Its known weakness is the healthy lean. Holdout healthy
 precision is 0.784, and 15 of its 25 wrong "healthy" calls are scorch.
 Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
-comparison set yet.
+comparison set yet. Against 2.7.2 on the shared 535-row holdout it is a
+tie within noise (2026-10-27 paired bootstrap, `MODEL_HISTORY.md`).
 
 - [ ] **Watch feedback that corrects "healthy" to scorch**
       (`server/tools/analyse_feedback.py` over the feedback store). That is
       where the holdout says 2.7.5 errs, and production feedback is the only
       real-distribution signal until T exists.
-- [ ] **Confirm the holdout gain against 2.7.2** (Colab). Neither model
-      trained on the 535 rows, and row 16 still reads the mF1 gain as
-      unconfirmed. Inputs: the 2.7.5 bundle
-      ([Drive](https://drive.google.com/file/d/1jU2uX7Yb-N-A8Enu2f5XytUJRR-f04nv/view?usp=sharing),
-      manifest-bound) and the 2.7.2 bundle (ledger row 15, unbound, so
-      `--allow-legacy-unbound`). The holdout tree is notebook §2's
-      `data_v2/classification/val/holdout`, built with the notebook still at
-      `MODEL_VERSION = '2.7.5'`, because §2 routes supplement rows by that
-      string. Score both with `tools/paired_eval.py` (served, then
-      `--argmax` as a second reading), then `tools/eval_bootstrap.py`. Record
-      the result in `MODEL_HISTORY.md` row 16.
+- [x] **Holdout gain against 2.7.2: not confirmed** (2026-10-27, no training
+      needed). Served disease mF1 +0.054 [−0.031, +0.137], argmax +0.022
+      [−0.059, +0.104], accuracy flat, and scorch → "healthy" rose 21 → 31
+      served. The details and caveats are in `MODEL_HISTORY.md`. Treat 2.7.5 as
+      no better than 2.7.2 on the holdout and better than 2.6.8 on unseen
+      photos. T_v1 is what will settle it.
 
 The notebook's `MODEL_VERSION` is `2.7.5`, the same as the deployed bundle, and
 stays that way until the next run is configured.
