@@ -6,8 +6,10 @@ its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
 (deploy + Android signing/FCM), `../server/models/MODEL_CARD.md`
 (version-agnostic; per-run numbers ship as `model_card.json` in each bundle).
 
-Every item below was re-verified against the tree on 2026-10-26 (no code has
-landed on `main` since 2026-10-11). Line references are as of that date.
+Code-checkable items below were re-verified against the tree on 2026-10-26 (no
+code has landed on `main` since 2026-10-11); the data and human-task items are
+status as last recorded, not something the tree can show. Line references are
+as of that date.
 
 ---
 
@@ -16,7 +18,7 @@ landed on `main` since 2026-10-11). Line references are as of that date.
 | track | state |
 |---|---|
 | **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. |
-| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
+| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). On the shared holdout it is a statistical tie with 2.7.2 (2026-10-27). |
 | **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
 | **Security** | The August audit is closed in code. Second opinions need the author key 1.9 sends, so older builds can no longer post them (decided). One follow-up is open: likes and views. |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
@@ -85,18 +87,14 @@ holdout rows. Its known weakness is the healthy lean. Holdout healthy
 precision is 0.784, and 15 of its 25 wrong "healthy" calls are scorch.
 Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
 comparison set yet. Against 2.7.2 on the shared 535-row holdout it is a
-tie within noise (2026-10-27 paired bootstrap, `MODEL_HISTORY.md`).
+tie within noise (served mF1 +0.054 [−0.031, +0.137], argmax +0.022
+[−0.059, +0.104], scorch → "healthy" up 21 → 31; paired bootstrap of
+2026-10-27 in `MODEL_HISTORY.md`). Only the locked test set T can settle it.
 
 - [ ] **Watch feedback that corrects "healthy" to scorch**
       (`server/tools/analyse_feedback.py` over the feedback store). That is
       where the holdout says 2.7.5 errs, and production feedback is the only
       real-distribution signal until T exists.
-- [x] **Holdout gain against 2.7.2: not confirmed** (2026-10-27, no training
-      needed). Served disease mF1 +0.054 [−0.031, +0.137], argmax +0.022
-      [−0.059, +0.104], accuracy flat, and scorch → "healthy" rose 21 → 31
-      served. The details and caveats are in `MODEL_HISTORY.md`. Treat 2.7.5 as
-      no better than 2.7.2 on the holdout and better than 2.6.8 on unseen
-      photos. T_v1 is what will settle it.
 
 The notebook's `MODEL_VERSION` is `2.7.5`, the same as the deployed bundle, and
 stays that way until the next run is configured.
