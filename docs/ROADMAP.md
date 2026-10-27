@@ -31,8 +31,9 @@ Each line names its section below. ★ = a human decision or human-only task.
 1. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-2. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
-   in production"). A one-line notebook change.
+2. **Confirm the 2.7.5 holdout gain on Colab** (Model track → "2.7.5 in
+   production"). Pair 2.7.5 against 2.7.2 on the shared 535-row holdout. No
+   training, one short session.
 3. **Close the likes/views key gap** (Security). Small, and the one open
    security item.
 4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
@@ -89,13 +90,20 @@ comparison set yet.
       (`server/tools/analyse_feedback.py` over the feedback store). That is
       where the holdout says 2.7.5 errs, and production feedback is the only
       real-distribution signal until T exists.
-- [ ] **Confirm the holdout gain against 2.7.2.** Pair 2.7.5 against 2.7.2
-      on the shared 535-row holdout with `tools/eval_bootstrap.py` (no GPU).
-      Neither model trained on it, and row 16 still reads the mF1 gain as
-      unconfirmed.
-- [ ] **Bump `MODEL_VERSION`** (notebook §1, still `2.7.5`) before the next
-      Colab run, so its bundle and `first_seen_model_version` stamps do not
-      collide with the deployed one.
+- [ ] **Confirm the holdout gain against 2.7.2** (Colab). Neither model
+      trained on the 535 rows, and row 16 still reads the mF1 gain as
+      unconfirmed. Inputs: the 2.7.5 bundle
+      ([Drive](https://drive.google.com/file/d/1jU2uX7Yb-N-A8Enu2f5XytUJRR-f04nv/view?usp=sharing),
+      manifest-bound) and the 2.7.2 bundle (ledger row 15, unbound, so
+      `--allow-legacy-unbound`). The holdout tree is notebook §2's
+      `data_v2/classification/val/holdout`, built with the notebook still at
+      `MODEL_VERSION = '2.7.5'`, because §2 routes supplement rows by that
+      string. Score both with `tools/paired_eval.py` (served, then
+      `--argmax` as a second reading), then `tools/eval_bootstrap.py`. Record
+      the result in `MODEL_HISTORY.md` row 16.
+
+The notebook's `MODEL_VERSION` is `2.7.5`, the same as the deployed bundle, and
+stays that way until the next run is configured.
 
 ### Open — code only (no data needed)
 

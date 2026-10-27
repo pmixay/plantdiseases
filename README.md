@@ -119,7 +119,7 @@ that gap is a data problem first, so that is what the roadmap's critical path ta
 | | Work left |
 |---|---|
 | 🔴 **Critical path** | Collect **v9 data** — 400 early-stage scorch families with boxes · carve the locked test set **T_v1** from 80 export rows · build **OOD benchmark v3** |
-| 🟠 **Before the next training run** | Bump `MODEL_VERSION` · confirm the 2.7.5-vs-2.7.2 holdout gain with a paired bootstrap · ablate the augmentation profile |
+| 🟠 **Model checks** | Confirm the 2.7.5-vs-2.7.2 holdout gain with a paired bootstrap on Colab · ablate the augmentation profile |
 | 🟡 **Hardening** | Likes and views still accept a key-less pseudo-id · Aqua has no classifier-side OOD signal |
 | 🔵 **Refactors** | Split `main.py` (~6k lines) into routers · split `ScanRepository` · retire Gson · type-check the server |
 
