@@ -1,0 +1,52 @@
+# Copy to the operator-owned RU_EGRESS_PROXY_CONFIG_DIR as squid.conf only
+# after replacing the two invalid example domains below with reviewed exact
+# hosts. Do not add broad TLD or wildcard-cloud allowlists.
+
+http_port 3128
+visible_hostname plantdisease-ru-egress
+
+acl CONNECT method CONNECT
+acl TLS_port port 443
+acl forbidden_destination dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10
+acl forbidden_destination dst 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12
+acl forbidden_destination dst 192.0.0.0/24 192.168.0.0/16 224.0.0.0/4
+acl forbidden_destination dst ::1/128 fc00::/7 fe80::/10 ff00::/8
+
+acl provider_hosts dstdomain login.yandex.ru id.vk.ru
+# Server-side purchase validation and JWE authorization use this single
+# RuStore Public API host. Billing is still disabled until release gates pass.
+acl billing_hosts dstdomain public-api.rustore.ru
+# The only PlantNet API destination used by species identification. The API
+# key stays inside the TLS tunnel and never appears in Squid logs.
+acl plantnet_hosts dstdomain my-api.plantnet.org
+# Exact hosts used by the enabled species-information/photo paths. No account
+# token or internal-service header is forwarded to these public content hosts.
+acl content_hosts dstdomain en.wikipedia.org ru.wikipedia.org
+acl content_hosts dstdomain commons.wikimedia.org upload.wikimedia.org
+acl content_hosts dstdomain translate.googleapis.com
+# OpenRouter remains credential-disabled until the privacy, ZDR, model-region,
+# cost-budget, and legal gates are approved. This exact host does not by itself
+# authorize the feature or any downstream model-provider hostname.
+acl llm_router_host dstdomain openrouter.ai
+acl ml_worker_host dstdomain replace-with-exact-german-ml-host.invalid
+acl backup_host dstdomain replace-with-exact-russian-backup-host.invalid
+
+http_access deny forbidden_destination
+http_access allow CONNECT TLS_port provider_hosts
+http_access allow CONNECT TLS_port billing_hosts
+http_access allow CONNECT TLS_port plantnet_hosts
+http_access allow CONNECT TLS_port content_hosts
+http_access allow CONNECT TLS_port llm_router_host
+http_access allow CONNECT TLS_port ml_worker_host
+http_access allow CONNECT TLS_port backup_host
+http_access deny all
+
+# The proxy carries credentials in CONNECT tunnels; keep request/access logs
+# disabled and collect only aggregate process health outside Squid.
+access_log none
+cache_log /dev/null
+cache_store_log none
+cache deny all
+via off
+forwarded_for delete
+request_header_access X-Forwarded-For deny all

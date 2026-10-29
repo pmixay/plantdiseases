@@ -6,6 +6,7 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.util.Calendar
 
 // TreatmentPlanFactory builds bullets/products via org.json.JSONArray, which
@@ -13,6 +14,7 @@ import java.util.Calendar
 // true) instead of throwing — Robolectric is required to get a real
 // implementation, not just to avoid a crash.
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class TreatmentPlanFactoryTest {
 
     private fun startedAt(): Long = Calendar.getInstance().apply {

@@ -58,6 +58,56 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.account.AccountActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.pro.ProActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${RUSTORE_PAY_SCHEME}" />
+            </intent-filter>
+        </activity>
+
+        <!-- The SDK dependencies remain compile-time available, but every
+             provider component is disabled unless that provider's own mobile
+             configuration is complete. This keeps Yandex and VK independent
+             and closes unused exported redirect handlers. -->
+        <activity
+            android:name="com.yandex.authsdk.internal.AuthSdkActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.ChromeTabLoginActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.WebViewLoginActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.yandex.authsdk.internal.ChromeTabDataActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}" />
+        <activity-alias
+            android:name="com.yandex.authsdk.YandexOauthClientIdActivity"
+            android:enabled="${YANDEX_OAUTH_ENABLED}"
+            android:targetActivity="com.yandex.authsdk.internal.ChromeTabDataActivity"
+            tools:replace="android:enabled" />
+
+        <activity
+            android:name="com.vk.id.internal.auth.AuthActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.vk.id.internal.auth.RedirectUriReceiverActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+        <activity
+            android:name="com.vk.id.captcha.web.VKCaptchaWebViewActivity"
+            android:enabled="${VKID_OAUTH_ENABLED}" />
+
+        <activity
             android:name=".ui.analysis.AnalysisActivity"
             android:exported="false"
             android:screenOrientation="portrait"
@@ -126,6 +176,11 @@
 
         <activity
             android:name=".ui.camera.WaterCalculatorActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.community.CommunityProfileActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
 
@@ -223,6 +278,21 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="community" />
+
+        <!-- Public RuStore Console identifiers. The Pay content provider is
+             disabled in unconfigured/recovery builds, so a blank local setup
+             remains a normal supported state and never touches the SDK. -->
+        <meta-data
+            android:name="console_app_id_value"
+            android:value="${RUSTORE_CONSOLE_APP_ID}" />
+        <meta-data
+            android:name="sdk_pay_scheme_value"
+            android:value="${RUSTORE_PAY_SCHEME}" />
+
+        <provider
+            android:name="ru.rustore.sdk.pay.RuStorePayContentProvider"
+            android:enabled="${RUSTORE_PAY_ENABLED}"
+            tools:replace="android:enabled" />
 
     </application>
 </manifest>

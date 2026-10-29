@@ -3,13 +3,13 @@ package com.plantdiseases.app.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.push.OpinionNotifier
 import com.plantdiseases.app.util.OpinionPrefs
-import com.plantdiseases.app.util.TelemetryIds
 
 /**
- * Periodically polls the server for second opinions on THIS install's shared
+ * Periodically polls the server for second opinions on the signed account's
  * scans and posts a notification when a new one appears. The per-scan view
  * already exists (the result screen's "View opinions" button) — this just
  * tells the user there's something new to look at.
@@ -26,18 +26,18 @@ class OpinionCheckWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
-
-    private val scanRepository = appEntryPoint(context).scanRepository()
-
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         // Runs regardless of the opinion-notifications preference: it drives
         // the notification centre, not just the popup. OpinionNotifier itself
         // decides whether to interrupt the user; this poll is the only way a
         // new opinion is even discovered on a device without FCM configured.
-        val pseudoId = TelemetryIds.userPseudoId(ctx)
-
-        val resp = scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {
+        if (!shouldRunOpinionCheck(BuildConfig.ACCOUNT_UI_ENABLED, OpinionPrefs.notificationsEnabled(ctx))) {
+            return Result.success()
+        }
+        // Resolve the account-aware graph only after the recovery-build gate.
+        val scanRepository = appEntryPoint(ctx).scanRepository()
+        val resp = scanRepository.fetchMyScanOpinions().getOrElse {
             // Network/server hiccup — retry on the next interval.
             return Result.retry()
         }
@@ -59,3 +59,9 @@ class OpinionCheckWorker(
         return Result.success()
     }
 }
+
+internal fun shouldRunOpinionCheck(
+    accountUiEnabled: Boolean,
+    @Suppress("UNUSED_PARAMETER")
+    notificationsEnabled: Boolean,
+): Boolean = accountUiEnabled

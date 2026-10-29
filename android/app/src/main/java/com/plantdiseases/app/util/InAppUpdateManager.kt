@@ -70,8 +70,8 @@ class InAppUpdateManager(
                 .addOnSuccessListener { info -> onUpdateInfo(mgr, info) }
                 // Expected on every non-RuStore install (RuStoreNotInstalledException
                 // & friends) — debug-log and move on.
-                .addOnFailureListener { e -> Log.d(TAG, "Update info unavailable", e) }
-        }.onFailure { e -> Log.w(TAG, "RuStore appupdate SDK unavailable", e) }
+                .addOnFailureListener { Log.d(TAG, "Update info unavailable") }
+        }.onFailure { Log.w(TAG, "RuStore appupdate SDK unavailable") }
     }
 
     /** Drop the store-app listener; call from the host activity's onDestroy. */
@@ -102,7 +102,7 @@ class InAppUpdateManager(
         mgr.startUpdateFlow(
             info,
             AppUpdateOptions.Builder().appUpdateType(AppUpdateType.FLEXIBLE).build(),
-        ).addOnFailureListener { e -> Log.w(TAG, "startUpdateFlow failed", e) }
+        ).addOnFailureListener { Log.w(TAG, "startUpdateFlow failed") }
         // Success just means the dialog resolved (RESULT_OK = user accepted,
         // RESULT_CANCELED = declined); the download itself reports through
         // installListener.
@@ -118,7 +118,7 @@ class InAppUpdateManager(
     private fun completeUpdate() {
         manager?.completeUpdate(
             AppUpdateOptions.Builder().appUpdateType(AppUpdateType.FLEXIBLE).build(),
-        )?.addOnFailureListener { e -> Log.w(TAG, "completeUpdate failed", e) }
+        )?.addOnFailureListener { Log.w(TAG, "completeUpdate failed") }
         // On success RuStore closes the app and installs the downloaded APK.
     }
 

@@ -462,10 +462,7 @@ def _resolve_max_logit_scope(meta: dict) -> str:
     if scope in _MAX_LOGIT_SCOPES:
         return str(scope)
     if scope is not None:
-        logger.warning(
-            "Unknown ood.max_logit_scope %r — falling back to %r",
-            scope, MAX_LOGIT_SCOPE_DEFAULT,
-        )
+        logger.warning("Unknown OOD max-logit scope; using safe default")
     return MAX_LOGIT_SCOPE_DEFAULT
 
 
@@ -724,10 +721,7 @@ class PlantDiseasePipeline:
         stage1 = self.detector.detect(img)
         detections = stage1["detections"]
 
-        logger.info(
-            "Stage 1 → detections=%d  best_conf=%.3f",
-            len(detections), stage1["confidence"],
-        )
+        logger.info("Detector stage completed")
 
         # No leaf bbox from Stage 1: fall back to classifying the full
         # image and let the classifier's dedicated `not_a_plant` head
@@ -751,13 +745,7 @@ class PlantDiseasePipeline:
         if self._should_route_to_nap(classification, det_conf):
             classification = self._mark_ood_rejected(classification)
 
-        logger.info(
-            "Stage 2 → class=%s  confidence=%.3f  primary_box=%s  voted_over=%d",
-            classification["class_name"],
-            classification["confidence"],
-            primary,
-            classification.get("_voted_over", 1),
-        )
+        logger.info("Classifier stage completed")
 
         final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
         # Compute the operational disease verdict from the final, canonical
@@ -1455,10 +1443,7 @@ def _apply_postprocessing_rules(
             warnings.append("uncertain_healthy")
             if disease_floor_hit and worst_disease[0]:
                 warnings.append(f"disease_suspected:{worst_disease[0]}")
-            logger.info(
-                "healthy gate soft-warning  top1=%.3f  margin=%.3f  worst_disease=%s/%.3f",
-                top1_prob, margin, worst_disease[0], worst_disease[1],
-            )
+            logger.info("Healthy-result uncertainty warning triggered")
 
     if classification.get("_ood_gated"):
         warnings.append("nap_ood_gated")

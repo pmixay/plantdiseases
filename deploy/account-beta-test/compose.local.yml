@@ -1,0 +1,252 @@
+name: ${COMPOSE_PROJECT_NAME:-plantdisease_account_beta_test}
+
+x-account-environment: &account-environment
+  ENVIRONMENT: test
+  AUTH_PROVIDER_MODE: mock
+  ACCOUNT_ISSUER: http://beta-account-api:8000
+  ACCOUNT_AUDIENCE: plantdiseases-app
+  ACCOUNT_DATABASE_URL: postgresql+psycopg://beta_account:${BETA_POSTGRES_PASSWORD:-local-synthetic-only}@beta-postgres/plantdisease_beta
+  ACCOUNT_DATABASE_LOCAL: "true"
+  ACCOUNT_ALLOW_EPHEMERAL_KEYS: "false"
+  ACCOUNT_SIGNING_KEY_FILE: /run/account-secrets/signing.json
+  ACCOUNT_ENCRYPTION_KEY_FILE: /run/account-secrets/encryption.key
+  INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+  # Local mock auth never contacts RuStore. Billing integration is exercised
+  # with strict unit/contract tests and the isolated staging stack.
+  RUSTORE_LIFECYCLE_ENABLED: "false"
+  RUSTORE_CHECKOUT_ENABLED: "false"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-08-v1
+  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5
+  ENTITLEMENT_PRO_DAILY_LIMITS: gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20
+  EMAIL_PASSWORD_AUTH_ENABLED: "true"
+  RUSTORE_ALLOW_SANDBOX: "false"
+  COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
+  CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
+
+services:
+  beta-postgres:
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    environment:
+      POSTGRES_DB: plantdisease_beta
+      POSTGRES_USER: beta_account
+      POSTGRES_PASSWORD: ${BETA_POSTGRES_PASSWORD:-local-synthetic-only}
+      PGDATA: /var/lib/postgresql/18/docker
+    expose:
+      - "5432"
+    volumes:
+      - beta_postgres:/var/lib/postgresql
+    networks:
+      - beta-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beta_account -d plantdisease_beta"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  beta-account-keygen:
+    image: plantdiseases-account-beta-account-api:local
+    build:
+      context: ../../account-server
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: test
+    command:
+      - python
+      - -m
+      - app.generate_test_keys
+      - /run/account-secrets
+      - --internal-token-directory
+      - /run/internal-token
+    network_mode: none
+    volumes:
+      - beta_account_keys:/run/account-secrets
+      - beta_internal_token:/run/internal-token
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  beta-account-migrate:
+    image: plantdiseases-account-beta-account-api:local
+    build:
+      context: ../../account-server
+      dockerfile: Dockerfile
+    environment: *account-environment
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      beta-postgres:
+        condition: service_healthy
+      beta-account-keygen:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
+    networks:
+      - beta-private
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  beta-account-api:
+    image: plantdiseases-account-beta-account-api:local
+    build:
+      context: ../../account-server
+      dockerfile: Dockerfile
+    environment: *account-environment
+    depends_on:
+      beta-account-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - beta_account_keys:/run/account-secrets:ro
+      - beta_internal_token:/run/internal-token:ro
+    ports:
+      - name: account-api
+        target: 8000
+        published: "${ACCOUNT_API_PORT:-18001}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - beta-private
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  beta-app-api:
+    image: plantdiseases-account-beta-app-api:local
+    build:
+      context: ../../server
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: test
+      ACCOUNT_BETA_SYNTHETIC_PIPELINE: "true"
+      ACCOUNT_FEATURE_EXPECTED: "true"
+      POPULAR_WARM_ENABLED: "false"
+      FRONTIER_ENABLED: "false"
+      TRAINING_CAPTURE_ENABLED: "false"
+      TRAINING_CONSENT_VERSION: model-improvement-v1
+      TELEMETRY_ENABLED: "false"
+      TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
+      ACCOUNT_API_BASE_URL: http://beta-account-api:8000/
+      ACCOUNT_ISSUER: http://beta-account-api:8000
+      ACCOUNT_AUDIENCE: plantdiseases-app
+      ACCOUNT_INTERNAL_BASE_URL: http://beta-account-api:8000
+      ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
+      ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
+      # No durable notification sink exists yet; clients poll for owner updates.
+      ACCOUNT_NOTIFICATION_URL: ""
+      INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
+      MODELS_DIR: /app/models
+      LOG_DIR: /data/logs
+      COMMUNITY_DB_PATH: /data/community/community-beta.db
+      COMMUNITY_THUMB_DIR: /data/community-thumbs
+      TRAINING_DB_PATH: /data/training/training-beta.db
+      TRAINING_IMAGE_DIR: /data/training-images
+      TELEMETRY_DB_PATH: /data/telemetry/telemetry-beta.db
+      PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
+      AI_CACHE_DIR: /data/app-cache/ai
+      PLANTNET_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      FCM_CREDENTIALS_FILE: ""
+      CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
+      TRUSTED_PROXIES: ""
+      RATE_LIMIT_RPS: "100"
+      RATE_LIMIT_BURST: "100"
+    depends_on:
+      beta-account-api:
+        condition: service_healthy
+    ports:
+      - name: app-api
+        target: 8000
+        published: "${APP_API_PORT:-18000}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - beta_models:/app/models:ro
+      - beta_internal_token:/run/internal-token:ro
+      - beta_app_data:/app/data
+      - beta_community:/data/community
+      - beta_thumbnails:/data/community-thumbs
+      - beta_training:/data/training
+      - beta_training_images:/data/training-images
+      - beta_telemetry:/data/telemetry
+      - beta_app_cache:/data/app-cache
+      - beta_app_logs:/data/logs
+    networks:
+      - beta-private
+      - beta-edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "10002"
+
+networks:
+  beta-private:
+    internal: true
+  beta-edge: {}
+
+volumes:
+  beta_postgres:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_postgres
+  beta_account_keys:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_account_keys
+  beta_internal_token:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_internal_token
+  beta_models:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_models
+  beta_app_data:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_app_data
+  beta_community:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_community
+  beta_thumbnails:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_thumbnails
+  beta_training:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_training
+  beta_training_images:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_training_images
+  beta_telemetry:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_telemetry
+  beta_app_cache:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_app_cache
+  beta_app_logs:
+    name: ${BETA_VOLUME_PREFIX:-plantdisease_account_beta_test}_app_logs

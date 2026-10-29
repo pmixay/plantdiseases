@@ -5,13 +5,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -24,20 +22,20 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.ui.community.CommunityProfileActivity
 import com.plantdiseases.app.ui.common.SpeciesInfoCardView
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
-import com.plantdiseases.app.util.TelemetryIds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -59,6 +57,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     @Inject
     lateinit var scanRepository: ScanRepository
 
+    @Inject
+    lateinit var authRepository: AuthRepository
+
     private var scanId: String = ""
     private var currentName: String? = null
 
@@ -72,6 +73,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var listContainer: LinearLayout? = null
     private var emptyView: TextView? = null
     private var metaView: TextView? = null
+    private var speciesCard: SpeciesInfoCardView? = null
     private var voteRow: View? = null
     private var currentVoteRow: View? = null
     private var currentVoteText: TextView? = null
@@ -82,18 +84,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var likeRow: View? = null
     private var likeIcon: ImageView? = null
     private var likeCountView: TextView? = null
-    private var lockedCard: View? = null
-    private var dockContainer: View? = null
-    private var composerRow: View? = null
-    private var chipScroll: HorizontalScrollView? = null
-    private var confidenceBar: LinearProgressIndicator? = null
-    private var speciesCard: SpeciesInfoCardView? = null
-    private var opinionsOpen = false
-
-    /** Whether the dock is showing the composer rather than a vote row. Kept
-     *  separate from the vote state so a background reload can refresh the
-     *  consensus without yanking a half-written note out from under the user. */
-    private var composerOpen = false
 
     // Local mirror of the server's liked_by_me — updated optimistically on
     // tap and by every server response that actually carries it (loadOpinions
@@ -101,11 +91,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     // can't tell "liked" apart from "unknown" and must not overwrite this).
     private var liked = false
     private var likeInFlight = false
-
-    /** True while the like/⋯ pair is overlaid on the scan photo, which decides
-     *  their resting tint (on_hero over the image, on_surface_secondary over
-     *  the sheet background). */
-    private var actionsOnPhoto = true
 
     // The caller's own current pick, per the server's my_opinion (opinions_for
     // dedupes per author, so a second vote replaces this rather than adding to
@@ -124,7 +109,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         scanId = arguments?.getString(ARG_SCAN_ID).orEmpty()
         currentName = arguments?.getString(ARG_CURRENT_NAME)
         diseaseKey = arguments?.getString(ARG_DISEASE_KEY).orEmpty()
-        opinionsOpen = arguments?.getBoolean(ARG_WRITABLE, false) == true
+        val viewOnly = arguments?.getBoolean(ARG_VIEW_ONLY, false) ?: false
         if (scanId.isBlank()) {
             dismissAllowingStateLoss()
             return
@@ -136,6 +121,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         listContainer = view.findViewById(R.id.ll_opinion_list)
         emptyView = view.findViewById(R.id.tv_opinion_empty)
         metaView = view.findViewById(R.id.tv_opinion_meta)
+        speciesCard = view.findViewById(R.id.card_opinion_species)
         voteRow = view.findViewById(R.id.ll_opinion_vote)
         currentVoteRow = view.findViewById(R.id.ll_opinion_current_vote)
         currentVoteText = view.findViewById(R.id.tv_opinion_current_vote)
@@ -146,12 +132,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         likeRow = view.findViewById(R.id.ll_opinion_like)
         likeIcon = view.findViewById(R.id.iv_opinion_like)
         likeCountView = view.findViewById(R.id.tv_opinion_like_count)
-        lockedCard = view.findViewById(R.id.card_opinion_locked)
-        dockContainer = view.findViewById(R.id.ll_opinion_dock)
-        composerRow = view.findViewById(R.id.ll_opinion_composer)
-        chipScroll = view.findViewById(R.id.scroll_opinion_chips)
-        confidenceBar = view.findViewById(R.id.progress_opinion_confidence)
-        speciesCard = view.findViewById(R.id.card_opinion_species)
 
         val currentCard = view.findViewById<View>(R.id.card_opinion_current)
         val currentView = view.findViewById<TextView>(R.id.tv_opinion_current)
@@ -160,16 +140,42 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             ?: run { currentCard.visibility = View.GONE }
         renderMeta()
         renderPhoto(view)
-        bindSpecies()
+
+        val safetyRow = view.findViewById<View>(R.id.ll_community_scan_safety)
+        safetyRow?.visibility = View.VISIBLE
+        view.findViewById<MaterialButton>(R.id.btn_community_report_scan)
+            ?.setOnClickListener { showReportDialog(TARGET_SCAN, scanId) }
+        view.findViewById<MaterialButton>(R.id.btn_community_block_scan_author)
+            ?.setOnClickListener { confirmBlock(TARGET_SCAN, scanId) }
 
         val ctx = requireContext()
+        val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
         // Commenting on your own scan makes no sense — that case is
         // MyScanRepliesActivity now, a separate screen this sheet never
         // opens for. Every caller reaching this sheet is a genuine viewer,
         // and Community v2 dropped the "already opined" lock: any viewer
         // may leave more than one comment.
+        if (viewOnly) {
+            view.findViewById<TextView>(R.id.tv_opinion_title)
+                .setText(R.string.community_opinion_replies_title)
+            view.findViewById<TextView>(R.id.tv_opinion_subtitle)
+                .setText(R.string.community_opinion_replies_subtitle)
+            voteRow?.visibility = View.GONE
+            currentVoteRow?.visibility = View.GONE
+            view.findViewById<View>(R.id.tv_opinion_pick_label).visibility = View.GONE
+            chipGroup?.visibility = View.GONE
+            view.findViewById<View>(R.id.til_opinion_note).visibility = View.GONE
+            sendBtn?.visibility = View.GONE
+            likeRow?.visibility = View.GONE
+            emptyView?.setText(R.string.community_opinion_replies_empty)
+            cancelBtn.setText(R.string.close)
+            cancelBtn.setOnClickListener { dismiss() }
+            expandSheet(view)
+            loadOpinions()
+            return
+        }
+
         setupLike(ctx)
-        setupSafety(view)
 
         CLASS_CATALOG.forEach { (key, labelRes) ->
             chipGroup?.addView(
@@ -183,35 +189,34 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             )
         }
 
-        // Agree and Disagree both open the same composer — Agree just
-        // pre-selects the model's own class, so agreeing without a note is
-        // Agree then Post, and everyone gets a chance to actually write
+        // Agree and Disagree both open the same picker + note — Agree just
+        // pre-selects the model's own class, so agreeing silently (no note)
+        // is still one tap, but everyone gets a chance to actually write
         // something before sending. An instant-submit Agree was the reason
         // "leave a comment" read as "click Agree or Disagree, nothing else":
         // there was never a text box in that path.
-        composerOpen = false
+        showPicker(view, visible = false)
         sendBtn?.isEnabled = false
         chipGroup?.setOnCheckedStateChangeListener { group, _ ->
             sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_agree).setOnClickListener {
-            openComposer(preselect = diseaseKey)
+            voteRow?.visibility = View.GONE
+            showPicker(view, visible = true)
+            if (diseaseKey.isNotBlank()) preselectChip(diseaseKey)
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_disagree).setOnClickListener {
-            openComposer(preselect = null)
+            voteRow?.visibility = View.GONE
+            showPicker(view, visible = true)
         }
-        changeVoteBtn?.setOnClickListener { openComposer(preselect = myOpinion) }
-        // The composer's own way out. With this here the sheet needs no Cancel
-        // button: swipe, scrim tap and Back already dismiss the sheet itself.
-        view.findViewById<View>(R.id.btn_opinion_composer_close).setOnClickListener {
-            closeComposer()
+        changeVoteBtn?.setOnClickListener {
+            currentVoteRow?.visibility = View.GONE
+            showPicker(view, visible = true)
+            myOpinion?.takeIf { it.isNotBlank() }?.let { preselectChip(it) }
         }
+
+        cancelBtn.setOnClickListener { dismiss() }
         sendBtn?.setOnClickListener { submitFromPicker() }
-        // The feed's flag is only a display hint. Keep every mutation locked
-        // until the thread endpoint confirms the request is still live.
-        applyOpinionAvailability(false)
-        likeRow?.isEnabled = false
-        likeRow?.alpha = 0.5f
 
         expandSheet(view)
         loadOpinions()
@@ -229,56 +234,25 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         val sheet = view.parent as? View ?: return
         val behavior = BottomSheetBehavior.from(sheet)
         val maxHeight = (resources.displayMetrics.heightPixels * 0.9f).toInt()
-        // MATCH_PARENT + maxHeight, not a fixed pixel height: the cap still
-        // holds the sheet at 90% of the screen, but when the keyboard resizes
-        // the window the sheet shrinks with it instead of keeping a height
-        // taller than the window and pushing its own bottom — now the dock,
-        // with the note field and Post — off screen.
-        sheet.layoutParams = sheet.layoutParams.apply {
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-        }
+        sheet.layoutParams = sheet.layoutParams.apply { height = maxHeight }
         behavior.maxHeight = maxHeight
         behavior.peekHeight = maxHeight
         behavior.skipCollapsed = true
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
-        // Deprecated in API 30 with no like-for-like constant: the documented
-        // replacement is edge-to-edge plus IME inset handling, which this app
-        // deliberately has not adopted (targetSdk is held at 35 for exactly
-        // that reason). The sheet has a text field, so losing the resize would
-        // put the keyboard over the input — keep the working behaviour.
-        @Suppress("DEPRECATION")
-        dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
-    /** Model confidence, as a number AND a meter — the same pairing the
-     *  scan-result screen uses, so the sheet reads like a real result rather
-     *  than a sentence under a decorative icon. Both hidden when unknown. */
+    /** Model confidence line ("Confidence 87%"), hidden when unknown. */
     private fun renderMeta() {
         val meta = metaView ?: return
         val confidence = arguments?.getFloat(ARG_CONFIDENCE, -1f) ?: -1f
+        val species = arguments?.getString(ARG_SPECIES)?.takeIf { it.isNotBlank() }
         if (confidence in 0f..1f) {
-            val percent = Math.round(confidence * 100)
             meta.visibility = View.VISIBLE
-            meta.text = getString(R.string.community_opinion_confidence, percent)
-            confidenceBar?.visibility = View.VISIBLE
-            confidenceBar?.setProgressCompat(percent, false)
+            meta.text = getString(R.string.community_opinion_confidence, Math.round(confidence * 100))
         } else {
             meta.visibility = View.GONE
-            confidenceBar?.visibility = View.GONE
         }
-    }
-
-    /** The one shared species card. Community v2 dropped it here on the
-     *  grounds that the photo is the subject; it's back because knowing WHAT
-     *  the plant is changes what you'd call the problem. Hides itself when the
-     *  feed item carried no species, so no pre-check is needed. */
-    private fun bindSpecies() {
-        val card = speciesCard ?: return
-        card.bind(
-            viewLifecycleOwner.lifecycleScope,
-            scientific = arguments?.getString(ARG_SPECIES),
-            common = null,
-        )
+        speciesCard?.bind(species, null)
     }
 
     /** Show the shared scan photo (borrowed from the scan-result screen) when
@@ -288,38 +262,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         val photo = view.findViewById<ImageView>(R.id.iv_opinion_photo)
         val thumb = arguments?.getString(ARG_THUMB)?.takeIf { it.isNotBlank() }
         if (thumb == null) {
-            // No photo to overlay, so the glass treatment has nothing behind it
-            // and the actions bar becomes an ordinary row of solid controls.
             card.visibility = View.GONE
-            view.findViewById<View>(R.id.ll_opinion_like)
-                .setBackgroundResource(R.drawable.bg_opinion_like_pill)
-            view.findViewById<View>(R.id.btn_opinion_more)
-                .setBackgroundResource(R.drawable.bg_circle_surface_variant)
-            actionsOnPhoto = false
-            tintActions(view, R.color.on_surface_secondary)
             return
         }
-        actionsOnPhoto = true
         card.visibility = View.VISIBLE
         Glide.with(this)
-            .load("${ServerConfig.baseUrl}api/community/thumb/$thumb")
+            .load("${ServerConfig.appBaseUrl}api/community/thumb/$thumb")
             .diskCacheStrategy(DiskCacheStrategy.ALL)
             .placeholder(R.drawable.ic_plant_placeholder)
             .error(R.drawable.ic_plant_placeholder)
             .transform(CenterCrop(), RoundedCorners(24))
             .into(photo)
-    }
-
-    /** Keeps the like icon, its count and the ⋯ on one tint, so the pair reads
-     *  as a set whether it sits on the photo (on_hero) or on the sheet
-     *  background (on_surface_secondary). [renderLike] re-tints the heart
-     *  afterwards when this viewer has liked the scan. */
-    private fun tintActions(view: View, colorRes: Int) {
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        val tint = android.content.res.ColorStateList.valueOf(color)
-        view.findViewById<ImageView>(R.id.iv_opinion_like).imageTintList = tint
-        view.findViewById<ImageView>(R.id.btn_opinion_more).imageTintList = tint
-        view.findViewById<TextView>(R.id.tv_opinion_like_count).setTextColor(color)
     }
 
     /** Check the chip matching [key] (the model's own verdict, for the Agree
@@ -330,53 +283,16 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         (0 until group.childCount)
             .map { group.getChildAt(it) as Chip }
             .firstOrNull { it.tag == key }
-            ?.let { chip ->
-                group.check(chip.id)
-                // The picker is one horizontally scrolling row, so a chip
-                // near the end starts off-screen and the selection reads as
-                // "nothing picked" until you happen to scroll.
-                chipScroll?.post { chipScroll?.smoothScrollTo(chip.left, 0) }
-            }
+            ?.let { group.check(it.id) }
         sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
     }
 
-    /**
-     * The dock shows exactly one of three faces, and this is the only place
-     * that decides which: the composer if it's open, otherwise "your opinion +
-     * change" once the server has a pick from this viewer, otherwise
-     * Agree/Disagree. A scan that isn't accepting opinions hides the dock
-     * entirely — its replies stay readable above.
-     */
-    private fun applyDockState() {
-        val dock = dockContainer ?: return
-        if (!opinionsOpen) {
-            composerOpen = false
-            dock.visibility = View.GONE
-            return
-        }
-        dock.visibility = View.VISIBLE
-        composerRow?.visibility = if (composerOpen) View.VISIBLE else View.GONE
-        voteRow?.visibility =
-            if (!composerOpen && myOpinion == null) View.VISIBLE else View.GONE
-        currentVoteRow?.visibility =
-            if (!composerOpen && myOpinion != null) View.VISIBLE else View.GONE
-    }
-
-    /** Agree, Disagree and Change all land here; only the pre-selected chip
-     *  differs. Agree pre-selects the model's own verdict, so agreeing with a
-     *  note stays two taps. */
-    private fun openComposer(preselect: String?) {
-        composerOpen = true
-        applyDockState()
-        preselect?.takeIf { it.isNotBlank() }?.let { preselectChip(it) }
-    }
-
-    private fun closeComposer() {
-        composerOpen = false
-        chipGroup?.clearCheck()
-        noteInput?.text?.clear()
-        sendBtn?.isEnabled = false
-        applyDockState()
+    private fun showPicker(view: View, visible: Boolean) {
+        val vis = if (visible) View.VISIBLE else View.GONE
+        view.findViewById<View>(R.id.tv_opinion_pick_label).visibility = vis
+        chipGroup?.visibility = vis
+        view.findViewById<View>(R.id.til_opinion_note).visibility = vis
+        sendBtn?.visibility = vis
     }
 
     override fun onDestroyView() {
@@ -387,6 +303,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         listContainer = null
         emptyView = null
         metaView = null
+        speciesCard = null
         voteRow = null
         currentVoteRow = null
         currentVoteText = null
@@ -397,52 +314,24 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         likeRow = null
         likeIcon = null
         likeCountView = null
-        lockedCard = null
-        dockContainer = null
-        composerRow = null
-        chipScroll = null
-        confidenceBar = null
-        speciesCard = null
     }
 
     private fun loadOpinions() {
-        val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch {
-            scanRepository.getCommunityOpinions(scanId, TelemetryIds.userPseudoId(ctx), context = ctx)
+            scanRepository.getCommunityOpinions(scanId)
                 .onSuccess {
-                    emptyView?.apply {
-                        text = getString(R.string.community_opinion_empty)
-                        isClickable = false
-                        setOnClickListener(null)
-                    }
                     render(it.consensus, it.opinions)
                     renderLike(it.likeCount, it.likedByMe)
                     renderVoteState(it.myOpinion)
-                    applyOpinionAvailability(it.wantsOpinion)
-                    likeRow?.isEnabled = true
-                    likeRow?.alpha = 1f
                 }
-                .onFailure {
-                    render(emptyList(), emptyList())
-                    applyOpinionAvailability(false)
-                    likeRow?.isEnabled = false
-                    likeRow?.alpha = 0.5f
-                    emptyView?.apply {
-                        visibility = View.VISIBLE
-                        text = getString(R.string.community_opinion_error)
-                        isClickable = true
-                        setOnClickListener {
-                            text = getString(R.string.community_opinion_loading)
-                            loadOpinions()
-                        }
-                    }
-                }
+                .onFailure { render(emptyList(), emptyList()) }
         }
     }
 
     private fun setupLike(ctx: Context) {
         likeRow?.setOnClickListener {
             if (likeInFlight) return@setOnClickListener
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             val previousCount = likeCountView?.text?.toString()?.toIntOrNull() ?: 0
             val previousLiked = liked
             val next = !liked
@@ -450,12 +339,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             Haptics.tick(ctx)
             renderLike((previousCount + if (next) 1 else -1).coerceAtLeast(0), next)
             viewLifecycleOwner.lifecycleScope.launch {
-                scanRepository.setCommunityLike(
-                    scanId,
-                    TelemetryIds.userPseudoId(ctx),
-                    next,
-                    ctx,
-                )
+                scanRepository.setCommunityLike(scanId, next)
                     .onSuccess { renderLike(it.count, it.liked) }
                     .onFailure { renderLike(previousCount, previousLiked) }
                 likeInFlight = false
@@ -471,29 +355,29 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         likeCountView?.text = count.toString()
         likeCountView?.visibility = if (count > 0) View.VISIBLE else View.GONE
         likeIcon?.setImageResource(if (likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart)
-        val restingTint = if (actionsOnPhoto) R.color.on_hero else R.color.on_surface_secondary
         likeIcon?.imageTintList = android.content.res.ColorStateList.valueOf(
             ContextCompat.getColor(
                 requireContext(),
-                if (likedByMe) R.color.primary else restingTint,
+                if (likedByMe) R.color.primary else R.color.on_surface_secondary,
             ),
         )
     }
 
-    /** Agree/Disagree vs. "Your opinion: X — Change opinion": the face the
+    /** Agree/Disagree vs. "Your opinion: X — Change opinion": the row the
      *  viewer sees depends on whether the server already has a pick from
      *  them (opinions_for's my_opinion), since a second vote replaces the
      *  first server-side rather than adding to it — presenting Agree/Disagree
-     *  again would offer an action whose real effect is hidden. Records the
-     *  pick and its label; [applyDockState] decides what the dock shows. */
+     *  again would offer an action whose real effect is hidden. Only touches
+     *  the two rows; [showPicker] governs the chips/note/Send underneath. */
     private fun renderVoteState(opinion: String?) {
         val current = opinion?.takeIf { it.isNotBlank() }
         myOpinion = current
+        voteRow?.visibility = if (current == null) View.VISIBLE else View.GONE
+        currentVoteRow?.visibility = if (current == null) View.GONE else View.VISIBLE
         if (current != null) {
             val label = DiseaseLabels.displayName(current, LocaleHelper.isRussian(requireContext())) ?: current
             currentVoteText?.text = getString(R.string.community_opinion_my_vote, label)
         }
-        applyDockState()
     }
 
     /** "Disagree" path: submit the disease the user picked from the chips. */
@@ -511,8 +395,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
      *  leave another comment (the consensus tally still counts one vote per
      *  author, see server/community.py opinions_for). */
     private fun submitDisease(key: String, note: String? = null) {
-        if (key.isBlank() || !opinionsOpen) return
+        if (key.isBlank()) return
         val ctx = requireContext()
+        if (!requireAuthenticatedAction()) return
         Haptics.tick(ctx)
         sendBtn?.isEnabled = false
         view?.findViewById<MaterialButton>(R.id.btn_opinion_agree)?.isEnabled = false
@@ -520,28 +405,21 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         val request = CommunityOpinionRequest(
             scanId = scanId,
-            userPseudoId = TelemetryIds.userPseudoId(ctx),
             suggestedDisease = key,
             note = note,
-            nickname = Nicknames.nickname(ctx),
         )
         viewLifecycleOwner.lifecycleScope.launch {
-            scanRepository.submitCommunityOpinion(ctx, request)
+            scanRepository.submitCommunityOpinion(request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
                     resetInputAfterSubmit(key)
                     render(resp.consensus, resp.opinions)
                 }
-                .onFailure { error ->
-                    if (error is ScanRepository.CommunityOpinionsLockedException) {
-                        applyOpinionAvailability(false)
-                        Toast.makeText(ctx, R.string.community_opinion_locked_toast, Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(ctx, R.string.community_opinion_error, Toast.LENGTH_SHORT).show()
-                        sendBtn?.isEnabled = true
-                        view?.findViewById<MaterialButton>(R.id.btn_opinion_agree)?.isEnabled = true
-                        view?.findViewById<MaterialButton>(R.id.btn_opinion_disagree)?.isEnabled = true
-                    }
+                .onFailure {
+                    Toast.makeText(ctx, R.string.community_opinion_error, Toast.LENGTH_SHORT).show()
+                    sendBtn?.isEnabled = true
+                    view?.findViewById<MaterialButton>(R.id.btn_opinion_agree)?.isEnabled = true
+                    view?.findViewById<MaterialButton>(R.id.btn_opinion_disagree)?.isEnabled = true
                 }
         }
     }
@@ -553,10 +431,98 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
      *  the server now has a pick from this viewer. */
     private fun resetInputAfterSubmit(justSubmittedKey: String) {
         val v = view ?: return
-        closeComposer()
+        noteInput?.text?.clear()
+        chipGroup?.clearCheck()
+        showPicker(v, visible = false)
         v.findViewById<MaterialButton>(R.id.btn_opinion_agree).isEnabled = true
         v.findViewById<MaterialButton>(R.id.btn_opinion_disagree).isEnabled = true
+        sendBtn?.isEnabled = false
         renderVoteState(justSubmittedKey)
+    }
+
+    /** Opens account setup and deliberately does not replay a mutation. */
+    private fun requireAuthenticatedAction(): Boolean {
+        if (authRepository.state.value is AuthState.Authenticated) return true
+        val ctx = requireContext()
+        Toast.makeText(ctx, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+        startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(ctx))
+        return false
+    }
+
+    private fun showReportDialog(targetType: String, targetId: String) {
+        if (!requireAuthenticatedAction()) return
+        val labels = resources.getStringArray(R.array.community_report_reasons)
+        var selected = -1
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.community_report_title)
+            .setMessage(R.string.community_report_prompt)
+            .setSingleChoiceItems(labels, -1) { _, which -> selected = which }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_report_content, null)
+            .create()
+        dialog.setOnShowListener {
+            val submit = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+            submit.isEnabled = false
+            dialog.listView.setOnItemClickListener { _, _, position, _ ->
+                selected = position
+                submit.isEnabled = position in REPORT_REASON_KEYS.indices
+            }
+            submit.setOnClickListener {
+                val reason = REPORT_REASON_KEYS.getOrNull(selected) ?: return@setOnClickListener
+                dialog.dismiss()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    scanRepository.reportCommunityContent(targetType, targetId, reason)
+                        .onSuccess {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.community_report_sent,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        .onFailure {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.community_safety_error,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmBlock(targetType: String, targetId: String) {
+        if (!requireAuthenticatedAction()) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.community_block_title)
+            .setMessage(R.string.community_block_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_block_confirm) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    scanRepository.blockCommunityAuthor(targetType, targetId)
+                        .onSuccess {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.community_author_blocked,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            parentFragmentManager.setFragmentResult(
+                                CONTENT_BLOCKED,
+                                bundleOf("target_type" to targetType, "target_id" to targetId),
+                            )
+                            dismissAllowingStateLoss()
+                        }
+                        .onFailure {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.community_safety_error,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
+            }
+            .show()
     }
 
     private fun render(consensus: List<CommunityTopDisease>, opinions: List<CommunityOpinion>) {
@@ -580,99 +546,14 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     com.plantdiseases.app.ui.community.OpinionViews.buildOpinionRow(
                         requireContext(),
                         it,
-                        onReport = { opinion ->
-                            opinion.contentId?.let { id -> showReportDialog("opinion", id) }
-                        },
-                        onBlock = { opinion ->
-                            opinion.contentId?.let { id -> confirmBlock("opinion", id) }
-                        },
-                    ),
+                    ) { opinion ->
+                        opinion.authorToken?.let { token ->
+                            startActivity(CommunityProfileActivity.intent(requireContext(), token))
+                        }
+                    },
                 )
             }
         }
-    }
-
-    /** The server response is authoritative. A request can expire or be
-     * cancelled while this sheet is open, so every successful read and every
-     * 423 submit race re-applies this state. Existing replies remain visible. */
-    private fun applyOpinionAvailability(open: Boolean) {
-        opinionsOpen = open
-        lockedCard?.visibility = if (open) View.GONE else View.VISIBLE
-        applyDockState()
-    }
-
-    /** Report and Block for the SCAN itself. They used to be two accent text
-     *  buttons carrying the same visual weight as the action the viewer came
-     *  for; behind one ⋯ they stay one tap away without competing. Individual
-     *  replies keep their own controls on each row. */
-    private fun setupSafety(root: View) {
-        root.findViewById<View>(R.id.btn_opinion_more).setOnClickListener { anchor ->
-            PopupMenu(requireContext(), anchor).apply {
-                menu.add(0, MENU_REPORT, 0, getString(R.string.community_report_action))
-                menu.add(0, MENU_BLOCK, 1, getString(R.string.community_block_action))
-                setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        MENU_REPORT -> {
-                            showReportDialog("scan", scanId)
-                            true
-                        }
-                        MENU_BLOCK -> {
-                            confirmBlock("scan", scanId)
-                            true
-                        }
-                        else -> false
-                    }
-                }
-                show()
-            }
-        }
-    }
-
-    private fun showReportDialog(targetType: String, targetId: String) {
-        val labels = resources.getStringArray(R.array.community_report_reason_labels)
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.community_report_title)
-            .setItems(labels) { _, which ->
-                val reason = REPORT_REASONS.getOrNull(which) ?: return@setItems
-                viewLifecycleOwner.lifecycleScope.launch {
-                    scanRepository.reportCommunityContent(
-                        TelemetryIds.userPseudoId(requireContext()),
-                        targetType,
-                        targetId,
-                        reason,
-                        requireContext(),
-                    ).onSuccess {
-                        Toast.makeText(requireContext(), R.string.community_report_sent, Toast.LENGTH_SHORT).show()
-                    }.onFailure {
-                        Toast.makeText(requireContext(), R.string.community_safety_error, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmBlock(targetType: String, targetId: String) {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.community_block_title)
-            .setMessage(R.string.community_block_body)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.community_block_confirm) { _, _ ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    scanRepository.blockCommunityAuthor(
-                        TelemetryIds.userPseudoId(requireContext()),
-                        targetType,
-                        targetId,
-                        requireContext(),
-                    ).onSuccess {
-                        Toast.makeText(requireContext(), R.string.community_blocked, Toast.LENGTH_SHORT).show()
-                        dismissAllowingStateLoss()
-                    }.onFailure {
-                        Toast.makeText(requireContext(), R.string.community_safety_error, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .show()
     }
 
     /** Draw the vote graph: one horizontal percentage bar per disease,
@@ -714,12 +595,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_CONFIDENCE = "arg_confidence"
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_SPECIES = "arg_species"
-        private const val ARG_WRITABLE = "arg_writable"
+        private const val ARG_VIEW_ONLY = "arg_view_only"
+        private const val TARGET_SCAN = "scan"
 
-        private const val MENU_REPORT = 1
-        private const val MENU_BLOCK = 2
+        const val CONTENT_BLOCKED = "community_content_blocked"
 
-        private val REPORT_REASONS = listOf(
+        private val REPORT_REASON_KEYS = listOf(
             "sexual_content",
             "violence_or_threats",
             "hate_or_harassment",
@@ -747,9 +628,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             "leaf_scorch_underwatering" to R.string.feedback_class_leaf_scorch_underwatering,
             "nutrient_deficiency" to R.string.feedback_class_nutrient_deficiency,
             "viral_disease" to R.string.feedback_class_viral_disease,
-            "pests" to R.string.feedback_class_pests,
-            "edema" to R.string.feedback_class_edema,
-            "sunburn_or_scorch" to R.string.feedback_class_sunburn_or_scorch,
             "not_a_plant" to R.string.feedback_class_not_a_plant,
         )
 
@@ -763,15 +641,32 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             currentDisplayName: String?,
         ) {
             CommunityOpinionSheet().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_SCAN_ID, item.scanId)
-                    putString(ARG_CURRENT_NAME, currentDisplayName)
-                    putString(ARG_DISEASE_KEY, item.disease)
-                    putFloat(ARG_CONFIDENCE, item.confidence ?: -1f)
-                    putString(ARG_THUMB, item.thumbPath)
-                    putString(ARG_SPECIES, item.species)
-                    putBoolean(ARG_WRITABLE, item.wantsOpinion)
-                }
+                arguments = bundleOf(
+                    ARG_SCAN_ID to item.scanId,
+                    ARG_CURRENT_NAME to currentDisplayName,
+                    ARG_DISEASE_KEY to item.disease,
+                    ARG_CONFIDENCE to (item.confidence ?: -1f),
+                    ARG_THUMB to item.thumbPath,
+                    ARG_SPECIES to item.species,
+                )
+            }.show(fm, TAG)
+        }
+
+        fun showReadOnly(
+            fm: FragmentManager,
+            item: com.plantdiseases.app.data.model.CommunityScanItem,
+            currentDisplayName: String?,
+        ) {
+            CommunityOpinionSheet().apply {
+                arguments = bundleOf(
+                    ARG_SCAN_ID to item.scanId,
+                    ARG_CURRENT_NAME to currentDisplayName,
+                    ARG_DISEASE_KEY to item.disease,
+                    ARG_CONFIDENCE to (item.confidence ?: -1f),
+                    ARG_THUMB to item.thumbPath,
+                    ARG_SPECIES to item.species,
+                    ARG_VIEW_ONLY to true,
+                )
             }.show(fm, TAG)
         }
     }

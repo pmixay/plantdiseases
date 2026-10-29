@@ -18,6 +18,7 @@ import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
@@ -48,6 +49,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
+    private var pendingIdentifyFile: File? = null
 
     private val requestCamera =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -75,7 +77,13 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         binding.offlineNotice.observe(this, connectivity.isOnline)
 
         binding.btnClose.setOnClickListener { finish() }
-        binding.btnRetake.setOnClickListener { hideCandidates() }
+        binding.btnRetake.setOnClickListener {
+            pendingIdentifyFile = null
+            hideCandidates()
+        }
+        binding.btnRetryIdentify.setOnClickListener {
+            pendingIdentifyFile?.takeIf { it.isFile }?.let(::runIdentify)
+        }
 
         // Back dismisses the candidate panel (return to the live camera)
         // before leaving the screen.
@@ -120,7 +128,9 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     // ── Identify ────────────────────────────────────────────────────
     private fun runIdentify(file: File) {
+        pendingIdentifyFile = file
         binding.candidatesPanel.visibility = View.GONE
+        binding.btnRetryIdentify.visibility = View.GONE
         binding.identifyProgress.visibility = View.VISIBLE
         lifecycleScope.launch {
             val result = scanRepository.identifySpecies(file, "auto", locale)
@@ -133,12 +143,25 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
                     // rejected photo intentionally carries available=false.
                     resp.wasRejectedAsNotAPlant ->
                         showStatus(getString(R.string.identify_not_a_plant))
-                    !resp.available -> showStatus(getString(R.string.identify_unavailable))
+                    !resp.available -> {
+                        val message = when (resp.source) {
+                            "budget_exhausted" -> R.string.identify_shared_budget_exhausted
+                            "budget_unavailable" -> R.string.identify_shared_budget_unavailable
+                            else -> R.string.identify_unavailable
+                        }
+                        showStatus(getString(message))
+                    }
                     resp.results.isEmpty() -> showStatus(getString(R.string.identify_no_match))
                     else -> openTopCandidate(resp.results)
                 }
-            }.onFailure {
-                showStatus(it.localizedMessage ?: getString(R.string.identify_failed))
+            }.onFailure { error ->
+                if (MeteredAccessUi.handles(error)) {
+                    showStatus(getString(MeteredAccessUi.message(error)))
+                    binding.btnRetryIdentify.visibility = View.VISIBLE
+                    MeteredAccessUi.showDialog(this@SpeciesIdentifyActivity, error)
+                } else {
+                    showStatus(error.localizedMessage ?: getString(R.string.identify_failed))
+                }
             }
         }
     }
@@ -149,6 +172,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
      *  none has one, degrade to the no-match status (same as an empty result
      *  set). The card itself owns the route to the full species screen. */
     private fun openTopCandidate(candidates: List<SpeciesCandidate>) {
+        binding.btnRetryIdentify.visibility = View.GONE
         val top = candidates
             .filter { !it.scientificName.isNullOrBlank() }
             .maxByOrNull { it.score }

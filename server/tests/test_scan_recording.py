@@ -1,265 +1,203 @@
-"""Production scan recording (/api/analyze → labeling store, anonymized)."""
+"""Consent-gated automatic training capture coverage."""
 
 from __future__ import annotations
 
-import io
-import time
+import copy
 
 import pytest
 from PIL import Image
 
-import labeling
 import main as server_main
-from tests.conftest import FakePipeline
-
-_seed = 0
-
-
-def _jpeg(size=(640, 480), exif: bool = False) -> bytes:
-    """Distinct bytes each call (sha-unique index must not collapse scans)."""
-    global _seed
-    _seed += 1
-    img = Image.new("RGB", size, (40, 150, 60))
-    img.putpixel((1, 1), (_seed % 251, (_seed * 7) % 251, 99))
-    buf = io.BytesIO()
-    kwargs = {}
-    if exif:
-        ex = Image.Exif()
-        ex[0x010F] = "TestMake"      # Make
-        ex[0x0131] = "TestSoftware"  # Software
-        kwargs["exif"] = ex
-    img.save(buf, format="JPEG", **kwargs)
-    return buf.getvalue()
-
-
-class ConfidentPipeline(FakePipeline):
-    """Singleton conformal set == top-1 ⇒ route_scan says auto_yes."""
-
-    def __init__(self, class_name="healthy", confidence=0.95):
-        super().__init__()
-        self._cls = class_name
-        self._conf = confidence
-
-    def analyze(self, img):
-        r = super().analyze(img)
-        r["class_name"] = self._cls
-        r["confidence"] = self._conf
-        r["prediction_set"] = {"classes": [self._cls], "coverage": 0.9}
-        return r
-
-
-class NapPipeline(FakePipeline):
-    def analyze(self, img):
-        r = super().analyze(img)
-        r["class_name"] = "not_a_plant"
-        r["warnings"] = ["blurry_image"]
-        return r
-
-
-class OodRejectedPipeline(FakePipeline):
-    """Raw disease argmax rejected by the secondary OOD verdict."""
-
-    def analyze(self, img):
-        r = super().analyze(img)
-        probs = {name: 0.0 for name in self.classifier.CLASS_NAMES}
-        probs.update({"leaf_spot": 0.7, "healthy": 0.2, "not_a_plant": 0.1})
-        r.update({
-            "class_name": "leaf_spot",
-            "confidence": 0.7,
-            "all_probs": probs,
-            "top_k": [{"class": "leaf_spot", "confidence": 0.7}],
-            "warnings": ["nap_ood_gated"],
-            "abstained": True,
-            "abstention_reason": "ood",
-        })
-        return r
+import training_store
 
 
 @pytest.fixture
-def recdb(monkeypatch):
-    """Fresh labeling DB + recording enabled with test-friendly caps."""
-    if labeling.LABELING_DB_PATH.exists():
-        labeling.LABELING_DB_PATH.unlink()
-    labeling._initialised = False
-    labeling.init_db()
-    monkeypatch.setattr(server_main, "SCAN_RECORDING_ENABLED", True)
-    monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 1.0)
-    monkeypatch.setattr(server_main, "SCAN_DAILY_CAP_PER_CLASS", 50)
-    return labeling
+def capture_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(training_store, "TRAINING_DB_PATH", tmp_path / "training.db")
+    monkeypatch.setattr(training_store, "TRAINING_IMAGE_DIR", tmp_path / "images")
+    monkeypatch.setattr(training_store, "_initialised", False)
+    monkeypatch.setattr(server_main, "TRAINING_CAPTURE_ENABLED", True)
+    monkeypatch.setattr(server_main, "TRAINING_HEALTHY_KEEP_RATE", 1.0)
+    monkeypatch.setattr(server_main, "TRAINING_DAILY_CAP_PER_CLASS", 50)
+    training_store.init_db()
+    with server_main._analyze_cache_lock:
+        server_main._analyze_cache.clear()
+    return training_store
 
 
-def _rows():
-    with labeling._connect() as conn:
-        return [dict(r) for r in conn.execute(
-            "SELECT * FROM candidates ORDER BY id").fetchall()]
+def _result(
+    class_name: str = "leaf_spot",
+    *,
+    confidence: float = 0.72,
+    regions: list[dict] | None = None,
+    prediction_set: list[str] | None = None,
+) -> dict:
+    regions = regions if regions is not None else [
+        {"x": 10, "y": 8, "width": 80, "height": 70, "confidence": 0.9}
+    ]
+    return {
+        "class_name": class_name,
+        "confidence": confidence,
+        "all_probs": {class_name: confidence, "healthy": 1.0 - confidence},
+        "top_k": [
+            {"class": class_name, "confidence": confidence},
+            {"class": "healthy", "confidence": 1.0 - confidence},
+        ],
+        "warnings": ["uncertain_prediction"] if confidence < 0.85 else [],
+        "severity": "medium" if class_name != "healthy" else "low",
+        "prediction_set": {
+            "classes": prediction_set or [class_name, "healthy"],
+            "coverage": 0.9,
+        },
+        "detection": {
+            "is_diseased": class_name != "healthy",
+            "detector_confidence": 0.9,
+            "regions": regions,
+            "primary_region": regions[0] if regions else None,
+        },
+        "elapsed_ms": 1.0,
+    }
 
 
-def test_labeling_connection_releases_database_file(tmp_path, monkeypatch):
-    """The feedback-to-training DB must not stay locked after a context exits.
-
-    Windows refuses to unlink an open SQLite database, so this catches a leak
-    that Linux permits and verifies the store's short-lived-connection promise.
-    """
-    db = tmp_path / "replaceable.db"
-    monkeypatch.setattr(labeling, "LABELING_DB_PATH", db)
-    labeling._initialised = False
-    labeling.init_db()
-    with labeling._connect() as conn:
-        conn.execute("SELECT 1").fetchone()
-    db.unlink()
-    assert not db.exists()
+def _capture(store, result: dict, *, colour="green") -> str:
+    receipt = store.issue_feedback_receipt(capture_pending=True)
+    server_main._record_training_candidate(
+        Image.new("RGB", (120, 100), colour),
+        receipt,
+        family="gamma",
+        model_version="2.6.9",
+        result=result,
+        consent_version="model-improvement-v1",
+    )
+    return receipt
 
 
-def _analyze(client, body):
-    r = client.post("/api/analyze", files={"image": ("leaf.jpg", body, "image/jpeg")})
-    assert r.status_code == 200, r.text
-    return r.json()
+def test_disease_and_uncertain_samples_are_retained(capture_store, monkeypatch):
+    monkeypatch.setattr(server_main, "TRAINING_HEALTHY_KEEP_RATE", 0.0)
+    disease_receipt = _capture(capture_store, _result("leaf_spot"))
+    uncertain_receipt = _capture(
+        capture_store,
+        _result("healthy", confidence=0.51, prediction_set=["healthy", "leaf_spot"]),
+        colour="yellow",
+    )
+    assert capture_store.sample_by_receipt(disease_receipt)["predicted_class"] == "leaf_spot"
+    assert capture_store.sample_by_receipt(uncertain_receipt)["review_status"] == "pending"
 
 
-def test_scan_recorded_with_source_status_scan_id(client, recdb):
-    # FakePipeline: healthy, low confidence, no conformal set → pending
-    data = _analyze(client, _jpeg())
-    rows = _rows()
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["source"] == "user_scan"
-    assert row["status"] == "pending"          # low confidence = suspicious
-    assert row["scan_id"] == data["scan_id"]
-    assert row["class"] == "healthy"
-    assert row["model_pred"] == "healthy"
+def test_confident_healthy_sampling_is_deterministic(capture_store, monkeypatch):
+    monkeypatch.setattr(server_main, "TRAINING_HEALTHY_KEEP_RATE", 0.0)
+    dropped = _capture(
+        capture_store,
+        _result("healthy", confidence=0.95, prediction_set=["healthy"]),
+    )
+    assert capture_store.sample_by_receipt(dropped) is None
+    assert capture_store.deterministically_sample("00000001" + "0" * 56, 0.1)
+    assert not capture_store.deterministically_sample("ffffffff" + "0" * 56, 0.1)
 
 
-def test_confident_singleton_set_routes_auto_yes(client, recdb, monkeypatch):
-    monkeypatch.setattr(server_main, "pipeline", ConfidentPipeline("pests", 0.97))
-    _analyze(client, _jpeg())
-    rows = _rows()
-    assert len(rows) == 1 and rows[0]["status"] == "auto_yes"
+@pytest.mark.parametrize(
+    "result",
+    [
+        _result("not_a_plant"),
+        _result("leaf_spot", regions=[]),
+    ],
+)
+def test_not_a_plant_and_missing_crop_retain_nothing(capture_store, result):
+    receipt = _capture(capture_store, copy.deepcopy(result))
+    assert capture_store.sample_by_receipt(receipt) is None
+    assert capture_store.apply_feedback(receipt, correct=False).updated is False
+    assert capture_store.training_counts()["total"] == 0
 
 
-def test_nap_and_blur_not_recorded(client, recdb, monkeypatch):
-    monkeypatch.setattr(server_main, "pipeline", NapPipeline())
-    _analyze(client, _jpeg())
-    assert _rows() == []
+def test_daily_class_cap_is_enforced(capture_store, monkeypatch):
+    monkeypatch.setattr(server_main, "TRAINING_DAILY_CAP_PER_CLASS", 1)
+    first = _capture(capture_store, _result("leaf_spot"), colour="green")
+    second = _capture(capture_store, _result("leaf_spot"), colour="red")
+    assert capture_store.sample_by_receipt(first) is not None
+    assert capture_store.sample_by_receipt(second) is None
+    assert capture_store.training_counts()["total"] == 1
 
 
-def test_ood_abstained_argmax_is_not_ingested_as_training_label(
-    client, recdb, monkeypatch,
+def _ood_rejected_result() -> dict:
+    """Raw disease argmax rejected by the secondary OOD verdict."""
+    result = _result("leaf_spot", confidence=0.7)
+    result["warnings"] = ["nap_ood_gated"]
+    return result
+
+
+def test_ood_abstained_argmax_is_not_ingested_as_training_label(capture_store):
+    receipt = _capture(capture_store, _ood_rejected_result())
+    assert capture_store.sample_by_receipt(receipt) is None
+    assert capture_store.training_counts()["total"] == 0
+
+
+def test_analyze_ood_abstention_skips_capture_and_binds_hidden_community_claim(
+    client, capture_store, png_bytes, monkeypatch
 ):
-    monkeypatch.setattr(server_main, "pipeline", OodRejectedPipeline())
-    body = _analyze(client, _jpeg())
+    claims: list[str] = []
+
+    def _record_token(_token, **kwargs):
+        claims.append(kwargs["disease"])
+
+    monkeypatch.setattr(server_main, "community_record_analysis_token", _record_token)
+    monkeypatch.setattr(
+        server_main.pipeline, "analyze", lambda _image: _ood_rejected_result()
+    )
+    path = (
+        "/api/analyze?training_consent=true&"
+        f"training_consent_version={server_main.TRAINING_CONSENT_VERSION}"
+    )
+    first = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    second = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    assert first.status_code == second.status_code == 200
+    body = first.json()
     assert body["class_name"] == "leaf_spot"  # diagnostic remains available
     assert body["abstained"] is True
     assert body["abstention_reason"] == "ood"
-    assert _rows() == []
+    assert second.json()["is_repeat"] is True
+    assert capture_store.training_counts()["total"] == 0
+    # Neither the fresh nor the cached response can publish the raw argmax.
+    assert claims == ["not_a_plant", "not_a_plant"]
 
 
-def test_cache_hit_records_once(client, recdb):
-    body = _jpeg()
-    _analyze(client, body)
-    second = _analyze(client, body)
-    assert second["is_repeat"] is True
-    assert len(_rows()) == 1
+def test_analyze_without_training_consent_writes_no_sample(
+    client, capture_store, png_bytes, monkeypatch
+):
+    monkeypatch.setattr(server_main.pipeline, "analyze", lambda _image: _result())
+    response = client.post(
+        "/api/analyze", files={"image": ("scan.png", png_bytes, "image/png")}
+    )
+    assert response.status_code == 200, response.text
+    assert capture_store.training_counts()["total"] == 0
+    assert capture_store.sample_by_receipt(response.json()["feedback_receipt"]) is None
 
 
-def test_recording_disabled_no_row(client, recdb, monkeypatch):
-    monkeypatch.setattr(server_main, "SCAN_RECORDING_ENABLED", False)
-    _analyze(client, _jpeg())
-    assert _rows() == []
+def test_analyze_requires_current_consent_disclosure(
+    client, capture_store, png_bytes
+):
+    response = client.post(
+        "/api/analyze?training_consent=true&training_consent_version=stale-v0",
+        files={"image": ("scan.png", png_bytes, "image/png")},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "training_consent_version_invalid"
+    assert capture_store.training_counts()["total"] == 0
 
 
-def test_stored_image_exif_stripped_and_downscaled(client, recdb):
-    _analyze(client, _jpeg(size=(2048, 1536), exif=True))
-    rows = _rows()
-    assert len(rows) == 1
-    stored = labeling.LABELING_IMG_DIR / rows[0]["image_path"]
-    img = Image.open(stored)
-    assert max(img.size) <= server_main.SCAN_IMG_MAX_SIDE
-    assert not img.getexif()  # EXIF (incl. GPS) dropped by re-encode
-
-
-def test_common_class_auto_yes_sampled_out(client, recdb, monkeypatch):
-    # healthy is the abundant easy class → confident scans honour the keep rate
-    monkeypatch.setattr(server_main, "pipeline", ConfidentPipeline("healthy", 0.97))
-    monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 0.0)
-    _analyze(client, _jpeg())
-    assert _rows() == []
-
-
-def test_disease_class_always_kept_despite_zero_keep_rate(client, recdb, monkeypatch):
-    # every disease class is high-value training signal → never sampled out
-    monkeypatch.setattr(
-        server_main, "pipeline", ConfidentPipeline("gray_mold_botrytis", 0.97))
-    monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 0.0)
-    _analyze(client, _jpeg())
-    rows = _rows()
-    assert len(rows) == 1 and rows[0]["status"] == "auto_yes"
-
-
-def test_suspicious_scan_kept_despite_zero_keep_rate(client, recdb, monkeypatch):
-    # default FakePipeline is unconfident → pending → always kept
-    monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 0.0)
-    _analyze(client, _jpeg())
-    assert len(_rows()) == 1
-
-
-def test_daily_cap_per_class(client, recdb, monkeypatch):
-    monkeypatch.setattr(server_main, "SCAN_DAILY_CAP_PER_CLASS", 1)
-    _analyze(client, _jpeg())
-    _analyze(client, _jpeg())
-    assert len(_rows()) == 1
-
-
-def test_keep_sampling_is_deterministic_by_sha():
-    sha_low = "00000001" + "0" * 56   # bucket 1 → kept at 10%
-    sha_high = "ffffffff" + "0" * 56  # bucket ~9999 → dropped at 10%
-    assert server_main._scan_keep_sampled(sha_low, 0.1) is True
-    assert server_main._scan_keep_sampled(sha_high, 0.1) is False
-    # repeat calls agree (pure function of sha)
-    assert server_main._scan_keep_sampled(sha_high, 0.1) is False
-
-
-def test_prune_user_scans_order(recdb):
-    """auto_yes common-class rows die first; pending only past retention;
-    user_feedback and human-verdict rows never."""
-    now = int(time.time())
-    old = now - 200 * 86400
-
-    def seed(cls, status, source, created_at, tag):
-        sha = f"{tag:0>64}"
-        fn = f"{sha}.jpg"
-        labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
-        (labeling.LABELING_IMG_DIR / fn).write_bytes(b"x")
-        rid = labeling.insert_candidate(
-            cls=cls, image_path=fn, source=source, source_url=None,
-            subject_plant=None, sha=sha, phash=None, status=status,
-        )
-        with labeling._connect() as conn:
-            conn.execute(
-                "UPDATE candidates SET created_at=? WHERE id=?", (created_at, rid))
-        return rid
-
-    fresh_auto_common = seed("healthy", "auto_yes", "user_scan", now, "a1")
-    old_auto_weak = seed("gray_mold_botrytis", "auto_yes", "user_scan", old, "a2")
-    old_pending = seed("leaf_spot", "pending", "user_scan", old, "a3")
-    fresh_pending = seed("leaf_spot", "pending", "user_scan", now, "a4")
-    old_feedback = seed("leaf_spot", "pending", "user_feedback", old, "a5")
-    human_yes = seed("pests", "yes", "user_scan", old, "a6")
-
-    # retention pass only: old pending user_scan dies, others stay
-    labeling.prune_user_scans(90, 1000, {"gray_mold_botrytis"})
-    ids = {r["id"] for r in _rows()}
-    assert old_pending not in ids
-    assert {fresh_auto_common, old_auto_weak, fresh_pending,
-            old_feedback, human_yes} <= ids
-
-    # cap pass: max 3 user_scan rows remain (auto_yes common dies before weak)
-    labeling.prune_user_scans(90, 3, {"gray_mold_botrytis"})
-    ids = {r["id"] for r in _rows()}
-    assert fresh_auto_common not in ids        # common auto_yes pruned first
-    assert {old_auto_weak, fresh_pending, old_feedback, human_yes} <= ids
-
-    # squeeze to 1: weak auto_yes goes next; pending/feedback/human survive
-    labeling.prune_user_scans(90, 1, {"gray_mold_botrytis"})
-    ids = {r["id"] for r in _rows()}
-    assert old_auto_weak not in ids
-    assert {fresh_pending, old_feedback, human_yes} <= ids
+def test_analyze_with_consent_stores_crop_and_cache_issues_fresh_receipt(
+    client, capture_store, png_bytes, monkeypatch
+):
+    monkeypatch.setattr(server_main.pipeline, "analyze", lambda _image: _result())
+    path = (
+        "/api/analyze?training_consent=true&"
+        f"training_consent_version={server_main.TRAINING_CONSENT_VERSION}"
+    )
+    first = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    second = client.post(path, files={"image": ("scan.png", png_bytes, "image/png")})
+    assert first.status_code == second.status_code == 200
+    assert first.json()["feedback_receipt"] != second.json()["feedback_receipt"]
+    assert first.json()["scan_id"] != second.json()["scan_id"]
+    assert second.json()["is_repeat"] is True
+    assert capture_store.training_counts()["total"] == 1
+    assert capture_store.sample_by_receipt(first.json()["feedback_receipt"]) is not None
+    assert capture_store.sample_by_receipt(second.json()["feedback_receipt"]) is not None

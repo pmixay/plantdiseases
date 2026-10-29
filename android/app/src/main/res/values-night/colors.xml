@@ -10,6 +10,10 @@
     <color name="primary_light">#14532D</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#052E16</color>
+    <!-- Official Yandex ID main-button palette for a dark surface. -->
+    <color name="yandex_button_background">#FFFFFF</color>
+    <color name="yandex_button_on_background">#000000</color>
+    <color name="yandex_button_ripple">#E5E7EB</color>
     <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
          colorSecondary / colorOnSecondary attributes. -->
     <color name="primary_dark">#16A34A</color>
@@ -65,6 +69,8 @@
     <color name="healthy_green_bg">#14532D</color>
     <color name="disease_red">#F87171</color>
     <color name="disease_red_bg">#3A1B1B</color>
+    <color name="danger_button">#DC2626</color>
+    <color name="on_danger_button">#FFFFFF</color>
     <color name="warning_amber">#FBBF24</color>
     <color name="warning_amber_bg">#3A2E1B</color>
     <color name="confidence_gradient_mid">#3A251B</color>
@@ -108,4 +114,6 @@
     <color name="moon_dark">#161B20</color>
     <color name="moon_mare">#7A766B</color>
     <color name="moon_glow">#22FFFFFF</color>
+    <color name="pro_gate_scrim_start">#B31A211D</color>
+    <color name="pro_gate_scrim_end">#F70E1511</color>
 </resources>

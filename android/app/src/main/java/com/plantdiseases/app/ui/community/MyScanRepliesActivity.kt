@@ -22,8 +22,6 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityMyScanRepliesBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.TelemetryIds
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
@@ -104,33 +102,12 @@ class MyScanRepliesActivity : AppCompatActivity() {
                 }
                 return@launch
             }
-            scanRepository.getCommunityOpinions(
-                scanId,
-                TelemetryIds.userPseudoId(this@MyScanRepliesActivity),
-                context = this@MyScanRepliesActivity,
-            )
+            scanRepository.getCommunityOpinions(scanId)
                 .onSuccess {
-                    binding.tvRepliesEmpty.apply {
-                        text = getString(R.string.community_opinion_replies_empty)
-                        isClickable = false
-                        setOnClickListener(null)
-                    }
                     renderStatus(it.wantsOpinion, it.opinionRequestedAt)
                     renderThread(it.consensus, it.opinions)
                 }
-                .onFailure {
-                    renderThread(emptyList(), emptyList())
-                    binding.llRepliesStatus.visibility = View.GONE
-                    binding.tvRepliesEmpty.apply {
-                        visibility = View.VISIBLE
-                        text = getString(R.string.community_opinion_error)
-                        isClickable = true
-                        setOnClickListener {
-                            text = getString(R.string.community_opinion_loading)
-                            load()
-                        }
-                    }
-                }
+                .onFailure { renderThread(emptyList(), emptyList()) }
         }
     }
 
@@ -182,7 +159,7 @@ class MyScanRepliesActivity : AppCompatActivity() {
         binding.btnRepliesStopRequest.setOnClickListener {
             binding.btnRepliesStopRequest.isEnabled = false
             lifecycleScope.launch {
-                scanRepository.cancelSecondOpinion(scanId, TelemetryIds.userPseudoId(this@MyScanRepliesActivity))
+                scanRepository.cancelSecondOpinion(scanId)
                     .onSuccess {
                         Toast.makeText(this@MyScanRepliesActivity, R.string.second_opinion_stopped, Toast.LENGTH_SHORT).show()
                         binding.llRepliesStatus.visibility = View.GONE
@@ -221,75 +198,18 @@ class MyScanRepliesActivity : AppCompatActivity() {
             binding.tvRepliesListHeader.text = getString(R.string.community_opinion_list_header, opinions.size)
             opinions.forEach { opinion ->
                 binding.llRepliesList.addView(
-                    OpinionViews.buildOpinionRow(
-                        this,
-                        opinion,
-                        onReport = { it.contentId?.let { id -> showReportDialog(id) } },
-                        onBlock = { it.contentId?.let { id -> confirmBlock(id) } },
-                    ),
+                    OpinionViews.buildOpinionRow(this, opinion) {
+                        it.authorToken?.let { token ->
+                            startActivity(CommunityProfileActivity.intent(this, token))
+                        }
+                    },
                 )
             }
         }
     }
 
-    private fun showReportDialog(opinionId: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.community_report_title)
-            .setItems(resources.getStringArray(R.array.community_report_reason_labels)) { _, which ->
-                val reason = REPORT_REASONS.getOrNull(which) ?: return@setItems
-                lifecycleScope.launch {
-                    scanRepository.reportCommunityContent(
-                        TelemetryIds.userPseudoId(this@MyScanRepliesActivity),
-                        "opinion",
-                        opinionId,
-                        reason,
-                        this@MyScanRepliesActivity,
-                    ).onSuccess {
-                        Toast.makeText(this@MyScanRepliesActivity, R.string.community_report_sent, Toast.LENGTH_SHORT).show()
-                    }.onFailure {
-                        Toast.makeText(this@MyScanRepliesActivity, R.string.community_safety_error, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmBlock(opinionId: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.community_block_title)
-            .setMessage(R.string.community_block_body)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.community_block_confirm) { _, _ ->
-                lifecycleScope.launch {
-                    scanRepository.blockCommunityAuthor(
-                        TelemetryIds.userPseudoId(this@MyScanRepliesActivity),
-                        "opinion",
-                        opinionId,
-                        this@MyScanRepliesActivity,
-                    ).onSuccess {
-                        Toast.makeText(this@MyScanRepliesActivity, R.string.community_blocked, Toast.LENGTH_SHORT).show()
-                        load()
-                    }.onFailure {
-                        Toast.makeText(this@MyScanRepliesActivity, R.string.community_safety_error, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .show()
-    }
-
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
-
-        private val REPORT_REASONS = listOf(
-            "sexual_content",
-            "violence_or_threats",
-            "hate_or_harassment",
-            "illegal_or_dangerous",
-            "spam_or_misleading",
-            "privacy_or_impersonation",
-            "other_rules_violation",
-        )
 
         fun intentFor(context: Context, scanId: String): Intent =
             Intent(context, MyScanRepliesActivity::class.java).putExtra(EXTRA_SCAN_ID, scanId)

@@ -13,6 +13,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.util.InAppReviewManager
 import kotlinx.coroutines.launch
 
@@ -102,8 +103,9 @@ class CarePlanController(
                     showApplyToReminders = scan.plantId != null,
                     onApplyToReminders = { applied -> applyToReminders(scan, applied) },
                 )
-            }.onFailure {
+            }.onFailure { error ->
                 view.showError(onRetry = { bind(scan, repository, isRu) })
+                MeteredAccessUi.showDialog(activity, error)
             }
         }
     }

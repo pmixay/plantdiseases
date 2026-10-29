@@ -1,7 +1,11 @@
 package com.plantdiseases.app.data.repository
 
-import android.content.Context
+import android.util.AtomicFile
 import com.google.gson.Gson
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
+import com.plantdiseases.app.auth.AuthenticationRequiredException
+import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.local.ScanChatMessageDao
 import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanDao
@@ -15,6 +19,7 @@ import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
+import com.plantdiseases.app.data.model.CommunityPublicProfile
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
@@ -26,26 +31,29 @@ import com.plantdiseases.app.data.model.diagnosticContractViolation
 import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
-import com.plantdiseases.app.util.CommunityIdentity
-import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.ImageUtils
-import com.plantdiseases.app.util.Nicknames
-import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.DefaultUploadImageSanitizer
+import com.plantdiseases.app.util.FeedbackReceiptStore
+import com.plantdiseases.app.util.NoOpFeedbackReceiptStore
+import com.plantdiseases.app.util.SanitizedImage
+import com.plantdiseases.app.util.UploadImageSanitizer
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,11 +61,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-
-/** The install's pseudo-id authorises reads of its own Community state, so it
- *  travels in this header and never in a URL — proxies and access logs record
- *  URLs. Servers that predate the header ignore it (it is optional there). */
-private const val USER_PSEUDO_ID_HEADER = "X-User-Pseudo-Id"
+import java.security.MessageDigest
+import java.util.UUID
 
 class ScanRepository(
     private val scanDao: ScanDao,
@@ -66,22 +71,150 @@ class ScanRepository(
     // surface don't need a Room database. Chat persistence quietly no-ops
     // when absent.
     private val scanChatMessageDao: ScanChatMessageDao? = null,
+    private val imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
+    private val feedbackReceiptStore: FeedbackReceiptStore = NoOpFeedbackReceiptStore,
+    private val authRepository: AuthRepository? = null,
 ) {
+    companion object {
+        internal const val RETAINED_ANALYSIS_IMAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
+        internal const val MAX_PENDING_ANALYSIS_IMAGES = 2
+        private const val HEADER_IDEMPOTENCY_KEY = "X-Idempotency-Key"
+        private const val HEADER_PLAN = "X-PlantDiseases-Plan"
+        private const val HEADER_QUOTA_LIMIT = "X-Quota-Limit"
+        private const val HEADER_QUOTA_REMAINING = "X-Quota-Remaining"
+        private const val HEADER_QUOTA_RESET_AT = "X-Quota-Reset-At"
+    }
+
     private val gson = Gson()
+    private val speciesRepository = SpeciesRepository(apiClient)
+    private val retainedAnalysisImageLock = Any()
+    private val pendingAnalysisImages = LinkedHashMap<PendingAnalysisImageKey, SanitizedImage>()
+    private val scanArtifactMutex = Mutex()
 
     // Serialises Aqua model installs so two concurrent syncAquaModel calls
     // (e.g. rapid config-change recreations each firing one) can't race the
     // shared temp/model file and corrupt it.
     private val aquaSyncMutex = Mutex()
 
-    // The key hash the server has already acknowledged, so the adopt POST
-    // rides along with the first community write of the process rather than
-    // every one of them. Keyed on the hash rather than a boolean because
-    // "Leave community" calls CommunityIdentity.clear(), which mints a fresh
-    // secret — a boolean would suppress the adopt for that new identity until
-    // the process restarted.
-    @Volatile
-    private var adoptedAuthorKeyHash: String? = null
+    private suspend fun <T> authenticatedAppCall(
+        block: suspend (accessToken: String) -> T,
+    ): Result<T> {
+        val result = authRepository?.authenticatedCall(block)
+            ?: return Result.failure(AuthenticationRequiredException())
+        return result.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { error ->
+                Result.failure(
+                    when (error) {
+                        is SocketTimeoutException -> ServerTimeoutException()
+                        is UnknownHostException -> NoNetworkException()
+                        is java.net.ConnectException -> ServerTimeoutException()
+                        else -> error
+                    },
+                )
+            },
+        )
+    }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.bearer(token: String) {
+        header(HttpHeaders.Authorization, "Bearer $token")
+    }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.metered(
+        token: String?,
+        requestId: String,
+    ) {
+        token?.let { bearer(it) }
+        header(HEADER_IDEMPOTENCY_KEY, requestId)
+    }
+
+    /**
+     * Run one metered app request as the signed-in account when possible, or as
+     * a guest otherwise. A signed-in 401 is converted to the account client's
+     * refresh signal, so [AuthRepository] retries the block exactly once with a
+     * fresh Bearer token. Callers create their idempotency UUID outside this
+     * block; the refresh retry therefore reuses the same logical operation id.
+     */
+    private suspend fun optionalMeteredCall(
+        request: suspend (accessToken: String?) -> HttpResponse,
+    ): Result<HttpResponse> {
+        if (authRepository?.state?.value is AuthState.Authenticated) {
+            return authenticatedAppCall { token ->
+                val response = request(token)
+                if (response.status.value == 401) {
+                    throw AccountApiException(401, "auth_required")
+                }
+                response
+            }
+        }
+        return try {
+            Result.success(request(null))
+        } catch (_: SocketTimeoutException) {
+            Result.failure(ServerTimeoutException())
+        } catch (_: UnknownHostException) {
+            Result.failure(NoNetworkException())
+        } catch (_: java.net.ConnectException) {
+            Result.failure(ServerTimeoutException())
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        }
+    }
+
+    /** Only quota denials carry the complete quota-header tuple. An ordinary
+     * anti-abuse 429 deliberately stays a [RateLimitException]. */
+    private fun HttpResponse.meteredDenialOrNull(): Exception? {
+        val plan = headers[HEADER_PLAN]?.trim()?.takeIf { it.isNotEmpty() }
+        val limit = headers[HEADER_QUOTA_LIMIT]?.toIntOrNull()
+        val remaining = headers[HEADER_QUOTA_REMAINING]?.toIntOrNull()
+        val resetAt = headers[HEADER_QUOTA_RESET_AT]?.trim()?.takeIf { it.isNotEmpty() }
+        return when {
+            status.value == 402 -> ProRequiredException(plan, limit, remaining, resetAt)
+            status.value == 429 &&
+                plan != null &&
+                limit != null &&
+                remaining != null &&
+                resetAt != null -> QuotaExhaustedException(plan, limit, remaining, resetAt)
+            else -> null
+        }
+    }
+
+    private suspend inline fun <reified T> HttpResponse.protectedBody(): T {
+        if (status.value == 401) throw AccountApiException(401, "auth_required")
+        if (!status.isSuccess()) throw CommunityRequestException(status.value)
+        return body()
+    }
+
+    private suspend fun HttpResponse.requireProtectedSuccess() {
+        if (status.value == 401) throw AccountApiException(401, "auth_required")
+        if (!status.isSuccess()) throw CommunityRequestException(status.value)
+    }
+
+    /** Public community reads carry an account token when one is available so
+     * server-side block filtering follows the user across devices. Guests keep
+     * the same public read path. A signed-in 401 gets the standard one-time
+     * refresh/retry semantics through [authenticatedAppCall]. */
+    private suspend inline fun <reified T> optionalAccountGet(
+        crossinline request: suspend (accessToken: String?) -> HttpResponse,
+    ): Result<T> {
+        if (authRepository?.state?.value is AuthState.Authenticated) {
+            return authenticatedAppCall { token ->
+                request(token).protectedBody<T>()
+            }
+        }
+        return try {
+            val response = request(null)
+            if (!response.status.isSuccess()) {
+                throw CommunityRequestException(response.status.value)
+            }
+            Result.success(response.body<T>())
+        } catch (_: SocketTimeoutException) {
+            Result.failure(ServerTimeoutException())
+        } catch (_: UnknownHostException) {
+            Result.failure(NoNetworkException())
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        }
+    }
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -94,43 +227,56 @@ class ScanRepository(
         speciesHint: String? = null,
         locale: String = "en",
         family: String = "gamma",
+        trainingConsent: Boolean = false,
+        trainingConsentVersion: String? = null,
     ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
                 // Ktor multipart over the shared OkHttp engine. Reading the
-                // bytes up front (rather than streaming the File) keeps the
-                // body re-writable, so the OkHttp RetryInterceptor can replay
-                // the POST once on an explicit 429/503 — the same behaviour the
-                // Retrofit File-backed body had.
-                val imageBytes = imageFile.readBytes()
-                val response = apiClient.httpClient.post("api/analyze") {
-                    url {
-                        speciesHint?.takeIf { it.isNotBlank() }?.let {
-                            parameters.append("species", it)
+                // bytes up front keeps the body re-writable for the one safe
+                // pre-consumption replay: AuthRepository's 401 token refresh.
+                // The shared interceptor deliberately does not replay metered
+                // 429/503 responses after quota may have been consumed.
+                val image = imageSanitizer.sanitize(imageFile)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/analyze") {
+                        metered(token, requestId)
+                        url {
+                            speciesHint?.takeIf { it.isNotBlank() }?.let {
+                                parameters.append("species", it)
+                            }
+                            parameters.append("locale", locale)
+                            // Model tier (aqua | gamma | frontier). Aqua normally
+                            // never reaches here (on-device); gamma is the default;
+                            // frontier only when the operator enabled it.
+                            parameters.append("family", family)
+                            parameters.append("training_consent", trainingConsent.toString())
+                            trainingConsentVersion?.takeIf { trainingConsent && it.isNotBlank() }?.let {
+                                parameters.append("training_consent_version", it)
+                            }
                         }
-                        parameters.append("locale", locale)
-                        // Model tier (aqua | gamma | frontier). Aqua normally
-                        // never reaches here (on-device); gamma is the default;
-                        // frontier only when the operator enabled it.
-                        parameters.append("family", family)
+                        setBody(
+                            MultiPartFormDataContent(
+                                formData {
+                                    append(
+                                        "image",
+                                        image.bytes,
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${image.filename}\"",
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                        )
                     }
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                append(
-                                    "image",
-                                    imageBytes,
-                                    Headers.build {
-                                        append(HttpHeaders.ContentType, "image/jpeg")
-                                        append(
-                                            HttpHeaders.ContentDisposition,
-                                            "filename=\"${imageFile.name}\"",
-                                        )
-                                    },
-                                )
-                            },
-                        ),
-                    )
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> {
@@ -146,6 +292,12 @@ class ScanRepository(
                         } else {
                             val violation = analysis.diagnosticContractViolation()
                             if (violation == null) {
+                                analysis.scanId?.takeIf { it.isNotBlank() }?.let { scanId ->
+                                    // Hold only a small in-memory handoff until saveScan creates
+                                    // the owning Room row. A process death then fails publication
+                                    // closed instead of leaving an unowned private disk sidecar.
+                                    rememberPendingAnalysisImage(imageFile, scanId, image)
+                                }
                                 Result.success(analysis)
                             } else {
                                 Result.failure(InvalidAnalysisResponseException(violation))
@@ -301,31 +453,36 @@ class ScanRepository(
     ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
-                // Re-encoded, never readBytes(): the file can still carry the
-                // camera's EXIF (GPS included) — see ImageUtils.encodeForUpload.
-                val imageBytes = ImageUtils.encodeForUpload(imageFile.path)
-                val response = apiClient.httpClient.post("api/identify") {
-                    url {
-                        parameters.append("organ", organ)
-                        parameters.append("locale", locale)
+                val image = imageSanitizer.sanitize(imageFile)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/identify") {
+                        metered(token, requestId)
+                        url {
+                            parameters.append("organ", organ)
+                            parameters.append("locale", locale)
+                        }
+                        setBody(
+                            MultiPartFormDataContent(
+                                formData {
+                                    append(
+                                        "image",
+                                        image.bytes,
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${image.filename}\"",
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                        )
                     }
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                append(
-                                    "image",
-                                    imageBytes,
-                                    Headers.build {
-                                        append(HttpHeaders.ContentType, "image/jpeg")
-                                        append(
-                                            HttpHeaders.ContentDisposition,
-                                            "filename=\"${imageFile.name}\"",
-                                        )
-                                    },
-                                )
-                            },
-                        ),
-                    )
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<IdentifyResponse>())
@@ -334,10 +491,6 @@ class ScanRepository(
                     400, 415 -> Result.failure(UnsupportedImageException())
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
-            } catch (e: ImageUtils.ImageDecodeException) {
-                Result.failure(UnsupportedImageException())
-            } catch (e: OutOfMemoryError) {
-                Result.failure(UnsupportedImageException())
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
             } catch (e: UnknownHostException) {
@@ -371,9 +524,16 @@ class ScanRepository(
                 .get(cacheKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiClient.httpClient.post("api/care-plan") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/care-plan") {
+                        metered(token, requestId)
+                        contentType(ContentType.Application.Json)
+                        setBody(request)
+                    }
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> {
@@ -427,75 +587,109 @@ class ScanRepository(
             }
         }
 
-    /** List community "second opinions" + consensus for a shared scan.
-     *  [userPseudoId] is optional — pass the caller's own id to get an
-     *  accurate `likedByMe` in the response. [context] is optional too and
-     *  drives `myOpinion` the same way — omit it (e.g. a background poll
-     *  with no UI context handy) and it just reads as "no opinion yet"
-     *  instead of failing; see opinions_for's docstring server-side for why
-     *  `myOpinion` keys on the device identity rather than userPseudoId. */
-    suspend fun getCommunityOpinions(
-        scanId: String,
-        userPseudoId: String? = null,
-        context: Context? = null,
-    ): Result<CommunityOpinionsResponse> =
+    /** List community opinions with viewer-relative state when signed in. */
+    suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.get("api/community/opinions/$scanId") {
-                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        header(USER_PSEUDO_ID_HEADER, it)
-                    }
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/opinions/$scanId") {
+                    token?.let { bearer(it) }
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
-    /** Submit one community "second opinion". Returns the refreshed list.
-     *  [context] resolves the device's durable identity key — reachable
-     *  unconditionally here because posting an opinion is only ever
-     *  reachable after the user has already opted into community sharing
-     *  (CommunityController / NearbyScansActivity both gate on
-     *  CommunityPrefs.uploadsEnabled before this call site is reachable at
-     *  all), so sending it here doesn't contradict the privacy policy's
-     *  "nothing sent while community sharing is off". */
+    /** Public account activity behind an opaque community author token. */
+    suspend fun getCommunityProfile(authorToken: String): Result<CommunityPublicProfile> =
+        withContext(Dispatchers.IO) {
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/profile/$authorToken") {
+                    token?.let { bearer(it) }
+                }
+            }
+        }
+
+    /** Submit one community "second opinion". Returns the refreshed list. */
     suspend fun submitCommunityOpinion(
-        context: Context,
         request: CommunityOpinionRequest,
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
-            // The server refuses an opinion without an adopted author key (the
-            // consensus tally dedupes on it), so don't send one that can only
-            // come back 401 — adoption failed, most likely offline.
-            val authorKey = adoptedCommunityKey(context)
-                ?: return@withContext Result.failure(CommunityIdentityUnavailableException())
-            try {
+            authenticatedAppCall { token ->
                 val response = apiClient.httpClient.post("api/community/opinion") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
-                    header("X-Community-Author-Key", authorKey)
                     setBody(request)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
-                    423 -> Result.failure(CommunityOpinionsLockedException())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                if (response.status.value == 423) throw CommunityOpinionsLockedException()
+                response.protectedBody<CommunityOpinionsResponse>()
+            }
+        }
+
+    /** Report a shared scan or one reply using only its opaque public token. */
+    suspend fun reportCommunityContent(
+        targetType: String,
+        targetId: String,
+        reason: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/safety/report") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityReportRequest(
+                            targetType = targetType,
+                            targetId = targetId,
+                            reason = reason,
+                        ),
+                    )
                 }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse>()
+                    .ok
+            }
+        }
+
+    /** Block the server-resolved author of a scan or reply. */
+    suspend fun blockCommunityAuthor(
+        targetType: String,
+        targetId: String,
+    ): Result<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/safety/block") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityBlockRequest(
+                            targetType = targetType,
+                            targetId = targetId,
+                        ),
+                    )
+                }
+                response.protectedBody()
+            }
+        }
+
+    suspend fun communityBlocks(): Result<List<com.plantdiseases.app.data.model.CommunityBlockItem>> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.get("api/community/safety/blocks") {
+                    bearer(token)
+                }
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunityBlocksResponse>()
+                    .items
+            }
+        }
+
+    suspend fun unblockCommunityAuthor(blockId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.delete(
+                    "api/community/safety/blocks/$blockId",
+                ) {
+                    bearer(token)
+                }
+                response.requireProtectedSuccess()
             }
         }
 
@@ -505,37 +699,27 @@ class ScanRepository(
      * wait for others to weigh in. Returns `true` when the server
      * actually flagged an owned community row; `false` (still a success)
      * when no owned row exists yet — the community upload is
-     * fire-and-forget and the user may have opted out of sharing. The UI
-     * shows its local "waiting" state regardless.
+     * fire-and-forget and the user may have opted out of sharing. Callers must
+     * treat that false result as a failed request rather than showing a local
+     * waiting state that the server does not know about.
      */
     suspend fun requestSecondOpinion(
         scanId: String,
-        userPseudoId: String,
     ): Result<Boolean> =
         withContext(Dispatchers.IO) {
-            try {
+            authenticatedAppCall { token ->
                 val response = apiClient.httpClient.post("api/community/request-opinion") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
                     setBody(
                         com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
                             scanId = scanId,
-                            userPseudoId = userPseudoId,
                         ),
                     )
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
-                            .flagged,
-                    )
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
+                    .flagged
             }
         }
 
@@ -548,32 +732,21 @@ class ScanRepository(
      */
     suspend fun cancelSecondOpinion(
         scanId: String,
-        userPseudoId: String,
     ): Result<Boolean> =
         withContext(Dispatchers.IO) {
-            try {
+            authenticatedAppCall { token ->
                 val response = apiClient.httpClient.post("api/community/request-opinion/cancel") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
                     setBody(
                         com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
                             scanId = scanId,
-                            userPseudoId = userPseudoId,
                         ),
                     )
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityCancelOpinionResponse>()
-                            .cleared,
-                    )
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
+                response
+                    .protectedBody<com.plantdiseases.app.data.model.CommunityCancelOpinionResponse>()
+                    .cleared
             }
         }
 
@@ -590,9 +763,16 @@ class ScanRepository(
     suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiClient.httpClient.post("api/chat") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
+                val requestId = UUID.randomUUID().toString()
+                val response = optionalMeteredCall { token ->
+                    apiClient.httpClient.post("api/chat") {
+                        metered(token, requestId)
+                        contentType(ContentType.Application.Json)
+                        setBody(request)
+                    }
+                }.getOrElse { return@withContext Result.failure(it) }
+                response.meteredDenialOrNull()?.let {
+                    return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
                     in 200..299 -> Result.success(response.body<ChatResponse>())
@@ -624,8 +804,9 @@ class ScanRepository(
     /**
      * Submit a thumbs-up / thumbs-down on a diagnosis.
      *
-     * The server's `/api/feedback` endpoint is append-only and
-     * rate-limited per IP — if the client posts faster than 1/sec the
+     * The server consumes a one-use receipt and updates the matching anonymous
+     * training sample. The endpoint is rate-limited — if the client posts
+     * faster than 1/sec the
      * request lands as a 429 and we surface a RateLimitException so
      * the UI can show a brief "try again in a moment" toast.
      */
@@ -640,6 +821,7 @@ class ScanRepository(
                     in 200..299 -> Result.success(response.body<FeedbackResponse>())
                     429 -> Result.failure(RateLimitException())
                     503 -> Result.failure(ServerStartingException())
+                    409 -> Result.failure(FeedbackReceiptException())
                     422 -> Result.failure(Exception("Invalid feedback payload"))
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
@@ -655,37 +837,34 @@ class ScanRepository(
         }
 
     /**
-     * Upload the original image bytes for a ``correct=false``
-     * feedback row. Best-effort — failures are swallowed because the
-     * primary feedback signal has already landed; the image is only
-     * additional training value. Caller is responsible for only
-     * invoking this on negative-feedback paths so the privacy
-     * disclosure on the feedback sheet matches the network traffic.
+     * Submit negative feedback and its sanitized image atomically. The receipt
+     * is one-use, so this replaces (rather than follows) the JSON-only route.
      */
     suspend fun uploadFeedbackImage(
-        scanId: String,
+        request: FeedbackRequest,
         imageFile: java.io.File,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             if (!imageFile.exists()) {
                 return@withContext Result.failure(Exception("Image file missing"))
             }
-            // Re-encoded, never readBytes(): the file can still carry the
-            // camera's EXIF (GPS included) — see ImageUtils.encodeForUpload.
-            val imageBytes = ImageUtils.encodeForUpload(imageFile.path)
+            val image = imageSanitizer.sanitize(imageFile)
             val response = apiClient.httpClient.post("api/feedback/image") {
                 setBody(
                     MultiPartFormDataContent(
                         formData {
-                            append("scan_id", scanId)
+                            append("feedback_receipt", request.feedbackReceipt)
+                            append("correct", request.correct.toString())
+                            request.correctedClass?.let { append("corrected_class", it) }
+                            request.reason?.let { append("reason", it) }
                             append(
                                 "image",
-                                imageBytes,
+                                image.bytes,
                                 Headers.build {
-                                    append(HttpHeaders.ContentType, "image/jpeg")
+                                    append(HttpHeaders.ContentType, image.contentType)
                                     append(
                                         HttpHeaders.ContentDisposition,
-                                        "filename=\"${imageFile.name}\"",
+                                        "filename=\"${image.filename}\"",
                                     )
                                 },
                             )
@@ -696,10 +875,14 @@ class ScanRepository(
             if (response.status.value in 200..299) {
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Server error: ${response.status.value}"))
+                when (response.status.value) {
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    409 -> Result.failure(FeedbackReceiptException())
+                    422 -> Result.failure(Exception("Invalid feedback payload"))
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                }
             }
-        } catch (e: OutOfMemoryError) {
-            Result.failure(ImageUtils.ImageDecodeException("Out of memory re-encoding feedback image", e))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -750,6 +933,20 @@ class ScanRepository(
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
     class RateLimitException : Exception("Server is busy, please wait")
+    class ProRequiredException(
+        val plan: String?,
+        val limit: Int?,
+        val remaining: Int?,
+        val resetAt: String?,
+    ) : Exception("PlantDiseases PRO is required")
+
+    class QuotaExhaustedException(
+        val plan: String,
+        val limit: Int,
+        val remaining: Int,
+        val resetAt: String,
+    ) : Exception("Daily $plan quota exhausted")
+
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")
     class ModelUnavailableException(
         val family: String,
@@ -761,7 +958,8 @@ class ScanRepository(
     ) : Exception("Analysis response violated the diagnostic contract: $violation")
     class UnsupportedImageException : Exception("Unsupported image format")
     class CommunityOpinionsLockedException : Exception("Second opinions are locked")
-    class CommunityIdentityUnavailableException : Exception("Community author key is not adopted")
+    class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
+    class CommunityRequestException(val statusCode: Int) : Exception("Community request failed: $statusCode")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
@@ -792,24 +990,24 @@ class ScanRepository(
                 .takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it.toList()) }
             val best = if (accepted) result.species?.best else null
-            // Prefer the server-issued scan_id so /api/feedback can
-            // bind this scan back to the row in the issued_scan_ids
-            // table. Fall back to a local UUID only if the server
-            // didn't return one (older deployment) — feedback for
-            // those will fail validation, which matches the legacy
-            // behaviour anyway.
+            // Keep the server-issued community publication capability when
+            // present. Feedback uses a separate one-use receipt and never
+            // sends this value.
             val serverScanId = result.scanId?.takeIf { it.isNotBlank() }
-            // Persist the conformal classes list (if any) so feedback
-            // submission can echo it back to the server later.
+            // Persist the conformal classes list for local result/history UI.
             val predictionSetJson = result.predictionSet?.classes
                 ?.takeIf { accepted }
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
             // The probability-backed diagnostic argmax is preserved even when
             // a separate abstention verdict prevents diagnosis presentation.
+            // Persisting it as ``displayedClassKey`` keeps local UI labels
+            // aligned with what the user saw; feedback itself trusts only the
+            // server receipt.
             val displayedClassKey = result.classKey?.takeIf { it.isNotBlank() }
+            val clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString()
             val entity = ScanEntity(
-                clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString(),
+                clientScanId = clientScanId,
                 predictionSet = predictionSetJson,
                 displayedClassKey = displayedClassKey,
                 speciesScientific = best?.scientificName,
@@ -839,8 +1037,32 @@ class ScanRepository(
                 toxicitySource = if (accepted) result.toxicitySource else "unknown",
                 severity = result.severity ?: "low",
             )
-            scanDao.insert(entity)
+            val rowId = scanArtifactMutex.withLock {
+                val inserted = try {
+                    scanDao.insert(entity)
+                } catch (error: Throwable) {
+                    discardPendingAnalysisImage(File(imagePath), clientScanId)
+                    throw error
+                }
+                takePendingAnalysisImage(File(imagePath), clientScanId)?.let { image ->
+                    // The exact bytes reach disk only after Room established their
+                    // owner. AtomicFile makes a crash either retain the old complete
+                    // object or no publishable object, never a partial JPEG.
+                    runCatching { retainAnalysisImage(File(imagePath), clientScanId, image) }
+                }
+                inserted
+            }
+            result.feedbackReceipt?.takeIf { it.isNotBlank() }?.let { receipt ->
+                feedbackReceiptStore.put(rowId.toString(), receipt)
+            }
+            rowId
         }
+
+    fun feedbackReceipt(scan: ScanEntity): String? = feedbackReceiptStore.get(scan.id.toString())
+
+    fun consumeFeedbackReceipt(scan: ScanEntity) {
+        feedbackReceiptStore.remove(scan.id.toString())
+    }
 
     /** Parse stored regions JSON back into a list of DetectionRegion. */
     fun parseRegions(json: String?): List<com.plantdiseases.app.data.model.DetectionRegion> {
@@ -866,6 +1088,12 @@ class ScanRepository(
                 .map { it.toHistoryItem() }
         }
 
+    /** Local scan ids used to hide the current user's own posts from discovery. */
+    suspend fun localClientScanIds(): Set<String> =
+        withContext(Dispatchers.IO) {
+            scanDao.allClientScanIds().filterTo(mutableSetOf()) { it.isNotBlank() }
+        }
+
     /** Get full scan details */
     suspend fun getScanById(id: Long): ScanEntity? =
         withContext(Dispatchers.IO) {
@@ -879,305 +1107,107 @@ class ScanRepository(
             scanDao.getScanByClientScanId(clientScanId)
         }
 
-    /** Every local scan's client id — used to filter the user's OWN scans out
-     *  of the community feed (scan_ids are globally unique, so a match is
-     *  definitely this device's own scan, even if the server-side pseudo-id
-     *  exclusion missed it after a reinstall). */
-    suspend fun localClientScanIds(): Set<String> =
+    /** Opinion counts on the signed account's own shared scans. */
+    suspend fun fetchMyScanOpinions(): Result<MyScanOpinionsResponse> =
         withContext(Dispatchers.IO) {
-            scanDao.allClientScanIds().toHashSet()
-        }
-
-    /** Opinion counts on this install's OWN shared scans (for the
-     *  second-opinion notification poll). Best-effort. */
-    suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val r = apiClient.httpClient.get("api/community/my-scan-opinions") {
-                    header(USER_PSEUDO_ID_HEADER, pseudoId)
+            authenticatedAppCall { token ->
+                apiClient.httpClient.get("api/community/my-scan-opinions") {
+                    bearer(token)
                 }
-                when (r.status.value) {
-                    in 200..299 -> Result.success(r.body<MyScanOpinionsResponse>())
-                    else -> Result.failure(Exception("Server error: ${r.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
+                    .protectedBody<MyScanOpinionsResponse>()
             }
         }
 
-    /** Register this install's FCM token with the server (best-effort,
-     *  fire-and-forget) so opinion notifications can be pushed to a closed
-     *  device. The server upserts by token. */
-    suspend fun registerPushToken(pseudoId: String, token: String) {
+    /** Record an authenticated view. Guests browse without creating a row. */
+    suspend fun recordCommunityView(scanId: String): Result<Unit> =
         withContext(Dispatchers.IO) {
-            try {
-                apiClient.httpClient.post("api/push/register") {
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/view") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.PushRegisterRequest(
-                            userPseudoId = pseudoId,
-                            token = token,
-                        ),
-                    )
-                }
-            } catch (_: Exception) {
-                // best-effort; the poll fallback still covers delivery
-            }
-        }
-    }
-
-    /** Record that this install opened someone else's shared scan. Best-effort
-     *  and fire-and-forget — the server dedups per viewer and ignores
-     *  owner/self + unknown scans, so failures are swallowed silently. */
-    suspend fun recordCommunityView(
-        scanId: String,
-        viewerPseudoId: String,
-        context: Context? = null,
-    ) {
-        withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                apiClient.httpClient.post("api/community/view") {
-                    contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityViewRequest(
                             scanId = scanId,
-                            userPseudoId = viewerPseudoId,
                         ),
                     )
                 }
-            } catch (_: Exception) {
-                // best-effort telemetry; never surface to the user
+                response.requireProtectedSuccess()
             }
         }
-    }
 
-    /** Record that this install scrolled past (not necessarily opened) up to
+    /** Record that this account scrolled past (not necessarily opened) up to
      *  50 shared scans in the feed. Same fire-and-forget contract as
      *  [recordCommunityView]; the caller is expected to have already
      *  filtered out ids already reported this screen session. */
-    suspend fun recordCommunityViews(
-        scanIds: List<String>,
-        viewerPseudoId: String,
-        context: Context? = null,
-    ) {
-        if (scanIds.isEmpty()) return
+    suspend fun recordCommunityViews(scanIds: List<String>): Result<Unit> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                apiClient.httpClient.post("api/community/view") {
+            if (scanIds.isEmpty()) return@withContext Result.success(Unit)
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/view") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityViewRequest(
                             scanIds = scanIds.take(50),
-                            userPseudoId = viewerPseudoId,
                         ),
                     )
                 }
-            } catch (_: Exception) {
-                // best-effort telemetry; never surface to the user
+                response.requireProtectedSuccess()
             }
         }
-    }
+
+    /** Batched {opinions, views} per scan for account-owned Gallery rows. */
+    suspend fun getCommunityScanCounts(
+        scanIds: List<String>,
+    ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
+        withContext(Dispatchers.IO) {
+            if (scanIds.isEmpty()) return@withContext emptyMap()
+            authenticatedAppCall { token ->
+                val response = apiClient.httpClient.post("api/community/scan-counts") {
+                    bearer(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
+                }
+                response.protectedBody<com.plantdiseases.app.data.model.CommunityScanCountsResponse>()
+                    .counts
+            }.getOrDefault(emptyMap())
+        }
 
     /** Like or unlike a shared scan. Returns the resulting liked state on
      *  success — the caller should already have applied it optimistically
      *  and only needs to roll back on failure. */
     suspend fun setCommunityLike(
         scanId: String,
-        userPseudoId: String,
         liked: Boolean,
-        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityLikeResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
+            authenticatedAppCall { token ->
                 val response = apiClient.httpClient.post("api/community/like") {
+                    bearer(token)
                     contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
                     setBody(
                         com.plantdiseases.app.data.model.CommunityLikeRequest(
                             scanId = scanId,
-                            userPseudoId = userPseudoId,
                             liked = liked,
                         ),
                     )
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityLikeResponse>(),
-                    )
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
+                response.protectedBody<com.plantdiseases.app.data.model.CommunityLikeResponse>()
             }
         }
-
-    /** Report a scan or reply without requiring an account. The server
-     * deduplicates the same reporter/target pair. */
-    suspend fun reportCommunityContent(
-        userPseudoId: String,
-        targetType: String,
-        targetId: String,
-        reason: String,
-        context: Context? = null,
-    ): Result<com.plantdiseases.app.data.model.CommunitySafetyResponse> =
-        withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.post("api/community/safety/report") {
-                    contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityReportRequest(
-                            userPseudoId = userPseudoId,
-                            targetType = targetType,
-                            targetId = targetId,
-                            reason = reason,
-                        ),
-                    )
-                }
-                if (response.status.value in 200..299) {
-                    Result.success(response.body<com.plantdiseases.app.data.model.CommunitySafetyResponse>())
-                } else {
-                    Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /** Block the anonymous author of a scan or reply. Future feed/reply reads
-     * hide both directions of the block on the server. */
-    suspend fun blockCommunityAuthor(
-        userPseudoId: String,
-        targetType: String,
-        targetId: String,
-        context: Context? = null,
-    ): Result<com.plantdiseases.app.data.model.CommunitySafetyResponse> =
-        withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.post("api/community/safety/block") {
-                    contentType(ContentType.Application.Json)
-                    authorKey?.let { header("X-Community-Author-Key", it) }
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityBlockRequest(
-                            userPseudoId = userPseudoId,
-                            targetType = targetType,
-                            targetId = targetId,
-                        ),
-                    )
-                }
-                if (response.status.value in 200..299) {
-                    Result.success(response.body<com.plantdiseases.app.data.model.CommunitySafetyResponse>())
-                } else {
-                    Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * Create-or-return this device's durable forum identity. [keyHash] is
-     * [com.plantdiseases.app.util.CommunityIdentity.keyHash] — never the raw
-     * secret — sent as a header, never in the body or a URL (see
-     * CommunityIdentity's kdoc for why). Scan and opinion writes send the
-     * same key so server-side author dedupe survives a changed pseudo id.
-     *
-     * This is the raw transport. Production code goes through
-     * [ensureCommunityAuthorAdopted], which applies the community opt-in
-     * gate; calling this directly bypasses it.
-     *
-     * [legacyPseudoId] attaches Community activity written by older app versions
-     * to this durable identity. That pseudonym can also appear on diagnosis and
-     * feedback records, so same-device records can be linkable; onboarding and
-     * the privacy policy disclose that explicitly.
-     */
-    suspend fun adoptCommunityAuthor(
-        keyHash: String,
-        seedDisplayName: String,
-        legacyPseudoId: String? = null,
-    ): Result<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.post("api/community/authors/adopt") {
-                    header("X-Community-Author-Key", keyHash)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityAuthorAdoptRequest(
-                            seedDisplayName = seedDisplayName,
-                            legacyPseudoId = legacyPseudoId,
-                        ),
-                    )
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityAuthorAdoptResponse>(),
-                    )
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * Lazily register this device's durable forum identity — the consent-gated
-     * entry point every community write should call.
-     *
-     * Adoption is not free: it mints [CommunityIdentity.keyHash], a permanent
-     * never-rotating per-device value, and creates a permanent server-side row
-     * whose `last_seen_at` is refreshed on every call. Doing that from
-     * `Application.onCreate()` would transmit a per-device launch log before
-     * the onboarding prominent-disclosure screen has even rendered, and for
-     * users who opted into nothing — so it happens here instead, behind
-     * [CommunityPrefs.uploadsEnabled] (default OFF, exactly the gate
-     * CommunityUploader already applies).
-     *
-     * [force] is for the second-opinion path, where the tap that shares one
-     * scan is itself the consent and deliberately bypasses the global toggle —
-     * exactly as `CommunityUploader.uploadFromEntity` does. It never bypasses
-     * anything else: this is still only reached from a real share.
-     *
-     * Best-effort and silent on failure; nothing in the app reads the response
-     * yet. Only the first success per process actually hits the network.
-     */
-    suspend fun ensureCommunityAuthorAdopted(context: Context, force: Boolean = false): Boolean {
-        if (!force && !CommunityPrefs.uploadsEnabled(context)) return false
-        val keyHash = CommunityIdentity.keyHash(context)
-        if (keyHash == adoptedAuthorKeyHash) return true
-        val adopted = adoptCommunityAuthor(
-            keyHash = keyHash,
-            seedDisplayName = Nicknames.nickname(context),
-            legacyPseudoId = TelemetryIds.userPseudoId(context),
-        ).isSuccess
-        if (adopted) adoptedAuthorKeyHash = keyHash
-        return adopted
-    }
-
-    /** Return a durable header only after the explicit adopt request has
-     * succeeded. This prevents a keyed read from creating a blank server-side
-     * author before the adoption request can attach legacy Community activity. */
-    private suspend fun adoptedCommunityKey(context: Context?): String? {
-        if (context == null) return null
-        val enabled = CommunityPrefs.uploadsEnabled(context)
-        // Do not mint a key merely because an opt-out code path asks for a
-        // header. A forced one-scan share may already have adopted one, though.
-        if (!enabled && adoptedAuthorKeyHash == null) return null
-        val keyHash = CommunityIdentity.keyHash(context)
-        if (keyHash == adoptedAuthorKeyHash) return keyHash
-        if (!enabled || !ensureCommunityAuthorAdopted(context)) return null
-        return keyHash
-    }
 
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
-        scanDao.deleteById(id)
+        scanArtifactMutex.withLock {
+            val scan = scanDao.getScanById(id)
+            if (scan != null) {
+                check(deleteRetainedAnalysisImage(scan) != ArtifactDeletion.FAILED) {
+                    "Unable to delete retained analysis image"
+                }
+            }
+            feedbackReceiptStore.remove(id.toString())
+            scanDao.deleteById(id)
+        }
     }
 
     // ─── AI Plant Doctor chat persistence (scan-keyed sessions) ──────
@@ -1212,6 +1242,7 @@ class ScanRepository(
         isHealthy = isHealthy,
         isNotAPlant = isNotAPlantScan(this),
         timestamp = timestamp,
+        clientScanId = clientScanId,
     )
 
     /** Persisted probability argmax from `all_probs`; null when not stored. */
@@ -1293,7 +1324,15 @@ class ScanRepository(
 
     /** Clear all scan history */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
-        scanDao.deleteAll()
+        scanArtifactMutex.withLock {
+            clearPendingAnalysisImages()
+            val scans = scanDao.getAllScans()
+            check(scans.none { deleteRetainedAnalysisImage(it) == ArtifactDeletion.FAILED }) {
+                "Unable to delete retained analysis images"
+            }
+            feedbackReceiptStore.clear()
+            scanDao.deleteAll()
+        }
     }
 
     /**
@@ -1307,11 +1346,143 @@ class ScanRepository(
     suspend fun purgeNotAPlantScans(
         olderThanMs: Long = 48L * 60 * 60 * 1000,
     ): Int = withContext(Dispatchers.IO) {
-        val cutoff = System.currentTimeMillis() - olderThanMs
-        val stale = scanDao.getAllScans()
-            .filter { it.timestamp < cutoff && isAbstainedScan(it) }
-        for (s in stale) scanDao.deleteById(s.id)
-        stale.size
+        scanArtifactMutex.withLock {
+            val cutoff = System.currentTimeMillis() - olderThanMs
+            val stale = scanDao.getAllScans()
+                .filter { it.timestamp < cutoff && isAbstainedScan(it) }
+            var removed = 0
+            for (s in stale) {
+                if (deleteRetainedAnalysisImage(s) == ArtifactDeletion.FAILED) continue
+                feedbackReceiptStore.remove(s.id.toString())
+                scanDao.deleteById(s.id)
+                removed++
+            }
+            removed
+        }
+    }
+
+    /**
+     * Delete exact analysis bytes once the server's community-publication
+     * capability has expired. The scan row and ordinary history image remain;
+     * only the additional SHA-bound upload sidecar is removed.
+     */
+    suspend fun purgeExpiredRetainedAnalysisImages(
+        nowMs: Long = System.currentTimeMillis(),
+        olderThanMs: Long = RETAINED_ANALYSIS_IMAGE_TTL_MS,
+    ): Int = withContext(Dispatchers.IO) {
+        scanArtifactMutex.withLock {
+            val cutoff = nowMs - olderThanMs
+            scanDao.getAllScans()
+                .asSequence()
+                .filter { it.timestamp <= cutoff }
+                .count { deleteRetainedAnalysisImage(it) == ArtifactDeletion.DELETED }
+        }
+    }
+
+    /**
+     * Retrieve the byte-for-byte /api/analyze upload retained for this server
+     * scan. Returning null is deliberate: old rows and interrupted disk writes
+     * cannot safely publish an independently encoded substitute because the
+     * server binds publication to the original image digest.
+     */
+    fun retainedAnalysisImage(scan: ScanEntity): SanitizedImage? =
+        synchronized(retainedAnalysisImageLock) {
+            val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
+                ?: return@synchronized null
+            val file = retainedAnalysisImageFile(File(scan.imagePath), scanId)
+                ?: return@synchronized null
+            val length = file.length()
+            if (!file.isFile || length !in 1..DefaultUploadImageSanitizer.MAX_OUTPUT_BYTES.toLong()) {
+                return@synchronized null
+            }
+            runCatching {
+                SanitizedImage(
+                    bytes = file.readBytes(),
+                    width = scan.detectionImageWidth.coerceAtLeast(1),
+                    height = scan.detectionImageHeight.coerceAtLeast(1),
+                )
+            }.getOrNull()
+        }
+
+    private fun retainAnalysisImage(
+        source: File,
+        scanId: String,
+        image: SanitizedImage,
+    ) = synchronized(retainedAnalysisImageLock) {
+        val file = retainedAnalysisImageFile(source, scanId)
+            ?: error("Analysis image has no parent directory")
+        val atomicFile = AtomicFile(file)
+        val output = atomicFile.startWrite()
+        try {
+            output.write(image.bytes)
+            atomicFile.finishWrite(output)
+        } catch (error: Throwable) {
+            atomicFile.failWrite(output)
+            throw error
+        }
+    }
+
+    private fun rememberPendingAnalysisImage(
+        source: File,
+        scanId: String,
+        image: SanitizedImage,
+    ) = synchronized(retainedAnalysisImageLock) {
+        val key = PendingAnalysisImageKey(source.absolutePath, scanId)
+        pendingAnalysisImages[key] = image.copy(bytes = image.bytes.copyOf())
+        while (pendingAnalysisImages.size > MAX_PENDING_ANALYSIS_IMAGES) {
+            pendingAnalysisImages.remove(pendingAnalysisImages.keys.first())
+        }
+    }
+
+    private fun takePendingAnalysisImage(source: File, scanId: String): SanitizedImage? =
+        synchronized(retainedAnalysisImageLock) {
+            pendingAnalysisImages.remove(PendingAnalysisImageKey(source.absolutePath, scanId))
+        }
+
+    private fun discardPendingAnalysisImage(source: File, scanId: String) {
+        synchronized(retainedAnalysisImageLock) {
+            pendingAnalysisImages.remove(PendingAnalysisImageKey(source.absolutePath, scanId))
+        }
+    }
+
+    private fun clearPendingAnalysisImages() {
+        synchronized(retainedAnalysisImageLock) { pendingAnalysisImages.clear() }
+    }
+
+    private fun deleteRetainedAnalysisImage(scan: ScanEntity): ArtifactDeletion {
+        if (scan.clientScanId.isBlank()) return ArtifactDeletion.ABSENT
+        return synchronized(retainedAnalysisImageLock) {
+            val file = retainedAnalysisImageFile(File(scan.imagePath), scan.clientScanId)
+                ?: return@synchronized ArtifactDeletion.ABSENT
+            val atomicArtifacts = listOf(file, File("${file.path}.new"), File("${file.path}.bak"))
+            val existed = atomicArtifacts.any(File::exists)
+            if (!existed) return@synchronized ArtifactDeletion.ABSENT
+            runCatching { AtomicFile(file).delete() }
+            if (atomicArtifacts.any(File::exists)) {
+                ArtifactDeletion.FAILED
+            } else {
+                ArtifactDeletion.DELETED
+            }
+        }
+    }
+
+    private fun retainedAnalysisImageFile(source: File, scanId: String): File? {
+        val parent = source.parentFile ?: return null
+        val key = MessageDigest.getInstance("SHA-256")
+            .digest(scanId.encodeToByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return File(parent, ".${source.name}.analysis-$key.jpg")
+    }
+
+    private data class PendingAnalysisImageKey(
+        val sourcePath: String,
+        val scanId: String,
+    )
+
+    private enum class ArtifactDeletion {
+        ABSENT,
+        DELETED,
+        FAILED,
     }
 
     data class ScanStats(
@@ -1341,6 +1512,16 @@ class ScanRepository(
         }
     }
 
+    /** Parse the JSON-encoded toxic-species list (cats/dogs/horses/...). */
+    fun parseToxicSpeciesList(json: String?): List<String> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            gson.fromJson(json, Array<String>::class.java).toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /** Parse pipeline warnings JSON array (flags like "uncertain_healthy"). */
     fun parseWarnings(json: String?): List<String> {
         if (json.isNullOrEmpty()) return emptyList()
@@ -1358,13 +1539,12 @@ class ScanRepository(
      * (network, server, validation) is logged but never thrown — a
      * failed upload must not block the user's normal scan flow.
      *
-     * The caller decides whether to send a thumbnail; see
-     * [CommunityUploader.uploadIfEnabled] which handles the
-     * opt-out pref + thumbnail downscale before reaching this hop.
+     * The caller must send the retained /api/analyze image bytes; see
+     * [CommunityUploader.uploadIfEnabled]. The publication capability is
+     * SHA-bound, so a separately encoded thumbnail is never valid here.
      */
     suspend fun uploadCommunityScan(
         scanId: String,
-        userPseudoId: String,
         country: String? = null,
         region: String = "",
         lat: Double? = null,
@@ -1374,21 +1554,17 @@ class ScanRepository(
         species: String? = null,
         speciesScore: Float? = null,
         locale: String? = null,
-        nickname: String? = null,
-        thumbnail: File? = null,
-        context: Context? = null,
+        analysisImage: SanitizedImage,
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
+            authenticatedAppCall { token ->
                 val response = apiClient.httpClient.post("api/community/scan") {
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+                    bearer(token)
                     setBody(
                         MultiPartFormDataContent(
                             formData {
                                 // Required fields (callers always supply these).
                                 append("scan_id", scanId)
-                                append("user_pseudo_id", userPseudoId)
                                 country?.takeIf { it.isNotBlank() }?.let { append("country", it) }
                                 append("disease", disease)
                                 // Optional fields — only sent when present/non-blank,
@@ -1400,34 +1576,22 @@ class ScanRepository(
                                 species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
                                 speciesScore?.let { append("species_score", it.toString()) }
                                 locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
-                                nickname?.takeIf { it.isNotBlank() }?.let { append("nickname", it) }
-                                thumbnail?.takeIf { it.exists() }?.let { f ->
-                                    append(
-                                        "image",
-                                        f.readBytes(),
-                                        Headers.build {
-                                            append(HttpHeaders.ContentType, "image/jpeg")
-                                            append(
-                                                HttpHeaders.ContentDisposition,
-                                                "filename=\"${f.name}\"",
-                                            )
-                                        },
-                                    )
-                                }
+                                append(
+                                    "image",
+                                    analysisImage.bytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${analysisImage.filename}\"",
+                                        )
+                                    },
+                                )
                             },
                         ),
                     )
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScanUploadResponse>(),
-                    )
-                    else -> Result.failure(
-                        Exception("Community upload failed: ${response.status.value}"),
-                    )
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
+                response.protectedBody<com.plantdiseases.app.data.model.CommunityScanUploadResponse>()
             }
         }
 
@@ -1444,42 +1608,30 @@ class ScanRepository(
         lon: Double? = null,
         disease: String?,
         species: String? = null,
-        userPseudoId: String?,
         limit: Int = 12,
         scope: String? = null,
+        // `recent` (default) or `recommended`. The server rejects anything
+        // else with 422, and pairs both orders with the opaque `cursor`
+        // below — there is no `before` timestamp cursor any more, because
+        // recommendation order is score + time + id, not time alone.
         ranking: String? = null,
         cursor: String? = null,
-        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.get("api/community/nearby") {
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/nearby") {
+                    token?.let { bearer(it) }
                     country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
                     lat?.let { parameter("lat", it) }
                     lon?.let { parameter("lon", it) }
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
-                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        header(USER_PSEUDO_ID_HEADER, it)
-                    }
                     scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
                     cursor?.takeIf { it.isNotBlank() }?.let { parameter("cursor", it) }
                     parameter("limit", limit)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(
-                        Exception("Community nearby failed: ${response.status.value}"),
-                    )
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
@@ -1491,34 +1643,20 @@ class ScanRepository(
         maxLon: Double,
         disease: String? = null,
         days: Int = 30,
-        userPseudoId: String? = null,
         limit: Int = 300,
-        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.get("api/community/map") {
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/map") {
+                    token?.let { bearer(it) }
                     parameter("min_lat", minLat)
                     parameter("min_lon", minLon)
                     parameter("max_lat", maxLat)
                     parameter("max_lon", maxLon)
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     parameter("days", days)
-                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        header(USER_PSEUDO_ID_HEADER, it)
-                    }
                     parameter("limit", limit)
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(Exception("Community map failed: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 
@@ -1559,168 +1697,43 @@ class ScanRepository(
         name: String,
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesInfoResponse> =
-        withContext(Dispatchers.IO) {
-            // Wikipedia blurb + lead image are stable per (name, locale) — cache
-            // once available so the result screen doesn't re-fetch every open.
-            // v2: image_url/images are now server-proxied (api/plant-photo).
-            // v3: those proxied URLs now point at a card-sized Wikimedia render
-            // instead of the multi-megabyte original, which is what made lead
-            // photos time out and fall back to a placeholder.
-            val cacheKey = "species:v3:${name.trim().lowercase()}|$locale"
-            com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
-                ?.let { return@withContext Result.success(it) }
-            try {
-                val body = apiClient.speciesInfo(name, locale)
-                if (body != null) {
-                    // Don't cache a transient "unavailable" (e.g. Wikipedia
-                    // miss / rate-limit) — only a real hit is worth keeping.
-                    if (body.available) {
-                        com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey,
-                            body,
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
-                        )
-                    }
-                    Result.success(body)
-                } else {
-                    Result.failure(Exception("species-info failed"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
+        speciesRepository.getSpeciesInfo(name, locale)
 
-    // v3: matches the server's v3 generation, which retired answers whose
-    // prompt carried a caller's unkeyed common name — a cached v2 answer here
-    // could still be one of those for up to a week.
-    private fun speciesDiseasesCacheKey(name: String, locale: String): String =
-        "species_diseases:v3:${name.trim().lowercase()}|$locale"
-
-    /** Peek the client cache for a previously-fetched species-diseases list,
-     *  without ever hitting the network. Lets the UI render a reopened species
-     *  instantly (no loading flash) instead of looking like it re-fetches. */
+    /** Read a cached species-diseases list without hitting the network. */
     suspend fun cachedSpeciesDiseases(
         name: String,
         locale: String,
     ): com.plantdiseases.app.data.model.SpeciesDiseasesResponse? =
-        withContext(Dispatchers.IO) {
-            com.plantdiseases.app.util.ResponseCache.get(
-                speciesDiseasesCacheKey(name, locale),
-                com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java,
-            )
-        }
+        speciesRepository.cachedSpeciesDiseases(name, locale)
 
-    /** Conditions a species is commonly affected by (AI, best-effort). The
-     *  answer is stable per (name, locale), and the LLM call is slow, so cache
-     *  a real (`available`) result — reopening the species no longer re-hits
-     *  the model and re-renders the list from scratch. */
+    /** Conditions a species is commonly affected by (AI, best-effort). */
     suspend fun fetchSpeciesDiseases(
         name: String,
         common: String?,
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesDiseasesResponse> =
-        withContext(Dispatchers.IO) {
-            val cacheKey = speciesDiseasesCacheKey(name, locale)
-            com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java)
-                ?.let { return@withContext Result.success(it) }
-            try {
-                val body = apiClient.speciesDiseases(name, common, locale)
-                if (body != null) {
-                    // Cache the answer either way so reopening the same species
-                    // never re-fetches: a real AI hit stays a week; an
-                    // "unavailable" answer (which renders the bundled guide) is
-                    // kept only briefly so it still retries within the day once
-                    // the AI becomes available. Only a hard network failure
-                    // (body == null) is left uncached to retry on next open.
-                    com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey,
-                        body,
-                        if (body.available) {
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS
-                        } else {
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MISS_MS
-                        },
-                    )
-                    Result.success(body)
-                } else {
-                    Result.failure(Exception("species-diseases failed"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
+        speciesRepository.fetchSpeciesDiseases(name, common, locale)
 
-    // v5: matches the server's v5 profile generation, which retired profiles
-    // whose prompt carried a caller's unkeyed common name.
-    private fun speciesProfileCacheKey(name: String): String =
-        "species_profile:v5:${name.trim().lowercase(java.util.Locale.ROOT)}"
-
-    /**
-     * Flowering and native-range profile (AI, best-effort). Real profiles are
-     * stable botanical metadata and use the species TTL; unavailable answers
-     * are retained only briefly so a restored provider is picked up later.
-     */
+    /** Flowering and native-range profile (AI, best-effort). */
     suspend fun fetchSpeciesProfile(
         name: String,
         common: String?,
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesProfileResponse> =
-        withContext(Dispatchers.IO) {
-            // The canonical profile contains both EN/RU text copies, so one cached response is
-            // safe to reuse after an offline language switch.
-            val cacheKey = speciesProfileCacheKey(name)
-            com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesProfileResponse::class.java)
-                ?.let { return@withContext Result.success(it) }
-            try {
-                val body = apiClient.speciesProfile(name, common, locale)
-                if (body != null) {
-                    com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey,
-                        body,
-                        if (body.available) {
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS
-                        } else {
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MISS_MS
-                        },
-                    )
-                    Result.success(body)
-                } else {
-                    Result.failure(Exception("species-profile failed"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
+        speciesRepository.fetchSpeciesProfile(name, common, locale)
 
     /** Community scans of one species (scientific name), across regions. */
     suspend fun communityScansBySpecies(
         species: String,
-        userPseudoId: String?,
         limit: Int = 12,
-        context: Context? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
-            val authorKey = adoptedCommunityKey(context)
-            try {
-                val response = apiClient.httpClient.get("api/community/by-species") {
-                    authorKey?.let { header("X-Community-Author-Key", it) }
+            optionalAccountGet { token ->
+                apiClient.httpClient.get("api/community/by-species") {
+                    token?.let { bearer(it) }
                     parameter("species", species)
                     parameter("limit", limit)
-                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
-                        header(USER_PSEUDO_ID_HEADER, it)
-                    }
                 }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
-                    )
-                    else -> Result.failure(Exception("by-species failed: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
         }
 }

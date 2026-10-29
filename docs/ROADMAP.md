@@ -5,6 +5,8 @@ its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
 (the data loop, the v9 protocol, every dataset finding), `../DEPLOYMENT.md`
 (deploy + Android signing/FCM), `../server/models/MODEL_CARD.md`
 (version-agnostic; per-run numbers ship as `model_card.json` in each bundle).
+The accounts release (Yandex sign-in, the production backend, the RuStore
+gates) is tracked step by step in `ACCOUNTS_PRODUCTION_PLAN.md`.
 
 Code-checkable items below were re-verified against the tree on 2026-10-26 (no
 code has landed on `main` since 2026-10-11); the data and human-task items are
@@ -17,10 +19,10 @@ as of that date.
 
 | track | state |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. |
+| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. The account system is merged to `main` (#182, `2dc681b`); the permanent signing identity still needs owner confirmation. |
 | **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). On the shared holdout it is a statistical tie with 2.7.2 (2026-10-27). |
-| **Server** | 39 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
-| **Security** | The August audit is closed in code. Second opinions need the author key 1.9 sends, so older builds can no longer post them (decided). One follow-up is open: likes and views. |
+| **Server** | 40 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
+| **Security** | The August audit is closed in code. Accounts replace the anonymous Community author key and pseudo-id (writes derive the actor from the verified account bearer), so the key-less likes/views and pseudo-id-in-URL findings no longer exist. Open: the cost-cap release gate and host hardening (Security). |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
 | **Docs / site** | `README.md` is the project's front page (hero, class gallery, pipeline and per-class charts in `docs/assets/`). `site/` is a one-page static site for the Gazprombank.Tech accelerator application, with every number copied by hand from this folder. |
 
@@ -30,14 +32,16 @@ as of that date.
 
 Each line names its section below. ★ = a human decision or human-only task.
 
-1. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
+1. ★ **Ship accounts to RuStore** — follow `ACCOUNTS_PRODUCTION_PLAN.md`: set up
+   the protected `android-signing` environment, check the signed APK on a phone, then the RuStore listing. Cut
+   the 1.9 tag and the RuStore build only after the permanent signing/provider
+   and real account-system gates pass.
+2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-2. **Add the augmentation-profile off switch** (Model track → "Open — code
+3. **Add the augmentation-profile off switch** (Model track → "Open — code
    only"), then spend one paired Colab run on it. The 2.7.5-vs-2.7.2 holdout
    check is done and reads as a tie.
-3. **Close the likes/views key gap** (Security). Small, and the one open
-   security item.
 4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
    Server). The next server refactor in line.
 
@@ -63,12 +67,36 @@ section and per-class chart.
 
 The config keys behind every limit are in `DEPLOYMENT.md` §3.2.
 
-- [ ] **Likes and views still accept a key-less pseudo-id.** The same
-      forgery class as opinions, at lower stakes: a script can inflate a
-      post's like or view count by changing the body pseudo-id. Likes are
-      bounded by the per-IP like quota (300/day); views only by the rate
-      limiter. Requiring the key here would also lock builds before 1.9 out
-      of liking, as it already does for second opinions.
+Community writes derive the actor from the verified account bearer, so the
+anonymous-key findings (forgeable second opinions, key-less likes and views, the
+pseudo-id in URLs) do not exist on this branch. What is still open:
+
+- [ ] **Cost caps — release gate.** Signed-in, API-key and guest traffic has
+      versioned per-feature daily admission, per-IP daily allowances sit on top
+      of it, and every uncached Pl@ntNet attempt (retries included) needs a
+      serialized deployment-wide attempt and a marginal-cost reservation. Cache
+      hits and explicit pre-provider denials spend neither allowance. A
+      reviewed model/route-specific aggregate OpenRouter price ceiling and live
+      alert evidence are still required before launch; the species caches key
+      on client-chosen names, so each new name is a billable miss until then.
+- [ ] **`/api/metrics` wants a short TTL cache.** The rate-limit exemption is
+      gone and the store snapshots run on a worker thread, but each request
+      still recomputes them.
+- [ ] **`/api/plant-photo`:** the LRU has a byte budget, but the WebP variants
+      on the serving side are still unbounded.
+- [ ] **Feedback images are never deleted.** Retention prune covers rows, not
+      the image directory.
+- [ ] **No lockfile.** Runtime pins are a mix of exact (`fastapi==0.141.1`,
+      `Pillow==12.3.0`) and floors (`numpy>=2.4.6,<3.0`, `onnxruntime>=1.28.0`,
+      `firebase-admin>=7.5.0`), and the transitive deps that actually serve
+      requests (starlette, httpx2) are unconstrained by us. CI catches a
+      resolution break as a red job rather than at deploy time — a lockfile is
+      still the actual fix.
+- [ ] **Host named publicly** — host IP + SSH user `root` in git history
+      (`cd4bda2`, removed with the admin panel in #149). **No credentials
+      leaked** — no key or password was ever committed. Action is ordinary
+      hardening: `PermitRootLogin prohibit-password`, `PasswordAuthentication
+      no`, SSH rate-limiting (plan step 10 in `ACCOUNTS_PRODUCTION_PLAN.md`).
 
 ---
 
@@ -241,9 +269,8 @@ item below needs its own PR. Don't fold one into another change.
       types. `scan_id` is `8..64` plus a charset check in two models
       (`main.py:2819`, `:2969`) and `1..128` with no charset check in three
       (`:3863`, `:4024`, `:4218`). Each item in `CommunityViewRequest.scan_ids`
-      is unbounded. `user_pseudo_id` has the same split. Standardise on the
-      looser bound; tightening it is a separate decision, because the Android
-      client mints these ids.
+      is unbounded. Standardise on the looser bound; tightening it is a
+      separate decision, because the Android client mints these ids.
 - [ ] **No `response_model` on any route.** So `openapi.json` describes
       request bodies only, and the 35-line contract test compares paths and
       methods. `/api/analyze` is covered: `tests/test_analyze_payload.py` pins
@@ -315,6 +342,11 @@ None of it blocks a release.
       provisioned at `assets/models/aqua_classifier.tflite`.** It is
       downloaded into `filesDir/aqua/` (`AquaModelManager`), as `:78-79` of
       the same file says.
+- [ ] **Privacy policy — operator legal/region approval.** Both copies already
+      disclose the external processors (the private inference worker,
+      Pl@ntNet/CIRAD, OpenRouter and its model provider, optional Google FCM)
+      and the identifier rules; the operator's legal/region sign-off remains a
+      deployment gate.
 - [ ] **Notebook header is two versions stale.** Cell 0 is titled
       "PlantVision 2.6" and says "v2.5 continues maximising gamma".
 
@@ -350,14 +382,14 @@ None of it blocks a release.
   the guts (Hilt, Ktor). Do not modularise. The one util → ui edge that
   blocked a `:core:data` extraction is fixed anyway.
 - **Stay free and honest.** Calibrated, OOD-aware, on-device offline,
-  privacy-first. There is no account, login, email or password. Community V2
-  creates a persistent anonymous per-device handle only after Community
-  opt-in or an explicit one-scan share. Account linkage stays deferred. The
-  handle and same-device linkability are disclosed in `privacy_policy.html`.
-- **Second opinions need the author key.** `community_require_author_key`
-  stays `true`: app builds before 1.9 cannot post second opinions. The
-  legacy pseudo-id URL forms stay for those builds, and the per-IP daily
-  allowances keep their defaults.
+  privacy-first. Diagnosis and community reading need no account; community
+  writes need a Yandex sign-in (no email or password in production). Posts
+  stay linked to the account's pseudonymous actor until the account is
+  deleted, as `privacy_policy.html` discloses.
+- **Community writes need a verified account.** Posts, opinions and likes take
+  the actor from the account bearer; the anonymous device handle and the
+  pseudo-id URL forms are gone, and the per-IP daily allowances keep their
+  defaults.
 - **Not planned:** a first-launch intro video, and room-level care defaults
   (`RoomEntity.baselineLux` stays an unused column, so no migration).
 - **The data loop is local.** Collect and judge offline → Kaggle supplement →

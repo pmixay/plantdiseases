@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.garden.DoctorChatSheet
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
 import com.plantdiseases.app.ui.garden.PlantHealthUi
@@ -136,7 +137,8 @@ class DetailExtraCardsController(
                     },
                 )
                 maybeStartTreatmentPlan(plant, latestScan, classKey, materializablePlan)
-            }.onFailure {
+            }.onFailure { error ->
+                MeteredAccessUi.showDialog(activity, error)
                 val fallback = storedTreatmentPlan(latestScan, classKey, isRu)
                 if (fallback != null) {
                     card.bind(

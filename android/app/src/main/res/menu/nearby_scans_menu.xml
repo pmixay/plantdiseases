@@ -17,6 +17,13 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_community_safety"
+        android:icon="@drawable/ic_shield_check"
+        android:iconTint="@color/toolbar_title"
+        android:title="@string/community_rules_action"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/action_disable_community"
         android:title="@string/nearby_action_disable"
         app:showAsAction="never" />

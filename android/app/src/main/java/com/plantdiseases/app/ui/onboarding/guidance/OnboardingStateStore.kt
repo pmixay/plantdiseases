@@ -22,7 +22,7 @@ class OnboardingStateStore internal constructor(
     val isSkipAll: Boolean
         get() = preferences.getBoolean(KEY_SKIP_ALL, false)
 
-    /** Called only by the mandatory consent screen on a genuinely new install. */
+    /** Called only by the first-launch privacy screen on a genuinely new install. */
     fun startForNewInstall() = reset(enabled = true)
 
     /** Manual Profile entry point. Consent and every unrelated preference live elsewhere. */

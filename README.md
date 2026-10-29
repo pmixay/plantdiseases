@@ -151,15 +151,20 @@ The full contract is [`DEPLOYMENT.md`](DEPLOYMENT.md) §2. Tests need no weights
 
 ### Android
 
-Open `android/` in current Android Studio (AGP 9.1, Gradle 9.5, JDK 17, `minSdk` 31).
-The server URL is baked in at build time:
+Open `android/` in current Android Studio (AGP 9.1, Gradle 9.5, JDK 17, `compileSdk` 37,
+`minSdk` 31). A fresh checkout's debug and local release builds enable real Yandex OAuth
+and use the live beta application/account URLs under `/plantdisease-test/`; no endpoint
+arguments are required. Local mock development explicitly sets `ACCOUNT_REAL_OAUTH=false`,
+`APP_API_BASE_URL` and `ACCOUNT_API_BASE_URL`.
 
-```bash
-./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/
-```
-
-Release signing, FCM push, TLS and the optional keys (`PLANTNET_API_KEY` for species ID,
-`OPENROUTER_API_KEY` for the AI doctor) are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Release signing, FCM push, and TLS are covered in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
+Production loads the optional species-ID and AI Doctor integrations from
+`PLANTNET_API_KEY_FILE` and `OPENROUTER_API_KEY_FILE`; without them, the server
+runs normally and reports the corresponding feature as unavailable.
+Direct keys require an explicit `ENVIRONMENT=test` or
+`ENVIRONMENT=development`; an unset, staging, or production environment fails
+closed and accepts only the corresponding owner-only secret file.
 
 ---
 
@@ -175,10 +180,11 @@ authoritative list.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/health` | Liveness, uptime, class count |
-| `GET` | `/api/capabilities` | Per-family availability (aqua / gamma / frontier), server version, bilingual class metadata |
-| `GET` | `/api/metrics` · `/api/metrics/prometheus` | JSON counters (incl. per-class feedback accuracy) · Prometheus exposition |
-| `POST` | `/api/telemetry/errors` | Anonymous client error reports |
+| `GET`  | `/api/health`              | Liveness + uptime + class count |
+| `GET`  | `/api/capabilities`        | Per-family availability (aqua / gamma / frontier) **plus** consolidated server version, model architecture, and bilingual class metadata (this folds in the former `/api/version` & `/api/classes`) |
+| `GET`  | `/api/metrics`             | JSON counters (requests, errors, latency) |
+| `GET`  | `/api/metrics/prometheus`  | Prometheus text exposition (v0.0.4) |
+| `POST` | `/api/telemetry/errors` | Consent-gated, errors-only technical reports |
 
 **Diagnosis**
 
@@ -205,17 +211,22 @@ authoritative list.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/community/scan` | Share a scan |
-| `GET` | `/api/community/nearby` · `/map` · `/heatmap` · `/by-species` | Feed, map markers, k-anonymized density grid, per-species scans |
-| `POST` | `/api/community/opinion` · `/request-opinion` · `/request-opinion/cancel` | Cast, request or cancel a second opinion |
-| `GET` | `/api/community/opinions/{scan_id}` · `/my-scan-opinions[/{user_pseudo_id}]` | Opinions + consensus; replies to your scans |
-| `POST` | `/api/community/like` · `/view` | Like or unlike; record views |
-| `POST` | `/api/community/safety/report` · `/safety/block` | Report or block |
-| `POST` | `/api/community/authors/adopt` | Bind the anonymous author handle |
-| `GET` | `/api/community/thumb/{filename}` | Scan thumbnail |
-| `POST` | `/api/push/register` | Register an FCM token (no-op without credentials) |
+| `POST` | `/api/community/scan`      | Share a scan into the anonymized corpus (opt-in, coarse-rounded coords) |
+| `GET`  | `/api/community/nearby`    | Shared-scans feed (`scope=nearby` ~30 km / `country` / `worldwide`; coords stripped, distance only) |
+| `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
+| `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
+| `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
+| `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
+| `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
+| `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
+| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
+| `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
+| `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
-</details>
+Response shapes and validation rules are documented inline in
+[`server/main.py`](server/main.py).
+Content criteria and the private operator workflow are documented in
+[`docs/COMMUNITY_RULES_AND_MODERATION.md`](docs/COMMUNITY_RULES_AND_MODERATION.md).
 
 ---
 
@@ -223,21 +234,29 @@ authoritative list.
 
 ```
 plantdiseases/
-├── android/           Kotlin app — Material 3, CameraX, Room, Ktor, Hilt; XML views, no Compose
-├── server/            FastAPI + the recognition pipeline
-│   ├── main.py            HTTP layer, middleware, validation
-│   ├── pipeline.py        two-stage pipeline + blur/OOD gates
-│   ├── bundle.py          fail-closed artefact verification
-│   ├── detector.py · classifier.py · ood.py · conformal.py
-│   ├── ai_services.py     PlantNet, OpenRouter, care plans
-│   ├── community.py · feedback.py · labeling*.py   the data loop
-│   ├── tools/             bundle verifier, paired eval, feedback analysis
-│   ├── train_notebook.ipynb   the whole training recipe (Colab only)
-│   └── models/            MODEL_CARD.md — weights are provisioned out of band
-├── docs/              ROADMAP · MODEL_HISTORY · DATASET_LABELING_PLAN · assets/
-├── site/              one-page project site (static HTML)
-├── .github/workflows/ ci.yml — push-only: ruff + pytest · ktlint + detekt + tests + release build
-└── DEPLOYMENT.md · CLAUDE.md
+├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Hilt DI)
+├── account-server/         FastAPI account service (sign-in, sessions, deletion, PRO entitlements) + PostgreSQL
+├── server/                 FastAPI server + ML pipeline
+│   ├── main.py             HTTP layer, middleware, validation
+│   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
+│   ├── detector.py         Stage 1 — YOLOv8n
+│   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
+│   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
+│   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
+│   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes PRO quotas
+│   ├── conformal.py        RAPS prediction sets
+│   ├── diseases_data.py    Bilingual disease database
+│   ├── train_notebook.ipynb End-to-end training recipe
+│   └── models/             MODEL_CARD.md + .gitkeep (weights provisioned out of band)
+├── site/                   one-page project site (static HTML)
+├── deploy/                 Compose, nginx and operator scripts for the account stack
+├── docs/                   ROADMAP · MODEL_HISTORY · ACCOUNTS_PRODUCTION_PLAN · DATASET_LABELING_PLAN · assets/
+├── .github/workflows/      ci.yml — push-only CI (ruff + pytest for server and account
+│                           service; ktlint + detekt + unit tests + CI-only APK builds);
+│                           android-release.yml — manual protected signing
+├── DEPLOYMENT.md           Production deployment guide
+├── CLAUDE.md               Working notes for agents in this repo
+└── README.md               You are here
 ```
 
 ---
@@ -252,6 +271,7 @@ plantdiseases/
 | [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) | Version-agnostic pipeline, calibration and limitations contract |
 | [`docs/DATASET_LABELING_PLAN.md`](docs/DATASET_LABELING_PLAN.md) | The data-collection and judging loop |
 | [`server/train_notebook.ipynb`](server/train_notebook.ipynb) | Training, calibration, ONNX/TFLite export |
+| [`docs/ACCOUNTS_PRODUCTION_PLAN.md`](docs/ACCOUNTS_PRODUCTION_PLAN.md) | Accounts decisions, release gates and the path to RuStore; [`account-server/README.md`](account-server/README.md) is the service's contract |
 
 ---
 

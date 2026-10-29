@@ -5,33 +5,29 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.FeedbackRequest
-import com.plantdiseases.app.data.model.TopProb
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.InAppReviewManager
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.TelemetryIds
-import kotlinx.coroutines.Dispatchers
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Owns the "was this diagnosis right?" card and the full feedback round-trip:
- * the yes/no choice, the correction sheet for a "no", building the rich
- * [FeedbackRequest] payload, submitting it, and the local "already sent"
- * memory so a scan can't be double-submitted.
+ * the yes/no choice, the correction sheet for a "no", submitting the
+ * server-issued one-use feedback receipt, and the local "already sent" memory
+ * so a scan can't be double-submitted.
  */
 class FeedbackController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
+    private val privacyConsentPrefs: PrivacyConsentPrefs,
     private val reviewManager: InAppReviewManager,
 ) {
 
@@ -49,15 +45,14 @@ class FeedbackController(
         ) { _, result ->
             val correctedClass = result.getString(FeedbackCorrectionSheet.RESULT_CORRECTED_CLASS)
             val reason = result.getString(FeedbackCorrectionSheet.RESULT_REASON)
-            val note = result.getString(FeedbackCorrectionSheet.RESULT_NOTE)
             val loaded = currentScan()
             if (loaded != null) {
-                submit(loaded, correct = false, correctedClass, reason, note)
+                submit(loaded, correct = false, correctedClass, reason)
             } else {
                 // Sheet outlived the scan load (recreation) — re-fetch by id.
                 activity.lifecycleScope.launch {
                     repository.getScanById(scanId)?.let {
-                        submit(it, correct = false, correctedClass, reason, note)
+                        submit(it, correct = false, correctedClass, reason)
                     }
                 }
             }
@@ -66,6 +61,10 @@ class FeedbackController(
 
     fun bind(scan: ScanEntity) {
         val card = binding.cardFeedback
+        if (!privacyConsentPrefs.trainingEnabled) {
+            card.visibility = View.GONE
+            return
+        }
         card.visibility = View.VISIBLE
 
         // Already-submitted feedback persists across re-opens of the same
@@ -95,12 +94,17 @@ class FeedbackController(
 
     /**
      * Natural NAP / OOD / quality-abstention variant: a single "This is a
-     * plant" correction (+ an optional note) instead of confirming the raw
-     * diagnostic argmax. A wrongly rejected plant photo is high-value gate and
-     * quality-policy evidence; negative feedback also uploads the image bytes.
+     * plant" action instead of confirming the raw diagnostic argmax. A
+     * wrongly rejected plant photo is exactly the training signal the
+     * rejection head needs (and gate / quality-policy evidence), and negative
+     * feedback also uploads the image bytes (see [submit]).
      */
     fun bindNotAPlant(scan: ScanEntity) {
         val card = binding.cardFeedback
+        if (!privacyConsentPrefs.trainingEnabled) {
+            card.visibility = View.GONE
+            return
+        }
         card.visibility = View.VISIBLE
 
         if (isAlreadySubmitted(scan.id)) {
@@ -122,38 +126,22 @@ class FeedbackController(
         }
     }
 
-    /** Optional-note dialog behind "This is a plant". Sends the dedicated
-     *  out-of-head correction label so retraining can prioritise these. */
+    /** Confirmation behind "This is a plant". Sends the dedicated out-of-head
+     * correction label so retraining can prioritise these without free text. */
     private fun showIsPlantDialog(scan: ScanEntity) {
-        val ctx = activity
-        val input = com.google.android.material.textfield.TextInputEditText(ctx).apply {
-            hint = ctx.getString(R.string.feedback_is_a_plant_note_hint)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            filters = arrayOf(android.text.InputFilter.LengthFilter(500))
-            minLines = 2
-        }
-        val pad = (20 * ctx.resources.displayMetrics.density).toInt()
-        val container = android.widget.FrameLayout(ctx).apply {
-            setPadding(pad, pad / 2, pad, 0)
-            addView(input)
-        }
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.feedback_is_a_plant)
             .setMessage(R.string.feedback_is_a_plant_body)
-            .setView(container)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.feedback_send) { _, _ ->
-                val note = input.text?.toString()?.trim().orEmpty().ifBlank { null }
-                submit(scan, correct = false, correctedClass = IS_A_PLANT_CLASS, note = note)
+                submit(scan, correct = false, correctedClass = IS_A_PLANT_CLASS)
             }
             .show()
     }
 
     private fun showCorrectionSheet(scan: ScanEntity) {
         val isRu = LocaleHelper.isRussian(activity)
-        val predictedKey = repository.topClassKey(scan)
+        val predictedKey = repository.verdictClassKey(scan)
         val predictedDisplay = predictedKey?.let { DiseaseLabels.displayName(it, isRu) }
             ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
         // The submit lands via the Fragment Result API listener registered in
@@ -169,7 +157,6 @@ class FeedbackController(
         correct: Boolean,
         correctedClass: String? = null,
         reason: String? = null,
-        note: String? = null,
     ) {
         // Visible progress, not just disabled buttons — a long send (slow
         // network, server cold start) previously looked like a freeze.
@@ -178,8 +165,22 @@ class FeedbackController(
         binding.tvFeedbackStatus.visibility = View.VISIBLE
         binding.tvFeedbackStatus.setText(R.string.feedback_sending)
         activity.lifecycleScope.launch {
-            val request = buildRequest(scan, correct, correctedClass, reason, note)
-            repository.submitFeedback(request).onSuccess {
+            val request = buildRequest(scan, correct, correctedClass, reason)
+            if (request == null) {
+                binding.feedbackChoiceRow.visibility = View.GONE
+                binding.tvFeedbackStatus.visibility = View.VISIBLE
+                binding.tvFeedbackStatus.setText(R.string.feedback_expired)
+                Toast.makeText(activity, R.string.feedback_expired, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val imageFile = java.io.File(scan.imagePath)
+            val submission: Result<Unit> = if (!correct && imageFile.exists()) {
+                repository.uploadFeedbackImage(request, imageFile)
+            } else {
+                repository.submitFeedback(request).map { }
+            }
+            submission.onSuccess {
+                repository.consumeFeedbackReceipt(scan)
                 markSubmitted(scan.id)
                 binding.feedbackChoiceRow.visibility = View.GONE
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
@@ -190,17 +191,15 @@ class FeedbackController(
                     // strongest satisfaction signal on this screen — see
                     // InAppReviewManager for the shared cooldown.
                     reviewManager.maybeRequestReview()
-                } else {
-                    // On negative feedback the original image is high-value for
-                    // retraining. Best-effort upload: failures are swallowed (the
-                    // JSON feedback row has already landed). The server filename is
-                    // the SHA-256 of the bytes, matching the image_hash in the JSON.
-                    val imageFile = java.io.File(scan.imagePath)
-                    if (imageFile.exists()) {
-                        runCatching { repository.uploadFeedbackImage(request.scanId, imageFile) }
-                    }
                 }
             }.onFailure { error ->
+                if (error is ScanRepository.FeedbackReceiptException) {
+                    repository.consumeFeedbackReceipt(scan)
+                    binding.feedbackChoiceRow.visibility = View.GONE
+                    binding.tvFeedbackStatus.visibility = View.VISIBLE
+                    binding.tvFeedbackStatus.setText(R.string.feedback_expired)
+                    return@onFailure
+                }
                 binding.btnFeedbackYes.isEnabled = true
                 binding.btnFeedbackNo.isEnabled = true
                 binding.tvFeedbackStatus.visibility = View.GONE
@@ -213,80 +212,20 @@ class FeedbackController(
         }
     }
 
-    /**
-     * Assemble the full feedback payload from a [ScanEntity] + the user's three
-     * correction signals. All metadata is best-effort: when a field is unknown
-     * we send null rather than fabricating a value, so server-side metrics
-     * don't get polluted by defaults.
-     */
-    private suspend fun buildRequest(
+    /** Build the strict, structured feedback payload authorized by the receipt. */
+    private fun buildRequest(
         scan: ScanEntity,
         correct: Boolean,
         correctedClass: String?,
         reason: String?,
-        note: String?,
-    ): FeedbackRequest {
-        // Prefer the server-issued probability-backed class key; fall back to
-        // argmax(all_probs) for legacy scans. Rejection state is sent through
-        // the dedicated correction UI, while this key remains useful diagnostic
-        // evidence for server-side error analysis.
-        val displayedKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
-        val argmaxKey = repository.topClassKey(scan)
-        val predictedKey = displayedKey ?: argmaxKey
-        val allProbs = repository.parseAllProbs(scan.allProbs)
-        val predictedConfidence = predictedKey?.let { allProbs[it] } ?: scan.confidence
-        val top3 = allProbs.entries
-            .asSequence()
-            .sortedByDescending { it.value }
-            .take(3)
-            .map { TopProb(classKey = it.key, prob = it.value) }
-            .toList()
-            .takeIf { it.isNotEmpty() }
-        val regionCount = repository.parseRegions(scan.regions).size
-        val isRu = LocaleHelper.isRussian(activity)
-        val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
-
-        // client_scan_id is the random UUID minted at insert time. We never
-        // send the local autoincrement primary key.
-        val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
-            ?: java.util.UUID.randomUUID().toString()
-
-        // SHA-256 of the original on-disk image so the corrections corpus can
-        // be joined back to image bytes during retraining without uploading the
-        // image itself. Off the UI thread; null when the file is gone (the
-        // server treats it as optional).
-        val imageHashHex = withContext(Dispatchers.IO) {
-            ImageUtils.sha256Hex(java.io.File(scan.imagePath))
-        }
-
-        // The persisted prediction set (JSON array of class keys, stored at
-        // saveScan time). Stale rows from before the local schema added it
-        // won't have one — the server treats the field as optional.
-        val predictionSet: List<String>? = scan.predictionSet?.let { raw ->
-            runCatching {
-                com.google.gson.Gson().fromJson(raw, Array<String>::class.java).toList()
-            }.getOrNull()?.takeIf { it.isNotEmpty() }
-        }
-
+    ): FeedbackRequest? {
+        if (!privacyConsentPrefs.trainingEnabled) return null
+        val receipt = repository.feedbackReceipt(scan) ?: return null
         return FeedbackRequest(
-            scanId = scanId,
+            feedbackReceipt = receipt,
             correct = correct,
             correctedClass = correctedClass,
             reason = reason,
-            note = note,
-            predictedClass = predictedKey,
-            predictedConfidence = predictedConfidence,
-            top3 = top3,
-            modelVersion = SERVER_MODEL_VERSION,
-            appVersion = BuildConfig.VERSION_NAME,
-            locale = if (isRu) "ru" else "en",
-            platform = "android",
-            userPseudoId = TelemetryIds.userPseudoId(activity),
-            regionCount = regionCount,
-            primaryRegionIndex = scan.primaryRegionIndex,
-            feedbackLatencyMs = latencyMs,
-            imageHash = imageHashHex,
-            predictionSet = predictionSet,
         )
     }
 
@@ -307,10 +246,5 @@ class FeedbackController(
         // Out-of-head correction label for "the reject was wrong — there IS a
         // plant here". Accepted by the server's feedback allowlist.
         private const val IS_A_PLANT_CLASS = "is_a_plant"
-
-        // Pinned to the classifier release in server/models/classes.json (the
-        // server also surfaces the live value via /api/capabilities). When
-        // /api/analyze exposes model_version per-scan we'll trust that instead.
-        private const val SERVER_MODEL_VERSION = "2.6.8"
     }
 }

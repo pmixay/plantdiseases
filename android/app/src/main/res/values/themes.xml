@@ -175,6 +175,56 @@
         <item name="elevation">0dp</item>
     </style>
 
+    <!-- Yandex ID's full, high-contrast main button. The 56dp height, 26dp
+         mark, fixed palette, label spacing, and fully rounded shape mirror the
+         official single-provider button construction. -->
+    <style name="App.Button.Yandex" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/yandex_button_background</item>
+        <item name="android:textColor">@color/yandex_button_on_background</item>
+        <item name="rippleColor">@color/yandex_button_ripple</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.YandexButton</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:paddingHorizontal">16dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="iconTint">@null</item>
+        <item name="iconSize">26dp</item>
+        <item name="iconPadding">12dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="elevation">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.App.YandexButton" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="ShapeAppearance.App.Avatar" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="App.Button.DangerOutlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textColor">@color/disease_red</item>
+        <item name="iconTint">@color/disease_red</item>
+        <item name="strokeColor">@color/disease_red</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Button</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="App.Button.DangerFilled" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/danger_button</item>
+        <item name="android:textColor">@color/on_danger_button</item>
+        <item name="iconTint">@color/on_danger_button</item>
+        <item name="rippleColor">@color/disease_red_bg</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Button</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="elevation">0dp</item>
+    </style>
+
 
 
     <!-- ─── FABs ────────────────────────────────────────────────────

@@ -6,6 +6,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -16,7 +18,6 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SimilarScans
-import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.launch
 
@@ -35,6 +36,7 @@ class CommunityController(
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
     private val communityUploader: CommunityUploader,
+    private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
     private val ensureNotificationPermission: () -> Unit,
     // Requests coarse location (+ notifications) and reports back whether
@@ -79,14 +81,20 @@ class CommunityController(
     private fun displayName(key: String, isRu: Boolean): String =
         DiseaseLabels.displayName(key, isRu) ?: key
 
-    /** Fire-and-forget: record that this install opened someone else's shared
-     *  scan. The repository swallows failures and the server dedups per
-     *  viewer + ignores owner self-views, so this is safe to call on any tap. */
-    private fun recordView(scanId: String, viewerPseudoId: String) {
-        if (scanId.isBlank() || viewerPseudoId.isBlank()) return
-        activity.lifecycleScope.launch {
-            repository.recordCommunityView(scanId, viewerPseudoId, activity)
-        }
+    /** Fire-and-forget: record that the signed account opened someone else's
+     *  shared scan. Guests return before the repository is called; the server
+     *  deduplicates per actor and ignores owner self-views. */
+    private fun recordView(scanId: String) {
+        if (scanId.isBlank() || authRepository.state.value !is AuthState.Authenticated) return
+        activity.lifecycleScope.launch { repository.recordCommunityView(scanId) }
+    }
+
+    /** Opens login and deliberately drops the initiating mutation. */
+    private fun requireAuthenticatedAction(): Boolean {
+        if (authRepository.state.value is AuthState.Authenticated) return true
+        Toast.makeText(activity, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+        activity.startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(activity))
+        return false
     }
 
     /**
@@ -123,11 +131,7 @@ class CommunityController(
 
     private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(
-                scan.clientScanId,
-                userPseudoId = TelemetryIds.userPseudoId(activity),
-                context = activity,
-            ).onSuccess { resp ->
+            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
                 val n = resp.opinions.size
                 when {
                     resp.wantsOpinion ->
@@ -199,6 +203,7 @@ class CommunityController(
         applySecondOpinionEnabled()
         btn.setText(R.string.result_get_second_opinion)
         btn.setOnClickListener {
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             // Second opinions come FROM the community, so they require the
             // community opt-in. Offer it in context instead of silently
             // sharing the scan of a user who never enabled anything.
@@ -219,6 +224,7 @@ class CommunityController(
             .setMessage(R.string.second_opinion_needs_community_body)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_enable_cta) { _, _ ->
+                if (!requireAuthenticatedAction()) return@setPositiveButton
                 requestCommunityOptIn { locationGranted ->
                     if (!locationGranted) return@requestCommunityOptIn
                     CommunityPrefs.enable(activity)
@@ -238,54 +244,44 @@ class CommunityController(
         // Notifications are requested HERE — the one moment they're clearly
         // needed (replies to YOUR ask) — not as part of the community opt-in.
         ensureNotificationPermission()
-        val pseudoId = TelemetryIds.userPseudoId(activity)
         activity.lifecycleScope.launch {
             // Ensure the scan is in the community corpus so others can
             // see the ask (force = explicit consent).
             val upload = communityUploader.uploadFromEntity(scan, force = true)
-            if (upload != com.plantdiseases.app.data.repository.CommunityUploader.UploadOutcome.Uploaded) {
-                opinionRequestInFlight = false
-                showAsk(scan, isRu)
-                Toast.makeText(
-                    activity,
-                    R.string.result_second_opinion_failed,
-                    Toast.LENGTH_SHORT,
-                ).show()
+            if (upload != CommunityUploader.UploadOutcome.Uploaded) {
+                showRequestFailure(scan, isRu)
                 return@launch
             }
-            repository.requestSecondOpinion(scan.clientScanId, pseudoId)
+            repository.requestSecondOpinion(scan.clientScanId)
                 .onSuccess { flagged ->
-                    opinionRequestInFlight = false
-                    if (!flagged) {
-                        showAsk(scan, isRu)
-                        Toast.makeText(
-                            activity,
-                            R.string.result_second_opinion_failed,
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        return@onSuccess
+                    if (flagged) {
+                        opinionRequestInFlight = false
+                        // Fresh request: 0 replies, full 72 h window.
+                        showOpenRequest(
+                            scan,
+                            replyCount = 0,
+                            requestedAtSec = System.currentTimeMillis() / 1000L,
+                        )
+                        // Seed the notify baseline at 0 so the very next
+                        // reply counts as new, and flip the global init flag.
+                        OpinionPrefs.markInitialized(activity)
+                        OpinionPrefs.setSeen(activity, scan.clientScanId, 0)
+                    } else {
+                        showRequestFailure(scan, isRu)
                     }
-                    // Fresh request: 0 replies, full 72 h window.
-                    showOpenRequest(
-                        scan,
-                        replyCount = 0,
-                        requestedAtSec = System.currentTimeMillis() / 1000L,
-                    )
-                    // Seed the notify baseline at 0 so the very next
-                    // reply counts as new, and flip the global init flag.
-                    OpinionPrefs.markInitialized(activity)
-                    OpinionPrefs.setSeen(activity, scan.clientScanId, 0)
                 }
-                .onFailure {
-                    opinionRequestInFlight = false
-                    showAsk(scan, isRu)
-                    Toast.makeText(
-                        activity,
-                        R.string.result_second_opinion_failed,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
+                .onFailure { showRequestFailure(scan, isRu) }
         }
+    }
+
+    private fun showRequestFailure(scan: ScanEntity, isRu: Boolean) {
+        opinionRequestInFlight = false
+        showAsk(scan, isRu)
+        Toast.makeText(
+            activity,
+            R.string.result_second_opinion_failed,
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     fun bindSimilarScans(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -305,20 +301,18 @@ class CommunityController(
         // abstained diagnostic argmax returns above and never scopes a feed.
         val diseaseKey = repository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
-        val pseudoId = TelemetryIds.userPseudoId(activity)
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
+            onAuthorClick = { item ->
+                item.authorToken?.let { token ->
+                    activity.startActivity(
+                        com.plantdiseases.app.ui.community.CommunityProfileActivity
+                            .intent(activity, token),
+                    )
+                }
+            },
             onClick = { item ->
-                // Community v2: commenting is unlocked here too — the server
-                // already excludes the caller's own scans from this carousel
-                // (userPseudoId doubles as exclude_user_pseudo_id below), so
-                // the strip itself is gated behind the community opt-in
-                // (handled below), not behind "is this someone else's scan".
-                // The localClientScanIds() check is belt-and-braces for a
-                // reinstalled app whose new pseudo-id doesn't match an old
-                // scan still cached in the feed — same guard NearbyScansActivity
-                // already applies to its own list.
-                recordView(item.scanId, pseudoId)
+                recordView(item.scanId)
                 activity.lifecycleScope.launch {
                     val mine = repository.localClientScanIds()
                     if (item.scanId in mine) {
@@ -326,7 +320,7 @@ class CommunityController(
                             com.plantdiseases.app.ui.community.MyScanRepliesActivity
                                 .intentFor(activity, item.scanId),
                         )
-                    } else {
+                    } else if (authRepository.state.value is AuthState.Authenticated) {
                         // localClientScanIds() suspends on Dispatchers.IO, so we
                         // always resume a main-loop turn later. lifecycleScope
                         // only cancels at DESTROYED, so a Home press mid-read
@@ -338,6 +332,13 @@ class CommunityController(
                             item,
                             displayName(item.disease, isRu),
                         )
+                    } else {
+                        if (activity.supportFragmentManager.isStateSaved) return@launch
+                        CommunityOpinionSheet.showReadOnly(
+                            activity.supportFragmentManager,
+                            item,
+                            displayName(item.disease, isRu),
+                        )
                     }
                 }
             },
@@ -345,31 +346,8 @@ class CommunityController(
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
 
-        // Community OFF: show the card with ONLY the in-context opt-in — no
-        // scans at all (not even the read-only strip) until the user enables.
-        // Tapping opts in, then loads the feed.
-        if (!CommunityPrefs.uploadsEnabled(activity)) {
-            card.visibility = View.VISIBLE
-            rv.visibility = View.GONE
-            empty.visibility = View.GONE
-            binding.tvSimilarSubtitle.text = activity.getString(R.string.community_enable_blurb)
-            binding.btnEnableSimilar.visibility = View.VISIBLE
-            binding.btnEnableSimilar.setOnClickListener {
-                // Same opt-in as the main community screen: request coarse
-                // location (+ notifications) first. Only flip community ON and
-                // load the feed once location is granted; on denial, leave the
-                // "enable community" button in place so the user can retry.
-                requestCommunityOptIn { locationGranted ->
-                    if (!locationGranted) return@requestCommunityOptIn
-                    CommunityPrefs.enable(activity)
-                    com.plantdiseases.app.push.PushManager.registerIfEnabled(activity)
-                    binding.btnEnableSimilar.visibility = View.GONE
-                    fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
-                }
-            }
-            return
-        }
-
+        // Public community reads remain available to guests. Sharing and
+        // opinions are gated separately at their explicit mutation buttons.
         fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
     }
 
@@ -403,9 +381,7 @@ class CommunityController(
                 // Monstera" doesn't render Ficus thumbnails. Server falls back
                 // gracefully when the species bucket is empty.
                 species = speciesScientific,
-                userPseudoId = TelemetryIds.userPseudoId(activity),
                 limit = 12,
-                context = activity,
             ).onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = if (isRu) {

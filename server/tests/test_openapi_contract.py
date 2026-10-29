@@ -33,3 +33,33 @@ def test_openapi_contract_conforms():
         current_methods = current_paths.get(path, {})
         assert set(current_methods.keys()) == set(methods.keys()), \
             f"Methods mismatch for path {path}! Current: {set(current_methods.keys())}, Contract: {set(methods.keys())}"
+
+    assert current_spec == contract_spec
+
+
+def test_community_contract_declares_account_auth_and_no_caller_identity_fields():
+    schema = app.openapi()
+    protected = (
+        ("/api/community/scan", "post"),
+        ("/api/community/opinion", "post"),
+        ("/api/community/request-opinion", "post"),
+        ("/api/community/request-opinion/cancel", "post"),
+        ("/api/community/my-scan-opinions", "get"),
+        ("/api/community/view", "post"),
+        ("/api/community/scan-counts", "post"),
+    )
+    for path, method in protected:
+        assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
+
+    assert "/api/push/register" not in schema["paths"]
+    assert "/api/internal/account-deletions" not in schema["paths"]
+    assert "/api/internal/account-nicknames" not in schema["paths"]
+    community_contract = json.dumps(
+        {
+            path: value
+            for path, value in schema["paths"].items()
+            if path.startswith("/api/community/")
+        },
+        sort_keys=True,
+    )
+    assert "user_pseudo_id" not in community_contract

@@ -119,11 +119,16 @@ object OpinionViews {
         op: CommunityOpinion,
         onReport: ((CommunityOpinion) -> Unit)? = null,
         onBlock: ((CommunityOpinion) -> Unit)? = null,
+        onAuthor: ((CommunityOpinion) -> Unit)? = null,
     ): View {
         val density = ctx.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val nick = op.nickname?.takeIf { it.isNotBlank() }
         val who = nick ?: ctx.getString(R.string.community_anonymous_author)
+        // Only a real account-author handle opens a profile; a legacy reply
+        // carries no addressable author, so its row stays inert.
+        val authorClickable = onAuthor != null &&
+            op.authorToken?.let { it.startsWith("ca") && it.length == 32 } == true
 
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -140,7 +145,14 @@ object OpinionViews {
                 textSize = 11f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 text = Avatars.monogramForNick(who)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                if (authorClickable) {
+                    contentDescription = ctx.getString(R.string.community_open_profile, who)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { onAuthor?.invoke(op) }
+                } else {
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
             },
         )
 
@@ -159,6 +171,11 @@ object OpinionViews {
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                if (authorClickable) {
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { onAuthor?.invoke(op) }
+                }
             },
         )
         if (op.createdAt > 0L) {

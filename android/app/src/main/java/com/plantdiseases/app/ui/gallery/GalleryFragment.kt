@@ -219,6 +219,41 @@ class GalleryFragment : Fragment() {
             }
 
             applyFilter(animate = runStagger)
+            loadCommunityBadges()
+        }
+    }
+
+    /**
+     * Lazily fetch community activity (opinions + per-viewer-deduped views) for
+     * the signed account's shared scans and re-render with badges. Best-effort: when
+     * community is off, nothing was shared, or the call fails, the list simply
+     * stays unbadged.
+     */
+    private fun loadCommunityBadges() {
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
+        val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
+        if (ids.isEmpty()) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val counts = scanRepository.getCommunityScanCounts(ids)
+            if (counts.isEmpty() || _binding == null) return@launch
+            val ctx = requireContext()
+            allScans = allScans.map { item ->
+                val c = counts[item.clientScanId]
+                if (c != null) {
+                    // "New" = opinions the user hasn't opened this scan to see.
+                    val viewed = com.plantdiseases.app.util.OpinionPrefs
+                        .viewedOpinions(ctx, item.clientScanId)
+                    item.copy(
+                        communityOpinions = c.opinions,
+                        communityViews = c.views,
+                        newOpinions = (c.opinions - viewed).coerceAtLeast(0),
+                    )
+                } else {
+                    item
+                }
+            }
+            // Re-render with badges but don't replay the grid entry animation.
+            applyFilter(animate = false)
         }
     }
 

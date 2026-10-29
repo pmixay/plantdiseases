@@ -4,21 +4,22 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
+import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * First-launch prominent disclosure.
+ * First-launch privacy choices.
  *
- * This is deliberately a single blocking page: the user can read the canonical
- * data-use disclosure and privacy policy, but [MainActivity] is reachable only
- * through Agree. Feature discovery continues later as small, once-only coach
- * marks in context instead of a swipe tour the user has to remember.
+ * The user must acknowledge the page, but both optional data uses are separate
+ * opt-ins and default off. Inference remains available with neither enabled.
  */
 @AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
@@ -27,6 +28,9 @@ class OnboardingActivity : AppCompatActivity() {
 
     @Inject
     lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var privacyConsentPrefs: PrivacyConsentPrefs
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -40,40 +44,35 @@ class OnboardingActivity : AppCompatActivity() {
         binding.consentPrivacyLink.setOnClickListener {
             startActivity(PrivacyPolicyActivity.intent(this))
         }
+        binding.switchTrainingConsent.isChecked = privacyConsentPrefs.trainingEnabled
+        binding.switchTelemetryConsent.isChecked = privacyConsentPrefs.telemetryEnabled
         binding.consentAgree.setOnClickListener { finishOnboarding() }
     }
 
     private fun finishOnboarding() {
-        // These flags remain one transaction: no route may mark the tour done
-        // without also recording explicit consent.
+        privacyConsentPrefs.setTrainingEnabled(binding.switchTrainingConsent.isChecked)
+        privacyConsentPrefs.setTelemetryEnabled(binding.switchTelemetryConsent.isChecked)
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_ONBOARDING_DONE, true)
-            .putBoolean(KEY_DATA_CONSENT, true)
             .apply()
         // This explicit call is what distinguishes a genuinely new install
         // from an upgrade whose versioned guidance store does not exist yet.
         onboardingState.startForNewInstall()
-        startActivity(Intent(this, MainActivity::class.java))
+        val next = if (BuildConfig.ACCOUNT_UI_ENABLED) {
+            AccountActivity.onboardingIntent(this)
+        } else {
+            Intent(this, MainActivity::class.java)
+        }
+        startActivity(next)
         finish()
     }
 
     companion object {
         const val PREFS_NAME = "plantdiseases_prefs"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
-        const val KEY_DATA_CONSENT = "data_consent_given"
 
         fun isOnboardingDone(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getBoolean(KEY_ONBOARDING_DONE, false)
-
-        fun isDataConsentGiven(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getBoolean(KEY_DATA_CONSENT, false)
-
-        fun setDataConsentGiven(context: Context) {
-            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_DATA_CONSENT, true)
-                .apply()
-        }
     }
 }

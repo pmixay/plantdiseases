@@ -477,9 +477,9 @@ class DiseaseClassifier:
             raise ClassifierLoadError("Classifier emits non-finite values on warmup input")
 
         logger.info(
-            "Classifier (ONNX) loaded from %s (%d classes, img_size=%d, "
+            "Classifier (ONNX) loaded (%d classes, img_size=%d, "
             "arch=%s, tta=%s, embedding_output=%s)",
-            path, self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
+            self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
             self._has_embedding,
         )
 

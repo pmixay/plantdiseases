@@ -195,7 +195,7 @@ class CameraFragment : Fragment() {
             // The crop succeeded; the raw original is no longer needed.
             clearPendingSource()
         } else {
-            if (result.error != null) Log.w(TAG, "Crop not completed", result.error)
+            if (result.error != null) Log.w(TAG, "Crop not completed")
             discardPendingCrop()
         }
     }
@@ -575,8 +575,8 @@ class CameraFragment : Fragment() {
                 // centered — btn_flash mirrors the gallery button.
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.INVISIBLE
-            } catch (e: Exception) {
-                Log.e(TAG, "Camera init/bind failed", e)
+            } catch (_: Exception) {
+                Log.e(TAG, "Camera init/bind failed")
                 if (_binding == null || !isAdded) return@addListener
                 Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
             }

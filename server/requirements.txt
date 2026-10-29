@@ -17,10 +17,6 @@ python-multipart==0.0.32
 # Patch anyway: it is free, and it removes the whole class rather than relying
 # on the gates staying correct forever.
 Pillow==12.3.0
-# Perceptual-hash near-duplicate signal stored with each labeling candidate
-# (server/labeling.py phash_bytes). Pulls numpy/scipy/PyWavelets (numpy pinned
-# below).
-ImageHash>=4.3.2
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
 # matches the training notebook, which already runs on numpy 2.x. Cap kept
@@ -40,3 +36,7 @@ requests>=2.34.2
 # used when FCM_CREDENTIALS_FILE points at a service-account JSON — without it
 # every send is a no-op, so the dependency is harmless on push-less deploys.
 firebase-admin>=7.5.0
+# Account-bound community writes verify Ed25519 JWTs locally before the
+# account service confirms the live session/authorization version.
+PyJWT[crypto]==2.13.0
+cryptography==50.0.0
