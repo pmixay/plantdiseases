@@ -1,5 +1,5 @@
 """
-PlantVision — AI / smart-API services.
+PlantDiseases — AI / smart-API services.
 
 Houses the supporting endpoints layered on top of the disease classifier:
 

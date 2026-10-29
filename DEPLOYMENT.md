@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Operator runbook for the PlantDiseases / PlantVision FastAPI server, plus the
+Operator runbook for the PlantDiseases FastAPI server, plus the
 Android release build. Architecture and API surface live in
 [`README.md`](README.md); model status lives in
 [`docs/ROADMAP.md`](docs/ROADMAP.md).

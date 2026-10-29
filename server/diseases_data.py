@@ -1,5 +1,5 @@
 """
-Bilingual disease information database for PlantVision.
+Bilingual disease information database for PlantDiseases.
 
 Stage 2 classifier outputs one of the 9 trainable v2.x classes — the
 bilingual content for each lives in ``DISEASES_DATABASE`` below.

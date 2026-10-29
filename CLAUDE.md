@@ -4,19 +4,26 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Repository layout
 
-Three deliverables, each with its own toolchain:
+Three deliverables, each with its own toolchain, plus supporting dirs:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `account-server/` | Python, FastAPI, SQLAlchemy/Alembic, PostgreSQL | Separate account service: provider sign-in, sessions, deletion, PRO entitlements and quotas. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
+| `site/` | Static HTML | One-page project site: a single self-contained `index.html`, served by any static host. Its figures are copied by hand from the docs — `site/README.md` says which. |
+| `docs/` | Markdown, SVG | Roadmap, model ledger, labeling plan; `docs/assets/` holds the README's images. |
+| `.claude/skills/` | Markdown, Python | The project's ML skill (see "ML work" below). |
 
 `deploy/` holds the compose files, nginx config and operator scripts for the account
 stack (`account-beta-test/` for staging, `production-vds/` for production).
 
-**Naming:** **PlantDiseases** is the app/repo, **PlantVision** the ML pipeline/brand —
-both appear in code and docs and mean the same project.
+**Naming:** **PlantDiseases** is the whole project — the Android app, the repo, the
+server and the docs. **PlantVision** is only the internal name of the recognition
+system (the two-stage pipeline, its calibration/OOD layers, the model bundles, the
+model card and ledger). Machine-bound identifiers keep the old spelling — don't rename
+`classifier_name: "plantvision"`, `plantvision_*.tar` / `plantvision_export_*` names or
+the `plantvision-aqua-bundle-v1` digest tag.
 
 **Privacy policy:** `android/app/src/main/assets/privacy_policy.html`, shown by
 `ui/legal/PrivacyPolicyActivity` (a WebView over that one local asset) from the
@@ -28,7 +35,10 @@ against `deploy/account-beta-test/release-policy-gates.json`, so change them tog
 
 ## Where documentation lives
 
-`README.md` — product overview, the class table, the API table, the model tiers ·
+`README.md` — the project's front page (visual: hero, class gallery, pipeline diagram
+under `docs/assets/`) plus the product overview, class table, API table and model tiers.
+`docs/assets/*.svg` come from `docs/assets/generate_assets.py` (edit that, not the SVGs) · `site/README.md` —
+how the one-page site is built and which docs its numbers come from ·
 `DEPLOYMENT.md` — production config, proxy/service setup, Android release signing +
 FCM · `docs/ROADMAP.md` — model status, release history, in-flight feature work,
 documentation debt · `docs/ACCOUNTS_PRODUCTION_PLAN.md` — accounts decisions, release
@@ -64,7 +74,7 @@ ruff check .                          # lint (config in pyproject.toml)
 pytest tests -q                       # full suite (no model weights needed — see below)
 pytest tests/test_endpoints.py -q     # single file
 pytest tests/test_endpoints.py::test_name -q   # single test
-./start.sh                            # venv + CPU torch + uvicorn (PORT env or --port; default 8000)
+./start.sh                            # venv + requirements.txt + uvicorn (PORT env or --port; default 8000); refuses to start without a bundle
 ```
 - The suite **needs no trained weights**: `tests/conftest.py` swaps a `FakePipeline`
   into both `main` and `pipeline` before the FastAPI lifespan runs, redirects the
@@ -126,22 +136,12 @@ release, staging and recovery variants. Ordinary CI holds no signing or provider
 credentials; distributable APKs come only from the manually dispatched, protected
 `.github/workflows/android-release.yml` (environment `android-signing`).
 
-**Where the Android minutes go**, from a `--profile` run of a cold build — worth reading
-before trying to speed it up, because the plain-console task headers mislead. Gradle
-overlaps this work as async workers (task time summed to 15m44 against a 9m33 build),
-so R8 and the tests run *concurrently* and R8 is the tail: `minifyReleaseWithR8` 5m08,
-`testDebugUnitTest` 2m34, `compileDebugKotlin` and `compileReleaseKotlin` 1m58 each,
-KSP 43s/37s. Two support pieces are easy to undo by accident: `maxParallelForks` in
-`app/build.gradle.kts` (little wall clock in a full invocation, where it competes with
-R8 for the runner's two cores, but a large win whenever the test task *is* the critical
-path — a cache-served release variant, or `./gradlew testDebugUnitTest` alone) and the
-`~/.m2/repository/org/robolectric` cache step (Robolectric fetches 338 MB of
-`android-all` jars at test runtime through its own Maven resolver, which the
-Gradle-home cache does not cover).
-
-Expect ~1.5 min when a push changes no Android source (main's build cache serves
-almost every task) and ~8-10 min when it does. `gradle/actions/setup-gradle` only
-*writes* that cache on `main`; branches read it.
+Two Android CI support pieces are easy to undo by accident: `maxParallelForks` in
+`app/build.gradle.kts` (parallel unit-test forks) and the `~/.m2/repository/org/robolectric`
+cache step (Robolectric resolves its `android-all` jars through its own Maven resolver,
+which the Gradle-home cache does not cover). The Gradle cache is written only on
+`main`; branches read it. Timings drift — measure with `--profile` instead of trusting
+a number written here.
 
 ## ML work — use the bundled skill
 
@@ -206,6 +206,12 @@ stack, request validation, metrics — and wires everything together):
 - `beta_runtime.py` / `synthetic_pipeline.py` / `runtime_paths.py` — the weight-free synthetic pipeline for the local/staging account stack (never a production fallback; `main.py` builds it only behind explicit test-mode guards) and reverse-proxy prefix handling
 - `push.py` — FCM push (lazy/no-op without credentials) · `telemetry.py` — consent-gated, errors-only reports (`TELEMETRY_*` keys; allowlisted enums and coarse buckets only: no free text, raw IP or IP hash)
 - `plant_photos.py` / `popular_plants.py` / `countries.py` — photo proxy/cache, popular-plants bundle, country lookups · `config.py` — config loader (see Conventions)
+- `tools/` — offline helpers, never imported by the server: `verify_bundle` (boot preflight),
+  `export_data` + `analyse_feedback` (feedback/training-data export and analysis),
+  `paired_eval` → `eval_bootstrap` (paired model A/B), `build_ood_benchmark`,
+  `filter_supplement` + `kaggle_inventory` (supplement-data QA)
+- `openapi.json` — the checked-in API contract; `tests/test_openapi_contract.py` fails
+  when the app's generated spec drifts from it, so an API change updates it in the same commit
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, analysis,
 result, garden, gallery, guide, community, species, …) over `data/` (`repository/`,
@@ -264,7 +270,7 @@ detail screen only.
   `train_notebook.ipynb` (§6/§6b); the Aqua TFLite model and disease-guide
   photos are provisioned out of band in `server/static/`.
 - **Config precedence** (`config.py`): `server/config.json` (gitignored; copy from
-  `config.example.json`) **wins over** the same-named env var **wins over** the
+  `config.example.json`; `PLANTDISEASES_CONFIG` points at another file) **wins over** the same-named env var **wins over** the
   default. Blank handling is asymmetric — a blank value in `config.json` counts as
   unset (so the empty `""` secrets in `config.example.json` let an env var win), but a
   **blank env var does not**: it wins as an empty string and shadows the default —
@@ -300,8 +306,8 @@ detail screen only.
   hand-build old-shaped DBs and let Room's `onValidateSchema` assert
   (`app/src/test/java/com/plantdiseases/app/data/local/Migration6To7Test.kt`). Every
   migration is hand-written and registered; destructive fallback is the last resort.
-- **Robolectric has no `robolectric.properties`** — every Robolectric test annotates
-  `@Config(sdk = [33])` itself; a new test omitting it runs on a different SDK and can
+- **Robolectric has no `robolectric.properties`** — Robolectric tests annotate
+  `@Config(sdk = [33])` themselves; a new test omitting it runs on a different SDK and can
   behave differently.
 - **`/api/feedback` accepts labels the head does not predict.** The allowlist is
   `_FEEDBACK_OUT_OF_HEAD_CLASSES` in `main.py`, incl. `is_a_plant` — the app's

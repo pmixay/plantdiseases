@@ -1,4 +1,4 @@
-# PlantVision — roadmap
+# PlantDiseases — roadmap
 
 **Open work only.** Finished work lives in git history; every model run, with
 its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
@@ -8,9 +8,10 @@ its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
 The accounts release (Yandex sign-in, the production backend, the RuStore
 gates) is tracked step by step in `ACCOUNTS_PRODUCTION_PLAN.md`.
 
-Every item below was re-verified against the tree on 2026-10-09, after the
-security round on `claude/epic-noether-jl9kez`. Line references are as of
-that branch.
+Code-checkable items below were re-verified against the tree on 2026-10-26 (no
+code has landed on `main` since 2026-10-11); the data and human-task items are
+status as last recorded, not something the tree can show. Line references are
+as of that date.
 
 ---
 
@@ -19,10 +20,11 @@ that branch.
 | track | state |
 |---|---|
 | **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. The account system is merged to `main` (#182, `2dc681b`); the permanent signing identity still needs owner confirmation. |
-| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). |
+| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). On the shared holdout it is a statistical tie with 2.7.2 (2026-10-27). |
 | **Server** | 40 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
 | **Security** | The August audit is closed in code. Accounts replace the anonymous Community author key and pseudo-id (writes derive the actor from the verified account bearer), so the key-less likes/views and pseudo-id-in-URL findings no longer exist. Open: the cost-cap release gate and host hardening (Security). |
 | **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
+| **Docs / site** | `README.md` is the project's front page (hero, class gallery, pipeline and per-class charts in `docs/assets/`). `site/` is a one-page static site for the Gazprombank.Tech accelerator application, with every number copied by hand from this folder. |
 
 ---
 
@@ -37,10 +39,15 @@ Each line names its section below. ★ = a human decision or human-only task.
 2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
    takes calendar time, so start now. In parallel, with no collection needed:
    adjudicate the 80 export rows and carve T_v1.
-3. **Bump `MODEL_VERSION`** before the next Colab run (Model track → "2.7.5
-   in production"). A one-line notebook change.
+3. **Add the augmentation-profile off switch** (Model track → "Open — code
+   only"), then spend one paired Colab run on it. The 2.7.5-vs-2.7.2 holdout
+   check is done and reads as a tie.
 4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
    Server). The next server refactor in line.
+
+**When 2.7.5's successor ships**, also refresh `site/index.html` (its figures
+are hand-copied; the list is in `site/README.md`) and the README's status
+section and per-class chart.
 
 ---
 
@@ -107,19 +114,18 @@ neither model trained on, 2.7.5 beats 2.6.8: served disease mF1 +0.059
 holdout rows. Its known weakness is the healthy lean. Holdout healthy
 precision is 0.784, and 15 of its 25 wrong "healthy" calls are scorch.
 Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
-comparison set yet.
+comparison set yet. Against 2.7.2 on the shared 535-row holdout it is a
+tie within noise (served mF1 +0.054 [−0.031, +0.137], argmax +0.022
+[−0.059, +0.104], scorch → "healthy" up 21 → 31; paired bootstrap of
+2026-10-27 in `MODEL_HISTORY.md`). Only the locked test set T can settle it.
 
 - [ ] **Watch feedback that corrects "healthy" to scorch**
       (`server/tools/analyse_feedback.py` over the feedback store). That is
       where the holdout says 2.7.5 errs, and production feedback is the only
       real-distribution signal until T exists.
-- [ ] **Confirm the holdout gain against 2.7.2.** Pair 2.7.5 against 2.7.2
-      on the shared 535-row holdout with `tools/eval_bootstrap.py` (no GPU).
-      Neither model trained on it, and row 16 still reads the mF1 gain as
-      unconfirmed.
-- [ ] **Bump `MODEL_VERSION`** (notebook §1, still `2.7.5`) before the next
-      Colab run, so its bundle and `first_seen_model_version` stamps do not
-      collide with the deployed one.
+
+The notebook's `MODEL_VERSION` is `2.7.5`, the same as the deployed bundle, and
+stays that way until the next run is configured.
 
 ### Open — code only (no data needed)
 
@@ -150,6 +156,15 @@ comparison set yet.
 
 Specified in `DATASET_LABELING_PLAN.md` (P0 is the minimum, "Sequencing" is
 the order). Not started.
+
+**Kaggle is required for the production recipe.** The notebook's strict source
+floors stop it before training if the approved houseplant/ornamental
+supplement is absent or truncated; only an explicitly degraded, non-production
+diagnostic run may disable that gate. Handles resolve to the latest revision
+at download time, and the resolved revision and corpus digests are bound into
+the run manifest. The private supplement was still at v8 at the last
+authenticated check (2026-08-23), which fails the strict v9 manifest contract.
+A compliant v9 published at the same handle is picked up automatically.
 
 - [ ] ★ **Early-stage marginal necrosis, 400 families with boxes.** That
       means `brown_frac < 0.05`, damage confined to the edge, and the blade
@@ -287,12 +302,12 @@ item below needs its own PR. Don't fold one into another change.
       `MaterialCardView`s by hand. The two styles look different on screen
       today.
 - [ ] **Retire Gson.** It is still live for Room field JSON, `ResponseCache`
-      and intent payloads (5 importing files). That keeps 389 hand-mirrored
+      and intent payloads (6 importing files). That keeps 389 hand-mirrored
       `@SerializedName` in `Models.kt`, a `KSerializer<JsonObject>` bridge and
       the Gson ProGuard rules alive. M/L effort.
 - [ ] **`data/GuideDataProvider.kt` (1,638 lines) is a second localization
       system.** It has 78 EN/RU pairs as Kotlin strings outside the resource
-      framework, which drive 41 `LocaleHelper.isRussian(` branches across 29
+      framework, which drive 42 `LocaleHelper.isRussian(` branches across 30
       files. Nothing enforces RU parity there.
 - [ ] **Navigation Component manages a two-destination graph**
       (`res/navigation/nav_graph.xml`), while 23 Activities navigate by
@@ -315,9 +330,14 @@ item below needs its own PR. Don't fold one into another change.
 
 None of it blocks a release.
 
-- [ ] **README licence section under-lists runtime deps** (`README.md:316-323`).
-      Name osmdroid (`build.gradle.kts:391`) and the RuStore appupdate/review
-      SDKs (`:337`, `:345`).
+- [ ] **README has no app screenshots.** Every other visual is generated or
+      comes from the guide photos. Real screenshots (scan result, garden, care
+      calendar, community map) need a device or emulator, so a human has to
+      capture them. Drop them in `docs/assets/screenshots/` and add a row to
+      the README's "What it does" section.
+- [ ] **`docs/assets/per-class.svg` holds hand-copied numbers.** Regenerate
+      it (`docs/assets/generate_assets.py`) from `MODEL_HISTORY.md` when a
+      model ships.
 - [ ] **`android/app/build.gradle.kts:407-409` still says the Aqua model is
       provisioned at `assets/models/aqua_classifier.tflite`.** It is
       downloaded into `filesDir/aqua/` (`AquaModelManager`), as `:78-79` of
