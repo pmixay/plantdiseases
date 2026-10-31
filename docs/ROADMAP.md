@@ -29,7 +29,8 @@ recorded. Line counts are approximate; re-measure before acting on one.
 - [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
       takes calendar time, so start now. In parallel (no collection needed):
       adjudicate the 80 export rows and carve T_v1.
-- [ ] **Augmentation-profile off switch**, then one paired Colab run.
+- [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
+      run; Model track, "Experiments that are not data").
 - [ ] **Split `main.py` into routers**, starting with `deps.py`.
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
@@ -105,10 +106,6 @@ comparison rules: `MODEL_HISTORY.md`.
 
 ### Code only (no data needed)
 
-- [ ] **Augmentation profile off switch.** `TRAIN_AUGMENTATION_PROFILE` (§4,
-      `serve_parity_v2_unablated`) has no flag that disables it *and* relabels the
-      version. Add one, then a paired run at `SEED=0` scored with
-      `tools/eval_bootstrap.py` on capture families.
 - [ ] **`paired_eval --argmax` binding check is weaker than boot.**
       `_load_bundle_binding` accepts `size_bytes == 0` and follows symlinks, where
       `bundle.verify_bundle` rejects both — reuse it. Also untested: `predict()`,
@@ -146,6 +143,10 @@ None is expected to fix scorch alone; all fit alongside the collection round.
 - [ ] **Capacity:** `frontier` (ViT-B/14) or DINOv3 (one run; **check DINOv3's
       licence** — not DINOv2's Apache-2.0).
 - [ ] **`USE_REGISTERS`** (§4, default `False`) — one flag, one run, one paired bootstrap.
+- [ ] **Augmentation ablation** (§4 `TRAIN_AUGMENTATION`, default `'on'`). One
+      `'off'` run (geometry only, profile `serve_parity_v2_geometry_only`) vs a
+      default run, both `SEED=0` on the same corpus; score with
+      `tools/eval_bootstrap.py` on capture families. Human Colab run.
 - [ ] **Crop-vs-whole gap.** `served_vote` 0.824 vs 0.865 whole-image; nutrient
       loses most (0.86 → 0.69). Diagnose before treating segmentation as the fix.
 - [ ] **Domain-robust training objective** stronger than a sampling nudge.
