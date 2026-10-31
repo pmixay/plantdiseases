@@ -99,7 +99,7 @@ Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 comparison rules: `MODEL_HISTORY.md`.
 
 - [ ] **Watch feedback correcting "healthy" to scorch**
-      (`server/tools/analyse_feedback.py`). 15 of 2.7.5's 25 wrong "healthy" calls
+      (`server/tools/analyse_training_data.py`). 15 of 2.7.5's 25 wrong "healthy" calls
       on the holdout are scorch; production feedback is the only real-distribution
       signal until T exists.
 
