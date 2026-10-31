@@ -506,10 +506,9 @@ password equals the store password):
 | `RELEASE_KEY_ALIAS` | the alias (e.g. `plantdiseases`) |
 | `RELEASE_KEY_PASSWORD` | permanent key password |
 
-Also create `RELEASE_CERT_SHA256` as a variable in that environment and configure
-required reviewers, prevent self-review, and restrict deployment branches to
-`main` only. The protected workflow refuses an APK whose
-certificate differs from the pinned fingerprint. Never commit the keystore or
+Also configure required reviewers, prevent self-review, and restrict deployment
+branches to `main` only. The protected workflow refuses an APK whose
+certificate differs from the fingerprint pinned in the workflow (`RELEASE_CERT_SHA256`). Never commit the keystore or
 its base64 encoding.
 
 The Yandex native client ID is pinned in the Android source and needs no
@@ -521,17 +520,16 @@ complete, and leaving both pairs absent keeps VK disabled. The exact reviewed
 `ACCOUNT_REAL_OAUTH=true` are committed public defaults in
 `android/gradle.properties`, so ordinary local debug/release/staging builds
 need no flags. Protected staging automation still checks that pair for drift.
-Create the reviewed `PRODUCTION_APP_API_BASE_URL` /
-`PRODUCTION_ACCOUNT_API_BASE_URL` variables for production. Copy the two
-production values into the
-protected `android-signing` environment under the distinct names
-`APPROVED_PRODUCTION_APP_API_BASE_URL` and
-`APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL`. The protected environment contains
-only the four permanent-key secrets above plus those approved URL variables,
-`RELEASE_CERT_SHA256`, and `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`. Keep the last
-variable `false` until the exact production HTTPS routes have passed the Russian
-ingress/account smoke matrix. The checkout-free signing job requires the
-repository URLs to match the protected approved URLs exactly. It also rejects
+The reviewed production endpoints, the approved production endpoints, the
+RuStore Console app and PRO product IDs, the `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`
+flag and the `RELEASE_CERT_SHA256` fingerprint are plain, public values written
+directly into `.github/workflows/android-release.yml`; no repository or
+environment variables are needed for them, and changing one is a reviewed commit
+to `main`. Keep the cutover flag `false` until the exact production HTTPS routes
+have passed the Russian ingress/account smoke matrix. The protected
+`android-signing` environment contains only the four permanent-key secrets above.
+The checkout-free signing job requires the
+production URLs to match the approved URLs exactly. It also rejects
 the German staging prefix, reserved `.invalid`/localhost names, IP literals,
 non-443 ports, and any path other than the application origin plus `id/`.
 Missing production values fail; they never fall back to staging.

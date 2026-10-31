@@ -366,8 +366,8 @@ jobs:
       - name: Validate reviewed German staging endpoint configuration
         if: inputs.channel == 'staging' || inputs.channel == 'recovery-staging'
         env:
-          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
-          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"
+          STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"
         shell: bash
         run: |
           set -eu
@@ -390,8 +390,8 @@ jobs:
           VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
           STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}
           STAGING_VKID_CLIENT_SECRET: ${{ vars.STAGING_VKID_CLIENT_SECRET }}
-          APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
         shell: bash
         run: |
           set -eu
@@ -493,9 +493,9 @@ jobs:
       - name: Validate production RuStore Pay configuration
         if: inputs.channel == 'production'
         env:
-          RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
-          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
-          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
+          RUSTORE_CONSOLE_APP_ID: "2063726125"
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: "plantdiseases_pro_monthly"
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: "plantdiseases_pro_yearly"
         shell: bash
         run: |
           set -eu
@@ -522,8 +522,8 @@ jobs:
       - name: Validate production-recovery endpoint configuration
         if: inputs.channel == 'recovery-production'
         env:
-          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          PRODUCTION_APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          PRODUCTION_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
         shell: bash
         run: |
           set -eu
@@ -610,8 +610,8 @@ jobs:
           RUSTORE_CONSOLE_APP_ID: ${{ vars.STAGING_RUSTORE_CONSOLE_APP_ID }}
           RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
           RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
-          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
-          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"
+          STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"
           FCM_APP_ID: ""
           FCM_API_KEY: ""
           FCM_PROJECT_ID: ""
@@ -629,11 +629,11 @@ jobs:
           ACCOUNT_REAL_OAUTH: "true"
           VKID_CLIENT_ID: ${{ vars.PRODUCTION_VKID_CLIENT_ID }}
           VKID_CLIENT_SECRET: ${{ vars.PRODUCTION_VKID_CLIENT_SECRET }}
-          RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
-          RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
-          RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
-          APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          RUSTORE_CONSOLE_APP_ID: "2063726125"
+          RUSTORE_PRO_MONTHLY_PRODUCT_ID: "plantdiseases_pro_monthly"
+          RUSTORE_PRO_YEARLY_PRODUCT_ID: "plantdiseases_pro_yearly"
+          APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
           FCM_APP_ID: ""
           FCM_API_KEY: ""
           FCM_PROJECT_ID: ""
@@ -649,8 +649,8 @@ jobs:
           ANDROID_UNSIGNED_DISTRIBUTION: "true"
           ANDROID_DISTRIBUTION_CHANNEL: recovery-production
           ACCOUNT_REAL_OAUTH: "false"
-          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          PRODUCTION_APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          PRODUCTION_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
           VKID_CLIENT_ID: ""
           VKID_CLIENT_SECRET: ""
           FCM_APP_ID: ""
@@ -668,8 +668,8 @@ jobs:
           ANDROID_UNSIGNED_DISTRIBUTION: "true"
           ANDROID_DISTRIBUTION_CHANNEL: recovery-staging
           ACCOUNT_REAL_OAUTH: "false"
-          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
-          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
+          STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"
+          STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"
           VKID_CLIENT_ID: ""
           VKID_CLIENT_SECRET: ""
           FCM_APP_ID: ""
@@ -691,13 +691,13 @@ jobs:
           STAGING_RUSTORE_CONSOLE_APP_ID: ${{ vars.STAGING_RUSTORE_CONSOLE_APP_ID }}
           STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
           STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
-          PRODUCTION_RUSTORE_CONSOLE_APP_ID: ${{ vars.PRODUCTION_RUSTORE_CONSOLE_APP_ID }}
-          PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID }}
-          PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID: ${{ vars.PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID }}
-          STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}
-          STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}
-          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
+          PRODUCTION_RUSTORE_CONSOLE_APP_ID: "2063726125"
+          PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID: "plantdiseases_pro_monthly"
+          PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID: "plantdiseases_pro_yearly"
+          STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"
+          STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"
+          PRODUCTION_APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          PRODUCTION_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
         shell: bash
         run: |
           set -euo pipefail
@@ -895,12 +895,12 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
-          RUSSIAN_CUTOVER_APPROVED: ${{ vars.PRODUCTION_RUSSIAN_CUTOVER_APPROVED }}
-          PRODUCTION_APP_API_BASE_URL: ${{ vars.PRODUCTION_APP_API_BASE_URL }}
-          PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.PRODUCTION_ACCOUNT_API_BASE_URL }}
-          APPROVED_PRODUCTION_APP_API_BASE_URL: ${{ vars.APPROVED_PRODUCTION_APP_API_BASE_URL }}
-          APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL: ${{ vars.APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL }}
+          RELEASE_CERT_SHA256: "ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367"
+          RUSSIAN_CUTOVER_APPROVED: "true"
+          PRODUCTION_APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          PRODUCTION_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
+          APPROVED_PRODUCTION_APP_API_BASE_URL: "https://pdis.arbuz.lol/"
+          APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/id/"
           UNSIGNED_ARTIFACT_ID: ${{ needs.build_unsigned.outputs.artifact_id }}
           UNSIGNED_ARTIFACT_DIGEST: ${{ needs.build_unsigned.outputs.artifact_digest }}
           EXPECTED_UNSIGNED_SHA256: ${{ needs.build_unsigned.outputs.unsigned_sha256 }}

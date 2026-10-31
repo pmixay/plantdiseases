@@ -618,8 +618,22 @@ def test_privacy_and_signing_gates_match_account_release():
     assert "          - recovery\n" not in workflow
     assert "          - recovery-production\n" in workflow
     assert "          - recovery-staging\n" in workflow
-    assert "STAGING_APP_API_BASE_URL: ${{ vars.STAGING_APP_API_BASE_URL }}" in workflow
-    assert "STAGING_ACCOUNT_API_BASE_URL: ${{ vars.STAGING_ACCOUNT_API_BASE_URL }}" in workflow
+    assert 'STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"' in workflow
+    assert (
+        'STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"'
+        in workflow
+    )
+    # The reviewed public endpoints, RuStore IDs, cutover flag and certificate
+    # fingerprint live in the workflow itself, not in repository variables.
+    for name in (
+        "PRODUCTION_APP_API_BASE_URL", "PRODUCTION_ACCOUNT_API_BASE_URL",
+        "APPROVED_PRODUCTION_APP_API_BASE_URL", "APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL",
+        "STAGING_APP_API_BASE_URL", "STAGING_ACCOUNT_API_BASE_URL",
+        "PRODUCTION_RUSSIAN_CUTOVER_APPROVED", "PRODUCTION_RUSTORE_CONSOLE_APP_ID",
+        "PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID",
+        "PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID", "RELEASE_CERT_SHA256",
+    ):
+        assert f"vars.{name}" not in workflow
     assert "Staging endpoints must equal the reviewed German staging pair" in workflow
     assert ":app:testRecoveryProductionUnitTest :app:assembleRecoveryProduction" in workflow
     assert ":app:testRecoveryStagingUnitTest :app:assembleRecoveryStaging" in workflow

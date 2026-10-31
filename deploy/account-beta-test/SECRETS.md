@@ -60,28 +60,28 @@ supplied to its build step.
 
 Store only `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
 `RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD` as protected environment
-secrets. Store the public `RELEASE_CERT_SHA256`, the cutover gate
-`PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and the independently reviewed
+secrets. The public `RELEASE_CERT_SHA256`, the cutover gate
+`PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and the reviewed
 `APPROVED_PRODUCTION_APP_API_BASE_URL` /
-`APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` as variables in that environment.
+`APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` are written directly into
+`.github/workflows/android-release.yml`, not stored as variables.
 
 The Yandex native client ID is pinned in source. VK is optional: leave all
 `STAGING_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` and
 `PRODUCTION_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` repository variables absent
 for the current Yandex-only release. If VK is enabled later, each environment's
 pair must be complete and the staging and production pairs must be distinct.
-Define `PRODUCTION_APP_API_BASE_URL` and `PRODUCTION_ACCOUNT_API_BASE_URL` as
-repository variables used by the credential-free build. Put independently
-reviewed copies under the `APPROVED_PRODUCTION_*` names in the protected
-environment. The checkout-free signing job refuses a mismatch, the German
+`PRODUCTION_APP_API_BASE_URL` and `PRODUCTION_ACCOUNT_API_BASE_URL` are likewise
+fixed in the workflow for the credential-free build, with the independently
+reviewed `APPROVED_PRODUCTION_*` copies beside them. The checkout-free signing job refuses a mismatch, the German
 staging prefix, `.invalid` or localhost names, IP literals, non-443 ports, and
 non-root application paths. Keep the cutover gate false until both URLs
 terminate at the reviewed Russian ingress. The workflow pins each third-party
 action and independently verifies artifact digests, provenance, certificate,
 package/version, endpoints, and the Yandex/VK provider mode.
 
-Also define `STAGING_APP_API_BASE_URL` and `STAGING_ACCOUNT_API_BASE_URL` as
-repository variables containing the exact reviewed German staging pair. Both
+`STAGING_APP_API_BASE_URL` and `STAGING_ACCOUNT_API_BASE_URL` are fixed in the
+workflow as the exact reviewed German staging pair. Both
 the normal staging artifact and `recovery-staging` consume these values; the
 workflow rejects missing or changed values. Production and staging recovery
 artifacts are distinct because endpoint-derived encrypted stores and queued

@@ -186,17 +186,18 @@ Create these secrets in the required-reviewer `android-signing` environment:
 | `RELEASE_KEY_ALIAS` | `plantdiseases`, or the recovered key's actual alias |
 | `RELEASE_KEY_PASSWORD` | Permanent key password |
 
-Create these environment **variables** (not secrets):
+These public, non-secret values are written directly into
+`.github/workflows/android-release.yml` (no environment variables are needed;
+changing one is a reviewed commit to `main`): `RELEASE_CERT_SHA256` (the
+permanent certificate fingerprint), `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`
+(keep `false` until the reviewed cutover smoke matrix passes) and
+`APPROVED_PRODUCTION_APP_API_BASE_URL` / `APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL`
+(the independently reviewed production origin, ending in `/`, and the same origin
+plus `id/`).
 
-| Variable | Value |
-|---|---|
-| `RELEASE_CERT_SHA256` | SHA-256 fingerprint of the permanent app certificate |
-| `PRODUCTION_RUSSIAN_CUTOVER_APPROVED` | `false` until the reviewed Russian cutover smoke matrix passes |
-| `APPROVED_PRODUCTION_APP_API_BASE_URL` | Independently reviewed Russian application HTTPS origin, ending in `/` |
-| `APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` | The same approved origin plus `id/` |
-
-Create these **repository Actions variables**. They are public/extractable
-mobile configuration and must be available to the unsigned build before a
+The following are public/extractable mobile configuration. Only the optional
+VK pair is still a repository Actions variable; the endpoint and RuStore values
+below are fixed in the workflow file, so the unsigned build sees them before a
 reviewer grants access to the permanent signing key:
 
 | Variable | Value |
@@ -211,10 +212,9 @@ reviewer grants access to the permanent signing key:
 | `STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID` | Exact value `plantdiseases_pro_monthly` |
 | `STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID` | Exact value `plantdiseases_pro_yearly` |
 
-Set each repository production URL to exactly the corresponding protected
-`APPROVED_PRODUCTION_*` environment value. The unsigned build uses the
-repository values, while the checkout-free signing job independently refuses
-to sign unless the artifact provenance matches the protected copies. Both
+The production URLs in the workflow must equal the `APPROVED_PRODUCTION_*`
+values. The unsigned build uses the former, while the checkout-free signing job
+independently refuses to sign unless the artifact provenance matches the latter. Both
 production and `recovery-production` reject the German staging prefix, `.invalid`
 or localhost names, every IP literal, non-443 ports, and application paths below
 the origin root. Staging and `recovery-staging` require the two explicit
@@ -442,14 +442,11 @@ After registration, provide only:
   account server (the Android value is already pinned);
 - if VK is enabled later, its numeric application ID and confirmation that the
   matching `VKID_CLIENT_SECRET` was placed in repository Actions variables;
-- confirmation that the reviewed staging and production endpoint pairs were
-  placed in repository Actions variables;
-- confirmation that both environments' RuStore Console app ID and exact
-  monthly/yearly product IDs were placed in repository Actions variables and
-  match the account-server allowlist;
-- confirmation that all four `RELEASE_*` secrets plus `RELEASE_CERT_SHA256`,
-  `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and both `APPROVED_PRODUCTION_*` URL
-  variables were placed only in the protected `android-signing` environment;
+- confirmation that the reviewed staging and production endpoint pairs, the
+  RuStore Console app ID and the exact monthly/yearly product IDs in the workflow
+  file match the deployment and the account-server allowlist;
+- confirmation that the four `RELEASE_*` secrets were placed only in the
+  protected `android-signing` environment;
 - confirmation that production URLs point to Russian ingress and the cutover
   gate remains false until the smoke matrix passes;
 - confirmation that both endpoint-matched recovery artifacts and their
