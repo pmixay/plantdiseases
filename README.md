@@ -252,8 +252,7 @@ plantdiseases/
 ├── deploy/                 Compose, nginx and operator scripts for the account stack
 ├── docs/                   ROADMAP · MODEL_HISTORY · ACCOUNTS_PRODUCTION_PLAN · DATASET_LABELING_PLAN · assets/
 ├── .github/workflows/      ci.yml — push-only CI (ruff + pytest for server and account
-│                           service; ktlint + detekt + unit tests + CI-only APK builds);
-│                           android-release.yml — manual protected signing
+│                           service; ktlint + detekt + unit tests + CI-only APK builds)
 ├── DEPLOYMENT.md           Production deployment guide
 ├── CLAUDE.md               Working notes for agents in this repo
 └── README.md               You are here

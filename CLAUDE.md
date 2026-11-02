@@ -24,9 +24,9 @@ digest tag.
 **Privacy policy:** `android/app/src/main/assets/privacy_policy.html` (shown by
 `ui/legal/PrivacyPolicyActivity`) is the canonical data-disclosure surface: it must work
 offline and describe the build the reader is running. The hosted copy is root
-`privacy.html`; the signing workflow exact-matches its structured markers (contact,
-deleted-actor disclosure) against `deploy/account-beta-test/release-policy-gates.json` —
-change them together.
+`privacy.html`; its structured markers (contact, deleted-actor disclosure) must match
+`deploy/account-beta-test/release-policy-gates.json` (checked by
+`account-server/tests/test_deployment_handoff.py`) — change them together.
 
 ## Where documentation lives
 
@@ -92,8 +92,8 @@ pytest -q
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew :app:assembleDebug -PAPP_API_BASE_URL=http://10.0.2.2:8000/ -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/ -PACCOUNT_REAL_OAUTH=false   # local app + mock-account stack
 ```
-- `assembleRelease` is CI-only; distributable APKs come only from the manually
-  dispatched `.github/workflows/android-release.yml` (environment `android-signing`).
+- `assembleRelease` is CI-only for agents; there is no CI release workflow — the owner
+  signs distributable APKs locally with the permanent key (`DEPLOYMENT.md` §8).
   `connectedDebugAndroidTest` needs a device and CI never runs it.
 - Unit tests run under Robolectric (real resources, in-memory Room) — prefer `src/test/`
   over `src/androidTest/`.

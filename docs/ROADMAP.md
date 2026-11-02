@@ -42,11 +42,9 @@ the README status section and `docs/assets/per-class.svg`.
 
 Details and current state per step: `ACCOUNTS_PRODUCTION_PLAN.md` (steps 7–10).
 
-- [ ] ★ **Protected `android-signing` environment.** Re-enter the four `RELEASE_*`
-      signing secrets from the original keystore (reviewers, `main`-only branch rule).
-      The URLs, RuStore IDs and cert fingerprint now live in the workflow file.
-- [ ] **Signed APK from the protected workflow**, after green `main` CI. Verify APK
-      digest, certificate and endpoints.
+- [ ] ★ **Signed release build, local.** The CI release workflow is gone: build
+      with the permanent key from `~/.gradle/gradle.properties` after green CI,
+      verify cert fingerprint/package/versionCode/endpoints (`DEPLOYMENT.md` §8.3).
 - [ ] ★ **Real-provider test of the permanently signed APK** (signup, cancel,
       refresh, logout, deletion). Confirm the Yandex console holds that key's
       certificate fingerprint.

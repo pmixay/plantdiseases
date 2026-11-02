@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import copy
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import yaml
@@ -31,7 +28,6 @@ PRODUCTION_ENV = HANDOFF / "env.production.example"
 RU_EGRESS_POLICY = HANDOFF / "egress-proxy" / "squid.conf.example"
 PRIVACY = REPOSITORY_ROOT / "privacy.html"
 RELEASE_POLICY_GATES = DEPLOY / "release-policy-gates.json"
-ANDROID_RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "android-release.yml"
 CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 ANDROID_BUILD_GRADLE = REPOSITORY_ROOT / "android" / "app" / "build.gradle.kts"
 ANDROID_GRADLE_PROPERTIES = REPOSITORY_ROOT / "android" / "gradle.properties"
@@ -84,36 +80,6 @@ def _environment(path: Path) -> dict[str, str]:
         key, value = line.split("=", maxsplit=1)
         values[key] = value
     return values
-
-
-def _release_policy_validator_source() -> str:
-    workflow = _yaml(ANDROID_RELEASE_WORKFLOW)
-    step = next(
-        step
-        for step in workflow["jobs"]["build_unsigned"]["steps"]
-        if step.get("name") == "Block unresolved identity-data policy releases"
-    )
-    script = step["run"]
-    prefix = "python3 - <<'PY'\n"
-    start = script.index(prefix) + len(prefix)
-    return script[start : script.index("\nPY\n", start)]
-
-
-def _run_release_policy_validator(tmp_path: Path, gates: dict, policy: str):
-    deployment = tmp_path / "deploy" / "account-beta-test"
-    deployment.mkdir(parents=True, exist_ok=True)
-    (deployment / "release-policy-gates.json").write_text(
-        json.dumps(gates),
-        encoding="utf-8",
-    )
-    (tmp_path / "privacy.html").write_text(policy, encoding="utf-8")
-    return subprocess.run(
-        [sys.executable, "-c", _release_policy_validator_source()],
-        cwd=tmp_path,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
 
 
 def _mount_source(mount: str) -> str:
@@ -542,7 +508,7 @@ def test_backup_check_is_scoped_to_generated_restore_database():
     assert "sha256sum" in text
 
 
-def test_privacy_and_signing_gates_match_account_release():
+def test_privacy_policy_matches_account_release():
     privacy = PRIVACY.read_text(encoding="utf-8")
     assert "fonts.googleapis.com" not in privacy
     assert "fonts.gstatic.com" not in privacy
@@ -596,176 +562,8 @@ def test_privacy_and_signing_gates_match_account_release():
     assert 'data-retention-mode="fixed_days"' in privacy
     assert 'data-retention-days="30"' in privacy
 
-    workflow = ANDROID_RELEASE_WORKFLOW.read_text(encoding="utf-8")
-    assert "&& secrets.PRODUCTION_" not in workflow
-    assert "PRODUCTION_RUSSIAN_CUTOVER_APPROVED" in workflow
-    assert "Require successful CI for this exact commit" in workflow
-    assert "APPLICATION_ID = \"com.plantdiseases.app\"" in workflow
-    assert "versionCode='$expected_version_code'" in workflow
-    assert "expected_yandex_client_id=2b439944bb4c4e33b85e20290aca6c7f" in workflow
-    assert "STAGING_YANDEX_CLIENT_ID" not in workflow
-    assert "PRODUCTION_YANDEX_CLIENT_ID" not in workflow
-    assert "YANDEX_CLIENT_SECRET" not in workflow
-    assert "STAGING_VKID_CLIENT_ID: ${{ vars.STAGING_VKID_CLIENT_ID }}" in workflow
-    assert "Configured production and staging VK applications must be distinct" in workflow
-    assert "VK ID and mobile value must be set together" in workflow
-    assert "APPROVED_PRODUCTION_APP_API_BASE_URL" in workflow
-    assert "APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL" in workflow
-    assert "Unsigned artifact endpoints differ from the protected approved" in workflow
-    assert "Production and production-recovery endpoints must not use German staging" in workflow
-    assert "Production origin must not use localhost or a reserved invalid" in workflow
-    assert "Production origin must not use an IPv4 literal" in workflow
-    assert "          - recovery\n" not in workflow
-    assert "          - recovery-production\n" in workflow
-    assert "          - recovery-staging\n" in workflow
-    assert 'STAGING_APP_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/"' in workflow
-    assert (
-        'STAGING_ACCOUNT_API_BASE_URL: "https://pdis.arbuz.lol/plantdisease-test/id/"'
-        in workflow
-    )
-    # The reviewed public endpoints, RuStore IDs, cutover flag and certificate
-    # fingerprint live in the workflow itself, not in repository variables.
-    for name in (
-        "PRODUCTION_APP_API_BASE_URL", "PRODUCTION_ACCOUNT_API_BASE_URL",
-        "APPROVED_PRODUCTION_APP_API_BASE_URL", "APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL",
-        "STAGING_APP_API_BASE_URL", "STAGING_ACCOUNT_API_BASE_URL",
-        "PRODUCTION_RUSSIAN_CUTOVER_APPROVED", "PRODUCTION_RUSTORE_CONSOLE_APP_ID",
-        "PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID",
-        "PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID", "RELEASE_CERT_SHA256",
-    ):
-        assert f"vars.{name}" not in workflow
-    assert "Staging endpoints must equal the reviewed German staging pair" in workflow
-    assert ":app:testRecoveryProductionUnitTest :app:assembleRecoveryProduction" in workflow
-    assert ":app:testRecoveryStagingUnitTest :app:assembleRecoveryStaging" in workflow
-    assert "RECOVERY_ENDPOINT_SCOPE = \"production\"" in workflow
-    assert "RECOVERY_ENDPOINT_SCOPE = \"staging\"" in workflow
-    assert "release-policy-gates.json" in workflow
-    assert 'contact.get("status") != "approved"' in workflow
-    assert 'tombstone.get("status") != "approved"' in workflow
-    assert "approved private contact must use mailto: or HTTPS" in workflow
-    assert "approved private contact does not match the policy link exactly" in workflow
-    assert "distinct English and Russian tombstone disclosures are required" in workflow
-    assert "both tombstone disclosures must contain the legal-basis reference" in workflow
-    assert "tombstone JSON and bilingual policy marker do not match exactly" in workflow
-    # The production stop was lifted with the deletion journal + backup epoch;
-    # production must not be re-blocked by a leftover channel-specific stop.
-    assert "Production distribution is blocked until the deferred backup epoch" not in workflow
-    assert "docs/DELETION_JOURNAL_AND_BACKUP_EPOCH.md" in workflow
-    assert "grep -Fq '**Deferred decision:**" not in workflow
-    assert "refs/heads/account-beta-test" not in workflow
-    assert "Every signing channel must use trusted workflow code from protected main" in workflow
 
-
-def test_release_policy_validator_requires_exact_structured_bilingual_policy(tmp_path):
-    disclosure_en = "The deleted-actor marker is retained for 30 days."
-    disclosure_ru = "Маркер удалённого участника хранится 30 дней."
-    gates = {
-        "schema_version": 2,
-        "private_contact": {
-            "status": "approved",
-            "uri": "mailto:privacy@example.test",
-            "policy_link_id": "privacy-private-contact",
-            "decision_reference": "https://decisions.example.test/contact",
-            "approved_at_utc": "2026-08-09T12:00:00Z",
-        },
-        "deleted_actor_tombstone": {
-            "status": "approved",
-            "mode": "fixed_days",
-            "retention_days": 30,
-            "legal_basis": None,
-            "policy_marker_id": "deleted-actor-tombstone-policy",
-            "disclosure_en": disclosure_en,
-            "disclosure_ru": disclosure_ru,
-            "decision_reference": "https://decisions.example.test/tombstone",
-            "approved_at_utc": "2026-08-09T12:00:00Z",
-        },
-    }
-    policy = f"""<!doctype html>
-    <html><head>
-    <meta name="plantdiseases-release-policy-schema" content="2">
-    </head><body><main>
-    <a id="privacy-private-contact"
-       data-policy-purpose="privacy-and-deletion"
-       href="mailto:privacy@example.test">Private contact</a>
-    <p id="deleted-actor-tombstone-policy"
-       data-policy-status="approved"
-       data-retention-mode="fixed_days"
-       data-retention-days="30"
-       data-legal-basis=""
-       data-en="{disclosure_en}"
-       data-ru="{disclosure_ru}">{disclosure_ru}</p>
-    </main></body></html>"""
-
-    accepted = _run_release_policy_validator(tmp_path, gates, policy)
-    assert accepted.returncode == 0, accepted.stderr
-
-    invalid_contact = copy.deepcopy(gates)
-    invalid_contact["private_contact"]["uri"] = "account"
-    rejected_contact = _run_release_policy_validator(
-        tmp_path,
-        invalid_contact,
-        policy.replace("mailto:privacy@example.test", "account"),
-    )
-    assert rejected_contact.returncode != 0
-    assert "must use mailto: or HTTPS" in rejected_contact.stderr
-
-    contradictory_retention = copy.deepcopy(gates)
-    contradictory_retention["deleted_actor_tombstone"]["retention_days"] = 1
-    rejected_retention = _run_release_policy_validator(
-        tmp_path,
-        contradictory_retention,
-        policy,
-    )
-    assert rejected_retention.returncode != 0
-    assert "must contain the approved day count" in rejected_retention.stderr
-
-
-def test_protected_android_signing_has_checkout_free_key_boundary():
-    workflow = _yaml(ANDROID_RELEASE_WORKFLOW)
-    build = workflow["jobs"]["build_unsigned"]
-    sign = workflow["jobs"]["sign"]
-    build_text = json.dumps(build)
-    sign_text = json.dumps(sign)
-
-    assert "environment" not in build
-    assert "secrets." not in build_text
-    assert "RELEASE_KEYSTORE" not in build_text
-    assert "RELEASE_STORE_PASSWORD" not in build_text
-    assert "RELEASE_KEY_PASSWORD" not in build_text
-    assert "ANDROID_UNSIGNED_DISTRIBUTION" in build_text
-    assert "EMAIL_PASSWORD_AUTH_ENABLED = true" in build_text
-    assert "EMAIL_PASSWORD_AUTH_ENABLED = false" in build_text
-    assert "Gradle output is already signed" in build_text
-    assert "Require successful CI for this exact commit" in build_text
-    branch_gate = next(
-        step
-        for step in build["steps"]
-        if step.get("name") == "Validate requested source branch"
-    )
-    assert branch_gate["working-directory"] == "."
-
-    assert sign["needs"] == "build_unsigned"
-    assert sign["environment"] == "android-signing"
-    assert sign["permissions"] == {"actions": "read", "contents": "none"}
-    assert "actions/checkout@" not in sign_text
-    assert "gradlew" not in sign_text
-    assert "setup-gradle" not in sign_text
-    assert "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131" in sign_text
-    assert "artifact-ids" in sign_text
-    assert "64 lowercase hex" in sign_text
-    assert "unset RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD" in sign_text
-    assert "EXPECTED_UNSIGNED_SHA256" in sign_text
-    assert "Downloaded unsigned APK digest differs from the build-job output" in sign_text
-    assert "EXPECTED_YANDEX_CLIENT_ID_SHA256" in sign_text
-    assert "EXPECTED_VKID_CLIENT_ID_SHA256" in sign_text
-    assert "EXPECTED_VKID_CLIENT_SECRET_SHA256" in sign_text
-    assert "vkid_client_secret_sha256=$EXPECTED_VKID_CLIENT_SECRET_SHA256" in sign_text
-    assert "unsigned_artifact_digest=$UNSIGNED_ARTIFACT_DIGEST" in sign_text
-    assert "apksigner" in sign_text
-    assert "zipalign" in sign_text
-    assert "certificate_sha256=$actual_cert" in sign_text
-    assert "signing_boundary=checkout-free" in sign_text
-
+def test_android_gradle_keeps_distribution_channel_contract():
     gradle = ANDROID_BUILD_GRADLE.read_text(encoding="utf-8")
     assert (
         'providers.environmentVariable(name)\n        .orElse(providers.gradleProperty(name))'

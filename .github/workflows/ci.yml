@@ -165,8 +165,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       # gradle-wrapper.jar is committed executable code that runs before the
-      # build. Validate it against Gradle's published known-good checksums. The
-      # protected signing workflow repeats this check before loading secrets.
+      # build. Validate it against Gradle's published known-good checksums.
       # The action scans the whole checkout, so
       # it finds android/gradle/ regardless of this job's
       # `defaults.run.working-directory` (which applies to `run:` steps only).
@@ -229,8 +228,8 @@ jobs:
       # workflow deliberately keeps.
       #
       # Ordinary CI never receives permanent signing/provider credentials and
-      # never produces a distributable APK. Release and same-package staging
-      # signing live in the separately protected android-release workflow.
+      # never produces a distributable APK; release signing is done locally by the
+      # owner (DEPLOYMENT.md §8.3).
       - name: Lint, test release variants, and assemble non-distributable APKs
         env:
           # FCM client config (optional). Unset ⇒ push stays dormant and the
