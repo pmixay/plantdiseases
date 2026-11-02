@@ -54,7 +54,8 @@ The release plan (steps, root-route switch, rollback) is in
   reviewed API 37/AGP 9 migration.
 - CI always compiles the Yandex-only real-OAuth BuildConfig path. Ordinary CI
   receives no signing key and publishes no distributable artifact; permanent
-  signing is isolated in the protected, manually dispatched Android workflow.
+  signing happens only locally on the owner's machine (there is no CI signing
+  workflow).
 
 Implementation entry points:
 
@@ -82,37 +83,36 @@ to pass:
 - **Server tests & lint**: Ruff and pytest.
 
 Do not distribute an APK from ordinary CI. After every applicable job passes,
-promote the reviewed SHA to protected `main`, then manually dispatch
-`.github/workflows/android-release.yml` for `staging` from `main`. Inspect the
-exact commit and its unsigned artifact/provenance, then have a different
-authorized reviewer approve the protected `android-signing` environment. The
-build job never receives the permanent key; the signing job has no checkout and
-does not run Gradle. Its inline signing shell is nevertheless repository code,
-so every channel must dispatch from protected `main` and the reviewer must
-inspect that exact workflow SHA. Use only that workflow's
-checksum/provenance-carrying signed artifact.
+promote the reviewed SHA to `main`, then build the staging APK locally from
+`android/` with `ANDROID_DISTRIBUTION_CHANNEL=staging` and the reviewed
+`STAGING_*` endpoint pair, signing it with the owner's permanent key through the
+`RELEASE_*` Gradle properties (see
+`docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md`, sections 5 and 7). The
+keystore never leaves the owner's machine and never enters Git or GitHub.
+Verify the APK certificate, package, versionCode and endpoints with
+`apksigner`/`aapt` and keep its SHA-256 as the distribution record.
 
-Before the first versionCode 19 staging distribution, dispatch
-`recovery-staging` from reviewed, protected `main` and archive its
-versionCode 20 artifact. Before the first production distribution, dispatch
-`recovery-production` from reviewed `main` and archive that distinct versionCode
-20 artifact. Both use the normal package/certificate and disable account UI,
-but staging recovery is bound to the exact reviewed `STAGING_*` endpoint pair
-while production recovery consumes the reviewed `PRODUCTION_*` pair. The
-checkout-free signing job requires the production repository values to equal
-the protected `APPROVED_PRODUCTION_*` values exactly. Never substitute one
-recovery artifact for the other: endpoint-scoped encrypted state and queued
+Before the first versionCode 19 staging distribution, build locally with
+channel `recovery-staging` from reviewed `main` and archive its
+versionCode 20 APK. Before the first production distribution, build with
+`recovery-production` and archive that distinct versionCode 20 APK. Both use
+the normal package/certificate and disable account UI, but staging recovery is
+bound to the exact reviewed `STAGING_*` endpoint pair while production recovery
+consumes the reviewed `PRODUCTION_*` pair; Gradle rejects missing or malformed
+values. Never substitute one recovery APK for the other: endpoint-scoped encrypted state and queued
 revocations must stay with their original issuer. These are the data-preserving
 rollback paths because Android cannot downgrade versionCode 19 to 18. If either
 recovery is used, the next mandatory account release must use versionCode 21 or
 higher.
 
-The workflow intentionally refuses real-provider staging or production while
-`deploy/account-beta-test/release-policy-gates.json` marks the private contact
-or deleted-actor-retention decision as blocked. Approved metadata must match a
-schema-2 contact link and bilingual tombstone marker in `privacy.html` exactly,
-including a real `mailto:`/HTTPS contact, the selected retention mode, decision
-reference and UTC approval time. Prose substring changes cannot clear the gate.
+No build step enforces the private-contact and deleted-actor-retention gates any
+more; the owner checks manually, before distributing a real-provider build, that
+`deploy/account-beta-test/release-policy-gates.json` is not marked blocked.
+Approved metadata must match a schema-2 contact link and bilingual tombstone
+marker in `privacy.html` exactly, including a real `mailto:`/HTTPS contact, the
+selected retention mode, decision reference and UTC approval time;
+`test_deployment_handoff.py::test_privacy_policy_matches_account_release` still
+checks that consistency.
 Production is additionally blocked while the handoff records the
 cross-store backup epoch/deletion replay journal as deferred. Recovery channels
 remain available during those holds.
@@ -188,8 +188,8 @@ Real login requires all of the following before building the APK:
    `com.plantdiseases.app` and the one permanent app-signing certificate. There
    is no `.accountbeta` provider registration.
 4. The APK is signed by the certificate registered with each provider. Use
-   `./gradlew :app:signingReport` to obtain the fingerprint; a CI-generated
-   disposable debug key is not a stable provider registration.
+   `./gradlew :app:signingReport` to obtain the fingerprint; a disposable
+   debug key is not a stable provider registration.
 5. The public Yandex Android client ID pinned in `app/build.gradle.kts`
    matches the provider registration. A Yandex client secret is neither
    required nor accepted by the build.
@@ -260,10 +260,10 @@ media remain isolated; only the model directory is shared read-only.
 
 ## 5. Build and run the real PlantDiseases 1.9 APK
 
-Dispatch the protected Android signing workflow with channel `production` for
-the RuStore candidate (`staging` remains limited to named pre-release testers). Review
-the exact unsigned artifact/provenance before approving the checkout-free
-signing job. Install its accepted APK using Android Studio or `adb install -r`.
+Build and sign locally with channel `production` for the RuStore candidate
+(`staging` remains limited to named pre-release testers), following
+`docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md`. Install the resulting APK
+using Android Studio or `adb install -r`.
 Confirm the installed application ID is `com.plantdiseases.app`, the installed
 version is 1.9/19, its certificate is the pinned permanent certificate, and the
 synthetic-auth notice is not visible. A signature mismatch over 1.8 is a stop

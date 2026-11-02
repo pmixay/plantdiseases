@@ -10,12 +10,11 @@ an `accountbeta` package.
 | Android application ID | `com.plantdiseases.app` |
 | Version name | `1.9` |
 | Version code | `19` |
-| RuStore build type | `release` |
-| RuStore CI artifact | `plantdiseases-1.9-release-apk` |
+| RuStore build | `production` distribution channel, built and signed locally |
 | Production app API | `https://pdis.arbuz.lol/` |
 | Production account API | `https://pdis.arbuz.lol/id/` |
 
-Only the production `release` artifact is a RuStore candidate. The internal
+Only the production-channel APK is a RuStore candidate. The internal
 `staging` build changes endpoints only; it deliberately has no application-ID
 suffix, version suffix, alternate launcher label, or alternate signing key, so
 it is not another app or version. Never upload that staging artifact to
@@ -44,7 +43,7 @@ Then choose exactly one of these paths:
    the exact keystore that signed it and compare its SHA-256 fingerprint. Do
    not generate a new key.
 2. **A store re-signs 1.8.** Use the store's app-signing certificate for
-   provider registration. A CI-signed sideload cannot update a store install
+   provider registration. A sideload signed with a different key cannot update a store install
    unless its installed signing certificate is the same. For RuStore AAB
    signing, distinguish the final app-signing certificate from the upload
    certificate; provider registration needs the certificate on the APK users
@@ -105,9 +104,11 @@ keytool -list -v \
   -alias plantdiseases
 ```
 
-The SHA-256 value becomes the protected `android-signing` environment variable
-`RELEASE_CERT_SHA256`. The signing job compares every distributable APK against
-that pinned value, so an accidental replacement keystore fails the workflow.
+The SHA-256 value is the permanent certificate fingerprint. For this project it
+is `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367`; it must
+be registered with Yandex for `com.plantdiseases.app`. Compare every
+distributable APK against it (section 7), so an accidental replacement keystore
+is caught before distribution.
 
 ## 3. Register Yandex ID
 
@@ -162,7 +163,7 @@ In the [VK ID integration cabinet](https://id.vk.ru/business/go):
 
 The VK mobile `client_secret` is embedded in the APK as required by the VK ID
 Android SDK and is therefore extractable client configuration, not a server
-credential. Pass it through a repository Actions variable rather than commit it,
+credential. Supply it through a Gradle property or environment variable rather than commit it,
 and never accept it as proof of a caller's identity.
 Until VK is registered, leave both `VKID_CLIENT_ID` and `VKID_CLIENT_SECRET`
 unset. The Android app shows a disabled **VK ID — coming soon** option, does
@@ -170,135 +171,69 @@ not initialize its SDK, and the account server returns `provider_unavailable`
 for VK routes. Adding VK later does not require changing the Yandex
 configuration.
 
-## 5. Configure GitHub Actions
+## 5. Build and sign locally
 
-Open **Settings → Environments**, create `android-signing`, allow only the
-protected `main` branch, prevent self-review, and require reviewer approval.
-Put permanent signing values only in this environment. Ordinary CI and the
-unsigned build job must remain unable to read them.
+There is no CI signing, no protected GitHub environment and no `RELEASE_*`
+GitHub secret. Ordinary CI (`.github/workflows/ci.yml`) holds no signing or
+provider credentials. The owner builds the distributable APK on a trusted
+machine with Gradle (section 7) and signs it with the permanent key through the
+`RELEASE_*` Gradle properties or same-named environment variables:
 
-Create these secrets in the required-reviewer `android-signing` environment:
-
-| Secret | Value |
+| Property / env var | Value |
 |---|---|
-| `RELEASE_KEYSTORE_BASE64` | One-line base64 of the permanent keystore |
+| `RELEASE_STORE_FILE` | Absolute path of the permanent keystore, outside the repository |
 | `RELEASE_STORE_PASSWORD` | Permanent keystore password |
 | `RELEASE_KEY_ALIAS` | `plantdiseases`, or the recovered key's actual alias |
 | `RELEASE_KEY_PASSWORD` | Permanent key password |
 
-These public, non-secret values are written directly into
-`.github/workflows/android-release.yml` (no environment variables are needed;
-changing one is a reviewed commit to `main`): `RELEASE_CERT_SHA256` (the
-permanent certificate fingerprint), `PRODUCTION_RUSSIAN_CUTOVER_APPROVED`
-(keep `false` until the reviewed cutover smoke matrix passes) and
-`APPROVED_PRODUCTION_APP_API_BASE_URL` / `APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL`
-(the independently reviewed production origin, ending in `/`, and the same origin
-plus `id/`).
+The keystore, its passwords and any base64 copy of it stay on the owner's
+machine (and in the controlled password manager and encrypted backups from
+section 2). They never go into Git, a GitHub secret or variable, chat, or a
+ticket. Keep them in the user's private `~/.gradle/gradle.properties`
+(restricted to the user) or in the shell environment of the build only.
 
-The following are public/extractable mobile configuration. Only the optional
-VK pair is still a repository Actions variable; the endpoint and RuStore values
-below are fixed in the workflow file, so the unsigned build sees them before a
-reviewer grants access to the permanent signing key:
+Everything else the build needs is public, extractable mobile configuration,
+not a secret. The values below are reviewed reference values; Gradle reads each
+one from a `-P` property or a same-named environment variable:
 
-| Variable | Value |
+| Gradle property / env var | Reference value |
 |---|---|
-| `STAGING_VKID_CLIENT_ID` / `PRODUCTION_VKID_CLIENT_ID` | Optional separate numeric VK application IDs; leave both unset for the current release |
-| `STAGING_VKID_CLIENT_SECRET` / `PRODUCTION_VKID_CLIENT_SECRET` | Optional matching VK mobile values; each ID/value pair must be either complete or absent |
-| `STAGING_APP_API_BASE_URL` | Exact reviewed German staging application URL: `https://pdis.arbuz.lol/plantdisease-test/` |
-| `STAGING_ACCOUNT_API_BASE_URL` | Exact reviewed German staging account URL: `https://pdis.arbuz.lol/plantdisease-test/id/` |
-| `PRODUCTION_APP_API_BASE_URL` | Reviewed production application HTTPS base URL |
-| `PRODUCTION_ACCOUNT_API_BASE_URL` | Reviewed production account HTTPS base URL |
-| `STAGING_RUSTORE_CONSOLE_APP_ID` / `PRODUCTION_RUSTORE_CONSOLE_APP_ID` | Positive, non-zero decimal RuStore Console application ID for the corresponding environment |
-| `STAGING_RUSTORE_PRO_MONTHLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_MONTHLY_PRODUCT_ID` | Exact value `plantdiseases_pro_monthly` |
-| `STAGING_RUSTORE_PRO_YEARLY_PRODUCT_ID` / `PRODUCTION_RUSTORE_PRO_YEARLY_PRODUCT_ID` | Exact value `plantdiseases_pro_yearly` |
+| `PRODUCTION_APP_API_BASE_URL` | `https://pdis.arbuz.lol/` |
+| `PRODUCTION_ACCOUNT_API_BASE_URL` | `https://pdis.arbuz.lol/id/` |
+| `STAGING_APP_API_BASE_URL` | `https://pdis.arbuz.lol/plantdisease-test/` |
+| `STAGING_ACCOUNT_API_BASE_URL` | `https://pdis.arbuz.lol/plantdisease-test/id/` |
+| `RUSTORE_CONSOLE_APP_ID` | `2063726125` (RuStore Console application ID) |
+| `RUSTORE_PRO_MONTHLY_PRODUCT_ID` | `plantdiseases_pro_monthly` |
+| `RUSTORE_PRO_YEARLY_PRODUCT_ID` | `plantdiseases_pro_yearly` |
+| `VKID_CLIENT_ID` / `VKID_CLIENT_SECRET` | Optional VK pair; leave both unset for the current release (both or neither) |
 
-The production URLs in the workflow must equal the `APPROVED_PRODUCTION_*`
-values. The unsigned build uses the former, while the checkout-free signing job
-independently refuses to sign unless the artifact provenance matches the latter. Both
-production and `recovery-production` reject the German staging prefix, `.invalid`
-or localhost names, every IP literal, non-443 ports, and application paths below
-the origin root. Staging and `recovery-staging` require the two explicit
-`STAGING_*` URL variables and reject any value other than the reviewed German
-pair. This keeps their endpoint-derived encrypted stores and revocation queues
-on the same issuer.
+Gradle enforces what it can at configuration time. `ANDROID_DISTRIBUTION_CHANNEL`
+selects a distribution channel: `staging`, `production`, `recovery-production`
+or `recovery-staging`. `production` and `recovery-production` need an explicit
+HTTPS production pair (app URL ending in `/`, account URL the same origin plus
+`id/`); `staging` and `recovery-staging` require the reviewed staging pair
+above. The PRO-enabled channels (`staging`, `production`) refuse to build
+unless all three RuStore values are present and both product IDs match the
+account-server allowlist; the recovery channels inject no Pay values and remain
+account-disabled rollback APKs. Yandex uses the one public native client ID
+pinned in `android/app/build.gradle.kts`; the Yandex client secret is never
+used. None of these values is the server RSA private key or the notification
+AES key.
 
-All four signing channels must be dispatched from protected `main`. Configure
-the `android-signing` environment deployment-branch rule for `main` only; do
-not allow `account-beta-test` or wildcard branches. Protect `main` with required
-pull-request review and CI, and disallow force pushes and deletion; changes to
-this workflow require the same release-security review as signing code.
-Environment values take precedence over Gradle-property fallbacks for
-distribution inputs. The build
-records SHA-256 values for the pinned Yandex client ID and the optional VK
-application ID/mobile value found in generated `BuildConfig`; the signing job
-validates those hashes in provenance before decoding or using the permanent
-key. Raw VK values are not written to provenance or logs.
+The two recovery channels share the package, permanent certificate and
+versionCode 20 but differ in endpoints and version name; they are not
+interchangeable. Keep a copy of the matching recovery APK for each channel
+before distributing its versionCode 19 counterpart.
 
-When VK is configured in both environments, the workflow requires distinct
-staging and production VK pairs. Yandex intentionally uses the one registered
-RuStore native client embedded in version 1.9; the server still validates its
-audience and provider response before creating an account session.
+Nothing enforces the privacy-policy or deletion-retention release gates at
+build time any more. The owner confirms them manually before distributing
+(`docs/ACCOUNTS_PRODUCTION_PLAN.md`). The consistency between the root
+`privacy.html` markers and
+`deploy/account-beta-test/release-policy-gates.json` is still checked by
+`test_deployment_handoff.py::test_privacy_policy_matches_account_release`.
 
-Staging and production are PRO-enabled distribution channels. Their protected
-workflow refuses to build unless all three public RuStore values are present,
-both product IDs match the account-server allowlist, and the generated
-`BuildConfig` proves Pay is enabled with those exact values. The two recovery
-channels intentionally inject no Pay values and prove
-`RUSTORE_PAY_CONFIGURED=false`; they remain account-disabled rollback APKs.
-These identifiers are extractable mobile configuration, not the server RSA
-private key or notification AES key.
-
-The manual workflow first runs Gradle in an unprotected job with
-`ANDROID_UNSIGNED_DISTRIBUTION=true`. That job receives no `RELEASE_*` value,
-proves that its APK is unsigned, checks package/version/endpoints/provider mode,
-and uploads the APK and provenance. Only then can a reviewer approve the
-`android-signing` job. That job downloads the exact artifact by ID, records the
-GitHub archive digest, independently checks the APK digest anchored in the
-build-job output plus its provenance, and uses fixed runner Android Build Tools
-to align, sign, and verify it. It performs no checkout or Gradle invocation.
-Its inline shell is still repository-controlled workflow code, so it is trusted
-only because every channel runs the workflow from protected `main`; the
-required reviewer must inspect that exact workflow SHA before approval.
-
-Archive both account-disabled rollback artifacts before their corresponding
-versionCode 19 release: `recovery-staging` for staging, and
-`recovery-production` for production. They share the package, permanent
-certificate and versionCode 20, but have distinct version names, endpoint hashes
-and artifact names. They are not interchangeable. The workflow also blocks
-real-provider staging and production while the machine-readable
-`deploy/account-beta-test/release-policy-gates.json` records the private contact
-or deleted-actor-retention decision as blocked. An approved gate must include
-an HTTPS decision reference and UTC approval timestamp. Schema 2 accepts only a
-real `mailto:` or credential-free HTTPS contact whose exact `href` is on the
-stable `privacy-private-contact` policy link; that anchor also carries
-`data-policy-purpose="privacy-and-deletion"`. Tombstone approval selects either
-`fixed_days` or `legal_basis`; the `deleted-actor-tombstone-policy` paragraph's
-status, mode, day count/legal basis, English disclosure and Russian disclosure
-must exactly match the JSON fields. Changing or reusing an
-unrelated policy substring cannot clear it. Production
-alone has an intentional code-level stop until the cross-store backup epoch and
-durable deletion replay journal are implemented and restore-tested; recovery
-remains usable.
-
-Create the one-line base64 value locally:
-
-```sh
-base64 -w 0 plantdiseases-app-signing.p12 > plantdiseases-keystore.base64
-```
-
-On macOS, use `base64 -i plantdiseases-app-signing.p12 -o
-plantdiseases-keystore.base64`. Copy the file contents into the GitHub secret,
-then remove the temporary plaintext base64 file through the machine's normal
-secure file-handling process. Base64 is encoding, not encryption. Delete any
-old repository-level copies after the protected environment is confirmed.
-
-Do not send the keystore or its passwords to another person merely so they can
-paste them into GitHub. The key owner should enter those four values directly.
-
-No Yandex secret is required in GitHub Actions. Its public native client ID is
-versioned with the Android release configuration so a missing CI value cannot
-silently remove LoginSDK. Leave both VK variables absent for the current
-release; adding both values later enables only VK and does not alter Yandex.
+Yandex needs no secret anywhere in this flow. Leave both VK values unset for the
+current release; adding both later enables only VK and does not alter Yandex.
 
 ## 6. Deploy the production account origin
 
@@ -315,7 +250,7 @@ account server.
 
 Before enabling PRO, create the monthly and yearly subscriptions in the
 matching RuStore Console application and keep the identifiers exactly aligned
-between the Android Actions variables and the account server:
+between the Android build values (section 5) and the account server:
 
 ```properties
 RUSTORE_LIFECYCLE_ENABLED=true
@@ -327,7 +262,7 @@ RUSTORE_SUBSCRIPTION_PRODUCTS=plantdiseases_pro_monthly,plantdiseases_pro_yearly
 The private Public API RSA key and callback AES key are deployed only through
 the account-server secret files described in
 `docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`; they must never become Android
-Gradle properties or Actions variables. The app will not load products, buy,
+Gradle properties. The app will not load products, buy,
 or restore until a fresh authenticated account response says
 `billing_available=true`, so enable the backend verifier before distributing a
 Pay-enabled APK.
@@ -381,7 +316,7 @@ ACCOUNT_REAL_OAUTH=true
 ANDROID_DISTRIBUTION_CHANNEL=production
 APP_API_BASE_URL=https://pdis.arbuz.lol/
 ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/id/
-RUSTORE_CONSOLE_APP_ID=<non-zero decimal production RuStore application ID>
+RUSTORE_CONSOLE_APP_ID=2063726125
 RUSTORE_PRO_MONTHLY_PRODUCT_ID=plantdiseases_pro_monthly
 RUSTORE_PRO_YEARLY_PRODUCT_ID=plantdiseases_pro_yearly
 RELEASE_STORE_FILE=/absolute/path/to/plantdiseases-app-signing.p12
@@ -397,8 +332,10 @@ For the zero-configuration beta, build from `android/` with either:
 ./gradlew :app:assembleRelease
 ```
 
-For an actual production artifact, use the protected production workflow or
-explicitly supply the reviewed production pair before running:
+For an actual production artifact, supply the reviewed production values from
+the properties above (channel `production`, the production endpoint pair, the
+RuStore values and the `RELEASE_*` signing properties) and run the same command
+locally. The owner builds and signs; there is no CI signing path.
 
 ```sh
 ./gradlew :app:assembleRelease
@@ -414,12 +351,12 @@ apkanalyzer manifest version-code app/build/outputs/apk/release/app-release.apk
 ```
 
 The package must be `com.plantdiseases.app`, the certificate SHA-256 must equal
-`RELEASE_CERT_SHA256`, and the version must be 1.9/19.
-
-Main-branch CI performs these checks against the packaged APK, also verifies
-the no-backup/no-cleartext/provider-component state and Yandex SDK bytecode,
-and uploads `app-release.apk.sha256` beside the APK. Preserve both files with
-the successful CI run as the RuStore handoff evidence.
+`ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367` (section 2),
+and the version must be 1.9/19. Also confirm the compiled endpoints are the
+production pair, not the beta defaults, and keep the APK's SHA-256
+(`sha256sum app-release.apk`) with the release notes as the RuStore handoff
+record. These checks are manual; ordinary CI only compiles and tests the
+variants and holds no signing key, so it never produces the distributable APK.
 
 Install as an update:
 
@@ -441,16 +378,17 @@ After registration, provide only:
 - confirmation that the matching public Yandex Client ID is configured on the
   account server (the Android value is already pinned);
 - if VK is enabled later, its numeric application ID and confirmation that the
-  matching `VKID_CLIENT_SECRET` was placed in repository Actions variables;
+  matching `VKID_CLIENT_SECRET` was supplied only as a local Gradle property or
+  environment variable;
 - confirmation that the reviewed staging and production endpoint pairs, the
-  RuStore Console app ID and the exact monthly/yearly product IDs in the workflow
-  file match the deployment and the account-server allowlist;
-- confirmation that the four `RELEASE_*` secrets were placed only in the
-  protected `android-signing` environment;
+  RuStore Console app ID and the exact monthly/yearly product IDs used for the
+  local build match the deployment and the account-server allowlist;
+- confirmation that the keystore and its passwords exist only on the owner's
+  machine and in encrypted backups, never in Git or GitHub;
 - confirmation that production URLs point to Russian ingress and the cutover
-  gate remains false until the smoke matrix passes;
-- confirmation that both endpoint-matched recovery artifacts and their
-  provenance were archived before either versionCode 19 artifact was distributed;
+  smoke matrix passed;
+- confirmation that both endpoint-matched recovery APKs were archived before
+  either versionCode 19 APK was distributed;
 - confirmation that every enabled provider dashboard shows package
   `com.plantdiseases.app` and the selected permanent certificate;
 - a public moderation/support URL or support email approved for end users (the
@@ -460,7 +398,7 @@ After registration, provide only:
 
 Do not provide the private keystore or either keystore password in chat. With
 the public IDs and the configuration confirmations, the remaining repository
-and protected VDS wiring can be completed and the enabled-provider login matrix
+and VDS wiring can be completed and the enabled-provider login matrix
 can be run from the signed PlantDiseases 1.9 APK.
 
 ## Official references
@@ -471,4 +409,3 @@ can be run from the signed PlantDiseases 1.9 APK.
 - [VK ID Android SDK](https://github.com/VKCOM/vkid-android-sdk)
 - [RuStore Pay SDK for Kotlin/Java](https://www.rustore.ru/help/en/sdk/pay/kotlin-java)
 - [RuStore subscription creation](https://www.rustore.ru/help/en/developers/monetization/create-app-subscription)
-- [GitHub Actions secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)

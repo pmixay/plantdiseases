@@ -2,7 +2,8 @@
 
 Purpose: restoring an old backup must never bring back an account, or its community
 content, that was deleted after that backup was taken. This is the design that the
-`production` channel stop in `.github/workflows/android-release.yml` refers to.
+`production` channel stop in the since-removed Android signing workflow referred
+to (historical; that stop is no longer enforced in CI).
 
 ## The problem
 

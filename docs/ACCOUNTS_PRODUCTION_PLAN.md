@@ -11,7 +11,7 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
 | # | Decision | Date |
 |---|---|---|
 | 1 | No separate Russian data plane. Production accounts, the app API and PostgreSQL run on the existing VDS. Whether storing accounts outside Russia is acceptable for the RuStore audience is the owner's call. | 2026-10-09 |
-| 2 | Production hostname: **reuse `pdis.arbuz.lol`**. App API at `/`, account API at `/id/` (the Android release workflow rejects any path prefix such as `/plantdisease-test/`). | 2026-10-09 |
+| 2 | Production hostname: **reuse `pdis.arbuz.lol`**. App API at `/`, account API at `/id/` (the production build must not use a path prefix such as `/plantdisease-test/`). | 2026-10-09 |
 | 3 | Yandex only. VK, email/password, FCM push and RuStore billing stay off unless decided separately. The Yandex client secret is never used (the SDK access-token flow does not need it). | 2026-10-09 |
 | 4 | Private data/deletion and support contact: `mailto:gavel8980@gmail.com`, approved by the owner on 2026-10-09 (used for the privacy policy link and `release-policy-gates.json`). | 2026-10-09 |
 | 5 | Beta tester access: the owner's VPN egress address (laptop and phone) is on the nginx allowlist; the address is deliberately not recorded in the repo. | 2026-10-09 |
@@ -44,7 +44,7 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   (1849 was the whole source-file length). Both `ktlintCheck` and `detekt` pass, all five unit-test variants pass
   (2887 tests), and release/staging/both recovery APKs build. See the
   [Android beta verification report](test-reports/android-account-beta-2026-10-09.json).
-  The signing workflow still requires successful GitHub CI for the exact commit before step 7.
+  Before step 7 the owner checks that GitHub CI passed for the exact commit (no longer enforced by a signing workflow).
 - **Real beta Yandex flow passed on the phone:** the owner completed sign-in and nickname/signup confirmation
   on the locally signed staging APK at `03bc2359`. Cold-start session restore and the signed-in live Community read
   also passed after the Android fix. Logout stayed signed out after a cold restart. The owner then completed
@@ -64,13 +64,15 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
   The later conflicts with `main@73cfb24` (#185) were resolved in `5135c89`, and CI passed on head `6069ec0`.
 - **Merged to `main` (2026-10-27):** PR #182 was squash-merged as `2dc681b`. `account-beta-test` is kept because this
   plan, and the production deployment (`305f1ad`), reference commits on it. Follow-on docs sync: `CLAUDE.md` and
-  `README.md` now describe the account service, `training_store.py` and the protected signing workflow.
+  `README.md` now describe the account service, `training_store.py` and the protected signing workflow (since removed; signing is now local).
 
 
 ## Release gates in plain words
 
 Things outside the application code that must be true before real users get accounts and RuStore publishes.
-Items 2-4 are checked by machine in `.github/workflows/android-release.yml`.
+Items 2-4 were once checked by machine in the since-removed `android-release.yml` signing workflow; they are now
+verified manually by the owner. `test_deployment_handoff.py::test_privacy_policy_matches_account_release` still
+checks that `privacy.html` and `release-policy-gates.json` agree.
 
 1. The production address works over HTTPS.
 2. **Private contact** is published and approved (`release-policy-gates.json` + the `privacy-private-contact`
@@ -80,17 +82,17 @@ Items 2-4 are checked by machine in `.github/workflows/android-release.yml`.
    Russian disclosures in the policy: **30 days, approved 2026-10-09.** The deployed app's retention constant
    and the original account's marker were checked on 2026-10-12. The marker's calculated policy expiry is
    2026-11-08; natural expiry of this particular marker has not yet elapsed.
-4. **Production hard stop** (lifted 2026-10-09) in the signing workflow: the `production` channel could not be built until a *deletion
+4. **Production hard stop** (lifted 2026-10-09; it lived in the since-removed signing workflow): the `production` channel could not be built until a *deletion
    replay journal* and a coordinated *backup epoch* exist and are restore-tested. Purpose: restoring an old
    backup must never bring back an account or content that was deleted after the backup was taken. Recovery
    channels stay buildable. This is engineering work, not a form to fill in (step 6a).
-5. The APK is signed with the permanent app key (the protected signing job; agents never hold the keystore).
+5. The APK is signed with the permanent app key (the owner signs locally with Gradle; agents never hold the keystore).
 6. The Yandex console shows `com.plantdiseases.app` with that key's certificate fingerprint (owner confirmed
    the application ID is registered; the fingerprint must match the permanent key).
 7. The signed build has been tried end to end on a real phone.
 8. The RuStore listing is complete.
 
-Building the real-provider *staging* APK through the protected workflow was blocked until items 2 and 3 were
+Building the real-provider *staging* APK was blocked by the since-removed signing workflow until items 2 and 3 were
 approved; both now are. Local Gradle builds are not blocked.
 
 Email/password stays off in production: production settings reject it until its blockers
@@ -110,14 +112,14 @@ Email/password stays off in production: production settings reject it until its 
 | 5 | Private contact | Provide a real public contact | Wire it into `privacy.html`, the in-app policy and the gate file; run the repo tests | done |
 | 5b | Deleted-account marker retention | Choose the number of days: **30** | Write the gate entry and the English/Russian disclosures; update the policy marker and tests | done |
 | 6 | Merge to `main` | Reviewed and approved [PR #182](https://github.com/pmixay/plantdiseases/pull/182) | All four CI jobs passed on `3f13385`. Earlier main conflicts were resolved at `aab7795`; the conflicts with `main@73cfb24` (#185) were resolved in `5135c89` and all four CI jobs passed on that head | **done** (squash-merged as `2dc681b`, 2026-10-27) |
-| 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop in `android-release.yml` is removed | **done** |
-| 7 | Signed release build | Configure the `android-signing` environment, its required reviewers/secrets/certificate and approved environment variables per [DEPLOYMENT.md](../DEPLOYMENT.md) | The workflow is on `main` since the 2026-10-27 merge; as of 2026-10-13 the protected environment was missing (not re-checked). Trigger the protected workflow after the owner setup and green main CI; verify APK digest, certificate and endpoints. Agents never handle the keystore. Findings 2026-10-13: the permanent key already exists as repository-level secrets (created 2026-06-09) and signs the current CI `app-release-apk`; its certificate SHA-256 is `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367` (the `RELEASE_CERT_SHA256` value). GitHub never shows secret values, so the four secrets must be re-entered in the environment from the original keystore. The public URLs, RuStore IDs (Console app ID, `plantdiseases_pro_monthly`, `plantdiseases_pro_yearly`), cutover flag and cert fingerprint are written directly into `android-release.yml` (no repository variables needed), so only the four secrets remain to enter | blocked on owner environment setup |
+| 6a | Deletion replay journal + backup epoch | Approved the design (2026-10-09) | Implemented, restore-drilled (15/15), review fixes applied (closed-service restore step, off-host retention rule, backup snapshot path); the production stop (in the since-removed `android-release.yml`) is removed | **done** |
+| 7 | Signed release build | Build and sign locally with the permanent key (channel `production`, production endpoint pair, RuStore IDs; see [ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md)). Keep the keystore and passwords off GitHub | Agents never handle the keystore. Owner verifies the APK with `apksigner`/`aapt`: certificate SHA-256 `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367`, package `com.plantdiseases.app`, versionCode and compiled endpoints. No CI signing path or GitHub environment/secrets are needed | pending |
 | 8 | Device check of the signed APK | Log in on the production build | PC agent: install and run the checklist (signup, cancel, refresh, logout, deletion) | pending |
 | 9 | RuStore listing | Console clicks and APK upload | Release notes, checklist, privacy page check | pending |
 | 10 | Housekeeping | Copy the backup key (and backups) off the VDS | Daily encrypted backups scheduled and tested (done); still open: SSH key-only login, monitoring with alerts on failed backups and `journal_unavailable` deletion retries | in progress |
 
-The owner supplies the support contact, holds the keystore and GitHub secrets, and approves protected
-signing and publication. Agents may drive the connected phone and complete authorized login/consent
+The owner supplies the support contact, holds the keystore (local only, never in GitHub), signs the release
+locally, and approves publication. Agents may drive the connected phone and complete authorized login/consent
 clicks; the owner supplies any required private credentials or verification codes.
 
 ## What taking over `/` means (step 4)
@@ -144,5 +146,5 @@ Order: build and verify beside the old service, compare responses, only then swi
 
 ## Open inputs
 
-Protected GitHub signing environment, secrets and approved variables; RuStore console access. The production hostname,
+The owner's local signed release build; RuStore console access. The production hostname,
 tester allowlist, support contact and step 4 switch are already approved and configured.
