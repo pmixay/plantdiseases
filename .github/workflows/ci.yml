@@ -118,7 +118,7 @@ jobs:
   #      select the live beta pair and the pinned Yandex client).
   #   2. The ~94-class shared Robolectric suite ran on all five variants
   #      although it is the same tests. Only src/testDebug, src/testRelease,
-  #      src/testStaging and src/testRecovery differ per variant, so the full
+  #      src/testStaging and src/testRecovery* differ per variant, so the full
   #      suite runs on debug and on release (what ships); staging and the
   #      recovery variants run just their own identity test. `--tests` binds to
   #      the task before it and fails loudly ("no tests found") if the class

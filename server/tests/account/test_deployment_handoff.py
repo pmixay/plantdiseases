@@ -546,8 +546,22 @@ def test_android_gradle_keeps_distribution_channel_contract():
     assert 'setOf("staging", "production", "recovery-production", "recovery-staging")' in gradle
     assert 'create("recoveryProduction")' in gradle
     assert 'create("recoveryStaging")' in gradle
-    assert 'getByName("testRecoveryProduction").java.srcDir("src/testRecovery/java")' in gradle
-    assert 'getByName("testRecoveryStaging").java.srcDir("src/testRecovery/java")' in gradle
+    # The identity tests must live in AGP's standard per-variant source sets: a
+    # custom java.srcDir for a .kt file compiled nothing (javac NO-SOURCE) and
+    # the test silently never ran.
+    for variant in ("RecoveryProduction", "RecoveryStaging"):
+        identity_test = (
+            ANDROID_BUILD_GRADLE.parent
+            / "src"
+            / f"test{variant}"
+            / "java"
+            / "com"
+            / "plantdiseases"
+            / "app"
+            / "RecoveryBuildIdentityTest.kt"
+        )
+        assert identity_test.is_file()
+    assert "testRecovery/java" not in gradle
     assert 'listOf("recoveryProduction", "recoveryStaging")' in gradle
     assert "Staging distribution endpoints must equal the reviewed German staging pair" in gradle
     assert 'buildConfigField("String", "YANDEX_CLIENT_ID_SHA256"' in gradle
