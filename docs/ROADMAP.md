@@ -1,8 +1,7 @@
 # PlantDiseases — roadmap
 
 **Open work only.** Finished work lives in git history; every model run, with its
-numbers, lives in `MODEL_HISTORY.md`. Companions: `ACCOUNTS_PRODUCTION_PLAN.md`
-(accounts release, steps and gates), `DATASET_LABELING_PLAN.md` (data loop, v9
+numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md` (data loop, v9
 protocol), `../DEPLOYMENT.md` (deploy, Android signing/FCM),
 `../server/models/MODEL_CARD.md` (version-agnostic pipeline overview).
 
@@ -40,8 +39,6 @@ the README status section and `docs/assets/per-class.svg`.
 
 ## Ship accounts to RuStore
 
-Details and current state per step: `ACCOUNTS_PRODUCTION_PLAN.md` (steps 7–10).
-
 - [ ] ★ **Signed release build, local.** The CI release workflow is gone: build
       with the permanent key from `~/.gradle/gradle.properties` after green CI,
       verify cert fingerprint/package/versionCode/endpoints (`DEPLOYMENT.md` §8.3).
@@ -54,8 +51,8 @@ Details and current state per step: `ACCOUNTS_PRODUCTION_PLAN.md` (steps 7–10)
       German VDS).
 - [ ] ★ **Host housekeeping.** SSH key-only login (`PermitRootLogin
       prohibit-password`, `PasswordAuthentication no`, rate-limiting), backup key
-      copied off the VDS, alerts on failed backups and `journal_unavailable`
-      deletion retries. The host IP and `root` user sit in git history (`cd4bda2`);
+      copied off the VDS, alerts on failed backups and repeated account-deletion
+      retries. The host IP and `root` user sit in git history (`cd4bda2`);
       no credentials were ever committed.
 - [ ] **Cost-cap release gate** (see Security).
 - [ ] **Old-client compatibility.** Older app versions will call the new server and

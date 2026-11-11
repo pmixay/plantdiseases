@@ -32,9 +32,7 @@ offline and describe the build the reader is running. The hosted copy is root
 
 `README.md` (overview, class table, API table, model tiers) · `DEPLOYMENT.md`
 (production config, proxy/service setup, Android signing + FCM) · `docs/ROADMAP.md`
-(open work only: next steps, model/data track, architecture and doc debt) · `docs/ACCOUNTS_PRODUCTION_PLAN.md`
-(accounts decisions, release gates; detail references: `docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md`,
-`ANDROID_1_9_SIGNING_*`, `DELETION_JOURNAL_*`, `EMAIL_PASSWORD_*`, `PLANTDISEASES_PRO_*`) · `docs/MODEL_HISTORY.md` (per-bundle run
+(open work only: next steps, model/data track, architecture and doc debt) · `docs/MODEL_HISTORY.md` (per-bundle run
 ledger + cross-release comparison rules) · `docs/DATASET_LABELING_PLAN.md` ·
 `server/models/MODEL_CARD.md` (version-agnostic pipeline overview) ·
 `server/train_notebook.ipynb` (full training recipe, §1–§7) · `site/README.md`.
@@ -174,8 +172,7 @@ verify it locally against the service's JWKS, then confirm the session is still 
 with the account service. Diagnosis and Community reading need no account; Community
 writes and metered features do. Entitlements/quotas are server-authoritative: the app never
 trusts a billing result, and the inference service asks the account service to consume a
-unit before cost-bearing work. Deletion tombstones public content via an outbox and a
-replay journal with backup epochs (a restored backup must never resurrect deleted data). Decisions and gates: `docs/ACCOUNTS_PRODUCTION_PLAN.md`.
+unit before cost-bearing work. Deletion tombstones public content via an outbox before the private account rows are erased.
 
 **One species surface.** Species info lives on `SpeciesDetailActivity` alone; every other
 screen embeds `ui/common/SpeciesInfoCardView`. Never build a second species card.

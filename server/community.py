@@ -3782,7 +3782,7 @@ def popular_snapshot(
 
 # Disclosed in privacy.html / release-policy-gates.json (deleted-actor marker: 30
 # days). Must outlast the longest-lived restorable backup (27 days) so a restore
-# can always be replayed against a surviving suppression record or journal entry.
+# can always be re-deleted against a surviving suppression record.
 DELETED_ACTOR_MARKER_RETENTION_DAYS = 30
 
 # A marker may only expire once its physical cleanup finished: while a cleanup

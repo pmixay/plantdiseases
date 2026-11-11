@@ -53,7 +53,6 @@ x-account-environment: &account-environment
   PLANTNET_ATTEMPT_COST_MICROS: "0"
   PLANTNET_DAILY_COST_LIMIT_MICROS: "0"
   COMMUNITY_DELETION_URL: http://prod-app-api:8000/api/internal/account-deletions
-  ACCOUNT_DELETION_JOURNAL_DIR: /run/deletion-journal
   CORS_ORIGINS: ""
 
 services:
@@ -186,7 +185,6 @@ services:
     volumes:
       - prod_account_keys:/run/account-secrets:ro
       - prod_internal_token:/run/internal-token:ro
-      - prod_deletion_journal:/run/deletion-journal
       - type: bind
         source: ${PROD_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore secret directory}
         target: /run/rustore-secrets
@@ -361,8 +359,6 @@ volumes:
     name: ${PROD_VOLUME_PREFIX}_account_keys
   prod_internal_token:
     name: ${PROD_VOLUME_PREFIX}_internal_token
-  prod_deletion_journal:
-    name: ${PROD_VOLUME_PREFIX}_deletion_journal
   prod_app_data:
     name: ${PROD_VOLUME_PREFIX}_app_data
   prod_community:

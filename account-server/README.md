@@ -34,9 +34,8 @@ password recovery, and shared multi-replica abuse controls remain mandatory
 production blockers. Completion and confirmation re-check the current flag; an
 email continuation presented while it is off is durably cancelled, including
 removal of any unconfirmed provisional account/session. OAuth continuation uses
-the same endpoints and remains available. See
-[`../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md`](../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
-before deploying or exposing its endpoints.
+the same endpoints and remains available. Do not deploy or expose its endpoints
+in production.
 
 ## Contract
 
@@ -129,10 +128,6 @@ while denials create no attacker-amplifiable receipt rows. Missing configuration
 authority state, or database access denies the vendor attempt before network
 I/O. The application service loads the actual PlantNet credential only through
 its owner-only `PLANTNET_API_KEY_FILE` in production.
-
-Console provisioning, callback operations, trial/grace/hold policy, pricing
-hypotheses, key rotation, live-purchase evidence, and rollback gates are in
-[`../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`](../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
 
 ## Verification
 

@@ -50,7 +50,7 @@ only and must never receive the permanent keystore or live provider
 configuration. Distributable APKs are built and signed locally by the owner with
 Gradle (`-PRELEASE_STORE_FILE`, `-PRELEASE_STORE_PASSWORD`,
 `-PRELEASE_KEY_ALIAS`, `-PRELEASE_KEY_PASSWORD`, or the same-named environment
-variables); procedure in `docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md`.
+variables); procedure in `DEPLOYMENT.md` §8.
 The keystore, its passwords and any base64 copy stay on the owner's machine and
 encrypted backups, out of Git and out of GitHub secrets or variables. Do not
 hand them to another person or tool.

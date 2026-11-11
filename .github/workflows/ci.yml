@@ -96,8 +96,6 @@ jobs:
               - '.github/workflows/**'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
-              - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
-              - 'docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md'
             server:
               - 'server/**'
               - 'account-server/**'
@@ -105,8 +103,6 @@ jobs:
               - '.github/workflows/**'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
-              - 'docs/ACCOUNT_BETA_*.md'
-              - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
 
   # Single runner, single Gradle invocation. Measured on the earlier serial
   # version of this job (cold cache, 2-core private runner): a

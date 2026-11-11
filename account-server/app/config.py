@@ -157,7 +157,6 @@ class Settings:
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
     community_deletion_url: str | None = None
-    deletion_journal_dir: Path | None = None
     yandex_client_id: str | None = None
     vk_client_id: str | None = None
     email_password_auth_enabled: bool = False
@@ -260,7 +259,6 @@ class Settings:
             community_deletion_url=(
                 source.get("COMMUNITY_DELETION_URL", "").strip() or None
             ),
-            deletion_journal_dir=_optional_path(source, "ACCOUNT_DELETION_JOURNAL_DIR"),
             yandex_client_id=source.get("YANDEX_CLIENT_ID", "").strip() or None,
             vk_client_id=source.get("VKID_CLIENT_ID", "").strip() or None,
             email_password_auth_enabled=_boolean(
@@ -491,9 +489,6 @@ class Settings:
                         "for an explicit private service hostname and port"
                     )
 
-        if self.deletion_journal_dir is not None and not self.deletion_journal_dir.is_absolute():
-            raise SettingsError("ACCOUNT_DELETION_JOURNAL_DIR must be an absolute path")
-
         configured_secret_files = (
             ("ACCOUNT_SIGNING_KEY_FILE", self.signing_key_file),
             ("ACCOUNT_ENCRYPTION_KEY_FILE", self.encryption_key_file),
@@ -520,11 +515,6 @@ class Settings:
             raise SettingsError("Production ACCOUNT_ISSUER must use HTTPS")
         if self.community_deletion_url is None:
             raise SettingsError("Production requires COMMUNITY_DELETION_URL")
-        if self.deletion_journal_dir is None:
-            raise SettingsError(
-                "Production requires ACCOUNT_DELETION_JOURNAL_DIR so restored backups can "
-                "replay deletions"
-            )
         query = parse_qs(database.query)
         ssl_mode = query.get("sslmode", [""])[-1].lower()
         database_host = database.hostname.lower()

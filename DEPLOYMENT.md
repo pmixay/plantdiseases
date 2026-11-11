@@ -483,13 +483,9 @@ mobile configuration values are supplied.
 
 Do **not** generate a key until the certificate that signed PlantDiseases 1.8
 has been identified. If 1.8 was distributed, 1.9 must use that same signing
-identity to update it. The authoritative recovery check, one-time generation
-command, provider registration fields, backup rules, and local verification
-are in
-[docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md](docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
-
-The keystore and its passwords stay on the owner's machine (and the offline
-backup described in the guide) and never go into Git or CI. The permanent
+identity to update it.
+The keystore and its passwords stay on the owner's machine (and an offline
+backup) and never go into Git or CI. The permanent
 certificate SHA-256 is
 `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367`; it must be the
 fingerprint registered with Yandex for `com.plantdiseases.app`, and every

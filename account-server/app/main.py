@@ -109,7 +109,6 @@ def create_app(
                             )
                         if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
                             operations.append(domain_service.prune_expired_private_state)
-                            operations.append(domain_service.prune_deletion_journal)
                             if domain_entitlement_service is not None:
                                 operations.append(
                                     domain_entitlement_service.prune_expired_usage

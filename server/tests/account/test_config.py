@@ -491,23 +491,4 @@ def _production_env(tmp_path: Path) -> dict[str, str]:
             "https://app.example.invalid/api/internal/account-deletions"
         ),
         "CORS_ORIGINS": "https://app.example.invalid",
-        "ACCOUNT_DELETION_JOURNAL_DIR": str(tmp_path / "deletion-journal"),
     }
-
-
-def test_production_requires_the_deletion_journal(tmp_path: Path):
-    environment = _production_env(tmp_path)
-    assert Settings.from_env(environment).deletion_journal_dir == tmp_path / "deletion-journal"
-    del environment["ACCOUNT_DELETION_JOURNAL_DIR"]
-    with pytest.raises(SettingsError, match="ACCOUNT_DELETION_JOURNAL_DIR"):
-        Settings.from_env(environment)
-
-
-def test_deletion_journal_directory_must_be_absolute(tmp_path: Path):
-    environment = _production_env(tmp_path) | {"ACCOUNT_DELETION_JOURNAL_DIR": "relative/journal"}
-    with pytest.raises(SettingsError, match="absolute"):
-        Settings.from_env(environment)
-
-
-def test_deletion_journal_is_optional_outside_production():
-    assert Settings.from_env(_base_env()).deletion_journal_dir is None
