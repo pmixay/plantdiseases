@@ -67,9 +67,7 @@ tombstone community content before private account rows are erased.
 The branch-only `staging` build type is an endpoint-selecting build of the real
 app: package `com.plantdiseases.app`, launcher name `PlantDiseases`, version
 name `1.9`, and version code `19`. It does not coexist with 1.8; with the same
-permanent certificate it updates 1.8 in place. The complete one-time signing
-and provider registration procedure is in
-[`docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md`](../../docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md).
+permanent certificate it updates 1.8 in place. It uses the same permanent signing certificate as production (`DEPLOYMENT.md` §8).
 
 Without real-provider configuration, local `staging` builds use deterministic
 synthetic authentication: tapping Yandex or VK creates a mock-provider
@@ -260,17 +258,10 @@ drop only that database before rerunning the check.
 
 ## Handoff material
 
-- `../../docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md` is the concise
-  implementation, build, synthetic-test, and real-SDK test entry point.
-- `../../docs/ACCOUNTS_PRODUCTION_PLAN.md` defines the release steps, the root-route
-  switch, and rollback for taking accounts from this beta to production.
-- `../../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md` defines the production
-  HOLD on the controlled 0007 email/password beta. German staging defaults it
+- The email/password beta is a production HOLD: German staging defaults it
   off and requires an explicit, edge-restricted tester exercise; the Russian
   production template pins it off and production settings reject an attempted
   enable.
-- `../../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md` defines the RuStore V5,
-  PlantDiseases PRO, quota, secret, reconciliation, and launch gates.
 - `SECRETS.md` inventories environment and secret ownership without values.
 - `ROLLBACK.md` defines non-destructive beta and final-split rollback evidence.
 - `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.

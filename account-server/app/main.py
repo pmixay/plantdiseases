@@ -109,7 +109,6 @@ def create_app(
                             )
                         if tick % _PRIVATE_PRUNE_EVERY_TICKS == 0:
                             operations.append(domain_service.prune_expired_private_state)
-                            operations.append(domain_service.prune_deletion_journal)
                             if domain_entitlement_service is not None:
                                 operations.append(
                                     domain_entitlement_service.prune_expired_usage
@@ -250,4 +249,14 @@ def create_app(
     return application
 
 
-app = create_app()
+def __getattr__(name: str):
+    """Build the ASGI ``app`` on first access (``uvicorn app.main:app``).
+
+    Importing this module must not require the service environment, so the test
+    suite can share a process with the app server's tests.
+    """
+    if name == "app":
+        global app  # noqa: PLW0603
+        app = create_app()
+        return app
+    raise AttributeError(name)

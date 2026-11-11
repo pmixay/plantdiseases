@@ -67,6 +67,6 @@ class ReleaseAccountPresentationTest {
         assertThat(context.getString(R.string.community_rules_body)).isNotEmpty()
         assertThat(context.getString(R.string.community_contact_moderation)).isNotEmpty()
         assertThat(context.getString(R.string.community_manage_blocks)).isNotEmpty()
-        assertThat(context.getString(R.string.community_moderation_url)).startsWith("https://")
+        assertThat(context.getString(R.string.community_moderation_url)).startsWith("mailto:")
     }
 }

@@ -16,11 +16,11 @@ cannot silently omit LoginSDK; the Yandex client secret is never used.
 | `BETA_POSTGRES_MIGRATOR_PASSWORD` | Staging DDL/ownership secret | Mode-0600 operator env file | One-shot Alembic migration and post-migration grant convergence | Recreate with disposable stack |
 | `BETA_POSTGRES_RUNTIME_PASSWORD` | Staging application-DML secret | Mode-0600 operator env file | Account API; SELECT-only on `alembic_version`, no sequence access | Recreate with disposable stack |
 | `BETA_POSTGRES_BACKUP_PASSWORD` | Staging read-only secret | Mode-0600 operator env file | Encrypted backup check | Recreate with disposable stack |
-| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Yandex: tracked Android release config plus mode-0600 server env; VK: protected build config plus server env | Account API/Android | Change only with provider registration |
-| `EMAIL_PASSWORD_AUTH_ENABLED` | Non-secret production-HOLD control | Mode-0600 operator env plus protected Android build configuration; tracked German Compose default is `false` | Account API/Android | Explicit `true` only for a scheduled non-production exercise after the named-tester edge allowlist is active; return to `false`; production rejects it |
+| `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Yandex: tracked Android release config plus mode-0600 server env; VK: local build property plus server env | Account API/Android | Change only with provider registration |
+| `EMAIL_PASSWORD_AUTH_ENABLED` | Non-secret production-HOLD control | Mode-0600 operator env plus local Android build configuration; tracked German Compose default is `false` | Account API/Android | Explicit `true` only for a scheduled non-production exercise after the named-tester edge allowlist is active; return to `false`; production rejects it |
 | `/etc/nginx/plantdisease-beta-testers.allow` | Restricted tester/VPN egress addresses; do not place names, emails, or roster metadata in this file | Root-owned host nginx configuration, least-readable mode accepted by `nginx -t`; roster/approval stays in the protected operator record | German host nginx | Replace exact `/32`/`/128` entries for each scheduled exercise and remove access immediately when a tester leaves |
-| Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Protected Android/CI build config, never server env | VK ID SDK | Change only with provider registration |
-| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Mode-0600 operator env plus protected Android build variables where applicable | Account API/Android | Change only with reviewed Console configuration; advance the epoch atomically with every AES-key rotation |
+| Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Local Android build property (public, extractable), never server env | VK ID SDK | Change only with provider registration |
+| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Mode-0600 operator env plus local Android build properties where applicable | Account API/Android | Change only with reviewed Console configuration; advance the epoch atomically with every AES-key rotation |
 | `private-key.b64` | Staging-only Base64 PKCS#8 RSA private key | `BETA_RUSTORE_SECRETS_DIR`, account-owned mode 0400 | Account API RuStore Public API authorization | Destroy with the disposable sandbox integration |
 | `notification-key.b64` | Staging-only Base64 AES-256 callback key | `BETA_RUSTORE_SECRETS_DIR`, account-owned mode 0400 | Account API callback decryption | Destroy with the disposable sandbox integration |
 | `BETA_MODELS_DIR` | Non-secret absolute model path | Host-only operator env | App API read-only mount | Verify at each model release |
@@ -43,48 +43,27 @@ logged. It has no FCM credentials, PlantNet/OpenRouter keys, production account
 keys, or production backup credential. Key generation has no network and
 refuses to overwrite an existing key file.
 
-## Protected Android signing
+## Android signing
 
-`.github/workflows/ci.yml` is compilation/test evidence only and must never
-receive the permanent keystore or live provider configuration. Distributable
-APKs are built only by the manually dispatched `android-release.yml` workflow.
-Its first job runs reviewed Gradle without an environment or signing secrets,
-forces an unsigned output, verifies it, and uploads the exact APK plus
-provenance. The required-reviewer `android-signing` job downloads that artifact
-by ID and signs it without checkout, Gradle, or repository file execution.
-Repository administrators must configure that environment with required
-reviewers, prevent self-review, and restrict deployment branches to `main`
-only. A private repository is not a substitute for this
-boundary: repository-controlled Gradle code can read every secret deliberately
-supplied to its build step.
+There is no CI signing. `.github/workflows/ci.yml` is compilation/test evidence
+only and must never receive the permanent keystore or live provider
+configuration. Distributable APKs are built and signed locally by the owner with
+Gradle (`-PRELEASE_STORE_FILE`, `-PRELEASE_STORE_PASSWORD`,
+`-PRELEASE_KEY_ALIAS`, `-PRELEASE_KEY_PASSWORD`, or the same-named environment
+variables); procedure in `DEPLOYMENT.md` §8.
+The keystore, its passwords and any base64 copy stay on the owner's machine and
+encrypted backups, out of Git and out of GitHub secrets or variables. Do not
+hand them to another person or tool.
 
-Store only `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
-`RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD` as protected environment
-secrets. Store the public `RELEASE_CERT_SHA256`, the cutover gate
-`PRODUCTION_RUSSIAN_CUTOVER_APPROVED`, and the independently reviewed
-`APPROVED_PRODUCTION_APP_API_BASE_URL` /
-`APPROVED_PRODUCTION_ACCOUNT_API_BASE_URL` as variables in that environment.
-
-The Yandex native client ID is pinned in source. VK is optional: leave all
-`STAGING_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` and
-`PRODUCTION_{VKID_CLIENT_ID,VKID_CLIENT_SECRET}` repository variables absent
-for the current Yandex-only release. If VK is enabled later, each environment's
-pair must be complete and the staging and production pairs must be distinct.
-Define `PRODUCTION_APP_API_BASE_URL` and `PRODUCTION_ACCOUNT_API_BASE_URL` as
-repository variables used by the credential-free build. Put independently
-reviewed copies under the `APPROVED_PRODUCTION_*` names in the protected
-environment. The checkout-free signing job refuses a mismatch, the German
-staging prefix, `.invalid` or localhost names, IP literals, non-443 ports, and
-non-root application paths. Keep the cutover gate false until both URLs
-terminate at the reviewed Russian ingress. The workflow pins each third-party
-action and independently verifies artifact digests, provenance, certificate,
-package/version, endpoints, and the Yandex/VK provider mode.
-
-Also define `STAGING_APP_API_BASE_URL` and `STAGING_ACCOUNT_API_BASE_URL` as
-repository variables containing the exact reviewed German staging pair. Both
-the normal staging artifact and `recovery-staging` consume these values; the
-workflow rejects missing or changed values. Production and staging recovery
-artifacts are distinct because endpoint-derived encrypted stores and queued
+Everything else the Android build needs is public, extractable mobile
+configuration, not a secret: the Yandex native client ID is pinned in source;
+the optional VK pair is absent for the current Yandex-only release (if enabled
+later it must be a complete pair, distinct for staging and production); the
+reviewed endpoint pairs, the RuStore Console application ID and the PRO product
+IDs are reference values documented in the signing guide and passed to Gradle as
+`-P` properties or environment variables. Gradle itself validates endpoints and
+RuStore values at configuration time. Production and staging recovery APKs
+remain distinct because endpoint-derived encrypted stores and queued
 revocations must stay with their original account issuer.
 
 FCM values are deliberately absent: version 1.9 uses polling until a durable
@@ -96,8 +75,8 @@ push worker is implemented and reviewed.
 |---|---|---|---|---|
 | `YANDEX_CLIENT_ID` | Public application ID | Tracked Android release config plus protected host configuration | Account API and Android build | Change only with provider registration |
 | `VKID_CLIENT_ID` | Optional public application ID | Protected host configuration; absent for the current release | Account API and Android build | Change only with provider registration |
-| Android `VKID_CLIENT_SECRET` | Optional extractable public mobile config | CI/build configuration; absent for the current release | Android VK ID SDK | Never use as server authentication |
-| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Protected host/Android build configuration as applicable | Account API and Android Pay SDK | Change only with a reviewed Console migration; never reuse an epoch after AES-key rotation |
+| Android `VKID_CLIENT_SECRET` | Optional extractable public mobile config | Local Android build property; absent for the current release | Android VK ID SDK | Never use as server authentication |
+| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Protected host configuration / local Android build properties as applicable | Account API and Android Pay SDK | Change only with a reviewed Console migration; never reuse an epoch after AES-key rotation |
 | `rustore-private-key.b64` | Critical Base64 PKCS#8 RSA private key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore Public API authorization | Overlap keys, validate, then revoke the retired Console key |
 | `rustore-notification-key.b64` | Critical Base64 AES-256 callback decryption key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore notifications | Follow the callback disable/rotate/reconcile sequence in the PRO runbook |
 | `signing.json` | Critical private Ed25519 key ring | Russia, account UID-readable mode 0400 | Account API | Keep active plus reviewed retired public keys; perform overlap exercise |

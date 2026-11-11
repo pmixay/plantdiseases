@@ -1,424 +1,289 @@
 # PlantDiseases — roadmap
 
-**Open work only.** Finished work lives in git history; every model run, with
-its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md`
-(the data loop, the v9 protocol, every dataset finding), `../DEPLOYMENT.md`
-(deploy + Android signing/FCM), `../server/models/MODEL_CARD.md`
-(version-agnostic; per-run numbers ship as `model_card.json` in each bundle).
-The accounts release (Yandex sign-in, the production backend, the RuStore
-gates) is tracked step by step in `ACCOUNTS_PRODUCTION_PLAN.md`.
+**Open work only.** Finished work lives in git history; every model run, with its
+numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELING_PLAN.md` (data loop, v9
+protocol), `../DEPLOYMENT.md` (deploy, Android signing/FCM),
+`../server/models/MODEL_CARD.md` (version-agnostic pipeline overview).
 
-Code-checkable items below were re-verified against the tree on 2026-10-26 (no
-code has landed on `main` since 2026-10-11); the data and human-task items are
-status as last recorded, not something the tree can show. Line references are
-as of that date.
+★ = needs a human decision or a human-only task. Code-checkable items were
+re-verified against the tree on 2026-10-31; data and human-task items are as last
+recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
 
-## Where things stand
+## Status
 
-| track | state |
+| track | now |
 |---|---|
-| **App** | `versionName` 1.9 / `versionCode` 19 (`android/app/build.gradle.kts:31-32`), carrying the Garden rooms / care calendar / treatment plans, the Option-A community opinion sheet and `minSdk` 31. RuStore uploads are done by hand. The account system is merged to `main` (#182, `2dc681b`); the permanent signing identity still needs owner confirmation. |
-| **Model** | **2.7.5 is deployed** (trained 2026-10-05 on dataset v8, the first manifest-bound bundle). Its weak spot is scorch read as healthy (`MODEL_HISTORY.md` row 16). On the shared holdout it is a statistical tie with 2.7.2 (2026-10-27). |
-| **Server** | 40 routes, fail-closed bundle contract, all optional integrations degrade to `available:false`. |
-| **Security** | The August audit is closed in code. Accounts replace the anonymous Community author key and pseudo-id (writes derive the actor from the verified account bearer), so the key-less likes/views and pseudo-id-in-URL findings no longer exist. Open: the cost-cap release gate and host hardening (Security). |
-| **Data** | v8 is the training corpus. v9 collection, the locked test set T and OOD benchmark v3 are specified in `DATASET_LABELING_PLAN.md`. None of them has started. |
-| **Docs / site** | `README.md` is the project's front page (hero, class gallery, pipeline and per-class charts in `docs/assets/`). `site/` is a one-page static site for the Gazprombank.Tech accelerator application, with every number copied by hand from this folder. |
+| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); unsigned by the permanent key, not on RuStore yet. |
+| **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
+| **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
+| **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
 
 ---
 
 ## Next up — in this order
 
-Each line names its section below. ★ = a human decision or human-only task.
+- [ ] ★ **Ship accounts to RuStore** (section below).
+- [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
+      takes calendar time, so start now. In parallel (no collection needed):
+      adjudicate the 80 export rows and carve T_v1.
+- [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
+      run; Model track, "Experiments that are not data").
+- [ ] **Split `main.py` into routers**, starting with `deps.py`.
 
-1. ★ **Ship accounts to RuStore** — follow `ACCOUNTS_PRODUCTION_PLAN.md`: set up
-   the protected `android-signing` environment, check the signed APK on a phone, then the RuStore listing. Cut
-   the 1.9 tag and the RuStore build only after the permanent signing/provider
-   and real account-system gates pass.
-2. ★ **Start v9 collection**: early, dull scorch, 400 families with boxes. It
-   takes calendar time, so start now. In parallel, with no collection needed:
-   adjudicate the 80 export rows and carve T_v1.
-3. **Add the augmentation-profile off switch** (Model track → "Open — code
-   only"), then spend one paired Colab run on it. The 2.7.5-vs-2.7.2 holdout
-   check is done and reads as a tie.
-4. **Split `main.py` into routers, starting with `deps.py`** (Architecture →
-   Server). The next server refactor in line.
+When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
+the README status section and `docs/assets/per-class.svg`.
 
-**When 2.7.5's successor ships**, also refresh `site/index.html` (its figures
-are hand-copied; the list is in `site/README.md`) and the README's status
-section and per-class chart.
+---
+
+## Ship accounts to RuStore
+
+- [ ] ★ **Signed release build, local.** The CI release workflow is gone: build
+      with the permanent key from `~/.gradle/gradle.properties` after green CI,
+      verify cert fingerprint/package/versionCode/endpoints (`DEPLOYMENT.md` §8.3).
+- [ ] ★ **Real-provider test of the permanently signed APK** (signup, cancel,
+      refresh, logout, deletion). Confirm the Yandex console holds that key's
+      certificate fingerprint.
+- [ ] ★ **RuStore listing** — console clicks, APK upload, release notes, privacy
+      page check. Cut the 1.9 tag only after the above.
+- [ ] ★ **Operator legal/region sign-off** on the privacy policy (data stored on the
+      German VDS).
+- [ ] ★ **Host housekeeping.** SSH key-only login (`PermitRootLogin
+      prohibit-password`, `PasswordAuthentication no`, rate-limiting), backup key
+      copied off the VDS, alerts on failed backups and repeated account-deletion
+      retries. The host IP and `root` user sit in git history (`cd4bda2`);
+      no credentials were ever committed.
+- [ ] **Cost-cap release gate** (see Security).
+- [ ] **Old-client compatibility.** Older app versions will call the new server and
+      have not been tested against it.
 
 ---
 
 ## Garden
 
-- [ ] ★ **Check the health thresholds against real scan histories.** The
-      verdict logic in `util/PlantHealth.kt` was reviewed and fixed on
-      2026-10-09 (only the last 60 days count, `POOR` needs two confident
-      disease readings, a ±10-point band is noise, one label/colour map in
-      `ui/garden/PlantHealthUi.kt`). The numbers in its tunables block are
-      still reasoned rather than measured. Compare them with a few real
-      plants' scan histories before trusting a red "Poor condition".
+- [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.**
+      The tunables are reasoned, not measured. Compare with a few real plants
+      before trusting a red "Poor condition".
 
 ---
 
 ## Security
 
-The config keys behind every limit are in `DEPLOYMENT.md` §3.2.
+Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 
-Community writes derive the actor from the verified account bearer, so the
-anonymous-key findings (forgeable second opinions, key-less likes and views, the
-pseudo-id in URLs) do not exist on this branch. What is still open:
-
-- [ ] **Cost caps — release gate.** Signed-in, API-key and guest traffic has
-      versioned per-feature daily admission, per-IP daily allowances sit on top
-      of it, and every uncached Pl@ntNet attempt (retries included) needs a
-      serialized deployment-wide attempt and a marginal-cost reservation. Cache
-      hits and explicit pre-provider denials spend neither allowance. A
+- [ ] **Cost caps — release gate.** Per-feature daily admission, per-IP allowances
+      and serialized Pl@ntNet attempts are in. Still required before launch: a
       reviewed model/route-specific aggregate OpenRouter price ceiling and live
-      alert evidence are still required before launch; the species caches key
-      on client-chosen names, so each new name is a billable miss until then.
-- [ ] **`/api/metrics` wants a short TTL cache.** The rate-limit exemption is
-      gone and the store snapshots run on a worker thread, but each request
-      still recomputes them.
-- [ ] **`/api/plant-photo`:** the LRU has a byte budget, but the WebP variants
-      on the serving side are still unbounded.
-- [ ] **Feedback images are never deleted.** Retention prune covers rows, not
-      the image directory.
-- [ ] **No lockfile.** Runtime pins are a mix of exact (`fastapi==0.141.1`,
-      `Pillow==12.3.0`) and floors (`numpy>=2.4.6,<3.0`, `onnxruntime>=1.28.0`,
-      `firebase-admin>=7.5.0`), and the transitive deps that actually serve
-      requests (starlette, httpx2) are unconstrained by us. CI catches a
-      resolution break as a red job rather than at deploy time — a lockfile is
-      still the actual fix.
-- [ ] **Host named publicly** — host IP + SSH user `root` in git history
-      (`cd4bda2`, removed with the admin panel in #149). **No credentials
-      leaked** — no key or password was ever committed. Action is ordinary
-      hardening: `PermitRootLogin prohibit-password`, `PasswordAuthentication
-      no`, SSH rate-limiting (plan step 10 in `ACCOUNTS_PRODUCTION_PLAN.md`).
+      alert evidence. Until then each new species name is a billable cache miss.
+- [ ] **`/api/metrics`:** add a short TTL cache; each request recomputes the
+      store snapshots.
+- [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
+      already has a byte budget).
+- [ ] **Feedback images are never deleted.** Retention prune covers rows, not the
+      image directory.
+- [ ] **No lockfile.** Runtime pins mix exact versions and floors; transitive deps
+      (starlette, httpx2) are unconstrained. CI turns a resolution break red, but a
+      lockfile is the real fix.
 
 ---
 
 ## Model track
 
-`MODEL_VERSION = '2.7.5'` (notebook §1). The default mode is `combined`: gamma
-ViT-S/14 plus the distilled Aqua MobileNetV3-Small. Per-run numbers and the
-release-comparison rules are in `MODEL_HISTORY.md`. Use them, not this file.
+`MODEL_VERSION = '2.7.5'` (notebook §1, matches the deployed bundle). Default mode
+`combined`: gamma ViT-S/14 plus the distilled Aqua MobileNetV3-Small. Numbers and
+comparison rules: `MODEL_HISTORY.md`.
 
-### 2.7.5 in production — what to watch
+- [ ] **Watch feedback correcting "healthy" to scorch**
+      (`server/tools/analyse_training_data.py`). 15 of 2.7.5's 25 wrong "healthy" calls
+      on the holdout are scorch; production feedback is the only real-distribution
+      signal until T exists.
 
-The evidence is in `MODEL_HISTORY.md`, row 16 and the 2.7.5 notes. On photos
-neither model trained on, 2.7.5 beats 2.6.8: served disease mF1 +0.059
-[+0.029, +0.091] on 1,019 iNat photos, and +0.131 argmax on the 160 unseen
-holdout rows. Its known weakness is the healthy lean. Holdout healthy
-precision is 0.784, and 15 of its 25 wrong "healthy" calls are scorch.
-Scorch, nutrient, leaf_spot, viral and gray_mold have no never-trained
-comparison set yet. Against 2.7.2 on the shared 535-row holdout it is a
-tie within noise (served mF1 +0.054 [−0.031, +0.137], argmax +0.022
-[−0.059, +0.104], scorch → "healthy" up 21 → 31; paired bootstrap of
-2026-10-27 in `MODEL_HISTORY.md`). Only the locked test set T can settle it.
+### Code only (no data needed)
 
-- [ ] **Watch feedback that corrects "healthy" to scorch**
-      (`server/tools/analyse_feedback.py` over the feedback store). That is
-      where the holdout says 2.7.5 errs, and production feedback is the only
-      real-distribution signal until T exists.
-
-The notebook's `MODEL_VERSION` is `2.7.5`, the same as the deployed bundle, and
-stays that way until the next run is configured.
-
-### Open — code only (no data needed)
-
-- [ ] **The augmentation profile is unablated.** `TRAIN_AUGMENTATION_PROFILE`
-      (§4 cell 10, `serve_parity_v2_unablated`, `efficacy_status: not
-      established`) has no off switch. `sensor_artifact_p = 0` disables the
-      block, but the version label is hard-coded. Add a flag that also
-      relabels the profile, then run one paired run at `SEED=0` scored with
-      `tools/eval_bootstrap.py` on capture families.
-- [ ] **`paired_eval --argmax` has a weaker binding check than boot.**
-      `_load_bundle_binding` (`tools/paired_eval.py:118-263`) accepts
-      `size_bytes == 0` (`:210`) and follows symlinks (`:213`), where
-      `bundle.verify_bundle` rejects both. Reuse the latter. Neither
-      `predict()` nor `predict_served()` has a test, and
-      `build_ood_benchmark.report()` has only one synthetic test.
-- [ ] **OOD benchmark v3 tool gaps.** `build_ood_benchmark.py` hard-codes one
-      source, one folder layout and a two-entry `CONDITION_MAP` with no
-      `not_a_plant` mapping. It writes `manifest.csv`, but §6 reads
-      `manifest_arms.csv`. Full list: `DATASET_LABELING_PLAN.md`, "OOD
-      benchmark v3". This blocks building v3.
-- [ ] **Aqua has no classifier-side OOD signal.** `AquaClassifier.classify()`
-      is a plain softmax argmax (`util/AquaClassifier.kt:46-53`). Aqua
-      abstains only on blur or a `not_a_plant` argmax, and its `classes.json`
-      carries no temperature or OOD block. A MaxLogit floor fitted in §5 is
-      the cheap version.
+- [ ] **`paired_eval --argmax` binding check is weaker than boot.**
+      `_load_bundle_binding` accepts `size_bytes == 0` and follows symlinks, where
+      `bundle.verify_bundle` rejects both — reuse it. Also untested: `predict()`,
+      `predict_served()`, and `build_ood_benchmark.report()` beyond one synthetic test.
+- [ ] **OOD benchmark v3 tool gaps** (blocks building v3): one hard-coded source and
+      layout, a two-entry `CONDITION_MAP` with no `not_a_plant`, and it writes
+      `manifest.csv` where §6 reads `manifest_arms.csv`. Full list in
+      `DATASET_LABELING_PLAN.md`.
+- [ ] **Aqua has no classifier-side OOD signal.** `AquaClassifier.classify()` is a
+      plain softmax argmax; it abstains only on blur or `not_a_plant`. A MaxLogit
+      floor fitted in §5 is the cheap fix.
 
 ### Data — the critical path
 
-Specified in `DATASET_LABELING_PLAN.md` (P0 is the minimum, "Sequencing" is
-the order). Not started.
+Specified in `DATASET_LABELING_PLAN.md`. Not started. The production recipe needs the
+Kaggle houseplant supplement; the private one was still at v8 at the last check
+(2026-08-23), which fails the strict v9 manifest contract. A compliant v9 under the
+same handle is picked up automatically.
 
-**Kaggle is required for the production recipe.** The notebook's strict source
-floors stop it before training if the approved houseplant/ornamental
-supplement is absent or truncated; only an explicitly degraded, non-production
-diagnostic run may disable that gate. Handles resolve to the latest revision
-at download time, and the resolved revision and corpus digests are bound into
-the run manifest. The private supplement was still at v8 at the last
-authenticated check (2026-08-23), which fails the strict v9 manifest contract.
-A compliant v9 published at the same handle is picked up automatically.
+- [ ] ★ **Early-stage marginal necrosis, 400 families with boxes**
+      (`brown_frac < 0.05`, edge-confined, blade mostly green), judged against
+      `leaf_spot` exemplars. Worth a run at ≥ 200 scorch and ≥ 100 houseplant
+      `leaf_spot` families. Boxes matter: Stage 1 returns no box on 21 % of scorch
+      vs 19 % of healthy.
+- [ ] ★ **Locked test set T_v1.** Adjudicate the 80 export rows; carve T before any
+      export row enters a supplement. It is the only slice fair to the deployed
+      model and a candidate alike.
+- [ ] ★ **OOD benchmark v3** — 8–12 species plus a non-plant arm (the non-plant arm
+      needs no plants; do it first). `REQUIRE_OOD_BENCHMARK` stays `False` until it exists.
 
-- [ ] ★ **Early-stage marginal necrosis, 400 families with boxes.** That
-      means `brown_frac < 0.05`, damage confined to the edge, and the blade
-      still mostly green. Judge each one against `leaf_spot` exemplars:
-      scorch↔`leaf_spot` is the boundary that fails, while scorch↔healthy
-      already probes at 0.95. On 2.7.5's holdout, scorch is the class most
-      often called healthy (15 of the 25 wrong "healthy" calls). Boxes
-      matter because Stage 1 returns no box on 0.386 of gray_mold, 0.381 of
-      pests and 0.211 of scorch, against 0.191 for healthy (2.7.5 served
-      pass). A run is worth doing at ≥ 200 scorch and
-      ≥ 100 houseplant `leaf_spot` families.
-- [ ] ★ **Locked test set T_v1.** Adjudicate the 80 export rows. This needs
-      no collection. T is the only slice that can be fair to the deployed
-      model and to a new candidate alike, and it must be carved before any export row
-      enters a supplement.
-- [ ] ★ **OOD benchmark v3**: 8–12 species, plus a non-plant /
-      difficult-plant arm. The non-plant arm needs no plants and can go first.
-      Until v3 exists, `REQUIRE_OOD_BENCHMARK` stays `False`.
+### Experiments that are not data
 
-### Open experiments that are not data
+None is expected to fix scorch alone; all fit alongside the collection round.
 
-None of these is expected to fix scorch alone. All of them fit alongside the
-collection round.
-
-- [ ] **Capacity: `frontier` (ViT-B/14) or DINOv3.** Scorch-vs-`leaf_spot`
-      sits at 48.4 % on a linear probe of the frozen ViT-S features. That is a
-      fine-grained dense-feature problem. `frontier` is a plain mode and costs
-      one run. **Check DINOv3's licence before committing.** It is not
-      DINOv2's Apache-2.0.
-- [ ] **`USE_REGISTERS`** (§4, default `False`). `dinov2_vits14_reg` gives
-      cleaner features. One flag, one run, one paired bootstrap.
-- [ ] **The crop-vs-whole gap.** 2.7.5's end-to-end `served_vote` scores 0.824
-      against 0.865 on the whole image, and nutrient loses most
-      (0.86 → 0.69). Diagnose why crop and vote dilute nutrient before
-      treating segmentation (2.8) as the fix.
-- [ ] **Domain-robust training objective.** Something stronger than a
-      sampling nudge.
+- [ ] **Capacity:** `frontier` (ViT-B/14) or DINOv3 (one run; **check DINOv3's
+      licence** — not DINOv2's Apache-2.0).
+- [ ] **`USE_REGISTERS`** (§4, default `False`) — one flag, one run, one paired bootstrap.
+- [ ] **Augmentation ablation** (§4 `TRAIN_AUGMENTATION`, default `'on'`). One
+      `'off'` run (geometry only, profile `serve_parity_v2_geometry_only`) vs a
+      default run, both `SEED=0` on the same corpus; score with
+      `tools/eval_bootstrap.py` on capture families. Human Colab run.
+- [ ] **Crop-vs-whole gap.** `served_vote` 0.824 vs 0.865 whole-image; nutrient
+      loses most (0.86 → 0.69). Diagnose before treating segmentation as the fix.
+- [ ] **Domain-robust training objective** stronger than a sampling nudge.
 
 ### Settled — do not retry
 
-Each of these was run as a single knob and measured. Re-proposing one costs a
-run and returns nothing. The notebook's §1 falsification record points here.
-The scorch numbers were measured on the v2 hibiscus arm, which is a regression
-alarm, not an independent instrument: 2.6.x trained on hibiscus through
-`pappu54` (`MODEL_HISTORY.md`, 2.7.5 notes). Each verdict still
-stands on its own evidence.
+Each was run as a single knob and measured; re-proposing costs a run. (Scorch numbers
+come from the v2 hibiscus arm, a regression alarm rather than an independent
+instrument.)
 
-| lever | verdict | evidence |
+| lever | verdict | why |
 |---|---|---|
-| `CLASS_LOGIT_BIAS` | **dead** | on 2.7.3, the best bias within the 0.12 false-fire ceiling is 1.44, which gives hibiscus 0.323. Reaching the floor needs false-fire 0.417, i.e. a third of never-trained healthy plants misdiagnosed |
-| regime-aware sampling (2.7.3) | **falsified** | stratum draw share 25 % → 50 %, hibiscus 3/31 → 4/31, Fisher p=1.000. Code removed |
-| regime-stratified conformal | **falsified** | marginal coverage 0.967; low-chroma 0.972 vs rest 0.965, so the dull stratum was already better covered. Code removed |
-| margin-preserving preprocessing | **not supported** | probe delta +0.013 against a +0.03 bar set in advance; letterboxing at inference made 2.7.2 *worse*, 3/31 → 1/31 |
-| sampler weights generally | **falsified** | 2.7.1's `kaggle_ornamental` ablation (1.0 → 0.35) did not move ornamental scorch at all and cost healthy (recall 0.947 → 0.861, McNemar p=0.0074) |
-| temperature refitting | **arithmetically impossible** | `argmax(z/T) == argmax(z)` for every `T > 0`: it moves confidence and set sizes, never a prediction |
+| `CLASS_LOGIT_BIAS` | dead | best bias inside the 0.12 false-fire ceiling gives hibiscus 0.323; the floor needs 0.417 false-fire |
+| regime-aware sampling | falsified | hibiscus 3/31 → 4/31, p=1.000 |
+| regime-stratified conformal | falsified | dull stratum already better covered (0.972 vs 0.965) |
+| margin-preserving preprocessing | not supported | probe +0.013 vs a +0.03 bar; letterboxing made 2.7.2 worse |
+| sampler weights generally | falsified | `kaggle_ornamental` 1.0 → 0.35 left scorch flat, cost healthy recall (McNemar p=0.0074) |
+| temperature refitting | impossible | `argmax(z/T) == argmax(z)`; moves confidence only |
 
-**Run-to-run noise is ~2 pp.** Two runs of an identical config at `SEED=0`
-gave `val_indomain` 0.884 and 0.864. Read any single-knob delta inside that
-band as noise.
+Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as noise.
 
-### 2.8 — the leap
+### 2.8 — from leaf classifier to plant doctor
 
-> From "a good leaf classifier" to a **holistic, trustworthy plant doctor**.
+Not started; waits for a stable scorch/nutrient boundary.
 
-1. **Real-distribution data at scale.** Production scans are what users
-   actually shoot. DoctorP (real app photos) is already the source that
-   supplies the starved classes.
-2. **Multi-label instead of single-label.** A softmax cannot say
-   "underwatered **and** nutrient-deficient". That calls for a sigmoid head,
-   per-class thresholds and per-class conformal. Do it after the boundary is
-   stable, never during.
-3. **Segmentation, not a box.** Lesion **area**, so severity is measured
-   rather than heuristic and one diseased leaf is not diluted across a whole
-   frame.
+- [ ] **Real-distribution data at scale** (production scans; DoctorP already feeds starved classes).
+- [ ] **Multi-label** — sigmoid head, per-class thresholds and conformal. After the boundary is stable, never during.
+- [ ] **Segmentation, not a box** — measured lesion area for severity.
 
 ---
 
 ## Architecture follow-ups
 
-From the 2026-08 review: the server's domain layer and the app's layering are
-sound, and the debt sits in a few god-modules and in HTTP-layer idiom. Each
-item below needs its own PR. Don't fold one into another change.
+Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Split `main.py` (5,955 lines) into routers.** It holds 39 handlers on
-      one `APIRouter`, 6 middlewares, 15 Pydantic models, 2 thread pools, the
-      limiter/ban/quota and admission state, the metrics and the lifespan. `Depends` is
-      used 0 times. Order of work:
-      1. Extract `deps.py` so the hand-copied quota preambles become one
-         `Depends`.
-      2. Replace the ~408-line duplicated alias-import block (`:66-473`) with
-         module imports.
-      3. Move one router group per PR, smallest first, community last.
-
-      Hard constraint: `conftest.py` patches names on `main` in place (the
-      `FakePipeline` swap), and 10 test modules `importlib.reload` the
-      modules main imports from. So a router doing `from main import
-      pipeline` binds before the patch. `openapi.json` and
-      `test_openapi_contract.py` catch a dropped route.
-- [ ] **Group the Pydantic models into `schemas.py`** with shared `Annotated`
-      types. `scan_id` is `8..64` plus a charset check in two models
-      (`main.py:2819`, `:2969`) and `1..128` with no charset check in three
-      (`:3863`, `:4024`, `:4218`). Each item in `CommunityViewRequest.scan_ids`
-      is unbounded. Standardise on the looser bound; tightening it is a
-      separate decision, because the Android client mints these ids.
-- [ ] **No `response_model` on any route.** So `openapi.json` describes
-      request bodies only, and the 35-line contract test compares paths and
-      methods. `/api/analyze` is covered: `tests/test_analyze_payload.py` pins
-      its key set through `build_analyze_payload()`. Every other response a
-      frozen APK parses can still change without failing CI.
-- [ ] **`ai_services.py` (3,459 lines) is three modules**: transport, five
-      features, and ~700 lines of bilingual content that belongs with
-      `diseases_data.py`. `community.py` (2,892 lines, 62 functions) wants to
-      become a package.
-- [ ] **Five hand-rolled SQLite stores** (`community`, `feedback`,
-      `labeling`, `push`, `telemetry`). Each has its own WAL `_connect` and
-      `init_db`, `_add_column_if_missing` and `prune_older_than` are copied
-      three times each, and there is no `PRAGMA user_version`, so every boot
-      replays every migration. The five `daily_*_count_for_ip_hash` functions
-      now all use a rolling 24 h window. `telemetry.daily_writes`
-      (`telemetry.py:139`) is the odd one out, counting from UTC midnight.
-- [ ] **Nothing type-checks the annotations.** No mypy or pyright config, and
-      not in CI.
+- [ ] **Split `main.py` (~6,640 lines) into routers.** 42 routes on one
+      `api_router`, 6 middlewares, 16 Pydantic models, 2 thread pools, limiter/ban/
+      quota/admission state, metrics, lifespan. `Depends` appears only as the
+      `community_bearer` route dependency; the quota preambles are still
+      hand-copied. Order: (1) `deps.py`; (2) replace the ~400-line duplicated
+      alias-import block with module imports; (3) one router group per PR,
+      smallest first, community last. Constraint: `conftest.py` patches names on
+      `main` in place and 10 test modules `importlib.reload`, so a router doing
+      `from main import pipeline` binds before the patch.
+- [ ] **Group Pydantic models into `schemas.py`** with shared `Annotated` types.
+      `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
+      others; `scan_ids` items are unbounded. Standardise on the looser bound
+      (the Android client mints these ids).
+- [ ] **Add `response_model` to routes.** `openapi.json` describes request bodies
+      only. `/api/analyze` is pinned by `tests/test_analyze_payload.py`; every other
+      response a frozen APK parses can change without failing CI.
+- [ ] **Break up `ai_services.py` (~3,600 lines)** — transport, five features, ~700
+      lines of bilingual content for `diseases_data.py` — and turn `community.py`
+      (~4,400 lines) into a package.
+- [ ] **Consolidate the five SQLite stores** (`community`, `feedback`, `labeling`,
+      `push`, `telemetry`): shared WAL `_connect`/`init_db`, one
+      `_add_column_if_missing` / `prune_older_than`, and `PRAGMA user_version` so a
+      boot stops replaying every migration. `telemetry.daily_writes` still counts
+      from UTC midnight where the others use a rolling 24 h.
+- [ ] **Type-check the annotations** — no mypy/pyright config, not in CI.
 
 **Android**
 
-- [ ] **`ScanRepository` is a 1,726-line god object** spanning seven bounded
-      contexts, with ~29 dependents (17 field injections, 4 EntryPoint
-      lookups, 6 controllers). Split it by context.
-- [ ] **Programmatic view construction.** `DetailExtraCardsController` (1,312
-      lines) and `CarePlanCardView` (1,186) build whole hierarchies in code
-      with hardcoded dp and colours. `DetailUiKit.baseCard()` exists for this
-      but has 2 call sites, and `DetailExtraCardsController` builds 8
-      `MaterialCardView`s by hand. The two styles look different on screen
-      today.
-- [ ] **Retire Gson.** It is still live for Room field JSON, `ResponseCache`
-      and intent payloads (6 importing files). That keeps 389 hand-mirrored
-      `@SerializedName` in `Models.kt`, a `KSerializer<JsonObject>` bridge and
-      the Gson ProGuard rules alive. M/L effort.
-- [ ] **`data/GuideDataProvider.kt` (1,638 lines) is a second localization
-      system.** It has 78 EN/RU pairs as Kotlin strings outside the resource
-      framework, which drive 42 `LocaleHelper.isRussian(` branches across 30
-      files. Nothing enforces RU parity there.
-- [ ] **Navigation Component manages a two-destination graph**
-      (`res/navigation/nav_graph.xml`), while 23 Activities navigate by
-      explicit Intent. It now costs more than it contributes.
-- [ ] **No DAO returns a `Flow`**, so screens re-read on resume. That is the
-      root cause of the 17 `launch(start = UNDISPATCHED)` sites, 16 of them
-      inside `NonCancellable`. The odd one out,
-      `GardenAttachController.attachScanToPlant` (`ui/result/GardenAttachController.kt:133`),
-      can lose the attach if the activity finishes mid-write. Migrate one
-      screen per PR, after the `ScanRepository` split.
-- [ ] **Ratchet the detekt thresholds down** as the splits land: LongMethod
-      210, LargeClass 1300 (`android/config/detekt/detekt.yml`). Its
-      "worst today" comment (ScanRepository at 1,165) is stale.
-      `GuideDataProvider.kt` stays excluded from the size rules until it stops
-      being a content blob.
+- [ ] **Split `ScanRepository` (~1,740 lines)** by context (species already moved to
+      `SpeciesRepository`); ~29 dependents.
+- [ ] **Replace programmatic view construction.** `DetailExtraCardsController`
+      (~1,300) and `CarePlanCardView` (~1,190) build hierarchies in code with
+      hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
+- [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
+      payloads. Keeps ~389 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
+      bridge and the Gson ProGuard rules alive. M/L effort.
+- [ ] **Fold `GuideDataProvider.kt` (~1,640 lines) into the resource framework.** 78
+      EN/RU pairs as Kotlin strings drive ~40 `LocaleHelper.isRussian(` branches; no
+      RU-parity enforcement.
+- [ ] **Drop Navigation Component** — a two-destination graph while 30+ Activities
+      navigate by Intent.
+- [ ] **DAOs returning `Flow`.** Today screens re-read on resume, which is the root
+      of the 17 `launch(start = UNDISPATCHED)` sites. `GardenAttachController.
+      attachScanToPlant` can lose the attach if the activity finishes mid-write.
+      One screen per PR, after the `ScanRepository` split.
+- [ ] **Ratchet detekt down** as splits land (LongMethod 210, LargeClass 1300 in
+      `android/config/detekt/detekt.yml`; its "worst today" comment is stale).
+      `GuideDataProvider.kt` stays excluded until it stops being a content blob.
 
 ---
 
 ## Documentation debt
 
-None of it blocks a release.
+None blocks a release.
 
-- [ ] **README has no app screenshots.** Every other visual is generated or
-      comes from the guide photos. Real screenshots (scan result, garden, care
-      calendar, community map) need a device or emulator, so a human has to
-      capture them. Drop them in `docs/assets/screenshots/` and add a row to
-      the README's "What it does" section.
-- [ ] **`docs/assets/per-class.svg` holds hand-copied numbers.** Regenerate
-      it (`docs/assets/generate_assets.py`) from `MODEL_HISTORY.md` when a
-      model ships.
-- [ ] **`android/app/build.gradle.kts:407-409` still says the Aqua model is
-      provisioned at `assets/models/aqua_classifier.tflite`.** It is
-      downloaded into `filesDir/aqua/` (`AquaModelManager`), as `:78-79` of
-      the same file says.
-- [ ] **Privacy policy — operator legal/region approval.** Both copies already
-      disclose the external processors (the private inference worker,
-      Pl@ntNet/CIRAD, OpenRouter and its model provider, optional Google FCM)
-      and the identifier rules; the operator's legal/region sign-off remains a
-      deployment gate.
-- [ ] **Notebook header is two versions stale.** Cell 0 is titled
-      "PlantVision 2.6" and says "v2.5 continues maximising gamma".
+- [ ] ★ **README app screenshots** (scan result, garden, care calendar, community
+      map) → `docs/assets/screenshots/` + a row in "What it does". Needs a device.
+- [ ] **`docs/assets/per-class.svg`** holds hand-copied numbers; regenerate with
+      `generate_assets.py` when a model ships.
+- [ ] **`android/app/build.gradle.kts` (~line 851)** still says Aqua is provisioned
+      at `assets/models/aqua_classifier.tflite`; it is downloaded to `filesDir/aqua/`.
+- [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
+      maximising gamma".
 
 ---
 
 ## Later / maybe
 
-- [ ] **Spider-mite split** from `pests` (deferred; `pests` precision is already
-      high).
-- [ ] **More UI languages.** Server content is already bilingual.
-- [ ] **Expert-human consultation.** Ties into 2.8 safety escalation and
-      builds on the shipped second-opinion loop.
+- [ ] Spider-mite split from `pests` (deferred; precision already high).
+- [ ] More UI languages (server content is already bilingual).
+- [ ] Expert-human consultation (ties into 2.8 safety escalation; builds on the second-opinion loop).
 
 ---
 
 ## Decisions
 
-- **Reliability and safety first.** Optimise against a confident wrong
-  diagnosis (precision, honest uncertainty, OOD/blur refusal) over headline
-  recall/F1.
-- **Data over architecture.** The ceiling is data and precision. Spend on the
-  flywheel and scope before backbone size.
-- **One species surface.** `SpeciesDetailActivity` is the only species
-  screen. Everything else embeds `ui/common/SpeciesInfoCardView`. Never build
-  a second card.
-- **New knowledge cards are best-effort, never blocking.** LLM plus cache,
-  with a graceful `available:false`.
-- **No new disease classes until the scorch/nutrient boundary is stable.**
-  Scope expansion waits for 2.8.
-- **Target store: RuStore** (RU audience, app already bilingual). No Google
-  Play.
-- **No Compose rewrite, single `:app` module.** Keep XML Views and modernise
-  the guts (Hilt, Ktor). Do not modularise. The one util → ui edge that
-  blocked a `:core:data` extraction is fixed anyway.
-- **Stay free and honest.** Calibrated, OOD-aware, on-device offline,
-  privacy-first. Diagnosis and community reading need no account; community
-  writes need a Yandex sign-in (no email or password in production). Posts
-  stay linked to the account's pseudonymous actor until the account is
-  deleted, as `privacy_policy.html` discloses.
-- **Community writes need a verified account.** Posts, opinions and likes take
-  the actor from the account bearer; the anonymous device handle and the
-  pseudo-id URL forms are gone, and the per-IP daily allowances keep their
-  defaults.
-- **Not planned:** a first-launch intro video, and room-level care defaults
-  (`RoomEntity.baselineLux` stays an unused column, so no migration).
-- **The data loop is local.** Collect and judge offline → Kaggle supplement →
-  the notebook pulls it.
+- **Reliability and safety first.** Precision, honest uncertainty and OOD/blur
+  refusal over headline recall/F1.
+- **Data over architecture.** The ceiling is data and precision.
+- **One species surface.** `SpeciesDetailActivity` only; everything else embeds
+  `ui/common/SpeciesInfoCardView`.
+- **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
+- **No new disease classes** until the scorch/nutrient boundary is stable.
+- **Target store: RuStore.** No Google Play.
+- **No Compose rewrite, single `:app` module.**
+- **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
+  Diagnosis and Community reading need no account; Community writes need a verified
+  Yandex sign-in (no email/password in production). Posts stay linked to the
+  pseudonymous actor until the account is deleted.
+- **Not planned:** a first-launch intro video; room-level care defaults
+  (`RoomEntity.baselineLux` stays unused).
+- **The data loop is local.** Collect and judge offline → Kaggle supplement → notebook pulls it.
 
 ---
 
 ## Working agreements
 
-**Training runs on Colab, never locally.** The target is a Colab A100 (40 GB
-VRAM, 80 GB RAM, 100 GB disk) driving `server/train_notebook.ipynb`, ≈20–35 min
-per full run including data prep. For ML work, edit the notebook or the
-pipeline code and hand the maintainer the cells to run.
-
-**Model choice for delegated work.** *Is there already a pattern in this repo
-to follow?* Yes → **Sonnet 5**. It follows instructions literally, so spell
-out the scope. New architecture across many files → **Opus 5** (`effort:
-xhigh`, generous `max_tokens`). It verifies its own work, so "double-check
-your answer" makes the output *worse*, and it expands scope readily, so state
-the boundary. Nobody has decided what it should be → **Fable 5**, once, to
-decide it. Omit `thinking` entirely; it degrades when you enumerate steps, so
-give intent and constraints, then get out of the way.
-
-**RU string review is a standing gate.** Machine-written Russian UI copy reads
-wrong in ways tests never catch. Review the `values-ru/strings.xml` diff on
-every merge.
-
-**CI** is described in `CLAUDE.md` and in the header of
-`.github/workflows/ci.yml`. The one rule to remember: a branch that matches no
-push glob gets no CI, and its PR shows an empty status rather than a red one.
-That is how #158–#167 merged unbuilt. Adding any branch automation means
-adding its prefix to the trigger list in the same commit.
+- **Training runs on Colab, never locally** (A100, ≈20–35 min per run) via
+  `server/train_notebook.ipynb`. Edit the notebook or pipeline code and hand the
+  maintainer the cells.
+- **Model choice for delegated work.** Pattern already in the repo → Sonnet 5 (spell
+  out scope). New architecture across many files → Opus 5 (`effort: xhigh`; state the
+  boundary, don't ask it to double-check). Undecided design → Fable 5, once. Omit
+  `thinking`; give intent and constraints.
+- **RU string review is a standing gate.** Review the `values-ru/strings.xml` diff on every merge.
+- **CI:** see `CLAUDE.md` and the `.github/workflows/ci.yml` header. A branch matching
+  no push glob gets no CI (that is how #158–#167 merged unbuilt); any new branch
+  automation adds its prefix to the trigger list in the same commit.

@@ -536,11 +536,6 @@ android {
         }
     }
 
-    sourceSets {
-        getByName("testRecoveryProduction").java.srcDir("src/testRecovery/java")
-        getByName("testRecoveryStaging").java.srcDir("src/testRecovery/java")
-    }
-
     buildFeatures {
         viewBinding = true
         buildConfig = true

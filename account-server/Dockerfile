@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-FROM python:3.11.15-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51c34de3f08cbb7 AS builder
+FROM python:3.14.0-slim@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -9,7 +9,7 @@ WORKDIR /build
 COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
-FROM python:3.11.15-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51c34de3f08cbb7 AS runtime
+FROM python:3.14.0-slim@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -20,11 +20,10 @@ COPY app ./app
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
 
-RUN mkdir -p /run/account-secrets /run/internal-token /run/deletion-journal && \
+RUN mkdir -p /run/account-secrets /run/internal-token && \
     adduser --disabled-password --gecos "" --uid 10002 accountd && \
-    chown -R accountd:accountd /app /run/account-secrets /run/internal-token /run/deletion-journal && \
-    chmod 0750 /run/internal-token && \
-    chmod 0700 /run/deletion-journal
+    chown -R accountd:accountd /app /run/account-secrets /run/internal-token && \
+    chmod 0750 /run/internal-token
 
 USER accountd
 EXPOSE 8000

@@ -256,6 +256,39 @@ def test_augmentation_geometry_matches_serving():
     )
 
 
+def test_augmentation_off_switch_defaults_on_and_relabels_the_ablation_arm():
+    """``TRAIN_AUGMENTATION`` defaults to ``'on'`` (the unablated profile,
+    unchanged) and is validated. ``'off'`` drops only the photometric pieces
+    (sensor artifacts + ColorJitter), keeps the serving-parity geometry, and
+    seals a DIFFERENT profile version so an ablation run can never be filed
+    under the default recipe in run_manifest.json / model_card.json.
+    """
+    src = _notebook_source()
+    assert "TRAIN_AUGMENTATION = 'on'\n" in src
+    assert "TRAIN_AUGMENTATION_MODES = ('on', 'off')" in src
+    assert "if TRAIN_AUGMENTATION not in TRAIN_AUGMENTATION_MODES:\n    raise ValueError(" in src
+    default_label = "'version': 'serve_parity_v2_unablated'"
+    off_label = "'version': 'serve_parity_v2_geometry_only'"
+    assert default_label in src and off_label in src and off_label != default_label
+    off_branch = src[src.index("if TRAIN_AUGMENTATION == 'off':"):]
+    off_branch = off_branch[: off_branch.index("_photometric_tx = []")]
+    assert off_label in off_branch
+    assert "'sensor_artifact': 'none'" in off_branch
+    assert "'sensor_artifact_p': 0, 'color_jitter_p': 0" in off_branch
+    assert "'efficacy_status':" in off_branch
+    # The Compose is built from the profile; zero-probability stages are
+    # omitted, never wrapped at p=0, and geometry stays unconditional.
+    assert "if TRAIN_AUGMENTATION_PROFILE['sensor_artifact_p'] > 0:" in src
+    assert "if TRAIN_AUGMENTATION_PROFILE['color_jitter_p'] > 0:" in src
+    assert (
+        "T.Resize(int(IMG * EVAL_RESIZE_RATIO)), T.RandomCrop(IMG), T.RandomHorizontalFlip(),\n"
+        "    *_photometric_tx,\n"
+    ) in src
+    # The label reaches every place the profile is recorded.
+    assert "log_run({'phase': 'augmentation_profile', **TRAIN_AUGMENTATION_PROFILE})" in src
+    assert src.count("'augmentation_profile': TRAIN_AUGMENTATION_PROFILE,") == 2
+
+
 def _notebook_markdown() -> str:
     nb = json.loads(NB_PATH.read_text(encoding="utf-8"))
     return "\n\n".join(

@@ -250,10 +250,9 @@ plantdiseases/
 │   └── models/             MODEL_CARD.md + .gitkeep (weights provisioned out of band)
 ├── site/                   one-page project site (static HTML)
 ├── deploy/                 Compose, nginx and operator scripts for the account stack
-├── docs/                   ROADMAP · MODEL_HISTORY · ACCOUNTS_PRODUCTION_PLAN · DATASET_LABELING_PLAN · assets/
+├── docs/                   ROADMAP · MODEL_HISTORY · DATASET_LABELING_PLAN · assets/
 ├── .github/workflows/      ci.yml — push-only CI (ruff + pytest for server and account
-│                           service; ktlint + detekt + unit tests + CI-only APK builds);
-│                           android-release.yml — manual protected signing
+│                           service; ktlint + detekt + unit tests + CI-only APK builds)
 ├── DEPLOYMENT.md           Production deployment guide
 ├── CLAUDE.md               Working notes for agents in this repo
 └── README.md               You are here
@@ -271,7 +270,7 @@ plantdiseases/
 | [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) | Version-agnostic pipeline, calibration and limitations contract |
 | [`docs/DATASET_LABELING_PLAN.md`](docs/DATASET_LABELING_PLAN.md) | The data-collection and judging loop |
 | [`server/train_notebook.ipynb`](server/train_notebook.ipynb) | Training, calibration, ONNX/TFLite export |
-| [`docs/ACCOUNTS_PRODUCTION_PLAN.md`](docs/ACCOUNTS_PRODUCTION_PLAN.md) | Accounts decisions, release gates and the path to RuStore; [`account-server/README.md`](account-server/README.md) is the service's contract |
+| [`account-server/README.md`](account-server/README.md) | The account service's contract |
 
 ---
 

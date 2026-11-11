@@ -34,9 +34,8 @@ password recovery, and shared multi-replica abuse controls remain mandatory
 production blockers. Completion and confirmation re-check the current flag; an
 email continuation presented while it is off is durably cancelled, including
 removal of any unconfirmed provisional account/session. OAuth continuation uses
-the same endpoints and remains available. See
-[`../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md`](../docs/EMAIL_PASSWORD_AUTH_RELEASE_BLOCKERS.md)
-before deploying or exposing its endpoints.
+the same endpoints and remains available. Do not deploy or expose its endpoints
+in production.
 
 ## Contract
 
@@ -130,27 +129,20 @@ authority state, or database access denies the vendor attempt before network
 I/O. The application service loads the actual PlantNet credential only through
 its owner-only `PLANTNET_API_KEY_FILE` in production.
 
-Console provisioning, callback operations, trial/grace/hold policy, pricing
-hypotheses, key rotation, live-purchase evidence, and rollback gates are in
-[`../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md`](../docs/PLANTDISEASES_PRO_RELEASE_OPERATIONS.md).
-
 ## Verification
 
-From `account-server/`, with an explicit test environment configured:
+The account tests live in `../server/tests/account/` and run with the server suite
+(Python 3.14, one venv from `server/requirements-dev.txt`):
 
 ```sh
-ruff check .
-pytest -q
-python -m tools.export_openapi openapi.json
+cd ../server
+ruff check . ../account-server
+pytest tests -q
 ```
 
-The PostgreSQL process-restart test is opt-in and accepts only an isolated beta
-database URL:
+To regenerate the committed schema, export the account environment variables
+(see `server/tests/account/conftest.py`) and run, from `account-server/`:
 
 ```sh
-ACCOUNT_POSTGRES_INTEGRATION_URL='postgresql+psycopg://...@127.0.0.1:15432/plantdisease_beta' \
-  pytest tests/test_postgres_integration.py -q
+python export_openapi.py openapi.json
 ```
-
-It creates a uniquely generated synthetic provider subject and leaves the beta
-volume intact for inspection.

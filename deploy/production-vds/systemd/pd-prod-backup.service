@@ -1,5 +1,5 @@
 [Unit]
-Description=PlantDiseases production backup (epoch barrier + PostgreSQL + community + journal, encrypted, restore-checked)
+Description=PlantDiseases production backup (PostgreSQL + community, encrypted, restore-checked)
 After=docker.service
 Requires=docker.service
 

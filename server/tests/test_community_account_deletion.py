@@ -370,7 +370,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
         ).fetchone()[0] == 1  # the deleted account's content is back
     assert _marker_ids(community) == set()  # and nothing suppresses it
 
-    # Replay: the account service re-delivers the journaled tombstone.
+    # The account service re-delivers the tombstone.
     assert community.request_actor_deletion(owner)
     assert community.process_cleanup_jobs()["completed"] == 1
 

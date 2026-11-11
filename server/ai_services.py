@@ -218,6 +218,9 @@ OPENROUTER_PROVIDER_ONLY = get_str("OPENROUTER_PROVIDER_ONLY", "openai").strip()
 #
 # Set OPENROUTER_PROMPT_CACHING to false to send none of the three.
 OPENROUTER_PROMPT_CACHING = get_bool("OPENROUTER_PROMPT_CACHING", True)
+# Zero-data-retention routing. On by default; an operator whose OpenRouter account has
+# no ZDR endpoints can turn it off (data_collection=deny stays on either way).
+OPENROUTER_REQUIRE_ZDR = get_bool("OPENROUTER_REQUIRE_ZDR", True)
 # OpenAI's cache-routing key, sent verbatim (it is our own constant, never
 # anything client-supplied). Deliberately ONE value for every surface: requests
 # sharing a key and a prefix land on the same machine, which is exactly what we
@@ -1133,8 +1136,9 @@ def _call_openrouter(
         # Plant-care messages can still contain personal text. Fail closed to
         # endpoints that neither collect nor retain prompts/completions.
         "data_collection": "deny",
-        "zdr": True,
     }
+    if OPENROUTER_REQUIRE_ZDR:
+        provider_pref["zdr"] = True
     providers = _provider_only()
     if providers:
         provider_pref["only"] = providers
@@ -1161,8 +1165,7 @@ def _call_openrouter(
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        # OpenRouter recommends these for attribution but they are optional.
-        "HTTP-Referer": "https://github.com/pmixay/plantdiseases",
+        # OpenRouter's attribution headers are optional; no repository URL is sent.
         "X-Title": "PlantDiseases",
     }
 

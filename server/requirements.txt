@@ -1,10 +1,10 @@
-fastapi==0.141.1
-uvicorn[standard]==0.52.3
-python-multipart==0.0.32
+fastapi==0.162.4
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
 # SECURITY: 12.2.0 is affected by 26 published advisories (CVE-2026-59199
 # paste/crop OOB write, CVE-2026-59203 EPS infinite loop, CVE-2026-59204 JP2
 # realloc, CVE-2026-54058 mmap OOB read, several decompression-bomb bypasses).
-# 12.3.0 clears all of them.
+# 12.3.0 cleared all of them; 13.0.0 is current.
 #
 # For the record, since an earlier draft of docs/SECURITY_AUDIT.md overstated
 # this: none of them was shown to be reachable *here*. The paste/crop write
@@ -16,17 +16,17 @@ python-multipart==0.0.32
 #
 # Patch anyway: it is free, and it removes the whole class rather than relying
 # on the gates staying correct forever.
-Pillow==12.3.0
+Pillow==13.0.0
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
 # matches the training notebook, which already runs on numpy 2.x. Cap kept
 # at <3 for the next ABI break.
 #
-# 2.4.6 is the newest series published as of this pin. This is a floor, not
+# 2.5.4 is the newest series published as of this pin. This is a floor, not
 # a pin — pip takes the newest compatible numpy on every interpreter, so
 # this line resolves to whatever is newest once a later series ships.
-numpy>=2.4.6,<3.0
-onnxruntime>=1.28.0
+numpy>=2.5.4,<3.0
+onnxruntime>=1.31.1
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return
 # a graceful ``available: false`` when no API key is configured. Only
@@ -35,8 +35,8 @@ requests>=2.34.2
 # Firebase Cloud Messaging push (server/push.py). Imported lazily and only
 # used when FCM_CREDENTIALS_FILE points at a service-account JSON — without it
 # every send is a no-op, so the dependency is harmless on push-less deploys.
-firebase-admin>=7.5.0
+firebase-admin>=7.7.0
 # Account-bound community writes verify Ed25519 JWTs locally before the
 # account service confirms the live session/authorization version.
-PyJWT[crypto]==2.13.0
-cryptography==50.0.0
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2

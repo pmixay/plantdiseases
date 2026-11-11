@@ -1,7 +1,7 @@
 # PlantDiseases Community Rules and Moderation
 
 Effective: 16 August 2026
-Moderation contact: <https://github.com/pmixay/plantdiseases/issues>
+Moderation contact: <mailto:gavel8980@gmail.com>
 
 These rules cover community scan photos, diagnoses, nicknames, and second-opinion replies. The same criteria are shown inside the RuStore release under **Community scans → Community Rules & safety**.
 
@@ -56,7 +56,7 @@ Report records are retained for at most 180 days. Blocks remain until unblocked 
 # Правила сообщества и модерация PlantDiseases
 
 Действуют с 16 августа 2026 г.
-Связь с модерацией: <https://github.com/pmixay/plantdiseases/issues>
+Связь с модерацией: <mailto:gavel8980@gmail.com>
 
 Правила распространяются на фотографии сканов, диагнозы, псевдонимы и ответы со вторым мнением. Эти же критерии показаны в версии для RuStore: **Сканы сообщества → Правила и безопасность**.
 

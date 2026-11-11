@@ -306,7 +306,10 @@ def test_yolo_boxes_reach_the_index_in_the_displayed_frame(tmp_path):
 def test_parse_yolo_boxes(tmp_path, text, boxes, bad):
     ns = _base_ns(tmp_path)
     got, got_bad = ns["_parse_yolo_boxes"](text)
-    assert got == pytest.approx(boxes) and got_bad == bad
+    assert got_bad == bad
+    assert len(got) == len(boxes)
+    for g, b in zip(got, boxes):
+        assert g == pytest.approx(b)
 
 
 # ── §3: the pooled PlantDoc -> YOLO build ──────────────────────────────────

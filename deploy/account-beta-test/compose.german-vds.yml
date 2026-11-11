@@ -38,8 +38,6 @@ x-account-environment: &account-environment
   ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5}"
   ENTITLEMENT_PRO_DAILY_LIMITS: "${ENTITLEMENT_PRO_DAILY_LIMITS:-gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20}"
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
-  # Durable deletion journal on its own volume, outside every backed-up store.
-  ACCOUNT_DELETION_JOURNAL_DIR: /run/deletion-journal
   CORS_ORIGINS: ""
 
 services:
@@ -207,7 +205,6 @@ services:
     volumes:
       - beta_account_keys:/run/account-secrets:ro
       - beta_internal_token:/run/internal-token:ro
-      - beta_deletion_journal:/run/deletion-journal
       - type: bind
         source: ${BETA_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore beta secret directory}
         target: /run/rustore-secrets
@@ -370,8 +367,6 @@ volumes:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_account_keys
   beta_internal_token:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_internal_token
-  beta_deletion_journal:
-    name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_deletion_journal
   beta_app_data:
     name: ${BETA_VOLUME_PREFIX:?Set the dedicated beta volume prefix}_app_data
   beta_community:

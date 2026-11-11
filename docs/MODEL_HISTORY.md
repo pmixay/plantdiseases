@@ -515,3 +515,9 @@ The mechanics: score both bundles served (`tools/paired_eval.py --served
 --manifest`), then `tools/eval_bootstrap.py` with the capture family as the
 resampling unit; read the *difference* CI, not the two point estimates. A CI
 that straddles 0 is not evidence, whatever the headline gap.
+
+**Augmentation ablation runs.** A run trained with `TRAIN_AUGMENTATION = 'off'` (§4)
+seals profile `serve_parity_v2_geometry_only` instead of `serve_parity_v2_unablated`
+(`run_manifest.json → augmentation_profile.version`). Compare it only against a
+same-seed default-profile run on the same corpus, label every row by profile version,
+and never file it under the release recipe above.

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # One coordinated production backup + restore check (operator tool, outside Git).
-# Order matters (docs/DELETION_JOURNAL_AND_BACKUP_EPOCH.md): epoch barrier first, then
-# every store, all labelled with the same epoch id. Never stops services, never touches
+# Every store is labelled with the same UTC timestamp. Never stops services, never touches
 # the live database; the restore check uses a temporary database that is dropped again.
 set -euo pipefail
 set -o noclobber
@@ -14,9 +13,8 @@ REC=$(age-keygen -y "$IDENT")
 PW=$(grep '^PROD_POSTGRES_BACKUP_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)
 export PGPASSWORD="$PW"
 
-EPOCH=$("$C" exec -T prod-account-api python -m app.deletion_replay begin-epoch)
-case "$EPOCH" in e[0-9]*Z-*) ;; *) echo "unexpected epoch id" >&2; exit 1 ;; esac
-base="$OUT/plantdisease-prod-$EPOCH"
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+base="$OUT/plantdisease-prod-$STAMP"
 
 # 1. PostgreSQL (least-privilege backup role, custom format)
 "$C" exec -T -e PGPASSWORD prod-postgres pg_dump -h 127.0.0.1 -U account_backup -d plantdisease -Fc --no-owner \
@@ -33,8 +31,6 @@ try:
 finally:
     if os.path.exists(snap): os.remove(snap)" \
     | age -r "$REC" > "$base.community.db.age"
-# 3. Deletion journal
-"$C" exec -T prod-account-api cat /run/deletion-journal/journal.jsonl | age -r "$REC" > "$base.journal.age"
 
 for f in "$base".*.age; do [ -s "$f" ] || { echo "empty artifact: $(basename "$f")" >&2; exit 1; }; done
 ( cd "$OUT" && sha256sum "$(basename "$base")".*.age > "$(basename "$base").sha256" )
@@ -51,7 +47,6 @@ tables=$("$C" exec -T prod-postgres psql -U account_bootstrap -d "$tmpdb" -At -c
 head=$("$C" exec -T prod-postgres psql -U account_bootstrap -d "$tmpdb" -At -c "select version_num from alembic_version")
 age -d -i "$IDENT" "$base.community.db.age" > "$work/community.db"
 integrity=$(python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('pragma integrity_check').fetchone()[0])" "$work/community.db")
-age -d -i "$IDENT" "$base.journal.age" | grep -c "\"epoch\":\"$EPOCH\"" >/dev/null
 [ "$tables" = 25 ] && [ "$head" = 0010_billing_lifecycle_quota_policy ] && [ "$integrity" = ok ] || { echo "restore check FAILED tables=$tables head=$head community=$integrity" >&2; exit 1; }
-find "$OUT" -maxdepth 1 -type f -name 'plantdisease-prod-e*' -mtime +27 -delete
-echo "backup OK epoch=$EPOCH tables=$tables alembic=$head community_integrity=$integrity journal_epoch_present=yes"
+find "$OUT" -maxdepth 1 -type f -name 'plantdisease-prod-2*' -mtime +27 -delete
+echo "backup OK stamp=$STAMP tables=$tables alembic=$head community_integrity=$integrity"

@@ -45,7 +45,7 @@ _CACHE_MAX_FILES = 1500
 # cache, so count and source+variant bytes are independently bounded.
 _CACHE_MAX_BYTES = 512 * 1024 * 1024
 _USER_AGENT = (
-    "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
+    "PlantDiseases/1.1 (plant care app)"
 )
 
 # Only these exact hosts are fetched. The endpoint is public, so a suffix-wide
