@@ -1165,8 +1165,7 @@ def _call_openrouter(
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        # OpenRouter recommends these for attribution but they are optional.
-        "HTTP-Referer": "https://github.com/pmixay/plantdiseases",
+        # OpenRouter's attribution headers are optional; no repository URL is sent.
         "X-Title": "PlantDiseases",
     }
 

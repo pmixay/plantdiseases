@@ -512,7 +512,6 @@ def test_privacy_policy_matches_account_release():
     assert tombstone["retention_days"] == 30
     assert tombstone["legal_basis"] is None
     assert tombstone["policy_marker_id"] == "deleted-actor-tombstone-policy"
-    assert tombstone["decision_reference"].startswith("https://github.com/pmixay/plantdiseases/blob/")
     assert tombstone["approved_at_utc"].endswith("Z")
     assert "30" in tombstone["disclosure_en"] and "30" in tombstone["disclosure_ru"]
     assert tombstone["disclosure_en"] != tombstone["disclosure_ru"]
@@ -520,7 +519,6 @@ def test_privacy_policy_matches_account_release():
     assert contact["status"] == "approved"
     assert contact["uri"] == "mailto:gavel8980@gmail.com"
     assert contact["policy_link_id"] == "privacy-private-contact"
-    assert contact["decision_reference"].startswith("https://github.com/pmixay/plantdiseases/blob/")
     assert contact["approved_at_utc"].endswith("Z")
     assert 'id="privacy-private-contact"' in privacy
     assert 'href="mailto:gavel8980@gmail.com"' in privacy

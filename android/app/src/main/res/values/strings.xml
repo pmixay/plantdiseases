@@ -393,7 +393,7 @@
     <string name="community_unblock_confirm">Unblock</string>
     <string name="community_author_unblocked">Author unblocked.</string>
     <string name="community_unknown_author">Unknown author</string>
-    <string name="community_moderation_url" translatable="false">https://github.com/pmixay/plantdiseases/issues</string>
+    <string name="community_moderation_url" translatable="false">mailto:gavel8980@gmail.com</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>

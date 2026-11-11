@@ -24,7 +24,7 @@ _TIMEOUT_S = 4.0
 _CACHE_TTL_S = 7 * 24 * 3600
 _CACHE_MAX = 512
 _USER_AGENT = (
-    "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
+    "PlantDiseases/1.1 (plant care app)"
 )
 _ALLOWED_LANGS = {"en", "ru"}
 _BAD_MEDIA_TERMS = {
