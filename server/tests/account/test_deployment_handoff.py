@@ -611,7 +611,7 @@ def test_fresh_android_checkout_defaults_to_live_real_oauth_beta():
     assert "?.takeIf { it.storeFile != null }" in gradle
 
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert "Verify zero-configuration Yandex beta build mode" in workflow
+    assert "zero-configuration Yandex beta build mode" in workflow
 
 
 def test_private_repository_android_ci_uses_github_basic_gradle_cache():

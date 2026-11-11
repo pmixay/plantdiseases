@@ -26,7 +26,7 @@ digest tag.
 offline and describe the build the reader is running. The hosted copy is root
 `privacy.html`; its structured markers (contact, deleted-actor disclosure) must match
 `deploy/account-beta-test/release-policy-gates.json` (checked by
-`account-server/tests/test_deployment_handoff.py`) — change them together.
+`server/tests/account/test_deployment_handoff.py`) — change them together.
 
 ## Where documentation lives
 

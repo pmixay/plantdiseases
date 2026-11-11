@@ -108,16 +108,54 @@ jobs:
               - 'docs/ACCOUNT_BETA_*.md'
               - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
 
+  # One matrix leg per independent unit of work, so wall-clock is the slowest
+  # leg instead of the sum. Measured on the serial version of this job (cold
+  # cache, 2-core private runner): a "zero-configuration" step of ~10m36 and a
+  # main step of ~24m, ~35m total. Two things made that so:
+  #
+  #   1. The zero-configuration step built and tested debug + staging WITHOUT
+  #      the FCM_* env, then the main step did it again WITH it. FCM_* are
+  #      BuildConfig fields, so the second pass had different inputs for
+  #      compile and for every test task: nothing was reusable and both
+  #      variants' whole suites ran twice. Every leg below is the zero-config
+  #      proof (no -P flags: committed defaults select the live beta pair and
+  #      the pinned Yandex client) and runs once.
+  #   2. Four minifyReleaseWithR8 passes (release, staging, recoveryProduction,
+  #      recoveryStaging, ~5 min each, CPU-bound) ran back to back on one
+  #      runner, and the ~94-class shared Robolectric suite ran on every
+  #      variant although it is the same tests. Only src/testDebug,
+  #      src/testRelease, src/testStaging and src/testRecovery differ per
+  #      variant, so: the full suite runs on debug (fast, no R8) and on release
+  #      (what ships); staging and the recovery variants run just their own
+  #      identity test (`--tests` fails loudly if the class is renamed away).
+  #
+  # Trade-off: more total runner minutes (each leg pays checkout + SDK +
+  # compile) for far less waiting. Gradle caches are per matrix leg.
   android:
-    name: Android build & lint
+    name: Android (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ktlint + detekt replace Android Lint as the code-quality gate.
+          - name: lint + debug tests
+            args: ktlintCheck detekt testDebugUnitTest
+          - name: release
+            args: testReleaseUnitTest assembleRelease
+          - name: staging
+            args: testStagingUnitTest --tests *StagingBuildIdentityTest assembleStaging
+          - name: recovery production
+            args: testRecoveryProductionUnitTest --tests *RecoveryBuildIdentityTest assembleRecoveryProduction
+          - name: recovery staging
+            args: testRecoveryStagingUnitTest --tests *RecoveryBuildIdentityTest assembleRecoveryStaging
     defaults:
       run:
         working-directory: android
     # This job is deliberately credential-free. It produces compilation/test
-    # evidence only; the protected manual workflow is the sole signing path.
+    # evidence only; release signing is done locally by the owner.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -193,71 +231,36 @@ jobs:
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
-      # Prove that a fresh checkout needs no endpoint/OAuth flags: committed
-      # public defaults select the live beta pair and pinned Yandex client.
-      - name: Verify zero-configuration Yandex beta build mode
-        run: >-
-          ./gradlew :app:testDebugUnitTest :app:testStagingUnitTest
-          --build-cache --configuration-cache --stacktrace
-
-      # One Gradle invocation runs lint + unit tests + the R8 release package,
-      # sharing a single configuration phase and warm daemon. Gradle overlaps
-      # these more than the serial-looking log suggests — a --profile run of a
-      # cold build summed 15m44 of task time into 9m33 of wall clock, because
-      # AGP submits work as async workers. The shape of that cold build, worth
-      # knowing before trying to speed this up again:
+      # --configuration-cache is a compatibility gate here rather than a
+      # speed win: the entry lives in the project's own .gradle/ directory,
+      # which setup-gradle does not cache (caching it would need a
+      # `cache-encryption-key`, and a config-cache entry can capture values read
+      # during configuration). Kept because Gradle 10 makes the config cache
+      # mandatory and this catches an incompatible change on the commit that
+      # introduces it.
       #
-      #   minifyReleaseWithR8        5m08   <- the critical path
-      #   testDebugUnitTest          2m34   (runs alongside R8)
-      #   compileDebugKotlin         1m58
-      #   compileReleaseKotlin       1m58
-      #   kspDebugKotlin / Release   0m43 / 0m37
-      #
-      # So R8 is the tail, it already overlaps the tests, and on a two-core
-      # runner everything else is competing with it for CPU. The remaining
-      # levers are giving R8 its own runner (a second job) or not packaging
-      # every variant on each branch push — both trade away something this
-      # workflow deliberately keeps.
-      #
-      # Ordinary CI never receives permanent signing/provider credentials and
-      # never produces a distributable APK; release signing is done locally by the
-      # owner (DEPLOYMENT.md §8.3).
-      - name: Lint, test release variants, and assemble non-distributable APKs
+      # `set -f` + an env var: the matrix args contain a `*Test` glob for
+      # --tests that the shell must not expand, and a value never reaches the
+      # script text.
+      - name: Build and test (zero-configuration Yandex beta build mode)
         env:
+          GRADLE_ARGS: ${{ matrix.args }}
           # FCM client config (optional). Unset ⇒ push stays dormant and the
           # client falls back to polling (PushManager.isConfigured).
           FCM_APP_ID: ${{ secrets.FCM_APP_ID }}
           FCM_API_KEY: ${{ secrets.FCM_API_KEY }}
           FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
           FCM_SENDER_ID: ${{ secrets.FCM_SENDER_ID }}
-        # ktlint + detekt replace Android Lint as the code-quality gate.
-        # --configuration-cache is a compatibility gate here rather than a
-        # speed win: the entry lives in the project's own .gradle/ directory,
-        # which setup-gradle does not cache, so CI stores one every run and
-        # restores none ("Calculating task graph as no cached configuration is
-        # available" on every build). Caching it would mean handing
-        # gradle/actions a `cache-encryption-key`, and a config-cache entry can
-        # capture values read during configuration, so that key cannot live
-        # in the workflow. Kept because
-        # Gradle 10 makes the config cache mandatory and this is what catches
-        # an incompatible change on the commit that introduces it.
-        run: >-
-          ./gradlew ktlintCheck detekt testDebugUnitTest
-          testStagingUnitTest testReleaseUnitTest testRecoveryProductionUnitTest
-          testRecoveryStagingUnitTest assembleRelease assembleStaging
-          assembleRecoveryProduction assembleRecoveryStaging
-          --build-cache --configuration-cache --stacktrace
+        run: |
+          set -f
+          ./gradlew $GRADLE_ARGS --build-cache --configuration-cache --stacktrace
 
-      # One artifact, not three. This used to be an upload of the ktlint +
-      # detekt reports, then one of the test reports, then one of
-      # `app/build/reports/**` — which is a superset of the first two. Only the
-      # JUnit XML and the packaging logs live outside build/reports, so those
-      # are the two extra paths.
+      # Only the JUnit XML and the packaging logs live outside build/reports.
       - name: Upload build reports on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: android-build-reports
+          name: android-build-reports-${{ strategy.job-index }}
           path: |
             android/app/build/reports/**
             android/app/build/test-results/**
