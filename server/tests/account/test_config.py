@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from app.api.errors import AccountAPIError
 from app.api.routes import _require_email_password_auth
 from app.config import Settings, SettingsError

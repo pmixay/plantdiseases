@@ -23,7 +23,7 @@ docs); those files were removed and remain in git history. The RU/DE `handoff/` 
 
 - Beta (`ENVIRONMENT=staging`) is deployed from `account-beta-test@03bc2359` under `/plantdisease-test/`
   and `/plantdisease-test/id/`: Alembic head `0010_billing_lifecycle_quota_policy`, 311 account tests
-  green on Python 3.11, encrypted backup and restore check passing, `/v1/internal/*` blocked at the edge,
+  green on Python 3.14, encrypted backup and restore check passing, `/v1/internal/*` blocked at the edge,
   access restricted to the owner's VPN allowlist.
 - **Production backend is live (2026-10-09)** on the same VDS from commit `305f1ad` (the deletion-journal work)
   (`ENVIRONMENT=production`, separate PostgreSQL with `account_*` roles, fresh keys). `https://pdis.arbuz.lol/` now serves the

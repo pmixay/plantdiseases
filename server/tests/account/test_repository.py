@@ -4,14 +4,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from app.db.models import Account, AccountIdentity, PushDevice, RefreshToken, Session
+from app.db.repository import AccountRepository
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import sessionmaker
-
-from app.db.models import Account, AccountIdentity, PushDevice, RefreshToken, Session
-from app.db.repository import AccountRepository
 
 
 def _repository(engine: Engine) -> AccountRepository:

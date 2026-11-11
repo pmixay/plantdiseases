@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from app.config import Settings
 from app.main import create_app
 from app.providers.registry import build_provider_registry
+from fastapi.testclient import TestClient
 
 
 class _FakeDatabase:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEPLOY = REPOSITORY_ROOT / "deploy" / "account-beta-test"
 GERMAN_COMPOSE = DEPLOY / "compose.german-vds.yml"
 GERMAN_BUILD_COMPOSE = DEPLOY / "compose.german-vds.build.yml"

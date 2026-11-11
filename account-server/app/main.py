@@ -250,4 +250,14 @@ def create_app(
     return application
 
 
-app = create_app()
+def __getattr__(name: str):
+    """Build the ASGI ``app`` on first access (``uvicorn app.main:app``).
+
+    Importing this module must not require the service environment, so the test
+    suite can share a process with the app server's tests.
+    """
+    if name == "app":
+        global app  # noqa: PLW0603
+        app = create_app()
+        return app
+    raise AttributeError(name)

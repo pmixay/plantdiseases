@@ -11,11 +11,10 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
+from app.db.models import Base
 from sqlalchemy import CheckConstraint, UniqueConstraint, create_engine, inspect
 
-from app.db.models import Base
-
-ACCOUNT_SERVER_DIR = Path(__file__).resolve().parent.parent
+ACCOUNT_SERVER_DIR = Path(__file__).resolve().parents[3] / "account-server"
 MIGRATION_PATH = (
     ACCOUNT_SERVER_DIR / "migrations" / "versions" / "0001_private_account_schema.py"
 )

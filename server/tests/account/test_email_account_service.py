@@ -5,13 +5,6 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from argon2 import PasswordHasher
-from argon2.low_level import Type
-from sqlalchemy import select
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session as OrmSession
-from sqlalchemy.orm import sessionmaker
-
 from app.api.errors import AccountAPIError
 from app.db.models import Account, AccountIdentity, PasswordCredential
 from app.db.repository import AccountRepository
@@ -21,6 +14,12 @@ from app.security.passwords import PasswordHashService
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import SigningKeyRing, TokenService
 from app.services.accounts import AccountService
+from argon2 import PasswordHasher
+from argon2.low_level import Type
+from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import sessionmaker
 
 
 @pytest.fixture

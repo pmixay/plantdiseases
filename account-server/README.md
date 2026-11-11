@@ -136,21 +136,18 @@ hypotheses, key rotation, live-purchase evidence, and rollback gates are in
 
 ## Verification
 
-From `account-server/`, with an explicit test environment configured:
+The account tests live in `../server/tests/account/` and run with the server suite
+(Python 3.14, one venv from `server/requirements-dev.txt`):
 
 ```sh
-ruff check .
-pytest -q
-python -m tools.export_openapi openapi.json
+cd ../server
+ruff check . ../account-server
+pytest tests -q
 ```
 
-The PostgreSQL process-restart test is opt-in and accepts only an isolated beta
-database URL:
+To regenerate the committed schema, export the account environment variables
+(see `server/tests/account/conftest.py`) and run, from `account-server/`:
 
 ```sh
-ACCOUNT_POSTGRES_INTEGRATION_URL='postgresql+psycopg://...@127.0.0.1:15432/plantdisease_beta' \
-  pytest tests/test_postgres_integration.py -q
+python export_openapi.py openapi.json
 ```
-
-It creates a uniquely generated synthetic provider subject and leaves the beta
-volume intact for inspection.

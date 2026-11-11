@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from app.db.models import Base
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
-
-from app.db.models import Base
 
 EXPECTED_TABLES = {
     "accounts",

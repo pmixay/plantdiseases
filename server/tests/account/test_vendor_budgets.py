@@ -4,11 +4,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
-
 from app.config import Settings
 from app.db.models import (
     VendorBudgetAuthority,
@@ -22,6 +17,10 @@ from app.services.vendor_budgets import (
     VendorBudgetService,
     VendorBudgetUnavailable,
 )
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 _AUTHORITY_ID = uuid.UUID("00000000-0000-0000-0000-000000000009")
 

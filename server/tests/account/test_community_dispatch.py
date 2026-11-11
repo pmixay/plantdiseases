@@ -6,7 +6,6 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-
 from app.community_deletion import (
     _NoRedirectHandler,
     _open_no_redirect,

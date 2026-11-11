@@ -6,7 +6,6 @@ import asyncio
 from dataclasses import dataclass, field
 
 import pytest
-
 from app.config import Settings, SettingsError
 from app.providers.base import ProviderErrorCode, ProviderVerificationError
 from app.providers.registry import build_provider_registry

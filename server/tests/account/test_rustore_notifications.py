@@ -6,8 +6,6 @@ import os
 import uuid
 
 import pytest
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from app.billing.notifications import (
     RuStoreNotificationDecoder,
     SubscriptionNotification,
@@ -15,6 +13,7 @@ from app.billing.notifications import (
 from app.billing.notifications import (
     TestNotification as DecodedTestNotification,
 )
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 def _envelope(key: bytes, payload: dict) -> dict:

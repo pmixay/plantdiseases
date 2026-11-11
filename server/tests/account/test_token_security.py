@@ -8,9 +8,6 @@ from pathlib import Path
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 from app.api.errors import AccountAPIError
 from app.config import Settings, SettingsError
 from app.security.push_crypto import PushTokenProtector
@@ -20,6 +17,8 @@ from app.security.tokens import (
     hash_opaque_token,
     new_opaque_token,
 )
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 NOW = datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC)
 

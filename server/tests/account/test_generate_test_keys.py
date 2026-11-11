@@ -4,7 +4,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from app.config import Settings
 from app.generate_test_keys import ensure_test_keys
 from app.security.push_crypto import PushTokenProtector

@@ -44,7 +44,6 @@ jobs:
       pull-requests: read
     outputs:
       android: ${{ steps.filter.outputs.android }}
-      account: ${{ steps.filter.outputs.account }}
       server: ${{ steps.filter.outputs.server }}
     steps:
       # WHAT THIS GATES ON, because it is not what you would guess and the
@@ -99,22 +98,15 @@ jobs:
               - 'privacy.html'
               - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
               - 'docs/ACCOUNT_BETA_FINAL_IMPLEMENTATION_GUIDE.md'
-            account:
+            server:
+              - 'server/**'
               - 'account-server/**'
               - 'deploy/account-beta-test/**'
-              - 'server/**'
               - '.github/workflows/**'
               - 'DEPLOYMENT.md'
               - 'privacy.html'
               - 'docs/ACCOUNT_BETA_*.md'
               - 'docs/ANDROID_1_9_SIGNING_AND_OAUTH_REGISTRATION.md'
-            server:
-              - 'server/**'
-              - 'account-server/**'
-              - '.github/workflows/**'
-              - 'DEPLOYMENT.md'
-              - 'privacy.html'
-              - 'docs/ACCOUNT_BETA_*.md'
 
   android:
     name: Android build & lint
@@ -274,7 +266,7 @@ jobs:
           retention-days: 7
 
   server:
-    name: Server tests & lint (py3.14)
+    name: Server + account tests & lint (py3.14)
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
@@ -302,90 +294,17 @@ jobs:
           cache-dependency-path: |
             server/requirements.txt
             server/requirements-dev.txt
+            account-server/requirements.txt
 
       # No `pip install --upgrade pip` first: setup-python ships a current pip
       # and the upgrade only bought a wheel download and a version check.
-      - name: Install server + dev dependencies
+      # requirements-dev.txt also pulls in ../account-server/requirements.txt: the
+      # account service's tests live in server/tests/account and share this run.
+      - name: Install server + account + dev dependencies
         run: pip install --disable-pip-version-check -r requirements-dev.txt
 
       - name: Lint (ruff)
-        run: ruff check .
+        run: ruff check . ../account-server
 
       - name: Run tests (pytest)
         run: pytest tests -q
-
-  account:
-    name: Account API tests & lint
-    needs: changes
-    if: needs.changes.outputs.account == 'true'
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
-        env:
-          POSTGRES_DB: account_ci
-          POSTGRES_USER: account_ci
-          POSTGRES_PASSWORD: account-ci-only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U account_ci -d account_ci"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-    env:
-      ENVIRONMENT: test
-      AUTH_PROVIDER_MODE: mock
-      ACCOUNT_ISSUER: http://127.0.0.1:18001
-      ACCOUNT_AUDIENCE: plantdiseases-app
-      ACCOUNT_DATABASE_URL: postgresql+psycopg://account_ci:account-ci-only@127.0.0.1:5432/account_ci
-      ACCOUNT_POSTGRES_INTEGRATION_URL: postgresql+psycopg://account_ci:account-ci-only@127.0.0.1:5432/account_ci
-      ACCOUNT_DATABASE_LOCAL: "true"
-      ACCOUNT_ALLOW_EPHEMERAL_KEYS: "true"
-    defaults:
-      run:
-        working-directory: account-server
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            account-server/requirements.txt
-            account-server/requirements-dev.txt
-
-      - name: Install account API dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
-
-      - name: Upgrade and verify the live PostgreSQL schema
-        run: |
-          alembic upgrade head
-          alembic current
-
-      - name: Validate local, German staging, and handoff configurations
-        run: |
-          docker compose -f ../deploy/account-beta-test/compose.local.yml config --quiet
-          docker compose --env-file ../deploy/account-beta-test/env.german.example \
-            -f ../deploy/account-beta-test/compose.german-vds.yml \
-            -f ../deploy/account-beta-test/compose.german-vds.build.yml \
-            config --quiet
-          docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \
-            -f ../deploy/account-beta-test/handoff/compose.russia-template.yml config --quiet
-          docker compose --env-file ../deploy/account-beta-test/handoff/env.production.example \
-            -f ../deploy/account-beta-test/handoff/compose.germany-worker-template.yml config --quiet
-          bash -n ../deploy/account-beta-test/backup-test.sh
-          sh -n ../deploy/account-beta-test/postgres-init/10-account-roles.sh
-          sh -n ../deploy/account-beta-test/handoff/postgres-init/10-account-roles.sh
-
-      - name: Lint (ruff)
-        run: ruff check .
-
-      - name: Run tests (pytest)
-        run: pytest -q

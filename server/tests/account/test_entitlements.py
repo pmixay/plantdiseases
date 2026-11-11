@@ -6,9 +6,6 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session, sessionmaker
-
 from app.api.errors import AccountAPIError
 from app.api.routes import RuStoreNotificationEnvelope, rustore_notification
 from app.billing.notifications import SubscriptionNotification
@@ -28,6 +25,8 @@ from app.db.models import (
 from app.db.repository import AccountRepository
 from app.services.accounts import CurrentAccount
 from app.services.entitlements import EntitlementService, QuotaPolicy
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
 
 MONTHLY = "plantdiseases_pro_monthly"
 YEARLY = "plantdiseases_pro_yearly"

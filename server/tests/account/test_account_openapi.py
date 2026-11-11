@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.main import app
-
-ACCOUNT_SERVER_ROOT = Path(__file__).resolve().parents[1]
+ACCOUNT_SERVER_ROOT = Path(__file__).resolve().parents[3] / "account-server"
 OPENAPI_PATH = ACCOUNT_SERVER_ROOT / "openapi.json"
 
 EXPECTED_PATHS = {
@@ -35,6 +33,8 @@ EXPECTED_PATHS = {
 
 
 def test_versioned_openapi_matches_the_application_contract():
+    from app.main import app
+
     committed = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
     assert committed == app.openapi()
     assert set(committed["paths"]) == EXPECTED_PATHS

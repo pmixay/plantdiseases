@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import asdict
 
 import pytest
-
 from app.config import SettingsError
 from app.providers.base import ProviderErrorCode, ProviderVerificationError
 from app.providers.mock import (

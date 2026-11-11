@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from app.security.passwords import PasswordHashService, normalize_email
 from argon2 import PasswordHasher
 from argon2.low_level import Type
-
-from app.security.passwords import PasswordHashService, normalize_email
 
 
 def _test_hasher(*, time_cost: int = 1) -> PasswordHasher:

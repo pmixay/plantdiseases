@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -12,19 +11,28 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-ACCOUNT_SERVER_DIR = Path(__file__).resolve().parent.parent
+ACCOUNT_SERVER_DIR = Path(__file__).resolve().parents[3] / "account-server"
 if str(ACCOUNT_SERVER_DIR) not in sys.path:
-    sys.path.insert(0, str(ACCOUNT_SERVER_DIR))
+    sys.path.append(str(ACCOUNT_SERVER_DIR))
 
-os.environ.setdefault("ENVIRONMENT", "test")
-os.environ.setdefault("AUTH_PROVIDER_MODE", "mock")
-os.environ.setdefault("ACCOUNT_ISSUER", "http://beta-account-api:8000")
-os.environ.setdefault("ACCOUNT_AUDIENCE", "plantdiseases-app")
-os.environ.setdefault("ACCOUNT_ALLOW_EPHEMERAL_KEYS", "true")
-os.environ.setdefault(
-    "ACCOUNT_DATABASE_URL",
-    "postgresql+psycopg://beta:synthetic-test-only@beta-postgres/plantdisease_beta",
-)
+# Set per account test only: the app server reads ``ENVIRONMENT`` / ``ACCOUNT_ISSUER``
+# itself with different expectations, so they must not leak into server tests.
+_ACCOUNT_ENV = {
+    "ENVIRONMENT": "test",
+    "AUTH_PROVIDER_MODE": "mock",
+    "ACCOUNT_ISSUER": "http://beta-account-api:8000",
+    "ACCOUNT_AUDIENCE": "plantdiseases-app",
+    "ACCOUNT_ALLOW_EPHEMERAL_KEYS": "true",
+    "ACCOUNT_DATABASE_URL": (
+        "postgresql+psycopg://beta:synthetic-test-only@beta-postgres/plantdisease_beta"
+    ),
+}
+
+
+@pytest.fixture(autouse=True)
+def _account_env(monkeypatch):
+    for key, value in _ACCOUNT_ENV.items():
+        monkeypatch.setenv(key, value)
 
 
 @pytest.fixture

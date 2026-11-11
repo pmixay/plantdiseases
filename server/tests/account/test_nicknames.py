@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.api.errors import AccountAPIError
 from app.nicknames import normalize_nickname, validate_nickname
 

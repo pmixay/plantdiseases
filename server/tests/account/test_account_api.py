@@ -6,15 +6,9 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Iterator
 
+import app.services.accounts as accounts_service_module
 import jwt
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import event, select
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session as OrmSession
-from sqlalchemy.orm import sessionmaker
-
-import app.services.accounts as accounts_service_module
 from app.api.errors import AccountAPIError
 from app.config import Settings
 from app.db.models import (
@@ -40,6 +34,11 @@ from app.rate_limit import InMemoryRateLimiter
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import SigningKeyRing, TokenService, hash_opaque_token
 from app.services.accounts import AccountService
+from fastapi.testclient import TestClient
+from sqlalchemy import event, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import sessionmaker
 
 
 class MutableClock:

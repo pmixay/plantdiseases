@@ -8,10 +8,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from app.billing.rustore import RuStoreSubscriptionClient, RuStoreUnavailable
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-
-from app.billing.rustore import RuStoreSubscriptionClient, RuStoreUnavailable
 
 
 class _Response(io.BytesIO):

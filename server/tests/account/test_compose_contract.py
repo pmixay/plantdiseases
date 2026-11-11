@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "account-beta-test" / "compose.local.yml"
 INTEGRATION_CHECK_PATH = (
     REPOSITORY_ROOT / "deploy" / "account-beta-test" / "check_integration.py"

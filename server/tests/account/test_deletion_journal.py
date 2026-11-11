@@ -14,12 +14,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session as OrmSession
-from sqlalchemy.orm import sessionmaker
-
 from app import deletion_replay
 from app.config import Settings
 from app.db.models import Account, AccountDeletionJob, Base
@@ -37,8 +31,13 @@ from app.rate_limit import InMemoryRateLimiter
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import SigningKeyRing, TokenService
 from app.services.accounts import AccountService
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import sessionmaker
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Clock:
