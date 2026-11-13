@@ -39,24 +39,45 @@ the README status section and `docs/assets/per-class.svg`.
 
 ## Ship accounts to RuStore
 
-- [ ] ★ **Signed release build, local.** The CI release workflow is gone: build
-      with the permanent key from `~/.gradle/gradle.properties` after green CI,
-      verify cert fingerprint/package/versionCode/endpoints (`DEPLOYMENT.md` §8.3).
-- [ ] ★ **Real-provider test of the permanently signed APK** (signup, cancel,
-      refresh, logout, deletion). Confirm the Yandex console holds that key's
-      certificate fingerprint.
-- [ ] ★ **RuStore listing** — console clicks, APK upload, release notes, privacy
-      page check. Cut the 1.9 tag only after the above.
-- [ ] ★ **Operator legal/region sign-off** on the privacy policy (data stored on the
-      German VDS).
-- [ ] ★ **Host housekeeping.** SSH key-only login (`PermitRootLogin
-      prohibit-password`, `PasswordAuthentication no`, rate-limiting), backup key
-      copied off the VDS, alerts on failed backups and repeated account-deletion
-      retries. The host IP and `root` user sit in git history (`cd4bda2`);
-      no credentials were ever committed.
-- [ ] **Cost-cap release gate** (see Security).
-- [ ] **Old-client compatibility.** Older app versions will call the new server and
-      have not been tested against it.
+1.9 ships accounts only: Yandex sign-in, no PRO (see Decisions). In order.
+
+**Before the build** (code and host; no signing key needed)
+
+- [ ] **`release.sh`.** One command for the owner: build the release with the
+      permanent key from `~/.gradle/gradle.properties`, then check certificate
+      fingerprint, package, versionCode and baked endpoints, print the APK SHA-256
+      and build the matching recovery APK (`DEPLOYMENT.md` §8.1, §8.3). Replaces
+      the manual checklist.
+- [ ] **Old clients: read the production logs.** `/` has pointed at the new server
+      since the 2026-10-09 switch, so older app versions already call it. Look
+      for 4xx/5xx from them; add a regression test for anything found.
+- [ ] **Open `/id/` to the public.** It is still limited to the owner's VPN
+      allowlist (`deploy/production-vds/nginx/`). Do it last in this group.
+- [ ] **Alerts** on a failed backup and on repeated account-deletion retries.
+      Nothing alerts today.
+
+**Release** (★ owner)
+
+- [ ] ★ **Cap OpenRouter spend on the key itself** (provider dashboard; confirm
+      the limit is a hard stop). This is the launch cost cap.
+- [ ] ★ **Copy the backup key off the VDS.**
+- [ ] ★ **Run `release.sh`** on the green commit.
+- [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
+      verified against production; only the certificate fingerprint registered
+      with Yandex is new.
+- [ ] ★ **RuStore upload** with release notes, then cut the 1.9 tag.
+
+**Not a 1.9 gate**
+
+- [ ] ★ **SSH hardening** on the VDS: key-only login (`PermitRootLogin
+      prohibit-password`, `PasswordAuthentication no`), rate-limiting. The host
+      IP and `root` user sit in git history (`cd4bda2`); no credentials were
+      ever committed.
+- [ ] **PRO subscriptions (after 1.9).** Purchase validation, the callback inbox
+      and the Android payment client are merged but switched off
+      (`RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`). Needs RuStore
+      keys and products provisioned and a sandbox purchase test. VK ID sign-in
+      is in the same state.
 
 ---
 
@@ -72,10 +93,10 @@ the README status section and `docs/assets/per-class.svg`.
 
 Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 
-- [ ] **Cost caps — release gate.** Per-feature daily admission, per-IP allowances
-      and serialized Pl@ntNet attempts are in. Still required before launch: a
-      reviewed model/route-specific aggregate OpenRouter price ceiling and live
-      alert evidence. Until then each new species name is a billable cache miss.
+- [ ] **Cost caps.** Per-feature daily admission, per-IP allowances and serialized
+      Pl@ntNet attempts are in. The launch cap is a spend limit on the OpenRouter
+      key (release list above). An in-server aggregate price ceiling is optional
+      hardening on top; each new species name is still a billable cache miss.
 - [ ] **`/api/metrics`:** add a short TTL cache; each request recomputes the
       store snapshots.
 - [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
@@ -263,6 +284,9 @@ None blocks a release.
 - **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Target store: RuStore.** No Google Play.
+- **1.9 is accounts only.** PRO subscriptions and VK ID stay switched off until a
+  later release.
+- **Account data stays on the German VDS** (owner's decision, 2026-11-13).
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
