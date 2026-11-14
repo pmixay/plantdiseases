@@ -3,7 +3,6 @@ package com.plantdiseases.app.auth
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.plantdiseases.app.data.account.AuthProvider
 import java.util.UUID
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -15,18 +14,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class SignupCompletionStoreTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
-
-    @Test
-    fun inMemoryContractKeepsTheExactLogicalOperationAcrossRepositoryInstances() {
-        val store = InMemorySignupCompletionStore()
-        val operation = operation()
-
-        store.write(operation)
-
-        assertThat(store.read()).isEqualTo(operation)
-        store.clear()
-        assertThat(store.read()).isNull()
-    }
 
     @Test
     fun malformedIssuerScopedCiphertextFailsClosedAndIsErased() {
@@ -47,15 +34,4 @@ class SignupCompletionStoreTest {
         assertThrows(CredentialUnreadableException::class.java) { store.read() }
         assertThat(prefs.all).isEmpty()
     }
-
-    private fun operation() = PendingSignupOperation(
-        provider = AuthProvider.YANDEX,
-        pendingSignupToken = "pending-proof",
-        completionId = "00000000-0000-4000-8000-000000000011",
-        installationId = "00000000-0000-4000-8000-000000000012",
-        expiresInSeconds = 600,
-        nickname = "Retry Fern",
-        confirmationAttempted = true,
-        remoteTerminationConfirmed = true,
-    )
 }

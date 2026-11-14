@@ -47,6 +47,10 @@ class RetryInterceptor(
     private val maxRetries: Int = 3,
     private val initialDelayMs: Long = 1000,
     private val maxDelayMs: Long = 30_000,
+    /** How a back-off is waited out. A seam so tests can record the delay
+     *  the policy asked for instead of sleeping through it; production
+     *  always sleeps. */
+    private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : Interceptor {
 
     @Throws(IOException::class)
@@ -95,7 +99,7 @@ class RetryInterceptor(
         val backoff = minOf(initialDelayMs * (1L shl attempt), maxDelayMs)
         val delay = serverDelayMs?.coerceAtLeast(backoff) ?: backoff
         try {
-            Thread.sleep(delay)
+            sleeper(delay)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw IOException("Interrupted during retry backoff", e)
@@ -120,6 +124,10 @@ class PlantApiClient(
     /** Where call outcomes are published. Defaults to a private instance so
      *  tests (and any standalone use) need not wire one up. */
     private val reachabilityReporter: ReachabilityReporter = ReachabilityReporter(),
+    /** Retry policy shared by every call. A test seam: the production
+     *  back-off starts at a full second, which a test driving a real 429/503
+     *  through the stack would otherwise wait out. */
+    retryInterceptor: RetryInterceptor = RetryInterceptor(maxRetries = 3, initialDelayMs = 1000),
 ) {
 
     private val client: OkHttpClient = run {
@@ -153,7 +161,7 @@ class PlantApiClient(
                     throw e
                 }
             }
-            .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
+            .addInterceptor(retryInterceptor)
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request().newBuilder()

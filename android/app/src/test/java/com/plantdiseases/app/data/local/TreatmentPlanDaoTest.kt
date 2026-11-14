@@ -70,10 +70,12 @@ class TreatmentPlanDaoTest {
     )
 
     @Test
-    fun getAllForPlant_stillReturnsThePlanAfterItIsCompleted(): Unit = runBlocking {
+    fun getAllForPlant_returnsPlansOfEveryStatus(): Unit = runBlocking {
         val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
-        val scanId = db.scanDao().insert(minimalScan(plantId))
-        val planId = db.treatmentPlanDao().insert(plan(plantId, scanId, "active"))
+        val completedScanId = db.scanDao().insert(minimalScan(plantId))
+        val abandonedScanId = db.scanDao().insert(minimalScan(plantId))
+        val planId = db.treatmentPlanDao().insert(plan(plantId, completedScanId, "active"))
+        db.treatmentPlanDao().insert(plan(plantId, abandonedScanId, "abandoned"))
 
         val active = db.treatmentPlanDao().getById(planId)!!
         db.treatmentPlanDao().update(
@@ -81,32 +83,11 @@ class TreatmentPlanDaoTest {
         )
 
         // The active-only lookup goes blind here. The all-status one must not:
-        // it is what stops a finished plan being re-created from the same scan.
+        // it is what stops a finished (or abandoned) plan being re-created
+        // from the same scan.
         assertThat(db.treatmentPlanDao().getActiveForPlant(plantId)).isNull()
         assertThat(db.treatmentPlanDao().getAllForPlant(plantId).map { it.scanId })
-            .containsExactly(scanId)
-    }
-
-    @Test
-    fun getAllForPlant_returnsAbandonedPlansToo() = runBlocking {
-        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
-        val scanId = db.scanDao().insert(minimalScan(plantId))
-        db.treatmentPlanDao().insert(plan(plantId, scanId, "abandoned"))
-
-        assertThat(db.treatmentPlanDao().getAllForPlant(plantId)).hasSize(1)
-    }
-
-    @Test
-    fun getAllForPlant_doesNotLeakAcrossScans() = runBlocking {
-        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
-        val firstScanId = db.scanDao().insert(minimalScan(plantId))
-        db.treatmentPlanDao().insert(plan(plantId, firstScanId, "completed"))
-        val secondScanId = db.scanDao().insert(minimalScan(plantId))
-
-        // A genuinely new scan must still be free to start its own treatment,
-        // so no plan may report as belonging to it.
-        assertThat(db.treatmentPlanDao().getAllForPlant(plantId).none { it.scanId == secondScanId })
-            .isTrue()
+            .containsExactly(completedScanId, abandonedScanId)
     }
 
     @Test

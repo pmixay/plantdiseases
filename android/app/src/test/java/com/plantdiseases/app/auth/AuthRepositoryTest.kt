@@ -916,7 +916,6 @@ class AuthRepositoryTest {
             ProviderSessionCleaner { providerClears++ },
             revocations,
         )
-        val localRoomRows = mutableListOf("scan", "garden", "reminder")
         repository.signIn(AuthProvider.YANDEX, "synthetic-provider-token")
 
         runCatching { repository.logout() }
@@ -929,7 +928,6 @@ class AuthRepositoryTest {
         assertThat(revocations.tokens).containsExactly("refresh-1")
         assertThat(revocations.failures).isEqualTo(1)
         assertThat(installationId.rotations).isEqualTo(1)
-        assertThat(localRoomRows).containsExactly("scan", "garden", "reminder").inOrder()
     }
 
     @Test

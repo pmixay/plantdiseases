@@ -36,6 +36,14 @@ class _QueueOpener:
         return _Response(self.documents.pop(0))
 
 
+@pytest.fixture(scope="module")
+def key() -> rsa.RSAPrivateKey:
+    """One signing key for the module: the client only ever signs with it, and
+    generating a 2048-bit key per test (and per parameter) was most of this
+    file's runtime."""
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
 def _auth_response():
     return {"code": "OK", "message": None, "body": {"jwe": "j" * 64, "ttl": 900}}
 
@@ -62,8 +70,7 @@ def _subscription_response(*, external_account_id=None):
     }
 
 
-def test_validates_subscription_with_fresh_signed_public_token():
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def test_validates_subscription_with_fresh_signed_public_token(key):
     external_account_id = str(uuid.uuid4())
     opener = _QueueOpener(
         _auth_response(),
@@ -105,8 +112,7 @@ def test_validates_subscription_with_fresh_signed_public_token():
     assert str(purchase_id) in validation_request.full_url
 
 
-def test_public_token_is_cached_but_purchase_state_is_always_refetched():
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def test_public_token_is_cached_but_purchase_state_is_always_refetched(key):
     opener = _QueueOpener(
         _auth_response(),
         _subscription_response(),
@@ -132,8 +138,7 @@ def test_public_token_is_cached_but_purchase_state_is_always_refetched():
     assert [request.get_method() for request in opener.requests] == ["POST", "GET", "GET"]
 
 
-def test_malformed_provider_response_fails_closed():
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def test_malformed_provider_response_fails_closed(key):
     opener = _QueueOpener(_auth_response(), {"code": "OK", "body": {"autoRenewing": True}})
     client = RuStoreSubscriptionClient(
         key_id="12345",
@@ -167,8 +172,7 @@ def test_malformed_provider_response_fails_closed():
         ("orderId", "unsafe\x00order"),
     ],
 )
-def test_money_time_and_binding_fields_are_parsed_without_coercion(field, value):
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def test_money_time_and_binding_fields_are_parsed_without_coercion(key, field, value):
     document = copy.deepcopy(_subscription_response())
     document["body"][field] = value
     opener = _QueueOpener(_auth_response(), document)
