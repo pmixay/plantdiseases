@@ -6,7 +6,7 @@ protocol), `../DEPLOYMENT.md` (deploy, Android signing/FCM),
 `../server/models/MODEL_CARD.md` (version-agnostic pipeline overview).
 
 ★ = needs a human decision or a human-only task. Code-checkable items were
-re-verified against the tree on 2026-10-31; data and human-task items are as last
+re-verified against the tree on 2026-11-14; data and human-task items are as last
 recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
@@ -19,11 +19,14 @@ recorded. Line counts are approximate; re-measure before acting on one.
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
+| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`). The Android half of the 2026-11 test rework has never been compiled: it sits on a branch no CI glob matches. |
 
 ---
 
 ## Next up — in this order
 
+- [ ] ★ **Get the test rework through CI** before anything else lands on top of
+      it (Tests and CI, below). The server half is verified; the Kotlin half is not.
 - [ ] ★ **Ship accounts to RuStore** (section below).
 - [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
       takes calendar time, so start now. In parallel (no collection needed):
@@ -101,8 +104,6 @@ Config keys behind every limit: `DEPLOYMENT.md` §3.2.
       store snapshots.
 - [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
       already has a byte budget).
-- [ ] **Feedback images are never deleted.** Retention prune covers rows, not the
-      image directory.
 - [ ] **No lockfile.** Runtime pins mix exact versions and floors; transitive deps
       (starlette, httpx2) are unconstrained. CI turns a resolution break red, but a
       lockfile is the real fix.
@@ -207,7 +208,7 @@ Each item is its own PR; don't fold one into another.
       hand-copied. Order: (1) `deps.py`; (2) replace the ~400-line duplicated
       alias-import block with module imports; (3) one router group per PR,
       smallest first, community last. Constraint: `conftest.py` patches names on
-      `main` in place and 10 test modules `importlib.reload`, so a router doing
+      `main` in place and 12 test modules `importlib.reload`, so a router doing
       `from main import pipeline` binds before the patch.
 - [ ] **Group Pydantic models into `schemas.py`** with shared `Annotated` types.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
@@ -219,7 +220,7 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Break up `ai_services.py` (~3,600 lines)** — transport, five features, ~700
       lines of bilingual content for `diseases_data.py` — and turn `community.py`
       (~4,400 lines) into a package.
-- [ ] **Consolidate the five SQLite stores** (`community`, `feedback`, `labeling`,
+- [ ] **Consolidate the four SQLite stores** (`community`, `training_store`,
       `push`, `telemetry`): shared WAL `_connect`/`init_db`, one
       `_add_column_if_missing` / `prune_older_than`, and `PRAGMA user_version` so a
       boot stops replaying every migration. `telemetry.daily_writes` still counts
@@ -234,7 +235,7 @@ Each item is its own PR; don't fold one into another.
       (~1,300) and `CarePlanCardView` (~1,190) build hierarchies in code with
       hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
 - [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
-      payloads. Keeps ~389 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
+      payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
       bridge and the Gson ProGuard rules alive. M/L effort.
 - [ ] **Fold `GuideDataProvider.kt` (~1,640 lines) into the resource framework.** 78
       EN/RU pairs as Kotlin strings drive ~40 `LocaleHelper.isRussian(` branches; no
@@ -251,6 +252,53 @@ Each item is its own PR; don't fold one into another.
 
 ---
 
+## Tests and CI
+
+The 2026-11 rework removed tests that guarded nothing, merged same-state tests and
+made the server suite parallel. What it left open:
+
+- [ ] ★ **Run the Android job on the rework.** Its branch (`ccr-*`) matches no push
+      glob, and local Gradle builds are off-limits, so every Kotlin edit in it —
+      the `RetryInterceptor` sleeper / `PlantApiClient` retry seam included — is
+      unbuilt and unlinted. Push it to a `claude/**` branch (or merge) and fix
+      forward on the first run.
+- [ ] ★ **Decide whether `testReleaseUnitTest` needs the whole shared suite.** CI
+      runs every shared test class on debug and again on release; only two classes
+      are release-specific (`ReleaseBuildIdentityTest`,
+      `ReleaseAccountPresentationTest`). Filtering release the way staging and
+      recovery already are removes one full pass. The duplicate pass was a
+      deliberate choice (see the workflow header), so this is the owner's call.
+- [ ] **Stop booting the real app for every Robolectric test.** Each test method
+      constructs the Hilt `PlantDiseasesApp` (component, notification channels,
+      telemetry, background launches). Classes that never touch the graph can run
+      under `@Config(application = Application::class)`; do it class by class with
+      CI, since a custom view that reaches `EntryPointAccessors` will crash.
+- [ ] **Move pure functions out of Activity companions.**
+      `LightMeterActivity.pickSpeciesBucket` and
+      `WaterCalculatorActivity.computeWatering` are pure, but their tests need
+      Robolectric only to load the Activity class.
+- [ ] **Delete or wire up the community helpers nothing calls**: `resolve_author`,
+      `opinion_counts_for_user`, `daily_opinion_count_for_ip_hash`, `owner_of`
+      (`community.py`). `opinion_counts_for_user` still has store-level tests while
+      the function the endpoint really calls, `opinion_counts_for_actor`, has only
+      a key-presence test.
+- [ ] **Replace per-test `importlib.reload` fixtures** in `test_ai_services.py`
+      (autouse, reloads a 3,600-line module before every test) and
+      `test_community_endpoint.py` (`isolated_community` reloads `community` and
+      rebinds ~30 names on `main`) with path redirection, as
+      `test_community_safety.py` already does. Same constraint as the `main.py` split.
+- [ ] **Tests that cannot fail where they run.**
+      `test_sqlite_connection_lifecycle.py` checks a Windows file-lock behaviour
+      (POSIX unlinks an open file happily), and
+      `test_rustore_notifications.py::test_wrong_application_or_key_is_rejected`
+      uses a wrong key and a wrong app id together, so the app-id branch is never
+      reached.
+- [ ] **Untested pipeline branches**: the confidence-threshold arm of
+      `_is_diseased`, and the served-threshold adoption in
+      `PlantDiseasePipeline.__init__` (its resolvers are tested, the adoption is not).
+
+---
+
 ## Documentation debt
 
 None blocks a release.
@@ -259,8 +307,11 @@ None blocks a release.
       map) → `docs/assets/screenshots/` + a row in "What it does". Needs a device.
 - [ ] **`docs/assets/per-class.svg`** holds hand-copied numbers; regenerate with
       `generate_assets.py` when a model ships.
-- [ ] **`android/app/build.gradle.kts` (~line 851)** still says Aqua is provisioned
-      at `assets/models/aqua_classifier.tflite`; it is downloaded to `filesDir/aqua/`.
+- [ ] **`android/app/build.gradle.kts`** (TFLite dependency comment) still says Aqua
+      is provisioned at `assets/models/aqua_classifier.tflite`; it is downloaded to
+      `filesDir/aqua/`. Its test-fork comment also still counts "~58 Robolectric classes".
+- [ ] **README route count.** The status line says 39 API routes; `main.py` registers
+      42 on `api_router`.
 - [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
       maximising gamma".
 

@@ -748,7 +748,14 @@ def test_presented_secrets_are_not_logged(api: ApiHarness, caplog: pytest.LogCap
     provider_sentinel = "mock-yandex-not-a-secret-log-sentinel"
     refresh_sentinel = "refresh-not-a-secret-log-sentinel"
     _exchange(api, provider="yandex", provider_token=provider_sentinel)
-    api.client.post("/v1/auth/refresh", json={"refresh_token": refresh_sentinel})
+    # With a rotation_id, so the request passes validation and the presented
+    # credential actually reaches AccountService.refresh — without one it
+    # stopped at a 422 and the refresh half of this test logged nothing to check.
+    refreshed = api.client.post(
+        "/v1/auth/refresh",
+        json={"refresh_token": refresh_sentinel, "rotation_id": str(uuid.uuid4())},
+    )
+    assert refreshed.status_code == 401
 
     assert provider_sentinel not in caplog.text
     assert refresh_sentinel not in caplog.text
