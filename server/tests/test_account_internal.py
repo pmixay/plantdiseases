@@ -6,7 +6,6 @@ import uuid
 import pytest
 
 import account_internal
-from account_auth import _NoRedirectHandler
 
 
 class _Response(io.BytesIO):
@@ -28,11 +27,6 @@ class _Opener:
     def open(self, _request, *, timeout):  # noqa: ANN001
         assert timeout == 2.0
         return self.response
-
-
-def test_internal_notification_delivery_refuses_redirects():
-    handler = _NoRedirectHandler()
-    assert handler.redirect_request(None, None, 307, "moved", {}, "https://evil.invalid") is None
 
 
 def test_internal_notification_delivery_rejects_oversized_response(monkeypatch):

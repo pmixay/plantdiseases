@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.analysis
 
+import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ActivityInfo
@@ -17,7 +18,7 @@ import org.robolectric.annotation.Config
  * configuration change a user can trigger mid-scan instead of being recreated.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class AnalysisActivityConfigChangesTest {
 
     @Test

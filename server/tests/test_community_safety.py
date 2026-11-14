@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 
@@ -11,31 +12,12 @@ from server.tests.conftest import _test_access_token
 
 
 @pytest.fixture
-def safety_store(tmp_path, monkeypatch):
-    import community
+def safety_store(community_store):
     import main as server_main
 
-    community.COMMUNITY_DB_PATH = tmp_path / "community.db"
-    community.COMMUNITY_THUMB_DIR = tmp_path / "thumbs"
-    community._initialised = False
-    community._last_expiry_sweep = 0.0
-    community.init_db()
-
-    # main.py imports these callables by value. Point every safety/read route
-    # at this test's isolated store.
-    server_main.community_actor_blocks = community.actor_blocks
-    server_main.community_block_content_author = community.block_content_author
-    server_main.community_record_content_report = community.record_content_report
-    server_main.community_unblock_actor = community.unblock_actor
-    server_main.community_nearby_scans = community.nearby_scans
-    server_main.community_map_scans = community.map_scans
-    server_main.community_scans_by_species = community.scans_by_species
-    server_main.community_region_summary = community.region_summary
-    server_main.community_opinion_counts = community.opinion_counts
-    server_main.community_opinions_for = community.opinions_for
-    server_main.community_resolve_scan_token = community.resolve_scan_token
+    community_store.init_db()
     server_main._daily_write_counts.clear()
-    yield community
+    yield community_store
 
 
 def _actor(label: str) -> str:
@@ -179,7 +161,7 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
             now=1_000_002,
         )
 
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT reporter_actor_id, target_actor_id, target_scan_id, "
             "target_opinion_id, reason FROM community_content_reports"
@@ -360,7 +342,7 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
         "completed": 1,
         "retried": 0,
     }
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_content_reports "
             "WHERE reporter_actor_id = ? OR target_actor_id = ?",

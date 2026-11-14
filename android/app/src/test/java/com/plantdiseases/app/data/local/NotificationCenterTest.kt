@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.local
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +22,7 @@ import org.robolectric.annotation.Config
  * user-visible actions (30-day sweep, swipe-to-dismiss).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class NotificationCenterTest {
 
     private lateinit var db: AppDatabase

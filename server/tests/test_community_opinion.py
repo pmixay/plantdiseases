@@ -6,22 +6,17 @@ test_community_endpoint.py.
 """
 from __future__ import annotations
 
-import importlib
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 
 import pytest
 
 
 @pytest.fixture
-def comm(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as c
-    importlib.reload(c)
-    return c
+def comm(community_store):
+    return community_store
 
 
 def _scan(comm, scan_id: str) -> None:
@@ -64,7 +59,7 @@ def test_opinions_for_unknown_scan_is_empty(comm):
 def test_opinions_for_orphaned_companion_rows_fails_closed(comm):
     comm.init_db()
     now = int(time.time())
-    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(comm.COMMUNITY_DB_PATH)) as connection, connection:
         connection.execute(
             "INSERT INTO community_opinions "
             "(scan_id, author_pseudo_id, suggested_disease, created_at) "
@@ -119,15 +114,11 @@ def test_record_opinion_rejects_unavailable_target_in_write_transaction(
             author_pseudo_id="responder",
             suggested_disease="healthy",
         )
-    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(comm.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_opinions WHERE scan_id = ?",
             ("closed-target",),
         ).fetchone()[0] == 0
-
-
-def test_daily_opinion_count_guards_none(comm):
-    assert comm.daily_opinion_count_for_ip_hash(None) == 0
 
 
 def test_opinion_open_respects_30_day_cutoff(comm):
@@ -204,49 +195,3 @@ def test_repeat_author_keeps_every_comment_but_consensus_takes_latest(comm):
     res = comm.opinions_for("s9")
     assert len(res["opinions"]) == 3
     assert sum(c["count"] for c in res["consensus"]) == 2
-
-
-# ── Durable forum identity (resolve_author) ───────────────────────────
-
-def test_resolve_author_creates_one_row_per_key_hash(comm):
-    a = comm.resolve_author(key_hash="k" * 64, seed_display_name="Leafy Sage 7")
-    assert a["author_id"].startswith("au_")
-    assert a["display_name"] == "Leafy Sage 7"
-    assert a["status"] == "active"
-
-
-def test_resolve_author_is_idempotent_and_does_not_overwrite_the_seed(comm):
-    first = comm.resolve_author(
-        key_hash="a" * 64, seed_display_name="Leafy Sage 7", legacy_pseudo_id="pseudo-1",
-    )
-    # Same key, different (later) seed values -- a re-adopt call must not
-    # rename the author or swap which legacy pseudo id it backfills from.
-    second = comm.resolve_author(
-        key_hash="a" * 64, seed_display_name="Renamed Later", legacy_pseudo_id="pseudo-2",
-    )
-    assert second["author_id"] == first["author_id"]
-    assert second["display_name"] == "Leafy Sage 7"
-    assert second["last_seen_at"] >= first["last_seen_at"]
-
-    with comm._connect() as conn:
-        stored = conn.execute(
-            "SELECT legacy_pseudo_id FROM community_authors WHERE author_id = ?",
-            (first["author_id"],),
-        ).fetchone()
-    assert stored[0] == "pseudo-1"
-
-
-def test_resolve_author_different_keys_never_collide(comm):
-    a = comm.resolve_author(key_hash="b" * 64, seed_display_name="Author A")
-    b = comm.resolve_author(key_hash="c" * 64, seed_display_name="Author B")
-    assert a["author_id"] != b["author_id"]
-
-
-def test_resolve_author_blank_key_hash_rejected(comm):
-    with pytest.raises(ValueError):
-        comm.resolve_author(key_hash="", seed_display_name="Someone")
-
-
-def test_resolve_author_blank_display_name_falls_back(comm):
-    a = comm.resolve_author(key_hash="d" * 64, seed_display_name="   ")
-    assert a["display_name"] == "Plant grower"

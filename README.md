@@ -147,7 +147,7 @@ python tools/verify_bundle.py models/
 ```
 
 The full contract is [`DEPLOYMENT.md`](DEPLOYMENT.md) §2. Tests need no weights:
-`pip install -r requirements-dev.txt && pytest tests -q`.
+`pip install -r requirements-dev.txt && pytest tests -q -n auto`.
 
 ### Android
 

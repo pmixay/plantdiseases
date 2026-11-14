@@ -6,7 +6,7 @@ protocol), `../DEPLOYMENT.md` (deploy, Android signing/FCM),
 `../server/models/MODEL_CARD.md` (version-agnostic pipeline overview).
 
 ★ = needs a human decision or a human-only task. Code-checkable items were
-re-verified against the tree on 2026-10-31; data and human-task items are as last
+re-verified against the tree on 2026-11-14; data and human-task items are as last
 recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
@@ -15,22 +15,26 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); unsigned by the permanent key, not on RuStore yet. |
+| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); the signed release APK is built and taken from CI; not on RuStore yet. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
-| **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
+| **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. The repo config opens `/id/` to the public — the host still has to be reloaded with it. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
+| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`); `ccr-*` branches build in CI on a pinned `ubuntu-26.04`. The 2026-11 test rework and the `main.py` route split are green in CI. |
 
 ---
 
 ## Next up — in this order
 
 - [ ] ★ **Ship accounts to RuStore** (section below).
-- [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
-      takes calendar time, so start now. In parallel (no collection needed):
-      adjudicate the 80 export rows and carve T_v1.
+- [ ] ★ **Carve T_v1** (adjudicate the 80 export rows). Nothing done to the scorch
+      class — real or synthetic — can be judged without it.
+- [ ] ★ **Scorch data**: real v9 collection (early, dull scorch, 400 families with
+      boxes; takes calendar time) and/or a second synthetic batch that meets the
+      review's conditions (Model track, "Data").
 - [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
       run; Model track, "Experiments that are not data").
-- [ ] **Split `main.py` into routers**, starting with `deps.py`.
+- [ ] **Finish the `main.py` split**: `deps.py`, then module imports instead of the
+      alias block (Architecture follow-ups).
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
 the README status section and `docs/assets/per-class.svg`.
@@ -39,24 +43,38 @@ the README status section and `docs/assets/per-class.svg`.
 
 ## Ship accounts to RuStore
 
-- [ ] ★ **Signed release build, local.** The CI release workflow is gone: build
-      with the permanent key from `~/.gradle/gradle.properties` after green CI,
-      verify cert fingerprint/package/versionCode/endpoints (`DEPLOYMENT.md` §8.3).
-- [ ] ★ **Real-provider test of the permanently signed APK** (signup, cancel,
-      refresh, logout, deletion). Confirm the Yandex console holds that key's
-      certificate fingerprint.
-- [ ] ★ **RuStore listing** — console clicks, APK upload, release notes, privacy
-      page check. Cut the 1.9 tag only after the above.
-- [ ] ★ **Operator legal/region sign-off** on the privacy policy (data stored on the
-      German VDS).
-- [ ] ★ **Host housekeeping.** SSH key-only login (`PermitRootLogin
-      prohibit-password`, `PasswordAuthentication no`, rate-limiting), backup key
-      copied off the VDS, alerts on failed backups and repeated account-deletion
-      retries. The host IP and `root` user sit in git history (`cd4bda2`);
-      no credentials were ever committed.
-- [ ] **Cost-cap release gate** (see Security).
-- [ ] **Old-client compatibility.** Older app versions will call the new server and
-      have not been tested against it.
+1.9 ships accounts only: Yandex sign-in, no PRO (see Decisions). In order.
+
+**Before the release** (code and host)
+
+- [ ] **Old clients: read the production logs.** `/` has pointed at the new server
+      since the 2026-10-09 switch, so older app versions already call it. Look
+      for 4xx/5xx from them; add a regression test for anything found.
+- [ ] ★ **Apply the public `/id/` config on the VDS.** The allowlist `include` is
+      gone from `deploy/production-vds/nginx/pd-account-prod.conf`; the live
+      snippet (`/etc/nginx/snippets/pd-account-prod.conf`) still carries it until
+      it is replaced and nginx reloaded.
+- [ ] ★ **Switch the backup job off on the VDS.** Its script and systemd units
+      are deleted from the repo, but the installed `pd-prod-backup.timer` keeps
+      running until disabled, and — because the 27-day prune lived in the same
+      script — the dumps already under `/var/backups/pd-account-prod/db` now stay
+      until someone deletes them.
+- [ ] **Alert** on repeated account-deletion retries. Nothing alerts today.
+
+**Release** (★ owner)
+
+- [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
+      verified against production; only the certificate fingerprint registered
+      with Yandex is new.
+- [ ] ★ **RuStore upload** with release notes, then cut the 1.9 tag.
+
+**Not a 1.9 gate**
+
+- [ ] **PRO subscriptions (after 1.9).** Purchase validation, the callback inbox
+      and the Android payment client are merged but switched off
+      (`RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`). Needs RuStore
+      keys and products provisioned and a sandbox purchase test. VK ID sign-in
+      is in the same state.
 
 ---
 
@@ -72,19 +90,12 @@ the README status section and `docs/assets/per-class.svg`.
 
 Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 
-- [ ] **Cost caps — release gate.** Per-feature daily admission, per-IP allowances
-      and serialized Pl@ntNet attempts are in. Still required before launch: a
-      reviewed model/route-specific aggregate OpenRouter price ceiling and live
-      alert evidence. Until then each new species name is a billable cache miss.
-- [ ] **`/api/metrics`:** add a short TTL cache; each request recomputes the
-      store snapshots.
-- [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
-      already has a byte budget).
-- [ ] **Feedback images are never deleted.** Retention prune covers rows, not the
-      image directory.
-- [ ] **No lockfile.** Runtime pins mix exact versions and floors; transitive deps
-      (starlette, httpx2) are unconstrained. CI turns a resolution break red, but a
-      lockfile is the real fix.
+- [ ] **The privacy policy still describes backups.** Both copies
+      (`privacy.html`, the in-app `privacy_policy.html`) and
+      `release-policy-gates.json` say "Encrypted operational backups may remain
+      for up to four weeks". That stays true while the old dumps exist on the
+      VDS; once they are deleted, drop the sentence from all three together. The
+      in-app copy ships inside the APK, so it follows the next app release.
 
 ---
 
@@ -120,6 +131,25 @@ Kaggle houseplant supplement; the private one was still at v8 at the last check
 (2026-08-23), which fails the strict v9 manifest contract. A compliant v9 under the
 same handle is picked up automatically.
 
+- [ ] ★ **Synthetic scorch experiment — batch 1 reviewed, not usable yet**
+      (owner's choice, 2026-11-14: try generated images for the weak class).
+      An independent review of `scorch_synthetic_100` found the stage right (all
+      early, edge-confined) but said do not train on it: only scorch is synthetic,
+      so "generator look ⇒ scorch" is easier to learn than the rim; the 100
+      images are about 10 templates (lesion position tied to species, 10 fixed
+      scenes); about 20 are ambiguous against healthy / `leaf_spot`; 3 fail the
+      server's blur statistic and 11 boxes need redrawing. It also runs against
+      plan rule P3 ("no … AI-looking images") — change that rule on purpose or
+      not at all. Before a batch 2 is worth a run:
+      (1) carve T_v1 — with ~39 unseen scorch rows in the holdout no result
+      could be told from noise; (2) a matched synthetic *healthy* image per
+      scorch image, same generator and scene; (3) lesion position, extent and
+      colour randomised independently of species, more genera, fewer flat-lays,
+      no tan backgrounds, every visible leaf boxed; (4) human adjudication of
+      each image; (5) a `supplement_synthetic` source that sits in no
+      `allowed_sources`, at reduced weight, train-only, with template-level
+      family ids. Then one paired `SEED=0` run, real-only evaluation, and stop
+      if healthy false alarms rise or scorch recall's CI straddles 0.
 - [ ] ★ **Early-stage marginal necrosis, 400 families with boxes**
       (`brown_frac < 0.05`, edge-confined, blade mostly green), judged against
       `leaf_spot` exemplars. Worth a run at ≥ 200 scorch and ≥ 100 houseplant
@@ -179,15 +209,16 @@ Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Split `main.py` (~6,640 lines) into routers.** 42 routes on one
-      `api_router`, 6 middlewares, 16 Pydantic models, 2 thread pools, limiter/ban/
-      quota/admission state, metrics, lifespan. `Depends` appears only as the
-      `community_bearer` route dependency; the quota preambles are still
-      hand-copied. Order: (1) `deps.py`; (2) replace the ~400-line duplicated
-      alias-import block with module imports; (3) one router group per PR,
-      smallest first, community last. Constraint: `conftest.py` patches names on
-      `main` in place and 10 test modules `importlib.reload`, so a router doing
-      `from main import pipeline` binds before the patch.
+- [ ] **Finish the `main.py` split (~4,790 lines left).** The 42 route handlers
+      now live in six `routes_*.py` modules that reach `main` as `m.name` at call
+      time, which is what keeps the tests' in-place patches working. Still in `main.py`: 6 middlewares, 16 Pydantic
+      models, 2 thread pools, limiter/ban/quota/admission state, metrics, lifespan
+      and every helper. Next, one PR each: (1) `deps.py` — `Depends` appears only
+      as the `community_bearer` route dependency and the quota preambles are still
+      hand-copied; (2) replace the ~400-line duplicated alias-import block with
+      module imports, moving the tests' patch targets with it, then drop
+      `main.py`'s F401 exemption (`server/pyproject.toml`); (3) move each route
+      group's helpers next to its routes, smallest first, community last.
 - [ ] **Group Pydantic models into `schemas.py`** with shared `Annotated` types.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
@@ -198,7 +229,7 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Break up `ai_services.py` (~3,600 lines)** — transport, five features, ~700
       lines of bilingual content for `diseases_data.py` — and turn `community.py`
       (~4,400 lines) into a package.
-- [ ] **Consolidate the five SQLite stores** (`community`, `feedback`, `labeling`,
+- [ ] **Consolidate the four SQLite stores** (`community`, `training_store`,
       `push`, `telemetry`): shared WAL `_connect`/`init_db`, one
       `_add_column_if_missing` / `prune_older_than`, and `PRAGMA user_version` so a
       boot stops replaying every migration. `telemetry.daily_writes` still counts
@@ -213,7 +244,7 @@ Each item is its own PR; don't fold one into another.
       (~1,300) and `CarePlanCardView` (~1,190) build hierarchies in code with
       hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
 - [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
-      payloads. Keeps ~389 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
+      payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
       bridge and the Gson ProGuard rules alive. M/L effort.
 - [ ] **Fold `GuideDataProvider.kt` (~1,640 lines) into the resource framework.** 78
       EN/RU pairs as Kotlin strings drive ~40 `LocaleHelper.isRussian(` branches; no
@@ -230,6 +261,26 @@ Each item is its own PR; don't fold one into another.
 
 ---
 
+## Tests and CI
+
+The 2026-11 rework removed tests that guarded nothing, merged same-state tests,
+made the server suite parallel and passed CI. What it left open:
+
+- [ ] **Move pure functions out of Activity companions.**
+      `LightMeterActivity.pickSpeciesBucket` and
+      `WaterCalculatorActivity.computeWatering` are pure, but their tests need
+      Robolectric only to load the Activity class.
+- [ ] **Last two module reloads in tests**: `test_plant_photos.py` and
+      `test_push.py` still `importlib.reload` their own module to redirect a path.
+      Harmless today (nothing holds their classes), but the same
+      `monkeypatch.setattr` redirection the community and `ai_services` tests now
+      use would retire `importlib.reload` from the suite.
+- [ ] **Untested pipeline branches**: the confidence-threshold arm of
+      `_is_diseased`, and the served-threshold adoption in
+      `PlantDiseasePipeline.__init__` (its resolvers are tested, the adoption is not).
+
+---
+
 ## Documentation debt
 
 None blocks a release.
@@ -238,8 +289,11 @@ None blocks a release.
       map) → `docs/assets/screenshots/` + a row in "What it does". Needs a device.
 - [ ] **`docs/assets/per-class.svg`** holds hand-copied numbers; regenerate with
       `generate_assets.py` when a model ships.
-- [ ] **`android/app/build.gradle.kts` (~line 851)** still says Aqua is provisioned
-      at `assets/models/aqua_classifier.tflite`; it is downloaded to `filesDir/aqua/`.
+- [ ] **`android/app/build.gradle.kts`** (TFLite dependency comment) still says Aqua
+      is provisioned at `assets/models/aqua_classifier.tflite`; it is downloaded to
+      `filesDir/aqua/`. Its test-fork comment also still counts "~58 Robolectric classes".
+- [ ] **README route count.** The status line says 39 API routes; `main.py` registers
+      42 on `api_router`.
 - [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
       maximising gamma".
 
@@ -263,6 +317,15 @@ None blocks a release.
 - **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Target store: RuStore.** No Google Play.
+- **No backups of production data** (owner's decision, 2026-11-14). A lost VDS
+  loses the accounts and the community store; there is nothing to restore from.
+- **Cost cap is the OpenRouter key's own spend limit**; no in-server price
+  ceiling and no dependency lockfile are planned.
+- **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
+  signs with the permanent key from repository secrets.
+- **1.9 is accounts only.** PRO subscriptions and VK ID stay switched off until a
+  later release.
+- **Account data stays on the German VDS** (owner's decision, 2026-11-13).
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified

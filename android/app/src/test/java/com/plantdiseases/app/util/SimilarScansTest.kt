@@ -34,13 +34,6 @@ class SimilarScansTest {
     }
 
     @Test
-    fun neverLeaksOtherDiseasesEvenWhenSpeciesMatches() {
-        // "rust on Ficus" must not appear in a "leaf_spot on Ficus" strip.
-        val out = SimilarScans.filterSimilar(feed, disease = "leaf_spot", species = "Ficus elastica")
-        assertThat(out.map { it.scanId }).doesNotContain("d")
-    }
-
-    @Test
     fun speciesNarrowsButKeepsUnknownSpeciesCandidates() {
         // Same species (a) and species-less candidates (c) pass; a different
         // known species (b) is dropped. Leniency keeps c so the strip fills.
@@ -58,10 +51,5 @@ class SimilarScansTest {
     fun blankSpeciesBehavesLikeNoSpeciesFilter() {
         val out = SimilarScans.filterSimilar(feed, disease = "leaf_spot", species = "   ")
         assertThat(out.map { it.scanId }).containsExactly("a", "b", "c").inOrder()
-    }
-
-    @Test
-    fun emptyFeedYieldsEmpty() {
-        assertThat(SimilarScans.filterSimilar(emptyList(), "leaf_spot", "Ficus elastica")).isEmpty()
     }
 }

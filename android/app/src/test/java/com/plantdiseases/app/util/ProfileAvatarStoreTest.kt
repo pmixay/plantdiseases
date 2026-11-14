@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -16,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ProfileAvatarStoreTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val store = ProfileAvatarStore(context, DefaultUploadImageSanitizer)

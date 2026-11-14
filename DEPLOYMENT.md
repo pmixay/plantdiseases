@@ -130,6 +130,7 @@ Defaults below are the **code** defaults.
 |---|---|---|
 | `require_api_key` | `false` | When true, every non-exempt route needs `X-API-Key:` or `Authorization: Bearer …`. An unknown key is 401 either way. |
 | `api_keys` | `{}` | `{"<key>": {"rate_limit_rps": …, "burst": …, "quota_daily": …}}`. Missing sub-fields inherit the global rate/burst; `quota_daily: 0` = unlimited. Accepted as a dict or a JSON string. |
+| `metrics_snapshot_ttl_seconds` | `5.0` | `/api/metrics` shares its two store aggregates (full-table scans of the training and community databases) between requests for this long. `0` recomputes on every request. |
 | `rate_limit_rps` / `rate_limit_burst` | `2.0` / `20.0` | Per-identity token bucket (`ip:<addr>` or `key:<key>`); over-limit = 429 + `Retry-After`. One user scan fans out into ~8 requests, hence the burst of 20. |
 | `violation_threshold` / `violation_window` / `ban_duration` | `40` / `60.0` / `300.0` | Sustained over-limit requests earn a temporary 403 ban. |
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
@@ -471,37 +472,36 @@ Counters worth alerting on, from `/api/metrics`:
 
 ## 8. Android release: signing & FCM
 
-The Android CI job (`.github/workflows/ci.yml`) runs lint, unit tests and
-non-distributable compilation on pushes. It never receives the permanent
-keystore or live provider configuration, and there is no CI release workflow:
-distributable APKs are built and signed locally by the owner (§8.3). The public
-Yandex native client ID is pinned in `app/build.gradle.kts`; no Yandex client
-secret is used. VK stays independently disabled unless both of its extractable
-mobile configuration values are supplied.
+The Android CI job (`.github/workflows/ci.yml`) runs lint and unit tests, then
+builds the release and recovery APKs, signs them with the permanent key from
+repository secrets and uploads them (§8.3). Every build targets the production
+server; there is no staging variant. The public Yandex native client ID is
+pinned in `app/build.gradle.kts`; no Yandex client secret is used. VK stays
+independently disabled unless both of its extractable mobile configuration
+values are supplied.
 
 ### 8.1 Release signing
 
 Do **not** generate a key until the certificate that signed PlantDiseases 1.8
 has been identified. If 1.8 was distributed, 1.9 must use that same signing
 identity to update it.
-The keystore and its passwords stay on the owner's machine (and an offline
-backup) and never go into Git or CI. The permanent
-certificate SHA-256 is
+The keystore lives on the owner's machine (and an offline backup) and in four
+repository secrets — `RELEASE_KEYSTORE_BASE64` (the keystore file,
+base64-encoded), `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`,
+`RELEASE_KEY_PASSWORD` — and never in Git. The permanent certificate SHA-256 is
 `ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367`; it must be the
-fingerprint registered with Yandex for `com.plantdiseases.app`, and every
-signed APK must be checked against it (`apksigner verify --print-certs`).
+fingerprint registered with Yandex for `com.plantdiseases.app`, and CI fails
+any build whose APKs carry a different one.
 
-Reviewed public build inputs for the distribution channels: production app
-`https://pdis.arbuz.lol/` and account `https://pdis.arbuz.lol/id/` (the account
-URL is always the app origin plus `id/`; never the German staging prefix, an IP
-literal or a non-443 port), staging `https://pdis.arbuz.lol/plantdisease-test/`
-and `.../plantdisease-test/id/` (committed defaults in `android/gradle.properties`),
-RuStore Console app `2063726125` and PRO product IDs `plantdiseases_pro_monthly`
-/ `plantdiseases_pro_yearly`. Optional VK values are supplied only after VK
+The endpoints are fixed in `app/build.gradle.kts`: app `https://pdis.arbuz.lol/`
+and account `https://pdis.arbuz.lol/id/`. Only a local mock-stack build
+overrides them (`-PAPP_API_BASE_URL=… -PACCOUNT_API_BASE_URL=…
+-PACCOUNT_REAL_OAUTH=false`). PRO stays off: the RuStore Console app and product
+IDs are not supplied. Optional VK values are supplied only after VK
 registration; each ID/value pair must be complete or absent.
 
-Put local signing properties in `~/.gradle/gradle.properties`, outside the
-repository, as shown in the dedicated guide.
+To sign on the owner's machine instead, put `RELEASE_STORE_FILE` and the three
+values above in `~/.gradle/gradle.properties`, outside the repository.
 
 ### 8.2 Notifications and future Firebase Cloud Messaging (FCM)
 
@@ -524,42 +524,47 @@ When that work is accepted, two distinct credential sets will be required:
   (config.json) / `FCM_CREDENTIALS_FILE` (env), read in `server/push.py`. **Not** in
   this repo; empty → `/api/push/register` and sends are graceful no-ops.
 
-### 8.3 CI and local signing
+### 8.3 The signed CI build
 
-Ordinary `android` CI runs this credential-free evidence command:
+Every push to a CI branch that touches Android runs:
 
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest testStagingUnitTest \
-  testReleaseUnitTest testRecoveryProductionUnitTest testRecoveryStagingUnitTest \
-  assembleRelease assembleStaging assembleRecoveryProduction \
-  assembleRecoveryStaging \
-  --build-cache --configuration-cache --stacktrace
+./gradlew ktlintCheck detekt \
+  testDebugUnitTest --tests '*DefaultBuildIdentityTest' \
+  testReleaseUnitTest \
+  testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest' \
+  assembleRelease assembleRecoveryProduction \
+  --build-cache --configuration-cache --stacktrace --warning-mode all
 ```
 
-Its APKs are not distributable. To ship, wait for green CI on the exact commit,
-then build on the owner's machine with the permanent key supplied through
-`~/.gradle/gradle.properties` (`RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`,
-`RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) and the production endpoints
-from §8.1 (`-PAPP_API_BASE_URL=… -PACCOUNT_API_BASE_URL=…`). Before upload,
-verify the APK with `apksigner verify --print-certs` (certificate matches the
-fingerprint in §8.1) and `aapt dump badging` (package `com.plantdiseases.app`,
-expected `versionCode`), and keep the APK SHA-256 with the release record.
+The shared unit-test suite runs once, on the release variant; debug and recovery
+run only their own build-identity test.
 
-Recovery builds exist for an endpoint or account-service rollback: the
-`recoveryProduction` and `recoveryStaging` variants build the same
-package/certificate at versionCode 20 with the account UI disabled, each bound
-to its own endpoint pair so the endpoint-scoped encrypted vault and queued
-revocations stay with their original service. Archive the matching recovery
-APK before each versionCode 19 build is distributed; after either recovery is
-published the next normal release must use versionCode 21 or higher.
+with the signing secrets from §8.1 as environment of that one step. The job then
+runs `apksigner verify --print-certs` on both APKs, fails unless the certificate
+is the permanent one, prints each APK's SHA-256 and uploads both as the
+`app-release-apk` artifact (kept 7 days). The identity unit tests pin package,
+versionCode and the production endpoints. To ship, take the artifact from the
+green run of the exact commit and keep its SHA-256 with the release record.
+
+Any branch in the workflow's trigger list builds with the key, so anyone who
+can push to one can run code that reads it. Keep the list to branches the
+owner controls.
+
+The artifact also holds the recovery build for an account-service rollback:
+`recoveryProduction` is the same package and certificate at versionCode 20 with
+the account UI disabled, bound to the production endpoints so the encrypted
+vault and queued revocations stay with their service. Archive it with each
+versionCode 19 build that is distributed; after a recovery build is published
+the next normal release must use versionCode 21 or higher.
 
 Before a real-provider release the committed privacy policy must carry the
 approved private contact and deleted-actor retention disclosure. The structured
 markers in `privacy.html` must match `deploy/account-beta-test/release-policy-gates.json`
 (schema 2: exact visible `mailto:` or HTTPS contact, matching English/Russian
 tombstone disclosures, an HTTPS decision reference and a UTC approval timestamp);
-`account-server/tests/test_deployment_handoff.py` checks that consistency, but
-nothing in CI blocks a release, so the owner checks it before distributing.
+`server/tests/account/test_deployment_handoff.py` checks that consistency in the
+server CI job.
 
 ### 8.4 RuStore in-app updates
 
@@ -593,8 +598,8 @@ where the app was installed *from* RuStore, not from a sideloaded build.
       200 with `available:false`.
 - [ ] End-to-end: `curl -F "image=@leaf.jpg" https://…/api/analyze` returns a
       bilingual diagnosis (HTTP 200).
-- [ ] The shipped APK was built with `-PAPI_BASE_URL=https://…`. Release builds
-      are HTTPS-only — `res/xml/network_security_config.xml` permits no
+- [ ] The shipped APK is the `app-release-apk` artifact of a green CI run (§8.3).
+      Release builds are HTTPS-only — `res/xml/network_security_config.xml` permits no
       cleartext; the `10.0.2.2`/`localhost` exemption lives only in
       `src/debug/`.
 

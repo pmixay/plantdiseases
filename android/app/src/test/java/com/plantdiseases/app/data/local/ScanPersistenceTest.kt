@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.local
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +22,7 @@ import org.robolectric.annotation.Config
  * vs all, delete, clear, and the stats rollup over genuine SQL.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ScanPersistenceTest {
 
     private lateinit var db: AppDatabase
@@ -62,30 +63,11 @@ class ScanPersistenceTest {
     }
 
     @Test
-    fun getAllScans_returnsInsertedRows() = runBlocking {
-        repo.saveScan("/a.jpg", AnalysisResponse(diseaseName = "A", scanId = "a"))
-        repo.saveScan("/b.jpg", AnalysisResponse(diseaseName = "B", scanId = "b"))
-        repo.saveScan("/c.jpg", AnalysisResponse(diseaseName = "C", scanId = "c"))
-        assertThat(repo.getAllScans()).hasSize(3)
-    }
-
-    @Test
-    fun deleteScan_removesRow() = runBlocking {
-        val id = repo.saveScan("/p.jpg", AnalysisResponse(diseaseName = "X", scanId = "x"))
-        repo.deleteScan(id)
-        assertThat(repo.getScanById(id)).isNull()
-    }
-
-    @Test
-    fun clearAll_empties() = runBlocking {
-        repo.saveScan("/p.jpg", AnalysisResponse(diseaseName = "X", scanId = "x"))
-        repo.clearAll()
-        assertThat(repo.getAllScans()).isEmpty()
-    }
-
-    @Test
-    fun getStats_rollupOverRealDb() = runBlocking {
-        repo.saveScan("/h.jpg", AnalysisResponse(diseaseName = "Healthy", isHealthy = true, scanId = "h"))
+    fun listStatsDeleteAndClear_overRealDb() = runBlocking {
+        val healthyId = repo.saveScan(
+            "/h.jpg",
+            AnalysisResponse(diseaseName = "Healthy", isHealthy = true, scanId = "h"),
+        )
         repo.saveScan(
             "/d.jpg",
             AnalysisResponse(
@@ -96,9 +78,18 @@ class ScanPersistenceTest {
                 scanId = "d",
             ),
         )
+        assertThat(repo.getAllScans()).hasSize(2)
+
         val stats = repo.getStats()
         assertThat(stats.healthyCount).isEqualTo(1)
         assertThat(stats.diseasedCount).isEqualTo(1)
         assertThat(stats.totalScans).isEqualTo(2)
+
+        repo.deleteScan(healthyId)
+        assertThat(repo.getScanById(healthyId)).isNull()
+        assertThat(repo.getAllScans()).hasSize(1)
+
+        repo.clearAll()
+        assertThat(repo.getAllScans()).isEmpty()
     }
 }

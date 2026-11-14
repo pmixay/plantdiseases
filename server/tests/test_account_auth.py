@@ -14,7 +14,6 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-import account_auth
 from account_auth import (
     AccountAuthenticationError,
     AccountAuthenticationUnavailable,
@@ -28,11 +27,6 @@ from account_internal import AccountInternalClient
 
 ISSUER = "https://accounts.synthetic.invalid"
 AUDIENCE = "plantdiseases-app"
-
-
-def test_account_http_delivery_refuses_redirects():
-    handler = account_auth._NoRedirectHandler()
-    assert handler.redirect_request(None, None, 302, "moved", {}, "https://evil.invalid") is None
 
 
 def _b64url(value: bytes) -> str:
@@ -314,8 +308,10 @@ def test_credentialed_http_helper_installs_a_redirect_rejecting_handler(monkeypa
         headers={"Authorization": "Bearer secret-jwt"},
         method="POST",
     )
-    with pytest.raises(urllib.error.HTTPError):
+    with pytest.raises(urllib.error.HTTPError) as rejected:
         _open_no_redirect(request, timeout=1.0)
+    # An HTTPError is also the response: whoever catches it closes it.
+    rejected.value.close()
 
     assert len(installed) == 1
     assert isinstance(installed[0], _NoRedirectHandler)

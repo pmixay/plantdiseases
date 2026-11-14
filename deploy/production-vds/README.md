@@ -13,12 +13,15 @@ Android release gates. It does not replace `deploy/account-beta-test/`.
 | `compose.sh` | Wrapper: `compose.sh build-images`, otherwise passes arguments to `docker compose` with the recorded env file. |
 | `provision_keys.py` | Writes the signing key, encryption key and internal token once (never overwrites). The repo's `generate_test_keys` stays test-only. |
 | `postgres-init/10-account-roles.sh` | Role script for production names. It is the `account-beta-test` script with the pinned-bootstrap-role fix: `handoff/postgres-init/10-account-roles.sh` still uses `REASSIGN OWNED BY account_bootstrap`, which PostgreSQL rejects on a fresh database. |
-| `backup.sh` + `systemd/` | Daily backup: PostgreSQL dump and community SQLite online backup, all age-encrypted, restore-checked in a temporary database, pruned after 27 days. |
 | `migrate_legacy.sh` | Final copy of the old service's community and push databases into the production volumes (only while the targets are still empty). The old service is only read. |
-| `nginx/` | Routing for `/id/` and the internal-route blocks, the rate-limit zone, `switch.sh` (backup, legacy copy, repoint `/`, smoke tests, automatic rollback) and `rollback.sh`. |
+| `nginx/` | Routing for `/id/` and the internal-route blocks, the rate-limit zone, `switch.sh` (nginx config copy, legacy copy, repoint `/`, smoke tests, automatic rollback) and `rollback.sh`. |
 
 Order used: `compose.sh build-images`, write the env file, `compose.sh run --rm --no-deps prod-keys-provision`,
-`compose.sh up -d --no-build`, verify, `backup.sh`, `nginx/switch.sh`.
+`compose.sh up -d --no-build`, verify, `nginx/switch.sh`.
 
-Decisions baked in: Yandex only; email/password, VK, RuStore and PlantNet budget off; `/id/` restricted to the owner's VPN
-allowlist until launch; legacy feedback/labeling/telemetry data is not migrated (the new code has no such stores).
+Decisions baked in: Yandex only; email/password, VK, RuStore and PlantNet budget off; `/id/` is public behind its rate
+limit; legacy feedback/labeling/telemetry data is not migrated (the new code has no such stores).
+
+There is no backup job (owner's decision, 2026-11-14): the daily encrypted dump, its restore check and its systemd timer
+were removed. The read-only `account_backup` database role and `PROD_POSTGRES_BACKUP_PASSWORD` are still provisioned by
+`postgres-init/` and the compose file; nothing uses them.

@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.crop
 
+import android.app.Application
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -12,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class CropContractTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 

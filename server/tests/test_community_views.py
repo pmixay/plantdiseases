@@ -6,31 +6,19 @@ tests.
 """
 from __future__ import annotations
 
-import importlib
+import uuid
 
 import pytest
 
 
 @pytest.fixture
-def comm(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as c
-    importlib.reload(c)
-    return c
+def comm(community_store):
+    return community_store
 
 
 def _scan(comm, scan_id="s1", owner="owner"):
     comm.record_scan(scan_id=scan_id, user_pseudo_id=owner, country="GB",
                      region="London", disease="leaf_spot")
-
-
-def test_owner_of_returns_sharer(comm):
-    _scan(comm, scan_id="s1", owner="owner")
-    assert comm.owner_of("s1") == "owner"
-    assert comm.owner_of("missing") is None
-    assert comm.owner_of("") is None
 
 
 def test_view_is_recorded_once_per_viewer(comm):
@@ -86,18 +74,20 @@ def test_opinions_for_includes_view_count(comm):
     assert out["opinions"] == []
 
 
-def test_opinion_counts_for_user_carries_views(comm):
-    _scan(comm, scan_id="s1", owner="owner")
+def test_opinion_counts_for_actor_carries_views(comm):
+    owner, other, viewer_one, viewer_two = (str(uuid.uuid4()) for _ in range(4))
+    comm.record_scan(scan_id="s1", account_actor_id=owner, country="GB",
+                     region="London", disease="leaf_spot")
     # The poll only surfaces scans the owner asked the community about.
-    comm.set_wants_opinion("s1", "owner")
+    comm.set_wants_opinion("s1", account_actor_id=owner)
     # An opinion from someone else is what makes the scan show up here.
-    comm.record_opinion(scan_id="s1", author_pseudo_id="other",
+    comm.record_opinion(scan_id="s1", account_actor_id=other,
                         suggested_disease="leaf_spot")
-    comm.record_views(["s1"], "v1")
-    comm.record_views(["s1"], "v2")
-    comm.record_views(["s1"], "v2")  # dedup
+    comm.record_views(["s1"], account_actor_id=viewer_one)
+    comm.record_views(["s1"], account_actor_id=viewer_two)
+    comm.record_views(["s1"], account_actor_id=viewer_two)  # dedup
 
-    payload = comm.opinion_counts_for_user("owner")
+    payload = comm.opinion_counts_for_actor(owner)
     assert payload["total_opinions"] == 1
     assert payload["total_views"] == 2
     scan = next(s for s in payload["scans"] if s["scan_id"] == "s1")

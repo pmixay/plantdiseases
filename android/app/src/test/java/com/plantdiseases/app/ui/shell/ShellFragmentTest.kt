@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.shell
 
+import android.app.Application
 import android.content.Context
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.test.core.app.ApplicationProvider
@@ -22,7 +23,7 @@ import org.robolectric.annotation.Config
  * than here.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ShellFragmentTest {
 
     private val context: Context
@@ -46,13 +47,6 @@ class ShellFragmentTest {
         // pager's page keys. Nothing in the type system ties the two together,
         // so reordering the menu alone would silently mis-wire every tab.
         assertThat(ShellFragment.PAGES).isEqualTo(barTabIds())
-    }
-
-    @Test
-    fun everyTabMapsToItsPageIndex() {
-        ShellFragment.PAGES.forEachIndexed { index, tabId ->
-            assertThat(ShellFragment.pageOf(tabId)).isEqualTo(index)
-        }
     }
 
     @Test

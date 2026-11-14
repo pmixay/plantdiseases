@@ -5,6 +5,12 @@
 -r ../account-server/requirements.txt
 PyYAML>=6.0.3,<7
 pytest>=9.2.0
+# Runs the suite across the runner's cores (`pytest tests -q -n auto`). Every
+# test is already hermetic per process — conftest redirects each DB and cache
+# to tmp dirs and resets the in-memory quotas/caches per test — so workers
+# need no extra isolation. Opt-in by flag rather than `addopts`: a single
+# targeted test is faster without spawning workers.
+pytest-xdist>=3.8.0
 # Dataset/eval audit tools: ImageHash supplies the pHash first pass; OpenCV's
 # SIFT+RANSAC is mandatory for rotated/noised capture-family detection.  Keep
 # these dev-only — production inference does not import either builder.

@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
 import androidx.appcompat.view.ContextThemeWrapper
@@ -14,7 +15,7 @@ import org.xmlpull.v1.XmlPullParser
 
 /** Guards the shared push/pop motion used by activities and the Guide route. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class NavigationMotionResourcesTest {
 
     private val baseContext: Context

@@ -8,6 +8,7 @@ import json
 import sqlite3
 import stat
 import tarfile
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -165,7 +166,7 @@ def test_export_refuses_metadata_even_when_checksum_matches(source_store, tmp_pa
     Image.new("RGB", (100, 100), "red").save(raw, format="JPEG", exif=exif)
     unsafe = raw.getvalue()
     image_path.write_bytes(unsafe)
-    with sqlite3.connect(source_store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(source_store.TRAINING_DB_PATH)) as connection, connection:
         connection.execute(
             "UPDATE training_samples SET sha256 = ?",
             (hashlib.sha256(unsafe).hexdigest(),),

@@ -13,6 +13,7 @@ Run with:
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from pathlib import Path
@@ -23,9 +24,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 NB_PATH = REPO_ROOT / "server" / "train_notebook.ipynb"
 
 
+@functools.lru_cache(maxsize=1)
 def _notebook_source() -> str:
     """Concatenate every code cell in the training notebook into a single
-    string. Easier to grep than walking nbformat cells per-test."""
+    string. Easier to grep than walking nbformat cells per-test. Cached: the
+    notebook is over half a megabyte of JSON and nearly every test here reads
+    it."""
     nb = json.loads(NB_PATH.read_text(encoding="utf-8"))
     return "\n\n".join(
         "".join(c.get("source", []))
@@ -517,7 +521,6 @@ def test_coleaf_removed_entirely():
     assert "_try_fetch('coleaf" not in src, "CoLeaf must never be fetched"
     assert re.search(r"'coleaf'\s*:", src) is None, "no 'coleaf' SOURCE_WEIGHTS entry"
     assert "PRIOR_SOURCE_WEIGHTS['coleaf']" not in src, "no 'coleaf' prior weight"
-
 
 
 def test_mpld_supplements_nutrient_deficiency_train_only():
@@ -1017,15 +1020,6 @@ def test_weakclass_precision_is_measured_shipped_and_selectable():
         "the precision-aware selection lever must default to 0.0 (pure macro-F1) "
         "until the precision/recall trade is GPU-A/B-validated"
     )
-
-
-def test_eval_bootstrap_exposes_per_class_precision():
-    """The canonical metric module must expose per-class precision + its
-    bootstrap CI, the precision companion to per_class_recall, so weak-class
-    precision is computed from one tested source of truth."""
-    from tools import eval_bootstrap as eb
-    assert hasattr(eb, "per_class_precision")
-    assert hasattr(eb, "bootstrap_per_class_precision_ci")
 
 
 def test_class_logit_bias_validation_runs_after_mode_definition():

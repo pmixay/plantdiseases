@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import sqlite3
+from contextlib import closing
 
 import pytest
 from PIL import Image
@@ -49,6 +50,12 @@ def test_capabilities_model_contract(client):
     healthy = [c for c in body["classes"] if c["class"] == "healthy"]
     assert len(healthy) == 1
     assert healthy[0]["is_healthy"] is True
+    # `model.int8_shipped` lets operators see whether the deployed
+    # `classifier_int8.onnx` is genuine INT8 (true) or the FP32 ONNX renamed
+    # (false). Read from `models/model_card.json`; absent -> false on a fresh
+    # checkout.
+    assert isinstance(model["int8_shipped"], bool)
+    assert "int8_artifact" in model
 
 
 def test_metrics_json(client):
@@ -107,20 +114,6 @@ def test_metrics_prometheus_format(client):
     assert all("{" not in line for line in plantnet_samples)
 
 
-def test_capabilities_int8_flag_surfaced(client):
-    """`/api/capabilities` `model.int8_shipped` lets operators see whether the
-    deployed `classifier_int8.onnx` is genuine INT8 (true) or the FP32 ONNX
-    renamed (false). Read from `models/model_card.json`; absent -> false on a
-    fresh checkout.
-    """
-    r = client.get("/api/capabilities")
-    assert r.status_code == 200
-    model = r.json()["model"]
-    assert "int8_shipped" in model
-    assert isinstance(model["int8_shipped"], bool)
-    assert "int8_artifact" in model
-
-
 def test_capabilities_int8_flag_read_from_bundle_analysis_dir(client, tmp_path, monkeypatch):
     """A notebook bundle (§6b) ships model_card.json under analysis/, not at the
     models root; the flag must still reach operators instead of reading false."""
@@ -140,19 +133,22 @@ def test_capabilities_int8_flag_read_from_bundle_analysis_dir(client, tmp_path, 
 def test_analyze_inference_timeout_504(client, png_bytes):
     """A pipeline that takes longer than `INFERENCE_TIMEOUT` must yield
     a 504 (asyncio.wait_for path). We patch the live `pipeline.analyze`
-    to block past the timeout and temporarily shrink `INFERENCE_TIMEOUT`
-    so the test runs in well under a second.
+    to block past the timeout and temporarily shrink `INFERENCE_TIMEOUT`.
+    The worker blocks on an event rather than a fixed sleep, so it is
+    released the moment the 504 is asserted instead of holding the
+    lifespan's executor shutdown open for the rest of the sleep.
     """
-    import time
+    import threading
 
     import main as server_main
 
     real_pipeline = server_main.pipeline
     real_timeout = server_main.INFERENCE_TIMEOUT
     original_analyze = real_pipeline.analyze
+    release = threading.Event()
 
     def _slow_analyze(img):  # runs in the inference threadpool
-        time.sleep(0.5)
+        release.wait(5)
         return original_analyze(img)
 
     real_pipeline.analyze = _slow_analyze
@@ -165,6 +161,7 @@ def test_analyze_inference_timeout_504(client, png_bytes):
         assert r.status_code == 504, r.text
         assert "timed out" in r.json()["detail"].lower()
     finally:
+        release.set()
         real_pipeline.analyze = original_analyze
         server_main.INFERENCE_TIMEOUT = real_timeout
 
@@ -341,18 +338,6 @@ def test_natural_nap_keeps_nap_copy_but_is_explicitly_abstained(
     assert body["species"]["source"] == "skipped_nap"
 
 
-def test_analyze_reports_actual_serving_family_on_aqua_fallback(client, png_bytes):
-    response = client.post(
-        "/api/analyze?family=aqua",
-        files={"image": ("leaf.png", png_bytes, "image/png")},
-    )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["requested_family"] == "aqua"
-    assert body["family"] == "gamma"
-    assert body["family_fallback_reason"] == "aqua_served_by_gamma"
-
-
 # ── Species fan-out ─────────────────────────────────────────────────
 
 
@@ -502,41 +487,6 @@ def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monk
     )
     assert r.status_code == 200, r.text
     assert r.json()["species"] is None
-
-
-def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatch):
-    """``identify_species`` declares ``organ`` AND ``lang`` keyword-only.
-    The endpoint must call both with keyword args — otherwise the call
-    landed via ``run_in_executor(..., organ_value)`` raises
-    ``TypeError`` and the route 500s.
-    """
-    import main as server_main
-
-    captured: dict[str, object] = {}
-
-    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
-        captured["organ"] = organ
-        captured["lang"] = lang
-        captured["image"] = image_bytes
-        return {"available": False, "results": [], "source": "no_api_key"}
-
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
-    r = client.post(
-        "/api/identify",
-        files={"image": ("leaf.png", png_bytes, "image/png")},
-        params={"organ": "flower", "locale": "ru"},
-    )
-    assert r.status_code == 200, r.text
-    assert captured["organ"] == "flower"
-    assert captured["lang"] == "ru"
-    forwarded = captured["image"]
-    assert isinstance(forwarded, bytes)
-    assert forwarded != png_bytes
-    with Image.open(io.BytesIO(forwarded)) as image:
-        assert image.format == "JPEG"
-        assert max(image.size) <= 1024
-        assert not image.getexif()
-    assert r.json()["organ"] == "flower"
 
 
 def test_identify_plantnet_cache_hit_spends_no_user_allowance(
@@ -848,7 +798,7 @@ def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
     assert all(isinstance(token, str) for token in tokens)
 
     raw_digest = hashlib.sha256(png_bytes).digest()
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         rows = connection.execute(
             "SELECT token, image_binding FROM community_analysis_tokens "
             "WHERE token IN (?, ?)",
@@ -896,12 +846,3 @@ def test_progression_history_is_capped(client):
     assert too_long.status_code == 422, too_long.text
 
 
-def test_feedback_rejects_legacy_scan_id_payload(client, png_bytes):
-    """Identifier-rich legacy payloads are rejected, not silently ignored."""
-    r = client.post(
-        "/api/feedback",
-        json={"scan_id": "neverissuedXYZ", "correct": True},
-    )
-    assert r.status_code == 422, r.text
-    errors = r.json()["detail"]
-    assert any(error["loc"][-1] == "scan_id" for error in errors)

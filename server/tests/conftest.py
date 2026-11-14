@@ -273,8 +273,75 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
         return None
 
     server_main._warm_placeholder_images = _skip_external_warmup
+    # /api/metrics shares its store aggregates for a few seconds in production.
+    # Tests read their own writes back through it, so the snapshot is off here;
+    # the caching itself is tested with the TTL switched back on.
+    server_main.METRICS_SNAPSHOT_TTL_SECONDS = 0.0
     server_main._daily_write_counts.clear()
     yield
+
+
+# ── Community store isolation ───────────────────────────────────────
+
+
+@pytest.fixture
+def community_store(tmp_path, monkeypatch):
+    """A private, empty community store for one test.
+
+    Redirects the store's paths and re-arms its lazy schema init; monkeypatch
+    puts all of it back afterwards, so the next test is on the session store
+    again. Deliberately no ``importlib.reload(community)``: a reload swaps in
+    new exception classes and function objects, which every fixture then had
+    to re-bind on ``main`` by hand (some thirty names) and nothing restored.
+    """
+    import community
+    import main as server_main
+
+    monkeypatch.setattr(community, "COMMUNITY_DB_PATH", tmp_path / "community.db")
+    monkeypatch.setattr(community, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
+    monkeypatch.setattr(community, "_initialised", False)
+    monkeypatch.setattr(community, "_last_expiry_sweep", 0.0)
+    # main imports this path by value for the thumbnail response endpoint.
+    monkeypatch.setattr(server_main, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
+    return community
+
+
+@pytest.fixture
+def community_http_store(community_store, monkeypatch):
+    """``community_store`` for HTTP tests that post synthetic scan ids.
+
+    ``/api/community/scan`` publishes a scan the server itself analysed: it
+    needs a server-issued analysis token and takes disease and species from
+    that record. These tests post made-up ids with client-supplied fields, so
+    every id counts as issued and the write goes through ``record_scan`` with
+    the client's values. The rejection paths are tested explicitly elsewhere.
+    """
+    import main as server_main
+
+    comm = community_store
+
+    def legacy_analysis_write(**kwargs):
+        return comm.record_scan(
+            scan_id=kwargs["scan_id"],
+            account_actor_id=kwargs["account_actor_id"],
+            country=kwargs["country"],
+            region=kwargs.get("region", ""),
+            city=kwargs.get("city"),
+            lat=kwargs.get("lat"),
+            lon=kwargs.get("lon"),
+            disease=kwargs.get("client_disease") or "healthy",
+            confidence=kwargs.get("client_confidence"),
+            species=kwargs.get("client_species"),
+            species_score=kwargs.get("client_species_score"),
+            image_bytes=kwargs.get("image_bytes"),
+            locale=kwargs.get("locale"),
+            nickname=kwargs.get("nickname"),
+        )
+
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", legacy_analysis_write)
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", lambda *a, **k: True)
+    server_main._daily_write_counts.clear()
+    return comm
 
 
 # ── HTTP test clients ───────────────────────────────────────────────
@@ -331,11 +398,15 @@ def client():
 
 @pytest.fixture
 def rate_limited_client():
-    """Variant of ``client`` that keeps a 1 req/s rate limit active.
+    """Variant of ``client`` that keeps the rate limiter active and strict.
 
-    Capacity is pinned to 1.0 so the token-bucket reduces to the strict
-    "one request per second, no burst" behaviour the rate-limit test
-    asserts. Production keeps the larger default burst.
+    Capacity is pinned to 1.0 and the bucket refills one token a MINUTE, so
+    the limiter reduces to "one request, then 429" for the length of a test.
+    The refill used to be one token a second, which made every test here a
+    race against the wall clock: on a loaded CI runner (the suite runs in
+    parallel) the first request could take over a second, the bucket refilled
+    and the second request was served instead of throttled. Production keeps
+    its own rate and the larger default burst.
     """
     from fastapi.testclient import TestClient
 
@@ -347,7 +418,7 @@ def rate_limited_client():
     with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.rate = 1.0
+            mw.rate = 1.0 / 60.0
             mw.capacity = 1.0
             with mw._lock:
                 mw._buckets.clear()

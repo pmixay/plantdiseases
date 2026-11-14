@@ -1,6 +1,13 @@
-"""Windows regression checks for the short-lived SQLite stores."""
+"""Regression checks for the short-lived SQLite stores.
+
+The bug was Windows-only in its symptom (an open handle blocks deleting the
+file), but the cause — a context manager that commits without closing — is
+checked directly, so the test bites on the POSIX CI runner too, where
+unlinking an open database file succeeds regardless."""
 
 from __future__ import annotations
+
+import sqlite3
 
 import pytest
 
@@ -25,5 +32,7 @@ def test_connection_context_releases_database_file(module, path_attr, tmp_path, 
     monkeypatch.setattr(module, path_attr, path)
     with module._connect() as conn:
         conn.execute("CREATE TABLE lifecycle_probe (id INTEGER)")
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
     path.unlink()
     assert not path.exists()

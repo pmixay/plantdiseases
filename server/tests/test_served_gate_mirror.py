@@ -70,10 +70,15 @@ def test_notebook_mirror_matches_server_detections_and_members(notebook_mirror):
     real = getattr(pipeline_module, "_RealPipelineForTests", pipeline_module.PlantDiseasePipeline)
     rng = np.random.default_rng(0)
     compared = 0
-    for trial in range(120):
+    no_detection_trials = 0
+    # 40 trials, not hundreds: each one already draws up to 40 boxes, so the
+    # NMS / size-filter / crop rules see ~800 randomised boxes. The first two
+    # trials are forced empty so the no-detection branch is covered by
+    # construction instead of by a 1-in-40 draw.
+    for trial in range(40):
         w, h = int(rng.integers(200, 1600)), int(rng.integers(200, 1600))
         img = Image.fromarray(rng.integers(0, 255, (h, w, 3), dtype=np.uint8))
-        n = int(rng.integers(0, 40))
+        n = 0 if trial < 2 else int(rng.integers(1, 40))
         out = np.zeros((1, 5, max(n, 1)), dtype=np.float32)
         if n:
             out[0, 0, :n] = rng.uniform(0, 640, n)
@@ -98,6 +103,7 @@ def test_notebook_mirror_matches_server_detections_and_members(notebook_mirror):
                 server_members.append(img)
         else:
             server_members = [img]  # _analyze_no_detection classifies the frame alone
+            no_detection_trials += 1
         mirror_members = notebook_mirror["_served_members"](img, mirror_dets)
         assert len(mirror_members) == len(server_members), f"trial {trial}: member count"
         for a, b in zip(mirror_members, server_members, strict=True):
@@ -105,7 +111,8 @@ def test_notebook_mirror_matches_server_detections_and_members(notebook_mirror):
                 f"trial {trial}: crop member differs"
             )
         compared += len(mirror_members)
-    assert compared > 200
+    assert compared > 100
+    assert no_detection_trials >= 2
 
 
 # ── The streamed served pass (2.7.5): classifier batching, gate rule, upload

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import io
 import shutil
 import sqlite3
@@ -20,14 +19,8 @@ def _thumbnail_bytes() -> bytes:
 
 
 @pytest.fixture
-def community(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "synthetic-pepper")
-    import community as module
-
-    importlib.reload(module)
-    return module
+def community(community_store):
+    return community_store
 
 
 def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
@@ -85,7 +78,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     community.record_view(
         "delete-account-scan", account_actor_id=responder
     )
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         thumbnail = connection.execute(
             "SELECT thumb_path FROM community_scans WHERE scan_id = 'delete-account-scan'"
         ).fetchone()[0]
@@ -98,7 +91,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     assert community.opinions_for("delete-account-scan")["opinions"] == []
     assert not community.thumbnail_is_visible(thumbnail)
     assert community.view_count_for("keep-legacy-scan") == 0
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         # Logical hiding precedes the asynchronous physical pass.
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
@@ -115,7 +108,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     result = community.process_cleanup_jobs()
     assert result == {"completed": 1, "retried": 0}
     assert not (community.COMMUNITY_THUMB_DIR / thumbnail).exists()
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 0
@@ -162,7 +155,7 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
     result = community.process_cleanup_jobs(now=1_000)
     assert result == {"completed": 0, "retried": 1}
     assert community.nearby_scans(country="GB", scope="country") == []
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         state, attempts, next_attempt, code = connection.execute(
             "SELECT state, attempt_count, next_attempt_at, last_error_code "
             "FROM community_cleanup_jobs WHERE actor_id = ?",
@@ -172,15 +165,12 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
 
 
 def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
-    tmp_path, monkeypatch,
+    community_store, tmp_path, monkeypatch,
 ):
     database = tmp_path / "legacy.db"
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(database))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    import community as module
-
-    importlib.reload(module)
-    with sqlite3.connect(database) as connection:
+    module = community_store
+    monkeypatch.setattr(module, "COMMUNITY_DB_PATH", database)
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executescript(
             "CREATE TABLE community_scans ("
             " id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id TEXT NOT NULL,"
@@ -236,7 +226,7 @@ def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
         region="London",
         disease="healthy",
     )
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         columns = {
             row[1]: row[3]
             for row in connection.execute("PRAGMA table_info(community_scans)")
@@ -286,7 +276,7 @@ def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
 
 
 def _marker_ids(community) -> set[str]:
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         return {
             row[0] for row in connection.execute("SELECT actor_id FROM community_deleted_actors")
         }
@@ -299,7 +289,7 @@ def test_deleted_actor_marker_expires_after_thirty_days_only_when_cleanup_finish
     assert community.DELETED_ACTOR_MARKER_RETENTION_DAYS == 30  # disclosed in the policy
     for actor, age_days in ((expired, 31), (recent, 29), (pending, 40)):
         community.request_actor_deletion(actor, now=now - age_days * day)
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:  # hold one job back
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:  # hold one job back
         connection.execute(
             "UPDATE community_cleanup_jobs SET next_attempt_at = ? WHERE actor_id = ?",
             (now + 10 * day, pending),
@@ -310,7 +300,7 @@ def test_deleted_actor_marker_expires_after_thirty_days_only_when_cleanup_finish
     # Too young stays; an unfinished cleanup keeps its marker even past 30 days.
     assert _marker_ids(community) == {recent, pending}
 
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         connection.execute(
             "UPDATE community_cleanup_jobs SET next_attempt_at = ? WHERE actor_id = ?",
             (now, pending),

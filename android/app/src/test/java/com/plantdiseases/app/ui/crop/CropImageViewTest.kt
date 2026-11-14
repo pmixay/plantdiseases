@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.crop
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.MotionEvent
@@ -22,7 +23,7 @@ import org.robolectric.annotation.Config
  * min-crop (56dp = 56px) never clamps the rects used below.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class CropImageViewTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

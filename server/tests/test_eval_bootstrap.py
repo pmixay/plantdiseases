@@ -5,6 +5,11 @@ macro-F1 must match a hand-computed value, the single-model CI must
 bracket the point estimate, and the paired bootstrap must detect a
 clear, real ordering while correctly calling a tiny gap *not*
 significant.
+
+Iteration counts are deliberately small (tens to a hundred replicates): every
+assertion here is qualitative — a CI brackets its point, a 35% corruption is a
+clear loser, identical models differ by exactly zero — and sklearn's per-call
+validation makes each replicate cost about a millisecond.
 """
 
 from __future__ import annotations
@@ -41,7 +46,7 @@ def test_single_model_ci_brackets_point_and_is_ordered():
     flip = rng.random(n) < 0.15
     y_pred[flip] = (y_true[flip] + rng.integers(1, 4, size=flip.sum())) % 4
 
-    out = eb.bootstrap_macro_f1_ci(y_true, y_pred, CLASS_NAMES, n_boot=500, seed=1)
+    out = eb.bootstrap_macro_f1_ci(y_true, y_pred, CLASS_NAMES, n_boot=100, seed=1)
     assert out["ci_low"] <= out["point"] <= out["ci_high"]
     assert 0.0 < out["ci_low"] < out["ci_high"] <= 1.0
     assert out["n"] == n
@@ -59,7 +64,7 @@ def test_paired_bootstrap_detects_clear_winner():
     corrupt = (rng.random(n) < 0.35) & np.isin(y_true, [0, 1])
     y_b[corrupt] = (y_true[corrupt] + 1) % 2  # swap disease_a<->disease_b
 
-    out = eb.paired_bootstrap(y_true, y_a, y_b, CLASS_NAMES, n_boot=500, seed=2)
+    out = eb.paired_bootstrap(y_true, y_a, y_b, CLASS_NAMES, n_boot=100, seed=2)
     assert out["f1_a"] > out["f1_b"]
     assert out["diff_point"] > 0.0
     assert out["diff_ci_low"] > 0.0  # CI excludes zero
@@ -78,7 +83,7 @@ def test_paired_bootstrap_calls_noise_not_significant():
     mask = rng.random(n) < 0.2
     y_pred[mask] = rng.integers(0, 4, size=int(mask.sum()))
 
-    out = eb.paired_bootstrap(y_true, y_pred, y_pred, CLASS_NAMES, n_boot=300, seed=4)
+    out = eb.paired_bootstrap(y_true, y_pred, y_pred, CLASS_NAMES, n_boot=60, seed=4)
     assert out["diff_point"] == 0.0
     assert out["diff_ci_low"] <= 0.0 <= out["diff_ci_high"]
     assert out["significant"] is False

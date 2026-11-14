@@ -2043,86 +2043,6 @@ def opinions_for(
     }
 
 
-def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
-    """Opinion counts on a user's OWN shared scans — drives the client's
-    "someone left a second opinion" notification poll.
-
-    Restricted to scans whose owner explicitly REQUESTED a second opinion
-    (see :func:`set_wants_opinion`): sharing a scan to the corpus is not a
-    request to be pinged, so opinions on scans the owner never asked about
-    don't drive notifications.
-
-    Each of the caller's requested scans that has at least one opinion FROM
-    SOMEONE ELSE (your own opinions on your scan don't notify you), with the
-    count, the latest opinion timestamp, and the scan's disease so the client
-    can say "someone weighed in on your <disease> scan".
-
-    Shape::
-        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at",
-                    "view_count", "latest_nickname"}, ...],
-         "total_opinions": N}
-    """
-    init_db()
-    _sweep_expired_requests()
-    uid = (user_pseudo_id or "").strip()
-    if not uid:
-        return {"scans": [], "total_opinions": 0, "total_views": 0}
-    limit = max(1, min(int(limit), 500))
-    request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
-            "  (SELECT COUNT(DISTINCT CASE "
-            "       WHEN v.viewer_author_id IS NOT NULL THEN 'a:' || v.viewer_author_id "
-            "       ELSE 'p:' || v.viewer_pseudo_id END) "
-            "     FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views, "
-            "  (SELECT o2.nickname FROM community_opinions o2 "
-            "     WHERE o2.scan_id = s.scan_id AND o2.author_pseudo_id != s.user_pseudo_id "
-            "       AND NOT EXISTS (SELECT 1 FROM community_blocks b2 WHERE "
-            "            (b2.blocker_pseudo_id = s.user_pseudo_id "
-            "             AND b2.blocked_pseudo_id = o2.author_pseudo_id) OR "
-            "            (b2.blocker_pseudo_id = o2.author_pseudo_id "
-            "             AND b2.blocked_pseudo_id = s.user_pseudo_id) OR "
-            "            (b2.blocker_author_id = s.author_id "
-            "             AND b2.blocked_author_id = o2.author_id) OR "
-            "            (b2.blocker_author_id = o2.author_id "
-            "             AND b2.blocked_author_id = s.author_id)) "
-            "     ORDER BY o2.created_at DESC LIMIT 1) AS latest_nick "
-            "FROM community_scans s "
-            "JOIN community_opinions o "
-            "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
-            " AND NOT EXISTS (SELECT 1 FROM community_blocks b WHERE "
-            "      (b.blocker_pseudo_id = s.user_pseudo_id "
-            "       AND b.blocked_pseudo_id = o.author_pseudo_id) OR "
-            "      (b.blocker_pseudo_id = o.author_pseudo_id "
-            "       AND b.blocked_pseudo_id = s.user_pseudo_id) OR "
-            "      (b.blocker_author_id = s.author_id "
-            "       AND b.blocked_author_id = o.author_id) OR "
-            "      (b.blocker_author_id = o.author_id "
-            "       AND b.blocked_author_id = s.author_id)) "
-            "WHERE s.user_pseudo_id = ? "
-            "  AND EXISTS (SELECT 1 FROM community_opinion_requests r "
-            "              WHERE r.scan_id = s.scan_id "
-            "                AND r.user_pseudo_id = s.user_pseudo_id "
-            "                AND r.created_at >= ?) "
-            "GROUP BY s.scan_id, s.disease "
-            "ORDER BY latest DESC LIMIT ?",
-            (uid, request_cutoff, limit),
-        ).fetchall()
-    scans = [
-        {"scan_id": str(r[0]), "disease": str(r[1]),
-         "opinion_count": int(r[2]), "latest_at": int(r[3]),
-         "view_count": int(r[4]),
-         "latest_nickname": (r[5] if len(r) > 5 else None) or None}
-        for r in rows
-    ]
-    return {
-        "scans": scans,
-        "total_opinions": sum(s["opinion_count"] for s in scans),
-        "total_views": sum(s["view_count"] for s in scans),
-    }
-
-
 def opinion_counts_for_actor(account_actor_id: str, *, limit: int = 200) -> dict:
     """Private opinion/view summary for scans owned by one signed actor."""
     init_db()
@@ -2204,20 +2124,6 @@ def opinion_counts_for_actor(account_actor_id: str, *, limit: int = 200) -> dict
     }
 
 
-def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
-    """Opinions submitted from one IP hash in the last 24h (abuse cap)."""
-    if not ip_hash:
-        return 0
-    init_db()
-    cutoff = int(time.time()) - 86_400
-    with _connect() as conn:
-        return int(conn.execute(
-            "SELECT COUNT(*) FROM community_opinions "
-            "WHERE client_ip_hash = ? AND created_at >= ?",
-            (ip_hash, cutoff),
-        ).fetchone()[0])
-
-
 def opinion_counts(
     scan_ids: list[str], *, viewer_account_actor_id: str | None = None
 ) -> dict[str, int]:
@@ -2242,20 +2148,6 @@ def opinion_counts(
             (*ids, *blocked_params),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
-
-
-def owner_of(scan_id: str) -> str | None:
-    """The pseudo-id that shared ``scan_id`` (None if the scan isn't ours).
-    Used by the push path to decide who to notify about a new opinion."""
-    sid = (scan_id or "").strip()
-    if not sid:
-        return None
-    init_db()
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?", (sid,),
-        ).fetchone()
-    return str(row[0]) if row else None
 
 
 def account_owner_of(scan_id: str) -> str | None:
@@ -3000,8 +2892,7 @@ def daily_safety_count_for_ip_hash(ip_hash: str | None) -> int:
 
 
 def daily_like_count_for_ip_hash(ip_hash: str | None) -> int:
-    """Likes from this IP in the last 24h — bounds abuse across many scans,
-    the same shape as ``daily_opinion_count_for_ip_hash``.
+    """Likes from this IP in the last 24h — bounds abuse across many scans.
 
     Counts withdrawn likes (``liked = 0``) too: the row is what costs
     storage, and not counting them is exactly what would let an unlike hand
@@ -4139,127 +4030,6 @@ def _author_row(conn: sqlite3.Connection, author_id: str) -> dict:
     }
 
 
-def resolve_author(
-    key_hash: str,
-    seed_display_name: str,
-    legacy_pseudo_id: str | None = None,
-) -> dict:
-    """Create-or-return the durable author row for one device's key hash.
-
-    Idempotent by design: a second call with the same ``key_hash`` returns
-    the existing row untouched except for ``last_seen_at`` — it does NOT
-    overwrite an established ``display_name`` or ``legacy_pseudo_id`` on
-    repeat calls. A legacy id may fill an existing NULL left by an older keyed
-    write/read ordering, after which it is immutable; profile editing, when it
-    exists, is the only thing allowed to change ``display_name``.
-
-    The upsert, legacy attachment, and ``legacy_backfilled_at`` marker run in
-    one ``BEGIN IMMEDIATE`` transaction. Concurrent workers therefore cannot
-    both execute the attachment suite, and later adopts only refresh the row.
-    """
-    kh = (key_hash or "").strip()
-    if not kh:
-        raise ValueError("key_hash is required")
-    stored_key = _stored_author_key(kh)
-    name = (seed_display_name or "").strip()[:80] or "Plant grower"
-    legacy = (legacy_pseudo_id or "").strip() or None
-
-    init_db()
-    now = int(time.time())
-    with _write_lock, _connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "INSERT INTO community_authors "
-            "(author_id, key_hash, key_version, display_name, legacy_pseudo_id, "
-            " created_at, last_seen_at) VALUES (?, ?, 2, ?, ?, ?, ?) "
-            "ON CONFLICT(key_hash) DO UPDATE SET "
-            "last_seen_at = excluded.last_seen_at, "
-            "legacy_pseudo_id = COALESCE(community_authors.legacy_pseudo_id, "
-            "                            excluded.legacy_pseudo_id)",
-            (_new_author_id(), stored_key, name, legacy, now, now),
-        )
-        # The generated id is discarded on the conflict path, so read the
-        # surviving row's id back rather than assuming we won the insert.
-        adopted = conn.execute(
-            "SELECT author_id, legacy_pseudo_id, legacy_backfilled_at "
-            "FROM community_authors WHERE key_hash = ?",
-            (stored_key,),
-        ).fetchone()
-        author_id = str(adopted[0])
-        adopted_legacy = (str(adopted[1]) if adopted[1] else None)
-        if adopted_legacy and adopted[2] is None:
-            # Attach pre-adoption activity to the durable account-free
-            # identity. If a current row already exists for the same
-            # (content, author), discard the legacy duplicate first so the
-            # partial UNIQUE indexes remain satisfiable.
-            conn.execute(
-                "DELETE FROM community_scan_views "
-                "WHERE viewer_pseudo_id = ? AND viewer_author_id IS NULL "
-                "AND scan_id IN (SELECT scan_id FROM community_scan_views "
-                "                WHERE viewer_author_id = ?)",
-                (adopted_legacy, author_id),
-            )
-            conn.execute(
-                "UPDATE community_scan_views SET viewer_author_id = ? "
-                "WHERE viewer_pseudo_id = ? AND viewer_author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "DELETE FROM community_likes "
-                "WHERE user_pseudo_id = ? AND author_id IS NULL "
-                "AND scan_id IN (SELECT scan_id FROM community_likes "
-                "                WHERE author_id = ?)",
-                (adopted_legacy, author_id),
-            )
-            conn.execute(
-                "UPDATE community_likes SET author_id = ? "
-                "WHERE user_pseudo_id = ? AND author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "UPDATE community_scans SET author_id = ? "
-                "WHERE user_pseudo_id = ? AND author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "UPDATE community_opinions SET author_id = ? "
-                "WHERE author_pseudo_id = ? AND author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "DELETE FROM community_reports "
-                "WHERE reporter_pseudo_id = ? AND reporter_author_id IS NULL "
-                "AND (target_type, target_id) IN ("
-                "    SELECT target_type, target_id FROM community_reports "
-                "    WHERE reporter_author_id = ?)",
-                (adopted_legacy, author_id),
-            )
-            conn.execute(
-                "UPDATE community_reports SET reporter_author_id = ? "
-                "WHERE reporter_pseudo_id = ? AND reporter_author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            # A block may predate adoption on either side. OR IGNORE keeps a
-            # pre-existing durable duplicate authoritative while upgrading all
-            # non-conflicting legacy rows.
-            conn.execute(
-                "UPDATE OR IGNORE community_blocks SET blocker_author_id = ? "
-                "WHERE blocker_pseudo_id = ? AND blocker_author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "UPDATE OR IGNORE community_blocks SET blocked_author_id = ? "
-                "WHERE blocked_pseudo_id = ? AND blocked_author_id IS NULL",
-                (author_id, adopted_legacy),
-            )
-            conn.execute(
-                "UPDATE community_authors SET legacy_backfilled_at = ? "
-                "WHERE author_id = ?",
-                (now, author_id),
-            )
-        return _author_row(conn, author_id)
-
-
 def touch_author(key_hash: str) -> dict | None:
     """Refresh one already-adopted author using only its indexed key row.
 
@@ -4394,11 +4164,9 @@ __all__ = [
     "map_scans",
     "nearby_scans",
     "opinion_counts",
-    "opinion_counts_for_user",
     "opinion_counts_for_actor",
     "opinion_open",
     "opinions_for",
-    "owner_of",
     "popular_snapshot",
     "process_cleanup_jobs",
     "prune_older_than",

@@ -137,7 +137,7 @@ The account tests live in `../server/tests/account/` and run with the server sui
 ```sh
 cd ../server
 ruff check . ../account-server
-pytest tests -q
+pytest tests -q -n auto
 ```
 
 To regenerate the committed schema, export the account environment variables

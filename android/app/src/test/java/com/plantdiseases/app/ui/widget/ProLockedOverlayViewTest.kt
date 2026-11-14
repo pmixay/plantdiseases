@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.widget
 
+import android.app.Application
 import android.content.Context
 import android.view.View
 import androidx.appcompat.view.ContextThemeWrapper
@@ -12,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ProLockedOverlayViewTest {
     private val context: Context
         get() = ContextThemeWrapper(

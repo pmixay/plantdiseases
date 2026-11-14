@@ -9,7 +9,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -509,7 +508,10 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                             ).show()
                             parentFragmentManager.setFragmentResult(
                                 CONTENT_BLOCKED,
-                                bundleOf("target_type" to targetType, "target_id" to targetId),
+                                Bundle().apply {
+                                    putString("target_type", targetType)
+                                    putString("target_id", targetId)
+                                },
                             )
                             dismissAllowingStateLoss()
                         }
@@ -631,6 +633,20 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             "not_a_plant" to R.string.feedback_class_not_a_plant,
         )
 
+        /** The sheet's inputs. Each key is read back with the getter matching
+         *  its put (getString / getFloat / getBoolean). */
+        private fun argumentsFor(
+            item: com.plantdiseases.app.data.model.CommunityScanItem,
+            currentDisplayName: String?,
+        ): Bundle = Bundle().apply {
+            putString(ARG_SCAN_ID, item.scanId)
+            putString(ARG_CURRENT_NAME, currentDisplayName)
+            putString(ARG_DISEASE_KEY, item.disease)
+            putFloat(ARG_CONFIDENCE, item.confidence ?: -1f)
+            putString(ARG_THUMB, item.thumbPath)
+            putString(ARG_SPECIES, item.species)
+        }
+
         /** Open the community scan detail for a feed/carousel item: shows the
          *  model's diagnosis + confidence, then Agree / Disagree — or, for a
          *  scan this install already commented on, straight into the thread
@@ -641,14 +657,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             currentDisplayName: String?,
         ) {
             CommunityOpinionSheet().apply {
-                arguments = bundleOf(
-                    ARG_SCAN_ID to item.scanId,
-                    ARG_CURRENT_NAME to currentDisplayName,
-                    ARG_DISEASE_KEY to item.disease,
-                    ARG_CONFIDENCE to (item.confidence ?: -1f),
-                    ARG_THUMB to item.thumbPath,
-                    ARG_SPECIES to item.species,
-                )
+                arguments = argumentsFor(item, currentDisplayName)
             }.show(fm, TAG)
         }
 
@@ -658,15 +667,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             currentDisplayName: String?,
         ) {
             CommunityOpinionSheet().apply {
-                arguments = bundleOf(
-                    ARG_SCAN_ID to item.scanId,
-                    ARG_CURRENT_NAME to currentDisplayName,
-                    ARG_DISEASE_KEY to item.disease,
-                    ARG_CONFIDENCE to (item.confidence ?: -1f),
-                    ARG_THUMB to item.thumbPath,
-                    ARG_SPECIES to item.species,
-                    ARG_VIEW_ONLY to true,
-                )
+                arguments = argumentsFor(item, currentDisplayName).apply {
+                    putBoolean(ARG_VIEW_ONLY, true)
+                }
             }.show(fm, TAG)
         }
     }

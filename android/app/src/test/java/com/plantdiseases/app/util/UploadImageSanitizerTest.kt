@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -17,7 +18,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class UploadImageSanitizerTest {
 
     private val files = mutableListOf<File>()

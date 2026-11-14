@@ -14,6 +14,7 @@ import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.remote.RetryInterceptor
 import com.plantdiseases.app.testutil.FakeAccountApi
 import com.plantdiseases.app.testutil.FakeScanDao
 import com.plantdiseases.app.util.SanitizedImage
@@ -53,7 +54,12 @@ class ScanRepositoryNetworkTest {
     fun setup() {
         server = MockWebServer()
         server.start()
-        client = PlantApiClient(server.url("/").toString())
+        // Same retry policy as production, minus the wait: the tests that
+        // drive a real 429/503 retry would otherwise sleep a second each.
+        client = PlantApiClient(
+            server.url("/").toString(),
+            retryInterceptor = RetryInterceptor(maxRetries = 3, initialDelayMs = 1000, sleeper = {}),
+        )
         accountApi = FakeAccountApi()
         authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
         runBlocking { authRepository.signIn(AuthProvider.YANDEX, "synthetic-provider-token") }

@@ -27,6 +27,7 @@ import ipaddress
 import json
 import logging
 import math
+import sys
 import threading
 import time
 import uuid
@@ -42,12 +43,8 @@ from pathlib import Path
 from fastapi import (
     APIRouter,
     BackgroundTasks,
-    Depends,
     FastAPI,
-    File,
-    Form,
     HTTPException,
-    Query,
     Request,
     UploadFile,
 )
@@ -67,7 +64,15 @@ from starlette.responses import Response as StarletteResponse
 #      server.main:app`) — same names live under the `server.` package.
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
-    from . import training_store
+    from . import (
+        routes_assistant,
+        routes_community,
+        routes_content,
+        routes_diagnosis,
+        routes_internal,
+        routes_meta,
+        training_store,
+    )
     from .account_auth import (
         AccountAuthenticationError,
         AccountAuthenticationUnavailable,
@@ -293,6 +298,12 @@ try:
         record_error as telemetry_record_error,
     )
 except ImportError:
+    import routes_assistant
+    import routes_community
+    import routes_content
+    import routes_diagnosis
+    import routes_internal
+    import routes_meta
     import training_store
     from account_auth import (
         AccountAuthenticationError,
@@ -1768,6 +1779,36 @@ def _record_error() -> None:
         _total_errors += 1
 
 
+# /api/metrics also reports two store aggregates, each several full-table
+# COUNT(*) scans over the training and community databases. They move slowly and
+# a dashboard or scraper has no use for them fresher than its own interval, so
+# requests inside the TTL share one snapshot instead of each re-scanning the
+# tables. 0 disables the cache.
+METRICS_SNAPSHOT_TTL_SECONDS = max(0.0, get_float("METRICS_SNAPSHOT_TTL_SECONDS", 5.0))
+_metrics_store_snapshot: tuple[float, dict, dict] | None = None
+
+
+async def _metrics_store_snapshots() -> tuple[dict, dict]:
+    """``(training, community)`` aggregates for /api/metrics, at most
+    ``METRICS_SNAPSHOT_TTL_SECONDS`` old.
+
+    No lock: two requests that both find the snapshot stale each recompute it,
+    which costs what every request cost before and cannot corrupt anything —
+    the last writer simply wins.
+    """
+    global _metrics_store_snapshot
+    ttl = METRICS_SNAPSHOT_TTL_SECONDS
+    cached = _metrics_store_snapshot
+    if ttl > 0 and cached is not None and time.monotonic() - cached[0] < ttl:
+        return cached[1], cached[2]
+    # Blocking sqlite3, so both hop to a worker thread.
+    loop = asyncio.get_running_loop()
+    training = await loop.run_in_executor(None, training_store.training_counts)
+    community = await loop.run_in_executor(None, community_stats_snapshot)
+    _metrics_store_snapshot = (time.monotonic(), training, community)
+    return training, community
+
+
 def _snapshot_metrics() -> dict:
     with _metrics_lock:
         avg = _latency_sum_ms / _latency_count if _latency_count else 0.0
@@ -2755,24 +2796,6 @@ def _record_training_candidate(
 
 api_router = APIRouter(prefix="/api")
 
-@api_router.get("/health")
-async def health_check():
-    """Health check — server status, uptime, request count."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
-    return {
-        "status": "ok",
-        "version": APP_VERSION,
-        "num_classes": len(pipeline.classifier.CLASS_NAMES),
-        "uptime_seconds": round(uptime, 1),
-        "total_requests": _snapshot_metrics()["total_requests"],
-        "account_feature_expected": ACCOUNT_FEATURE_EXPECTED,
-        "account_auth_configured": bool(
-            getattr(account_authenticator, "configured", False)
-        ),
-    }
-
 
 # The two physiological-stress classes whose care advice genuinely
 # diverges — under-watering (``leaf_scorch_underwatering``) says "water me"
@@ -2871,207 +2894,11 @@ def _apply_abstention_presentation(payload: dict) -> dict:
     return payload
 
 
-@api_router.get("/capabilities")
-async def capabilities():
-    """Model-family availability for the scan-screen picker.
-
-    The client calls this once when opening the picker to decide which
-    tiers to offer. It greys out / blocks any family reported unavailable —
-    notably ``frontier`` when ``FRONTIER_ENABLED`` is false or its bundle
-    failed to load. ``aqua`` is always offered because it runs on-device
-    (its real capability depends on the app shipping the tflite student).
-    Tolerates a not-yet-ready pipeline so the app can call it during boot.
-    """
-    base_ready = _family_available("gamma")
-    families = [
-        {
-            "id": "aqua",
-            "available": True,
-            "location": "on_device",
-            "model_family": "aqua",
-        },
-        {
-            "id": "gamma",
-            "available": base_ready,
-            "location": "server",
-            "model_family": pipeline.classifier.model_family if base_ready else "gamma",
-        },
-        {
-            "id": "frontier",
-            "available": _family_available("frontier"),
-            "location": "server",
-            "model_family": (
-                pipeline_frontier.classifier.model_family
-                if pipeline_frontier is not None else "frontier"
-            ),
-        },
-    ]
-    # Consolidated model/version metadata (formerly /version and /classes).
-    # The int8 ship flag tells operators whether classifier_int8.onnx is genuine
-    # INT8 or the FP32 ONNX renamed; defaults to false when the card is missing
-    # or malformed. A notebook bundle (§6b) keeps the card under analysis/; older
-    # trees had it at the root.
-    int8_shipped = False
-    int8_artifact: str | None = None
-    for _card in (MODELS_DIR / "model_card.json", MODELS_DIR / "analysis" / "model_card.json"):
-        try:
-            with open(_card, encoding="utf-8") as fh:
-                _int8 = (json.load(fh).get("int8") or {})
-        except (OSError, ValueError, AttributeError):
-            continue
-        int8_shipped = bool(_int8.get("shipped", False))
-        _artifact = _int8.get("shipped_artifact")
-        if isinstance(_artifact, str):
-            int8_artifact = _artifact
-        break
-
-    model: dict | None = None
-    model_version: str | None = None
-    classes_list: list[dict] = []
-    if base_ready:
-        clf = pipeline.classifier
-        model_version = getattr(clf, "meta", {}).get("model_version")
-        model = {
-            "classifier_name": "plantvision",
-            "model_family": clf.model_family,
-            "detector_arch": "YOLOv8n (single-class plant_leaf)",
-            "classifier_arch": (
-                f"PlantVision {clf.architecture} @ "
-                f"{clf.img_size} px / {clf.backend} backend"
-            ),
-            "stages": 2,
-            "focus": "houseplants + outdoor/garden ornamentals",
-            "int8_shipped": int8_shipped,
-            "int8_artifact": int8_artifact,
-        }
-        for name in clf.CLASS_NAMES:
-            info = DISEASES_DATABASE.get(name, {})
-            classes_list.append({
-                "class": name,
-                "name_en": info.get("name_en", name.replace("_", " ").title()),
-                "name_ru": info.get("name_ru", name),
-                "is_healthy": bool(info.get("is_healthy", False)),
-            })
-
-    return {
-        "default": DEFAULT_FAMILY,
-        "families": families,
-        "account": {
-            "expected": ACCOUNT_FEATURE_EXPECTED,
-            "available": bool(getattr(account_authenticator, "configured", False)),
-        },
-        "version": APP_VERSION,
-        "server_version": APP_VERSION,
-        "model_version": model_version,
-        "model": model,
-        "classes": classes_list,
-    }
-
-
-@api_router.get("/metrics")
-async def metrics():
-    """Operational metrics (JSON). Useful for dashboards and jury demos."""
-    snap = _snapshot_metrics()
-    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
-    # The two store snapshots are blocking sqlite3 and each runs several
-    # full-table COUNT(*) scans, so they hop to a worker thread; the
-    # in-process counters above are just dict reads.
-    loop = asyncio.get_running_loop()
-    training_snapshot = await loop.run_in_executor(None, training_store.training_counts)
-    community_snapshot = await loop.run_in_executor(None, community_stats_snapshot)
-    return {
-        "uptime_seconds": round(uptime, 1),
-        **snap,
-        "ai_doctor": chat_metrics_snapshot(),
-        # Across every OpenRouter caller, not just the doctor — the number that
-        # answers "is prompt caching engaging at all" after a model switch.
-        "prompt_cache": prompt_cache_metrics_snapshot(),
-        "care_plan_polish": care_plan_metrics_snapshot(),
-        "plantnet": plantnet_metrics_snapshot(),
-        "training": training_snapshot,
-        "community": community_snapshot,
-    }
-
-
 _PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
 
 
 def _prom_label(value: str) -> str:
     return value.translate(_PROM_LABEL_ESCAPE)
-
-
-@api_router.get("/metrics/prometheus")
-async def metrics_prometheus():
-    """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
-    snap = _snapshot_metrics()
-    plantnet = plantnet_metrics_snapshot()
-    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
-    version = _prom_label(APP_VERSION)
-
-    lines = [
-        "# HELP plantdiseases_uptime_seconds Seconds since the server started.",
-        "# TYPE plantdiseases_uptime_seconds gauge",
-        f"plantdiseases_uptime_seconds {uptime:.3f}",
-        "# HELP plantdiseases_requests_total Total HTTP requests handled.",
-        "# TYPE plantdiseases_requests_total counter",
-        f"plantdiseases_requests_total {snap['total_requests']}",
-        "# HELP plantdiseases_analyses_total Total successful /api/analyze responses.",
-        "# TYPE plantdiseases_analyses_total counter",
-        f"plantdiseases_analyses_total {snap['total_analyses']}",
-        "# HELP plantdiseases_errors_total Total error responses from /api/analyze.",
-        "# TYPE plantdiseases_errors_total counter",
-        f"plantdiseases_errors_total {snap['total_errors']}",
-        "# HELP plantdiseases_inference_inflight Inference requests holding an admission slot.",
-        "# TYPE plantdiseases_inference_inflight gauge",
-        f"plantdiseases_inference_inflight {snap['inference_inflight']}",
-        "# HELP plantdiseases_inference_busy_rejections_total Inference requests turned away with 503 (server full).",
-        "# TYPE plantdiseases_inference_busy_rejections_total counter",
-        f"plantdiseases_inference_busy_rejections_total {snap['inference_busy_rejections']}",
-        "# HELP plantdiseases_analyze_latency_ms_avg Average analyse latency in milliseconds.",
-        "# TYPE plantdiseases_analyze_latency_ms_avg gauge",
-        f"plantdiseases_analyze_latency_ms_avg {snap['avg_latency_ms']}",
-        "# HELP plantdiseases_build_info Build version label.",
-        "# TYPE plantdiseases_build_info gauge",
-        f'plantdiseases_build_info{{version="{version}"}} 1',
-        "# HELP plantdiseases_class_predictions_total Count of predictions per class.",
-        "# TYPE plantdiseases_class_predictions_total counter",
-    ]
-    for class_name, count in sorted(snap["class_counts"].items()):
-        lines.append(
-            f'plantdiseases_class_predictions_total{{class="{_prom_label(class_name)}"}} {count}'
-        )
-
-    lines.extend(
-        [
-            "# HELP plantdiseases_plantnet_cache_hits_total PlantNet responses served from the local image cache.",
-            "# TYPE plantdiseases_plantnet_cache_hits_total counter",
-            f"plantdiseases_plantnet_cache_hits_total {plantnet['cache_hits_total']}",
-            "# HELP plantdiseases_plantnet_upstream_attempts_total Real PlantNet network attempts after budget authorization.",
-            "# TYPE plantdiseases_plantnet_upstream_attempts_total counter",
-            f"plantdiseases_plantnet_upstream_attempts_total {plantnet['upstream_attempts_total']}",
-            "# HELP plantdiseases_plantnet_upstream_retries_total Real PlantNet retry attempts after a transient failure.",
-            "# TYPE plantdiseases_plantnet_upstream_retries_total counter",
-            f"plantdiseases_plantnet_upstream_retries_total {plantnet['upstream_retries_total']}",
-            "# HELP plantdiseases_plantnet_budget_denials_total Attempts denied by a configured shared ceiling.",
-            "# TYPE plantdiseases_plantnet_budget_denials_total counter",
-            f"plantdiseases_plantnet_budget_denials_total {plantnet['budget_denials_total']}",
-            "# HELP plantdiseases_plantnet_budget_unavailable_total Attempts denied because the shared authority was unavailable.",
-            "# TYPE plantdiseases_plantnet_budget_unavailable_total counter",
-            f"plantdiseases_plantnet_budget_unavailable_total {plantnet['budget_unavailable_total']}",
-            "# HELP plantdiseases_plantnet_reserved_cost_micros_total Marginal-cost exposure reserved by this process.",
-            "# TYPE plantdiseases_plantnet_reserved_cost_micros_total counter",
-            f"plantdiseases_plantnet_reserved_cost_micros_total {plantnet['reserved_cost_micros_total']}",
-            "# HELP plantdiseases_plantnet_daily_cost_exposure_micros Latest shared UTC-day marginal-cost exposure observed.",
-            "# TYPE plantdiseases_plantnet_daily_cost_exposure_micros gauge",
-            f"plantdiseases_plantnet_daily_cost_exposure_micros {plantnet['daily_cost_exposure_micros']}",
-        ]
-    )
-
-    body = "\n".join(lines) + "\n"
-    return StarletteResponse(
-        content=body,
-        media_type="text/plain; version=0.0.4; charset=utf-8",
-    )
 
 
 async def _species_identify_best_effort(
@@ -3337,48 +3164,6 @@ def build_analyze_payload(
         # so a token is never replayed from the diagnosis cache.
         response_payload["scan_id"] = scan_id
     return _apply_abstention_presentation(response_payload)
-
-
-@api_router.post("/analyze")
-async def analyze_image(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    image: UploadFile = File(...),
-    species: str | None = Query(default=None, max_length=128),
-    locale: str = Query(default="en", max_length=16),
-    family: str = Query(default=DEFAULT_FAMILY, max_length=16),
-    training_consent: bool = Query(default=False),
-    training_consent_version: str | None = Query(default=None, max_length=32),
-):
-    """Analyse a plant image for diseases (two-stage pipeline).
-
-    Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
-    Returns bilingual (EN/RU) disease diagnosis with treatment advice,
-    detected regions, a conservative compatibility severity placeholder, and
-    the top-k class probabilities. ``locale`` (default "en") is forwarded to PlantNet
-    so the species ``common_name`` is localised in the response.
-
-    ``family`` selects the model tier (aqua | gamma | frontier). ``gamma``
-    is the default; ``aqua`` is normally answered on-device but is served
-    by gamma here for online parity; ``frontier`` requires the operator to
-    have enabled and provisioned it (otherwise a graceful ``available:false``
-    payload is returned, never a 5xx).
-
-    Admission-controlled: a request that finds the server full gets 503 +
-    ``Retry-After`` before its upload is read (see ``_inference_slot``), and
-    each IP gets ``ANALYZE_DAILY_QUOTA`` analyses a day (429 past it).
-    """
-    async with _inference_slot(request) as slot:
-        # Taken once admitted, so a busy 503 (and the app's retry of it)
-        # does not spend the caller's allowance.
-        _require_daily_quota(_analyze_quota, request)
-        return await _analyze_image_admitted(
-            request, background_tasks, image, slot,
-            client_ip=_client_key(_client_ip(request)),
-            species=species, locale=locale, family=family,
-            training_consent=training_consent,
-            training_consent_version=training_consent_version,
-        )
 
 
 async def _plantnet_quota_exhausted() -> dict:
@@ -4173,43 +3958,6 @@ class FeedbackRequest(BaseModel):
         return self
 
 
-@api_router.post("/identify")
-async def identify_endpoint(
-    request: Request,
-    image: UploadFile = File(...),
-    organ: str = "leaf",
-    locale: str = "en",
-):
-    """PlantNet-backed plant species identification.
-
-    Returns up to 5 candidate species with confidence scores. When the
-    PlantNet API key is missing we still respond 200 OK with
-    ``available: false`` so the client can render a graceful state
-    instead of an error toast. Cached server-side by SHA-256(image) +
-    organ + locale to keep the daily PlantNet quota intact.
-
-    ``locale`` is forwarded to PlantNet's ``lang`` query param so the
-    common names come back localised (e.g. "Каучуковое дерево" on
-    ru-RU instead of "Rubber tree").
-
-    The same local NAP gate used by ``/api/analyze`` runs before PlantNet.
-    A ``not_a_plant`` verdict returns a graceful ``available: false``
-    payload and does not spend a PlantNet identification request.
-
-    Shares ``/api/analyze``'s admission control (``_inference_slot``): the NAP
-    gate runs on the same inference executor. Each IP gets
-    ``IDENTIFY_DAILY_QUOTA`` calls a day (429 past it), and its PlantNet calls
-    count against ``PLANTNET_DAILY_QUOTA_PER_IP`` (``available: false``,
-    ``source: "quota"`` past it).
-    """
-    async with _inference_slot(request) as slot:
-        _require_daily_quota(_identify_quota, request)
-        return await _identify_admitted(
-            request, image, slot,
-            client_ip=_client_key(_client_ip(request)), organ=organ, locale=locale,
-        )
-
-
 async def _identify_admitted(
     request: Request,
     image: UploadFile,
@@ -4377,283 +4125,6 @@ async def _identify_admitted(
     return JSONResponse(content={**public_result, "organ": organ})
 
 
-@api_router.post("/chat")
-async def chat_endpoint(request: Request, payload: ChatRequest):
-    """AI Plant Doctor — OpenRouter chat completion (default model
-    ``openai/gpt-5.6-luna``).
-
-    Per-session turn + token caps prevent budget overrun within a session;
-    ``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the
-    client mints ``session_id`` and a new one resets the session caps.
-    """
-    if not _chat_quota.try_consume(_client_key(_client_ip(request))):
-        lang = "ru" if str(payload.locale or "en").lower().startswith("ru") else "en"
-        return JSONResponse(content={
-            "available": False,
-            "reply": "",
-            "reason": "daily_quota",
-            # The app shows ``fallback`` verbatim, so builds that predate
-            # this reason still tell the user what happened.
-            "fallback": _QUOTA_UNAVAILABLE_TEXT[lang],
-        })
-    # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
-    # before they hit chat_reply so a malicious client can't push a
-    # 10 MB nested dict through the LLM context window.
-    diagnosis = payload.diagnosis
-    if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
-        raise HTTPException(status_code=400, detail="diagnosis context too large")
-    if openrouter_configured():
-        await _authorize_metered_feature(request, feature="ai_doctor")
-    result = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(),
-        lambda: chat_reply(
-            session_id=payload.session_id,
-            user_message=payload.message,
-            locale=payload.locale,
-            diagnosis_context=diagnosis,
-        ),
-    )
-    if (
-        not result.get("available")
-        and result.get("reason") in ("session_turn_cap", "session_token_cap")
-    ):
-        logger.warning("AI Doctor budget cap reached")
-    return JSONResponse(content=result)
-
-
-@api_router.post("/care-plan")
-async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
-    """Build a watering / fertilising / humidity schedule for a plant.
-
-    Always returns a usable rules-based plan; when an OpenRouter key
-    is configured the response also includes a Markdown ``summary_md``
-    polished by the LLM. Disease must be one of the known classifier
-    classes (``unknown`` is normalised to a generic monitoring plan).
-    Past ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served
-    without the LLM polish.
-    """
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
-    polish = _care_plan_quota.try_consume(_client_key(_client_ip(request)))
-    disease = payload.disease.strip()
-    if disease not in DISEASES_DATABASE and disease != "unknown":
-        # Don't reject — just normalise unknown to ``unknown``. Keeps the
-        # endpoint forgiving while still producing a useful plan.
-        disease = "unknown"
-    await _authorize_metered_feature(request, feature="care_plan")
-    plan = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(),
-        lambda: generate_care_plan(
-            disease=disease,
-            species=payload.species,
-            light=payload.light,
-            locale=payload.locale,
-            season=payload.season,
-            polish=polish,
-        ),
-    )
-    toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
-        "toxic_to_pets": False, "species_list": [], "source": "unknown",
-    }
-    plan = {
-        **plan,
-        "toxic_to_pets": toxicity["toxic_to_pets"],
-        "toxic_species_list": toxicity["species_list"],
-        "toxicity_source": toxicity["source"],
-    }
-    return JSONResponse(content=plan)
-
-
-@api_router.post("/symptom-diagnose")
-async def symptom_diagnose_endpoint(payload: SymptomDiagnoseRequest):
-    """No-photo symptom triage — the fallback when the camera/ML pipeline
-    can't get a confident read.
-
-    Scores the answered questionnaire against a transparent weight table
-    (``symptoms.py``) and returns a ranked shortlist of likely conditions,
-    each enriched with its full bilingual care card. ``low_confidence`` is
-    set when the answers are too sparse/weak to trust, so the client can
-    nudge the user to take a photo for a more reliable diagnosis. Always
-    returns 200 with a usable payload — an empty questionnaire just yields
-    an empty shortlist + the ``unknown`` guidance card.
-    """
-    triage = symptom_diagnose(payload.answers)
-    results = []
-    for item in triage["results"]:
-        card = _compact_care_card(item["class"])
-        card["score"] = item["score"]
-        card["confidence"] = item["confidence"]
-        card["rank"] = item["rank"]
-        results.append(card)
-    # When nothing scored, hand back the generic "unknown" guidance card so
-    # the screen is never blank — and flag low confidence.
-    if not results:
-        fallback = _compact_care_card("unknown")
-        fallback["score"] = 0.0
-        fallback["confidence"] = 0.0
-        fallback["rank"] = 1
-        results = [fallback]
-    return JSONResponse(
-        content={
-            "results": results,
-            "answered": triage["answered"],
-            "low_confidence": triage["low_confidence"] or not triage["results"],
-        }
-    )
-
-
-@api_router.post("/progression")
-async def progression_endpoint(payload: ProgressionRequest):
-    """Disease-progression analysis. Returns a 5-point severity
-    sparkline + a trend slope across the supplied history (oldest
-    first). An empty list is allowed and yields a zero-padded
-    baseline so the client can render an "awaiting data" state
-    without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
-    (422 past it), so the computation stays a few microseconds of event-loop
-    time."""
-    return JSONResponse(content=compare_progression_history(payload.history))
-
-
-@api_router.post("/feedback")
-async def feedback_endpoint(payload: FeedbackRequest, request: Request):
-    """Apply one structured correction through a short-lived receipt.
-
-    The receipt is independent from accounts, community publication tokens,
-    and client scan identifiers. Only its digest exists at rest. The live
-    connection address is used for an in-process quota and is never written.
-    """
-    client_ip = _client_ip(request)
-    if not _consume_daily_write("feedback", client_ip, FEEDBACK_DAILY_QUOTA):
-        logger.warning("Feedback daily quota reached")
-        raise HTTPException(
-            status_code=429,
-            detail="Daily feedback quota reached. Try again tomorrow.",
-        )
-    out_of_head: bool | None = None
-    if payload.corrected_class:
-        out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
-    try:
-        result = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: training_store.apply_feedback(
-                payload.feedback_receipt,
-                correct=payload.correct,
-                corrected_class=payload.corrected_class,
-                correction_reason=payload.reason,
-                out_of_head=out_of_head,
-            ),
-        )
-    except training_store.TrainingStoreError as exc:
-        if exc.code == "feedback_not_ready":
-            raise HTTPException(status_code=409, detail="feedback_not_ready") from None
-        if exc.code == "feedback_receipt_used":
-            raise HTTPException(status_code=409, detail="feedback_receipt_used") from None
-        raise HTTPException(status_code=422, detail="feedback_receipt_invalid") from None
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to record structured feedback")
-        raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
-    logger.info("Structured feedback recorded")
-    return JSONResponse(content={"ok": True, "updated": result.updated})
-
-
-@api_router.post("/feedback/image")
-async def feedback_image_upload(
-    request: Request,
-    feedback_receipt: str = Form(...),
-    correct: bool = Form(...),
-    corrected_class: str | None = Form(None),
-    reason: str | None = Form(None),
-    image: UploadFile = File(...),
-):
-    """Apply feedback and optionally retain a detector-backed leaf crop.
-
-    Full frames are never stored by this endpoint. If the detector cannot
-    provide a bounded leaf crop, the upload is rejected without retaining
-    pixels. Re-encoding strips metadata before hashes are calculated.
-    """
-    try:
-        payload = FeedbackRequest(
-            feedback_receipt=feedback_receipt,
-            correct=correct,
-            corrected_class=corrected_class,
-            reason=reason,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="invalid_feedback") from exc
-
-    client_ip = _client_ip(request)
-    if not _consume_daily_write("feedback_image", client_ip, FEEDBACK_DAILY_QUOTA):
-        logger.warning("Feedback image daily quota reached")
-        raise HTTPException(
-            status_code=429,
-            detail="Daily feedback quota reached. Try again tomorrow.",
-        )
-    image_bytes = await _read_upload(image)
-    # Apply the same byte-signature allowlist as the analysis endpoint before
-    # decoding or invoking the privacy screen. Content-Type is attacker-owned.
-    _validate_image_bytes(image_bytes)
-    img = _open_image(image_bytes)
-    if pipeline is None or not getattr(pipeline, "detector", None):
-        raise HTTPException(status_code=503, detail="privacy_screen_unavailable")
-    loop = asyncio.get_running_loop()
-    try:
-        detector_result = await asyncio.wait_for(
-            loop.run_in_executor(_get_inference_executor(), pipeline.detector.detect, img),
-            timeout=INFERENCE_TIMEOUT,
-        )
-    except (AttributeError, asyncio.TimeoutError):
-        raise HTTPException(status_code=503, detail="privacy_screen_unavailable") from None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Feedback image privacy screen failed")
-        raise HTTPException(status_code=422, detail="unsafe_training_image") from exc
-
-    safe_crop = training_store.extract_safe_leaf_crop(
-        img, {"regions": list((detector_result or {}).get("detections") or [])}
-    )
-    if safe_crop is None:
-        raise HTTPException(status_code=422, detail="unsafe_training_image")
-    crop, _area_buckets = safe_crop
-    try:
-        sanitized = await loop.run_in_executor(
-            None, training_store.sanitize_training_image, crop
-        )
-        out_of_head = (
-            payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
-            if payload.corrected_class
-            else None
-        )
-        result = await loop.run_in_executor(
-            None,
-            lambda: training_store.store_feedback_upload(
-                payload.feedback_receipt,
-                sanitized,
-                correct=payload.correct,
-                corrected_class=payload.corrected_class,
-                correction_reason=payload.reason,
-                out_of_head=out_of_head,
-                consent_version=TRAINING_CONSENT_VERSION,
-            ),
-        )
-    except training_store.TrainingStoreError as exc:
-        if exc.code == "feedback_not_ready":
-            raise HTTPException(status_code=409, detail="feedback_not_ready") from None
-        if exc.code == "feedback_receipt_used":
-            raise HTTPException(status_code=409, detail="feedback_receipt_used") from None
-        raise HTTPException(status_code=422, detail="feedback_receipt_invalid") from None
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to store privacy-screened feedback image")
-        raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
-
-    logger.info("Privacy-screened feedback image processed")
-    return JSONResponse(
-        content={
-            "ok": True,
-            "updated": result.updated,
-            "stored_image": result.stored_image,
-        }
-    )
-
-
 # ── Community scan corpus ───────────────────────────────────────────
 
 
@@ -4671,201 +4142,6 @@ class InternalActorDeletionRequest(BaseModel):
 class InternalActorNicknameRequest(BaseModel):
     actor_id: str = Field(..., min_length=36, max_length=36)
     nickname: str = Field(..., min_length=1, max_length=48)
-
-
-@api_router.post(
-    "/internal/account-deletions",
-    status_code=202,
-    include_in_schema=False,
-)
-async def internal_account_deletion(
-    payload: InternalActorDeletionRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-):
-    """Immediately tombstone an actor; physical removal is retryable."""
-    if not internal_service_authorized(
-        request.headers.get("x-internal-service-token", "")
-    ):
-        raise HTTPException(status_code=401, detail="auth_required")
-    try:
-        actor_id = str(uuid.UUID(payload.actor_id))
-    except ValueError:
-        raise HTTPException(status_code=422, detail="invalid_request") from None
-    accepted = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_request_actor_deletion(actor_id)
-    )
-    if not accepted:
-        raise HTTPException(status_code=422, detail="invalid_request")
-    background_tasks.add_task(community_process_cleanup_jobs)
-    return JSONResponse(status_code=202, content={"status": "accepted"})
-
-
-@api_router.post(
-    "/internal/account-nicknames",
-    status_code=202,
-    include_in_schema=False,
-)
-async def internal_account_nickname(
-    payload: InternalActorNicknameRequest,
-    request: Request,
-):
-    """Idempotently replace an actor's denormalized historical nickname."""
-    if not internal_service_authorized(
-        request.headers.get("x-internal-service-token", "")
-    ):
-        raise HTTPException(status_code=401, detail="auth_required")
-    try:
-        actor_id = str(uuid.UUID(payload.actor_id))
-    except ValueError:
-        raise HTTPException(status_code=422, detail="invalid_request") from None
-    updated = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_update_actor_nickname(actor_id, payload.nickname),
-    )
-    return JSONResponse(
-        status_code=202,
-        content={"status": "accepted", "updated": updated},
-    )
-
-
-@api_router.post("/community/scan", dependencies=[Depends(community_bearer)])
-async def community_scan_upload(
-    request: Request,
-    scan_id: str = Form(...),
-    country: str | None = Form(None),
-    region: str = Form(""),
-    lat: float | None = Form(None),
-    lon: float | None = Form(None),
-    disease: str = Form(...),
-    confidence: float | None = Form(None),
-    species: str | None = Form(None),
-    species_score: float | None = Form(None),
-    locale: str | None = Form(None),
-    image: UploadFile | None = File(None),
-):
-    """Append one community-shared scan to the corpus.
-
-    Identity and nickname come exclusively from the verified access token.
-    Location is supplied by the opted-in client from its coarse location
-    (``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no
-    server-side IP geolocation.
-    The image is required and must be byte-for-byte identical to the upload
-    accepted by ``/api/analyze`` when ``scan_id`` was issued. The server derives
-    the stored thumbnail from that already-sanitized upload.
-    """
-
-    principal = await _require_account(request)
-    try:
-        payload = CommunityScanRequest(
-            scan_id=scan_id,
-            country=country,
-            region=region,
-            disease=disease,
-            confidence=confidence,
-            species=species,
-            species_score=species_score,
-            locale=locale,
-        )
-    except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
-        logger.info("Community scan validation failed")
-        raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
-
-    # Bind the shared scan to a publication token we actually issued at
-    # /api/analyze. This capability is independent from feedback receipts;
-    # without it any client could
-    # post a fabricated diagnosis (arbitrary species/disease/confidence) into
-    # the public feed under a made-up or copied scan_id. On-device Aqua scans
-    # have no server-issued id and are kept private client-side, so a
-    # legitimate upload always carries an issued id. Checked BEFORE the quota
-    # read and the (up to 10 MB) image body so a forged id is rejected without
-    # us ingesting its payload.
-    issued = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_analysis_token_issued(payload.scan_id),
-    )
-    if not issued:
-        logger.warning("Community publication capability rejected")
-        raise HTTPException(
-            status_code=422,
-            detail="Unknown scan_id — re-scan before sharing to the community.",
-        )
-
-    geo = _client_location(payload.country, payload.region, lat, lon)
-
-    # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
-    # image body — an over-quota client should be rejected without us
-    # ingesting its payload first.
-    client_ip = _client_ip(request)
-    if not _consume_daily_write("community_scan", client_ip, COMMUNITY_DAILY_QUOTA):
-        logger.warning("Community daily upload quota reached")
-        raise HTTPException(
-            status_code=429,
-            detail="Daily community-upload quota reached.",
-        )
-
-    image_bytes: bytes | None = None
-    if image is not None:
-        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail="Community image must be JPEG / PNG / WebP / BMP",
-            )
-        try:
-            image_bytes = await _read_upload(image)
-        except HTTPException:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.info("Community image read failed")
-            image_bytes = None
-        # Re-validate the actual bytes — Content-Type is attacker-controlled
-        # (and optional), but the magic bytes don't lie. The exact bytes are
-        # also matched against the digest stored with the analysis capability.
-        if image_bytes:
-            _validate_image_bytes(image_bytes)
-    try:
-        row_id = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: community_record_analysis_scan(
-                scan_id=payload.scan_id,
-                account_actor_id=principal.actor_id,
-                country=geo["country"] or "",
-                region=geo["city"] or "",
-                city=geo["city"],
-                lat=geo["lat"],
-                lon=geo["lon"],
-                client_disease=payload.disease,
-                client_confidence=payload.confidence,
-                client_species=payload.species,
-                nickname=principal.nickname,
-                client_species_score=payload.species_score,
-                image_bytes=image_bytes,
-                locale=payload.locale,
-            ),
-        )
-    except AnalysisTokenUnknownError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="Unknown scan_id — re-scan before sharing to the community.",
-        ) from exc
-    except AnalysisImageMismatchError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="Community image does not match the analyzed image.",
-        ) from exc
-    except AnalysisTokenConflictError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="This scan_id has already been published.",
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Community scan write failed")
-        raise HTTPException(status_code=500, detail="Failed to record scan") from exc
-
-    # A new scan can change "popular near you" — drop the cached bundles so it
-    # surfaces on the next request rather than only after the TTL lapses.
-    _invalidate_popular_cache()
-    return JSONResponse(content={"ok": True, "id": row_id})
 
 
 class TelemetryErrorRequest(BaseModel):
@@ -4927,46 +4203,6 @@ class TelemetryErrorRequest(BaseModel):
         return values
 
 
-@api_router.post("/telemetry/errors")
-async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
-    """Record minimized error telemetry only under the current consent text."""
-    if not TELEMETRY_ENABLED or not payload.telemetry_consent:
-        return JSONResponse(content={"ok": True, "recorded": False})
-    if (
-        (payload.telemetry_consent_version or "").strip().lower()
-        != TELEMETRY_CONSENT_VERSION.lower()
-    ):
-        raise HTTPException(status_code=422, detail="telemetry_consent_version_invalid")
-    client_ip = _client_ip(request)
-    if not _consume_daily_write(
-        "telemetry", client_ip, TELEMETRY_DAILY_CAP_PER_IP
-    ):
-        raise HTTPException(status_code=429, detail="Daily telemetry quota reached.")
-    loop = asyncio.get_running_loop()
-    try:
-        rid = await loop.run_in_executor(
-            None,
-            lambda: telemetry_record_error(
-                stage=payload.stage,
-                kind=payload.kind,
-                fatal=payload.fatal,
-                http_status_bucket=telemetry_http_status_bucket(
-                    payload.http_status
-                ),
-                family=payload.family,
-                app_version=payload.app_version,
-                android_api_bucket=telemetry_android_api_bucket(
-                    payload.android_api
-                ),
-                breadcrumbs=payload.breadcrumbs,
-            ),
-        )
-    except Exception:  # noqa: BLE001 - telemetry never breaks the caller
-        logger.warning("Minimized telemetry write failed")
-        return JSONResponse(content={"ok": True, "recorded": False})
-    return JSONResponse(content={"ok": True, "recorded": rid is not None})
-
-
 class CommunityOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
     suggested_disease: str = Field(..., min_length=1, max_length=64)
@@ -5005,345 +4241,8 @@ def _raise_community_safety_error(error: ValueError) -> None:
     raise HTTPException(status_code=500, detail="community_safety_failed") from None
 
 
-@api_router.post(
-    "/community/safety/report", dependencies=[Depends(community_bearer)]
-)
-async def community_report_content(
-    payload: CommunityReportRequest, request: Request,
-):
-    """Queue a report bound to the signed actor and stored content author.
-
-    The request contains only an opaque public content token plus a fixed
-    reason.  It never accepts an actor id or free-form moderation text.
-    """
-    principal = await _require_account(request)
-    kind = payload.target_type.strip().lower()
-    if kind not in {"scan", "opinion"}:
-        raise HTTPException(status_code=422, detail="invalid_target_type")
-    try:
-        created = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: community_record_content_report(
-                reporter_actor_id=principal.actor_id,
-                target_type=kind,
-                target_id=payload.target_id.strip(),
-                reason=payload.reason,
-            ),
-        )
-    except ValueError as exc:
-        _raise_community_safety_error(exc)
-        raise AssertionError("unreachable") from exc
-    return JSONResponse(
-        content={"ok": True, "created": bool(created)},
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-@api_router.post(
-    "/community/safety/block", dependencies=[Depends(community_bearer)]
-)
-async def community_block_author(
-    payload: CommunityBlockRequest, request: Request,
-):
-    """Block the verified author resolved from an opaque content token."""
-    principal = await _require_account(request)
-    kind = payload.target_type.strip().lower()
-    if kind not in {"scan", "opinion"}:
-        raise HTTPException(status_code=422, detail="invalid_target_type")
-    try:
-        result = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: community_block_content_author(
-                blocker_actor_id=principal.actor_id,
-                target_type=kind,
-                target_id=payload.target_id.strip(),
-            ),
-        )
-    except ValueError as exc:
-        _raise_community_safety_error(exc)
-        raise AssertionError("unreachable") from exc
-    return JSONResponse(
-        content={"ok": True, **result},
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-@api_router.get(
-    "/community/safety/blocks", dependencies=[Depends(community_bearer)]
-)
-async def community_list_blocks(request: Request):
-    """List only the caller's blocks using unlinkable opaque block ids."""
-    principal = await _require_account(request)
-    items = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_actor_blocks(principal.actor_id)
-    )
-    return JSONResponse(
-        content={"items": items}, headers={"Cache-Control": "no-store"}
-    )
-
-
-@api_router.delete(
-    "/community/safety/blocks/{block_id}",
-    dependencies=[Depends(community_bearer)],
-)
-async def community_remove_block(block_id: str, request: Request):
-    """Delete only a block owned by the signed caller."""
-    principal = await _require_account(request)
-    if len(block_id) != 32 or not block_id.startswith("cb"):
-        raise HTTPException(status_code=422, detail="invalid_block_id")
-    removed = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_unblock_actor(principal.actor_id, block_id)
-    )
-    if not removed:
-        raise HTTPException(status_code=404, detail="block_not_found")
-    return JSONResponse(
-        content={"ok": True}, headers={"Cache-Control": "no-store"}
-    )
-
-
-@api_router.post("/community/opinion", dependencies=[Depends(community_bearer)])
-async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
-    """Record one community 'second opinion' on a shared scan.
-
-    The suggested disease must be a known classifier class so the consensus
-    tally stays clean; any free text lives only in the optional note.
-    """
-    principal = await _require_account(request)
-    disease = payload.suggested_disease.strip()
-    if disease not in DISEASES_DATABASE:
-        raise HTTPException(status_code=422, detail="Unknown suggested disease")
-
-    client_ip = _client_ip(request)
-    loop = asyncio.get_running_loop()
-    if not _consume_daily_write(
-        "community_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
-    ):
-        raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
-
-    # Viewers arrive with the feed's public token; the scan's owner (and
-    # legacy cached feeds) with the real scan_id. Resolve to the real id
-    # and require the shared scan to exist — opinions against ids that
-    # were never shared are write-only noise in the consensus tally.
-    sid = await loop.run_in_executor(
-        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
-    )
-    known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
-    if not known:
-        raise HTTPException(status_code=422, detail="Unknown scan")
-    owner_actor = await loop.run_in_executor(
-        None, lambda: community_account_owner_of(sid)
-    )
-    if owner_actor is None:
-        raise HTTPException(status_code=409, detail="legacy_scan_read_only")
-    # A scan older than 30 days goes read-only so stale photos cannot keep
-    # collecting opinions. Its per-scan public read handle remains stable.
-    fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
-    if not fresh:
-        raise HTTPException(status_code=410, detail="Scan too old for new opinions")
-    try:
-        _opinion_id, created = await loop.run_in_executor(
-            None,
-            lambda: community_record_opinion(
-                scan_id=sid,
-                account_actor_id=principal.actor_id,
-                suggested_disease=disease,
-                note=payload.note,
-                nickname=principal.nickname,
-            ),
-        )
-    except OpinionTargetUnavailableError as exc:
-        raise HTTPException(
-            status_code=410,
-            detail="Scan no longer accepts opinions",
-        ) from exc
-    except ValueError as exc:
-        if str(exc) == "blocked_interaction":
-            raise HTTPException(status_code=409, detail="blocked_interaction") from None
-        logger.error("Community opinion write failed")
-        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Community opinion write failed")
-        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
-
-    # Push the scan's owner a notification (best-effort; no-op when push isn't
-    # configured). Skip self-opinions — you don't get pinged for your own note.
-    # Only owners who explicitly REQUESTED a second opinion get pushed: sharing
-    # a scan to the corpus is not a request to be notified.
-    author = principal.actor_id
-
-    def _push_owner() -> None:
-        try:
-            if not created:
-                return
-            if not community_wants_opinion(sid):
-                return
-            owner = owner_actor
-            if owner and owner != author:
-                # Delivery is delegated to the account service, which resolves
-                # encrypted device registrations privately. Wired below via
-                # the internal notification client.
-                _send_account_opinion_notification(
-                    owner, sid, disease, payload.note, principal.nickname
-                )
-        except Exception:  # noqa: BLE001
-            logger.debug("Opinion push failed")
-
-    # FCM is external HTTP — keep it off the default (DB-op) pool too.
-    await loop.run_in_executor(_get_net_executor(), _push_owner)
-
-    result = await loop.run_in_executor(
-        None,
-        lambda: community_opinions_for(
-            sid, viewer_account_actor_id=principal.actor_id
-        ),
-    )
-    return JSONResponse(
-        content={"ok": True, "count": len(result["opinions"]), **result}
-    )
-
-
 class CommunityRequestOpinionRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
-
-
-@api_router.post(
-    "/community/request-opinion", dependencies=[Depends(community_bearer)]
-)
-async def community_request_opinion(
-    payload: CommunityRequestOpinionRequest, request: Request,
-):
-    """Flag the scanner's own shared scan as wanting a second opinion.
-
-    Unlike ``/community/opinion`` (where a *viewer* suggests a diagnosis
-    for someone else's scan), this is the *scanner* raising their hand:
-    "I'm unsure — community, please weigh in." The flag is owner-scoped
-    (the update only matches the signed account actor) and
-    idempotent.
-
-    Degrades gracefully: the community upload is fire-and-forget and the
-    user may have opted out of sharing, so the owned row might not exist
-    yet. We still return 200 with ``flagged: false`` — the client shows
-    its local "waiting for the community" state regardless.
-    """
-    principal = await _require_account(request)
-    sid = payload.scan_id.strip()
-    client_ip = _client_ip(request)
-    loop = asyncio.get_running_loop()
-    if not _consume_daily_write(
-        "community_request_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
-    ):
-        raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
-    try:
-        flagged = await loop.run_in_executor(
-            None,
-            lambda: community_set_wants_opinion(
-                sid, account_actor_id=principal.actor_id
-            ),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Community request-opinion failed")
-        raise HTTPException(
-            status_code=500, detail="Failed to request opinion",
-        ) from exc
-    return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
-
-
-@api_router.post(
-    "/community/request-opinion/cancel", dependencies=[Depends(community_bearer)]
-)
-async def community_request_opinion_cancel(
-    payload: CommunityRequestOpinionRequest, request: Request,
-):
-    """Withdraw an open second-opinion request on the caller's own scan.
-
-    The inverse of ``/community/request-opinion``: drops the durable
-    request row + the feed badge, so the community stops seeing the ask
-    and the owner stops being notified about new opinions. Opinions
-    already left stay visible. Owner-scoped and idempotent — cancelling
-    a request that doesn't exist (or isn't yours) returns
-    ``cleared: false`` with 200.
-
-    (Requests also lapse on their own after
-    ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
-    """
-    principal = await _require_account(request)
-    sid = payload.scan_id.strip()
-    loop = asyncio.get_running_loop()
-    try:
-        cleared = await loop.run_in_executor(
-            None,
-            lambda: community_clear_wants_opinion(
-                sid, account_actor_id=principal.actor_id
-            ),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Community cancel-request-opinion failed")
-        raise HTTPException(
-            status_code=500, detail="Failed to cancel opinion request",
-        ) from exc
-    return JSONResponse(content={"ok": True, "cleared": bool(cleared)})
-
-
-@api_router.get("/community/opinions/{scan_id}")
-async def community_opinions_list(scan_id: str, request: Request):
-    """List community opinions + a consensus tally for one shared scan.
-
-    Accepts the real scan_id (owner's own app) or the feed's public
-    token (viewers); echoes back whichever form the caller sent.
-    Authentication is optional for this public read. When present it adds
-    caller-specific fields such as ``liked_by_me`` and ``is_mine`` and applies
-    the caller's block list.
-    """
-    sid = (scan_id or "").strip()
-    if not sid or len(sid) > 128:
-        raise HTTPException(status_code=422, detail="Invalid scan id")
-    loop = asyncio.get_running_loop()
-    principal = await _optional_account(request)
-    resolved = await loop.run_in_executor(
-        None, lambda: community_resolve_scan_token(sid),
-    )
-    result = await loop.run_in_executor(
-        None,
-        lambda: community_opinions_for(
-            resolved,
-            viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    return JSONResponse(content={"scan_id": sid, **result})
-
-
-@api_router.get("/community/profile/{author_token}")
-async def community_author_profile(author_token: str, request: Request):
-    """Public community activity for one opaque account-author handle."""
-    if len(author_token) != 32 or not author_token.startswith("ca"):
-        raise HTTPException(status_code=404, detail="profile_not_found")
-    principal = await _optional_account(request)
-    profile = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_public_account_profile(
-            author_token,
-            viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    if profile is None:
-        raise HTTPException(status_code=404, detail="profile_not_found")
-    for item in profile.get("items", []):
-        _localize_item_country(item)
-    return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
-
-
-@api_router.get(
-    "/community/my-scan-opinions", dependencies=[Depends(community_bearer)]
-)
-async def community_my_scan_opinions(request: Request):
-    """Opinion counts on the caller's OWN shared scans. The client polls this
-    on a schedule to notify the user when someone leaves a second opinion on a
-    scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
-    principal = await _require_account(request)
-    result = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinion_counts_for_actor(principal.actor_id),
-    )
-    return JSONResponse(content=result)
 
 
 class CommunityViewRequest(BaseModel):
@@ -5363,75 +4262,9 @@ class CommunityViewRequest(BaseModel):
         return self
 
 
-@api_router.post("/community/view", dependencies=[Depends(community_bearer)])
-async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
-    """Record that the caller opened (or merely scrolled past) someone
-    else's shared scan — one id via ``scan_id``, or up to 50 via
-    ``scan_ids`` for feed-scroll impressions. Deduped per viewer
-    server-side; a scan owner viewing their own scan and views of an
-    unknown scan never count, so this is safe to fire liberally.
-
-    The whole batch is resolved and written in one pass and is bound to the
-    verified account actor, never a client-supplied identifier."""
-    principal = await _require_account(request)
-    loop = asyncio.get_running_loop()
-    ids = [s.strip() for s in (payload.scan_ids or []) if s and s.strip()]
-    if payload.scan_id and payload.scan_id.strip():
-        ids.append(payload.scan_id.strip())
-    # The declared cap is per-field; ``scan_id`` + a full ``scan_ids`` can
-    # exceed it, and a client may repeat an id across the two.
-    ids = list(dict.fromkeys(ids))[:50]
-    # An explicit single-scan open keeps the read-only contract the opinion
-    # route states: a legacy (pre-account) row is readable but never mutable,
-    # and the caller is told so rather than being handed a silent no-op. A
-    # feed-scroll batch stays lenient and just skips any such id.
-    if payload.scan_id and payload.scan_id.strip() and not payload.scan_ids:
-        sid = await loop.run_in_executor(
-            None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
-        )
-        owner_actor = await loop.run_in_executor(
-            None, lambda: community_account_owner_of(sid)
-        )
-        if owner_actor is None:
-            raise HTTPException(status_code=409, detail="legacy_scan_read_only")
-    counted = await loop.run_in_executor(
-        None,
-        lambda: community_record_views(ids, account_actor_id=principal.actor_id),
-    )
-    return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
-
-
 class CommunityLikeRequest(BaseModel):
     scan_id: str = Field(..., min_length=1, max_length=128)
     liked: bool = True
-
-
-@api_router.post("/community/like", dependencies=[Depends(community_bearer)])
-async def community_like_scan(payload: CommunityLikeRequest, request: Request):
-    """Like or unlike a shared scan. A self-like is refused (0 either way);
-    liking your own scan makes no more sense than viewing it does."""
-    principal = await _require_account(request)
-    client_ip = _client_ip(request)
-    loop = asyncio.get_running_loop()
-    if payload.liked and not _consume_daily_write(
-        "community_like", client_ip, COMMUNITY_LIKE_DAILY_QUOTA
-    ):
-        raise HTTPException(status_code=429, detail="Daily like quota reached.")
-    sid = await loop.run_in_executor(
-        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
-    )
-    liked = await loop.run_in_executor(
-        None,
-        lambda: community_set_like(
-            sid,
-            liked=payload.liked,
-            account_actor_id=principal.actor_id,
-        ),
-    )
-    count = await loop.run_in_executor(
-        None, lambda: community_like_counts([sid]).get(sid, 0),
-    )
-    return JSONResponse(content={"ok": True, "liked": liked, "count": count})
 
 
 _COMMUNITY_REPORT_REASONS = {
@@ -5449,209 +4282,6 @@ class CommunityScanCountsRequest(BaseModel):
     scan_ids: list[str] = Field(..., max_length=500)
 
 
-@api_router.post("/community/scan-counts", dependencies=[Depends(community_bearer)])
-async def community_scan_counts_endpoint(
-    payload: CommunityScanCountsRequest, request: Request,
-):
-    """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
-    caller's own rows in one round-trip. Unknown/zero scans are omitted."""
-    principal = await _require_account(request)
-    ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
-    counts = (
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: community_scan_counts_for_actor(principal.actor_id, ids),
-        )
-        if ids else {}
-    )
-    return JSONResponse(content={"counts": counts})
-
-
-@api_router.get("/community/nearby")
-async def community_scan_nearby(
-    request: Request,
-    country: str | None = None,
-    region: str | None = None,
-    lat: float | None = None,
-    lon: float | None = None,
-    disease: str | None = None,
-    species: str | None = None,
-    limit: int = 20,
-    scope: str | None = None,
-    ranking: str | None = None,
-    cursor: str | None = None,
-):
-    """List the most recent community-shared scans near the requester.
-
-    Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
-    reverse-geocoded ``country``/``region`` city). ``scope`` is the app's
-    filter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius
-    of the coords; ``country`` widens to the whole country; ``worldwide`` drops
-    the geo filter entirely (every country, newest first — needs no location).
-    ``species`` + ``disease`` narrow the result-screen "similar scans"
-    carousel, which widens nearby→country to stay filled.
-
-    ``cursor`` pages both recommendation and recent order with a signed,
-    opaque composite key; tied upload timestamps therefore cannot lose rows.
-    The response cursor is null once a page comes back short. Paging is
-    single-pass only:
-    combining it with ``disease`` or ``species`` is rejected with 422,
-    because those widen the query into several concatenated passes whose
-    concatenation has no single global ``created_at`` order to page on.
-    """
-    ranking_norm = (ranking or "recent").strip().lower()
-    if ranking_norm not in {"recent", "recommended"}:
-        raise HTTPException(status_code=422, detail="Invalid community ranking.")
-    if cursor and ((disease or "").strip() or (species or "").strip()):
-        raise HTTPException(
-            status_code=422,
-            detail="cursor cannot be combined with disease or species.",
-        )
-    if ranking_norm == "recommended" and ((disease or "").strip() or (species or "").strip()):
-        raise HTTPException(
-            status_code=422,
-            detail="recommended ranking cannot be combined with disease or species.",
-        )
-    principal = await _optional_account(request)
-    try:
-        recommendation_cursor = community_decode_recommendation_cursor(cursor)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
-    if ranking_norm == "recent" and recommendation_cursor is not None \
-            and recommendation_cursor[0] != 0:
-        raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
-    geo = _client_location(country, region, lat, lon)
-    country_norm = geo["country"]
-    scope_norm = (scope or "nearby").strip().lower()
-    if scope_norm not in ("nearby", "country", "worldwide"):
-        scope_norm = "nearby"
-    nearby = scope_norm == "nearby"
-    worldwide = scope_norm == "worldwide"
-    has_coords = geo["lat"] is not None
-    # With neither coords nor a country a *geo-scoped* query has no anchor, so
-    # the feed comes back empty for a reason the client can't otherwise tell
-    # apart from "no scans near you" (the usual cause: community opted in but
-    # the coarse-location permission was never granted / no fix yet). Surface
-    # it as an explicit flag so the client can prompt to enable location
-    # instead of rendering a misleading empty state. Worldwide needs no anchor,
-    # so it never sets the flag. Storage stays privacy-preserving — there is
-    # deliberately no server-side IP geolocation.
-    location_required = not worldwide and not (bool(country_norm) or has_coords)
-    effective_limit = max(1, min(int(limit), 50))
-    # Every community_* call below is blocking sqlite3. This is the feed the
-    # gallery polls and the queries are the heaviest reads in the server, so
-    # each one hops to a worker thread rather than stalling the event loop.
-    loop = asyncio.get_running_loop()
-    if ranking_norm == "recommended":
-        rows = await loop.run_in_executor(
-            None,
-            lambda: community_recommended_scans(
-                country=country_norm,
-                lat=geo["lat"] if nearby else None,
-                lon=geo["lon"] if nearby else None,
-                limit=effective_limit,
-                exclude_account_actor_id=principal.actor_id if principal else None,
-                viewer_account_actor_id=principal.actor_id if principal else None,
-                scope=scope_norm,
-                cursor=recommendation_cursor,
-            ),
-        )
-    else:
-        rows = await loop.run_in_executor(
-            None,
-            lambda: community_nearby_scans(
-                country=country_norm,
-                lat=geo["lat"] if nearby else None,
-                lon=geo["lon"] if nearby else None,
-                disease=(disease or None),
-                species=(species or None),
-                limit=effective_limit,
-                exclude_account_actor_id=principal.actor_id if principal else None,
-                viewer_account_actor_id=principal.actor_id if principal else None,
-                scope=scope_norm,
-                cursor=(recommendation_cursor[1], recommendation_cursor[2])
-                if recommendation_cursor is not None else None,
-            ),
-        )
-    # A short page means the scope is exhausted; a full page might have more
-    # (the very last page just happens to also be full-sized, and the client
-    # finds out on the follow-up request that comes back empty).
-    next_cursor = None
-    if rows and len(rows) >= effective_limit:
-        last = rows[-1]
-        next_cursor = community_encode_recommendation_cursor(
-            int(last.get("_cursor_score", 0)),
-            int(last["created_at"]),
-            int(last["_cursor_row_id"]),
-        )
-    # Country-level overview for the chip row (the coords feed itself is
-    # radius-scoped; the summary stays country-wide for a stable "what's
-    # around" readout). Excludes the requester's own rows so the row doesn't
-    # surface the scan they just uploaded.
-    summary = await loop.run_in_executor(
-        None,
-        lambda: community_region_summary(
-            country_norm or "",
-            None,
-            exclude_account_actor_id=principal.actor_id if principal else None,
-            viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    # Annotate each cell with how many second opinions it has so the carousel
-    # can show a badge, then swap the publication capability for its stable,
-    # per-scan public token. The author pseudonym rotates independently;
-    # feedback uses a separate receipt.
-    scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts: dict = {}
-    views: dict = {}
-    if ranking_norm == "recent":
-        counts = await loop.run_in_executor(
-            None,
-            lambda: community_opinion_counts(
-                scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
-        views = await loop.run_in_executor(
-            None, lambda: community_view_counts(scan_ids),
-        )
-    for r in rows:
-        sid = str(r.get("scan_id"))
-        r.setdefault("opinion_count", counts.get(sid, 0))
-        r.setdefault("view_count", views.get(sid, 0))
-        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-        r.pop("_cursor_score", None)
-        r.pop("_cursor_row_id", None)
-        # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-        _localize_item_country(r)
-    meta = _country_display(country_norm)
-    # Tell the client which filter was actually served + the nearby label.
-    if worldwide:
-        meta["scope"] = "worldwide"
-        meta["region"] = None
-    else:
-        meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
-        meta["region"] = geo["city"] if (nearby and has_coords) else None
-    meta["location_required"] = location_required
-    summary.update(meta)
-    # Older installed app versions type CommunityRegionSummary.country as a
-    # non-nullable String and decode with strict kotlinx.serialization (no
-    # coerceInputValues) — an explicit `null` here (worldwide scope, or a
-    # coarse location in a territory with no ISO code) throws a decode error
-    # client-side, surfacing as "couldn't reach the community". Newer app
-    # builds tolerate the null directly; this coercion is just backward
-    # compatibility for what's already installed. Only the nested copy is
-    # coerced — the top-level `country` field stays nullable.
-    summary["country"] = summary.get("country") or ""
-    return JSONResponse(
-        content={
-            "items": rows,
-            "summary": summary,
-            "ranking": ranking_norm,
-            "next_cursor": next_cursor,
-            **meta,
-        },
-    )
-
-
 def _valid_bbox(
     min_lat: float, min_lon: float, max_lat: float, max_lon: float,
 ) -> tuple[float, float, float, float] | None:
@@ -5667,245 +4297,6 @@ def _valid_bbox(
     if hi_lat <= lo_lat or hi_lon <= lo_lon:
         return None
     return (lo_lat, lo_lon, hi_lat, hi_lon)
-
-
-@api_router.get("/community/map")
-async def community_map(
-    request: Request,
-    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
-    disease: str | None = None,
-    days: int = 30,
-    limit: int = 300,
-):
-    """Individual community scans inside a bbox — the zoomed-in map markers.
-
-    Each scan carries its ~1 km-rounded coords + the PUBLIC token (never the
-    real scan_id), so the app can pin a marker and open the existing opinion
-    sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
-    signals an over-full bbox."""
-    principal = await _optional_account(request)
-    box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
-    if box is None:
-        raise HTTPException(status_code=422, detail="Invalid bbox")
-    lo_lat, lo_lon, hi_lat, hi_lon = box
-    loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(
-        None,
-        lambda: community_map_scans(
-            lo_lat, hi_lat, lo_lon, hi_lon,
-            disease=(disease or None),
-            days=days,
-            limit=max(1, min(int(limit), 500)),
-            exclude_account_actor_id=principal.actor_id if principal else None,
-            viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    rows = data["items"]
-    # Same opinion-count annotation + public-token swap + country localization as
-    # the nearby feed; here we KEEP lat/lon for the markers.
-    map_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = await loop.run_in_executor(
-        None,
-        lambda: community_opinion_counts(
-            map_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    for r in rows:
-        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
-        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-        _localize_item_country(r)
-    return JSONResponse(content={"items": rows, "truncated": data["truncated"]})
-
-
-@api_router.get("/community/heatmap")
-async def community_heatmap(
-    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
-    disease: str | None = None,
-    days: int = 30,
-):
-    """K-anonymized scan density (grid cells) for the zoomed-out heat layer.
-
-    Public; returns only cell centers + counts (each ≥ 3 scans), never per-scan
-    coords; ``not_a_plant`` excluded."""
-    box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
-    if box is None:
-        raise HTTPException(status_code=422, detail="Invalid bbox")
-    lo_lat, lo_lon, hi_lat, hi_lon = box
-    data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_density_grid(
-            lo_lat, hi_lat, lo_lon, hi_lon,
-            disease=(disease or None),
-            days=days,
-        ),
-    )
-    return JSONResponse(content=data)
-
-
-@api_router.get("/community/by-species")
-async def community_by_species(
-    request: Request,
-    species: str | None = None,
-    limit: int = 12,
-):
-    """Community scans of one species (by scientific name), across all
-    regions — the result screen's 'other <species> in the community' strip."""
-    principal = await _optional_account(request)
-    sci = (species or "").strip()
-    if not sci:
-        raise HTTPException(status_code=422, detail="Invalid species")
-    loop = asyncio.get_running_loop()
-    rows = await loop.run_in_executor(
-        None,
-        lambda: community_scans_by_species(
-            sci,
-            limit=max(1, min(int(limit), 50)),
-            exclude_account_actor_id=principal.actor_id if principal else None,
-            viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-    counts = await loop.run_in_executor(
-        None,
-        lambda: community_opinion_counts(
-            species_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
-        ),
-    )
-    for r in rows:
-        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
-        # Public token only — never the community publication capability.
-        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-        # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-        _localize_item_country(r)
-    return JSONResponse(content={"items": rows})
-
-
-@api_router.get("/species-info")
-async def species_info_endpoint(name: str, locale: str = "en"):
-    """Localized Wikipedia summary + lead image for a scientific name."""
-    n = (name or "").strip()
-    if not n or len(n) > 128:
-        raise HTTPException(status_code=422, detail="Invalid species name")
-    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    loop = asyncio.get_running_loop()
-    info = await loop.run_in_executor(
-        _get_net_executor(), lambda: fetch_species_info(n, lang),
-    )
-    if info is None:
-        # Don't let an intermediary cache a transient Wikipedia miss.
-        return JSONResponse(content={"available": False}, headers={"Cache-Control": "no-store"})
-    # Pin the PHOTOS to the English article for every locale so the same
-    # species shows the same images regardless of UI language — the localized
-    # (e.g. RU) Wikipedia article often carries a different or smaller media
-    # set, which made the species card's gallery differ by locale. Text (title,
-    # extract) stays localized; only the images come from EN. Fall back to the
-    # localized images when the English article has none, so a card never loses
-    # its photo. (fetch_species_info is cached, so the extra EN call is cheap.)
-    image_url = info.get("image_url")
-    images = info.get("images") or []
-    if lang != "en":
-        en_info = await loop.run_in_executor(
-            _get_net_executor(), lambda: fetch_species_info(n, "en"),
-        )
-        if en_info and (en_info.get("images") or en_info.get("image_url")):
-            image_url = en_info.get("image_url")
-            images = en_info.get("images") or ([image_url] if image_url else [])
-    # Route the Wikipedia photos through the server's cache so the app loads
-    # them from our domain (reliable where Wikimedia is blocked). Unproxyable
-    # entries drop to None/out so the card just omits them.
-    proxied = {
-        **info,
-        "image_url": plant_photo_proxy(image_url),
-        "images": [p for p in (plant_photo_proxy(i) for i in images) if p],
-    }
-    # Species facts are stable; carry a long Cache-Control so a CDN / HTTP cache
-    # reuses it too (symmetric with /species-diseases). The app has its own
-    # 7-day ResponseCache, so this mainly helps any intermediary layer.
-    return JSONResponse(
-        content={"available": True, **proxied},
-        headers={"Cache-Control": "public, max-age=604800"},
-    )
-
-
-@api_router.get("/species-diseases")
-async def species_diseases_endpoint(
-    request: Request, name: str, common: str = "", locale: str = "en",
-):
-    """Common conditions a species is affected by indoors (AI, best-effort).
-
-    Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
-    is configured or on any failure — the client then renders its bundled
-    disease guide, so the species screen's "common problems" section is never
-    empty. A real (``available``) result is cached server-side (in-memory +
-    on disk, surviving restarts) per (species, language) and carries a long
-    ``Cache-Control`` so the client/CDN reuses it too; a transient failure is
-    sent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``
-    for the caller's IP the answer is ``available: false`` with
-    ``reason: "daily_quota"``.
-    """
-    n = (name or "").strip()
-    if not n or len(n) > 128:
-        raise HTTPException(status_code=422, detail="Invalid species name")
-    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
-        return JSONResponse(
-            content={"available": False, "diseases": [], "reason": "daily_quota"},
-            headers={"Cache-Control": "no-store"},
-        )
-    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    # ``common`` is accepted for client compatibility and ignored: it is not
-    # part of the shared cache key, so it must not shape the cached answer.
-    _ = common
-    data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_common_diseases(n, lang=lang),
-    )
-    headers = (
-        {"Cache-Control": "public, max-age=604800"}
-        if isinstance(data, dict) and data.get("available")
-        else {"Cache-Control": "no-store"}
-    )
-    return JSONResponse(content=data, headers=headers)
-
-
-@api_router.get("/species-profile")
-async def species_profile_endpoint(
-    request: Request,
-    name: str,
-    common: str = "",
-    locale: str = "en",
-    profile_version: int = 3,
-):
-    """Flowering pattern + native range for a species (AI, best-effort).
-
-    Graceful ``{"available": False}`` when no OpenRouter key is configured or
-    on any failure — the client then hides the section, so the species screen
-    degrades gracefully instead of showing bogus data. A real (``available``)
-    result is cached server-side (in-memory + on disk, surviving restarts) per
-    species and carries both EN/RU text copies, so a locale switch cannot
-    change the map. ``profile_version`` is a cache-busting query parameter for
-    clients/CDNs; the current endpoint always serves the canonical bilingual shape.
-    Shares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.
-    """
-    _ = profile_version
-    n = (name or "").strip()
-    if not n or len(n) > 128:
-        raise HTTPException(status_code=422, detail="Invalid species name")
-    if not _species_ai_quota.try_consume(_client_key(_client_ip(request))):
-        return JSONResponse(
-            content={"available": False, "reason": "daily_quota"},
-            headers={"Cache-Control": "no-store"},
-        )
-    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    # ``common`` is accepted for client compatibility and ignored, as above.
-    _ = common
-    data = await asyncio.get_running_loop().run_in_executor(
-        _get_net_executor(), lambda: species_profile(n, lang=lang),
-    )
-    headers = (
-        {"Cache-Control": "public, max-age=604800"}
-        if isinstance(data, dict) and data.get("available")
-        else {"Cache-Control": "no-store"}
-    )
-    return JSONResponse(content=data, headers=headers)
 
 
 def _cached_image_response(
@@ -5931,106 +4322,6 @@ def _cached_image_response(
     if etag in {t.strip() for t in inm.split(",") if t.strip()}:
         return StarletteResponse(status_code=304, headers=headers)
     return FileResponse(path, media_type=media_type, headers=headers)
-
-
-@api_router.get("/community/thumb/{filename}")
-async def community_scan_thumb(filename: str, request: Request):
-    """Serve a community thumbnail by filename.
-
-    The corpus only ever stores filenames that ``community._save_thumbnail``
-    minted, but we still hard-guard against path traversal: any
-    filename containing ``/`` or ``..`` is refused outright. Missing
-    files return 404 instead of 500.
-    """
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid thumbnail name")
-    visible = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_thumbnail_is_visible(filename)
-    )
-    if not visible:
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    path = COMMUNITY_THUMB_DIR / filename
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    # Streams off the event loop; supports 304 revalidation. Thumbnails
-    # are always re-encoded to JPEG by community._save_thumbnail.
-    return _cached_image_response(
-        request, path,
-        media_type="image/jpeg",
-        cache_control="public, max-age=300, must-revalidate",
-    )
-
-
-@api_router.get("/plant-photo")
-async def plant_photo(request: Request, u: str | None = None,
-                      name: str | None = None, locale: str = "en"):
-    """Proxy + cache an external plant photo so the app loads it from this
-    server's domain — reliable where Wikimedia is throttled/blocked.
-
-    Two ways to address a photo:
-    - ``u`` — a (URL-encoded) source URL (used for species-detail extra photos);
-    - ``name`` — a scientific name the proxy *fully resolves* to its Wikipedia
-      lead image server-side (used by the popular carousel, so a species that
-      only just became popular still resolves a photo on demand).
-
-    Only Wikimedia/Wikipedia hosts are ever fetched. 404 when the photo can't be
-    cached (no image, fetch failure, or a non-raster format) — the client then
-    shows its plant placeholder, the same graceful fallback as before."""
-    loop = asyncio.get_running_loop()
-    url = (u or "").strip()
-    if url:
-        if not plant_photo_allowed(url):
-            raise HTTPException(status_code=400, detail="Invalid photo URL")
-    elif name:
-        nm = name.strip()[:128]
-        lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-        info = await loop.run_in_executor(
-            _get_net_executor(), lambda: fetch_species_info(nm, lang),
-        )
-        url = ((info or {}).get("image_url") or "").strip()
-        if not url:
-            raise HTTPException(status_code=404, detail="Photo unavailable")
-    else:
-        raise HTTPException(status_code=400, detail="Missing photo source")
-    path = await loop.run_in_executor(
-        _get_net_executor(), lambda: plant_photo_get_or_fetch(url),
-    )
-    if path is None:
-        raise HTTPException(status_code=404, detail="Photo unavailable")
-    # Wikimedia lead images come at full resolution (often multi-MB) — the home
-    # carousel pulls ~10 of them, the worst payload on the main screen for a
-    # slow connection. Downscale + WebP-transcode to a phone-sized variant once
-    # and serve that; fall back to the original bytes if transcoding fails.
-    # Backward compatible: Glide decodes WebP transparently on any app version.
-    webp = await loop.run_in_executor(
-        None,
-        lambda: _webp_variant(
-            path,
-            _PLANT_PHOTO_MAX_SIDE,
-            _PLANT_PHOTO_QUALITY,
-            plant_photo_prune_cache,
-        ),
-    )
-    if webp is None:
-        # A transcode failure normally falls back to the original. Dimension
-        # policy failures are different: returning that compressed source
-        # would pass a decompression bomb or extreme allocation risk through
-        # to the mobile decoder, defeating the pre-load guard above.
-        dimensions_allowed = await loop.run_in_executor(
-            None,
-            lambda: _webp_source_dimensions_allowed(path),
-        )
-        if dimensions_allowed is False:
-            raise HTTPException(status_code=404, detail="Photo unavailable")
-    serve, media = (
-        (webp, "image/webp") if webp is not None
-        else (path, plant_photo_media_type(path))
-    )
-    return _cached_image_response(
-        request, serve,
-        media_type=media,
-        cache_control="public, max-age=604800",
-    )
 
 
 # Large source images (guide PNGs, full-res Wikimedia plant photos) are
@@ -6145,32 +4436,6 @@ _PLANT_PHOTO_MAX_SIDE = get_int("PLANT_PHOTO_MAX_SIDE", 1000)
 _PLANT_PHOTO_QUALITY = get_int("PLANT_PHOTO_QUALITY", 80)
 
 
-@api_router.get("/guide/photo/{key}")
-async def guide_photo(key: str, request: Request):
-    """Serve a guide example photo by key (e.g. ``powdery_mildew``).
-
-    Path-traversal guarded like the community-thumb route; missing keys 404.
-    Long-cached because the photos are immutable per release. Serves the
-    downscaled WebP variant when available (Glide sniffs the magic bytes,
-    so clients of any vintage decode it transparently); the original PNG
-    is the fallback if transcoding ever fails.
-    """
-    if "/" in key or "\\" in key or ".." in key:
-        raise HTTPException(status_code=400, detail="Invalid guide photo key")
-    path = GUIDE_STATIC_DIR / f"{key}.png"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Guide photo not found")
-    webp = await asyncio.get_running_loop().run_in_executor(
-        None, _guide_webp_variant, path,
-    )
-    serve, media = (webp, "image/webp") if webp is not None else (path, "image/png")
-    return _cached_image_response(
-        request, serve,
-        media_type=media,
-        cache_control="public, max-age=604800",
-    )
-
-
 # Cache the model digest by (path, mtime, size) so we hash the (multi-MB)
 # tflite once per provisioned file instead of on every manifest poll.
 # lru_cache is thread-safe and bounded (the previous hand-rolled dict had no
@@ -6279,62 +4544,6 @@ def _aqua_bundle_sha256(model_sha256: str, classes_sha256: str) -> str:
     digest.update(bytes.fromhex(model_sha256))
     digest.update(bytes.fromhex(classes_sha256))
     return digest.hexdigest()
-
-
-@api_router.get("/aqua/manifest")
-async def aqua_manifest():
-    """Describe the hosted Aqua on-device model so the app can decide whether
-    to (re)download it. ``available:false`` when the artefact isn't provisioned
-    — the app then just uses the server model. ``sha256`` lets the client skip
-    a re-download when it already has the current bytes; ``classes`` is the
-    sidecar metadata (class order, input size, normalisation) the app needs to
-    run the model.  ``bundle_sha256`` binds model bytes to the semantic
-    sidecar, so changing class order or preprocessing also forces an update."""
-    model_path = AQUA_STATIC_DIR / "aqua_classifier.tflite"
-    meta_path = AQUA_STATIC_DIR / "classes.json"
-    if not model_path.is_file() or not meta_path.is_file():
-        return {"available": False}
-    try:
-        meta = json.loads(
-            meta_path.read_text(encoding="utf-8"),
-            parse_constant=lambda value: (_ for _ in ()).throw(
-                ValueError(f"non-standard JSON constant {value}")
-            ),
-        )
-    except (OSError, ValueError, TypeError):
-        return {"available": False}
-    if not _valid_aqua_classes(meta):
-        return {"available": False}
-    st = model_path.stat()
-    if st.st_size <= 0 or st.st_size > 64 * 1024 * 1024:
-        return {"available": False}
-    model_sha = _aqua_model_sha256(model_path, st.st_mtime, st.st_size)
-    classes_sha = _aqua_classes_sha256(meta)
-    return {
-        "available": True,
-        "version": meta["model_version"],
-        # ``sha256`` is retained for old clients and always means model bytes.
-        "sha256": model_sha,
-        "classes_sha256": classes_sha,
-        "bundle_sha256": _aqua_bundle_sha256(model_sha, classes_sha),
-        "bundle_schema_version": 1,
-        "size_bytes": st.st_size,
-        "classes": meta,
-    }
-
-
-@api_router.get("/aqua/model")
-async def aqua_model():
-    """Serve the Aqua TFLite model bytes. 404 when not provisioned."""
-    model_path = AQUA_STATIC_DIR / "aqua_classifier.tflite"
-    if not model_path.is_file():
-        raise HTTPException(status_code=404, detail="Aqua model not provisioned")
-    return FileResponse(
-        model_path,
-        media_type="application/octet-stream",
-        filename="aqua_classifier.tflite",
-        headers={"Cache-Control": "no-cache"},
-    )
 
 
 # --- /api/popular: personalized, short-cached popular-plants bundle ----
@@ -6539,53 +4748,6 @@ def _build_popular_bundle(
     }
 
 
-@api_router.get("/popular")
-async def popular_endpoint(request: Request, country: str | None = None,
-                           region: str | None = None, lat: float | None = None,
-                           lon: float | None = None, locale: str = "en"):
-    """Personalized popular-plants bundle with lead images pre-resolved.
-
-    Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
-    reverse-geocoded ``country``/``region`` city); a request with none gets the
-    worldwide bundle. Cached per (country, coords, locale); a stale entry is
-    served immediately and refreshed in the background so a user never waits on
-    the per-species Wikipedia calls."""
-    geo = _client_location(country, region, lat, lon)
-    country_norm = geo["country"]
-    lat_n, lon_n = geo["lat"], geo["lon"]
-    city_n = geo["city"]
-    locale = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-
-    key = _popular_cache_key(country_norm, lat_n, lon_n, locale)
-    now = time.time()
-    with _popular_lock:
-        hit = _popular_cache.get(key)
-        if hit:
-            _popular_cache.move_to_end(key)
-    bundle = hit[1] if hit else None
-    fresh = bool(hit and hit[0] > now)
-
-    if bundle is None:
-        # Cold: build synchronously (first ever request for this scope).
-        bundle = await asyncio.get_running_loop().run_in_executor(
-            _get_net_executor(),
-            lambda: _build_popular_bundle(country_norm, city_n, lat_n, lon_n, locale),
-        )
-        with _popular_lock:
-            _popular_cache[key] = (now + _popular_ttl(bundle), bundle)
-            _popular_cache.move_to_end(key)
-            while len(_popular_cache) > _POPULAR_CACHE_MAX:
-                _popular_cache.popitem(last=False)
-    elif not fresh:
-        # Stale: serve it now, refresh in the background (deduped per key).
-        _refresh_popular_bg(key, country_norm, city_n, lat_n, lon_n, locale)
-
-    return JSONResponse(
-        content=bundle,
-        headers={"cache-control": f"public, max-age={_popular_ttl(bundle)}"},
-    )
-
-
 # Keys currently being refreshed in the background, so concurrent stale hits
 # don't each spawn a rebuild.
 _popular_refreshing: set[str] = set()
@@ -6618,6 +4780,20 @@ def _refresh_popular_bg(
 
     with contextlib.suppress(RuntimeError):  # no running loop (shouldn't happen)
         asyncio.create_task(_run())
+
+
+# The route handlers live in the ``routes_*`` modules beside this file. Each
+# ``register`` adds its routes straight onto ``api_router`` (a nested router
+# would drop the ``/api`` prefix from the route template the access log
+# prints) and gets this module, through which the handlers resolve helpers,
+# state and collaborators at call time — so patching a name here (as the
+# tests do) or reloading this module reaches every route. The handlers are
+# also bound here under their own names, where callers have always found them.
+for _routes in (routes_meta, routes_diagnosis, routes_assistant, routes_internal, routes_community, routes_content):
+    _registered = len(api_router.routes)
+    _routes.register(api_router, sys.modules[__name__])
+    for _route in api_router.routes[_registered:]:
+        globals()[_route.endpoint.__name__] = _route.endpoint
 
 
 app.include_router(api_router)

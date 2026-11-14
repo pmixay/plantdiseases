@@ -48,7 +48,7 @@ true across releases.
 - **Never train models locally** (no GPU here; no distillation or ONNX/TFLite export
   either). Training/eval/export runs on the user's Colab via `server/train_notebook.ipynb`
   — edit the notebook/pipeline code and hand the user the cells to run.
-- **Git:** feature work on `claude/**` branches. Don't push to `main` without explicit
+- **Git:** feature work on `claude/**` branches (cloud sessions push to `ccr-*`). Don't push to `main` without explicit
   permission. Don't open a PR unless asked.
 
 ## Common commands
@@ -57,7 +57,7 @@ true across releases.
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
-pytest tests -q                                # full suite; no model weights needed
+pytest tests -q -n auto                        # full suite in parallel (pytest-xdist); no model weights needed
 pytest tests/test_endpoints.py::test_name -q   # single test
 ./start.sh                                     # venv + uvicorn; refuses to start without a bundle
 ```
@@ -66,7 +66,9 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   limiter in `client` (`rate_limited_client` keeps it on), and per test clears
   `main._analyze_cache` (same-photo dedup would leak verdicts), `main._DAILY_QUOTAS`
   and the inference admission slots (all requests share one TestClient peer; quota tests
-  lower `_DailyQuota.limit` via monkeypatch). New pipeline behaviour means keeping
+  lower `_DailyQuota.limit` via monkeypatch). A test that needs its own community store
+  takes `community_store` / `community_http_store` — never `importlib.reload(community)`,
+  which re-creates classes `main` already holds. New pipeline behaviour means keeping
   `FakePipeline`'s response shape in sync, or patching `main.pipeline`.
 - Run as a flat package from `server/` (`uvicorn main:app`); `main.py` resolves imports
   both flat and as `server.*` via try/except.
@@ -92,14 +94,17 @@ cd server && pytest tests/account -q          # account tests; also part of the 
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew :app:assembleDebug -PAPP_API_BASE_URL=http://10.0.2.2:8000/ -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/ -PACCOUNT_REAL_OAUTH=false   # local app + mock-account stack
 ```
-- `assembleRelease` is CI-only for agents; there is no CI release workflow — the owner
-  signs distributable APKs locally with the permanent key (`DEPLOYMENT.md` §8).
+- `assembleRelease` is CI-only for agents. The CI android job signs the release and
+  recovery APKs with the permanent key from repository secrets, checks the certificate
+  and uploads them as the `app-release-apk` artifact (`DEPLOYMENT.md` §8).
+- Every build targets the production server (URLs fixed in `app/build.gradle.kts`);
+  there is no staging variant. Only a local mock-stack build overrides them, as above.
   `connectedDebugAndroidTest` needs a device and CI never runs it.
 - Unit tests run under Robolectric (real resources, in-memory Room) — prefer `src/test/`
   over `src/androidTest/`.
 
 ### CI (`.github/workflows/ci.yml`)
-- Push-only on `main`, `account-beta-test`, `claude/**`, `work/**`, `codex/**`, `model-*`;
+- Push-only on `main`, `account-beta-test`, `claude/**`, `work/**`, `codex/**`, `model-*`, `ccr-*`;
   deliberately no `pull_request` trigger (rationale in the workflow header). A branch
   matching none of these gets no CI.
 - A `paths-filter` job gates the **android** and **server** (server + account) jobs. It gates
@@ -107,7 +112,8 @@ cd server && pytest tests/account -q          # account tests; also part of the 
   commit on a branch touches `android/**`, every later push there runs the android job,
   docs-only ones included. Only a branch whose entire diff touches no filtered path runs
   nothing. (On `main` it uses `github.event.before`, so it gates per push.)
-- Ordinary CI holds no signing or provider credentials.
+- The android job holds the release signing key (env of the Gradle step only); no job
+  holds provider credentials. Every branch in the trigger list can use that key.
 - Easy to undo by accident: `maxParallelForks` in `app/build.gradle.kts` and the
   `~/.m2/repository/org/robolectric` cache step (Robolectric resolves `android-all` via its
   own Maven resolver, which the Gradle-home cache doesn't cover). Measure timings with
@@ -152,8 +158,11 @@ Safety gates (the reason for the architecture):
 pipeline instance. Preserve: an unknown family string falls back to the default; an
 unavailable family answers HTTP 200 `available:false`, not an error. Details: `README.md`.
 
-**Server layout:** `main.py` is the HTTP layer and wires the flat modules beside it
-(`ls server/`). Privacy-sensitive: `training_store.py` and `telemetry.py` are
+**Server layout:** `main.py` is the HTTP layer (app, middleware, shared state, helpers) and
+wires the flat modules beside it (`ls server/`). The route handlers live in `routes_*.py`;
+each `register(router, m)` gets the `main` module and must reach anything defined in or
+imported by `main` as `m.name` at call time — never `from main import …` — because the
+tests patch names on `main`. That is also why `main.py` is exempt from F401. Privacy-sensitive: `training_store.py` and `telemetry.py` are
 consent-gated and de-identified (no account, actor, device or IP data; no free text).
 `account_*.py` are fail-closed clients to the account service. `beta_runtime.py` /
 `synthetic_pipeline.py` are a weight-free pipeline for local/staging only — never a
@@ -219,7 +228,10 @@ detail screen only.
   (destructive fallback is the last resort); migration tests hand-build old-shaped DBs and
   let `onValidateSchema` assert (see `Migration6To7Test.kt`).
 - **Robolectric tests must annotate `@Config(sdk = [33])`** — there is no
-  `robolectric.properties`.
+  `robolectric.properties`. Add `application = Application::class` unless the test needs
+  the Hilt graph: by default Robolectric constructs the real `PlantDiseasesApp` (component,
+  channels, background launches) before every test method. `PlantDiseasesAppBootTest` is
+  the one that boots it on purpose.
 - **`/api/feedback` accepts labels the head does not predict** via
   `_FEEDBACK_OUT_OF_HEAD_CLASSES` in `main.py` (incl. `is_a_plant`, the "the reject was
   wrong" signal that retrains the rejection head). They are tagged `out_of_head` and feed

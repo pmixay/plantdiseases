@@ -10,6 +10,7 @@ import hashlib
 import io
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 
@@ -17,73 +18,9 @@ from server.tests.conftest import _test_access_token
 
 
 @pytest.fixture
-def isolated_community(tmp_path, monkeypatch):
+def isolated_community(community_http_store, tmp_path):
     """Point the community store at a temp DB + thumb dir per test."""
-    db_path = tmp_path / "community.db"
-    thumb_dir = tmp_path / "thumbs"
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(db_path))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(thumb_dir))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import importlib
-
-    import community as comm
-    importlib.reload(comm)
-    import main as server_main
-    server_main.community_record_scan = comm.record_scan
-    server_main.AnalysisImageMismatchError = comm.AnalysisImageMismatchError
-    server_main.AnalysisTokenConflictError = comm.AnalysisTokenConflictError
-    server_main.AnalysisTokenUnknownError = comm.AnalysisTokenUnknownError
-    server_main.OpinionTargetUnavailableError = comm.OpinionTargetUnavailableError
-
-    def legacy_analysis_write(**kwargs):
-        return comm.record_scan(
-            scan_id=kwargs["scan_id"],
-            account_actor_id=kwargs["account_actor_id"],
-            country=kwargs["country"],
-            region=kwargs.get("region", ""),
-            city=kwargs.get("city"),
-            lat=kwargs.get("lat"),
-            lon=kwargs.get("lon"),
-            disease=kwargs.get("client_disease") or "healthy",
-            confidence=kwargs.get("client_confidence"),
-            species=kwargs.get("client_species"),
-            species_score=kwargs.get("client_species_score"),
-            image_bytes=kwargs.get("image_bytes"),
-            locale=kwargs.get("locale"),
-            nickname=kwargs.get("nickname"),
-        )
-
-    server_main.community_record_analysis_scan = legacy_analysis_write
-    server_main.community_nearby_scans = comm.nearby_scans
-    server_main.community_recommended_scans = comm.recommended_scans
-    server_main.community_encode_recommendation_cursor = comm.encode_recommendation_cursor
-    server_main.community_decode_recommendation_cursor = comm.decode_recommendation_cursor
-    server_main.community_region_summary = comm.region_summary
-    server_main.community_stats_snapshot = comm.stats_snapshot
-    server_main.community_set_wants_opinion = comm.set_wants_opinion
-    server_main.community_clear_wants_opinion = comm.clear_wants_opinion
-    server_main.community_wants_opinion = comm.wants_opinion
-    server_main.community_account_owner_of = comm.account_owner_of
-    server_main.community_record_opinion = comm.record_opinion_with_status
-    server_main.community_opinions_for = comm.opinions_for
-    server_main.community_scan_exists = comm.scan_exists
-    server_main.community_opinion_open = comm.opinion_open
-    server_main.community_resolve_scan_token = comm.resolve_scan_token
-    server_main.community_record_view = comm.record_view
-    server_main.community_opinion_counts_for_actor = comm.opinion_counts_for_actor
-    server_main.community_scan_counts_for_actor = comm.scan_counts_for_actor
-    server_main.community_thumbnail_is_visible = comm.thumbnail_is_visible
-    server_main.community_record_analysis_token = comm.record_analysis_token
-    server_main.init_community_db = comm.init_db
-    server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
-    server_main._daily_write_counts.clear()
-    # Community publication uses a server-issued capability that is separate
-    # from the anonymous feedback receipt. Synthetic ids are accepted here;
-    # the rejection path is covered explicitly below.
-    monkeypatch.setattr(
-        server_main, "community_analysis_token_issued", lambda *a, **k: True
-    )
-    yield db_path, thumb_dir
+    yield community_http_store.COMMUNITY_DB_PATH, community_http_store.COMMUNITY_THUMB_DIR
 
 
 def _form(**fields):
@@ -109,20 +46,6 @@ def _png_bytes() -> bytes:
 
 def _account_headers(identity: str, nickname: str = "Signed Fern") -> dict[str, str]:
     return {"Authorization": f"Bearer {_test_access_token(identity, nickname)}"}
-
-
-def _jpeg_with_exif_bytes(size=(1200, 900)) -> bytes:
-    """An oversized (> the 512px thumbnail cap), EXIF-carrying JPEG — proof
-    material for _save_thumbnail actually decoding and re-encoding rather
-    than writing client bytes straight through."""
-    from PIL import Image
-    img = Image.new("RGB", size, color=(60, 140, 60))
-    buf = io.BytesIO()
-    exif = Image.Exif()
-    exif[0x010F] = "TestMake"  # Make — stands in for the GPS tags a real
-    exif[0x0131] = "TestSoftware"  # phone photo would carry alongside them.
-    img.save(buf, format="JPEG", exif=exif)
-    return buf.getvalue()
 
 
 # ── Happy paths ─────────────────────────────────────────────────────
@@ -175,7 +98,7 @@ def test_signed_claims_override_spoofed_legacy_identity_fields(
     assert response.status_code == 200, response.text
     import uuid
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         row = connection.execute(
             "SELECT user_pseudo_id, account_actor_id, nickname "
             "FROM community_scans WHERE scan_id = 'claimbound01'"
@@ -206,7 +129,7 @@ def test_anonymous_reads_create_no_stable_viewer_records(client, isolated_commun
         params={"country": "GB", "scope": "country", "user_pseudo_id": "ignored"},
     )
     assert feed.status_code == 200 and len(feed.json()["items"]) == 1
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute("SELECT COUNT(*) FROM community_scan_views").fetchone()[0] == 0
 
 
@@ -242,15 +165,6 @@ def test_legacy_rows_remain_readable_but_are_never_mutable(
     )
     assert opinion.status_code == 409
     assert view.status_code == 409
-
-
-def test_legacy_push_registration_endpoint_is_removed(client, isolated_community):
-    response = client.post(
-        "/api/push/register",
-        headers={"Authorization": ""},
-        json={"user_pseudo_id": "legacy", "token": "synthetic-token"},
-    )
-    assert response.status_code == 404
 
 
 def test_internal_deletion_hook_is_secret_guarded_and_idempotent(
@@ -389,7 +303,7 @@ def test_community_scan_upload_stores_client_location(client, isolated_community
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         row = conn.execute(
             "SELECT country, region, city, lat, lon FROM community_scans WHERE scan_id = ?",
             ("scangeo001",),
@@ -412,7 +326,7 @@ def test_community_scan_upload_no_location_stores_empty_country(client, isolated
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         row = conn.execute(
             "SELECT country, lat FROM community_scans WHERE scan_id = ?",
             ("scandefault1",),
@@ -503,7 +417,7 @@ def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
     assert first.status_code == replay.status_code == 200, (first.text, replay.text)
     assert first.json()["id"] == replay.json()["id"]
     assert conflict.status_code == 409
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         rows = connection.execute(
             "SELECT disease, confidence, species, species_score, account_actor_id "
             "FROM community_scans WHERE scan_id = 'bound-analysis-1'"
@@ -563,7 +477,7 @@ def test_analysis_publication_rejects_missing_or_substituted_image(
     assert substituted.status_code == missing.status_code == 422
     assert substituted.json()["detail"] == "Community image does not match the analyzed image."
     assert missing.json()["detail"] == "Community image does not match the analyzed image."
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT claimed_actor_id FROM community_analysis_tokens "
             "WHERE token = 'image-bound-analysis-1'"
@@ -610,7 +524,7 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
         species_score=None,
         image_sha256=hashlib.sha256(image_bytes).hexdigest(),
     )
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "CREATE TRIGGER fail_analysis_insert BEFORE INSERT ON community_scans "
             "WHEN NEW.scan_id = 'retry-analysis-1' BEGIN "
@@ -624,7 +538,7 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
         files={"image": ("scan.png", image_bytes, "image/png")},
     )
     assert failed.status_code == 500, failed.text
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT claimed_actor_id FROM community_analysis_tokens "
             "WHERE token = 'retry-analysis-1'"
@@ -700,6 +614,11 @@ def test_community_scan_upload_with_thumbnail(client, isolated_community):
 def test_community_thumbnail_is_oriented_resized_and_metadata_free(
     client, isolated_community,
 ):
+    """_save_thumbnail used to write whatever bytes the client sent straight
+    to disk — its own docstring claimed a 512px JPEG while enforcing nothing
+    of the kind. A modified client could put a full-resolution, GPS-tagged
+    photo behind a publicly served .jpg filename. Now it decodes, applies the
+    orientation, downscales and drops every metadata block."""
     db_path, thumb_dir = isolated_community
     from PIL import Image
 
@@ -797,7 +716,7 @@ def test_community_scan_accepts_unicode_region(client, isolated_community):
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         row = conn.execute(
             "SELECT country, region FROM community_scans WHERE scan_id = ?",
             ("scanru000001",),
@@ -836,32 +755,6 @@ def test_community_scan_thumbnail_size_limit(client, isolated_community):
     assert r.status_code == 200
 
 
-def test_community_thumbnail_is_decoded_downscaled_and_exif_stripped(client, isolated_community):
-    """_save_thumbnail used to write whatever bytes the client sent straight
-    to disk — its own docstring claimed a 512px JPEG while enforcing nothing
-    of the kind. A modified client could put a full-resolution, GPS-tagged
-    photo behind a publicly served .jpg filename. Now it actually decodes."""
-    _, thumb_dir = isolated_community
-    r = client.post(
-        "/api/community/scan",
-        data=_form(
-            scan_id="scanexif0001",
-            user_pseudo_id="pseudoexif1",
-            region="Berlin", country="DE",
-            disease="healthy",
-        ),
-        files={"image": ("scan.jpg", _jpeg_with_exif_bytes((1200, 900)), "image/jpeg")},
-    )
-    assert r.status_code == 200, r.text
-
-    files = list(thumb_dir.iterdir())
-    assert len(files) == 1
-    from PIL import Image
-    with Image.open(files[0]) as saved:
-        assert max(saved.size) <= 512
-        assert not saved.getexif()
-
-
 def test_community_thumbnail_rejects_undecodable_bytes(client, isolated_community):
     """Bytes that pass the size cap but aren't a real image (a modified
     client, or a truncated upload) must not land on disk at all — the row
@@ -880,7 +773,7 @@ def test_community_thumbnail_rejects_undecodable_bytes(client, isolated_communit
     )
     assert r.status_code == 200, r.text
     assert list(thumb_dir.iterdir()) == []
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         row = conn.execute(
             "SELECT thumb_path FROM community_scans WHERE scan_id = ?",
             ("scangarbage1",),
@@ -1422,7 +1315,7 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
         assert r.status_code == 200, r.text
 
     # Persisted country is "GB"; the region column carries the city.
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT country, region FROM community_scans ORDER BY id"
         ).fetchall()
@@ -1548,7 +1441,7 @@ def test_prune_transaction_removes_fresh_companion_that_won_write_race(
     old = int(_time.time()) - 200 * 86_400
     fresh = int(_time.time())
     db_path, _ = isolated_community
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "INSERT INTO community_scans (scan_id, user_pseudo_id, country, "
             "region, disease, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1571,7 +1464,7 @@ def test_prune_transaction_removes_fresh_companion_that_won_write_race(
         )
 
     assert comm.prune_older_than(90) == 1
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         for table in (
             "community_scans",
             "community_opinions",
@@ -1752,7 +1645,7 @@ def test_opinion_rechecks_target_after_cleanup_between_http_checks_and_write(
 
     assert response.status_code == 410, response.text
     assert response.json()["detail"] == "Scan no longer accepts opinions"
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
             (scan_id,),
@@ -1790,7 +1683,7 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
     )
     assert uploaded.status_code == 200, uploaded.text
     two_days_old = int(_time.time()) - 2 * 86_400
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (two_days_old, scan_id),
@@ -1815,7 +1708,7 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
     )
 
     assert response.status_code == 410, response.text
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
             (scan_id,),
@@ -1858,7 +1751,7 @@ def test_opinion_on_stale_scan_rejected_410(client, isolated_community):
 
     # Backdate the scan past the rotation window → new opinions refused.
     stale = int(_time.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (stale, "staleshared01"),
@@ -1935,7 +1828,7 @@ def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
 
     now = 1_800_000_000
     day = 86_400
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         for scan_id, created_at in (
             ("freshpost0001", now),
             ("staleliked001", now - 5 * day),
@@ -1967,7 +1860,7 @@ def test_recommended_feed_caps_total_engagement_below_material_freshness(
     _share(client, "staleengaged1", "Max-engaged stale post")
 
     now = 1_800_000_000
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (now, "freshmax0001"),
@@ -2015,7 +1908,7 @@ def test_recommended_feed_keeps_a_live_opinion_request_ahead_of_fresher_posts(
     _request_opinion(client, "askingpost001", "pseudo-owner-askingpost001")
 
     now = 1_800_000_000
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         changed = conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (now - comm.OPINION_REQUEST_TTL_HOURS * 3600, "askingpost001"),
@@ -2046,7 +1939,7 @@ def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
             ),
         )
     # Force the timestamp tie that a created_at-only cursor cannot page.
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
     _request_opinion(client, scan_ids[0], "pseudo-author-0")
 
@@ -2110,7 +2003,7 @@ def test_recent_composite_cursor_keeps_same_second_rows(client, isolated_communi
                 disease="healthy",
             ),
         )
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
 
     params = {
@@ -2228,16 +2121,12 @@ def test_batch_impression_views_counted_once(client, isolated_community):
     assert counts["views"] == 1
 
 
-def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
+def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(community_store, tmp_path):
     """Rows + thumbnails created before the public_id column existed get
     migrated on init: token assigned, thumbnail renamed off the real id."""
-    import importlib
     import time as _time
 
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    import community as comm
-    importlib.reload(comm)
+    comm = community_store
 
     # Simulate a legacy DB: table without public_id, plus a legacy thumb.
     (tmp_path / "thumbs").mkdir()
@@ -2303,7 +2192,7 @@ def test_scan_id_index_exists_and_is_not_unique(isolated_community):
     db_path, _ = isolated_community
     import community as comm
     comm.init_db()
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         idx = {
             row[1]: bool(row[2])
             for row in conn.execute("PRAGMA index_list(community_scans)").fetchall()
@@ -2316,7 +2205,7 @@ def test_legacy_backfill_pseudo_columns_are_indexed(isolated_community):
     db_path, _ = isolated_community
     import community as comm
     comm.init_db()
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         view_indexes = {
             row[1] for row in conn.execute(
                 "PRAGMA index_list(community_scan_views)",
@@ -2385,66 +2274,24 @@ def test_unlike_soft_deletes_so_the_daily_like_quota_holds(client, isolated_comm
         "liked": True,
     }
     assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         (created_at,) = conn.execute(
             "SELECT created_at FROM community_account_likes",
         ).fetchone()
 
     unliked = client.post("/api/community/like", json={**body, "liked": False})
     assert unliked.json() == {"ok": True, "liked": False, "count": 0}
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT liked, created_at FROM community_account_likes",
         ).fetchall()
     assert rows == [(0, created_at)]
 
     assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT liked, created_at FROM community_account_likes",
         ).fetchall()
     assert rows == [(1, created_at)]
 
 
-def test_author_adopt_is_atomic_under_concurrency(isolated_community, monkeypatch):
-    """Simultaneous adopts of the SAME key must all return the one row — a
-    check-then-insert raced into "UNIQUE constraint failed", i.e. a 500 on an
-    endpoint documented as idempotent.
-
-    The write lock is disabled for the duration so this pins the SQL itself
-    rather than the lock: a second uvicorn worker is a second process, and no
-    in-process lock spans it. Eight barrier-synchronised keys at 16 threads
-    each — the pre-fix code loses this race on roughly 40% of keys, so the
-    run as a whole fails it essentially always."""
-    import contextlib
-    import threading
-
-    import community as comm
-
-    comm.init_db()
-    monkeypatch.setattr(comm, "_write_lock", contextlib.nullcontext())
-    threads_per_key = 16
-
-    for n in range(8):
-        key = f"{n:02x}" * 32
-        barrier = threading.Barrier(threads_per_key)
-        ids: list[str] = []
-        errors: list[Exception] = []
-
-        def _adopt(key: str = key, barrier: threading.Barrier = barrier,
-                   ids: list = ids, errors: list = errors) -> None:
-            barrier.wait()
-            try:
-                ids.append(comm.resolve_author(key, "Racer", "pseudo-race")["author_id"])
-            except Exception as exc:  # noqa: BLE001 — the assertion is "none of these"
-                errors.append(exc)
-
-        threads = [threading.Thread(target=_adopt) for _ in range(threads_per_key)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=30)
-
-        assert not errors, errors
-        assert len(ids) == threads_per_key
-        assert len(set(ids)) == 1

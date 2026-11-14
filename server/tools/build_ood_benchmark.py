@@ -579,7 +579,8 @@ def report(preds_path: Path, manifest: Path) -> None:
     d = json.loads(preds_path.read_text())
     if "items" not in d:
         sys.exit("preds.json has no `items` — re-run paired_eval (it records image paths now)")
-    rows = list(csv.DictReader(open(manifest, newline="", encoding="utf-8")))
+    with open(manifest, newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     # Key on ``class/name``, NOT the bare basename: the same species+stem exists
     # under two classes (``hibiscus__test1.jpg`` is both a healthy and a scorch
     # file), so a basename key silently overwrites one class with the other and

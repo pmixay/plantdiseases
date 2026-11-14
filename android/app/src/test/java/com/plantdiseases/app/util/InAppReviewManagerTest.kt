@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * exactly the way a sideloaded production install would).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class InAppReviewManagerTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
@@ -37,39 +38,20 @@ class InAppReviewManagerTest {
     // ── prompt throttle ──────────────────────────────────────────────
 
     @Test
-    fun promptsOnFirstEverCheck() {
-        assertThat(newManager().shouldPromptNow(now)).isTrue()
-    }
-
-    @Test
-    fun promptThrottledWithinSixtyDays() {
+    fun promptThrottle_opensAfterTheWindow_onClockRollback_andPersists() {
         val manager = newManager()
+        // First ever check: nothing stamped yet.
+        assertThat(manager.shouldPromptNow(now)).isTrue()
+
         manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now)).isFalse()
         assertThat(manager.shouldPromptNow(now + sixtyDays - 1)).isFalse()
-    }
-
-    @Test
-    fun promptsAgainAfterSixtyDays() {
-        val manager = newManager()
-        manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now + sixtyDays)).isTrue()
-    }
-
-    @Test
-    fun throttleStampSurvivesAcrossInstances() {
-        newManager().markPrompted(now)
-        // A fresh instance (new controller / next launch) reads the same prefs.
-        assertThat(newManager().shouldPromptNow(now + 1)).isFalse()
-    }
-
-    @Test
-    fun clockRollbackDoesNotSilencePrompts() {
-        val manager = newManager()
-        manager.markPrompted(now)
         // Device clock rolled back behind the stored stamp: prompt rather than
         // stay silent until the clock catches back up.
         assertThat(manager.shouldPromptNow(now - 2 * sixtyDays)).isTrue()
+        // A fresh instance (new controller / next launch) reads the same prefs.
+        assertThat(newManager().shouldPromptNow(now + 1)).isFalse()
     }
 
     // ── graceful degradation without RuStore ─────────────────────────

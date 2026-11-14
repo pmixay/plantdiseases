@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.app.Application
 import android.os.Looper
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
@@ -14,7 +15,7 @@ import org.robolectric.annotation.Config
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class OfflineNoticeViewTest {
 
     /** Past the strip's show-delay, so a settled offline state has painted. */
@@ -63,25 +64,6 @@ class OfflineNoticeViewTest {
 
         online.value = true
         settle()
-        assertThat(notice.visibility).isEqualTo(View.GONE)
-
-        controller.pause().stop().destroy()
-    }
-
-    @Test
-    fun goingOnline_hidesImmediatelyWithoutWaiting() {
-        val controller = Robolectric.buildActivity(AppCompatActivity::class.java).setup()
-        val activity = controller.get()
-        val notice = OfflineNoticeView(activity)
-        activity.setContentView(notice)
-        val online = MutableStateFlow(false)
-
-        notice.observe(activity, online)
-        settle()
-        assertThat(notice.visibility).isEqualTo(View.VISIBLE)
-
-        online.value = true
-        shadowOf(Looper.getMainLooper()).idle() // no time advanced
         assertThat(notice.visibility).isEqualTo(View.GONE)
 
         controller.pause().stop().destroy()

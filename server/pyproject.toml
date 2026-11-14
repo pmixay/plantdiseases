@@ -27,3 +27,16 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B"]
+# main.py is the namespace the routes_*.py modules resolve through (`m.name`
+# at call time) and the one the tests patch. A collaborator it imports only so
+# a route can reach it is therefore used, just not in this file — which is all
+# F401 can see. Goes away when the alias-import block becomes module imports
+# (docs/ROADMAP.md, "Split main.py").
+"main.py" = ["F401"]
+
+[tool.pytest.ini_options]
+# Every warning is an error, so a new one fails CI instead of scrolling past in
+# the summary. Fix the cause (migrate off the deprecated API, close the
+# resource); a test that provokes a warning on purpose asserts it with
+# `pytest.warns` or routes it into a recorder. Do not add `ignore` entries here.
+filterwarnings = ["error"]

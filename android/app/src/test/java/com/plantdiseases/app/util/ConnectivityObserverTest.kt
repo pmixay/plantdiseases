@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -41,7 +42,7 @@ import org.robolectric.shadows.ShadowNetworkCapabilities
  * offline, since the recovery loop reschedules itself forever.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 // runCurrent/advanceTimeBy/currentTime are still ExperimentalCoroutinesApi.
 // The whole class drives the TestScope clock (see the note above), so opt in
 // once here rather than at ~30 call sites.

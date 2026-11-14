@@ -1,6 +1,7 @@
 package com.plantdiseases.app.data.remote
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import okhttp3.Authenticator
 import okhttp3.Cache
 import okhttp3.Call
@@ -34,7 +35,9 @@ import javax.net.ssl.X509TrustManager
  *  - POSTs are NEVER retried on an IOException (the server may already
  *    have processed the non-idempotent body) but DO retry once on an
  *    explicit 429/503;
- *  - the loop stops after the configured number of attempts.
+ *  - metered POSTs (X-Idempotency-Key) are never retried at all;
+ *  - the loop stops after the configured number of attempts;
+ *  - a Retry-After header can lengthen the back-off, never shorten it.
  */
 class RetryInterceptorTest {
 
@@ -124,44 +127,136 @@ class RetryInterceptorTest {
     private fun get() = Request.Builder().url("http://localhost/").get().build()
     private fun post() =
         Request.Builder().url("http://localhost/").post("x".toRequestBody(null)).build()
+    private fun meteredPost() = post().newBuilder().header("X-Idempotency-Key", "one-unit").build()
 
-    // Tiny delays so the backoff sleeps don't slow the suite.
-    private fun interceptor() = RetryInterceptor(maxRetries = 3, initialDelayMs = 1, maxDelayMs = 4)
+    // Back-offs are recorded instead of slept, with the production delays, so
+    // each case asserts the wait the policy asked for and the class runs in no
+    // real time.
+    private val delays = mutableListOf<Long>()
+    private fun interceptor() = RetryInterceptor(
+        maxRetries = 3,
+        initialDelayMs = 1000,
+        maxDelayMs = 30_000,
+        sleeper = { delays.add(it) },
+    )
+
+    private class Case(
+        val name: String,
+        val request: Request,
+        val script: List<Outcome>,
+        val expectedCode: Int,
+        val expectedProceeds: Int,
+        val expectedDelays: List<Long>,
+    )
 
     @Test
-    fun get_success_firstTry_noRetry() {
-        val chain = FakeChain(get(), mutableListOf(Outcome.Status(200)))
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(200)
-        assertThat(chain.proceedCount).isEqualTo(1)
-    }
-
-    @Test
-    fun get_retriesOn503_thenSucceeds() {
-        val chain = FakeChain(get(), mutableListOf(Outcome.Status(503), Outcome.Status(200)))
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(200)
-        assertThat(chain.proceedCount).isEqualTo(2)
-    }
-
-    @Test
-    fun get_exhaustsRetriesOn503() {
-        // maxRetries=3 -> attempts 0..3 == 4 proceeds, final 503 returned.
-        val chain = FakeChain(
-            get(),
-            mutableListOf(Outcome.Status(503), Outcome.Status(503), Outcome.Status(503), Outcome.Status(503)),
+    fun retryPolicy_perMethodAndOutcome() {
+        val cases = listOf(
+            Case("GET succeeds first try", get(), listOf(Outcome.Status(200)), 200, 1, emptyList()),
+            Case(
+                "GET retries a 503",
+                get(),
+                listOf(Outcome.Status(503), Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
+            Case(
+                "GET retries a 429",
+                get(),
+                listOf(Outcome.Status(429), Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
+            // maxRetries=3 -> attempts 0..3 == 4 proceeds, final 503 returned,
+            // with the back-off doubling between them.
+            Case(
+                "GET exhausts its retries",
+                get(),
+                List(4) { Outcome.Status(503) },
+                503,
+                4,
+                listOf(1000L, 2000L, 4000L),
+            ),
+            Case(
+                "GET retries a transport failure",
+                get(),
+                listOf(Outcome.Fail, Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
+            Case(
+                "POST retries a 503 once",
+                post(),
+                listOf(Outcome.Status(503), Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
+            // effectiveRetries for POST == min(3,1) == 1 -> 2 proceeds max.
+            Case(
+                "POST stops after one retry",
+                post(),
+                listOf(Outcome.Status(503), Outcome.Status(503), Outcome.Status(200)),
+                503,
+                2,
+                listOf(1000L),
+            ),
+            // Quota may already be consumed: a metered POST is never replayed.
+            Case(
+                "metered POST is never retried",
+                meteredPost(),
+                listOf(Outcome.Status(503), Outcome.Status(200)),
+                503,
+                1,
+                emptyList(),
+            ),
+            // 400/404/500 are not retried -> single proceed, returned as-is.
+            Case("non-retryable status passes through", get(), listOf(Outcome.Status(400)), 400, 1, emptyList()),
+            Case(
+                "Retry-After longer than the back-off is honoured",
+                get(),
+                listOf(Outcome.Status(503, retryAfter = "5"), Outcome.Status(200)),
+                200,
+                2,
+                listOf(5000L),
+            ),
+            Case(
+                "Retry-After never shortens the back-off",
+                get(),
+                listOf(Outcome.Status(503, retryAfter = "0"), Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
+            Case(
+                "Retry-After is capped at maxDelayMs",
+                get(),
+                listOf(Outcome.Status(503, retryAfter = "120"), Outcome.Status(200)),
+                200,
+                2,
+                listOf(30_000L),
+            ),
+            Case(
+                "unparseable Retry-After falls back to the back-off",
+                get(),
+                listOf(Outcome.Status(503, retryAfter = "soon"), Outcome.Status(200)),
+                200,
+                2,
+                listOf(1000L),
+            ),
         )
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(503)
-        assertThat(chain.proceedCount).isEqualTo(4)
-    }
 
-    @Test
-    fun get_retriesOnIOException_thenSucceeds() {
-        val chain = FakeChain(get(), mutableListOf(Outcome.Fail, Outcome.Status(200)))
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(200)
-        assertThat(chain.proceedCount).isEqualTo(2)
+        for (case in cases) {
+            delays.clear()
+            val chain = FakeChain(case.request, case.script.toMutableList())
+            val response = interceptor().intercept(chain)
+            assertWithMessage(case.name).that(response.code).isEqualTo(case.expectedCode)
+            assertWithMessage(case.name).that(chain.proceedCount).isEqualTo(case.expectedProceeds)
+            assertWithMessage(case.name).that(delays).isEqualTo(case.expectedDelays)
+        }
     }
 
     @Test
@@ -170,45 +265,6 @@ class RetryInterceptorTest {
         assertThrows(IOException::class.java) { interceptor().intercept(chain) }
         // The second (200) outcome must never be consumed.
         assertThat(chain.proceedCount).isEqualTo(1)
-    }
-
-    @Test
-    fun post_retriesOnceOn503_thenSucceeds() {
-        val chain = FakeChain(post(), mutableListOf(Outcome.Status(503), Outcome.Status(200)))
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(200)
-        assertThat(chain.proceedCount).isEqualTo(2)
-    }
-
-    @Test
-    fun post_stopsAfterOneRetryOn503() {
-        // effectiveRetries for POST == min(3,1) == 1 -> 2 proceeds max.
-        val chain = FakeChain(
-            post(),
-            mutableListOf(Outcome.Status(503), Outcome.Status(503), Outcome.Status(200)),
-        )
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(503)
-        assertThat(chain.proceedCount).isEqualTo(2)
-    }
-
-    @Test
-    fun honorsRetryAfterHeader_andStillSucceeds() {
-        val chain = FakeChain(
-            get(),
-            mutableListOf(Outcome.Status(503, retryAfter = "0"), Outcome.Status(200)),
-        )
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(200)
-        assertThat(chain.proceedCount).isEqualTo(2)
-    }
-
-    @Test
-    fun nonRetryableErrorCode_passesThroughImmediately() {
-        // 400/404/500 are not retried -> single proceed, returned as-is.
-        val chain = FakeChain(get(), mutableListOf(Outcome.Status(400)))
-        val response = interceptor().intercept(chain)
-        assertThat(response.code).isEqualTo(400)
-        assertThat(chain.proceedCount).isEqualTo(1)
+        assertThat(delays).isEmpty()
     }
 }

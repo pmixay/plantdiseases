@@ -4,12 +4,13 @@ import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.ErrorReport
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+/**
+ * Plain JUnit on purpose: [TelemetryReporter] is pure Kotlin (its one Android
+ * touch is reading `Build.VERSION.SDK_INT`, which nothing here asserts), and
+ * `init` in [setup] replaces the sender and clears the breadcrumbs, so the
+ * tests need neither a Robolectric sandbox nor the app's own wiring.
+ */
 class TelemetryReporterTest {
     private val reports = mutableListOf<ErrorReport>()
     private var consent = true

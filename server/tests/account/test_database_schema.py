@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from app.db.models import Base
-from sqlalchemy import inspect
-from sqlalchemy.engine import Engine
 
 EXPECTED_TABLES = {
     "accounts",
@@ -174,14 +172,3 @@ def test_vendor_budget_tables_contain_only_aggregate_cost_authority_state():
     assert forbidden.isdisjoint(authorities | daily | receipts)
 
 
-def test_sqlite_fixture_materializes_all_constraints(db_engine: Engine):
-    inspector = inspect(db_engine)
-    assert set(inspector.get_table_names()) == EXPECTED_TABLES
-    for table_name in EXPECTED_TABLES:
-        expected_primary_key = (
-            ["purchase_id"] if table_name == "billing_purchase_fetches" else ["id"]
-        )
-        assert (
-            inspector.get_pk_constraint(table_name)["constrained_columns"]
-            == expected_primary_key
-        )

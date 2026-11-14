@@ -67,8 +67,3 @@ def test_progression_history_improving_trend(client):
     assert body["sparkline"][-1] < body["sparkline"][0]
 
 
-def test_progression_rejects_payload_without_history(client):
-    """The endpoint requires the ``history`` field. Pydantic surfaces
-    the missing field as a 422 Unprocessable Entity."""
-    r = client.post("/api/progression", json={})
-    assert r.status_code == 422

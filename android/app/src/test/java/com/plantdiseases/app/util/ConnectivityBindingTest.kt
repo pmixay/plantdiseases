@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.os.Looper
 import android.widget.Button
 import android.widget.LinearLayout
@@ -21,7 +22,7 @@ import org.robolectric.annotation.Config
  * that the dimming doesn't double up on controls that dim themselves.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ConnectivityBindingTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()

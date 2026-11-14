@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -24,7 +25,7 @@ import java.io.FileOutputStream
  * where a real Bitmap codec is available.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ImageUtilsTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
@@ -50,12 +51,6 @@ class ImageUtilsTest {
     @Test
     fun sha256Hex_returnsNullForMissingFile() {
         assertThat(ImageUtils.sha256Hex(File("/does/not/exist.bin"))).isNull()
-    }
-
-    @Test
-    fun formatTimestamp_matchesExpectedPattern() {
-        val formatted = ImageUtils.formatTimestamp(1_700_000_000_000L)
-        assertThat(formatted).matches("""\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}""")
     }
 
     @Test

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Switch https://pdis.arbuz.lol/ from the old service (:8000) to the production app (:18200) and
-# publish the account API under /id/ (VPN-allowlisted at first). Saves a backup, tests, and
+# publish the account API under /id/. Saves a copy of the nginx config, tests, and
 # rolls back automatically if any smoke test fails. Run only after an explicit owner "yes".
 set -euo pipefail
 SITE=/etc/nginx/sites-available/plantdiseases.conf

@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.notifications
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -17,7 +18,7 @@ import org.robolectric.annotation.Config
  * Home") rather than throw on a user's tap.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class NotificationRouterTest {
 
     private val ctx: Context = ApplicationProvider.getApplicationContext()

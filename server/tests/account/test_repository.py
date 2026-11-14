@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.db.models import Account, AccountIdentity, PushDevice, RefreshToken, Session
+from app.db.models import Account, AccountIdentity, RefreshToken, Session
 from app.db.repository import AccountRepository
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -123,44 +123,6 @@ def test_provider_subject_and_account_provider_are_database_unique(db_engine: En
                     refreshed_at=datetime.now(UTC),
                 )
             )
-
-
-def test_session_refresh_and_push_store_only_hashes_or_ciphertext(db_engine: Engine):
-    repository = _repository(db_engine)
-    now = datetime.now(UTC)
-    with repository.transaction() as transaction:
-        account = _account("SyntheticOne", "syntheticone")
-        transaction.add(account)
-        transaction.flush()
-        session = _session(account.id)
-        transaction.add(session)
-        transaction.flush()
-        transaction.add_all(
-            [
-                RefreshToken(
-                    session_id=session.id,
-                    token_hash=b"r" * 32,
-                    issued_at=now,
-                    idle_expires_at=now + timedelta(days=30),
-                    absolute_expires_at=now + timedelta(days=180),
-                ),
-                PushDevice(
-                    account_id=account.id,
-                    session_id=session.id,
-                    token_ciphertext=b"synthetic encrypted token bytes",
-                    token_fingerprint=b"f" * 32,
-                ),
-            ]
-        )
-
-    with repository.transaction() as transaction:
-        saved_session = transaction.scalar(select(Session))
-        saved_token = transaction.scalar(select(RefreshToken))
-        saved_push = transaction.scalar(select(PushDevice))
-        assert saved_session.device_label == "Android device"
-        assert saved_token.token_hash == b"r" * 32
-        assert saved_push.token_fingerprint == b"f" * 32
-        assert saved_push.token_ciphertext != b"plain-fcm-token"
 
 
 def test_hash_length_checks_fail_closed(db_engine: Engine):

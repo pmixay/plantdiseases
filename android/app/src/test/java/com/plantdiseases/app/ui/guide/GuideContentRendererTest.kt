@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.guide
 
+import android.app.Application
 import android.text.Spannable
 import android.text.Spanned
 import android.text.style.LeadingMarginSpan
@@ -35,7 +36,7 @@ import org.robolectric.annotation.Config
  * header.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class GuideContentRendererTest {
 
     /** A header, two bullets, a blank separator, then a numbered line with no
@@ -72,31 +73,23 @@ class GuideContentRendererTest {
     }
 
     @Test
-    fun everyListLineGetsItsOwnLeadingMarginSpan() {
-        // One span per paragraph, not one across the block: LeadingMarginSpan leaves
-        // only its OWN first line unindented, so a single block-wide span would hang
-        // just the first bullet and flatten the rest.
-        assertThat(marginSpans(renderBody())).hasSize(3)
-    }
-
-    @Test
-    fun theFinalLineIsIndented_andTheBlankLineIsNot() {
+    fun everyListLineGetsItsOwnHangingIndent_onAMutableBuffer() {
         val tv = renderBody()
+        // Guards the failure mode directly: on an immutable SpannedString the cast in
+        // applyHangingIndent yields null, the indent vanishes, and CI stays green.
+        assertWithMessage("ContentLinks.apply must leave a mutable buffer (BufferType.SPANNABLE)")
+            .that(tv.text).isInstanceOf(Spannable::class.java)
+
         val text = tv.text as Spanned
         val ranges = marginSpans(tv)
             .map { text.getSpanStart(it) to text.getSpanEnd(it) }
             .sortedBy { it.first }
 
+        // One span per paragraph, not one across the block: LeadingMarginSpan leaves
+        // only its OWN first line unindented, so a single block-wide span would hang
+        // just the first bullet and flatten the rest.
         // "• a" = [0,3), "• b" = [4,7), index 8 is the blank line and is skipped by
         // the `end > start` guard, "1. c" = [9,13) via the `indexOf('\n') == -1` tail.
         assertThat(ranges).containsExactly(0 to 3, 4 to 7, 9 to 13).inOrder()
-    }
-
-    @Test
-    fun theBodyBufferStaysMutable_soTheIndentPassIsNotASilentNoOp() {
-        // Guards the failure mode directly: on an immutable SpannedString the cast in
-        // applyHangingIndent yields null, the indent vanishes, and CI stays green.
-        assertWithMessage("ContentLinks.apply must leave a mutable buffer (BufferType.SPANNABLE)")
-            .that(renderBody().text).isInstanceOf(Spannable::class.java)
     }
 }

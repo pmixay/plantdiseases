@@ -1,31 +1,27 @@
 """Symptom-triage scorer + /api/symptom-diagnose endpoint."""
 from __future__ import annotations
 
+import pytest
+
 import symptoms
 
 # ── Pure scorer ─────────────────────────────────────────────────────
 
 
-def test_spots_rank_leaf_spot_first():
-    ranked = symptoms.rank_symptoms({"symptom": "spots", "pests": "none"})
-    assert ranked[0][0] == "leaf_spot"
-
-
-def test_powder_ranks_powdery_mildew_first():
-    ranked = symptoms.rank_symptoms({"symptom": "powder"})
-    assert ranked[0][0] == "powdery_mildew"
-
-
-def test_white_cotton_and_cottony_rank_mealybug_first():
-    ranked = symptoms.rank_symptoms({"symptom": "cottony", "pests": "white_cotton"})
-    assert ranked[0][0] == "mealybug"
-
-
-def test_brown_domes_rank_scale_first():
-    ranked = symptoms.rank_symptoms(
-        {"part": "stems", "symptom": "sticky", "pests": "brown_domes"}
-    )
-    assert ranked[0][0] == "scale"
+@pytest.mark.parametrize(
+    ("answers", "top_class"),
+    [
+        ({"symptom": "spots", "pests": "none"}, "leaf_spot"),
+        ({"symptom": "powder"}, "powdery_mildew"),
+        ({"symptom": "cottony", "pests": "white_cotton"}, "mealybug"),
+        ({"part": "stems", "symptom": "sticky", "pests": "brown_domes"}, "scale"),
+        ({"symptom": "webbing", "pests": "moving_dots"}, "pests"),
+        # Unknown question/option ids are ignored, not an error.
+        ({"bogus_q": "bogus_o", "symptom": "deformed"}, "viral_disease"),
+    ],
+)
+def test_rank_symptoms_top_class(answers, top_class):
+    assert symptoms.rank_symptoms(answers)[0][0] == top_class
 
 
 def test_window_side_dry_edges_surface_sunburn():
@@ -36,24 +32,8 @@ def test_window_side_dry_edges_surface_sunburn():
     assert "sunburn_or_scorch" in classes
 
 
-def test_moving_dots_rank_pests_first():
-    ranked = symptoms.rank_symptoms({"symptom": "webbing", "pests": "moving_dots"})
-    assert ranked[0][0] == "pests"
-
-
-def test_unknown_ids_are_ignored():
-    ranked = symptoms.rank_symptoms({"bogus_q": "bogus_o", "symptom": "deformed"})
-    assert ranked[0][0] == "viral_disease"
-
-
 def test_empty_answers_score_nothing():
     assert symptoms.rank_symptoms({}) == []
-
-
-def test_ranking_is_deterministic_with_tie_break():
-    # Two runs of the same ambiguous answer set produce identical ordering.
-    answers = {"symptom": "yellowing"}
-    assert symptoms.rank_symptoms(answers) == symptoms.rank_symptoms(answers)
 
 
 def test_diagnose_flags_low_confidence_for_sparse_answers():

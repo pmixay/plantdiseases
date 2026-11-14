@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.repository
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -41,7 +42,7 @@ import org.tensorflow.lite.schema.TensorType
  * consumed via `bodyAsChannel().toInputStream()`.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class AquaSyncNetworkTest {
 
     private lateinit var server: MockWebServer

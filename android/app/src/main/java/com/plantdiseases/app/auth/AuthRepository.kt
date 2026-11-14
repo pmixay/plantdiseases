@@ -286,11 +286,12 @@ class AuthRepository(
                 )
             }
             if (!signupTerminated) {
-                firstFailure = LogoutNotDurableException()
+                val notDurable = LogoutNotDurableException()
+                firstFailure = notDurable
                 try {
                     scheduleLogoutRetry()
                 } catch (failure: Exception) {
-                    firstFailure?.addSuppressed(failure)
+                    notDurable.addSuppressed(failure)
                 }
             }
             if (signupTerminated) {

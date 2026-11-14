@@ -1,5 +1,6 @@
 package com.plantdiseases.app.worker
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ExistingWorkPolicy
@@ -11,7 +12,7 @@ import org.robolectric.annotation.Config
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class LogoutRetrySchedulerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 

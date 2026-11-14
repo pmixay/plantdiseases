@@ -6,6 +6,7 @@ import io
 import json
 import sqlite3
 import tarfile
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -48,7 +49,7 @@ def legacy_material(tmp_path):
         _legacy_image("blue", "SENTINEL-UNAPPROVED-CAMERA")
     )
 
-    with sqlite3.connect(labeling_db) as connection:
+    with closing(sqlite3.connect(labeling_db)) as connection, connection:
         connection.executescript(
             """
             CREATE TABLE candidates (
@@ -78,7 +79,7 @@ def legacy_material(tmp_path):
             ),
         )
 
-    with sqlite3.connect(feedback_db) as connection:
+    with closing(sqlite3.connect(feedback_db)) as connection, connection:
         connection.executescript(
             """
             CREATE TABLE feedback (
@@ -203,7 +204,7 @@ def test_apply_removes_legacy_linkage_and_exports_cleanly(legacy_material, tmp_p
         "in_memory_joins": 1,
         "standalone_feedback_images": 1,
     }
-    with sqlite3.connect(paths.destination_database) as connection:
+    with closing(sqlite3.connect(paths.destination_database)) as connection, connection:
         rows = connection.execute(
             "SELECT source, predicted_class, user_correct, corrected_class, "
             "out_of_head, review_status, label_provenance, consent_version "
@@ -283,11 +284,11 @@ def test_offline_human_verdict_remains_authoritative_after_feedback_join(
     legacy_material,
 ):
     paths = legacy_material
-    with sqlite3.connect(paths.labeling_database) as connection:
+    with closing(sqlite3.connect(paths.labeling_database)) as connection, connection:
         connection.execute("UPDATE candidates SET status = 'yes' WHERE id = 1")
 
     migration.apply(paths, consent_version="legacy-reviewed-v1")
-    with sqlite3.connect(paths.destination_database) as connection:
+    with closing(sqlite3.connect(paths.destination_database)) as connection, connection:
         status, provenance, user_correct = connection.execute(
             "SELECT review_status, label_provenance, user_correct "
             "FROM training_samples WHERE predicted_class = 'healthy'"

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import time as _time
+from contextlib import closing
 
 import pytest
 
@@ -43,16 +44,10 @@ def test_to_iso_alpha2(raw, expected):
     assert to_iso_alpha2(raw) == expected
 
 
-def test_record_scan_canonicalizes_country(tmp_path, monkeypatch):
+def test_record_scan_canonicalizes_country(community_store):
     """Two uploads for the same country in different spellings land in one
     ISO bucket, so popular_snapshot(country="RU") sees both."""
-    import importlib
-
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as comm
-    importlib.reload(comm)
+    comm = community_store
 
     comm.record_scan(
         scan_id="canonscan01", user_pseudo_id="pseudo-canon-a",
@@ -76,15 +71,10 @@ def test_record_scan_canonicalizes_country(tmp_path, monkeypatch):
     assert comm.popular_snapshot(country="Narnia")["total"] == 0
 
 
-def test_migration_canonicalizes_legacy_country_rows(tmp_path, monkeypatch):
+def test_migration_canonicalizes_legacy_country_rows(community_store, tmp_path):
     """Legacy rows stored under a localized country name are folded to the
     ISO code on init_db."""
-    import importlib
-
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    import community as comm
-    importlib.reload(comm)
+    comm = community_store
 
     conn = sqlite3.connect(tmp_path / "community.db")
     conn.executescript(
@@ -112,10 +102,9 @@ def test_migration_canonicalizes_legacy_country_rows(tmp_path, monkeypatch):
 
     comm.init_db()
 
-    buckets = {
-        row[0]
-        for row in sqlite3.connect(tmp_path / "community.db").execute(
-            "SELECT DISTINCT country FROM community_scans"
-        )
-    }
+    with closing(sqlite3.connect(tmp_path / "community.db")) as conn:
+        buckets = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT country FROM community_scans")
+        }
     assert buckets == {"RU"}
