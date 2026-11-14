@@ -48,7 +48,7 @@ true across releases.
 - **Never train models locally** (no GPU here; no distillation or ONNX/TFLite export
   either). Training/eval/export runs on the user's Colab via `server/train_notebook.ipynb`
   — edit the notebook/pipeline code and hand the user the cells to run.
-- **Git:** feature work on `claude/**` branches. Don't push to `main` without explicit
+- **Git:** feature work on `claude/**` branches (cloud sessions push to `ccr-*`). Don't push to `main` without explicit
   permission. Don't open a PR unless asked.
 
 ## Common commands
@@ -99,7 +99,7 @@ cd server && pytest tests/account -q          # account tests; also part of the 
   over `src/androidTest/`.
 
 ### CI (`.github/workflows/ci.yml`)
-- Push-only on `main`, `account-beta-test`, `claude/**`, `work/**`, `codex/**`, `model-*`;
+- Push-only on `main`, `account-beta-test`, `claude/**`, `work/**`, `codex/**`, `model-*`, `ccr-*`;
   deliberately no `pull_request` trigger (rationale in the workflow header). A branch
   matching none of these gets no CI.
 - A `paths-filter` job gates the **android** and **server** (server + account) jobs. It gates

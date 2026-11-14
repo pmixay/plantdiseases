@@ -19,14 +19,15 @@ recorded. Line counts are approximate; re-measure before acting on one.
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`). The Android half of the 2026-11 test rework has never been compiled: it sits on a branch no CI glob matches. |
+| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`). `ccr-*` branches build in CI now; the 2026-11 test rework is on its first Android run. |
 
 ---
 
 ## Next up — in this order
 
-- [ ] ★ **Get the test rework through CI** before anything else lands on top of
-      it (Tests and CI, below). The server half is verified; the Kotlin half is not.
+- [ ] **Get the test rework green in CI** before anything else lands on top of
+      it (Tests and CI, below). The server half is verified; the Kotlin half is on
+      its first build.
 - [ ] ★ **Ship accounts to RuStore** (section below).
 - [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
       takes calendar time, so start now. In parallel (no collection needed):
@@ -46,11 +47,14 @@ the README status section and `docs/assets/per-class.svg`.
 
 **Before the build** (code and host; no signing key needed)
 
-- [ ] **`release.sh`.** One command for the owner: build the release with the
-      permanent key from `~/.gradle/gradle.properties`, then check certificate
-      fingerprint, package, versionCode and baked endpoints, print the APK SHA-256
-      and build the matching recovery APK (`DEPLOYMENT.md` §8.1, §8.3). Replaces
-      the manual checklist.
+- [ ] **Signed release workflow in CI** (owner's decision, 2026-11-14: the signed
+      build runs in CI, not on the owner's machine). A separate, manually
+      dispatched workflow — ordinary push CI stays credential-free — that signs
+      with the permanent key from repository secrets, then checks certificate
+      fingerprint, package, versionCode and baked endpoints, prints the APK
+      SHA-256 and builds the matching recovery APK (`DEPLOYMENT.md` §8.1, §8.3).
+      Put the secrets behind a protected GitHub environment. `CLAUDE.md` and
+      `DEPLOYMENT.md` §8 still describe local signing; change them in the same PR.
 - [ ] **Old clients: read the production logs.** `/` has pointed at the new server
       since the 2026-10-09 switch, so older app versions already call it. Look
       for 4xx/5xx from them; add a regression test for anything found.
@@ -61,10 +65,13 @@ the README status section and `docs/assets/per-class.svg`.
 
 **Release** (★ owner)
 
-- [ ] ★ **Cap OpenRouter spend on the key itself** (provider dashboard; confirm
-      the limit is a hard stop). This is the launch cost cap.
-- [ ] ★ **Copy the backup key off the VDS.**
-- [ ] ★ **Run `release.sh`** on the green commit.
+- [ ] ★ **Copy the backup decryption key off the VDS.** `backup.sh` encrypts every
+      dump with `age` to `/etc/pd-account-prod/backup-age-identity.txt`, and that
+      file exists only on the host the backups sit on: lose the VDS and the
+      backups go with it; lose just the key and they cannot be decrypted. Keep a
+      copy of the key (and periodically of `/var/backups/pd-account-prod/db`)
+      somewhere else.
+- [ ] ★ **Add the signing secrets and run the release workflow** on the green commit.
 - [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
       verified against production; only the certificate fingerprint registered
       with Yandex is new.
@@ -97,9 +104,9 @@ the README status section and `docs/assets/per-class.svg`.
 Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 
 - [ ] **Cost caps.** Per-feature daily admission, per-IP allowances and serialized
-      Pl@ntNet attempts are in. The launch cap is a spend limit on the OpenRouter
-      key (release list above). An in-server aggregate price ceiling is optional
-      hardening on top; each new species name is still a billable cache miss.
+      Pl@ntNet attempts are in, and the OpenRouter key carries a spend limit (the
+      launch cap; set by the owner). An in-server aggregate price ceiling is
+      optional hardening on top; each new species name is still a billable cache miss.
 - [ ] **`/api/metrics`:** add a short TTL cache; each request recomputes the
       store snapshots.
 - [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
@@ -257,11 +264,10 @@ Each item is its own PR; don't fold one into another.
 The 2026-11 rework removed tests that guarded nothing, merged same-state tests and
 made the server suite parallel. What it left open:
 
-- [ ] ★ **Run the Android job on the rework.** Its branch (`ccr-*`) matches no push
-      glob, and local Gradle builds are off-limits, so every Kotlin edit in it —
-      the `RetryInterceptor` sleeper / `PlantApiClient` retry seam included — is
-      unbuilt and unlinted. Push it to a `claude/**` branch (or merge) and fix
-      forward on the first run.
+- [ ] **Fix forward on the rework's first Android run.** Local Gradle builds are
+      off-limits, so every Kotlin edit in it — the `RetryInterceptor` sleeper /
+      `PlantApiClient` retry seam included — met a compiler and ktlint/detekt for
+      the first time in CI.
 - [ ] ★ **Decide whether `testReleaseUnitTest` needs the whole shared suite.** CI
       runs every shared test class on debug and again on release; only two classes
       are release-specific (`ReleaseBuildIdentityTest`,
@@ -335,6 +341,8 @@ None blocks a release.
 - **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Target store: RuStore.** No Google Play.
+- **Release signing runs in CI** (owner's decision, 2026-11-14), from repository
+  secrets in a workflow separate from ordinary push CI.
 - **1.9 is accounts only.** PRO subscriptions and VK ID stay switched off until a
   later release.
 - **Account data stays on the German VDS** (owner's decision, 2026-11-13).
