@@ -34,7 +34,8 @@ recorded. Line counts are approximate; re-measure before acting on one.
       adjudicate the 80 export rows and carve T_v1.
 - [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
       run; Model track, "Experiments that are not data").
-- [ ] **Split `main.py` into routers**, starting with `deps.py`.
+- [ ] **Finish the `main.py` split**: `deps.py`, then module imports instead of the
+      alias block (Architecture follow-ups).
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
 the README status section and `docs/assets/per-class.svg`.
@@ -208,15 +209,17 @@ Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Split `main.py` (~6,640 lines) into routers.** 42 routes on one
-      `api_router`, 6 middlewares, 16 Pydantic models, 2 thread pools, limiter/ban/
-      quota/admission state, metrics, lifespan. `Depends` appears only as the
-      `community_bearer` route dependency; the quota preambles are still
-      hand-copied. Order: (1) `deps.py`; (2) replace the ~400-line duplicated
-      alias-import block with module imports; (3) one router group per PR,
-      smallest first, community last. Constraint: `conftest.py` patches names on
-      `main` in place and 12 test modules `importlib.reload`, so a router doing
-      `from main import pipeline` binds before the patch.
+- [ ] **Finish the `main.py` split (~4,790 lines left).** The 42 route handlers
+      now live in six `routes_*.py` modules that reach `main` as `m.name` at call
+      time, which is what keeps the tests' in-place patches and the 12 modules that
+      `importlib.reload` working. Still in `main.py`: 6 middlewares, 16 Pydantic
+      models, 2 thread pools, limiter/ban/quota/admission state, metrics, lifespan
+      and every helper. Next, one PR each: (1) `deps.py` — `Depends` appears only
+      as the `community_bearer` route dependency and the quota preambles are still
+      hand-copied; (2) replace the ~400-line duplicated alias-import block with
+      module imports, moving the tests' patch targets with it, then drop
+      `main.py`'s F401 exemption (`server/pyproject.toml`); (3) move each route
+      group's helpers next to its routes, smallest first, community last.
 - [ ] **Group Pydantic models into `schemas.py`** with shared `Annotated` types.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
@@ -283,11 +286,6 @@ made the server suite parallel. What it left open:
       `LightMeterActivity.pickSpeciesBucket` and
       `WaterCalculatorActivity.computeWatering` are pure, but their tests need
       Robolectric only to load the Activity class.
-- [ ] **Delete or wire up the community helpers nothing calls**: `resolve_author`,
-      `opinion_counts_for_user`, `daily_opinion_count_for_ip_hash`, `owner_of`
-      (`community.py`). `opinion_counts_for_user` still has store-level tests while
-      the function the endpoint really calls, `opinion_counts_for_actor`, has only
-      a key-presence test.
 - [ ] **Replace per-test `importlib.reload` fixtures** in `test_ai_services.py`
       (autouse, reloads a 3,600-line module before every test) and
       `test_community_endpoint.py` (`isolated_community` reloads `community` and

@@ -74,6 +74,43 @@
         }
       }
     },
+    "/api/telemetry/errors": {
+      "post": {
+        "summary": "Telemetry Errors",
+        "description": "Record minimized error telemetry only under the current consent text.",
+        "operationId": "telemetry_errors_api_telemetry_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetryErrorRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analyze": {
       "post": {
         "summary": "Analyze Image",
@@ -215,80 +252,6 @@
               }
             }
           }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/chat": {
-      "post": {
-        "summary": "Chat Endpoint",
-        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun within a session;\n``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the\nclient mints ``session_id`` and a new one resets the session caps.",
-        "operationId": "chat_endpoint_api_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/care-plan": {
-      "post": {
-        "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.",
-        "operationId": "care_plan_endpoint_api_care_plan_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CarePlanRequest"
-              }
-            }
-          },
-          "required": true
         },
         "responses": {
           "200": {
@@ -460,6 +423,254 @@
         }
       }
     },
+    "/api/chat": {
+      "post": {
+        "summary": "Chat Endpoint",
+        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun within a session;\n``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the\nclient mints ``session_id`` and a new one resets the session caps.",
+        "operationId": "chat_endpoint_api_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/care-plan": {
+      "post": {
+        "summary": "Care Plan Endpoint",
+        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.",
+        "operationId": "care_plan_endpoint_api_care_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CarePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/species-info": {
+      "get": {
+        "summary": "Species Info Endpoint",
+        "description": "Localized Wikipedia summary + lead image for a scientific name.",
+        "operationId": "species_info_endpoint_api_species_info_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/species-diseases": {
+      "get": {
+        "summary": "Species Diseases Endpoint",
+        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``\nfor the caller's IP the answer is ``available: false`` with\n``reason: \"daily_quota\"``.",
+        "operationId": "species_diseases_endpoint_api_species_diseases_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "common",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Common"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/species-profile": {
+      "get": {
+        "summary": "Species Profile Endpoint",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.\nShares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.",
+        "operationId": "species_profile_endpoint_api_species_profile_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "common",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Common"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          },
+          {
+            "name": "profile_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 3,
+              "title": "Profile Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
@@ -500,43 +711,6 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/api/telemetry/errors": {
-      "post": {
-        "summary": "Telemetry Errors",
-        "description": "Record minimized error telemetry only under the current consent text.",
-        "operationId": "telemetry_errors_api_telemetry_errors_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TelemetryErrorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/community/safety/report": {
@@ -1443,180 +1617,6 @@
               "type": "integer",
               "default": 12,
               "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/species-info": {
-      "get": {
-        "summary": "Species Info Endpoint",
-        "description": "Localized Wikipedia summary + lead image for a scientific name.",
-        "operationId": "species_info_endpoint_api_species_info_get",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          },
-          {
-            "name": "locale",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "en",
-              "title": "Locale"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/species-diseases": {
-      "get": {
-        "summary": "Species Diseases Endpoint",
-        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``\nfor the caller's IP the answer is ``available: false`` with\n``reason: \"daily_quota\"``.",
-        "operationId": "species_diseases_endpoint_api_species_diseases_get",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          },
-          {
-            "name": "common",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Common"
-            }
-          },
-          {
-            "name": "locale",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "en",
-              "title": "Locale"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/species-profile": {
-      "get": {
-        "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.\nShares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.",
-        "operationId": "species_profile_endpoint_api_species_profile_get",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          },
-          {
-            "name": "common",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Common"
-            }
-          },
-          {
-            "name": "locale",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "en",
-              "title": "Locale"
-            }
-          },
-          {
-            "name": "profile_version",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 3,
-              "title": "Profile Version"
             }
           }
         ],

@@ -7,6 +7,7 @@ community tests.
 from __future__ import annotations
 
 import importlib
+import uuid
 
 import pytest
 
@@ -152,13 +153,14 @@ def test_expired_request_does_not_flag_late_upload(comm):
     assert _wants(comm, "e2") is False
 
 
-def test_opinion_counts_for_user_ignores_expired_requests(comm):
-    comm.record_scan(scan_id="e3", user_pseudo_id="owner", country="GB",
+def test_opinion_counts_for_actor_ignores_expired_requests(comm):
+    owner, viewer = str(uuid.uuid4()), str(uuid.uuid4())
+    comm.record_scan(scan_id="e3", account_actor_id=owner, country="GB",
                      region="London", disease="leaf_spot")
-    comm.set_wants_opinion("e3", "owner")
-    comm.record_opinion(scan_id="e3", author_pseudo_id="viewer",
+    comm.set_wants_opinion("e3", account_actor_id=owner)
+    comm.record_opinion(scan_id="e3", account_actor_id=viewer,
                         suggested_disease="healthy")
-    assert comm.opinion_counts_for_user("owner")["total_opinions"] == 1
+    assert comm.opinion_counts_for_actor(owner)["total_opinions"] == 1
     with comm._connect() as conn:  # age the request past the TTL
         conn.execute(
             "UPDATE community_opinion_requests SET created_at = created_at - ? "
@@ -166,4 +168,4 @@ def test_opinion_counts_for_user_ignores_expired_requests(comm):
             (comm.OPINION_REQUEST_TTL_HOURS * 3600 + 60,),
         )
     # The lapsed ask no longer drives the notification poll.
-    assert comm.opinion_counts_for_user("owner")["scans"] == []
+    assert comm.opinion_counts_for_actor(owner)["scans"] == []
