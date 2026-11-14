@@ -118,7 +118,17 @@ def test_decodes_sandbox_connection_test():
     assert result.sandbox is True
 
 
-def test_wrong_application_or_key_is_rejected():
+@pytest.mark.parametrize(
+    ("right_key", "app_id"),
+    [
+        # Each alone, so the application check is reached on its own: with a
+        # wrong key AND a wrong app id, decryption fails first and the app-id
+        # branch never runs.
+        pytest.param(False, 12345, id="wrong-key"),
+        pytest.param(True, 99999, id="wrong-application"),
+    ],
+)
+def test_wrong_application_or_key_is_rejected(right_key, app_id):
     key = os.urandom(32)
     decoder = RuStoreNotificationDecoder(
         application_id=12345,
@@ -126,9 +136,9 @@ def test_wrong_application_or_key_is_rejected():
         allowed_products=("plantdiseases_pro_monthly",),
     )
     envelope = _envelope(
-        os.urandom(32),
+        key if right_key else os.urandom(32),
         {
-            "app_id": 99999,
+            "app_id": app_id,
             "notification_type": "TEST_EVENT",
             "data": json.dumps({"test": "TEST"}),
         },

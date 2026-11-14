@@ -306,12 +306,6 @@ made the server suite parallel. What it left open:
       Harmless today (nothing holds their classes), but the same
       `monkeypatch.setattr` redirection the community and `ai_services` tests now
       use would retire `importlib.reload` from the suite.
-- [ ] **Tests that cannot fail where they run.**
-      `test_sqlite_connection_lifecycle.py` checks a Windows file-lock behaviour
-      (POSIX unlinks an open file happily), and
-      `test_rustore_notifications.py::test_wrong_application_or_key_is_rejected`
-      uses a wrong key and a wrong app id together, so the app-id branch is never
-      reached.
 - [ ] **Untested pipeline branches**: the confidence-threshold arm of
       `_is_diseased`, and the served-threshold adoption in
       `PlantDiseasePipeline.__init__` (its resolvers are tested, the adoption is not).
