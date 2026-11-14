@@ -394,11 +394,15 @@ def client():
 
 @pytest.fixture
 def rate_limited_client():
-    """Variant of ``client`` that keeps a 1 req/s rate limit active.
+    """Variant of ``client`` that keeps the rate limiter active and strict.
 
-    Capacity is pinned to 1.0 so the token-bucket reduces to the strict
-    "one request per second, no burst" behaviour the rate-limit test
-    asserts. Production keeps the larger default burst.
+    Capacity is pinned to 1.0 and the bucket refills one token a MINUTE, so
+    the limiter reduces to "one request, then 429" for the length of a test.
+    The refill used to be one token a second, which made every test here a
+    race against the wall clock: on a loaded CI runner (the suite runs in
+    parallel) the first request could take over a second, the bucket refilled
+    and the second request was served instead of throttled. Production keeps
+    its own rate and the larger default burst.
     """
     from fastapi.testclient import TestClient
 
@@ -410,7 +414,7 @@ def rate_limited_client():
     with AccountAwareTestClient(server_main.app) as c:
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
-            mw.rate = 1.0
+            mw.rate = 1.0 / 60.0
             mw.capacity = 1.0
             with mw._lock:
                 mw._buckets.clear()

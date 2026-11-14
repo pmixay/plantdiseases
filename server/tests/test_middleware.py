@@ -58,9 +58,9 @@ def test_request_log_uses_route_template_and_server_correlation_id(client, caplo
 
 
 def test_health_capabilities_not_rate_limited(rate_limited_client):
-    # Hammer the free endpoints under the strict 1 req/s, no-burst bucket: a
-    # metered route 429s on its second call there, so ten clean answers prove
-    # the exemption itself rather than a wide default bucket.
+    # Hammer the free endpoints under the strict one-token bucket: a metered
+    # route 429s on its second call there, so ten clean answers prove the
+    # exemption itself rather than a wide default bucket.
     for _ in range(5):
         for path in ("/api/health", "/api/capabilities"):
             r = rate_limited_client.get(path)
@@ -111,8 +111,8 @@ def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
 
 
 def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, png_bytes):
-    # With a 1 req/s limit, two back-to-back uploads from the same client
-    # trip the limiter on the second request.
+    # With a one-token bucket that does not refill within a test, the second
+    # upload from the same client trips the limiter.
     files = {"image": ("a.png", png_bytes, "image/png")}
     r1 = rate_limited_client.post("/api/analyze", files=files)
     assert r1.status_code == 200, r1.text
@@ -202,7 +202,7 @@ def test_metrics_endpoints_are_rate_limited(rate_limited_client):
     aggregates on the event loop). Exempting it made it a free amplifier."""
     first = rate_limited_client.get("/api/metrics")
     assert first.status_code == 200, first.text
-    # The `rate_limited_client` fixture runs a 1 req/s bucket.
+    # The `rate_limited_client` fixture runs a one-token bucket.
     statuses = [rate_limited_client.get("/api/metrics").status_code for _ in range(3)]
     assert 429 in statuses, f"metrics never throttled: {statuses}"
 
