@@ -66,7 +66,9 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   limiter in `client` (`rate_limited_client` keeps it on), and per test clears
   `main._analyze_cache` (same-photo dedup would leak verdicts), `main._DAILY_QUOTAS`
   and the inference admission slots (all requests share one TestClient peer; quota tests
-  lower `_DailyQuota.limit` via monkeypatch). New pipeline behaviour means keeping
+  lower `_DailyQuota.limit` via monkeypatch). A test that needs its own community store
+  takes `community_store` / `community_http_store` — never `importlib.reload(community)`,
+  which re-creates classes `main` already holds. New pipeline behaviour means keeping
   `FakePipeline`'s response shape in sync, or patching `main.pipeline`.
 - Run as a flat package from `server/` (`uvicorn main:app`); `main.py` resolves imports
   both flat and as `server.*` via try/except.
@@ -156,8 +158,7 @@ unavailable family answers HTTP 200 `available:false`, not an error. Details: `R
 wires the flat modules beside it (`ls server/`). The route handlers live in `routes_*.py`;
 each `register(router, m)` gets the `main` module and must reach anything defined in or
 imported by `main` as `m.name` at call time — never `from main import …` — because the
-tests patch names on `main` and several modules reload it. That is also why `main.py` is
-exempt from F401. Privacy-sensitive: `training_store.py` and `telemetry.py` are
+tests patch names on `main`. That is also why `main.py` is exempt from F401. Privacy-sensitive: `training_store.py` and `telemetry.py` are
 consent-gated and de-identified (no account, actor, device or IP data; no free text).
 `account_*.py` are fail-closed clients to the account service. `beta_runtime.py` /
 `synthetic_pipeline.py` are a weight-free pipeline for local/staging only — never a

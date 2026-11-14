@@ -277,6 +277,69 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     yield
 
 
+# ── Community store isolation ───────────────────────────────────────
+
+
+@pytest.fixture
+def community_store(tmp_path, monkeypatch):
+    """A private, empty community store for one test.
+
+    Redirects the store's paths and re-arms its lazy schema init; monkeypatch
+    puts all of it back afterwards, so the next test is on the session store
+    again. Deliberately no ``importlib.reload(community)``: a reload swaps in
+    new exception classes and function objects, which every fixture then had
+    to re-bind on ``main`` by hand (some thirty names) and nothing restored.
+    """
+    import community
+    import main as server_main
+
+    monkeypatch.setattr(community, "COMMUNITY_DB_PATH", tmp_path / "community.db")
+    monkeypatch.setattr(community, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
+    monkeypatch.setattr(community, "_initialised", False)
+    monkeypatch.setattr(community, "_last_expiry_sweep", 0.0)
+    # main imports this path by value for the thumbnail response endpoint.
+    monkeypatch.setattr(server_main, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
+    return community
+
+
+@pytest.fixture
+def community_http_store(community_store, monkeypatch):
+    """``community_store`` for HTTP tests that post synthetic scan ids.
+
+    ``/api/community/scan`` publishes a scan the server itself analysed: it
+    needs a server-issued analysis token and takes disease and species from
+    that record. These tests post made-up ids with client-supplied fields, so
+    every id counts as issued and the write goes through ``record_scan`` with
+    the client's values. The rejection paths are tested explicitly elsewhere.
+    """
+    import main as server_main
+
+    comm = community_store
+
+    def legacy_analysis_write(**kwargs):
+        return comm.record_scan(
+            scan_id=kwargs["scan_id"],
+            account_actor_id=kwargs["account_actor_id"],
+            country=kwargs["country"],
+            region=kwargs.get("region", ""),
+            city=kwargs.get("city"),
+            lat=kwargs.get("lat"),
+            lon=kwargs.get("lon"),
+            disease=kwargs.get("client_disease") or "healthy",
+            confidence=kwargs.get("client_confidence"),
+            species=kwargs.get("client_species"),
+            species_score=kwargs.get("client_species_score"),
+            image_bytes=kwargs.get("image_bytes"),
+            locale=kwargs.get("locale"),
+            nickname=kwargs.get("nickname"),
+        )
+
+    monkeypatch.setattr(server_main, "community_record_analysis_scan", legacy_analysis_write)
+    monkeypatch.setattr(server_main, "community_analysis_token_issued", lambda *a, **k: True)
+    server_main._daily_write_counts.clear()
+    return comm
+
+
 # ── HTTP test clients ───────────────────────────────────────────────
 
 

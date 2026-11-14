@@ -11,31 +11,12 @@ from server.tests.conftest import _test_access_token
 
 
 @pytest.fixture
-def safety_store(tmp_path, monkeypatch):
-    import community
+def safety_store(community_store):
     import main as server_main
 
-    community.COMMUNITY_DB_PATH = tmp_path / "community.db"
-    community.COMMUNITY_THUMB_DIR = tmp_path / "thumbs"
-    community._initialised = False
-    community._last_expiry_sweep = 0.0
-    community.init_db()
-
-    # main.py imports these callables by value. Point every safety/read route
-    # at this test's isolated store.
-    server_main.community_actor_blocks = community.actor_blocks
-    server_main.community_block_content_author = community.block_content_author
-    server_main.community_record_content_report = community.record_content_report
-    server_main.community_unblock_actor = community.unblock_actor
-    server_main.community_nearby_scans = community.nearby_scans
-    server_main.community_map_scans = community.map_scans
-    server_main.community_scans_by_species = community.scans_by_species
-    server_main.community_region_summary = community.region_summary
-    server_main.community_opinion_counts = community.opinion_counts
-    server_main.community_opinions_for = community.opinions_for
-    server_main.community_resolve_scan_token = community.resolve_scan_token
+    community_store.init_db()
     server_main._daily_write_counts.clear()
-    yield community
+    yield community_store
 
 
 def _actor(label: str) -> str:

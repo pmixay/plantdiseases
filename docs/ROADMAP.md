@@ -211,8 +211,7 @@ Each item is its own PR; don't fold one into another.
 
 - [ ] **Finish the `main.py` split (~4,790 lines left).** The 42 route handlers
       now live in six `routes_*.py` modules that reach `main` as `m.name` at call
-      time, which is what keeps the tests' in-place patches and the 12 modules that
-      `importlib.reload` working. Still in `main.py`: 6 middlewares, 16 Pydantic
+      time, which is what keeps the tests' in-place patches working. Still in `main.py`: 6 middlewares, 16 Pydantic
       models, 2 thread pools, limiter/ban/quota/admission state, metrics, lifespan
       and every helper. Next, one PR each: (1) `deps.py` — `Depends` appears only
       as the `community_bearer` route dependency and the quota preambles are still
@@ -286,11 +285,11 @@ made the server suite parallel. What it left open:
       `LightMeterActivity.pickSpeciesBucket` and
       `WaterCalculatorActivity.computeWatering` are pure, but their tests need
       Robolectric only to load the Activity class.
-- [ ] **Replace per-test `importlib.reload` fixtures** in `test_ai_services.py`
-      (autouse, reloads a 3,600-line module before every test) and
-      `test_community_endpoint.py` (`isolated_community` reloads `community` and
-      rebinds ~30 names on `main`) with path redirection, as
-      `test_community_safety.py` already does. Same constraint as the `main.py` split.
+- [ ] **Last two module reloads in tests**: `test_plant_photos.py` and
+      `test_push.py` still `importlib.reload` their own module to redirect a path.
+      Harmless today (nothing holds their classes), but the same
+      `monkeypatch.setattr` redirection the community and `ai_services` tests now
+      use would retire `importlib.reload` from the suite.
 - [ ] **Tests that cannot fail where they run.**
       `test_sqlite_connection_lifecycle.py` checks a Windows file-lock behaviour
       (POSIX unlinks an open file happily), and

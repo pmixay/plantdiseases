@@ -17,73 +17,9 @@ from server.tests.conftest import _test_access_token
 
 
 @pytest.fixture
-def isolated_community(tmp_path, monkeypatch):
+def isolated_community(community_http_store, tmp_path):
     """Point the community store at a temp DB + thumb dir per test."""
-    db_path = tmp_path / "community.db"
-    thumb_dir = tmp_path / "thumbs"
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(db_path))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(thumb_dir))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import importlib
-
-    import community as comm
-    importlib.reload(comm)
-    import main as server_main
-    server_main.community_record_scan = comm.record_scan
-    server_main.AnalysisImageMismatchError = comm.AnalysisImageMismatchError
-    server_main.AnalysisTokenConflictError = comm.AnalysisTokenConflictError
-    server_main.AnalysisTokenUnknownError = comm.AnalysisTokenUnknownError
-    server_main.OpinionTargetUnavailableError = comm.OpinionTargetUnavailableError
-
-    def legacy_analysis_write(**kwargs):
-        return comm.record_scan(
-            scan_id=kwargs["scan_id"],
-            account_actor_id=kwargs["account_actor_id"],
-            country=kwargs["country"],
-            region=kwargs.get("region", ""),
-            city=kwargs.get("city"),
-            lat=kwargs.get("lat"),
-            lon=kwargs.get("lon"),
-            disease=kwargs.get("client_disease") or "healthy",
-            confidence=kwargs.get("client_confidence"),
-            species=kwargs.get("client_species"),
-            species_score=kwargs.get("client_species_score"),
-            image_bytes=kwargs.get("image_bytes"),
-            locale=kwargs.get("locale"),
-            nickname=kwargs.get("nickname"),
-        )
-
-    server_main.community_record_analysis_scan = legacy_analysis_write
-    server_main.community_nearby_scans = comm.nearby_scans
-    server_main.community_recommended_scans = comm.recommended_scans
-    server_main.community_encode_recommendation_cursor = comm.encode_recommendation_cursor
-    server_main.community_decode_recommendation_cursor = comm.decode_recommendation_cursor
-    server_main.community_region_summary = comm.region_summary
-    server_main.community_stats_snapshot = comm.stats_snapshot
-    server_main.community_set_wants_opinion = comm.set_wants_opinion
-    server_main.community_clear_wants_opinion = comm.clear_wants_opinion
-    server_main.community_wants_opinion = comm.wants_opinion
-    server_main.community_account_owner_of = comm.account_owner_of
-    server_main.community_record_opinion = comm.record_opinion_with_status
-    server_main.community_opinions_for = comm.opinions_for
-    server_main.community_scan_exists = comm.scan_exists
-    server_main.community_opinion_open = comm.opinion_open
-    server_main.community_resolve_scan_token = comm.resolve_scan_token
-    server_main.community_record_view = comm.record_view
-    server_main.community_opinion_counts_for_actor = comm.opinion_counts_for_actor
-    server_main.community_scan_counts_for_actor = comm.scan_counts_for_actor
-    server_main.community_thumbnail_is_visible = comm.thumbnail_is_visible
-    server_main.community_record_analysis_token = comm.record_analysis_token
-    server_main.init_community_db = comm.init_db
-    server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
-    server_main._daily_write_counts.clear()
-    # Community publication uses a server-issued capability that is separate
-    # from the anonymous feedback receipt. Synthetic ids are accepted here;
-    # the rejection path is covered explicitly below.
-    monkeypatch.setattr(
-        server_main, "community_analysis_token_issued", lambda *a, **k: True
-    )
-    yield db_path, thumb_dir
+    yield community_http_store.COMMUNITY_DB_PATH, community_http_store.COMMUNITY_THUMB_DIR
 
 
 def _form(**fields):
@@ -2184,16 +2120,12 @@ def test_batch_impression_views_counted_once(client, isolated_community):
     assert counts["views"] == 1
 
 
-def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
+def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(community_store, tmp_path):
     """Rows + thumbnails created before the public_id column existed get
     migrated on init: token assigned, thumbnail renamed off the real id."""
-    import importlib
     import time as _time
 
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    import community as comm
-    importlib.reload(comm)
+    comm = community_store
 
     # Simulate a legacy DB: table without public_id, plus a legacy thumb.
     (tmp_path / "thumbs").mkdir()

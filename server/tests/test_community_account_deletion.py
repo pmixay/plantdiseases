@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import io
 import shutil
 import sqlite3
@@ -20,14 +19,8 @@ def _thumbnail_bytes() -> bytes:
 
 
 @pytest.fixture
-def community(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "synthetic-pepper")
-    import community as module
-
-    importlib.reload(module)
-    return module
+def community(community_store):
+    return community_store
 
 
 def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
@@ -172,14 +165,11 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
 
 
 def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
-    tmp_path, monkeypatch,
+    community_store, tmp_path, monkeypatch,
 ):
     database = tmp_path / "legacy.db"
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(database))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    import community as module
-
-    importlib.reload(module)
+    module = community_store
+    monkeypatch.setattr(module, "COMMUNITY_DB_PATH", database)
     with sqlite3.connect(database) as connection:
         connection.executescript(
             "CREATE TABLE community_scans ("

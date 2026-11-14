@@ -6,7 +6,6 @@ test_community_endpoint.py.
 """
 from __future__ import annotations
 
-import importlib
 import sqlite3
 import time
 import uuid
@@ -15,13 +14,8 @@ import pytest
 
 
 @pytest.fixture
-def comm(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as c
-    importlib.reload(c)
-    return c
+def comm(community_store):
+    return community_store
 
 
 def _scan(comm, scan_id: str) -> None:

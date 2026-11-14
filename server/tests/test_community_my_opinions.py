@@ -8,7 +8,6 @@ pseudo-id twin of it that nothing in production called."""
 
 from __future__ import annotations
 
-import importlib
 import uuid
 
 import pytest
@@ -18,13 +17,8 @@ _EMPTY = {"scans": [], "total_opinions": 0, "total_views": 0}
 
 
 @pytest.fixture
-def comm(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as c
-    importlib.reload(c)
-    return c
+def comm(community_store):
+    return community_store
 
 
 def test_counts_only_for_requested_scans_and_exclude_my_own_opinions(comm):

@@ -15,13 +15,56 @@ os.environ.pop("OPENROUTER_API_KEY", None)
 os.environ.pop("PLANTNET_API_KEY", None)
 
 
+_PLAIN_VALUE = (str, int, float, bool, tuple, frozenset, type(None))
+_pristine: dict[str, object] | None = None
+
+
+def _pristine_module_state() -> dict[str, object]:
+    """The values ai_services' data globals have straight after import.
+
+    Taken once from a private second copy of the module, so the copy the
+    server imported keeps its identity: reloading that one for every test (as
+    this file used to) re-created its classes and functions under the feet of
+    everything that had already imported them.
+    """
+    global _pristine
+    if _pristine is None:
+        import copy
+        import importlib.util
+
+        import ai_services as ai
+
+        spec = importlib.util.spec_from_file_location("_ai_services_pristine", ai.__file__)
+        twin = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(twin)
+        _pristine = {
+            name: copy.deepcopy(value)
+            for name, value in vars(twin).items()
+            if not name.startswith("__") and isinstance(value, (dict, *_PLAIN_VALUE))
+        }
+    return _pristine
+
+
 @pytest.fixture(autouse=True)
-def _reset_module_state():
-    """Reload ai_services so each test sees a fresh _LRU + chat session map."""
-    import importlib
+def _reset_module_state(monkeypatch):
+    """Give each test ai_services as it is straight after import: counters and
+    session maps back at their initial contents, the in-memory caches empty,
+    and any constant another test left changed restored."""
+    import copy
 
     import ai_services as ai
-    importlib.reload(ai)
+
+    for name, initial in _pristine_module_state().items():
+        live = getattr(ai, name)
+        if isinstance(initial, dict):
+            live.clear()
+            live.update(copy.deepcopy(initial))
+        elif live != initial:
+            setattr(ai, name, initial)
+    for value in vars(ai).values():
+        if isinstance(value, ai._LRU):
+            with value._lock:
+                value._d.clear()
 
     class _AllowBudget:
         def __init__(self):
@@ -46,7 +89,7 @@ def _reset_module_state():
             )
 
     budget = _AllowBudget()
-    ai.plantnet_budget_client = budget
+    monkeypatch.setattr(ai, "plantnet_budget_client", budget)
     yield ai, budget
 
 

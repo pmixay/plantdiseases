@@ -8,53 +8,14 @@ leak, plus disease/time-window filters and the hidden-disease exclusion.
 """
 from __future__ import annotations
 
-import importlib
 import time
 
 import pytest
 
 
 @pytest.fixture
-def mapenv(tmp_path, monkeypatch):
-    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
-    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("FEEDBACK_IP_PEPPER", "test-pepper")
-    import community as comm
-    importlib.reload(comm)
-    import main as server_main
-    server_main.community_record_scan = comm.record_scan
-
-    def legacy_analysis_write(**kwargs):
-        return comm.record_scan(
-            scan_id=kwargs["scan_id"],
-            account_actor_id=kwargs["account_actor_id"],
-            country=kwargs["country"],
-            region=kwargs.get("region", ""),
-            city=kwargs.get("city"),
-            lat=kwargs.get("lat"),
-            lon=kwargs.get("lon"),
-            disease=kwargs.get("client_disease") or "healthy",
-            confidence=kwargs.get("client_confidence"),
-            species=kwargs.get("client_species"),
-            species_score=kwargs.get("client_species_score"),
-            image_bytes=kwargs.get("image_bytes"),
-            locale=kwargs.get("locale"),
-            nickname=kwargs.get("nickname"),
-        )
-
-    server_main.community_record_analysis_scan = legacy_analysis_write
-    server_main.community_map_scans = comm.map_scans
-    server_main.community_density_grid = comm.density_grid
-    server_main.community_opinion_counts = comm.opinion_counts
-    server_main.init_community_db = comm.init_db
-    server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
-    server_main._daily_write_counts.clear()
-    # /api/community/scan now requires a server-issued scan_id; these tests
-    # post synthetic ids, so treat them all as issued.
-    monkeypatch.setattr(
-        server_main, "community_analysis_token_issued", lambda *a, **k: True
-    )
-    return comm
+def mapenv(community_http_store):
+    return community_http_store
 
 
 def _scan(comm, sid, lat, lon, disease="leaf_spot", user="u1"):
