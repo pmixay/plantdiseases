@@ -543,36 +543,38 @@ def test_android_gradle_keeps_distribution_channel_contract():
     )
     assert 'configuredValue("ANDROID_UNSIGNED_DISTRIBUTION")' in gradle
     assert "unsignedDistributionBuild -> null" in gradle
-    assert 'setOf("staging", "production", "recovery-production", "recovery-staging")' in gradle
+    assert 'setOf("production", "recovery-production")' in gradle
     assert 'create("recoveryProduction")' in gradle
-    assert 'create("recoveryStaging")' in gradle
+    # Every build targets production; there is no staging build type or URL.
+    assert "plantdisease-test" not in gradle
+    assert 'create("staging")' not in gradle
+    assert 'create("recoveryStaging")' not in gradle
     # The identity tests must live in AGP's standard per-variant source sets: a
     # custom java.srcDir for a .kt file compiled nothing (javac NO-SOURCE) and
     # the test silently never ran.
-    for variant in ("RecoveryProduction", "RecoveryStaging"):
-        identity_test = (
-            ANDROID_BUILD_GRADLE.parent
-            / "src"
-            / f"test{variant}"
-            / "java"
-            / "com"
-            / "plantdiseases"
-            / "app"
-            / "RecoveryBuildIdentityTest.kt"
-        )
-        assert identity_test.is_file()
+    identity_test = (
+        ANDROID_BUILD_GRADLE.parent
+        / "src"
+        / "testRecoveryProduction"
+        / "java"
+        / "com"
+        / "plantdiseases"
+        / "app"
+        / "RecoveryBuildIdentityTest.kt"
+    )
+    assert identity_test.is_file()
     assert "testRecovery/java" not in gradle
-    assert 'listOf("recoveryProduction", "recoveryStaging")' in gradle
-    assert "Staging distribution endpoints must equal the reviewed German staging pair" in gradle
+    assert 'selector().withBuildType("recoveryProduction")' in gradle
     assert 'buildConfigField("String", "YANDEX_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_ID_SHA256"' in gradle
     assert 'buildConfigField("String", "VKID_CLIENT_SECRET_SHA256"' in gradle
     assert 'configuredValue("EMAIL_PASSWORD_AUTH_ENABLED")' in gradle
     assert 'distributionChannel == "production" && emailPasswordAuthOverride == true' in gradle
-    assert '"production", "recovery-production", "recovery-staging" -> false' in gradle
+    assert '"production", "recovery-production" -> false' in gradle
+    assert "else -> emailPasswordAuthOverride ?: false" in gradle
 
 
-def test_fresh_android_checkout_defaults_to_live_real_oauth_beta():
+def test_fresh_android_checkout_defaults_to_production_with_real_oauth():
     properties = {
         key: value
         for raw_line in ANDROID_GRADLE_PROPERTIES.read_text(encoding="utf-8").splitlines()
@@ -580,24 +582,17 @@ def test_fresh_android_checkout_defaults_to_live_real_oauth_beta():
         for key, value in [line.split("=", maxsplit=1)]
     }
     assert properties["ACCOUNT_REAL_OAUTH"] == "true"
-    assert properties["STAGING_APP_API_BASE_URL"] == (
-        "https://pdis.arbuz.lol/plantdisease-test/"
-    )
-    assert properties["STAGING_ACCOUNT_API_BASE_URL"] == (
-        "https://pdis.arbuz.lol/plantdisease-test/id/"
-    )
+    assert not any("API_BASE_URL" in key for key in properties)
 
     gradle = ANDROID_BUILD_GRADLE.read_text(encoding="utf-8")
     assert '"", "true" -> true' in gradle
-    assert ".ifBlank { stagingAppApiBaseUrl }" in gradle
-    assert ".ifBlank { stagingAccountApiBaseUrl }" in gradle
+    assert 'val productionAppApiBaseUrl = "https://pdis.arbuz.lol/"' in gradle
+    assert 'val productionAccountApiBaseUrl = "https://pdis.arbuz.lol/id/"' in gradle
+    assert ".ifBlank { productionAppApiBaseUrl }" in gradle
+    assert ".ifBlank { productionAccountApiBaseUrl }" in gradle
     assert 'buildConfigField("boolean", "ACCOUNT_UI_ENABLED", "true")' in gradle
-    assert 'distributionChannel.ifBlank { "local-beta" }' in gradle
     assert 'debug {' in gradle
     assert "?.takeIf { it.storeFile != null }" in gradle
-
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert "zero-configuration Yandex beta build mode" in workflow
 
 
 def test_private_repository_android_ci_uses_github_basic_gradle_cache():
@@ -611,11 +606,28 @@ def test_private_repository_android_ci_uses_github_basic_gradle_cache():
     assert setup["with"] == {"cache-provider": "basic"}
 
 
-def test_android_ci_does_not_receive_release_signing_secrets():
+def test_android_ci_signs_with_the_permanent_key_and_proves_it():
     workflow = _yaml(CI_WORKFLOW)
-    workflow_text = json.dumps(workflow)
-    assert "RELEASE_" not in workflow_text
-    assert "environment" not in workflow["jobs"]["android"]
+    for name, job in workflow["jobs"].items():
+        if name != "android":
+            assert "RELEASE_" not in json.dumps(job)
+    steps = workflow["jobs"]["android"]["steps"]
+    # The key is env for `run:` steps only; no third-party action receives it.
+    for step in steps:
+        if "uses" in step:
+            assert "RELEASE_" not in json.dumps(step)
+    names = [step.get("name", "") for step in steps]
+    build = names.index("Build, test and sign (production server, permanent key)")
+    verify = names.index("Verify the signing certificate")
+    upload = names.index("Upload signed APKs (release + recovery)")
+    assert build < verify < upload
+    assert steps[verify]["env"]["EXPECTED_CERT_SHA256"] == (
+        "ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367"
+    )
+    assert "if" not in steps[verify] and "if" not in steps[upload]
+    command = steps[build]["run"]
+    assert "assembleRelease assembleRecoveryProduction" in command
+    assert "Staging" not in command
 
 
 def test_database_role_provisioning_is_idempotent_and_url_safe():

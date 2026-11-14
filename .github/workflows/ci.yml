@@ -126,12 +126,12 @@ jobs:
   #      compile and for every test task: nothing was reusable and both
   #      variants' whole suites ran twice. There is now one invocation, with no
   #      -P flags, so it is itself the zero-config proof (committed defaults
-  #      select the live beta pair and the pinned Yandex client).
-  #   2. The ~94-class shared Robolectric suite ran on all five variants
-  #      although it is the same tests. Only src/testDebug, src/testRelease,
-  #      src/testStaging and src/testRecovery* differ per variant, so the full
-  #      suite runs on debug and on release (what ships); staging and the
-  #      recovery variants run just their own identity test. `--tests` binds to
+  #      select the production server and the pinned Yandex client).
+  #   2. The ~94-class shared Robolectric suite ran on every variant
+  #      although it is the same tests. Only src/testDebug, src/testRelease
+  #      and src/testRecoveryProduction differ per variant, so the full
+  #      suite runs on debug and on release (what ships); the recovery
+  #      variant runs just its own identity test. `--tests` binds to
   #      the task before it and fails loudly ("no tests found") if the class
   #      is renamed away.
   #   3. A second Gradle start (configuration, task graph, daemon) between the
@@ -148,8 +148,11 @@ jobs:
     defaults:
       run:
         working-directory: android
-    # This job is deliberately credential-free. It produces compilation/test
-    # evidence only; release signing is done locally by the owner.
+    # This job signs with the permanent release key (owner's decision,
+    # 2026-11-14): its release and recovery APKs are the distributable ones.
+    # The key reaches only the Gradle step, as env; no third-party action
+    # sees it. Anyone who can push to a branch in the trigger list can run
+    # code with it, so keep that list to branches the owner controls.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -234,8 +237,22 @@ jobs:
       # during configuration). Kept because Gradle 10 makes the config cache
       # mandatory and this catches an incompatible change on the commit that
       # introduces it.
-      - name: Build and test (zero-configuration Yandex beta build mode)
+      - name: Decode the release keystore
         env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 is not set; add the signing secrets (DEPLOYMENT.md §8.1)"
+            exit 1
+          fi
+          (umask 077 && printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore")
+
+      - name: Build, test and sign (production server, permanent key)
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           # FCM client config (optional). Unset ⇒ push stays dormant and the
           # client falls back to polling (PushManager.isConfigured).
           FCM_APP_ID: ${{ secrets.FCM_APP_ID }}
@@ -246,11 +263,8 @@ jobs:
           ./gradlew ktlintCheck detekt
           testDebugUnitTest
           testReleaseUnitTest
-          testStagingUnitTest --tests '*StagingBuildIdentityTest'
           testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest'
-          testRecoveryStagingUnitTest --tests '*RecoveryBuildIdentityTest'
-          assembleRelease assembleStaging
-          assembleRecoveryProduction assembleRecoveryStaging
+          assembleRelease assembleRecoveryProduction
           --build-cache --configuration-cache --stacktrace
 
       # Only the JUnit XML and the packaging logs live outside build/reports.
@@ -266,16 +280,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # A test build, not a distributable one: this job has no signing key, so
-      # the APK carries the runner's throwaway debug certificate and the
-      # staging endpoints. It cannot update an install signed by another key,
-      # and Yandex sign-in rejects its certificate. An APK is already a zip,
-      # hence the light compression level.
-      - name: Upload release APK (debug-signed, staging endpoints)
+      # Gradle falls back to the debug key when the store is missing, so prove
+      # the signer instead of trusting the build: both APKs must carry the
+      # permanent certificate (DEPLOYMENT.md §8.1).
+      - name: Verify the signing certificate
+        env:
+          EXPECTED_CERT_SHA256: ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367
+        run: |
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          test -n "$apksigner"
+          for apk in app/build/outputs/apk/release/*.apk app/build/outputs/apk/recoveryProduction/*.apk; do
+            cert=$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+            if [ "$cert" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$apk is signed by '$cert', not the permanent key"
+              exit 1
+            fi
+            sha256sum "$apk"
+          done
+
+      # The 1.9 release and its versionCode-20 recovery build (DEPLOYMENT.md
+      # §8.3). An APK is already a zip, hence the light compression level.
+      - name: Upload signed APKs (release + recovery)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: app-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/recoveryProduction/*.apk
           if-no-files-found: error
           retention-days: 7
           compression-level: 3

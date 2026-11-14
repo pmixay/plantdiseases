@@ -69,7 +69,7 @@ app: package `com.plantdiseases.app`, launcher name `PlantDiseases`, version
 name `1.9`, and version code `19`. It does not coexist with 1.8; with the same
 permanent certificate it updates 1.8 in place. It uses the same permanent signing certificate as production (`DEPLOYMENT.md` §8).
 
-Without real-provider configuration, local `staging` builds use deterministic
+With `ACCOUNT_REAL_OAUTH=false`, local builds use deterministic
 synthetic authentication: tapping Yandex or VK creates a mock-provider
 credential from the app's random installation UUID. The first use still
 exercises the pending-signup/nickname flow; later uses of the same
@@ -78,16 +78,17 @@ installation/provider exercise existing-account sign-in.
 With this local stack running, build and test the emulator APK from `android/`:
 
 ```sh
-./gradlew :app:testStagingUnitTest :app:assembleStaging \
+./gradlew :app:assembleDebug \
   -PAPP_API_BASE_URL=http://10.0.2.2:18000/ \
-  -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/
+  -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/ \
+  -PACCOUNT_REAL_OAUTH=false
 ```
 
-Install the APK from `app/build/outputs/apk/staging/`. Cleartext remains
+Install the APK from `app/build/outputs/apk/debug/`. Cleartext remains
 limited to emulator loopback (`10.0.2.2`, `localhost`, and `127.0.0.1`) in this
-variant; arbitrary LAN cleartext is not enabled. Without URL properties the
-build points only to `https://pdis.arbuz.lol/plantdisease-test/` and its
-`id/` account route, never to the production API root.
+variant; arbitrary LAN cleartext is not enabled. Without URL properties every
+build points to the production server (`https://pdis.arbuz.lol/` and its `id/`
+account route): the Android app no longer has a staging variant.
 
 ### Build with one or both real provider SDKs
 
@@ -107,7 +108,7 @@ ACCOUNT_API_BASE_URL=https://pdis.arbuz.lol/plantdisease-test/id/
 Then build from `android/`:
 
 ```sh
-./gradlew :app:testStagingUnitTest :app:assembleStaging
+./gradlew :app:assembleDebug
 ```
 
 The real mode requires at least one provider. Yandex is already enabled; VK

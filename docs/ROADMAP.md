@@ -48,16 +48,8 @@ the README status section and `docs/assets/per-class.svg`.
 
 1.9 ships accounts only: Yandex sign-in, no PRO (see Decisions). In order.
 
-**Before the build** (code and host; no signing key needed)
+**Before the release** (code and host)
 
-- [ ] **Signed release workflow in CI** (owner's decision, 2026-11-14: the signed
-      build runs in CI, not on the owner's machine). A separate, manually
-      dispatched workflow — ordinary push CI stays credential-free — that signs
-      with the permanent key from repository secrets, then checks certificate
-      fingerprint, package, versionCode and baked endpoints, prints the APK
-      SHA-256 and builds the matching recovery APK (`DEPLOYMENT.md` §8.1, §8.3).
-      Put the secrets behind a protected GitHub environment. `CLAUDE.md` and
-      `DEPLOYMENT.md` §8 still describe local signing; change them in the same PR.
 - [ ] **Old clients: read the production logs.** `/` has pointed at the new server
       since the 2026-10-09 switch, so older app versions already call it. Look
       for 4xx/5xx from them; add a regression test for anything found.
@@ -74,7 +66,9 @@ the README status section and `docs/assets/per-class.svg`.
       backups go with it; lose just the key and they cannot be decrypted. Keep a
       copy of the key (and periodically of `/var/backups/pd-account-prod/db`)
       somewhere else.
-- [ ] ★ **Add the signing secrets and run the release workflow** on the green commit.
+- [ ] ★ **Take the signed APK from CI.** The android job signs with the permanent
+      key and uploads `app-release-apk` (`DEPLOYMENT.md` §8.3); use the artifact of
+      the green run on the release commit.
 - [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
       verified against production; only the certificate fingerprint registered
       with Yandex is new.

@@ -94,8 +94,11 @@ cd server && pytest tests/account -q          # account tests; also part of the 
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew :app:assembleDebug -PAPP_API_BASE_URL=http://10.0.2.2:8000/ -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/ -PACCOUNT_REAL_OAUTH=false   # local app + mock-account stack
 ```
-- `assembleRelease` is CI-only for agents; there is no CI release workflow — the owner
-  signs distributable APKs locally with the permanent key (`DEPLOYMENT.md` §8).
+- `assembleRelease` is CI-only for agents. The CI android job signs the release and
+  recovery APKs with the permanent key from repository secrets, checks the certificate
+  and uploads them as the `app-release-apk` artifact (`DEPLOYMENT.md` §8).
+- Every build targets the production server (URLs fixed in `app/build.gradle.kts`);
+  there is no staging variant. Only a local mock-stack build overrides them, as above.
   `connectedDebugAndroidTest` needs a device and CI never runs it.
 - Unit tests run under Robolectric (real resources, in-memory Room) — prefer `src/test/`
   over `src/androidTest/`.
@@ -109,7 +112,8 @@ cd server && pytest tests/account -q          # account tests; also part of the 
   commit on a branch touches `android/**`, every later push there runs the android job,
   docs-only ones included. Only a branch whose entire diff touches no filtered path runs
   nothing. (On `main` it uses `github.event.before`, so it gates per push.)
-- Ordinary CI holds no signing or provider credentials.
+- The android job holds the release signing key (env of the Gradle step only); no job
+  holds provider credentials. Every branch in the trigger list can use that key.
 - Easy to undo by accident: `maxParallelForks` in `app/build.gradle.kts` and the
   `~/.m2/repository/org/robolectric` cache step (Robolectric resolves `android-all` via its
   own Maven resolver, which the Gradle-home cache doesn't cover). Measure timings with
