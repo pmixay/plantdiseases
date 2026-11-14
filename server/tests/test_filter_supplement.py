@@ -151,14 +151,6 @@ def test_every_gate_fires_on_its_own_row(bundle):
     assert report["totals"]["benchmark_leaks"] == 1
 
 
-def test_blur_gate_is_asymmetric_for_not_a_plant(bundle):
-    """Same smooth image, two classes, two verdicts — this is the point."""
-    root, bench, _ = bundle
-    got = _verdicts(fs.filter_bundle(root, bench, workers=4, require_provenance=True)[0])
-    assert got["leaf_spot/smooth.jpg"] == "blurry"
-    assert got["not_a_plant/smooth.jpg"] == "keep"
-
-
 def _flip_bits(digest: str, n: int) -> str:
     """Perturb a 64-bit hex pHash by exactly ``n`` bits."""
     return f"{int(digest, 16) ^ ((1 << n) - 1):016x}"

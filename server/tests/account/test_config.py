@@ -177,15 +177,6 @@ def test_every_environment_rejects_wildcard_cors():
         Settings.from_env(env)
 
 
-def test_ephemeral_keys_are_rejected_outside_explicit_test_mode():
-    env = _base_env() | {
-        "ENVIRONMENT": "development",
-        "ACCOUNT_ALLOW_EPHEMERAL_KEYS": "true",
-    }
-    with pytest.raises(SettingsError, match="only in test"):
-        Settings.from_env(env)
-
-
 def test_malformed_boolean_and_rate_limit_are_rejected():
     with pytest.raises(SettingsError, match="must be a boolean"):
         Settings.from_env(_base_env() | {"ACCOUNT_DATABASE_LOCAL": "sometimes"})

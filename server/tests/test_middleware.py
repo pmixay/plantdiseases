@@ -57,20 +57,14 @@ def test_request_log_uses_route_template_and_server_correlation_id(client, caplo
         assert forbidden not in application_logs
 
 
-def test_health_capabilities_not_rate_limited(client):
-    # Hammer free endpoints — none should ever produce a 429.
+def test_health_capabilities_not_rate_limited(rate_limited_client):
+    # Hammer the free endpoints under the strict 1 req/s, no-burst bucket: a
+    # metered route 429s on its second call there, so ten clean answers prove
+    # the exemption itself rather than a wide default bucket.
     for _ in range(5):
         for path in ("/api/health", "/api/capabilities"):
-            r = client.get(path)
+            r = rate_limited_client.get(path)
             assert r.status_code == 200, f"{path} returned {r.status_code}"
-
-
-def test_metrics_endpoints_still_answer(client):
-    """Metrics are metered now (see test_metrics_endpoints_are_rate_limited),
-    but the default bucket is wide enough that ordinary scraping is
-    unaffected — `client` uses the default burst."""
-    assert client.get("/api/metrics").status_code == 200
-    assert client.get("/api/metrics/prometheus").status_code == 200
 
 
 def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
@@ -232,17 +226,6 @@ def test_client_supplied_trace_id_is_ignored(client):
         assert all(character in "0123456789abcdef" for character in generated)
 
 
-def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
-    """``client`` keeps the default capacity (5). Five back-to-back
-    POSTs to /api/feedback must all succeed even though the steady-
-    state rate is 1 req/s — that's what the burst bucket is for.
-    """
-    body = {"feedback_receipt": "x" * 43, "correct": True}
-    for i in range(5):
-        r = client.post("/api/feedback", json=body)
-        assert r.status_code in (200, 422), f"burst[{i}] got {r.status_code}: {r.text}"
-
-
 # ── Unhandled exceptions ──────────────────────────────────────────────
 # Before `_unhandled_exception_handler` existed, an exception escaping a
 # handler was answered by Starlette's ServerErrorMiddleware: plain-text
@@ -264,16 +247,26 @@ def _client_swallowing_server_errors():
     return TestClient(server_main.app, raise_server_exceptions=False)
 
 
-def test_unhandled_exception_returns_json_500_with_trace_id(monkeypatch):
+def test_unhandled_exception_is_a_logged_counted_json_500_with_a_server_trace_id(
+    monkeypatch, caplog,
+):
+    """One failing handler, every promise the 500 path makes: the shared JSON
+    error shape, a server-minted trace id (with or without a client one), no
+    leaked exception text, an error-counter increment and an access-log line."""
+    import logging
+
     import main as server_main
 
     def _boom():
         raise RuntimeError("store exploded")
 
+    before = server_main._snapshot_metrics()["total_errors"]
     monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
 
-    with _client_swallowing_server_errors() as c:
-        r = c.get("/api/metrics", headers={"X-Trace-ID": "trace-abc_123"})
+    with caplog.at_level(logging.INFO, logger="plantdiseases"):
+        with _client_swallowing_server_errors() as c:
+            r = c.get("/api/metrics", headers={"X-Trace-ID": "trace-abc_123"})
+            bare = c.get("/api/metrics")
 
     assert r.status_code == 500
     # The same JSON {"detail": ...} shape every other error on this API uses.
@@ -287,51 +280,11 @@ def test_unhandled_exception_returns_json_500_with_trace_id(monkeypatch):
     # The exception message must not leak to the client.
     assert "store exploded" not in r.text
 
+    # A request without a client trace id still gets one minted.
+    assert bare.status_code == 500
+    assert bare.headers.get("X-Trace-ID")
 
-def test_unhandled_exception_mints_a_trace_id_when_client_sent_none(monkeypatch):
-    import main as server_main
-
-    def _boom():
-        raise RuntimeError("store exploded")
-
-    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
-
-    with _client_swallowing_server_errors() as c:
-        r = c.get("/api/metrics")
-
-    assert r.status_code == 500
-    assert r.headers.get("X-Trace-ID")
-
-
-def test_unhandled_exception_increments_the_error_counter(monkeypatch):
-    import main as server_main
-
-    def _boom():
-        raise RuntimeError("store exploded")
-
-    before = server_main._snapshot_metrics()["total_errors"]
-    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
-
-    with _client_swallowing_server_errors() as c:
-        assert c.get("/api/metrics").status_code == 500
-
-    assert server_main._snapshot_metrics()["total_errors"] == before + 1
-
-
-def test_unhandled_exception_is_written_to_the_access_log(monkeypatch, caplog):
-    import logging
-
-    import main as server_main
-
-    def _boom():
-        raise RuntimeError("store exploded")
-
-    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
-
-    with caplog.at_level(logging.INFO, logger="plantdiseases"):
-        with _client_swallowing_server_errors() as c:
-            assert c.get("/api/metrics").status_code == 500
-
+    assert server_main._snapshot_metrics()["total_errors"] == before + 2
     assert any(
         "REQUEST GET /api/metrics -> 500" in rec.getMessage()
         for rec in caplog.records

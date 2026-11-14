@@ -34,10 +34,8 @@ def _img(path, seed):
     Image.fromarray(small).resize((256, 256), Image.BICUBIC).save(path, quality=95)
 
 
-@pytest.fixture
-def src(tmp_path):
+def _write_source(root):
     """Upstream layout: <split>/<species>/<condition>/<images>."""
-    root = tmp_path / "flower_data"
     n = 0
     for species, conds in (("hibiscus", ("healthy", "scorch")),
                            ("banana_bush", ("healthy", "scorch")),
@@ -49,15 +47,33 @@ def src(tmp_path):
     return root
 
 
+@pytest.fixture
+def src(tmp_path):
+    return _write_source(tmp_path / "flower_data")
+
+
+@pytest.fixture(scope="module")
+def built(tmp_path_factory):
+    """The default source built once, for the tests that only read the result.
+
+    Five tests each regenerated the 30 source JPEGs and ran this identical
+    build to inspect a different facet of its output.
+    """
+    root = tmp_path_factory.mktemp("ood-bench")
+    source = _write_source(root / "flower_data")
+    out = root / "bench"
+    b.build(source, out, per_class_cap=100, min_clusters_per_class=1,
+            robust_dedup=False)
+    return source, out
+
+
 def _manifest(out):
     with (out / "manifest.csv").open() as fh:
         return list(csv.DictReader(fh))
 
 
-def test_retired_arm_never_reaches_disk(src, tmp_path):
-    out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
-            robust_dedup=False)
+def test_retired_arm_never_reaches_disk(built):
+    src, out = built
     rows = _manifest(out)
 
     diseased = {(r["species"], r["class"]) for r in rows
@@ -71,22 +87,18 @@ def test_retired_arm_never_reaches_disk(src, tmp_path):
         "retired arm left orphan images on disk"
 
 
-def test_healthy_side_of_a_retired_species_is_kept(src, tmp_path):
+def test_healthy_side_of_a_retired_species_is_kept(built):
     """Retirement is about the CONDITION, not the species — banana_bush is an
     in-domain ornamental and its healthy frames are valid negatives."""
-    out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
-            robust_dedup=False)
+    src, out = built
     healthy = {r["species"] for r in _manifest(out) if r["class"] == "healthy"}
     assert "banana_bush" in healthy
 
 
-def test_manifest_and_disk_agree_exactly(src, tmp_path):
+def test_manifest_and_disk_agree_exactly(built):
     """The ship gate joins images to the manifest by filename; any drift on
     either side silently attributes an image to the wrong arm, or to none."""
-    out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
-            robust_dedup=False)
+    src, out = built
     listed = [r["filename"] for r in _manifest(out)]
     on_disk = [f"{p.parent.name}/{p.name}" for p in out.rglob("*.jpg")]
     # COUNTS, not sets. build() pools every split dir before copying, so two
@@ -116,10 +128,8 @@ def test_same_stem_in_two_splits_does_not_overwrite(tmp_path):
         "cross-split stem collision: manifest rows outnumber files on disk"
 
 
-def test_arm_is_blank_for_healthy_and_named_for_disease(src, tmp_path):
-    out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
-            robust_dedup=False)
+def test_arm_is_blank_for_healthy_and_named_for_disease(built):
+    src, out = built
     for r in _manifest(out):
         if r["class"] == "healthy":
             assert r["arm"] == "", "a healthy leaf has no condition arm"
@@ -137,10 +147,8 @@ def test_unknown_species_is_flagged_not_guessed(src, tmp_path, capsys):
     assert "mystery_plant" in out and "SPECIES_ARMS" in out
 
 
-def test_manifest_provenance_is_stable_not_local_tmp_path(src, tmp_path):
-    out = tmp_path / "bench"
-    b.build(src, out, per_class_cap=100, min_clusters_per_class=1,
-            robust_dedup=False)
+def test_manifest_provenance_is_stable_not_local_tmp_path(built):
+    src, out = built
     for row in _manifest(out):
         assert row["source"] == b.SOURCE_DATASET_SLUG
         assert row["source_slug"] == b.SOURCE_DATASET_SLUG
@@ -152,7 +160,7 @@ def test_manifest_provenance_is_stable_not_local_tmp_path(src, tmp_path):
         assert row["source_relative_path"]
         assert len(row["capture_family_id"]) == 16
         assert int(row["source_family_size"]) >= 1
-        assert str(tmp_path) not in row["source"]
+        assert str(src.parent) not in row["source"]
 
 
 def test_default_robust_dedup_merges_geometric_augmentation_family(

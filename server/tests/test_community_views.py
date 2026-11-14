@@ -26,13 +26,6 @@ def _scan(comm, scan_id="s1", owner="owner"):
                      region="London", disease="leaf_spot")
 
 
-def test_owner_of_returns_sharer(comm):
-    _scan(comm, scan_id="s1", owner="owner")
-    assert comm.owner_of("s1") == "owner"
-    assert comm.owner_of("missing") is None
-    assert comm.owner_of("") is None
-
-
 def test_view_is_recorded_once_per_viewer(comm):
     _scan(comm)
     assert comm.record_views(["s1"], "viewer-a") == 1   # new

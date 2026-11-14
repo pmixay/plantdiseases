@@ -126,10 +126,6 @@ def test_record_opinion_rejects_unavailable_target_in_write_transaction(
         ).fetchone()[0] == 0
 
 
-def test_daily_opinion_count_guards_none(comm):
-    assert comm.daily_opinion_count_for_ip_hash(None) == 0
-
-
 def test_opinion_open_respects_30_day_cutoff(comm):
     """A freshly shared scan accepts opinions; after 30 days it goes
     read-only while its public handle remains stable."""

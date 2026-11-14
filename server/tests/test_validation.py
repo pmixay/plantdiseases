@@ -15,29 +15,35 @@ def _post_image(client, data: bytes, filename: str, content_type: str):
     )
 
 
-def test_empty_file_rejected(client):
-    r = _post_image(client, b"", "empty.png", "image/png")
+_PNG_MAGIC_ONLY = b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.parametrize(
+    ("contents", "filename", "content_type", "detail"),
+    [
+        pytest.param(b"", "empty.png", "image/png", "empty", id="empty-file"),
+        # Right content-type but the bytes are not an image.
+        pytest.param(b"NOT_AN_IMAGE" * 100, "fake.png", "image/png", "", id="bogus-magic"),
+        # A bare RIFF container (e.g. WAV, AVI) used to slip past the magic-byte
+        # check because `RIFF` was in IMAGE_MAGIC. WebP now has its own explicit
+        # `RIFF<size>WEBP` validator and bare RIFF is refused at that stage
+        # rather than by a later Pillow decode failure.
+        pytest.param(
+            b"RIFF" + (1024).to_bytes(4, "little") + b"WAVE" + b"\x00" * 64,
+            "fake.webp",
+            "image/webp",
+            "unrecognised",
+            id="riff-not-webp",
+        ),
+        pytest.param(
+            _PNG_MAGIC_ONLY, "doc.pdf", "application/pdf", "unsupported", id="content-type",
+        ),
+    ],
+)
+def test_invalid_upload_rejected(client, contents, filename, content_type, detail):
+    r = _post_image(client, contents, filename, content_type)
     assert r.status_code == 400
-    assert "empty" in r.json()["detail"].lower()
-
-
-def test_bogus_magic_bytes_rejected(client):
-    # Right content-type but the bytes are not an image.
-    r = _post_image(client, b"NOT_AN_IMAGE" * 100, "fake.png", "image/png")
-    assert r.status_code == 400
-
-
-def test_riff_non_webp_rejected(client):
-    """A bare RIFF container (e.g. WAV, AVI) used to slip past the
-    magic-byte check because `RIFF` was in IMAGE_MAGIC. Now WebP gets
-    its own explicit `RIFF<size>WEBP` validator and bare-RIFF is
-    refused — Pillow would later fail the decode anyway, but we want
-    the rejection at the magic-byte stage."""
-    # WAV header: 'RIFF' + 4-byte size + 'WAVE'.
-    wav = b"RIFF" + (1024).to_bytes(4, "little") + b"WAVE" + b"\x00" * 64
-    r = _post_image(client, wav, "fake.webp", "image/webp")
-    assert r.status_code == 400
-    assert "unrecognised" in r.json()["detail"].lower()
+    assert detail in r.json()["detail"].lower()
 
 
 def test_webp_passes_magic_check(client):
@@ -94,7 +100,9 @@ def test_decode_exception_text_never_appears_in_logs_or_response(
     monkeypatch.setattr(server_main, "_open_image", fail_decode)
     caplog.set_level(logging.INFO, logger="plantdiseases")
     response = _post_image(client, png_bytes, "scan.jpg", "image/png")
+    # A non-HTTPException from the decoder surfaces as a clean 400, not a 500.
     assert response.status_code == 400
+    assert "cannot read" in response.json()["detail"].lower()
     rendered = "\n".join(
         record.getMessage()
         for record in caplog.records
@@ -102,12 +110,6 @@ def test_decode_exception_text_never_appears_in_logs_or_response(
     )
     assert sentinel not in rendered
     assert sentinel not in response.text
-
-
-def test_unsupported_content_type_rejected(client, png_bytes):
-    r = _post_image(client, png_bytes, "doc.pdf", "application/pdf")
-    assert r.status_code == 400
-    assert "unsupported" in r.json()["detail"].lower()
 
 
 def test_too_large_file_rejected(client, monkeypatch):
@@ -160,18 +162,3 @@ def test_valid_image_accepted(client, fmt, content_type):
         assert key in body
 
 
-def test_unexpected_pil_error_returns_400(client, monkeypatch):
-    """Non-HTTPException errors from PIL must surface as a clean 400
-    rather than a 500 inference crash."""
-    import main as server_main
-
-    def boom(_contents):
-        raise RuntimeError("synthetic PIL bug")
-
-    monkeypatch.setattr(server_main, "_open_image", boom)
-    img = Image.new("RGB", (64, 64), color=(80, 160, 80))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    r = _post_image(client, buf.getvalue(), "leaf.png", "image/png")
-    assert r.status_code == 400
-    assert "cannot read" in r.json()["detail"].lower()

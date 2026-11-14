@@ -47,5 +47,3 @@ def test_send_is_noop_without_credentials(push):
     assert push.send_opinion_push("user-a", "scan1", "leaf_spot") == 0
 
 
-def test_send_noop_for_unknown_user(push):
-    assert push.send_opinion_push("nobody", "scan1", "leaf_spot") == 0

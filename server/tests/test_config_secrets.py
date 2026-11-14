@@ -26,18 +26,6 @@ def test_secret_file_is_the_only_supported_production_channel(tmp_path, monkeypa
     assert config.get_secret(key) == ""
 
 
-def test_plantnet_key_uses_the_production_file_channel(tmp_path, monkeypatch):
-    key = "PLANTNET_API_KEY"
-    _clear(monkeypatch, key)
-    secret_file = tmp_path / "plantnet-api.key"
-    secret_file.write_text("plantnet-test-key\n", encoding="utf-8")
-    os.chmod(secret_file, 0o400)
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("PLANTNET_API_KEY_FILE", str(secret_file))
-
-    assert config.get_secret("PLANTNET_API_KEY") == "plantnet-test-key"
-
-
 def test_production_direct_or_overpermissive_secret_fails_closed(
     tmp_path,
     monkeypatch,

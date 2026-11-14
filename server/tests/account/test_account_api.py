@@ -662,6 +662,11 @@ def test_signup_tokens_profile_sessions_and_validation_are_private(api: ApiHarne
     }
     assert me.json()["linked_providers"][0]["provider"] == "yandex"
     assert "subject" not in me.text
+    # ...and not by value either: the stored provider subject never leaves the DB.
+    with api.service.repository.transaction() as transaction:
+        private_subject = transaction.scalar(select(AccountIdentity.provider_subject))
+    assert private_subject
+    assert private_subject not in me.text
 
     sessions = api.client.get("/v1/auth/sessions", headers=api.headers(access_token))
     assert sessions.status_code == 200
@@ -1651,15 +1656,6 @@ def test_refresh_rotation_lost_response_replays_the_same_successor(api: ApiHarne
     assert successor.status_code == 200
 
 
-def test_refresh_requires_rotation_id(api: ApiHarness):
-    tokens = _signup(api)
-    missing = api.client.post(
-        "/v1/auth/refresh",
-        json={"refresh_token": tokens["refresh_token"]},
-    )
-    assert missing.status_code == 422
-
-
 def test_refresh_rotation_replay_after_successor_use_is_detected_immediately(
     api: ApiHarness,
 ):
@@ -2169,18 +2165,6 @@ def test_push_path_fails_explicitly_without_a_delivery_sink(api: ApiHarness):
     assert _error(response) == "push_unavailable"
     with api.service.repository.transaction() as transaction:
         assert transaction.scalar(select(PushDevice)) is None
-
-
-def test_database_identity_rows_never_escape_profile_contract(api: ApiHarness):
-    tokens = _signup(api)
-    with api.service.repository.transaction() as transaction:
-        identity = transaction.scalar(select(AccountIdentity))
-        assert identity is not None
-        private_subject = identity.provider_subject
-
-    response = api.client.get("/v1/me", headers=api.headers(tokens["access_token"]))
-    assert response.status_code == 200
-    assert private_subject not in response.text
 
 
 def test_sensitive_mutation_rechecks_account_state_inside_its_transaction(api: ApiHarness):

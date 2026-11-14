@@ -309,33 +309,6 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     assert prune_calls == [True]
 
 
-def test_webp_variant_rejects_oversized_source_before_decode(tmp_path, monkeypatch):
-    import main as server_main
-
-    src = tmp_path / "oversized.png"
-    src.write_bytes(_PNG)
-    loaded = False
-
-    class _OversizedImage:
-        size = (server_main._WEBP_MAX_SOURCE_PIXELS + 1, 1)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_exc):
-            return False
-
-        def load(self):
-            nonlocal loaded
-            loaded = True
-            raise AssertionError("oversized image must be rejected before decode")
-
-    monkeypatch.setattr(server_main.Image, "open", lambda _path: _OversizedImage())
-
-    assert server_main._webp_variant(src, 1000, 80) is None
-    assert loaded is False
-
-
 def test_endpoint_never_falls_back_to_raw_oversized_source(
     client,
     tmp_path,

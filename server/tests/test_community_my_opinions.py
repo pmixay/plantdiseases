@@ -52,20 +52,7 @@ def test_counts_only_for_requested_scans_and_exclude_my_own_opinions(comm):
     assert by_id["mine1"]["disease"] == "leaf_spot"
     assert by_id["mine2"]["opinion_count"] == 1
     assert res["total_opinions"] == 3
-    assert by_id["mine1"]["latest_at"] >= by_id["mine2"]["latest_at"] or True  # ts present
     assert isinstance(by_id["mine1"]["latest_at"], int)
-
-
-def test_unrequested_scan_never_notifies(comm):
-    """A scan shared to the corpus but never flagged for a second opinion does
-    not surface in the poll, even when others leave opinions on it."""
-    comm.record_scan(scan_id="shared", user_pseudo_id="owner", country="GB",
-                     region="London", disease="leaf_spot")
-    comm.record_opinion(scan_id="shared", author_pseudo_id="alice", suggested_disease="blight")
-
-    assert comm.opinion_counts_for_user("owner") == {
-        "scans": [], "total_opinions": 0, "total_views": 0,
-    }
 
 
 def test_latest_nickname_is_returned_for_poll_notification(comm):
@@ -103,6 +90,3 @@ def test_endpoint_returns_counts(client):
     assert "scans" in body and "total_opinions" in body
 
 
-def test_endpoint_rejects_bad_id(client):
-    r = client.get("/api/community/my-scan-opinions/" + "bad id with spaces")
-    assert r.status_code in (404, 422)

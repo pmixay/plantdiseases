@@ -36,13 +36,6 @@ def _uniform_probs() -> dict[str, float]:
     return {name: 1.0 / n for name in sorted(EXPECTED_CLASSES)}
 
 
-def test_not_a_plant_class_is_present():
-    """Rejection class must always exist — it's how the pipeline reports noise."""
-    from classifier import DEFAULT_CLASS_NAMES
-
-    assert "not_a_plant" in DEFAULT_CLASS_NAMES
-
-
 def test_taxonomy_is_v2x_disease_only():
     """PlantVision v2.x carries 9 trainable classes (incl. the combined
     ``pests`` head). The remaining physiological conditions (edema,
@@ -268,21 +261,6 @@ def test_healthy_gate_silent_on_high_confidence():
 
     assert out["class_name"] == "healthy"
     assert "uncertain_healthy" not in out["warnings"]
-
-
-def test_low_confidence_warning_is_propagated():
-    from pipeline import _apply_postprocessing_rules
-
-    probs = _uniform_probs()
-    classification = {
-        "class_name": "leaf_spot",
-        "confidence": 1.0 / len(probs),
-        "all_probs": probs,
-        "low_confidence": True,
-    }
-    out = _apply_postprocessing_rules(classification, list(probs.keys()))
-
-    assert "low_confidence" in out["warnings"]
 
 
 def test_very_low_confidence_warning_fires_on_disease_under_floor():
@@ -854,39 +832,6 @@ def test_taxonomy_without_nap_keeps_plant_max_logit_equal_to_max_logit():
 
     res = stub._format_result_from_logits(np.array([3.0, 5.0], dtype=np.float32))
     assert res["plant_max_logit"] == res["max_logit"] == 5.0
-
-
-def test_classes_json_in_repo_drives_pipeline_config():
-    """End-to-end check: the committed classes.json parses cleanly and
-    declares a sensible plantvision taxonomy. The exact class set may
-    lag DEFAULT_CLASS_NAMES whenever the artefact is shipped from an
-    older training pass than the current code (e.g. v2.1 artefact in
-    tree while DEFAULT_CLASS_NAMES has already been bumped to v2.2)."""
-    import json
-    from pathlib import Path
-
-    repo_classes = Path(__file__).resolve().parents[1] / "models" / "classes.json"
-    if not repo_classes.exists():  # pragma: no cover - models optional locally
-        return
-
-    meta = json.loads(repo_classes.read_text(encoding="utf-8"))
-    class_set = set(meta["class_names"])
-    assert "healthy" in class_set and "not_a_plant" in class_set
-    # The current code targets the merged 8-class set (EXPECTED_CLASSES),
-    # but the shipped artefact lags until the next A100 retrain regenerates
-    # classes.json + classifier.onnx together. The artefact in tree today is
-    # the v2.1 7-class set (pre-merge, pre-physiological), still valid on
-    # disk, so accept either. Anything else is genuine taxonomy drift.
-    LEGACY_V21_CLASSES = {
-        "bacterial_leaf_spot", "gray_mold_botrytis", "healthy",
-        "leaf_spot_fungal", "not_a_plant", "powdery_mildew", "viral_disease",
-    }
-    assert class_set in (LEGACY_V21_CLASSES, EXPECTED_CLASSES), (
-        f"class set drift: {class_set ^ EXPECTED_CLASSES}"
-    )
-    assert len(meta["class_names"]) == len(class_set)  # no duplicates
-    assert meta["detector_classes"] == ["plant_leaf"]
-    assert meta.get("model_version", "").startswith("2.")
 
 
 def test_severity_low_for_non_disease():

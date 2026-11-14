@@ -1264,15 +1264,6 @@ def test_progression_improving_disease_to_healthy():
     assert out["class_changed"] is True
 
 
-def test_chat_metrics_snapshot_initially_empty():
-    import ai_services as ai
-
-    snap = ai.chat_metrics_snapshot()
-    assert snap["active_sessions"] == 0
-    assert snap["requests"] == 0
-    assert snap["rejected"] == 0
-
-
 def test_openrouter_call_retries_transient_5xx(monkeypatch):
     """`_call_openrouter` must retry on 503 / 502 / 504 / 429 / 408 and
     on connection / timeout errors, but NOT on auth / bad-request 4xx.

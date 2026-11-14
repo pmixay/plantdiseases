@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from app.community_deletion import (
+    _MAX_RESPONSE_BYTES,
     _NoRedirectHandler,
     _open_no_redirect,
     build_community_deletion_dispatcher,
@@ -94,3 +95,28 @@ def test_community_dispatch_http_installs_redirect_rejecting_handler(monkeypatch
     assert installed[0].redirect_request(
         None, None, 307, "", {}, "http://evil.invalid/capture"
     ) is None
+
+
+def test_deletion_delivery_rejects_oversized_response(monkeypatch):
+    class Oversized:
+        status = 202
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, limit):
+            return (b"x" * (_MAX_RESPONSE_BYTES + 1))[:limit]
+
+    monkeypatch.setattr(
+        "app.community_deletion._open_no_redirect",
+        lambda request, *, timeout: Oversized(),
+    )
+    dispatcher = build_community_deletion_dispatcher(
+        SimpleNamespace(community_deletion_url="https://app.invalid/api/internal/deletions"),
+        service_token="s" * 64,
+    )
+
+    assert dispatcher(uuid.uuid4()) is False

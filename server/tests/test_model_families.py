@@ -9,6 +9,8 @@ weights; frontier-enabled tests swap a second fake in directly.
 
 from __future__ import annotations
 
+import pytest
+
 import main as server_main
 
 
@@ -24,18 +26,13 @@ def _analyze(client, png_bytes, family=None):
 # ── /api/capabilities ───────────────────────────────────────────────
 
 
-def test_capabilities_lists_three_families(client):
+def test_capabilities_lists_three_families_and_their_availability(client):
     r = client.get("/api/capabilities")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["default"] == "gamma"
-    ids = {f["id"] for f in body["families"]}
-    assert ids == {"aqua", "gamma", "frontier"}
-
-
-def test_capabilities_aqua_and_gamma_available_frontier_not(client):
-    body = client.get("/api/capabilities").json()
     by_id = {f["id"]: f for f in body["families"]}
+    assert set(by_id) == {"aqua", "gamma", "frontier"}
     assert by_id["aqua"]["available"] is True
     assert by_id["aqua"]["location"] == "on_device"
     assert by_id["gamma"]["available"] is True
@@ -48,14 +45,18 @@ def test_capabilities_aqua_and_gamma_available_frontier_not(client):
 # ── family routing on /api/analyze ──────────────────────────────────
 
 
-def test_analyze_defaults_to_gamma(client, png_bytes):
-    r = _analyze(client, png_bytes)
-    assert r.status_code == 200, r.text
-    assert r.json()["family"] == "gamma"
-
-
-def test_analyze_gamma_explicit(client, png_bytes):
-    r = _analyze(client, png_bytes, family="gamma")
+@pytest.mark.parametrize(
+    "family",
+    [
+        pytest.param(None, id="default"),
+        pytest.param("gamma", id="explicit"),
+        # Forward-compatible: an unknown tier degrades to the default
+        # instead of a 400.
+        pytest.param("totally-made-up", id="unknown-falls-back"),
+    ],
+)
+def test_analyze_is_served_by_gamma(client, png_bytes, family):
+    r = _analyze(client, png_bytes, family=family)
     assert r.status_code == 200, r.text
     assert r.json()["family"] == "gamma"
 
@@ -71,13 +72,6 @@ def test_analyze_aqua_served_by_gamma_for_parity(client, png_bytes):
     assert body["requested_family"] == "aqua"
     assert body["family_fallback_reason"] == "aqua_served_by_gamma"
     assert "class_name" in body and "confidence" in body
-
-
-def test_analyze_unknown_family_falls_back_to_gamma(client, png_bytes):
-    r = _analyze(client, png_bytes, family="totally-made-up")
-    assert r.status_code == 200, r.text
-    # Forward-compatible: unknown tier degrades to the default instead of 400.
-    assert r.json()["family"] == "gamma"
 
 
 # ── frontier gating ─────────────────────────────────────────────────
