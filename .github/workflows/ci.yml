@@ -39,9 +39,17 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Runner image: pinned to an explicit release instead of `ubuntu-latest`.
+# The floating label was mid-migration from 24.04 to 26.04 (2026-10-19 to
+# 2026-11-19, actions/runner-images#14748), so which image a run got depended
+# on the day, and every job carried the migration warning. 26.04 ships what
+# this workflow relies on: the Android SDK with the platform and build-tools
+# this build compiles against, JDK 17 for setup-java to select (the image's own
+# default is 25), and CPython 3.14 for setup-python. Bump the label on purpose,
+# in all three jobs together.
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       pull-requests: read
@@ -136,7 +144,7 @@ jobs:
     name: Android build & lint
     needs: changes
     if: needs.changes.outputs.android == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: android
@@ -262,7 +270,7 @@ jobs:
     name: Server + account tests & lint (py3.14)
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: server
