@@ -273,6 +273,10 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
         return None
 
     server_main._warm_placeholder_images = _skip_external_warmup
+    # /api/metrics shares its store aggregates for a few seconds in production.
+    # Tests read their own writes back through it, so the snapshot is off here;
+    # the caching itself is tested with the TTL switched back on.
+    server_main.METRICS_SNAPSHOT_TTL_SECONDS = 0.0
     server_main._daily_write_counts.clear()
     yield
 

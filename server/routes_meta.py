@@ -138,12 +138,10 @@ def register(router: APIRouter, m) -> None:
         """Operational metrics (JSON). Useful for dashboards and jury demos."""
         snap = m._snapshot_metrics()
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
-        # The two store snapshots are blocking sqlite3 and each runs several
-        # full-table COUNT(*) scans, so they hop to a worker thread; the
-        # in-process counters above are just dict reads.
-        loop = asyncio.get_running_loop()
-        training_snapshot = await loop.run_in_executor(None, m.training_store.training_counts)
-        community_snapshot = await loop.run_in_executor(None, m.community_stats_snapshot)
+        # The two store snapshots run full-table scans, so they come from a
+        # short-lived shared snapshot; the in-process counters above are just
+        # dict reads.
+        training_snapshot, community_snapshot = await m._metrics_store_snapshots()
         return {
             "uptime_seconds": round(uptime, 1),
             **snap,

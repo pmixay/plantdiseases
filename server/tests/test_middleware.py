@@ -207,6 +207,34 @@ def test_metrics_endpoints_are_rate_limited(rate_limited_client):
     assert 429 in statuses, f"metrics never throttled: {statuses}"
 
 
+def test_metrics_store_aggregates_are_shared_within_the_ttl(client, monkeypatch):
+    """Each /api/metrics used to re-run the full-table scans behind its
+    ``training`` and ``community`` blocks. Inside the TTL they are computed
+    once; the in-process counters beside them stay live."""
+    import main as server_main
+
+    scans = {"community": 0}
+
+    def _counting_snapshot():
+        scans["community"] += 1
+        return {"scans": scans["community"]}
+
+    monkeypatch.setattr(server_main, "community_stats_snapshot", _counting_snapshot)
+    monkeypatch.setattr(server_main, "_metrics_store_snapshot", None)
+    monkeypatch.setattr(server_main, "METRICS_SNAPSHOT_TTL_SECONDS", 60.0)
+
+    first = client.get("/api/metrics").json()
+    second = client.get("/api/metrics").json()
+    assert scans["community"] == 1
+    assert first["community"] == second["community"] == {"scans": 1}
+    # The request counter is not part of the snapshot.
+    assert second["total_requests"] > first["total_requests"]
+
+    # TTL 0 turns the snapshot off: every request scans again.
+    monkeypatch.setattr(server_main, "METRICS_SNAPSHOT_TTL_SECONDS", 0.0)
+    assert client.get("/api/metrics").json()["community"] == {"scans": 2}
+
+
 def test_client_supplied_trace_id_is_ignored(client):
     """A caller-selected ID must not become an undeclared stable correlate."""
     # Non-ASCII is omitted deliberately: the HTTP client refuses to encode it,

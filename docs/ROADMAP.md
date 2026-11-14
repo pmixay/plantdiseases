@@ -15,9 +15,9 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); CI signs the release APK with the permanent key; not on RuStore yet. |
+| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); the signed release APK is built and taken from CI; not on RuStore yet. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
-| **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
+| **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. The repo config opens `/id/` to the public — the host still has to be reloaded with it. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
 | **Tests / CI** | Server suite runs in parallel (`pytest -n auto`); `ccr-*` branches build in CI on a pinned `ubuntu-26.04`. The 2026-11 test rework and the `main.py` route split are green in CI. |
 
@@ -50,22 +50,19 @@ the README status section and `docs/assets/per-class.svg`.
 - [ ] **Old clients: read the production logs.** `/` has pointed at the new server
       since the 2026-10-09 switch, so older app versions already call it. Look
       for 4xx/5xx from them; add a regression test for anything found.
-- [ ] **Open `/id/` to the public.** It is still limited to the owner's VPN
-      allowlist (`deploy/production-vds/nginx/`). Do it last in this group.
-- [ ] **Alerts** on a failed backup and on repeated account-deletion retries.
-      Nothing alerts today.
+- [ ] ★ **Apply the public `/id/` config on the VDS.** The allowlist `include` is
+      gone from `deploy/production-vds/nginx/pd-account-prod.conf`; the live
+      snippet (`/etc/nginx/snippets/pd-account-prod.conf`) still carries it until
+      it is replaced and nginx reloaded.
+- [ ] ★ **Switch the backup job off on the VDS.** Its script and systemd units
+      are deleted from the repo, but the installed `pd-prod-backup.timer` keeps
+      running until disabled, and — because the 27-day prune lived in the same
+      script — the dumps already under `/var/backups/pd-account-prod/db` now stay
+      until someone deletes them.
+- [ ] **Alert** on repeated account-deletion retries. Nothing alerts today.
 
 **Release** (★ owner)
 
-- [ ] ★ **Copy the backup decryption key off the VDS.** `backup.sh` encrypts every
-      dump with `age` to `/etc/pd-account-prod/backup-age-identity.txt`, and that
-      file exists only on the host the backups sit on: lose the VDS and the
-      backups go with it; lose just the key and they cannot be decrypted. Keep a
-      copy of the key (and periodically of `/var/backups/pd-account-prod/db`)
-      somewhere else.
-- [ ] ★ **Take the signed APK from CI.** The android job signs with the permanent
-      key and uploads `app-release-apk` (`DEPLOYMENT.md` §8.3); use the artifact of
-      the green run on the release commit.
 - [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
       verified against production; only the certificate fingerprint registered
       with Yandex is new.
@@ -73,10 +70,6 @@ the README status section and `docs/assets/per-class.svg`.
 
 **Not a 1.9 gate**
 
-- [ ] ★ **SSH hardening** on the VDS: key-only login (`PermitRootLogin
-      prohibit-password`, `PasswordAuthentication no`), rate-limiting. The host
-      IP and `root` user sit in git history (`cd4bda2`); no credentials were
-      ever committed.
 - [ ] **PRO subscriptions (after 1.9).** Purchase validation, the callback inbox
       and the Android payment client are merged but switched off
       (`RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`). Needs RuStore
@@ -97,17 +90,12 @@ the README status section and `docs/assets/per-class.svg`.
 
 Config keys behind every limit: `DEPLOYMENT.md` §3.2.
 
-- [ ] **Cost caps.** Per-feature daily admission, per-IP allowances and serialized
-      Pl@ntNet attempts are in, and the OpenRouter key carries a spend limit (the
-      launch cap; set by the owner). An in-server aggregate price ceiling is
-      optional hardening on top; each new species name is still a billable cache miss.
-- [ ] **`/api/metrics`:** add a short TTL cache; each request recomputes the
-      store snapshots.
-- [ ] **`/api/plant-photo`:** bound the WebP variants on the serving side (the LRU
-      already has a byte budget).
-- [ ] **No lockfile.** Runtime pins mix exact versions and floors; transitive deps
-      (starlette, httpx2) are unconstrained. CI turns a resolution break red, but a
-      lockfile is the real fix.
+- [ ] **The privacy policy still describes backups.** Both copies
+      (`privacy.html`, the in-app `privacy_policy.html`) and
+      `release-policy-gates.json` say "Encrypted operational backups may remain
+      for up to four weeks". That stays true while the old dumps exist on the
+      VDS; once they are deleted, drop the sentence from all three together. The
+      in-app copy ships inside the APK, so it follows the next app release.
 
 ---
 
@@ -335,8 +323,12 @@ None blocks a release.
 - **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Target store: RuStore.** No Google Play.
-- **Release signing runs in CI** (owner's decision, 2026-11-14), from repository
-  secrets in a workflow separate from ordinary push CI.
+- **No backups of production data** (owner's decision, 2026-11-14). A lost VDS
+  loses the accounts and the community store; there is nothing to restore from.
+- **Cost cap is the OpenRouter key's own spend limit**; no in-server price
+  ceiling and no dependency lockfile are planned.
+- **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
+  signs with the permanent key from repository secrets.
 - **1.9 is accounts only.** PRO subscriptions and VK ID stay switched off until a
   later release.
 - **Account data stays on the German VDS** (owner's decision, 2026-11-13).

@@ -1779,6 +1779,36 @@ def _record_error() -> None:
         _total_errors += 1
 
 
+# /api/metrics also reports two store aggregates, each several full-table
+# COUNT(*) scans over the training and community databases. They move slowly and
+# a dashboard or scraper has no use for them fresher than its own interval, so
+# requests inside the TTL share one snapshot instead of each re-scanning the
+# tables. 0 disables the cache.
+METRICS_SNAPSHOT_TTL_SECONDS = max(0.0, get_float("METRICS_SNAPSHOT_TTL_SECONDS", 5.0))
+_metrics_store_snapshot: tuple[float, dict, dict] | None = None
+
+
+async def _metrics_store_snapshots() -> tuple[dict, dict]:
+    """``(training, community)`` aggregates for /api/metrics, at most
+    ``METRICS_SNAPSHOT_TTL_SECONDS`` old.
+
+    No lock: two requests that both find the snapshot stale each recompute it,
+    which costs what every request cost before and cannot corrupt anything —
+    the last writer simply wins.
+    """
+    global _metrics_store_snapshot
+    ttl = METRICS_SNAPSHOT_TTL_SECONDS
+    cached = _metrics_store_snapshot
+    if ttl > 0 and cached is not None and time.monotonic() - cached[0] < ttl:
+        return cached[1], cached[2]
+    # Blocking sqlite3, so both hop to a worker thread.
+    loop = asyncio.get_running_loop()
+    training = await loop.run_in_executor(None, training_store.training_counts)
+    community = await loop.run_in_executor(None, community_stats_snapshot)
+    _metrics_store_snapshot = (time.monotonic(), training, community)
+    return training, community
+
+
 def _snapshot_metrics() -> dict:
     with _metrics_lock:
         avg = _latency_sum_ms / _latency_count if _latency_count else 0.0

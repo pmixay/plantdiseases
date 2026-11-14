@@ -130,6 +130,7 @@ Defaults below are the **code** defaults.
 |---|---|---|
 | `require_api_key` | `false` | When true, every non-exempt route needs `X-API-Key:` or `Authorization: Bearer …`. An unknown key is 401 either way. |
 | `api_keys` | `{}` | `{"<key>": {"rate_limit_rps": …, "burst": …, "quota_daily": …}}`. Missing sub-fields inherit the global rate/burst; `quota_daily: 0` = unlimited. Accepted as a dict or a JSON string. |
+| `metrics_snapshot_ttl_seconds` | `5.0` | `/api/metrics` shares its two store aggregates (full-table scans of the training and community databases) between requests for this long. `0` recomputes on every request. |
 | `rate_limit_rps` / `rate_limit_burst` | `2.0` / `20.0` | Per-identity token bucket (`ip:<addr>` or `key:<key>`); over-limit = 429 + `Retry-After`. One user scan fans out into ~8 requests, hence the burst of 20. |
 | `violation_threshold` / `violation_window` / `ban_duration` | `40` / `60.0` / `300.0` | Sustained over-limit requests earn a temporary 403 ban. |
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
