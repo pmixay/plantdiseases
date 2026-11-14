@@ -191,6 +191,19 @@ jobs:
           packages: ''
           log-accepted-android-sdk-licenses: false
 
+      # AGP strips native libs with llvm-strip from the NDK pinned in
+      # app/build.gradle.kts and never downloads one for that task: with the
+      # exact version missing it ships every .so unstripped and only warns.
+      # The image carries this version today; this step makes it a guarantee.
+      - name: Ensure the pinned NDK is installed
+        run: |
+          ndk=$(sed -n 's/^ *ndkVersion = "\([0-9.]*\)".*/\1/p' app/build.gradle.kts)
+          test -n "$ndk"
+          if [ ! -f "$ANDROID_HOME/ndk/$ndk/source.properties" ]; then
+            sdkmanager --install "ndk;$ndk"
+          fi
+          test -x "$ANDROID_HOME/ndk/$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+
       # gradle-wrapper.jar is committed executable code that runs before the
       # build. Validate it against Gradle's published known-good checksums.
       # The action scans the whole checkout, so

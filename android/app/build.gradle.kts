@@ -175,6 +175,19 @@ android {
     // other half of that requirement; the two only move together.
     compileSdk = 37
 
+    // This module compiles no native code; the NDK is here for one tool.
+    // AGP strips the prebuilt .so files that come in with AARs (CameraX,
+    // LiteRT, DataStore, graphics-path) using llvm-strip from the NDK, looks
+    // for it only at <sdk>/ndk/<this exact version>, and never downloads an
+    // NDK for that task. With the version absent it packages every library
+    // unstripped and logs "Unable to strip the following libraries".
+    // Unpinned, "this version" is AGP's built-in default, which changes with
+    // each AGP release and which the CI image does not ship. Pinned to the
+    // NDK LTS the image does ship; the android job in ci.yml reads this line
+    // and installs that version itself if the image ever stops carrying it.
+    // A machine without it still builds, with that warning.
+    ndkVersion = "27.3.13750724"
+
     defaultConfig {
         applicationId = "com.plantdiseases.app"
         minSdk = 31 // Android 12
@@ -391,16 +404,10 @@ android {
             excludes += "**/libLiteRtOpenClAccelerator.so"
             excludes += "**/libLiteRtClGlAccelerator.so"
 
-            // These prebuilt CameraX JNI .so libs can't be stripped by the
-            // NDK strip tool, which logs a noisy "Unable to strip the
-            // following libraries" warning every build. They are packaged
-            // as-is either way, so declaring them here just keeps their
-            // (already-present) symbols and silences the warning — the APK
-            // size is unchanged.
-            keepDebugSymbols += listOf(
-                "**/libimage_processing_util_jni.so",
-                "**/libsurface_util_jni.so",
-            )
+            // No keepDebugSymbols entries, on purpose. Two CameraX libs used
+            // to be listed here as "unstrippable"; they strip cleanly. The
+            // "Unable to strip" warning they were hiding meant AGP had found
+            // no NDK at all (see ndkVersion above), so nothing was stripped.
         }
     }
 

@@ -258,13 +258,21 @@
         </provider>
 
         <!-- Firebase Cloud Messaging. We initialise Firebase manually from
-             BuildConfig.FCM_* (no google-services.json), so the auto-init
-             provider is removed — otherwise it logs a noisy failure when the
-             FCM resources aren't present. -->
+             BuildConfig.FCM_* (no google-services.json), so firebase-common's
+             auto-init provider must never run — it would log a failure on
+             every start because the FCM resources aren't present. It is
+             declared disabled, which the system never instantiates, rather
+             than stripped with tools:node="remove": AGP merges this file once
+             without any library manifest when it builds the unit-test
+             manifest, and a remove marker with nothing to remove warns there
+             on every build. name, authorities and exported repeat the
+             library's own values, so they merge with it; if Firebase ever
+             changes them the merge fails loudly instead of drifting. -->
         <provider
             android:name="com.google.firebase.provider.FirebaseInitProvider"
             android:authorities="${applicationId}.firebaseinitprovider"
-            tools:node="remove" />
+            android:enabled="false"
+            android:exported="false" />
 
         <service
             android:name=".push.PlantMessagingService"
