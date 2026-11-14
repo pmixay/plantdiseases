@@ -15,19 +15,16 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); unsigned by the permanent key, not on RuStore yet. |
+| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); CI signs the release APK with the permanent key; not on RuStore yet. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS (`/id/`, VPN-only until launch); real Yandex flow, deletion and backups verified. |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`). `ccr-*` branches build in CI now; the 2026-11 test rework is on its first Android run. |
+| **Tests / CI** | Server suite runs in parallel (`pytest -n auto`); `ccr-*` branches build in CI on a pinned `ubuntu-26.04`. The 2026-11 test rework and the `main.py` route split are green in CI. |
 
 ---
 
 ## Next up — in this order
 
-- [ ] **Get the test rework green in CI** before anything else lands on top of
-      it (Tests and CI, below). The server half is verified; the Kotlin half is on
-      its first build.
 - [ ] ★ **Ship accounts to RuStore** (section below).
 - [ ] ★ **Carve T_v1** (adjudicate the 80 export rows). Nothing done to the scorch
       class — real or synthetic — can be judged without it.
@@ -278,18 +275,14 @@ Each item is its own PR; don't fold one into another.
 
 ## Tests and CI
 
-The 2026-11 rework removed tests that guarded nothing, merged same-state tests and
-made the server suite parallel. What it left open:
+The 2026-11 rework removed tests that guarded nothing, merged same-state tests,
+made the server suite parallel and passed CI. What it left open:
 
-- [ ] **Fix forward on the rework's first Android run.** Local Gradle builds are
-      off-limits, so every Kotlin edit in it — the `RetryInterceptor` sleeper /
-      `PlantApiClient` retry seam included — met a compiler and ktlint/detekt for
-      the first time in CI.
 - [ ] ★ **Decide whether `testReleaseUnitTest` needs the whole shared suite.** CI
       runs every shared test class on debug and again on release; only two classes
       are release-specific (`ReleaseBuildIdentityTest`,
-      `ReleaseAccountPresentationTest`). Filtering release the way staging and
-      recovery already are removes one full pass. The duplicate pass was a
+      `ReleaseAccountPresentationTest`). Filtering release the way the recovery
+      variant already is removes one full pass. The duplicate pass was a
       deliberate choice (see the workflow header), so this is the owner's call.
 - [ ] **Move pure functions out of Activity companions.**
       `LightMeterActivity.pickSpeciesBucket` and
