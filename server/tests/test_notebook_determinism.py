@@ -63,18 +63,28 @@ class _StubTorch:
 
 
 @pytest.fixture
-def helper(monkeypatch):
+def shown() -> list[warnings.WarningMessage]:
+    """What reached the ``showwarning`` the helper found installed — its console."""
+    return []
+
+
+@pytest.fixture
+def helper(shown):
     stub = _StubTorch()
     fake_os = types.SimpleNamespace(environ={"CUBLAS_WORKSPACE_CONFIG": ":4096:8"})
     ns = {"torch": stub, "os": fake_os, "_CUBLAS_WORKSPACE_CONFIG": ":4096:8"}
-    saved_showwarning = warnings.showwarning
-    saved_filters = list(warnings.filters)
-    try:
+
+    def console(message, category, filename, lineno, file=None, line=None):
+        shown.append(warnings.WarningMessage(message, category, filename, lineno, file, line))
+
+    # The helper replaces ``warnings.showwarning`` and edits the filter list;
+    # ``catch_warnings`` puts both back. ``console`` is installed first, so it
+    # is the hook the helper chains to: a warning the recorder forwards lands in
+    # ``shown`` for the test to assert on, instead of in pytest's own log.
+    with warnings.catch_warnings():
+        warnings.showwarning = console
         exec(compile(_helper_block(), "train_notebook §1 determinism", "exec"), ns)
         yield ns, stub, fake_os
-    finally:
-        warnings.showwarning = saved_showwarning
-        warnings.filters[:] = saved_filters
 
 
 def test_assert_determinism_undoes_ultralytics_unset(helper):
@@ -100,23 +110,27 @@ def test_assert_determinism_undoes_ultralytics_unset(helper):
     }
 
 
-def test_nondeterministic_ops_are_recorded_per_phase(helper):
+def test_nondeterministic_ops_are_recorded_per_phase(helper, shown):
     ns, _stub, _os = helper
+    text = (
+        "adaptive_avg_pool2d_backward_cuda does not have a deterministic "
+        "implementation, but you set 'torch.use_deterministic_algorithms(True, "
+        "warn_only=True)'."
+    )
     ns["assert_determinism"]("s5_finalize_distill")
-    # A library 'ignore' filter installed after the assert must not hide it.
+    # A library 'ignore' filter installed after the assert must not hide it:
+    # the re-assert alone has to put the helper's filter back in front.
     warnings.filterwarnings("ignore", category=UserWarning)
     ns["assert_determinism"]("s5_finalize_distill")
-    with warnings.catch_warnings():
-        warnings.simplefilter("default")
-        warnings.warn_explicit(
-            "adaptive_avg_pool2d_backward_cuda does not have a deterministic "
-            "implementation, but you set 'torch.use_deterministic_algorithms(True, "
-            "warn_only=True)'.",
-            UserWarning, "x.py", 1,
-        )
+    # What torch does for an op with no deterministic kernel under warn_only.
+    warnings.warn_explicit(text, UserWarning, "x.py", 1)
     assert ns["DETERMINISM_WARNINGS"] == {
         "adaptive_avg_pool2d_backward_cuda": ["s5_finalize_distill"],
     }
+    # Recorded, not swallowed: the run still prints it, exactly once.
+    assert [(str(w.message), w.category, w.filename, w.lineno) for w in shown] == [
+        (text, UserWarning, "x.py", 1),
+    ]
 
 
 def test_determinism_is_reasserted_before_every_training_phase():

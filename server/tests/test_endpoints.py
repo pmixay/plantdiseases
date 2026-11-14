@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import sqlite3
+from contextlib import closing
 
 import pytest
 from PIL import Image
@@ -797,7 +798,7 @@ def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
     assert all(isinstance(token, str) for token in tokens)
 
     raw_digest = hashlib.sha256(png_bytes).digest()
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         rows = connection.execute(
             "SELECT token, image_binding FROM community_analysis_tokens "
             "WHERE token IN (?, ?)",

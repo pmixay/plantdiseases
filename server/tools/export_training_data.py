@@ -19,6 +19,7 @@ import sqlite3
 import tarfile
 import tempfile
 from collections import Counter, defaultdict
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
@@ -327,7 +328,7 @@ def export_training_data(
         raise ExportError("export archive already exists")
 
     columns = ", ".join(_MANIFEST_COLUMNS)
-    with _read_only_connection(database) as connection:
+    with closing(_read_only_connection(database)) as connection:
         connection.execute("BEGIN")
         try:
             rows = [

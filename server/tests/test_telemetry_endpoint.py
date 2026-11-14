@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -22,7 +23,7 @@ def teldb(tmp_path, monkeypatch):
 
 
 def _rows(store):
-    with sqlite3.connect(store.TELEMETRY_DB_PATH) as connection:
+    with closing(sqlite3.connect(store.TELEMETRY_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         return [
             dict(row)
@@ -178,7 +179,7 @@ def test_error_counts_group_only_safe_dimensions(teldb):
 
 def test_legacy_schema_fails_closed_without_modification(tmp_path, monkeypatch):
     database = tmp_path / "legacy-telemetry.db"
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "CREATE TABLE error_reports (id INTEGER PRIMARY KEY, message TEXT, "
             "client_ip_hash TEXT)"

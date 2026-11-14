@@ -12,6 +12,7 @@ import argparse
 import json
 import sqlite3
 from collections import Counter, defaultdict
+from contextlib import closing
 from pathlib import Path
 
 
@@ -45,7 +46,7 @@ def _counts(rows: list[dict], field: str) -> dict[str, int]:
 
 
 def analyse(database: Path) -> dict:
-    with _connect(Path(database)) as connection:
+    with closing(_connect(Path(database))) as connection:
         try:
             rows = [
                 dict(row)

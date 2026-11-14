@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 
 import pytest
 
@@ -58,7 +59,7 @@ def test_opinions_for_unknown_scan_is_empty(comm):
 def test_opinions_for_orphaned_companion_rows_fails_closed(comm):
     comm.init_db()
     now = int(time.time())
-    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(comm.COMMUNITY_DB_PATH)) as connection, connection:
         connection.execute(
             "INSERT INTO community_opinions "
             "(scan_id, author_pseudo_id, suggested_disease, created_at) "
@@ -113,7 +114,7 @@ def test_record_opinion_rejects_unavailable_target_in_write_transaction(
             author_pseudo_id="responder",
             suggested_disease="healthy",
         )
-    with sqlite3.connect(comm.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(comm.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_opinions WHERE scan_id = ?",
             ("closed-target",),

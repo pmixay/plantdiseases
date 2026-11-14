@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import time as _time
+from contextlib import closing
 
 import pytest
 
@@ -101,10 +102,9 @@ def test_migration_canonicalizes_legacy_country_rows(community_store, tmp_path):
 
     comm.init_db()
 
-    buckets = {
-        row[0]
-        for row in sqlite3.connect(tmp_path / "community.db").execute(
-            "SELECT DISTINCT country FROM community_scans"
-        )
-    }
+    with closing(sqlite3.connect(tmp_path / "community.db")) as conn:
+        buckets = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT country FROM community_scans")
+        }
     assert buckets == {"RU"}

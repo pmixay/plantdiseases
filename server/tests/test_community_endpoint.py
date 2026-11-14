@@ -10,6 +10,7 @@ import hashlib
 import io
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_signed_claims_override_spoofed_legacy_identity_fields(
     assert response.status_code == 200, response.text
     import uuid
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         row = connection.execute(
             "SELECT user_pseudo_id, account_actor_id, nickname "
             "FROM community_scans WHERE scan_id = 'claimbound01'"
@@ -128,7 +129,7 @@ def test_anonymous_reads_create_no_stable_viewer_records(client, isolated_commun
         params={"country": "GB", "scope": "country", "user_pseudo_id": "ignored"},
     )
     assert feed.status_code == 200 and len(feed.json()["items"]) == 1
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute("SELECT COUNT(*) FROM community_scan_views").fetchone()[0] == 0
 
 
@@ -302,7 +303,7 @@ def test_community_scan_upload_stores_client_location(client, isolated_community
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         row = conn.execute(
             "SELECT country, region, city, lat, lon FROM community_scans WHERE scan_id = ?",
             ("scangeo001",),
@@ -325,7 +326,7 @@ def test_community_scan_upload_no_location_stores_empty_country(client, isolated
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         row = conn.execute(
             "SELECT country, lat FROM community_scans WHERE scan_id = ?",
             ("scandefault1",),
@@ -416,7 +417,7 @@ def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
     assert first.status_code == replay.status_code == 200, (first.text, replay.text)
     assert first.json()["id"] == replay.json()["id"]
     assert conflict.status_code == 409
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         rows = connection.execute(
             "SELECT disease, confidence, species, species_score, account_actor_id "
             "FROM community_scans WHERE scan_id = 'bound-analysis-1'"
@@ -476,7 +477,7 @@ def test_analysis_publication_rejects_missing_or_substituted_image(
     assert substituted.status_code == missing.status_code == 422
     assert substituted.json()["detail"] == "Community image does not match the analyzed image."
     assert missing.json()["detail"] == "Community image does not match the analyzed image."
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT claimed_actor_id FROM community_analysis_tokens "
             "WHERE token = 'image-bound-analysis-1'"
@@ -523,7 +524,7 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
         species_score=None,
         image_sha256=hashlib.sha256(image_bytes).hexdigest(),
     )
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "CREATE TRIGGER fail_analysis_insert BEFORE INSERT ON community_scans "
             "WHEN NEW.scan_id = 'retry-analysis-1' BEGIN "
@@ -537,7 +538,7 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
         files={"image": ("scan.png", image_bytes, "image/png")},
     )
     assert failed.status_code == 500, failed.text
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT claimed_actor_id FROM community_analysis_tokens "
             "WHERE token = 'retry-analysis-1'"
@@ -715,7 +716,7 @@ def test_community_scan_accepts_unicode_region(client, isolated_community):
         ),
     )
     assert r.status_code == 200, r.text
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         row = conn.execute(
             "SELECT country, region FROM community_scans WHERE scan_id = ?",
             ("scanru000001",),
@@ -772,7 +773,7 @@ def test_community_thumbnail_rejects_undecodable_bytes(client, isolated_communit
     )
     assert r.status_code == 200, r.text
     assert list(thumb_dir.iterdir()) == []
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         row = conn.execute(
             "SELECT thumb_path FROM community_scans WHERE scan_id = ?",
             ("scangarbage1",),
@@ -1314,7 +1315,7 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
         assert r.status_code == 200, r.text
 
     # Persisted country is "GB"; the region column carries the city.
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT country, region FROM community_scans ORDER BY id"
         ).fetchall()
@@ -1440,7 +1441,7 @@ def test_prune_transaction_removes_fresh_companion_that_won_write_race(
     old = int(_time.time()) - 200 * 86_400
     fresh = int(_time.time())
     db_path, _ = isolated_community
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "INSERT INTO community_scans (scan_id, user_pseudo_id, country, "
             "region, disease, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1463,7 +1464,7 @@ def test_prune_transaction_removes_fresh_companion_that_won_write_race(
         )
 
     assert comm.prune_older_than(90) == 1
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         for table in (
             "community_scans",
             "community_opinions",
@@ -1644,7 +1645,7 @@ def test_opinion_rechecks_target_after_cleanup_between_http_checks_and_write(
 
     assert response.status_code == 410, response.text
     assert response.json()["detail"] == "Scan no longer accepts opinions"
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
             (scan_id,),
@@ -1682,7 +1683,7 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
     )
     assert uploaded.status_code == 200, uploaded.text
     two_days_old = int(_time.time()) - 2 * 86_400
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (two_days_old, scan_id),
@@ -1707,7 +1708,7 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
     )
 
     assert response.status_code == 410, response.text
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE scan_id = ?",
             (scan_id,),
@@ -1750,7 +1751,7 @@ def test_opinion_on_stale_scan_rejected_410(client, isolated_community):
 
     # Backdate the scan past the rotation window → new opinions refused.
     stale = int(_time.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (stale, "staleshared01"),
@@ -1827,7 +1828,7 @@ def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
 
     now = 1_800_000_000
     day = 86_400
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         for scan_id, created_at in (
             ("freshpost0001", now),
             ("staleliked001", now - 5 * day),
@@ -1859,7 +1860,7 @@ def test_recommended_feed_caps_total_engagement_below_material_freshness(
     _share(client, "staleengaged1", "Max-engaged stale post")
 
     now = 1_800_000_000
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (now, "freshmax0001"),
@@ -1907,7 +1908,7 @@ def test_recommended_feed_keeps_a_live_opinion_request_ahead_of_fresher_posts(
     _request_opinion(client, "askingpost001", "pseudo-owner-askingpost001")
 
     now = 1_800_000_000
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         changed = conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (now - comm.OPINION_REQUEST_TTL_HOURS * 3600, "askingpost001"),
@@ -1938,7 +1939,7 @@ def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
             ),
         )
     # Force the timestamp tie that a created_at-only cursor cannot page.
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
     _request_opinion(client, scan_ids[0], "pseudo-author-0")
 
@@ -2002,7 +2003,7 @@ def test_recent_composite_cursor_keeps_same_second_rows(client, isolated_communi
                 disease="healthy",
             ),
         )
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute("UPDATE community_scans SET created_at = ?", (1_800_000_000,))
 
     params = {
@@ -2191,7 +2192,7 @@ def test_scan_id_index_exists_and_is_not_unique(isolated_community):
     db_path, _ = isolated_community
     import community as comm
     comm.init_db()
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         idx = {
             row[1]: bool(row[2])
             for row in conn.execute("PRAGMA index_list(community_scans)").fetchall()
@@ -2204,7 +2205,7 @@ def test_legacy_backfill_pseudo_columns_are_indexed(isolated_community):
     db_path, _ = isolated_community
     import community as comm
     comm.init_db()
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         view_indexes = {
             row[1] for row in conn.execute(
                 "PRAGMA index_list(community_scan_views)",
@@ -2273,21 +2274,21 @@ def test_unlike_soft_deletes_so_the_daily_like_quota_holds(client, isolated_comm
         "liked": True,
     }
     assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         (created_at,) = conn.execute(
             "SELECT created_at FROM community_account_likes",
         ).fetchone()
 
     unliked = client.post("/api/community/like", json={**body, "liked": False})
     assert unliked.json() == {"ok": True, "liked": False, "count": 0}
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT liked, created_at FROM community_account_likes",
         ).fetchall()
     assert rows == [(0, created_at)]
 
     assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
         rows = conn.execute(
             "SELECT liked, created_at FROM community_account_likes",
         ).fetchall()

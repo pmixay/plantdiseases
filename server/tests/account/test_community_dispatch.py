@@ -87,8 +87,10 @@ def test_community_dispatch_http_installs_redirect_rejecting_handler(monkeypatch
         method="POST",
     )
 
-    with pytest.raises(urllib.error.HTTPError):
+    with pytest.raises(urllib.error.HTTPError) as rejected:
         _open_no_redirect(request, timeout=1.0)
+    # An HTTPError is also the response: whoever catches it closes it.
+    rejected.value.close()
 
     assert len(installed) == 1
     assert isinstance(installed[0], _NoRedirectHandler)

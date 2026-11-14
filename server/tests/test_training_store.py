@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -65,7 +66,7 @@ def test_schema_contains_no_legacy_linkage_fields(store):
         "feedback_note",
     }
     assert all(value not in schema for value in forbidden)
-    with sqlite3.connect(store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(store.TRAINING_DB_PATH)) as connection, connection:
         columns = {
             row[1]
             for table in ("training_samples", "feedback_receipts")
@@ -203,7 +204,7 @@ def test_post_sanitization_sha_is_idempotent(store):
         "by_source": {"consented_scan": 1},
         "by_review_status": {"pending": 1},
     }
-    with sqlite3.connect(store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(store.TRAINING_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT top_k_json, conformal_set_json, warnings_json "
             "FROM training_samples"
@@ -235,7 +236,7 @@ def test_prune_removes_old_low_value_rows_but_keeps_negative_feedback(store):
     )
     result = store.prune_training_data(90, 100, now=1_800_000_000)
     assert result["samples"] == result["images"] == 1
-    with sqlite3.connect(store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(store.TRAINING_DB_PATH)) as connection, connection:
         ids = {row[0] for row in connection.execute("SELECT sample_id FROM training_samples")}
     assert positive_id not in ids
     assert negative_id in ids
@@ -260,7 +261,7 @@ def test_prune_retains_row_when_image_deletion_fails(store, monkeypatch):
     monkeypatch.setattr(Path, "unlink", refuse_jpeg)
     result = store.prune_training_data(90, 100, now=1_800_000_000)
     assert result["samples"] == result["images"] == 0
-    with sqlite3.connect(store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(store.TRAINING_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT image_key, prune_status FROM training_samples WHERE sample_id = ?",
             (sample_id,),

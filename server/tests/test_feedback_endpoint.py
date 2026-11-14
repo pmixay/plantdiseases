@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -80,7 +81,7 @@ def test_feedback_updates_matching_sample_with_structured_correction(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"ok": True, "updated": True}
-    with sqlite3.connect(isolated_training_store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(isolated_training_store.TRAINING_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT user_correct, corrected_class, correction_reason, out_of_head, "
             "review_status, label_provenance FROM training_samples WHERE sample_id = ?",
@@ -238,7 +239,7 @@ def test_feedback_image_stores_only_sanitized_detector_crop(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"ok": True, "updated": True, "stored_image": True}
-    with sqlite3.connect(isolated_training_store.TRAINING_DB_PATH) as connection:
+    with closing(sqlite3.connect(isolated_training_store.TRAINING_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT image_key, source, predicted_class, corrected_class, "
             "label_provenance FROM training_samples"

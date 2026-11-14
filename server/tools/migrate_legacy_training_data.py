@@ -194,9 +194,9 @@ def _load_approved(paths: MigrationPaths) -> tuple[list[dict], list[dict]]:
         raise MigrationError("approval file selects no rows")
     if not paths.labeling_images.is_dir() or not paths.feedback_images.is_dir():
         raise MigrationError("a legacy image directory does not exist")
-    with _read_only(paths.labeling_database) as labeling_connection:
+    with contextlib.closing(_read_only(paths.labeling_database)) as labeling_connection:
         candidates = _rows_by_ids(labeling_connection, "candidates", labeling_ids)
-    with _read_only(paths.feedback_database) as feedback_connection:
+    with contextlib.closing(_read_only(paths.feedback_database)) as feedback_connection:
         feedback_rows = _rows_by_ids(feedback_connection, "feedback", feedback_ids)
     return candidates, feedback_rows
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 
@@ -160,7 +161,7 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
             now=1_000_002,
         )
 
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT reporter_actor_id, target_actor_id, target_scan_id, "
             "target_opinion_id, reason FROM community_content_reports"
@@ -341,7 +342,7 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
         "completed": 1,
         "retried": 0,
     }
-    with sqlite3.connect(community.COMMUNITY_DB_PATH) as connection:
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_content_reports "
             "WHERE reporter_actor_id = ? OR target_actor_id = ?",
