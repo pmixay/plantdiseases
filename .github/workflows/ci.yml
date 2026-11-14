@@ -127,13 +127,15 @@ jobs:
   #      variants' whole suites ran twice. There is now one invocation, with no
   #      -P flags, so it is itself the zero-config proof (committed defaults
   #      select the production server and the pinned Yandex client).
-  #   2. The ~94-class shared Robolectric suite ran on every variant
+  #   2. The shared Robolectric suite (src/test) ran on every variant
   #      although it is the same tests. Only src/testDebug, src/testRelease
   #      and src/testRecoveryProduction differ per variant, so the full
-  #      suite runs on debug and on release (what ships); the recovery
-  #      variant runs just its own identity test. `--tests` binds to
-  #      the task before it and fails loudly ("no tests found") if the class
-  #      is renamed away.
+  #      suite runs once, on release — the variant that ships. Debug and
+  #      recovery run just their own build-identity test. It ran on debug
+  #      as well until 2026-11: a second full pass over identical test code
+  #      whose only different input is BuildConfig, which the identity
+  #      tests already pin. `--tests` binds to the task before it and fails
+  #      loudly ("no tests found") if the class is renamed away.
   #   3. A second Gradle start (configuration, task graph, daemon) between the
   #      two steps.
   #
@@ -274,7 +276,7 @@ jobs:
           FCM_SENDER_ID: ${{ secrets.FCM_SENDER_ID }}
         run: >-
           ./gradlew ktlintCheck detekt
-          testDebugUnitTest
+          testDebugUnitTest --tests '*DefaultBuildIdentityTest'
           testReleaseUnitTest
           testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest'
           assembleRelease assembleRecoveryProduction

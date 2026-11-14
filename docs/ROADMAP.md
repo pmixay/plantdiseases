@@ -266,12 +266,6 @@ Each item is its own PR; don't fold one into another.
 The 2026-11 rework removed tests that guarded nothing, merged same-state tests,
 made the server suite parallel and passed CI. What it left open:
 
-- [ ] ★ **Decide whether `testReleaseUnitTest` needs the whole shared suite.** CI
-      runs every shared test class on debug and again on release; only two classes
-      are release-specific (`ReleaseBuildIdentityTest`,
-      `ReleaseAccountPresentationTest`). Filtering release the way the recovery
-      variant already is removes one full pass. The duplicate pass was a
-      deliberate choice (see the workflow header), so this is the owner's call.
 - [ ] **Move pure functions out of Activity companions.**
       `LightMeterActivity.pickSpeciesBucket` and
       `WaterCalculatorActivity.computeWatering` are pure, but their tests need

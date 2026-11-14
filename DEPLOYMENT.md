@@ -529,10 +529,16 @@ When that work is accepted, two distinct credential sets will be required:
 Every push to a CI branch that touches Android runs:
 
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest testReleaseUnitTest \
-  testRecoveryProductionUnitTest assembleRelease assembleRecoveryProduction \
-  --build-cache --configuration-cache --stacktrace
+./gradlew ktlintCheck detekt \
+  testDebugUnitTest --tests '*DefaultBuildIdentityTest' \
+  testReleaseUnitTest \
+  testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest' \
+  assembleRelease assembleRecoveryProduction \
+  --build-cache --configuration-cache --stacktrace --warning-mode all
 ```
+
+The shared unit-test suite runs once, on the release variant; debug and recovery
+run only their own build-identity test.
 
 with the signing secrets from §8.1 as environment of that one step. The job then
 runs `apksigner verify --print-certs` on both APKs, fails unless the certificate
