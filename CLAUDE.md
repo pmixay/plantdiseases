@@ -57,7 +57,7 @@ true across releases.
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
-pytest tests -q                                # full suite; no model weights needed
+pytest tests -q -n auto                        # full suite in parallel (pytest-xdist); no model weights needed
 pytest tests/test_endpoints.py::test_name -q   # single test
 ./start.sh                                     # venv + uvicorn; refuses to start without a bundle
 ```

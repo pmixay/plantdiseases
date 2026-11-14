@@ -55,20 +55,32 @@ def test_listing_returns_when_pages_run_out(monkeypatch):
     assert ki.listing(REF) == ["a.jpg", "b.jpg"]
 
 
-@pytest.fixture
-def augmented_folder(tmp_path, monkeypatch):
+@pytest.fixture(scope="module")
+def _augmented_source(tmp_path_factory):
     """40 photographs x 10 brightness-jittered copies, copies sorted adjacently.
 
     This is the collapsed-export shape: the folder looks like 400 images and
     holds 40. An evenly-strided sample of 40 steps over every duplicate.
+
+    Written once per module: the gate only ever reads these files (it copies
+    them into each test's own workdir), and encoding 400 JPEGs per test was
+    most of this file's runtime.
     """
-    src = tmp_path / "src"
+    src = tmp_path_factory.mktemp("kaggle-src")
     names = []
     for orig in range(40):
         for copy in range(10):
             n = f"Hibiscus_Necrosis/{orig:03d}_{copy}.jpg"
             _write(src / n, seed=orig, gain=1.0 + 0.02 * copy)
             names.append(n)
+    return src, names
+
+
+@pytest.fixture
+def augmented_folder(_augmented_source, tmp_path, monkeypatch):
+    """The shared collapsed folder behind a stubbed lister/downloader, plus a
+    per-test benchmark and workdir."""
+    src, names = _augmented_source
 
     monkeypatch.setattr(ki, "listing", lambda ref, hard_cap=2000: list(names))
     monkeypatch.setattr(ki, "download_file",

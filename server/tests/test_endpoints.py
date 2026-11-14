@@ -140,19 +140,22 @@ def test_capabilities_int8_flag_read_from_bundle_analysis_dir(client, tmp_path, 
 def test_analyze_inference_timeout_504(client, png_bytes):
     """A pipeline that takes longer than `INFERENCE_TIMEOUT` must yield
     a 504 (asyncio.wait_for path). We patch the live `pipeline.analyze`
-    to block past the timeout and temporarily shrink `INFERENCE_TIMEOUT`
-    so the test runs in well under a second.
+    to block past the timeout and temporarily shrink `INFERENCE_TIMEOUT`.
+    The worker blocks on an event rather than a fixed sleep, so it is
+    released the moment the 504 is asserted instead of holding the
+    lifespan's executor shutdown open for the rest of the sleep.
     """
-    import time
+    import threading
 
     import main as server_main
 
     real_pipeline = server_main.pipeline
     real_timeout = server_main.INFERENCE_TIMEOUT
     original_analyze = real_pipeline.analyze
+    release = threading.Event()
 
     def _slow_analyze(img):  # runs in the inference threadpool
-        time.sleep(0.5)
+        release.wait(5)
         return original_analyze(img)
 
     real_pipeline.analyze = _slow_analyze
@@ -165,6 +168,7 @@ def test_analyze_inference_timeout_504(client, png_bytes):
         assert r.status_code == 504, r.text
         assert "timed out" in r.json()["detail"].lower()
     finally:
+        release.set()
         real_pipeline.analyze = original_analyze
         server_main.INFERENCE_TIMEOUT = real_timeout
 

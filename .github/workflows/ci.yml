@@ -296,5 +296,8 @@ jobs:
       - name: Lint (ruff)
         run: ruff check . ../account-server
 
+      # -n auto: one pytest-xdist worker per core. The suite has no slow test to
+      # single out — its time is ~1,300 small tests — so fanning them out is
+      # what shortens it.
       - name: Run tests (pytest)
-        run: pytest tests -q
+        run: pytest tests -q -n auto
