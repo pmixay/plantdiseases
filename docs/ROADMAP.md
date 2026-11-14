@@ -29,9 +29,11 @@ recorded. Line counts are approximate; re-measure before acting on one.
       it (Tests and CI, below). The server half is verified; the Kotlin half is on
       its first build.
 - [ ] ★ **Ship accounts to RuStore** (section below).
-- [ ] ★ **Start v9 collection** — early, dull scorch, 400 families with boxes. It
-      takes calendar time, so start now. In parallel (no collection needed):
-      adjudicate the 80 export rows and carve T_v1.
+- [ ] ★ **Carve T_v1** (adjudicate the 80 export rows). Nothing done to the scorch
+      class — real or synthetic — can be judged without it.
+- [ ] ★ **Scorch data**: real v9 collection (early, dull scorch, 400 families with
+      boxes; takes calendar time) and/or a second synthetic batch that meets the
+      review's conditions (Model track, "Data").
 - [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
       run; Model track, "Experiments that are not data").
 - [ ] **Finish the `main.py` split**: `deps.py`, then module imports instead of the
@@ -150,6 +152,25 @@ Kaggle houseplant supplement; the private one was still at v8 at the last check
 (2026-08-23), which fails the strict v9 manifest contract. A compliant v9 under the
 same handle is picked up automatically.
 
+- [ ] ★ **Synthetic scorch experiment — batch 1 reviewed, not usable yet**
+      (owner's choice, 2026-11-14: try generated images for the weak class).
+      An independent review of `scorch_synthetic_100` found the stage right (all
+      early, edge-confined) but said do not train on it: only scorch is synthetic,
+      so "generator look ⇒ scorch" is easier to learn than the rim; the 100
+      images are about 10 templates (lesion position tied to species, 10 fixed
+      scenes); about 20 are ambiguous against healthy / `leaf_spot`; 3 fail the
+      server's blur statistic and 11 boxes need redrawing. It also runs against
+      plan rule P3 ("no … AI-looking images") — change that rule on purpose or
+      not at all. Before a batch 2 is worth a run:
+      (1) carve T_v1 — with ~39 unseen scorch rows in the holdout no result
+      could be told from noise; (2) a matched synthetic *healthy* image per
+      scorch image, same generator and scene; (3) lesion position, extent and
+      colour randomised independently of species, more genera, fewer flat-lays,
+      no tan backgrounds, every visible leaf boxed; (4) human adjudication of
+      each image; (5) a `supplement_synthetic` source that sits in no
+      `allowed_sources`, at reduced weight, train-only, with template-level
+      family ids. Then one paired `SEED=0` run, real-only evaluation, and stop
+      if healthy false alarms rise or scorch recall's CI straddles 0.
 - [ ] ★ **Early-stage marginal necrosis, 400 families with boxes**
       (`brown_frac < 0.05`, edge-confined, blade mostly green), judged against
       `leaf_spot` exemplars. Worth a run at ≥ 200 scorch and ≥ 100 houseplant
