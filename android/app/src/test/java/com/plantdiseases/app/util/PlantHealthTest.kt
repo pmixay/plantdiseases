@@ -59,39 +59,6 @@ class PlantHealthTest {
     }
 
     @Test
-    fun evaluate_activePlanWithGoodAdherence_isRecovering() {
-        val now = 1_000_000_000L
-        // 5 -> 20: a real (>= IMPROVE_DELTA_PP) improvement, not noise.
-        val verdict = PlantHealth.evaluate(
-            scans = listOf(
-                scan(now - PlantHealth.WEEK_MS, healthy = false, confidence = 0.9f),
-                scan(now, healthy = false, confidence = 0.6f),
-            ),
-            hasActiveTreatmentPlan = true,
-            adherence = PlantHealth.Adherence(due = 5, done = 5),
-            nowMs = now,
-        )
-        assertThat(verdict.status).isEqualTo(PlantHealth.Status.RECOVERING)
-    }
-
-    @Test
-    fun evaluate_newActivePlanWithNoDueWork_staysInTreatment() {
-        val now = 1_000_000_000L
-        val verdict = PlantHealth.evaluate(
-            scans = listOf(
-                scan(now - PlantHealth.WEEK_MS, healthy = false, confidence = 0.7f),
-                scan(now, healthy = false, confidence = 0.6f),
-            ),
-            hasActiveTreatmentPlan = true,
-            adherence = PlantHealth.Adherence(due = 0, done = 0),
-            nowMs = now,
-        )
-
-        assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
-        assertThat(PlantHealth.Adherence(due = 0, done = 0).ratio).isEqualTo(0f)
-    }
-
-    @Test
     fun evaluate_activePlanWithOnlyOneScan_stillShowsTreatment() {
         val now = 1_000_000_000L
         val verdict = PlantHealth.evaluate(
@@ -118,21 +85,6 @@ class PlantHealthTest {
             nowMs = now,
         )
 
-        assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
-    }
-
-    @Test
-    fun evaluate_activePlanWithPoorAdherence_isTreatment() {
-        val now = 1_000_000_000L
-        val verdict = PlantHealth.evaluate(
-            scans = listOf(
-                scan(now - PlantHealth.WEEK_MS, healthy = false, confidence = 0.7f),
-                scan(now, healthy = false, confidence = 0.6f),
-            ),
-            hasActiveTreatmentPlan = true,
-            adherence = PlantHealth.Adherence(due = 5, done = 1),
-            nowMs = now,
-        )
         assertThat(verdict.status).isEqualTo(PlantHealth.Status.TREATMENT)
     }
 

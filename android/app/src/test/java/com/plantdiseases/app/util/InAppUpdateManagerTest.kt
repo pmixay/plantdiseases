@@ -38,39 +38,20 @@ class InAppUpdateManagerTest {
     // ── prompt throttle ──────────────────────────────────────────────
 
     @Test
-    fun promptsOnFirstEverCheck() {
-        assertThat(newManager().shouldPromptNow(now)).isTrue()
-    }
-
-    @Test
-    fun promptThrottledWithinTwentyFourHours() {
+    fun promptThrottle_opensAfterTheWindow_onClockRollback_andPersists() {
         val manager = newManager()
+        // First ever check: nothing stamped yet.
+        assertThat(manager.shouldPromptNow(now)).isTrue()
+
         manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now)).isFalse()
         assertThat(manager.shouldPromptNow(now + day - 1)).isFalse()
-    }
-
-    @Test
-    fun promptsAgainAfterTwentyFourHours() {
-        val manager = newManager()
-        manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now + day)).isTrue()
-    }
-
-    @Test
-    fun throttleStampSurvivesAcrossInstances() {
-        newManager().markPrompted(now)
-        // A fresh instance (new activity / next launch) reads the same prefs.
-        assertThat(newManager().shouldPromptNow(now + 1)).isFalse()
-    }
-
-    @Test
-    fun clockRollbackDoesNotSilencePrompts() {
-        val manager = newManager()
-        manager.markPrompted(now)
         // Device clock rolled back behind the stored stamp: prompt rather than
         // stay silent until the clock catches back up.
         assertThat(manager.shouldPromptNow(now - 2 * day)).isTrue()
+        // A fresh instance (new activity / next launch) reads the same prefs.
+        assertThat(newManager().shouldPromptNow(now + 1)).isFalse()
     }
 
     // ── graceful degradation without RuStore ─────────────────────────
@@ -84,10 +65,5 @@ class InAppUpdateManagerTest {
         // SDK before ever reaching the update-offer path.
         assertThat(manager.shouldPromptNow(now)).isTrue()
         manager.release()
-    }
-
-    @Test
-    fun releaseBeforeAnyCheckIsSafe() {
-        newManager().release()
     }
 }

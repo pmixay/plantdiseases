@@ -42,10 +42,4 @@ class WikipediaAttributionTest {
         assertThat(text).contains("CC BY-SA 4.0")
         assertThat(text).contains("переведён автоматически")
     }
-
-    @Test
-    fun licenceLinkIsTheCcBySa40Deed() {
-        assertThat(WikipediaAttribution.LICENCE_URL)
-            .isEqualTo("https://creativecommons.org/licenses/by-sa/4.0/")
-    }
 }

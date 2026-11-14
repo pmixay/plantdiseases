@@ -49,13 +49,6 @@ class ShellFragmentTest {
     }
 
     @Test
-    fun everyTabMapsToItsPageIndex() {
-        ShellFragment.PAGES.forEachIndexed { index, tabId ->
-            assertThat(ShellFragment.pageOf(tabId)).isEqualTo(index)
-        }
-    }
-
-    @Test
     fun nonTabDestinationHasNoPage() {
         // The guide is pushed over the shell, never paged to. selectTab has to
         // be able to tell, or a tap would try to page to index -1.

@@ -1,6 +1,6 @@
 package com.plantdiseases.app.ui.camera
 
-import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -19,27 +19,24 @@ import org.robolectric.annotation.Config
 class LightMeterBucketTest {
 
     @Test
-    fun mapsKnownGeneraToCorrectBuckets() {
-        assertThat(LightMeterActivity.pickSpeciesBucket("Echeveria elegans")).isEqualTo(1)
-        assertThat(LightMeterActivity.pickSpeciesBucket("Crassula ovata")).isEqualTo(1)
-        assertThat(LightMeterActivity.pickSpeciesBucket("Monstera deliciosa")).isEqualTo(2)
-        assertThat(LightMeterActivity.pickSpeciesBucket("Ficus elastica")).isEqualTo(2)
-        assertThat(LightMeterActivity.pickSpeciesBucket("Nephrolepis exaltata")).isEqualTo(3)
-        assertThat(LightMeterActivity.pickSpeciesBucket("Solanum lycopersicum")).isEqualTo(4)
-    }
-
-    @Test
-    fun unknownGenusFallsBackToGeneral() {
-        assertThat(LightMeterActivity.pickSpeciesBucket("Quercus robur")).isEqualTo(0)
-    }
-
-    @Test
-    fun isCaseAndWhitespaceInsensitive() {
-        assertThat(LightMeterActivity.pickSpeciesBucket("  ECHEVERIA  agavoides")).isEqualTo(1)
-    }
-
-    @Test
-    fun emptyStringFallsBackToGeneral() {
-        assertThat(LightMeterActivity.pickSpeciesBucket("")).isEqualTo(0)
+    fun mapsAGenusToItsLightBucket() {
+        val expected = mapOf(
+            "Echeveria elegans" to 1,
+            "Crassula ovata" to 1,
+            "Monstera deliciosa" to 2,
+            "Ficus elastica" to 2,
+            "Nephrolepis exaltata" to 3,
+            "Solanum lycopersicum" to 4,
+            // Case and surrounding whitespace do not matter.
+            "  ECHEVERIA  agavoides" to 1,
+            // An unknown genus and an empty name fall back to "general".
+            "Quercus robur" to 0,
+            "" to 0,
+        )
+        for ((species, bucket) in expected) {
+            assertWithMessage(species)
+                .that(LightMeterActivity.pickSpeciesBucket(species))
+                .isEqualTo(bucket)
+        }
     }
 }

@@ -40,7 +40,7 @@ class SpeciesSectionsLayoutTest {
 
     private val sections = listOf(
         // Care is deliberately absent: it has no section card at all — see
-        // theCarePlanSlotIsNotWrappedInASection.
+        // the care_slot check in the test below.
         SectionIds("about", R.id.card_about, R.id.about_header, R.id.iv_about_chevron, R.id.about_body),
         SectionIds(
             "fertiliser",
@@ -87,13 +87,28 @@ class SpeciesSectionsLayoutTest {
         return false
     }
 
+    /**
+     * Every structural promise the screen's collapsible sections make, checked
+     * on ONE inflation: the layout is by far the largest in the app, and each
+     * of these used to launch an activity and inflate it again to read a
+     * different facet of the same tree. The animator runs last because it is
+     * the only step that mutates the views.
+     */
     @Test
-    fun everySectionHasAHeaderChevronAndBodyInsideItsOwnCard() {
+    fun sectionsAreSelfContainedCollapsedTappableCardsTheAnimatorCanToggle() {
         val root = inflate()
+        val minPx = root.resources.getDimensionPixelSize(R.dimen.species_info_touch_target)
+        // Care has no section card at all. CarePlanCardView is already a
+        // collapsible card with its own header and chevron, so wrapping it in
+        // one stacked two chevrons over a single body and shipped both closed —
+        // loadCare() drops it straight into this slot instead.
+        val careSlot = root.findViewById<View>(R.id.care_slot)
+        assertThat(careSlot).isNotNull()
+
         for (s in sections) {
-            val card = root.findViewById<View>(s.card)
+            val card = root.findViewById<ViewGroup>(s.card)
             val header = root.findViewById<View>(s.header)
-            val chevron = root.findViewById<View>(s.chevron)
+            val chevron = root.findViewById<ImageView>(s.chevron)
             val body = root.findViewById<View>(s.body)
             assertWithMessage("${s.name}: card missing")
                 .that(card).isNotNull()
@@ -108,57 +123,18 @@ class SpeciesSectionsLayoutTest {
             assertThat(header.isDescendantOf(card)).isTrue()
             assertThat(chevron.isDescendantOf(card)).isTrue()
             assertThat(body.isDescendantOf(card)).isTrue()
-        }
-    }
 
-    @Test
-    fun everySectionHeaderIsClickableAndMeetsTheTouchTarget() {
-        val root = inflate()
-        val minPx = root.resources.getDimensionPixelSize(R.dimen.species_info_touch_target)
-        for (s in sections) {
-            val header = root.findViewById<View>(s.header)
             assertWithMessage("${s.name}: header not clickable")
                 .that(header.isClickable).isTrue()
             val declared = header.minimumHeight.coerceAtLeast(header.layoutParams?.height ?: 0)
             assertWithMessage("${s.name}: header below the touch target")
                 .that(declared)
                 .isAtLeast(minPx)
-        }
-    }
 
-    @Test
-    fun everySectionBodyStartsCollapsedInTheLayout() {
-        val root = inflate()
-        for (s in sections) {
             assertWithMessage("${s.name}: body should start GONE")
-                .that(root.findViewById<View>(s.body).visibility).isEqualTo(View.GONE)
-        }
-    }
-
-    /**
-     * Care has no section card at all. CarePlanCardView is already a
-     * collapsible card with its own header and chevron, so wrapping it in one
-     * stacked two chevrons over a single body and shipped both closed —
-     * loadCare() drops it straight into this slot instead.
-     */
-    @Test
-    fun theCarePlanSlotIsNotWrappedInASection() {
-        val root = inflate()
-        val slot = root.findViewById<View>(R.id.care_slot)
-        assertThat(slot).isNotNull()
-        for (s in sections) {
+                .that(body.visibility).isEqualTo(View.GONE)
             assertWithMessage("care_slot must not live inside the ${s.name} section")
-                .that(slot.isDescendantOf(root.findViewById<View>(s.body))).isFalse()
-        }
-    }
-
-    @Test
-    fun animatorTogglesBodyVisibilityAndChevronRotation() {
-        val root = inflate()
-        for (s in sections) {
-            val card = root.findViewById<ViewGroup>(s.card)
-            val chevron = root.findViewById<ImageView>(s.chevron)
-            val body = root.findViewById<View>(s.body)
+                .that(careSlot.isDescendantOf(body)).isFalse()
 
             ExpandableSectionAnimator.update(card, expanded = true, chevron = chevron, animate = false) {
                 body.visibility = View.VISIBLE

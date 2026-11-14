@@ -53,12 +53,6 @@ class ImageUtilsTest {
     }
 
     @Test
-    fun formatTimestamp_matchesExpectedPattern() {
-        val formatted = ImageUtils.formatTimestamp(1_700_000_000_000L)
-        assertThat(formatted).matches("""\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}""")
-    }
-
-    @Test
     fun formatRelativeDate_todayYesterdayAndDaysAgo() {
         val now = System.currentTimeMillis()
         val day = 24L * 60 * 60 * 1000

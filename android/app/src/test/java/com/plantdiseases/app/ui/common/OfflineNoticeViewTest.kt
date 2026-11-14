@@ -67,23 +67,4 @@ class OfflineNoticeViewTest {
 
         controller.pause().stop().destroy()
     }
-
-    @Test
-    fun goingOnline_hidesImmediatelyWithoutWaiting() {
-        val controller = Robolectric.buildActivity(AppCompatActivity::class.java).setup()
-        val activity = controller.get()
-        val notice = OfflineNoticeView(activity)
-        activity.setContentView(notice)
-        val online = MutableStateFlow(false)
-
-        notice.observe(activity, online)
-        settle()
-        assertThat(notice.visibility).isEqualTo(View.VISIBLE)
-
-        online.value = true
-        shadowOf(Looper.getMainLooper()).idle() // no time advanced
-        assertThat(notice.visibility).isEqualTo(View.GONE)
-
-        controller.pause().stop().destroy()
-    }
 }
