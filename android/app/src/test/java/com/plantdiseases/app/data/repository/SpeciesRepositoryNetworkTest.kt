@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.repository
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -22,7 +23,7 @@ import java.io.File
 
 /** Regression coverage through ScanRepository's public species API. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class SpeciesRepositoryNetworkTest {
     private lateinit var server: MockWebServer
     private lateinit var client: PlantApiClient

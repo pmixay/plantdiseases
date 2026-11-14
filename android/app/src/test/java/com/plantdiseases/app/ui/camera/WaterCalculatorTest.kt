@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.camera
 
+import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,7 +16,7 @@ import org.robolectric.annotation.Config
  * Light:        0 low, 1 medium, 2 bright.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class WaterCalculatorTest {
 
     @Test

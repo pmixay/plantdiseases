@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.camera
 
+import android.app.Application
 import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,7 +16,7 @@ import org.robolectric.annotation.Config
  * 2 tropical, 3 fern, 4 vegetable.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class LightMeterBucketTest {
 
     @Test

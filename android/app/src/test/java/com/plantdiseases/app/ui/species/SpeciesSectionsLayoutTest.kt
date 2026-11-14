@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.species
 
+import android.app.Application
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -27,7 +28,7 @@ import org.robolectric.annotation.Config
  * duplicated id, or a body that does not start collapsed.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class SpeciesSectionsLayoutTest {
 
     private data class SectionIds(

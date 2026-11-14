@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -24,7 +25,7 @@ import java.io.FileOutputStream
  * where a real Bitmap codec is available.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ImageUtilsTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

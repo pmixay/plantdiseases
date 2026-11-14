@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.local
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -26,7 +27,7 @@ import org.robolectric.annotation.Config
  * with no other test failing, which is why it is pinned here.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class TreatmentPlanDaoTest {
 
     private lateinit var db: AppDatabase

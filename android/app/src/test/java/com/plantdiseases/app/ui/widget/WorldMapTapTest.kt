@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.widget
 
+import android.app.Application
 import android.content.Context
 import android.graphics.PointF
 import android.view.MotionEvent
@@ -23,7 +24,7 @@ import org.robolectric.annotation.GraphicsMode
  * Region, so every tap would miss and the test would prove nothing.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class WorldMapTapTest {
 

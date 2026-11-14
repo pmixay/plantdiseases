@@ -1,5 +1,6 @@
 package com.plantdiseases.app.auth
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -10,7 +11,7 @@ import org.robolectric.annotation.Config
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class InstallationIdStoreTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 

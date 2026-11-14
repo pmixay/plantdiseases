@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.app.Application
 import android.text.Spannable
 import android.text.Spanned
 import android.text.style.ClickableSpan
@@ -13,7 +14,7 @@ import org.robolectric.annotation.Config
 
 /** Verifies the `[label](token)` cross-link parser ([ContentLinks.apply]). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ContentLinksTest {
 
     private fun textView() = TextView(RuntimeEnvironment.getApplication())

@@ -276,11 +276,6 @@ made the server suite parallel. What it left open:
       `ReleaseAccountPresentationTest`). Filtering release the way staging and
       recovery already are removes one full pass. The duplicate pass was a
       deliberate choice (see the workflow header), so this is the owner's call.
-- [ ] **Stop booting the real app for every Robolectric test.** Each test method
-      constructs the Hilt `PlantDiseasesApp` (component, notification channels,
-      telemetry, background launches). Classes that never touch the graph can run
-      under `@Config(application = Application::class)`; do it class by class with
-      CI, since a custom view that reaches `EntryPointAccessors` will crash.
 - [ ] **Move pure functions out of Activity companions.**
       `LightMeterActivity.pickSpeciesBucket` and
       `WaterCalculatorActivity.computeWatering` are pure, but their tests need

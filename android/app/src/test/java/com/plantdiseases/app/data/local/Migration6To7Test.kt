@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.local
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -40,7 +41,7 @@ import java.util.Locale
  * migrations under test.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class Migration6To7Test {
 
     // ─── Fixtures ────────────────────────────────────────────────────────

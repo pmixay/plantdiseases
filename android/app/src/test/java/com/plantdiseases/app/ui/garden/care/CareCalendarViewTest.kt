@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.garden.care
 
+import android.app.Application
 import android.content.Context
 import android.view.ContextThemeWrapper
 import android.widget.LinearLayout
@@ -13,7 +14,7 @@ import org.robolectric.annotation.Config
 import java.util.Calendar
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class CareCalendarViewTest {
 
     @Test

@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.app.Application
 import android.os.Looper
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
@@ -14,7 +15,7 @@ import org.robolectric.annotation.Config
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class OfflineNoticeViewTest {
 
     /** Past the strip's show-delay, so a settled offline state has painted. */

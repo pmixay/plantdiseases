@@ -1,5 +1,6 @@
 package com.plantdiseases.app.data.local
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +22,7 @@ import org.robolectric.annotation.Config
  * vs all, delete, clear, and the stats rollup over genuine SQL.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ScanPersistenceTest {
 
     private lateinit var db: AppDatabase

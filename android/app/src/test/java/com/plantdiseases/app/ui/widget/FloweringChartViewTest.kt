@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.widget
 
+import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
 import androidx.test.core.app.ApplicationProvider
@@ -11,7 +12,7 @@ import org.robolectric.annotation.Config
 import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class FloweringChartViewTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

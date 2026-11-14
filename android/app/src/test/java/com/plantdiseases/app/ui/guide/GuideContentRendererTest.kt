@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.guide
 
+import android.app.Application
 import android.text.Spannable
 import android.text.Spanned
 import android.text.style.LeadingMarginSpan
@@ -35,7 +36,7 @@ import org.robolectric.annotation.Config
  * header.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class GuideContentRendererTest {
 
     /** A header, two bullets, a blank separator, then a numbered line with no

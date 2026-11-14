@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.common
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -10,7 +11,7 @@ import org.robolectric.annotation.Config
 
 /** CC BY-SA requires the source and the licence next to reused Wikipedia text. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class WikipediaAttributionTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -15,7 +16,7 @@ import org.robolectric.annotation.Config
  * connection, then refresh only when [ResponseCache.Peek.fresh] is false.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ResponseCacheTest {
 
     data class Box(val v: Int)

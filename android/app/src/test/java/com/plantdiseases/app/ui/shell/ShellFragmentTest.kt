@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.shell
 
+import android.app.Application
 import android.content.Context
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.test.core.app.ApplicationProvider
@@ -22,7 +23,7 @@ import org.robolectric.annotation.Config
  * than here.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class ShellFragmentTest {
 
     private val context: Context

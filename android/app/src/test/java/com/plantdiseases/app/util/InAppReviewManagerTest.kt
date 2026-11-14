@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import android.content.Context
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * exactly the way a sideloaded production install would).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class InAppReviewManagerTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

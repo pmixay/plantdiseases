@@ -1,5 +1,6 @@
 package com.plantdiseases.app.util
 
+import android.app.Application
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.CarePlanCheckpoint
 import com.plantdiseases.app.data.model.CarePlanResponse
@@ -14,7 +15,7 @@ import java.util.Calendar
 // true) instead of throwing — Robolectric is required to get a real
 // implementation, not just to avoid a crash.
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class TreatmentPlanFactoryTest {
 
     private fun startedAt(): Long = Calendar.getInstance().apply {

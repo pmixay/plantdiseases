@@ -224,7 +224,10 @@ detail screen only.
   (destructive fallback is the last resort); migration tests hand-build old-shaped DBs and
   let `onValidateSchema` assert (see `Migration6To7Test.kt`).
 - **Robolectric tests must annotate `@Config(sdk = [33])`** — there is no
-  `robolectric.properties`.
+  `robolectric.properties`. Add `application = Application::class` unless the test needs
+  the Hilt graph: by default Robolectric constructs the real `PlantDiseasesApp` (component,
+  channels, background launches) before every test method. `PlantDiseasesAppBootTest` is
+  the one that boots it on purpose.
 - **`/api/feedback` accepts labels the head does not predict** via
   `_FEEDBACK_OUT_OF_HEAD_CLASSES` in `main.py` (incl. `is_a_plant`, the "the reject was
   wrong" signal that retrains the rejection head). They are tagged `out_of_head` and feed

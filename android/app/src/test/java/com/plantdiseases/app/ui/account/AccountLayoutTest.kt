@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.account
 
+import android.app.Application
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -17,7 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = Application::class)
 class AccountLayoutTest {
     private val context: Context
         get() = ContextThemeWrapper(
