@@ -265,7 +265,7 @@ jobs:
           testReleaseUnitTest
           testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest'
           assembleRelease assembleRecoveryProduction
-          --build-cache --configuration-cache --stacktrace
+          --build-cache --configuration-cache --stacktrace --warning-mode all
 
       # Only the JUnit XML and the packaging logs live outside build/reports.
       - name: Upload build reports on failure
@@ -290,11 +290,11 @@ jobs:
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
           test -n "$apksigner"
           for apk in app/build/outputs/apk/release/*.apk app/build/outputs/apk/recoveryProduction/*.apk; do
-            # The signer label varies by build-tools release ("Signer #1", or
-            # "Signer (minSdkVersion=…)"), so match on the digest line itself:
+            # The signer label varies by scheme and build-tools release
+            # ("V2 Signer:", "Signer #1"), so match on the digest line itself:
             # every signer certificate must be the permanent one.
             report=$("$apksigner" verify --print-certs "$apk")
-            certs=$(printf '%s\n' "$report" | sed -n 's/^Signer .*certificate SHA-256 digest: //p' | sort -u)
+            certs=$(printf '%s\n' "$report" | sed -n 's/^.*Signer.*certificate SHA-256 digest: //p' | sort -u)
             if [ "$certs" != "$EXPECTED_CERT_SHA256" ]; then
               printf '%s\n' "$report" | grep -i 'digest' || true
               echo "::error::$apk is not signed by the permanent key alone"
