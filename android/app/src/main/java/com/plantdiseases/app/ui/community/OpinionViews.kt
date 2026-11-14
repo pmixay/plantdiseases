@@ -149,7 +149,7 @@ object OpinionViews {
                     contentDescription = ctx.getString(R.string.community_open_profile, who)
                     isClickable = true
                     isFocusable = true
-                    setOnClickListener { onAuthor?.invoke(op) }
+                    setOnClickListener { onAuthor.invoke(op) }
                 } else {
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 }
@@ -174,7 +174,7 @@ object OpinionViews {
                 if (authorClickable) {
                     isClickable = true
                     isFocusable = true
-                    setOnClickListener { onAuthor?.invoke(op) }
+                    setOnClickListener { onAuthor.invoke(op) }
                 }
             },
         )

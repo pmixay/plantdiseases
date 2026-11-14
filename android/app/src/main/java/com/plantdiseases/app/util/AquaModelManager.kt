@@ -46,6 +46,7 @@ object AquaModelManager {
     private val SHA_RE = Regex("^[0-9a-f]{64}$")
     private val SLOT_RE = Regex("^[0-9a-f]{64}-[0-9a-f-]{36}$")
 
+    @ConsistentCopyVisibility
     data class InstalledBundle internal constructor(
         val modelFile: File,
         val classesFile: File,

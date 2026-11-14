@@ -7,10 +7,10 @@ import com.plantdiseases.app.data.account.ExchangeResult
 import com.plantdiseases.app.testutil.FakeAccountApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import java.io.IOException
@@ -2022,10 +2022,14 @@ class AuthRepositoryTest {
         var registrationAllowed = true
         val first = async { repository.registerPush("first-token") }
         firstRegistrationStarted.await()
-        val stale = async {
+        // UNDISPATCHED runs the stale call inline up to its first suspension,
+        // i.e. until it is parked behind the first registration. A plain async
+        // would not start before the opt-out below, so an implementation that
+        // only checked the flag before queueing would pass unnoticed.
+        val stale = async(start = CoroutineStart.UNDISPATCHED) {
             repository.registerPush("stale-token") { registrationAllowed }
         }
-        runCurrent()
+        assertThat(stale.isCompleted).isFalse()
 
         registrationAllowed = false
         val optOut = async { repository.disablePush() }

@@ -11,6 +11,7 @@ import java.security.MessageDigest
  * stores use [storageKey] so a same-package update can never discover and send
  * a token issued for another configured account endpoint.
  */
+@ConsistentCopyVisibility
 data class AccountEndpointScope private constructor(
     val issuer: String,
     val storageKey: String,
