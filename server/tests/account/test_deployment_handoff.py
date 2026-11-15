@@ -487,7 +487,7 @@ def test_privacy_policy_matches_account_release():
     assert "fonts.googleapis.com" not in privacy
     assert "fonts.gstatic.com" not in privacy
     assert "retained for model improvement, a use you accept when you first open the app" in privacy
-    assert "сохраняется для улучшения моделей только если вы отдельно дали" in privacy
+    assert "сохраняется для улучшения моделей — это использование вы принимаете при первом запуске" in privacy
     assert "account-service endpoint scope, including its base path" in privacy
     # The first release is Yandex-only with push and billing off (plan decision 3);
     # the policy must not offer or describe sign-in methods or services that are not live.
