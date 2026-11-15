@@ -27,6 +27,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -94,7 +95,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         // Check onboarding
-        if (!OnboardingActivity.isOnboardingDone(this)) {
+        if (!OnboardingActivity.isOnboardingDone(this) || !PrivacyConsentPrefs(this).trainingEnabled) {
             startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return

@@ -377,46 +377,6 @@
                     android:layout_marginVertical="@dimen/space_md"
                     android:background="@color/divider" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/training_consent_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/training_consent_subtitle"
-                            android:textColor="@color/on_surface_secondary"
-                            android:textSize="@dimen/text_body_sm" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_training_consent"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:contentDescription="@string/training_consent_title" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_md"
-                    android:background="@color/divider" />
 
                 <LinearLayout
                     android:layout_width="match_parent"

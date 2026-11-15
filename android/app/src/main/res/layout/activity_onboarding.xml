@@ -56,13 +56,12 @@
             android:textColor="@color/primary"
             android:textSize="@dimen/text_title_sm" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_training_consent"
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"
-            android:checked="false"
-            android:text="@string/training_consent_title" />
+            android:text="@string/training_consent_title"
+            android:textAppearance="@style/TextAppearance.App.Title" />
 
         <TextView
             android:layout_width="match_parent"
