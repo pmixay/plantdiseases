@@ -151,7 +151,7 @@ jobs:
       run:
         working-directory: android
     # This job signs with the permanent release key (owner's decision,
-    # 2026-11-14): its release and recovery APKs are the distributable ones.
+    # 2026-11-14): its release APK is the distributable one.
     # The key reaches only the Gradle step, as env; no third-party action
     # sees it. Anyone who can push to a branch in the trigger list can run
     # code with it, so keep that list to branches the owner controls.
@@ -279,7 +279,7 @@ jobs:
           testDebugUnitTest --tests '*DefaultBuildIdentityTest'
           testReleaseUnitTest
           testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest'
-          assembleRelease assembleRecoveryProduction
+          assembleRelease
           --build-cache --configuration-cache --stacktrace --warning-mode all
 
       # Only the JUnit XML and the packaging logs live outside build/reports.
@@ -296,7 +296,7 @@ jobs:
           retention-days: 7
 
       # Gradle falls back to the debug key when the store is missing, so prove
-      # the signer instead of trusting the build: both APKs must carry the
+      # the signer instead of trusting the build: the APK must carry the
       # permanent certificate (DEPLOYMENT.md §8.1).
       - name: Verify the signing certificate
         env:
@@ -304,7 +304,7 @@ jobs:
         run: |
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
           test -n "$apksigner"
-          for apk in app/build/outputs/apk/release/*.apk app/build/outputs/apk/recoveryProduction/*.apk; do
+          for apk in app/build/outputs/apk/release/*.apk; do
             # The signer label varies by scheme and build-tools release
             # ("V2 Signer:", "Signer #1"), so match on the digest line itself:
             # every signer certificate must be the permanent one.
@@ -318,15 +318,14 @@ jobs:
             sha256sum "$apk"
           done
 
-      # The 1.9 release and its versionCode-20 recovery build (DEPLOYMENT.md
-      # §8.3). An APK is already a zip, hence the light compression level.
-      - name: Upload signed APKs (release + recovery)
+      # The signed release APK. An APK is already a zip, hence the light
+      # compression level.
+      - name: Upload signed APK (release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: app-release-apk
           path: |
             android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/apk/recoveryProduction/*.apk
           if-no-files-found: error
           retention-days: 7
           compression-level: 3

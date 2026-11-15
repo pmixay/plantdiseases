@@ -473,8 +473,8 @@ Counters worth alerting on, from `/api/metrics`:
 ## 8. Android release: signing & FCM
 
 The Android CI job (`.github/workflows/ci.yml`) runs lint and unit tests, then
-builds the release and recovery APKs, signs them with the permanent key from
-repository secrets and uploads them (§8.3). Every build targets the production
+builds the release APK, signs it with the permanent key from
+repository secrets and uploads it (§8.3). Every build targets the production
 server; there is no staging variant. The public Yandex native client ID is
 pinned in `app/build.gradle.kts`; no Yandex client secret is used. VK stays
 independently disabled unless both of its extractable mobile configuration
@@ -533,7 +533,7 @@ Every push to a CI branch that touches Android runs:
   testDebugUnitTest --tests '*DefaultBuildIdentityTest' \
   testReleaseUnitTest \
   testRecoveryProductionUnitTest --tests '*RecoveryBuildIdentityTest' \
-  assembleRelease assembleRecoveryProduction \
+  assembleRelease \
   --build-cache --configuration-cache --stacktrace --warning-mode all
 ```
 
@@ -541,8 +541,8 @@ The shared unit-test suite runs once, on the release variant; debug and recovery
 run only their own build-identity test.
 
 with the signing secrets from §8.1 as environment of that one step. The job then
-runs `apksigner verify --print-certs` on both APKs, fails unless the certificate
-is the permanent one, prints each APK's SHA-256 and uploads both as the
+runs `apksigner verify --print-certs` on the APK, fails unless the certificate
+is the permanent one, prints its SHA-256 and uploads it as the
 `app-release-apk` artifact (kept 7 days). The identity unit tests pin package,
 versionCode and the production endpoints. To ship, take the artifact from the
 green run of the exact commit and keep its SHA-256 with the release record.
@@ -551,8 +551,8 @@ Any branch in the workflow's trigger list builds with the key, so anyone who
 can push to one can run code that reads it. Keep the list to branches the
 owner controls.
 
-The artifact also holds the recovery build for an account-service rollback:
-`recoveryProduction` is the same package and certificate at versionCode 20 with
+CI no longer builds or uploads the recovery APK. For an account-service rollback,
+`recoveryProduction` (built outside CI) is the same package and certificate at versionCode 20 with
 the account UI disabled, bound to the production endpoints so the encrypted
 vault and queued revocations stay with their service. Archive it with each
 versionCode 19 build that is distributed; after a recovery build is published

@@ -619,14 +619,15 @@ def test_android_ci_signs_with_the_permanent_key_and_proves_it():
     names = [step.get("name", "") for step in steps]
     build = names.index("Build, test and sign (production server, permanent key)")
     verify = names.index("Verify the signing certificate")
-    upload = names.index("Upload signed APKs (release + recovery)")
+    upload = names.index("Upload signed APK (release)")
     assert build < verify < upload
     assert steps[verify]["env"]["EXPECTED_CERT_SHA256"] == (
         "ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367"
     )
     assert "if" not in steps[verify] and "if" not in steps[upload]
     command = steps[build]["run"]
-    assert "assembleRelease assembleRecoveryProduction" in command
+    assert "assembleRelease" in command
+    assert "assembleRecoveryProduction" not in command
     assert "Staging" not in command
 
 

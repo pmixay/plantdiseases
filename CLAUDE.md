@@ -95,7 +95,7 @@ cd server && pytest tests/account -q          # account tests; also part of the 
 ./gradlew :app:assembleDebug -PAPP_API_BASE_URL=http://10.0.2.2:8000/ -PACCOUNT_API_BASE_URL=http://10.0.2.2:18001/ -PACCOUNT_REAL_OAUTH=false   # local app + mock-account stack
 ```
 - `assembleRelease` is CI-only for agents. The CI android job signs the release and
-  recovery APKs with the permanent key from repository secrets, checks the certificate
+  APK with the permanent key from repository secrets, checks the certificate
   and uploads them as the `app-release-apk` artifact (`DEPLOYMENT.md` §8).
 - Every build targets the production server (URLs fixed in `app/build.gradle.kts`);
   there is no staging variant. Only a local mock-stack build overrides them, as above.
