@@ -17,6 +17,10 @@ class PrivacyConsentPrefs(context: Context) {
         get() = preferences.getBoolean(KEY_TELEMETRY_ENABLED, false) &&
             preferences.getString(KEY_TELEMETRY_VERSION, null) == TELEMETRY_CONSENT_VERSION
 
+    /** True until the user has answered the error-report pop-up (or chose in an older build). */
+    val telemetryChoicePending: Boolean
+        get() = !preferences.contains(KEY_TELEMETRY_ENABLED)
+
     val trainingConsentVersion: String?
         get() = TRAINING_CONSENT_VERSION.takeIf { trainingEnabled }
 

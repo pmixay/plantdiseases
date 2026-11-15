@@ -197,12 +197,13 @@
     <!-- Independent optional privacy choices -->
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
     <string name="consent_title">Privacy choices</string>
-    <string name="consent_body">To keep improving plant diagnosis, you need to accept the model-improvement use of your photos described below. Error reports are optional and can be changed later in Profile. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
+    <string name="consent_body">To keep improving plant diagnosis, you need to accept the model-improvement use of your photos described below. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
+    <string name="telemetry_prompt_ok">OK</string>
     <string name="consent_agree">Continue</string>
     <string name="training_consent_title">Help improve diagnosis models</string>
     <string name="training_consent_subtitle">De-identified, metadata-free plant images and structured model results to are added to the model-improvement store. No account, installation, community, or location identifier is attached. Previously contributed material cannot be tied back to you for withdrawal because it is intentionally unlinkable.</string>
     <string name="telemetry_consent_title">Send minimal error reports</string>
-    <string name="telemetry_consent_subtitle">Allow errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
+    <string name="telemetry_consent_subtitle">Errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
     <string name="community_sign_in_required">Sign in to publish or change community content. Tap the action again after sign-in.</string>
     <string name="community_location_cta">Allow approximate location</string>
     <string name="consent_privacy_link">Privacy policy</string>

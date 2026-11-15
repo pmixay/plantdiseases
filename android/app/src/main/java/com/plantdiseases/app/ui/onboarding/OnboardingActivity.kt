@@ -19,8 +19,8 @@ import javax.inject.Inject
  * First-launch privacy choices.
  *
  * The user cannot continue without accepting model improvement (de-identified
- * images feed the training store); there is no switch for it. Error reports stay
- * a separate opt-in that defaults off.
+ * images feed the training store); there is no switch for it. Error reports are
+ * offered afterwards in a pop-up on the main screen (default on).
  */
 @AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
@@ -45,13 +45,11 @@ class OnboardingActivity : AppCompatActivity() {
         binding.consentPrivacyLink.setOnClickListener {
             startActivity(PrivacyPolicyActivity.intent(this))
         }
-        binding.switchTelemetryConsent.isChecked = privacyConsentPrefs.telemetryEnabled
         binding.consentAgree.setOnClickListener { finishOnboarding() }
     }
 
     private fun finishOnboarding() {
         privacyConsentPrefs.setTrainingEnabled(true)
-        privacyConsentPrefs.setTelemetryEnabled(binding.switchTelemetryConsent.isChecked)
         val wasOnboarded = isOnboardingDone(this)
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()

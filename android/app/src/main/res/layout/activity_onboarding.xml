@@ -71,22 +71,6 @@
             android:textColor="@color/on_surface_secondary"
             android:textSize="@dimen/text_body_sm" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_telemetry_consent"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:checked="false"
-            android:text="@string/telemetry_consent_title" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xxs"
-            android:text="@string/telemetry_consent_subtitle"
-            android:textColor="@color/on_surface_secondary"
-            android:textSize="@dimen/text_body_sm" />
-
         <com.google.android.material.button.MaterialButton
             android:id="@+id/consent_agree"
             android:layout_width="match_parent"
