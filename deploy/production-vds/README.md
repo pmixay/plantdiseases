@@ -14,7 +14,7 @@ Android release gates. It does not replace `deploy/account-beta-test/`.
 | `provision_keys.py` | Writes the signing key, encryption key and internal token once (never overwrites). The repo's `generate_test_keys` stays test-only. |
 | `postgres-init/10-account-roles.sh` | Role script for production names. It is the `account-beta-test` script with a pinned bootstrap role: `REASSIGN OWNED BY account_bootstrap` is rejected by PostgreSQL on a fresh database. |
 | `migrate_legacy.sh` | Final copy of the old service's community and push databases into the production volumes (only while the targets are still empty). The old service is only read. |
-| `nginx/` | Routing for `/id/` and the internal-route blocks, the rate-limit zone, `switch.sh` (nginx config copy, legacy copy, repoint `/`, smoke tests, automatic rollback) and `rollback.sh`. |
+| `nginx/` | Routing for `/id/` and the internal-route blocks, the rate-limit zone, `pd-privacy.conf` (serves the repo-root `privacy.html` from `/var/www/pdis` at `/privacy.html`; included in the site's TLS server block ahead of `location /` — re-copy `privacy.html` whenever it changes), `switch.sh` (nginx config copy, legacy copy, repoint `/`, smoke tests, automatic rollback) and `rollback.sh`. |
 
 Order used: `compose.sh build-images`, write the env file, `compose.sh run --rm --no-deps prod-keys-provision`,
 `compose.sh up -d --no-build`, verify, `nginx/switch.sh`.

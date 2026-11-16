@@ -53,6 +53,10 @@ _USER_AGENT = (
 # subdomain. These are the only hosts emitted by species_info's en/ru lookups.
 _ALLOWED_HOSTS = frozenset({
     "upload.wikimedia.org",
+    # Wikipedia's REST summary now hands out lead images on this host (same
+    # path layout and bytes as upload.wikimedia.org, plus utm_* tracking
+    # parameters). canonical_media_url() folds it back onto upload.
+    "thumb.wikimedia.org",
     "en.wikipedia.org",
     "ru.wikipedia.org",
 })
@@ -91,6 +95,26 @@ def is_allowed_url(url: str) -> bool:
     )
 
 
+_MEDIA_HOSTS = frozenset({"upload.wikimedia.org", "thumb.wikimedia.org"})
+
+
+def canonical_media_url(url: str) -> str:
+    """Fold a Wikimedia media URL onto one spelling: ``thumb.wikimedia.org``
+    becomes ``upload.wikimedia.org`` and the query (Wikipedia's utm_* tracking
+    parameters; media files take none) is dropped. One photo then has one cache
+    key whichever form Wikipedia returned. Other URLs are returned unchanged."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = (parsed.hostname or "").lower()
+    except (TypeError, ValueError):
+        return url
+    if host not in _MEDIA_HOSTS:
+        return url
+    return urllib.parse.urlunsplit(
+        ("https", "upload.wikimedia.org", parsed.path, "", ""),
+    )
+
+
 def proxy_path(url: str | None) -> str | None:
     """App-facing relative path that proxies ``url`` through this server, or
     ``None`` when the URL is empty / not an allowed host (the caller keeps the
@@ -98,6 +122,7 @@ def proxy_path(url: str | None) -> str | None:
     URL, matching the ``api/community/thumb/…`` convention."""
     if not url or not is_allowed_url(url):
         return None
+    url = canonical_media_url(url)
     return "api/plant-photo?u=" + urllib.parse.quote(url, safe="")
 
 
@@ -267,7 +292,7 @@ def get_or_fetch(url: str) -> Path | None:
         return None
     # Before anything touches the cache, so an off-ladder width and its snapped
     # form share one cache entry instead of the former permanently missing.
-    url = normalize_thumb_url(url)
+    url = normalize_thumb_url(canonical_media_url(url))
     hit = _existing(url)
     if hit is not None:
         with contextlib.suppress(OSError):
