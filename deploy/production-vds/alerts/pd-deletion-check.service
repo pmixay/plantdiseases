@@ -1,0 +1,8 @@
+[Unit]
+Description=PlantDiseases: alert on stuck account deletions
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pd-deletion-check
