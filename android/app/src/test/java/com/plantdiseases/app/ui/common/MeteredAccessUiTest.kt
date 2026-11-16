@@ -23,6 +23,7 @@ class MeteredAccessUiTest {
                     remaining = 0,
                     resetAt = "2026-09-01T00:00:00Z",
                 ),
+                proOffered = true,
             ),
         )
 
@@ -42,6 +43,7 @@ class MeteredAccessUiTest {
                     remaining = 0,
                     resetAt = "2026-09-01T00:00:00Z",
                 ),
+                proOffered = true,
             ),
         )
 
@@ -59,6 +61,7 @@ class MeteredAccessUiTest {
                     remaining = null,
                     resetAt = null,
                 ),
+                proOffered = true,
             ),
         )
 
@@ -77,12 +80,50 @@ class MeteredAccessUiTest {
                     remaining = -1,
                     resetAt = " ",
                 ),
+                proOffered = true,
             ),
         )
 
         assertTrue(policy.offerPro)
         assertNull(policy.remaining)
         assertNull(policy.resetAt)
+    }
+
+    @Test
+    fun `quota exhaustion never mentions pro while pro is not offered`() {
+        val policy = requireNotNull(
+            meteredDialogPolicy(
+                ScanRepository.QuotaExhaustedException(
+                    plan = "free",
+                    limit = 1,
+                    remaining = 0,
+                    resetAt = "2026-09-01T00:00:00Z",
+                ),
+            ),
+        )
+
+        assertFalse(policy.offerPro)
+        assertEquals(R.string.metered_quota_title, policy.title)
+        assertEquals(R.string.metered_quota_body, policy.message)
+        assertEquals("2026-09-01T00:00:00Z", policy.resetAt)
+    }
+
+    @Test
+    fun `a zero allowance reads as unavailable while pro is not offered`() {
+        val policy = requireNotNull(
+            meteredDialogPolicy(
+                ScanRepository.ProRequiredException(
+                    plan = "free",
+                    limit = 0,
+                    remaining = 0,
+                    resetAt = null,
+                ),
+            ),
+        )
+
+        assertFalse(policy.offerPro)
+        assertEquals(R.string.metered_pro_active_unavailable_title, policy.title)
+        assertEquals(R.string.metered_unavailable_body, policy.message)
     }
 
     @Test

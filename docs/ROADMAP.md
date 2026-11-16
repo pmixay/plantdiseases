@@ -17,7 +17,7 @@ recorded. Line counts are approximate; re-measure before acting on one.
 |---|---|
 | **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); the signed release APK is built and taken from CI; not on RuStore yet. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
-| **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. The repo config opens `/id/` to the public — the host still has to be reloaded with it. No backup job (owner's decision). |
+| **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. `/id/` is public on the host; the privacy policy is served at `/privacy.html`; a Telegram alert watches for stuck account deletions (`deploy/production-vds/alerts/`). No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
 | **Tests / CI** | Server suite runs in parallel (`pytest -n auto`); `ccr-*` branches build in CI on a pinned `ubuntu-26.04`. The 2026-11 test rework and the `main.py` route split are green in CI. |
 
@@ -43,23 +43,24 @@ the README status section and `docs/assets/per-class.svg`.
 
 ## Ship accounts to RuStore
 
-1.9 ships accounts only: Yandex sign-in, no PRO (see Decisions). In order.
+1.9 ships accounts only: Yandex sign-in. PRO is not part of it and is hidden in the app (see Decisions). In order.
 
 **Before the release** (code and host)
 
-- [ ] **Old clients: read the production logs.** `/` has pointed at the new server
-      since the 2026-10-09 switch, so older app versions already call it. Look
-      for 4xx/5xx from them; add a regression test for anything found.
-- [ ] ★ **Apply the public `/id/` config on the VDS.** The allowlist `include` is
-      gone from `deploy/production-vds/nginx/pd-account-prod.conf`; the live
-      snippet (`/etc/nginx/snippets/pd-account-prod.conf`) still carries it until
-      it is replaced and nginx reloaded.
-- [ ] ★ **Switch the backup job off on the VDS.** Its script and systemd units
-      are deleted from the repo, but the installed `pd-prod-backup.timer` keeps
-      running until disabled, and — because the 27-day prune lived in the same
-      script — the dumps already under `/var/backups/pd-account-prod/db` now stay
-      until someone deletes them.
-- [ ] **Alert** on repeated account-deletion retries. Nothing alerts today.
+- [x] **Old clients: production logs read (2026-11-16).** No 5xx. Fixed: plant
+      photos 404'd for every client because Wikipedia moved lead images to
+      `thumb.wikimedia.org` (`server/plant_photos.py`). Left as is: pre-1.9 apps
+      still call the pseudo-id `GET /api/community/my-scan-opinions/{id}`, removed
+      on purpose in #182, so they get no "new opinion" notifications until they
+      update.
+- [x] **`/id/` is public on the VDS** (the live snippet already had no allowlist).
+- [x] **Privacy policy served** at `/privacy.html` (`nginx/pd-privacy.conf`).
+- [x] **Backup job is off on the VDS** (no timer installed, no dumps left).
+- [x] **Alert** on stuck account deletions: `deploy/production-vds/alerts/`,
+      every 15 minutes, to the owner's Telegram group.
+- [ ] **Hide PRO in the app.** `ProUi.ENABLED = false`: no PRO card, screen,
+      lock badge or dialog text; the lunar calendar is open to everyone. Needs
+      the release APK rebuilt from `main` after this merges.
 
 **Release** (★ owner)
 
@@ -70,11 +71,13 @@ the README status section and `docs/assets/per-class.svg`.
 
 **Not a 1.9 gate**
 
-- [ ] **PRO subscriptions (after 1.9).** Purchase validation, the callback inbox
-      and the Android payment client are merged but switched off
-      (`RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`). Needs RuStore
-      keys and products provisioned and a sandbox purchase test. VK ID sign-in
-      is in the same state.
+- [ ] **PRO subscriptions (distant future, not scheduled).** Not planned for
+      any upcoming release. The purchase validation, callback inbox and Android
+      payment client stay in the code, switched off and invisible
+      (`ProUi.ENABLED = false` in the app, `RUSTORE_LIFECYCLE_ENABLED` /
+      `RUSTORE_CHECKOUT_ENABLED` off on the server). Reviving it would need
+      RuStore keys and products, a sandbox purchase test and the app switch.
+- [ ] **VK ID sign-in (after 1.9).** Merged, switched off until VK registration.
 
 ---
 
@@ -323,8 +326,11 @@ None blocks a release.
   ceiling and no dependency lockfile are planned.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
-- **1.9 is accounts only.** PRO subscriptions and VK ID stay switched off until a
-  later release.
+- **1.9 is accounts only.** VK ID stays switched off until a later release.
+- **PRO is a distant-future idea, not a plan** (owner's decision, 2026-11-16).
+  The app and server show no PRO wording and lock nothing behind it; only
+  documents may mention it, and only as something far off. Signed-in accounts
+  share one set of daily limits, including one frontier analysis a day.
 - **Account data stays on the German VDS** (owner's decision, 2026-11-13).
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.

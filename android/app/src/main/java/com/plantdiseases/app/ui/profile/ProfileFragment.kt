@@ -30,6 +30,7 @@ import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.billing.EntitlementPolicy
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.billing.EntitlementState
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -119,7 +120,8 @@ class ProfileFragment : Fragment() {
 
         binding.root.applyStatusBarTopInset()
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
-        binding.proCard.visibility = if (BuildConfig.ACCOUNT_UI_ENABLED) View.VISIBLE else View.GONE
+        binding.proCard.visibility =
+            if (ProUi.ENABLED && BuildConfig.ACCOUNT_UI_ENABLED) View.VISIBLE else View.GONE
         binding.proCard.setOnClickListener { startActivity(ProActivity.intent(requireContext())) }
         if (BuildConfig.ACCOUNT_UI_ENABLED) {
             binding.accountCard.visibility = View.VISIBLE

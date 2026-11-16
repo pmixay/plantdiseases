@@ -496,8 +496,8 @@ any build whose APKs carry a different one.
 The endpoints are fixed in `app/build.gradle.kts`: app `https://pdis.arbuz.lol/`
 and account `https://pdis.arbuz.lol/id/`. Only a local mock-stack build
 overrides them (`-PAPP_API_BASE_URL=… -PACCOUNT_API_BASE_URL=…
--PACCOUNT_REAL_OAUTH=false`). PRO stays off: the RuStore Console app and product
-IDs are not supplied. Optional VK values are supplied only after VK
+-PACCOUNT_REAL_OAUTH=false`). PRO is not offered (a distant-future idea, hidden in the app by
+`ProUi.ENABLED = false`): the RuStore Console app and product IDs are not supplied. Optional VK values are supplied only after VK
 registration; each ID/value pair must be complete or absent.
 
 To sign on the owner's machine instead, put `RELEASE_STORE_FILE` and the three

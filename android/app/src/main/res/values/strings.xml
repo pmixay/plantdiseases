@@ -65,7 +65,8 @@
     <string name="account_session_time_unknown">Unknown</string>
     <string name="account_logout">Log out</string>
     <string name="account_delete">Delete account</string>
-    <string name="account_delete_warning">Sign in again to confirm. Your account data will be queued for removal. Local scans, garden entries, and reminders stay on this device. Deleting PlantDiseases does not cancel RuStore auto-renewal; manage or cancel the subscription in RuStore first to prevent future charges.</string>
+    <string name="account_delete_warning">Sign in again to confirm. Your account data will be queued for removal. Local scans, garden entries, and reminders stay on this device.</string>
+    <string name="account_delete_subscription_note">Deleting PlantDiseases does not cancel RuStore auto-renewal; manage or cancel the subscription in RuStore first to prevent future charges.</string>
     <string name="account_delete_confirm">Reauthenticate and delete</string>
     <string name="account_choose_reauth_provider">Confirm with a linked sign-in method</string>
     <string name="account_link_restart_required">Linking was interrupted. Start the link again to keep your account secure.</string>
@@ -1452,6 +1453,8 @@
 <string name="metered_quota_title">Daily cloud limit reached</string>
 <string name="metered_quota_free_body">You have used today\'s free cloud allowance. Your current work is still here; try again after the daily reset or see PRO for higher limits.</string>
 <string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Your current work is still here; try again after the daily reset.</string>
+<string name="metered_quota_body">You have used today\'s cloud allowance. Your current work is still here; try again after the daily reset.</string>
+<string name="metered_unavailable_body">This cloud option isn\'t available right now. If you aren\'t signed in, signing in to a PlantDiseases account gives it a daily allowance. Your current work is still here.</string>
 <string name="metered_quota_remaining_detail">Remaining in this daily allowance: %1$d</string>
 <string name="metered_quota_reset_detail">Resets at %1$s</string>
 <string name="metered_quota_reset_unknown_detail">The exact reset time is temporarily unavailable.</string>

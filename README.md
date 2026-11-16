@@ -235,7 +235,7 @@ Content criteria and the private operator workflow are documented in
 ```
 plantdiseases/
 ├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Hilt DI)
-├── account-server/         FastAPI account service (sign-in, sessions, deletion, PRO entitlements) + PostgreSQL
+├── account-server/         FastAPI account service (sign-in, sessions, deletion, daily quotas) + PostgreSQL
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
@@ -243,7 +243,7 @@ plantdiseases/
 │   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
 │   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
 │   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
-│   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes PRO quotas
+│   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes daily quotas
 │   ├── conformal.py        RAPS prediction sets
 │   ├── diseases_data.py    Bilingual disease database
 │   ├── train_notebook.ipynb End-to-end training recipe

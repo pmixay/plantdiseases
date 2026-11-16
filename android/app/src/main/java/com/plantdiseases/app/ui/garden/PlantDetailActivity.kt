@@ -27,9 +27,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.R
-import com.plantdiseases.app.billing.EntitlementPolicy
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.billing.ProFeature
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
@@ -415,7 +415,7 @@ class PlantDetailActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 entitlementRepository.state.collect { state ->
                     lunarCalendarView?.setProAccess(
-                        EntitlementPolicy.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
+                        ProUi.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
                     ) { startActivity(ProActivity.intent(this@PlantDetailActivity)) }
                 }
             }

@@ -29,9 +29,9 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.R
-import com.plantdiseases.app.billing.EntitlementPolicy
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.billing.ProFeature
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
@@ -133,7 +133,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 entitlementRepository.state.collect { state ->
                     binding.lunarCalendar.setProAccess(
-                        EntitlementPolicy.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
+                        ProUi.allows(state, ProFeature.LUNAR_FULL_CALENDAR),
                     ) { startActivity(ProActivity.intent(this@SpeciesDetailActivity)) }
                 }
             }

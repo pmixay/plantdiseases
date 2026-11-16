@@ -156,12 +156,12 @@ def test_free_entitlements_create_only_an_opaque_billing_identity(db_engine):
     limits = {item["feature"]: item["daily_limit"] for item in result["quotas"]}
     assert limits == {
         "gamma_analysis": 5,
-        "frontier_analysis": 0,
+        "frontier_analysis": 1,
         "plant_identification": 1,
         "ai_doctor": 3,
         "care_plan": 5,
     }
-    assert result["quota_policy_version"] == "launch-2026-08-v1"
+    assert result["quota_policy_version"] == "launch-2026-11-v1"
 
 
 def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
@@ -191,7 +191,12 @@ def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
         feature="gamma_analysis",
         request_id=uuid.uuid4(),
     )
-    locked = service.consume(
+    frontier = service.consume(
+        actor_id=current.community_actor_id,
+        feature="frontier_analysis",
+        request_id=uuid.uuid4(),
+    )
+    frontier_denied = service.consume(
         actor_id=current.community_actor_id,
         feature="frontier_analysis",
         request_id=uuid.uuid4(),
@@ -203,10 +208,13 @@ def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
     assert first["remaining"] == 4
     assert denied["allowed"] is False
     assert denied["reason"] == "quota_exhausted"
-    assert locked["reason"] == "pro_required"
+    # Free accounts get one frontier analysis a day, then the ordinary limit.
+    assert frontier["allowed"] is True
+    assert frontier_denied["allowed"] is False
+    assert frontier_denied["reason"] == "quota_exhausted"
     with repository.transaction() as transaction:
-        assert transaction.scalar(select(func.sum(FeatureUsage.used))) == 5
-        assert transaction.scalar(select(func.count(FeatureUsageReceipt.id))) == 7
+        assert transaction.scalar(select(func.sum(FeatureUsage.used))) == 6
+        assert transaction.scalar(select(func.count(FeatureUsageReceipt.id))) == 8
 
 
 def test_purchase_requires_exact_server_issued_external_account_id(db_engine):
@@ -1305,6 +1313,34 @@ def test_retryable_callback_is_bounded_by_age_before_attempt_limit(db_engine):
         assert receipt is not None
         assert receipt.attempt_count == 2
         assert receipt.last_error_code == "billing_unavailable"
+
+
+def test_a_zero_free_allowance_still_reports_pro_required(db_engine):
+    """The shipped policy has no zero limits, but an operator may set one."""
+    now = datetime(2026, 8, 26, 12, tzinfo=UTC)
+    repository, service = _service(db_engine, now=now)
+    features = (
+        "gamma_analysis",
+        "frontier_analysis",
+        "plant_identification",
+        "ai_doctor",
+        "care_plan",
+    )
+    service.quota_policy = QuotaPolicy(
+        version="zero-frontier-v1",
+        free={feature: (0 if feature == "frontier_analysis" else 2) for feature in features},
+        pro={feature: 10 for feature in features},
+    )
+    current = _account(repository, "ZeroFern")
+
+    locked = service.consume(
+        actor_id=current.community_actor_id,
+        feature="frontier_analysis",
+        request_id=uuid.uuid4(),
+    )
+
+    assert locked["allowed"] is False
+    assert locked["reason"] == "pro_required"
 
 
 def test_quota_policy_replay_is_frozen_and_release_is_exactly_once(db_engine):

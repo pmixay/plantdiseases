@@ -53,7 +53,7 @@ class EntitlementRepository @Inject constructor(
         }
     }
 
-    fun allows(feature: ProFeature): Boolean = EntitlementPolicy.allows(state.value, feature)
+    fun allows(feature: ProFeature): Boolean = ProUi.allows(state.value, feature)
 
     fun currentSnapshot(): EntitlementSnapshot? = EntitlementPolicy.snapshot(state.value)
 

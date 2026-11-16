@@ -34,6 +34,7 @@ import com.plantdiseases.app.auth.InstallationIdProvider
 import com.plantdiseases.app.auth.LogoutNotDurableException
 import com.plantdiseases.app.auth.SignupAlreadyConfirmedException
 import com.plantdiseases.app.auth.SyntheticProviderToken
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.account.AccountProfile
 import com.plantdiseases.app.data.account.AccountSession
@@ -512,10 +513,17 @@ class AccountActivity : AppCompatActivity() {
         }
     }
 
+    /** The auto-renewal note only applies once subscriptions are offered. */
+    private fun deletionWarning(): CharSequence {
+        val warning = getString(R.string.account_delete_warning)
+        if (!ProUi.ENABLED) return warning
+        return warning + " " + getString(R.string.account_delete_subscription_note)
+    }
+
     private fun confirmDeletion() {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.account_delete)
-            .setMessage(R.string.account_delete_warning)
+            .setMessage(deletionWarning())
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.account_delete_confirm) { _, _ ->
                 chooseReauthProvider(OAuthAction.REAUTH_DELETE)

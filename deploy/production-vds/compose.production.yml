@@ -42,8 +42,8 @@ x-account-environment: &account-environment
   RUSTORE_NOTIFICATION_KEY_EPOCH: production-v1
   RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "8"
   RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "168"
-  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-08-v1
-  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5
+  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-11-v1
+  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=1,plant_identification=1,ai_doctor=3,care_plan=5
   ENTITLEMENT_PRO_DAILY_LIMITS: gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20
   # PlantNet stays denied until the owner approves a cohort budget (disabled = every
   # uncached PlantNet call is refused by the account-side budget authority).
