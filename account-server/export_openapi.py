@@ -1,4 +1,4 @@
-"""Write the deterministic account API schema used by clients and handoff."""
+"""Write the deterministic account API schema used by clients."""
 
 from __future__ import annotations
 

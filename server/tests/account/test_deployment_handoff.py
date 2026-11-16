@@ -15,24 +15,17 @@ GERMAN_ENV = DEPLOY / "env.german.example"
 NGINX = DEPLOY / "nginx.location.conf"
 NGINX_TESTER_ALLOWLIST = DEPLOY / "nginx.testers.allow.example"
 DEPLOY_README = DEPLOY / "README.md"
-SECRETS_INVENTORY = DEPLOY / "SECRETS.md"
 BACKUP = DEPLOY / "backup-test.sh"
-HANDOFF = DEPLOY / "handoff"
-RU_NGINX = HANDOFF / "nginx.russia.location.conf"
-RU_COMPOSE = HANDOFF / "compose.russia-template.yml"
-DE_COMPOSE = HANDOFF / "compose.germany-worker-template.yml"
-SERVICE_MANIFEST = HANDOFF / "ru-de-service-manifest.yml"
-ML_OPENAPI = HANDOFF / "ml-worker.openapi.json"
-PRODUCTION_ENV = HANDOFF / "env.production.example"
-RU_EGRESS_POLICY = HANDOFF / "egress-proxy" / "squid.conf.example"
 PRIVACY = REPOSITORY_ROOT / "privacy.html"
 RELEASE_POLICY_GATES = DEPLOY / "release-policy-gates.json"
 CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 ANDROID_BUILD_GRADLE = REPOSITORY_ROOT / "android" / "app" / "build.gradle.kts"
 ANDROID_GRADLE_PROPERTIES = REPOSITORY_ROOT / "android" / "gradle.properties"
 GERMAN_ROLE_INIT = DEPLOY / "postgres-init" / "10-account-roles.sh"
-RU_ROLE_INIT = HANDOFF / "postgres-init" / "10-account-roles.sh"
 GRANT_CONVERGENCE = DEPLOY / "converge-runtime-grants.py"
+PRODUCTION_COMPOSE = (
+    REPOSITORY_ROOT / "deploy" / "production-vds" / "compose.production.yml"
+)
 
 ACCOUNT_SCHEMA_HEAD = "0010_billing_lifecycle_quota_policy"
 ACCOUNT_TABLES = {
@@ -405,11 +398,6 @@ def test_rustore_callbacks_have_exact_paths_source_cidrs_and_sufficient_body_cap
             "/plantdisease-test/id/v1/billing/rustore/notifications",
             "http://127.0.0.1:18101/v1/billing/rustore/notifications",
         ),
-        (
-            RU_NGINX,
-            "/id/v1/billing/rustore/notifications",
-            "http://ru-account-api:8000/v1/billing/rustore/notifications",
-        ),
     ):
         text = path.read_text(encoding="utf-8")
         marker = f"location = {public_path} {{"
@@ -634,7 +622,6 @@ def test_android_ci_signs_with_the_permanent_key_and_proves_it():
 def test_database_role_provisioning_is_idempotent_and_url_safe():
     for path, bootstrap in (
         (GERMAN_ROLE_INIT, "beta_account"),
-        (RU_ROLE_INIT, "account_bootstrap"),
     ):
         text = path.read_text(encoding="utf-8")
         assert text.startswith("#!/bin/sh\n#")
@@ -689,276 +676,7 @@ def test_post_migration_grant_convergence_is_owner_scoped_and_fail_closed():
     )
     assert (DEPLOY / _mount_source(german_mount)).resolve() == GRANT_CONVERGENCE.resolve()
 
-    russian = _yaml(RU_COMPOSE)["services"]["ru-account-migrate"]
-    russian_script = russian["command"][2]
-    assert russian_script.index("alembic upgrade head") < russian_script.index(
-        "converge-runtime-grants.py --contract russian-production"
+    production_script = PRODUCTION_COMPOSE.read_text(encoding="utf-8")
+    assert production_script.index("alembic upgrade head") < production_script.index(
+        "converge-runtime-grants.py --contract production"
     )
-    russian_mount = next(
-        mount for mount in russian["volumes"] if "converge-runtime-grants.py" in mount
-    )
-    assert (HANDOFF / _mount_source(russian_mount)).resolve() == GRANT_CONVERGENCE.resolve()
-
-
-def test_final_service_manifest_keeps_every_user_state_store_in_russia():
-    manifest = _yaml(SERVICE_MANIFEST)
-    services = manifest["services"]
-    worker = services["de-ml-worker"]
-    assert manifest["status"] == "deployment-blocked-until-legal-and-operator-gates"
-    assert worker["country"] == "DE"
-    assert worker["persists"] == []
-    assert worker["public_android_endpoint"] is False
-    assert worker["runtime"]["request_storage"] == "memory-only"
-    assert worker["runtime"]["temporary_storage"] == "tmpfs"
-    assert worker["runtime"]["model_storage"] == "read-only"
-    account = services["ru-account-api"]
-    assert "nickname_propagation_jobs" in account["persists"]
-    assert account["schema_revision"] == ACCOUNT_SCHEMA_HEAD
-    assert set(account["database_tables"]) == ACCOUNT_TABLES
-    assert set(account["account_features"]) == {
-        "installation_bound_pending_signup",
-        "two_phase_signup_completion",
-        "bounded_signup_completion_idempotency",
-        "explicit_signup_confirmation_or_cancellation",
-        "email_password_backend_beta",
-        "keyed_email_lookup_and_argon2id",
-        "runtime_read_only_migration_metadata",
-        "nickname_claim_registry",
-        "durable_nickname_propagation",
-        "server_verified_rustore_subscription_v5",
-        "dedicated_billing_external_account_binding",
-        "encrypted_billing_notification_deduplication",
-        "purchase_scoped_canonical_fetch_generation",
-        "bounded_billing_dead_letter_and_manual_replay",
-        "atomic_retry_safe_daily_feature_quotas",
-        "versioned_feature_quota_policy_and_exact_once_release",
-        "atomic_global_plantnet_attempt_and_cost_budget",
-    }
-    assert {
-        "email_address",
-        "password",
-        "billing_external_id",
-        "rustore_purchase_id",
-        "subscription_state",
-        "feature_usage",
-    } <= set(services["ru-ingress"]["must_not_send_to_de"])
-    assert account["release_holds"] == {
-        "email_password": [
-            "inbox_ownership_verification",
-            "password_recovery",
-            "shared_multi_replica_abuse_controls",
-        ],
-        "rustore_pro": [
-            "console_product_and_legal_approval",
-            "production_rsa_and_aes_secret_provisioning",
-            "live_v5_callback_and_reconciliation_evidence",
-            "quota_cost_and_rollback_evidence",
-        ],
-    }
-    assert set(worker["forbidden_import_domains"]) == {
-        "account",
-        "community",
-        "push",
-        "telemetry",
-        "feedback",
-        "training_store",
-    }
-    for name, service in services.items():
-        if name.startswith("ru-"):
-            assert service["country"] == "RU"
-    openrouter = services["ru-app-api"]["optional_external_processors"]["openrouter"]
-    assert openrouter["retention_requirement"] == "zero"
-    assert openrouter["data_collection_requirement"] == "deny"
-    assert openrouter["release_gate"] == (
-        "disabled_until_privacy_region_legal_and_budget_approval"
-    )
-    assert {"authorization", "account_id", "billing_identifier"} <= set(
-        openrouter["forbidden"]
-    )
-    plantnet = services["ru-app-api"]["optional_external_processors"]["plantnet"]
-    assert plantnet["endpoint"] == "my-api.plantnet.org"
-    assert plantnet["provider_image_retention"] == "volatile_memory_only"
-    assert plantnet["release_gate"] == (
-        "disabled_until_global_budget_contract_attribution_and_legal_approval"
-    )
-    assert {"account_id", "installation_id", "billing_identifier"} <= set(
-        plantnet["forbidden"]
-    )
-    fcm = account["optional_external_processors"]["firebase_cloud_messaging"]
-    assert fcm["location"] == "global Google infrastructure"
-    assert fcm["release_gate"] == (
-        "disabled_until_operator_privacy_transfer_and_delivery_sink_approval"
-    )
-    assert {"oauth_token", "email_address", "billing_identifier", "image"} <= set(
-        fcm["forbidden"]
-    )
-    flow = manifest["flows"]["ru_to_de_inference"]
-    assert flow["transport"] == "mTLS"
-    assert flow["direct_android_access"] == "forbidden"
-
-
-def test_worker_openapi_has_an_exact_identity_free_request_contract():
-    document = json.loads(ML_OPENAPI.read_text(encoding="utf-8"))
-    operation = document["paths"]["/v1/infer"]["post"]
-    assert operation["security"] == [{"mutualTLS": []}]
-    request = document["components"]["schemas"]["InferenceRequest"]
-    assert request["additionalProperties"] is False
-    assert set(request["properties"]) == {
-        "image",
-        "request_id",
-        "model_family",
-        "language",
-        "result_options",
-    }
-    assert set(request["required"]) == set(request["properties"])
-    forbidden = {
-        "authorization",
-        "jwt",
-        "account_id",
-        "actor_id",
-        "session_id",
-        "nickname",
-        "provider",
-        "installation_id",
-        "fcm_token",
-        "filename",
-        "metadata",
-    }
-    assert forbidden.isdisjoint(request["properties"])
-
-
-def test_final_compose_templates_encode_the_ru_de_boundary():
-    ru = _yaml(RU_COMPOSE)
-    de = _yaml(DE_COMPOSE)
-    assert ru["networks"]["ru-ingress-backend"]["internal"] is True
-    assert ru["networks"]["ru-db"]["internal"] is True
-    assert ru["networks"]["ru-egress-clients"] == {"internal": True}
-    assert ru["networks"]["ru-egress"] == {}
-    assert "ports" not in ru["services"]["ru-account-api"]
-    assert "ports" not in ru["services"]["ru-app-api"]
-    ru_app = ru["services"]["ru-app-api"]["environment"]
-    assert ru_app["FORWARDED_ALLOW_IPS"] == "${RU_INGRESS_BACKEND_IP:-172.30.0.10}"
-    assert ru_app["FCM_CREDENTIALS_FILE"] == ""
-    assert ru_app["ACCOUNT_NOTIFICATION_URL"] == ""
-    assert ru_app["ACCOUNT_FEATURE_EXPECTED"] == "true"
-    assert ru_app["ML_WORKER_FORWARD_AUTHORIZATION"] == "false"
-    assert ru_app["ML_WORKER_ALLOWED_FIELDS"] == (
-        "image,request_id,model_family,language,result_options"
-    )
-    assert ru_app["OPENROUTER_API_KEY_FILE"] == "${OPENROUTER_API_KEY_FILE:-}"
-    assert "OPENROUTER_API_KEY" not in ru_app
-    assert ru_app["OPENROUTER_BASE_URL"] == "https://openrouter.ai/api/v1"
-    assert ru_app["COMMUNITY_DB_PATH"].startswith("/data/")
-    assert ru_app["TRAINING_DB_PATH"].startswith("/data/")
-    assert ru_app["TELEMETRY_DB_PATH"].startswith("/data/")
-    assert ru_app["HTTPS_PROXY"] == "http://ru-egress-proxy:3128"
-    assert "PLANTNET_API_KEY" not in ru_app
-    assert ru_app["PLANTNET_API_KEY_FILE"] == "${PLANTNET_API_KEY_FILE:-}"
-
-    egress = ru["services"]["ru-egress-proxy"]
-    assert set(egress["networks"]) == {"ru-egress-clients", "ru-egress"}
-    assert "ru-push-worker" not in ru["services"]
-    for service_name in ("ru-account-api", "ru-app-api", "ru-backup"):
-        assert "ru-egress" not in ru["services"][service_name]["networks"]
-        assert "ru-egress-clients" in ru["services"][service_name]["networks"]
-    assert "ru-db" not in ru["services"]["ru-ingress"]["networks"]
-    assert "ru-ingress-backend" not in ru["services"]["ru-postgres"]["networks"]
-    assert set(ru["services"]["ru-postgres"]["networks"]) == {"ru-db"}
-
-    egress_policy = RU_EGRESS_POLICY.read_text(encoding="utf-8")
-    for exact_content_host in (
-        "en.wikipedia.org",
-        "ru.wikipedia.org",
-        "commons.wikimedia.org",
-        "upload.wikimedia.org",
-        "translate.googleapis.com",
-    ):
-        assert exact_content_host in egress_policy
-    assert "http_access allow CONNECT TLS_port content_hosts" in egress_policy
-    assert "acl billing_hosts dstdomain public-api.rustore.ru" in egress_policy
-    assert "http_access allow CONNECT TLS_port billing_hosts" in egress_policy
-    assert "acl plantnet_hosts dstdomain my-api.plantnet.org" in egress_policy
-    assert "http_access allow CONNECT TLS_port plantnet_hosts" in egress_policy
-    assert "acl llm_router_host dstdomain openrouter.ai" in egress_policy
-    assert "http_access allow CONNECT TLS_port llm_router_host" in egress_policy
-    assert ru["services"]["ru-account-migrate"]["depends_on"][
-        "ru-account-role-provision"
-    ]["condition"] == "service_completed_successfully"
-    assert ru["services"]["ru-account-api"]["depends_on"] == {
-        "ru-account-migrate": {"condition": "service_completed_successfully"}
-    }
-
-    account_environment = ru["services"]["ru-account-api"]["environment"]
-    assert account_environment["EMAIL_PASSWORD_AUTH_ENABLED"] == "false"
-    assert account_environment["PLANTNET_BUDGET_ENABLED"] == (
-        "${PLANTNET_BUDGET_ENABLED:-false}"
-    )
-    assert account_environment["PLANTNET_BUDGET_POLICY_VERSION"] == (
-        "${PLANTNET_BUDGET_POLICY_VERSION:-}"
-    )
-    assert account_environment["PLANTNET_DAILY_ATTEMPT_LIMIT"] == (
-        "${PLANTNET_DAILY_ATTEMPT_LIMIT:-0}"
-    )
-    assert account_environment["PLANTNET_ATTEMPT_COST_MICROS"] == (
-        "${PLANTNET_ATTEMPT_COST_MICROS:-0}"
-    )
-    assert account_environment["PLANTNET_DAILY_COST_LIMIT_MICROS"] == (
-        "${PLANTNET_DAILY_COST_LIMIT_MICROS:-0}"
-    )
-    assert account_environment["COMMUNITY_DELETION_URL"] == (
-        "http://ru-app-api:8000/api/internal/account-deletions"
-    )
-    assert "account_runtime" in account_environment["ACCOUNT_DATABASE_URL"]
-    assert "account_migrator" in ru["services"]["ru-account-migrate"]["environment"][
-        "ACCOUNT_DATABASE_URL"
-    ]
-
-    backup = ru["services"]["ru-backup"]
-    assert backup["environment"]["BACKUP_POSTGRES_MODE"] == "pg-dump-custom"
-    assert backup["environment"]["BACKUP_SQLITE_MODE"] == "online-backup-api"
-    assert "account_backup" in backup["environment"]["BACKUP_DATABASE_URL"]
-    assert all("/source/postgres" not in mount for mount in backup["volumes"])
-    assert all(not mount.startswith("ru_postgres:") for mount in backup["volumes"])
-
-    worker = de["services"]["de-ml-worker"]
-    assert set(de["services"]) == {"de-ml-worker"}
-    assert worker["read_only"] is True
-    assert worker["environment"]["PERSISTENCE_ENABLED"] == "false"
-    assert worker["environment"]["ACCESS_LOG_ENABLED"] == "false"
-    assert worker["environment"]["ALLOWED_REQUEST_FIELDS"] == (
-        "image,request_id,model_family,language,result_options"
-    )
-    assert worker["ports"][0]["host_ip"].startswith("${DE_ML_BIND_IP:?")
-    assert all(mount.endswith(":ro") for mount in worker["volumes"])
-    assert all("postgres" not in mount.lower() for mount in worker["volumes"])
-
-    environment = _environment(PRODUCTION_ENV)
-    image_values = [value for key, value in environment.items() if key.endswith("IMAGE")]
-    assert image_values
-    assert all("@sha256:" in image for image in image_values)
-    assert all(image.startswith("registry.invalid/") for image in image_values)
-    assert all(image.endswith("0" * 64) for image in image_values)
-    assert environment["RU_PUBLIC_HOST"].endswith(".invalid")
-    assert environment["PLANTNET_API_KEY_FILE"] == ""
-    assert environment["PLANTNET_BUDGET_ENABLED"] == "false"
-    assert int(environment["PLANTNET_ATTEMPT_COST_MICROS"]) > 0
-    assert int(environment["PLANTNET_DAILY_ATTEMPT_LIMIT"]) > 0
-    assert int(environment["PLANTNET_DAILY_COST_LIMIT_MICROS"]) > 0
-    secrets_inventory = SECRETS_INVENTORY.read_text(encoding="utf-8")
-    assert "Optional `plantnet-api.key`" in secrets_inventory
-    assert "${RU_APP_SECRETS_DIR}/plantnet-api.key" in secrets_inventory
-    assert (
-        "`PLANTNET_API_KEY_FILE=/run/app-secrets/plantnet-api.key`"
-        in secrets_inventory
-    )
-    assert "first restore\n`PLANTNET_BUDGET_ENABLED=false`" in secrets_inventory
-    assert environment["DE_ML_WORKER_URL"].split(":", maxsplit=1)[1].startswith(
-        "//de-ml.private.invalid"
-    )
-    for name in (
-        "RU_POSTGRES_ADMIN_PASSWORD",
-        "RU_POSTGRES_RUNTIME_PASSWORD",
-        "RU_POSTGRES_MIGRATOR_PASSWORD",
-        "RU_POSTGRES_BACKUP_PASSWORD",
-    ):
-        assert environment[name].startswith("replace-")

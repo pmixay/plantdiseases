@@ -55,7 +55,7 @@ CONTRACTS = {
         runtime="beta_account_runtime",
         backup="beta_account_backup",
     ),
-    "russian-production": RoleContract(
+    "production": RoleContract(
         database="plantdisease",
         migrator="account_migrator",
         runtime="account_runtime",

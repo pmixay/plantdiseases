@@ -69,50 +69,25 @@ revocations must stay with their original account issuer.
 FCM values are deliberately absent: version 1.9 uses polling until a durable
 push worker is implemented and reviewed.
 
-## Final Russian data plane
-
-| Value/file | Classification | Required owner/location | Consumer | Rotation/recovery rule |
-|---|---|---|---|---|
-| `YANDEX_CLIENT_ID` | Public application ID | Tracked Android release config plus protected host configuration | Account API and Android build | Change only with provider registration |
-| `VKID_CLIENT_ID` | Optional public application ID | Protected host configuration; absent for the current release | Account API and Android build | Change only with provider registration |
-| Android `VKID_CLIENT_SECRET` | Optional extractable public mobile config | Local Android build property; absent for the current release | Android VK ID SDK | Never use as server authentication |
-| `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Protected host configuration / local Android build properties as applicable | Account API and Android Pay SDK | Change only with a reviewed Console migration; never reuse an epoch after AES-key rotation |
-| `rustore-private-key.b64` | Critical Base64 PKCS#8 RSA private key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore Public API authorization | Overlap keys, validate, then revoke the retired Console key |
-| `rustore-notification-key.b64` | Critical Base64 AES-256 callback decryption key | `RU_ACCOUNT_SECRETS_DIR`, account UID-readable mode 0400 | Account API RuStore notifications | Follow the callback disable/rotate/reconcile sequence in the PRO runbook |
-| `signing.json` | Critical private Ed25519 key ring | Russia, account UID-readable mode 0400 | Account API | Keep active plus reviewed retired public keys; perform overlap exercise |
-| `encryption.key` | Critical AES-256 account encryption/derivation key | Russia, account-owned mode 0400 | Account API refresh rotation and email fingerprints; future push-token protection remains disabled | Do not replace in place; use a reviewed overlap migration or planned session revocation/credential migration |
-| `internal.token` | Critical service credential | Separate account/app-owned mode-0400 copies in Russia | Private account/app calls | Rotate atomically across both services |
-| Optional `plantnet-api.key` | External species-identification credential; absent while PlantNet is off | `RU_APP_SECRETS_DIR`, app UID-readable mode 0400 | Russian app API only after the processor/legal gate and both shared daily ceilings are approved | Disable the file path and shared budget first, rotate at PlantNet, then provision a fresh file without logging it |
-| Optional `openrouter-api.key` | External AI credential; absent while feature gates are open | `RU_APP_SECRETS_DIR`, app UID-readable mode 0400 | Russian app API only after privacy, region, ZDR, legal, and aggregate-cost approval | Disable the file path first, rotate at OpenRouter, then provision a fresh file without logging it |
-| `RU_POSTGRES_ADMIN_PASSWORD` | Bootstrap-only database secret | Root-managed mode-0600 host environment/secret manager in Russia | PostgreSQL initialization/idempotent role provision only | Never mount into migrator, API, app, or backup |
-| `RU_POSTGRES_MIGRATOR_PASSWORD` | DDL/ownership secret | Root-managed mode-0600 host environment/secret manager in Russia | One-shot Alembic migration and post-migration grant convergence | Rotate after reviewed migrations when practical |
-| `RU_POSTGRES_RUNTIME_PASSWORD` | Restricted application-DML secret | Root-managed mode-0600 host environment/secret manager in Russia | Account API; SELECT-only on `alembic_version`, no sequence access | Rotate and test reconnect/rollback |
-| `RU_POSTGRES_BACKUP_PASSWORD` | Read-only database secret | Root-managed mode-0600 host environment/secret manager in Russia | Encrypted backup job | Rotate with restore test |
-| Future `fcm.json` (absent in 1.9) | External service credential | App/push-owned mode-0400 files in Russia | A separately implemented and reviewed push worker only | Provider policy plus incident rotation |
-| ML worker CA/client cert/key | Cross-border service credential | App-owned mode-0400 files in Russia | Russian app API | Short validity; overlap before replacement |
-| German worker CA/server cert/key | Cross-border service credential | Worker-owned mode-0400 files in Germany | Stateless worker | Short validity; revoke on source change |
-| Backup encryption recipient/key | Critical recovery secret | Separate Russian-controlled location | Backup/restore job | Test restore before rotation; escrow separately |
-| TLS private keys | Critical ingress secret | Respective host secret store | Russian ingress/German private worker | Normal certificate lifecycle |
+## Secret file handling
 
 Account-service startup checks every configured account secret is an absolute
 regular file. Signing and encryption keys permit no group/world access. The
 beta internal token may be group-readable, but never group-writable or
 world-accessible, because it lives alone in a dedicated volume mounted
-read-only into the differently-UID app container. The final Russian template
-instead expects owner-specific mode-0400 copies whose byte values match; never
-print them for comparison.
+read-only into the differently-UID app container.
 The app API applies the same absolute, regular, non-symlink, owner-only and
 bounded-file contract to optional vendor API keys. Production rejects direct
 `PLANTNET_API_KEY` / `OPENROUTER_API_KEY` environment/config values and any
 simultaneous direct and file setting. Leave each `*_API_KEY_FILE` blank to keep
 that feature off.
-Russian migrator/runtime/backup database passwords use the same validated
+Migrator/runtime/backup database passwords use a validated
 64-hex format; the bootstrap password is transported through `PGPASSWORD`, not
 embedded in a URL.
 
-PlantNet is default-off in the production example. To enable it after the
+PlantNet is default-off. To enable it after the
 named review gates pass, keep `PLANTNET_BUDGET_ENABLED=false` while an operator
-provisions `${RU_APP_SECRETS_DIR}/plantnet-api.key` for the app UID as a regular
+provisions `plantnet-api.key` in the app secrets directory for the app UID as a regular
 mode-0400 file. Set only the in-container path
 `PLANTNET_API_KEY_FILE=/run/app-secrets/plantnet-api.key`, validate the reviewed
 policy version, attempt ceiling, marginal cost, and cost-exposure ceiling, then
@@ -144,11 +119,10 @@ never assume polling-only 1.9 makes this key safe to regenerate.
 ## Prohibited handling
 
 - Do not put usable provider, refresh, pending-signup, reauthentication, FCM,
-  internal, database, mTLS, or backup values in committed environment files.
+  internal, database, or backup values in committed environment files.
   The examples contain visibly non-secret, non-runnable render placeholders
   only.
 - Do not pass a token in a URL, query string, metric label, exception, support
   ticket, screenshot, or test fixture copied from a real account.
 - Do not mount a production secret directory into the local or German beta.
-- Do not reuse beta signing/encryption/database values in Russia.
-- Do not retain a decrypted backup or provider response snapshot in Germany.
+- Do not reuse beta signing/encryption/database values in production.

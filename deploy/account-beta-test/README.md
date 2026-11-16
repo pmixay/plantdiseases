@@ -257,22 +257,13 @@ directory. It never writes a plaintext dump file, stops the stack, or removes
 volumes. A stale restore is an incident: inspect it, record the exact name, then
 drop only that database before rerunning the check.
 
-## Handoff material
+## Related documents
 
 - The email/password beta is a production HOLD: German staging defaults it
-  off and requires an explicit, edge-restricted tester exercise; the Russian
-  production template pins it off and production settings reject an attempted
-  enable.
+  off and requires an explicit, edge-restricted tester exercise; production
+  settings reject an attempted enable.
 - `SECRETS.md` inventories environment and secret ownership without values.
-- `ROLLBACK.md` defines non-destructive beta and final-split rollback evidence.
-- `handoff/ru-de-service-manifest.yml` freezes data ownership and network flow.
-- `handoff/ml-worker.openapi.json` is the identity-free mTLS inference request
-  contract.
-- `handoff/compose.russia-template.yml` and
-  `handoff/compose.germany-worker-template.yml` are render-tested contract
-  templates for the separately assigned split participant. They are explicitly
-  blocked until extracted images, infrastructure, secrets, legal gates, backup
-  restore, key rotation, and operator acceptance exist.
+- `ROLLBACK.md` defines non-destructive beta rollback evidence.
 
 ## Stop without deleting data
 

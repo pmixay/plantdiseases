@@ -67,20 +67,6 @@ German env file to the newly reviewed digests. Database downgrade is never an
 automatic rollback step. The Alembic downgrade is exercised only on a fresh
 synthetic database; an operator must approve any stateful rollback separately.
 
-## Final Russian/German split
-
-Before enabling real accounts, preserve the last known-good Russian image
-digests, schema revision, encrypted backup, JWKS overlap, and Android endpoint
-configuration. A failed release rolls Android/Russian ingress traffic back to
-the prior Russian services. It must not redirect Android directly to Germany.
-
-If the German ML worker fails, the Russian API returns a bounded unavailable
-response or uses an explicitly approved Russian fallback; it never forwards
-account context to a different endpoint. If account/community migration fails,
-writes remain frozen and clients remain on the prior reviewed Russian state.
-Any restore uses a fresh target followed by count/checksum/application checks;
-it never overwrites the only copy in place.
-
 ## Evidence to retain
 
 - incident/rollback decision and named approvers;

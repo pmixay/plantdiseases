@@ -62,9 +62,9 @@ services:
       POSTGRES_DB: plantdisease
       POSTGRES_USER: account_bootstrap
       POSTGRES_PASSWORD: ${PROD_POSTGRES_ADMIN_PASSWORD:?Set the bootstrap password}
-      RU_POSTGRES_RUNTIME_PASSWORD: ${PROD_POSTGRES_RUNTIME_PASSWORD:?Set the runtime password}
-      RU_POSTGRES_MIGRATOR_PASSWORD: ${PROD_POSTGRES_MIGRATOR_PASSWORD:?Set the migrator password}
-      RU_POSTGRES_BACKUP_PASSWORD: ${PROD_POSTGRES_BACKUP_PASSWORD:?Set the backup password}
+      ACCOUNT_POSTGRES_RUNTIME_PASSWORD: ${PROD_POSTGRES_RUNTIME_PASSWORD:?Set the runtime password}
+      ACCOUNT_POSTGRES_MIGRATOR_PASSWORD: ${PROD_POSTGRES_MIGRATOR_PASSWORD:?Set the migrator password}
+      ACCOUNT_POSTGRES_BACKUP_PASSWORD: ${PROD_POSTGRES_BACKUP_PASSWORD:?Set the backup password}
       PGDATA: /var/lib/postgresql/18/docker
     expose:
       - "5432"
@@ -99,9 +99,9 @@ services:
       PGPASSWORD: ${PROD_POSTGRES_ADMIN_PASSWORD:?Set the bootstrap password}
       POSTGRES_DB: plantdisease
       POSTGRES_USER: account_bootstrap
-      RU_POSTGRES_RUNTIME_PASSWORD: ${PROD_POSTGRES_RUNTIME_PASSWORD:?Set the runtime password}
-      RU_POSTGRES_MIGRATOR_PASSWORD: ${PROD_POSTGRES_MIGRATOR_PASSWORD:?Set the migrator password}
-      RU_POSTGRES_BACKUP_PASSWORD: ${PROD_POSTGRES_BACKUP_PASSWORD:?Set the backup password}
+      ACCOUNT_POSTGRES_RUNTIME_PASSWORD: ${PROD_POSTGRES_RUNTIME_PASSWORD:?Set the runtime password}
+      ACCOUNT_POSTGRES_MIGRATOR_PASSWORD: ${PROD_POSTGRES_MIGRATOR_PASSWORD:?Set the migrator password}
+      ACCOUNT_POSTGRES_BACKUP_PASSWORD: ${PROD_POSTGRES_BACKUP_PASSWORD:?Set the backup password}
     depends_on:
       prod-postgres:
         condition: service_healthy
@@ -132,7 +132,7 @@ services:
       - -ec
       - |
         python -m alembic upgrade head
-        python /role-contract/converge-runtime-grants.py --contract russian-production
+        python /role-contract/converge-runtime-grants.py --contract production
     depends_on:
       prod-account-role-provision:
         condition: service_completed_successfully
