@@ -16,6 +16,7 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
@@ -27,6 +28,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -72,6 +74,21 @@ class MainActivity : AppCompatActivity() {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
 
+    /** One-time pop-up for minimal error reports: pre-ticked, so the default is on. */
+    private fun maybeAskTelemetryChoice() {
+        val prefs = PrivacyConsentPrefs(this)
+        if (!prefs.telemetryChoicePending) return
+        val checked = booleanArrayOf(true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.telemetry_consent_title)
+            .setMultiChoiceItems(arrayOf(getString(R.string.telemetry_consent_subtitle)), checked) { _, which, on ->
+                checked[which] = on
+            }
+            .setCancelable(false)
+            .setPositiveButton(R.string.telemetry_prompt_ok) { _, _ -> prefs.setTelemetryEnabled(checked[0]) }
+            .show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Only show the splash on a genuine cold start. A language change
         // calls AppCompatDelegate.setApplicationLocales(), which restarts
@@ -94,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         // Check onboarding
-        if (!OnboardingActivity.isOnboardingDone(this)) {
+        if (!OnboardingActivity.isOnboardingDone(this) || !PrivacyConsentPrefs(this).trainingEnabled) {
             startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return
@@ -124,6 +141,7 @@ class MainActivity : AppCompatActivity() {
             navigateToContext = ::navigateOnboardingTo,
         )
         setContentView(binding.root)
+        if (savedInstanceState == null) maybeAskTelemetryChoice()
 
         // Single root inset listener — dispatches status-bar + nav-bar + cutout insets
         // to the toolbar (top) and the bottom navigation (bottom/sides).

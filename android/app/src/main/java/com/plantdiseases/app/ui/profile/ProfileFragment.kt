@@ -536,11 +536,7 @@ class ProfileFragment : Fragment() {
     }
 
     private fun setupPrivacyConsentToggles() {
-        binding.switchTrainingConsent.isChecked = privacyConsentPrefs.trainingEnabled
         binding.switchTelemetryConsent.isChecked = privacyConsentPrefs.telemetryEnabled
-        binding.switchTrainingConsent.setOnCheckedChangeListener { _, enabled ->
-            privacyConsentPrefs.setTrainingEnabled(enabled)
-        }
         binding.switchTelemetryConsent.setOnCheckedChangeListener { _, enabled ->
             privacyConsentPrefs.setTelemetryEnabled(enabled)
         }

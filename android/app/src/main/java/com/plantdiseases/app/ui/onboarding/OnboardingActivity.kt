@@ -18,8 +18,9 @@ import javax.inject.Inject
 /**
  * First-launch privacy choices.
  *
- * The user must acknowledge the page, but both optional data uses are separate
- * opt-ins and default off. Inference remains available with neither enabled.
+ * The user cannot continue without accepting model improvement (de-identified
+ * images feed the training store); there is no switch for it. Error reports are
+ * offered afterwards in a pop-up on the main screen (default on).
  */
 @AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
@@ -44,22 +45,21 @@ class OnboardingActivity : AppCompatActivity() {
         binding.consentPrivacyLink.setOnClickListener {
             startActivity(PrivacyPolicyActivity.intent(this))
         }
-        binding.switchTrainingConsent.isChecked = privacyConsentPrefs.trainingEnabled
-        binding.switchTelemetryConsent.isChecked = privacyConsentPrefs.telemetryEnabled
         binding.consentAgree.setOnClickListener { finishOnboarding() }
     }
 
     private fun finishOnboarding() {
-        privacyConsentPrefs.setTrainingEnabled(binding.switchTrainingConsent.isChecked)
-        privacyConsentPrefs.setTelemetryEnabled(binding.switchTelemetryConsent.isChecked)
+        privacyConsentPrefs.setTrainingEnabled(true)
+        val wasOnboarded = isOnboardingDone(this)
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_ONBOARDING_DONE, true)
             .apply()
         // This explicit call is what distinguishes a genuinely new install
         // from an upgrade whose versioned guidance store does not exist yet.
-        onboardingState.startForNewInstall()
-        val next = if (BuildConfig.ACCOUNT_UI_ENABLED) {
+        // An already-onboarded install only re-accepts the new terms.
+        if (!wasOnboarded) onboardingState.startForNewInstall()
+        val next = if (!wasOnboarded && BuildConfig.ACCOUNT_UI_ENABLED) {
             AccountActivity.onboardingIntent(this)
         } else {
             Intent(this, MainActivity::class.java)

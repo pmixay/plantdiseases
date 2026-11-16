@@ -58,4 +58,13 @@ class PrivacyConsentPrefsTest {
 
         assertThat(PrivacyConsentPrefs(context).telemetryEnabled).isFalse()
     }
+
+    @Test
+    fun telemetryChoiceIsPendingUntilAnswered() {
+        val preferences = PrivacyConsentPrefs(context)
+        assertThat(preferences.telemetryChoicePending).isTrue()
+
+        preferences.setTelemetryEnabled(false)
+        assertThat(preferences.telemetryChoicePending).isFalse()
+    }
 }

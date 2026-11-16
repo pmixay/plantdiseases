@@ -486,8 +486,8 @@ def test_privacy_policy_matches_account_release():
     privacy = PRIVACY.read_text(encoding="utf-8")
     assert "fonts.googleapis.com" not in privacy
     assert "fonts.gstatic.com" not in privacy
-    assert "retained for model improvement only if you separately consent" in privacy
-    assert "сохраняется для улучшения моделей только если вы отдельно дали" in privacy
+    assert "retained for model improvement, a use you accept when you first open the app" in privacy
+    assert "сохраняется для улучшения моделей — это использование вы принимаете при первом запуске" in privacy
     assert "account-service endpoint scope, including its base path" in privacy
     # The first release is Yandex-only with push and billing off (plan decision 3);
     # the policy must not offer or describe sign-in methods or services that are not live.
@@ -619,14 +619,15 @@ def test_android_ci_signs_with_the_permanent_key_and_proves_it():
     names = [step.get("name", "") for step in steps]
     build = names.index("Build, test and sign (production server, permanent key)")
     verify = names.index("Verify the signing certificate")
-    upload = names.index("Upload signed APKs (release + recovery)")
+    upload = names.index("Upload signed APK (release)")
     assert build < verify < upload
     assert steps[verify]["env"]["EXPECTED_CERT_SHA256"] == (
         "ef9563c5db397924c1f81239b9ed5fa1e9b233f034ce10eb75f16efd36a26367"
     )
     assert "if" not in steps[verify] and "if" not in steps[upload]
     command = steps[build]["run"]
-    assert "assembleRelease assembleRecoveryProduction" in command
+    assert "assembleRelease" in command
+    assert "assembleRecoveryProduction" not in command
     assert "Staging" not in command
 
 
