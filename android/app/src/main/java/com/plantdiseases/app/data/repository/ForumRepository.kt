@@ -15,6 +15,7 @@ import com.plantdiseases.app.data.model.ForumMediaUpload
 import com.plantdiseases.app.data.model.ForumPage
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumPostCreateRequest
+import com.plantdiseases.app.data.model.ForumPostEditRequest
 import com.plantdiseases.app.data.model.ForumReactionRequest
 import com.plantdiseases.app.data.model.ForumReactionResponse
 import com.plantdiseases.app.data.model.ForumReportRequest
@@ -42,6 +43,7 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -169,6 +171,10 @@ class ForumRepository(
 
     suspend fun createPost(request: ForumPostCreateRequest): Result<ForumPost> = write { token ->
         apiClient.httpClient.post("api/community/posts") { json(token, request) }
+    }
+
+    suspend fun editPost(postId: String, request: ForumPostEditRequest): Result<ForumPost> = write { token ->
+        apiClient.httpClient.patch("api/community/posts/$postId") { json(token, request) }
     }
 
     suspend fun deletePost(postId: String): Result<Unit> = writeUnit { token ->

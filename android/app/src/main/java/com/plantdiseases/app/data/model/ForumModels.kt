@@ -140,6 +140,18 @@ data class ForumPostCreateRequest(
     @SerializedName("locale") @SerialName("locale") val locale: String?,
 )
 
+/** Author edit of a post's text and tags; null leaves a field unchanged. */
+@Serializable
+data class ForumPostEditRequest(
+    @SerializedName("title") @SerialName("title") val title: String? = null,
+    @SerializedName("body") @SerialName("body") val body: String? = null,
+    @SerializedName("space") @SerialName("space") val space: String? = null,
+    @SerializedName("species") @SerialName("species") val species: String? = null,
+    @SerializedName("condition") @SerialName("condition") val condition: String? = null,
+    @SerializedName("urgent") @SerialName("urgent") val urgent: Boolean? = null,
+    @SerializedName("training_consent") @SerialName("training_consent") val trainingConsent: Boolean? = null,
+)
+
 @Serializable
 data class ForumAnswerCreateRequest(
     @SerializedName("body") @SerialName("body") val body: String,

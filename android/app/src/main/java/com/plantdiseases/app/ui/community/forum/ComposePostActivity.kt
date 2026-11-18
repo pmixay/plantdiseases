@@ -18,7 +18,9 @@ import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumPostCreateRequest
+import com.plantdiseases.app.data.model.ForumPostEditRequest
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -61,6 +63,8 @@ class ComposePostActivity : AppCompatActivity() {
 
     private val parentPostId: String? by lazy { intent.getStringExtra(EXTRA_PARENT_POST_ID) }
     private val scanRowId: Long by lazy { intent.getLongExtra(EXTRA_SCAN_ROW_ID, -1L) }
+    private val editPostId: String? by lazy { intent.getStringExtra(EXTRA_EDIT_POST_ID) }
+    private var editing: ForumPost? = null
 
     private val pickPhotos = registerForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS),
@@ -83,6 +87,7 @@ class ComposePostActivity : AppCompatActivity() {
             binding.chipTip.visibility = View.GONE
             binding.toolbar.setTitle(R.string.forum_compose_update_title)
         }
+        if (editPostId != null) enterEditMode()
         binding.btnAddPhoto.setOnClickListener {
             if (photos.size >= MAX_PHOTOS) return@setOnClickListener
             pickPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -210,7 +215,7 @@ class ComposePostActivity : AppCompatActivity() {
 
     private fun suggestSimilar(title: String) {
         similarJob?.cancel()
-        if (title.trim().length < MIN_SIMILAR_CHARS || parentPostId != null) {
+        if (title.trim().length < MIN_SIMILAR_CHARS || parentPostId != null || editPostId != null) {
             binding.cardSimilar.visibility = View.GONE
             return
         }
@@ -243,8 +248,74 @@ class ComposePostActivity : AppCompatActivity() {
         else -> "question"
     }
 
+    /** Edit mode: the post's text and tags only. Kind and photos stay as
+     *  posted, so their controls are hidden. */
+    private fun enterEditMode() {
+        binding.toolbar.setTitle(R.string.forum_compose_edit_title)
+        binding.btnPost.setText(R.string.save)
+        binding.chipKind.visibility = View.GONE
+        binding.tvPhotosLabel.visibility = View.GONE
+        binding.photosScroll.visibility = View.GONE
+        binding.btnPost.isEnabled = false
+        lifecycleScope.launch {
+            forum.post(editPostId.orEmpty())
+                .onSuccess { post ->
+                    editing = post
+                    binding.etTitle.setText(post.title)
+                    binding.etBody.setText(post.body)
+                    binding.etSpecies.setText(post.species.orEmpty())
+                    space = post.space
+                    condition = post.condition
+                    binding.switchUrgent.isChecked = post.urgent
+                    binding.switchConsent.isChecked = post.trainingConsent == true
+                    renderSpace()
+                    renderCondition()
+                    binding.cardSimilar.visibility = View.GONE
+                    binding.btnPost.isEnabled = true
+                }
+                .onFailure {
+                    toast(ForumUi.errorMessage(this@ComposePostActivity, it))
+                    finish()
+                }
+        }
+    }
+
+    private fun saveEdit(post: ForumPost) {
+        val title = binding.etTitle.text?.toString()?.trim().orEmpty()
+        if (title.isEmpty() && post.kind != "scan") {
+            binding.tilTitle.error = getString(R.string.forum_error_title_required)
+            return
+        }
+        binding.tilTitle.error = null
+        publishing = true
+        binding.btnPost.isEnabled = false
+        val request = ForumPostEditRequest(
+            title = title,
+            body = binding.etBody.text?.toString()?.trim().orEmpty(),
+            space = space,
+            species = binding.etSpecies.text?.toString()?.trim().orEmpty(),
+            condition = condition,
+            urgent = binding.switchUrgent.isChecked,
+            trainingConsent = binding.switchConsent.isChecked,
+        )
+        lifecycleScope.launch {
+            forum.editPost(post.id, request)
+                .onSuccess {
+                    toast(getString(R.string.forum_edit_saved))
+                    finish()
+                }
+                .onFailure { toast(ForumUi.errorMessage(this@ComposePostActivity, it)) }
+            publishing = false
+            binding.btnPost.isEnabled = true
+        }
+    }
+
     private fun publish() {
         if (publishing) return
+        if (editPostId != null) {
+            editing?.let(::saveEdit)
+            return
+        }
         val kind = selectedKind()
         val title = binding.etTitle.text?.toString()?.trim().orEmpty()
         val body = binding.etBody.text?.toString()?.trim().orEmpty()
@@ -292,6 +363,7 @@ class ComposePostActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_PARENT_POST_ID = "extra_forum_parent_post_id"
         private const val EXTRA_SCAN_ROW_ID = "extra_forum_scan_row_id"
+        private const val EXTRA_EDIT_POST_ID = "extra_forum_edit_post_id"
         private const val MAX_PHOTOS = 4
         private const val MAX_SIMILAR = 3
         private const val MIN_SIMILAR_CHARS = 6
@@ -306,6 +378,10 @@ class ComposePostActivity : AppCompatActivity() {
             intent(context).putExtra(EXTRA_SCAN_ROW_ID, scanRowId)
 
         /** Post a recovery update on one of your own posts. */
+        /** Edit the member's own post (text and tags). */
+        fun intentForEdit(context: Context, postId: String): Intent =
+            intent(context).putExtra(EXTRA_EDIT_POST_ID, postId)
+
         fun intentForUpdate(context: Context, parentPostId: String): Intent =
             intent(context).putExtra(EXTRA_PARENT_POST_ID, parentPostId)
     }

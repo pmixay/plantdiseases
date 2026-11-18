@@ -257,6 +257,15 @@ class CameraFragment : Fragment() {
 
     private fun setupUI() {
         shutterMotion = ShutterMotion(binding.btnCapture, binding.shutterBusy)
+        // A flat shutter: no elevation, no press lift, and no outline for the
+        // system to cast a shadow from (it showed as dark corners).
+        binding.btnCapture.apply {
+            compatElevation = 0f
+            compatPressedTranslationZ = 0f
+            compatHoveredFocusedTranslationZ = 0f
+            stateListAnimator = null
+            outlineProvider = null
+        }
         binding.btnCapture.setOnClickListener { onCaptureClicked() }
         binding.btnGallery.setOnClickListener {
             // Same offline rule as the shutter — an imported photo needs the

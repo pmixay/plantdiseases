@@ -96,6 +96,17 @@ class PostDetailActivity :
         load()
     }
 
+    private var reloadOnReturn = false
+
+    override fun onRestart() {
+        super.onRestart()
+        // Back from editing the post or posting an update: show the change.
+        if (reloadOnReturn) {
+            reloadOnReturn = false
+            load()
+        }
+    }
+
     private fun load() {
         lifecycleScope.launch {
             forum.post(postId)
@@ -126,7 +137,8 @@ class PostDetailActivity :
         val menu = binding.toolbar.menu
         menu.clear()
         if (loaded.author.isMe) {
-            menu.add(0, MENU_DELETE, 0, R.string.forum_delete_post)
+            if (loaded.kind != "tip") menu.add(0, MENU_UPDATE, 0, R.string.forum_post_update)
+            menu.add(0, MENU_DELETE, 1, R.string.forum_delete_post)
         } else {
             menu.add(0, MENU_REPORT, 0, R.string.forum_report)
             menu.add(0, MENU_BLOCK, 1, R.string.forum_block_author)
@@ -141,6 +153,10 @@ class PostDetailActivity :
                 lifecycleScope.launch {
                     forum.deletePost(current.id).onSuccess { finish() }.onFailure(::showError)
                 }
+            }
+            MENU_UPDATE -> {
+                reloadOnReturn = true
+                startActivity(ComposePostActivity.intentForUpdate(this, current.id))
             }
             MENU_REPORT -> report("post", current.id)
             MENU_BLOCK -> block("post", current.id)
@@ -166,17 +182,21 @@ class PostDetailActivity :
         startActivity(HelperProfileActivity.intent(this, authorToken))
     }
 
-    override fun onPostUpdate() {
+    override fun onEditPost() {
         val current = post ?: return
-        startActivity(ComposePostActivity.intentForUpdate(this, current.id))
+        reloadOnReturn = true
+        startActivity(ComposePostActivity.intentForEdit(this, current.id))
     }
+
+    override fun hasAnswerMenu(answer: ForumAnswer): Boolean =
+        answer.author?.isMe == true || !answer.isAi || staff?.isStaff == true
 
     override fun onOpenPost(postId: String) {
         startActivity(intent(this, postId))
     }
 
-    override fun onOpenPhoto(mediaIds: List<String>, index: Int) {
-        PhotoViewerActivity.open(this, mediaIds.map(forum::mediaUrl), index)
+    override fun onOpenPhoto(mediaIds: List<String>, index: Int, from: View) {
+        PhotoViewerActivity.open(this, mediaIds.map(forum::mediaUrl), index, from)
     }
 
     override fun onReact(answer: ForumAnswer, reaction: String?) {
@@ -411,6 +431,7 @@ class PostDetailActivity :
         private const val MENU_REPORT = 2
         private const val MENU_BLOCK = 3
         private const val MENU_MODERATE = 4
+        private const val MENU_UPDATE = 5
 
         fun intent(context: Context, postId: String): Intent =
             Intent(context, PostDetailActivity::class.java).putExtra(EXTRA_POST_ID, postId)

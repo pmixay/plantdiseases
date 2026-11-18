@@ -71,7 +71,7 @@
         <item quantity="many">%d ответов</item>
         <item quantity="other">%d ответа</item>
     </plurals>
-    <string name="forum_ai_answer_title">Ответ PlantVision</string>
+    <string name="forum_ai_answer_title">PlantVision</string>
     <string name="forum_ai_verdict">%1$s · %2$d%%</string>
     <string name="forum_removed_author">Удалено</string>
     <string name="forum_answer_removed">Этот ответ удалён.</string>
@@ -82,7 +82,7 @@
     <string name="forum_reply">Ответить</string>
     <string name="forum_accept">Принять</string>
     <string name="forum_unaccept">Принят</string>
-    <string name="forum_post_update">Рассказать, как дела</string>
+    <string name="forum_post_update">Добавить обновление</string>
     <string name="forum_original_post">Исходный вопрос</string>
     <string name="forum_recovery_link">Обновление: %1$s, %2$s</string>
     <string name="forum_locked_banner">Ответы на эту публикацию закрыты.</string>
@@ -328,4 +328,7 @@
     <string name="forum_filters_reset">Сбросить</string>
     <string name="forum_filter_remove">Убрать фильтр: %1$s</string>
     <string name="forum_nearby_map">Сканы рядом и карта</string>
+    <string name="forum_post_edit">Редактировать</string>
+    <string name="forum_compose_edit_title">Редактирование</string>
+    <string name="forum_edit_saved">Изменения сохранены</string>
 </resources>

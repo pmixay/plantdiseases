@@ -1,8 +1,10 @@
 package com.plantdiseases.app.ui.garden
 
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.graphics.Matrix
+import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -15,6 +17,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityPhotoViewerBinding
 import com.plantdiseases.app.util.LocaleHelper
@@ -70,8 +73,14 @@ class PhotoViewerActivity : AppCompatActivity() {
             insets
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, R.anim.photo_viewer_close)
+        }
+
         pager = binding.photoPager
         pager.adapter = PhotoAdapter(uris)
+        // Neighbours load ahead so a swipe lands on a ready photo.
+        pager.offscreenPageLimit = 1
         pager.isUserInputEnabled = uris.size > 1
 
         indicator = binding.photoIndicator
@@ -87,6 +96,14 @@ class PhotoViewerActivity : AppCompatActivity() {
         })
         pager.setCurrentItem(start, false)
         updateIndicator(start)
+    }
+
+    override fun finish() {
+        super.finish()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, R.anim.photo_viewer_close)
+        }
     }
 
     private fun updateIndicator(position: Int) {
@@ -124,6 +141,7 @@ class PhotoViewerActivity : AppCompatActivity() {
             holder.image.reset()
             Glide.with(holder.image.context)
                 .load(items[position])
+                .transition(DrawableTransitionOptions.withCrossFade(PHOTO_FADE_MS))
                 .into(holder.image)
         }
 
@@ -137,12 +155,21 @@ class PhotoViewerActivity : AppCompatActivity() {
         const val EXTRA_URIS = "extra_uris"
         const val EXTRA_START_INDEX = "extra_start_index"
 
-        fun open(context: Context, uris: List<String>, startIndex: Int = 0) {
+        private const val PHOTO_FADE_MS = 180
+
+        /**
+         * Open the viewer. With [from] (the thumbnail that was tapped) the
+         * viewer grows out of that thumbnail instead of sliding in.
+         */
+        fun open(context: Context, uris: List<String>, startIndex: Int = 0, from: View? = null) {
             if (uris.isEmpty()) return
             val intent = Intent(context, PhotoViewerActivity::class.java)
                 .putStringArrayListExtra(EXTRA_URIS, ArrayList(uris))
                 .putExtra(EXTRA_START_INDEX, startIndex.coerceIn(0, uris.size - 1))
-            context.startActivity(intent)
+            val options = from?.takeIf { it.width > 0 && it.height > 0 }?.let {
+                ActivityOptions.makeScaleUpAnimation(it, 0, 0, it.width, it.height).toBundle()
+            }
+            context.startActivity(intent, options)
         }
 
         private val ViewPager2_PAGE_PARAMS = RecyclerView.LayoutParams(

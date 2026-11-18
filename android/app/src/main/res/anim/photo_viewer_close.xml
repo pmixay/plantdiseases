@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Photo viewer dismissal: the photo shrinks a little and fades out over the
+     screen it opened from (paired with the scale-up launch in open()). -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/fast_out_linear_in"
+    android:shareInterpolator="true">
+    <alpha
+        android:duration="200"
+        android:fromAlpha="1"
+        android:toAlpha="0" />
+    <scale
+        android:duration="200"
+        android:fromXScale="1"
+        android:fromYScale="1"
+        android:pivotX="50%"
+        android:pivotY="50%"
+        android:toXScale="0.86"
+        android:toYScale="0.86" />
+</set>

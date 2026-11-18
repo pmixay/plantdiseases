@@ -27,9 +27,12 @@ import com.plantdiseases.app.util.Avatars
 interface ThreadActions {
     fun onLikePost()
     fun onOpenAuthor(authorToken: String)
-    fun onPostUpdate()
+    fun onEditPost()
     fun onOpenPost(postId: String)
-    fun onOpenPhoto(mediaIds: List<String>, index: Int)
+    fun onOpenPhoto(mediaIds: List<String>, index: Int, from: View)
+
+    /** False when the answer's ⋯ menu would be empty (e.g. PlantVision's for members). */
+    fun hasAnswerMenu(answer: ForumAnswer): Boolean
     fun onReact(answer: ForumAnswer, reaction: String?)
     fun onReply(answer: ForumAnswer)
     fun onAccept(answer: ForumAnswer)
@@ -106,7 +109,7 @@ class PostThreadAdapter(
             bindLike(context, post)
             binding.tvAnswerCount.text = post.answerCount.toString()
             binding.btnUpdate.visibility = if (post.author.isMe && post.kind != "tip") View.VISIBLE else View.GONE
-            binding.btnUpdate.setOnClickListener { actions.onPostUpdate() }
+            binding.btnUpdate.setOnClickListener { actions.onEditPost() }
             binding.tvAnswersTitle.text = context.resources.getQuantityString(
                 R.plurals.forum_answers_title,
                 post.answerCount,
@@ -138,7 +141,7 @@ class PostThreadAdapter(
                 val ratio = if (item.width > 0 && item.height > 0) item.width.toFloat() / item.height else RATIO
                 val view = photoView(context, (height * ratio).toInt().coerceIn(height / 2, height * 2), height)
                 Glide.with(view).load(mediaUrl(item.mediaId)).centerCrop().into(view)
-                view.setOnClickListener { actions.onOpenPhoto(ids, index) }
+                view.setOnClickListener { actions.onOpenPhoto(ids, index, it) }
                 binding.llPhotos.addView(view)
             }
         }
@@ -237,7 +240,7 @@ class PostThreadAdapter(
             binding.tvAuthorBadge.visibility = if (badge == null) View.GONE else View.VISIBLE
             badge?.let { binding.tvAuthorBadge.setText(it) }
             binding.tvTime.text = ForumUi.relativeTime(answer.createdAt)
-            binding.btnMore.visibility = if (answer.isRemoved) View.GONE else View.VISIBLE
+            binding.btnMore.visibility = if (answer.isRemoved || !actions.hasAnswerMenu(answer)) View.GONE else View.VISIBLE
             binding.btnMore.setOnClickListener { actions.onAnswerMenu(answer, it) }
             binding.btnAccept.visibility = View.GONE
             if (post.locked) binding.tvReply.visibility = View.GONE
@@ -276,7 +279,7 @@ class PostThreadAdapter(
             media.forEachIndexed { index, item ->
                 val view = photoView(context, size, size)
                 Glide.with(view).load(mediaUrl(item.mediaId)).centerCrop().into(view)
-                view.setOnClickListener { actions.onOpenPhoto(ids, index) }
+                view.setOnClickListener { actions.onOpenPhoto(ids, index, it) }
                 binding.llMedia.addView(view)
             }
         }
