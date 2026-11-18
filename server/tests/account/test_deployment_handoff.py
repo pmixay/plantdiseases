@@ -27,7 +27,7 @@ PRODUCTION_COMPOSE = (
     REPOSITORY_ROOT / "deploy" / "production-vds" / "compose.production.yml"
 )
 
-ACCOUNT_SCHEMA_HEAD = "0010_billing_lifecycle_quota_policy"
+ACCOUNT_SCHEMA_HEAD = "0011_community_roles_rewards"
 ACCOUNT_TABLES = {
     "account_consents",
     "account_deletion_jobs",
@@ -54,6 +54,8 @@ ACCOUNT_TABLES = {
     "vendor_budget_authorities",
     "vendor_budget_daily",
     "vendor_budget_receipts",
+    "community_roles",
+    "community_rewards",
 }
 
 

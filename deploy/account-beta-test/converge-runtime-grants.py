@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-SCHEMA_HEAD = "0010_billing_lifecycle_quota_policy"
+SCHEMA_HEAD = "0011_community_roles_rewards"
 APPLICATION_TABLES = (
     "account_consents",
     "account_deletion_jobs",
@@ -36,6 +36,8 @@ APPLICATION_TABLES = (
     "vendor_budget_authorities",
     "vendor_budget_daily",
     "vendor_budget_receipts",
+    "community_roles",
+    "community_rewards",
 )
 DATABASE_TABLES = frozenset((*APPLICATION_TABLES, "alembic_version"))
 
@@ -178,7 +180,7 @@ def converge(database_url: str, contract: RoleContract) -> None:
 
             runtime_table_contract = connection.execute(
                 text(
-                    "SELECT count(*) = 24 AND bool_and("
+                    f"SELECT count(*) = {len(APPLICATION_TABLES)} AND bool_and("
                     "has_table_privilege(:runtime, format('%I.%I', schemaname, tablename), 'SELECT') "
                     "AND has_table_privilege(:runtime, format('%I.%I', schemaname, tablename), "
                     "'INSERT') "

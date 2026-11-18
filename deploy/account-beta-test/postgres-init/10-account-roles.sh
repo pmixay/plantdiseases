@@ -119,7 +119,9 @@ WITH runtime_tables(tablename) AS (
         ('subscriptions'),
         ('vendor_budget_authorities'),
         ('vendor_budget_daily'),
-        ('vendor_budget_receipts')
+        ('vendor_budget_receipts'),
+        ('community_roles'),
+        ('community_rewards')
 )
 SELECT format(
     'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO beta_account_runtime',
