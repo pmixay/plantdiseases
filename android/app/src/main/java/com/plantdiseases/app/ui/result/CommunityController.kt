@@ -58,11 +58,10 @@ class CommunityController(
     // Stop) — that screen is a separate Activity now, not a bottom sheet
     // over this one, so there's no Fragment Result callback to catch.
     private var lastScan: ScanEntity? = null
-    private var lastIsRu: Boolean = false
 
     fun onResume() {
         val scan = lastScan ?: return
-        refreshSecondOpinion(scan, lastIsRu)
+        refreshSecondOpinion(scan)
     }
 
     /**
@@ -113,22 +112,21 @@ class CommunityController(
      * That screen is a separate Activity, not a bottom sheet over this one,
      * so there's no result callback on return — [onResume] re-probes instead.
      */
-    fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
+    fun setupSecondOpinion(scan: ScanEntity) {
         if (repository.isAbstainedScan(scan)) {
             binding.btnSecondOpinion.visibility = View.GONE
             lastScan = null
             return
         }
         lastScan = scan
-        lastIsRu = isRu
         // This control is not in the activity's enableWhileOnline set — it
         // needs the in-flight rule too, so it observes reachability itself.
         activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
         showAsk(scan)
-        refreshSecondOpinion(scan, isRu)
+        refreshSecondOpinion(scan)
     }
 
-    private fun refreshSecondOpinion(scan: ScanEntity, isRu: Boolean) {
+    private fun refreshSecondOpinion(scan: ScanEntity) {
         activity.lifecycleScope.launch {
             repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
                 val n = resp.opinions.size
