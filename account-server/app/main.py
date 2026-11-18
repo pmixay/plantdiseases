@@ -26,6 +26,7 @@ from app.providers.registry import build_provider_registry
 from app.security.internal import load_internal_service_token
 from app.service_factory import build_account_service
 from app.services.accounts import AccountService
+from app.services.community_roles import CommunityRoleService
 from app.services.entitlements import EntitlementService, QuotaPolicy
 from app.services.vendor_budgets import VendorBudgetService
 
@@ -41,6 +42,7 @@ def create_app(
     account_service: AccountService | None = None,
     entitlement_service: EntitlementService | None = None,
     vendor_budget_service: VendorBudgetService | None = None,
+    community_role_service: CommunityRoleService | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
     internal_service_token = load_internal_service_token(config)
@@ -80,6 +82,14 @@ def create_app(
         domain_vendor_budget_service = VendorBudgetService.from_settings(
             repository=AccountRepository(database_handle.session_factory),
             settings=config,
+        )
+
+    domain_community_role_service = community_role_service
+    if domain_community_role_service is None and hasattr(
+        database_handle, "session_factory"
+    ):
+        domain_community_role_service = CommunityRoleService(
+            repository=AccountRepository(database_handle.session_factory),
         )
 
     @asynccontextmanager
@@ -149,6 +159,7 @@ def create_app(
     application.state.account_service = domain_service
     application.state.entitlement_service = domain_entitlement_service
     application.state.vendor_budget_service = domain_vendor_budget_service
+    application.state.community_role_service = domain_community_role_service
     application.state.internal_service_token = internal_service_token
 
     if config.cors_origins:

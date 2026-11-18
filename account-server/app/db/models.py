@@ -872,6 +872,59 @@ class VendorBudgetReceipt(Base):
     )
 
 
+class CommunityRole(Base):
+    """A community role (expert, moderator or admin) held by one account.
+
+    Rows are never updated in place except to set ``revoked_at``, so the table
+    doubles as the grant history. ``scope`` is ``*`` or one forum space slug.
+    """
+
+    __tablename__ = "community_roles"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('expert', 'moderator', 'admin')", name="role_allowed"
+        ),
+        CheckConstraint("length(scope) BETWEEN 1 AND 32", name="scope_length"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="*", server_default=text("'*'")
+    )
+    granted_by_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL")
+    )
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CommunityReward(Base):
+    """Server-computed community reward state for one account.
+
+    The app API reports how many discount-bearing achievements an actor holds;
+    the discount itself is derived here and never accepted from a client.
+    """
+
+    __tablename__ = "community_rewards"
+    __table_args__ = (
+        CheckConstraint("achievement_count >= 0", name="achievement_count_nonnegative"),
+        CheckConstraint(
+            "discount_percent BETWEEN 0 AND 100", name="discount_percent_range"
+        ),
+    )
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    achievement_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_percent: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AccountSecurityEvent(Base):
     __tablename__ = "account_security_events"
     __table_args__ = (
@@ -899,6 +952,7 @@ class AccountSecurityEvent(Base):
 
 
 Index("ix_identity_account_id", AccountIdentity.account_id)
+Index("ix_community_roles_account", CommunityRole.account_id, CommunityRole.revoked_at)
 Index("ix_sessions_absolute_expires_at", Session.absolute_expires_at)
 Index("ix_deletion_jobs_state_next_attempt", AccountDeletionJob.state, AccountDeletionJob.next_attempt_at)
 Index("ix_nickname_jobs_state_next_attempt", AccountNicknameJob.state, AccountNicknameJob.next_attempt_at)

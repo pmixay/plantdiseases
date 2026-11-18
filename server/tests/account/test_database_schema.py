@@ -27,6 +27,8 @@ EXPECTED_TABLES = {
     "vendor_budget_authorities",
     "vendor_budget_daily",
     "vendor_budget_receipts",
+    "community_roles",
+    "community_rewards",
 }
 
 FORBIDDEN_COLUMN_NAMES = {

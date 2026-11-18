@@ -31,6 +31,7 @@ from app.api.schemas import (
 )
 from app.providers.base import ProviderName
 from app.services.accounts import AccountService, CurrentAccount
+from app.services.community_roles import CommunityRoleError, CommunityRoleService
 from app.services.entitlements import EntitlementService
 from app.services.vendor_budgets import VendorBudgetService, VendorBudgetUnavailable
 
@@ -153,6 +154,33 @@ class InternalNotificationReplayRequest(StrictRequest):
     limit: int = Field(default=10, ge=1, le=100)
 
 
+class InternalCommunityActorRequest(StrictRequest):
+    actor_id: uuid.UUID
+
+
+class InternalCommunityRoleChange(StrictRequest):
+    actor_id: uuid.UUID
+    role: Literal["expert", "moderator"]
+    scope: str = Field(default="*", min_length=1, max_length=32)
+    by_actor_id: uuid.UUID
+
+
+class InternalCommunityRewardRequest(StrictRequest):
+    actor_id: uuid.UUID
+    achievement_count: int = Field(ge=0, le=1000)
+
+
+class InternalCommunityListRequest(StrictRequest):
+    pass
+
+
+class CommunityRewardResponse(BaseModel):
+    achievement_count: int
+    discount_percent: int
+    discount_cap_percent: int
+    discount_per_achievement: int
+
+
 class InternalOpinionNotificationRequest(StrictRequest):
     actor_id: uuid.UUID
     scan_id: str = Field(min_length=1, max_length=128)
@@ -180,6 +208,20 @@ def _vendor_budgets(request: Request) -> VendorBudgetService:
     if service is None:
         raise AccountAPIError("service_unavailable", status_code=503)
     return service
+
+
+def _community_roles(request: Request) -> CommunityRoleService:
+    service = getattr(request.app.state, "community_role_service", None)
+    if service is None:
+        raise AccountAPIError("service_unavailable", status_code=503)
+    return service
+
+
+def _role_call(operation):
+    try:
+        return operation()
+    except CommunityRoleError as exc:
+        raise AccountAPIError(exc.code, status_code=exc.status_code) from None
 
 
 def _current_account(
@@ -526,6 +568,19 @@ def me(
 
 
 @router.get(
+    "/v1/me/community-reward",
+    response_model=CommunityRewardResponse,
+    tags=["profile"],
+)
+def community_reward(
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    """The PRO discount earned with community achievements (2 % each, up to 40 %)."""
+    return service.reward_for_account(current.account_id)
+
+
+@router.get(
     "/v1/entitlements",
     response_model=EntitlementsResponse,
     tags=["billing"],
@@ -764,4 +819,73 @@ def notify_opinion(body: InternalOpinionNotificationRequest, request: Request) -
         disease=body.disease,
         note=body.note,
         nickname=body.nickname,
+    )
+
+
+@router.post("/v1/internal/community/roles/lookup", include_in_schema=False)
+def lookup_internal_community_roles(
+    body: InternalCommunityActorRequest,
+    request: Request,
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    _require_internal_service(request)
+    return {"roles": service.roles_for_actor(body.actor_id)}
+
+
+@router.post("/v1/internal/community/roles/list", include_in_schema=False)
+def list_internal_community_roles(
+    body: InternalCommunityListRequest,
+    request: Request,
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    _require_internal_service(request)
+    return {"items": service.holders()}
+
+
+@router.post("/v1/internal/community/roles/grant", include_in_schema=False)
+def grant_internal_community_role(
+    body: InternalCommunityRoleChange,
+    request: Request,
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    _require_internal_service(request)
+    return _role_call(
+        lambda: service.grant(
+            actor_id=body.actor_id,
+            role=body.role,
+            scope=body.scope,
+            granted_by_actor_id=body.by_actor_id,
+        )
+    )
+
+
+@router.post("/v1/internal/community/roles/revoke", include_in_schema=False)
+def revoke_internal_community_role(
+    body: InternalCommunityRoleChange,
+    request: Request,
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    _require_internal_service(request)
+    revoked = _role_call(
+        lambda: service.revoke(
+            actor_id=body.actor_id,
+            role=body.role,
+            scope=body.scope,
+            revoked_by_actor_id=body.by_actor_id,
+        )
+    )
+    return {"revoked": bool(revoked)}
+
+
+@router.post("/v1/internal/community/rewards", include_in_schema=False)
+def set_internal_community_reward(
+    body: InternalCommunityRewardRequest,
+    request: Request,
+    service: Annotated[CommunityRoleService, Depends(_community_roles)],
+) -> dict:
+    _require_internal_service(request)
+    return _role_call(
+        lambda: service.set_reward(
+            actor_id=body.actor_id, achievement_count=body.achievement_count
+        )
     )

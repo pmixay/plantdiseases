@@ -28,6 +28,7 @@ EXPECTED_PATHS = {
     "/v1/entitlements",
     "/v1/me",
     "/v1/me/nickname",
+    "/v1/me/community-reward",
     "/v1/push/device",
 }
 
@@ -46,6 +47,7 @@ def test_versioned_openapi_matches_the_application_contract():
         not in committed["paths"]
     )
     assert "/v1/internal/notifications/opinion" not in committed["paths"]
+    assert not [path for path in committed["paths"] if "/internal/" in path]
 
 
 def test_protected_routes_declare_bearer_auth_and_requests_forbid_extra_fields():
@@ -57,6 +59,7 @@ def test_protected_routes_declare_bearer_auth_and_requests_forbid_extra_fields()
 
     protected_operations = (
         ("/v1/me", "get"),
+        ("/v1/me/community-reward", "get"),
         ("/v1/me/nickname", "patch"),
         ("/v1/auth/sessions", "get"),
         ("/v1/push/device", "put"),

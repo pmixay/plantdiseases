@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     -- training export splits on it so one plant never straddles splits.
     plant_group        TEXT    NOT NULL,
     training_consent   INTEGER NOT NULL DEFAULT 0,
+    training_excluded  INTEGER NOT NULL DEFAULT 0,
     state              TEXT    NOT NULL DEFAULT 'visible'
                        CHECK(state IN ('visible', 'hidden', 'removed', 'deleted')),
     locked             INTEGER NOT NULL DEFAULT 0,
@@ -203,6 +204,8 @@ CREATE TABLE IF NOT EXISTS forum_answers (
     like_count        INTEGER NOT NULL DEFAULT 0,
     not_helpful_count INTEGER NOT NULL DEFAULT 0,
     legacy_opinion_id INTEGER UNIQUE,
+    verified_by_actor_id TEXT,
+    verified_at       INTEGER,
     created_at        INTEGER NOT NULL,
     edited_at         INTEGER,
     state_changed_at  INTEGER
@@ -289,6 +292,27 @@ _fts_enabled: dict[str, bool] = {}
 # and moderation observe events). Each is called with plain values only.
 can_mark_not_helpful = None  # Callable[[sqlite3.Connection, str], bool] | None
 event_listeners: list = []  # Callable[[str, dict], None]
+# Guards run inside the write transaction and raise ForumError to refuse:
+#   write_guards(conn, actor, operation)  operation: "write" | "react"
+#   text_guards(conn, actor, text)        new or edited user text
+#   media_guards(conn, actor, dhash)      a photo about to be stored
+write_guards: list = []
+text_guards: list = []
+media_guards: list = []
+
+
+def _guard(
+    conn: sqlite3.Connection,
+    actor: str,
+    operation: str,
+    *,
+    text: str | None = None,
+) -> None:
+    for guard in list(write_guards):
+        guard(conn, actor, operation)
+    if text:
+        for guard in list(text_guards):
+            guard(conn, actor, text)
 
 
 def _emit(event: str, payload: dict) -> None:
@@ -323,6 +347,12 @@ def init_db() -> None:
             return
         with community._write_lock, community._connect() as conn:
             conn.executescript(_SCHEMA)
+            for table, column, decl in (
+                ("forum_posts", "training_excluded", "INTEGER NOT NULL DEFAULT 0"),
+                ("forum_answers", "verified_by_actor_id", "TEXT"),
+                ("forum_answers", "verified_at", "INTEGER"),
+            ):
+                community._add_column_if_missing(conn, table, column, decl)
             try:
                 conn.execute(_FTS_SCHEMA)
                 _fts_enabled[key] = True
@@ -584,6 +614,9 @@ def store_media(
     try:
         with community._write_lock, community._connect() as conn:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "write")
+            for guard in list(media_guards):
+                guard(conn, actor, phash)
             conn.execute(
                 "INSERT INTO forum_media (public_id, owner_actor_id, filename, width, height, "
                 "phash, scan_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -595,7 +628,12 @@ def store_media(
     return {"media_id": public_id, "width": width, "height": height}
 
 
-def media_file(media_id: str, *, viewer_actor_id: str | None = None) -> Path | None:
+def media_file(
+    media_id: str,
+    *,
+    viewer_actor_id: str | None = None,
+    moderator: bool = False,
+) -> Path | None:
     """Path of a photo the viewer may see, or ``None``.
 
     Attached photos follow their post's visibility; an unattached upload is
@@ -620,6 +658,9 @@ def media_file(media_id: str, *, viewer_actor_id: str | None = None) -> Path | N
     if row is None:
         return None
     filename, owner, post_id, answer_id, post_state, answer_state, post_author = row
+    if moderator and post_state != "deleted" and answer_state != "deleted":
+        path = media_dir() / str(filename)
+        return path if path.is_file() else None
     if post_id is None and answer_id is None:
         if viewer != owner:
             return None
@@ -1023,6 +1064,7 @@ def create_post(
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "write", text=f"{title_value}\n{body_value}")
             space_value = _require_space(conn, space)
             parent_id: int | None = None
             plant_group = secrets.token_hex(16)
@@ -1125,8 +1167,8 @@ def _answers_for(conn: sqlite3.Connection, post_id: int, post_row: tuple, viewer
     accepted_id = post_row[21]
     rows = conn.execute(
         "SELECT id, public_id, parent_id, depth, author_actor_id, author_token, nickname, is_ai, "
-        "body, steps_json, diagnosis, state, like_count, not_helpful_count, created_at, edited_at "
-        "FROM forum_answers WHERE post_id = ? AND state IN ('visible', 'removed', 'deleted') "
+        "body, steps_json, diagnosis, state, like_count, not_helpful_count, created_at, edited_at, "
+        "verified_at FROM forum_answers WHERE post_id = ? AND state IN ('visible', 'removed', 'deleted') "
         "ORDER BY id",
         (post_id,),
     ).fetchall()
@@ -1209,6 +1251,7 @@ def _answers_for(conn: sqlite3.Connection, post_id: int, post_row: tuple, viewer
                     "not_helpful_count": int(r[13]),
                     "my_reaction": reactions.get(answer_id),
                     "accepted": answer_id == accepted_id,
+                    "verified": bool(visible and r[16] is not None),
                     "media": media.get(answer_id, []) if visible else [],
                     "created_at": int(r[14]),
                     "edited_at": int(r[15]) if r[15] is not None else None,
@@ -1244,6 +1287,7 @@ def edit_post(
             row = _require_post(conn, post_id, actor)
             if row[2] != actor:
                 raise ForumError("not_author", 403)
+            _guard(conn, actor, "write", text=f"{title or ''}\n{body or ''}")
             updates: dict[str, object] = {}
             if title is not None:
                 value = clean_text(title, limit=TITLE_MAX, multiline=False)
@@ -1317,6 +1361,7 @@ def set_post_like(*, actor_id: str, post_id: str, liked: bool, now: int | None =
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "react")
             row = _require_post(conn, post_id, actor)
             if row[16] != "visible":
                 raise ForumError("post_not_found", 404)
@@ -1405,6 +1450,7 @@ def create_answer(
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "write", text="\n".join([body_value, *steps_value]))
             post = _require_post(conn, post_id, actor)
             if post[16] != "visible":
                 raise ForumError("post_not_found", 404)
@@ -1494,6 +1540,7 @@ def edit_answer(
             row = _require_answer(conn, answer_id, actor)
             if row[4] != actor:
                 raise ForumError("not_author", 403)
+            _guard(conn, actor, "write", text="\n".join([body or "", *(steps or [])]))
             updates: dict[str, object] = {}
             if body is not None:
                 updates["body"] = clean_text(body, limit=ANSWER_BODY_MAX)
@@ -1571,6 +1618,7 @@ def set_answer_reaction(
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "react")
             row = _require_answer(conn, answer_id, actor)
             if row[4] == actor:
                 raise ForumError("self_reaction", 409)
@@ -1623,6 +1671,7 @@ def accept_answer(
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, actor)
+            _guard(conn, actor, "react")
             post = _require_post(conn, post_id, actor)
             if post[2] != actor:
                 raise ForumError("not_author", 403)
@@ -1923,6 +1972,7 @@ def report_content(
         conn.execute("BEGIN IMMEDIATE")
         try:
             _require_live_actor(conn, reporter)
+            _guard(conn, reporter, "react")
             if kind == "post":
                 post = _require_post(conn, target_id, reporter)
                 post_internal, answer_internal, target_actor = int(post[0]), 0, post[2]

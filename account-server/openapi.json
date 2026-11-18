@@ -75,6 +75,34 @@
         "title": "CancelSignupRequest",
         "type": "object"
       },
+      "CommunityRewardResponse": {
+        "properties": {
+          "achievement_count": {
+            "title": "Achievement Count",
+            "type": "integer"
+          },
+          "discount_cap_percent": {
+            "title": "Discount Cap Percent",
+            "type": "integer"
+          },
+          "discount_per_achievement": {
+            "title": "Discount Per Achievement",
+            "type": "integer"
+          },
+          "discount_percent": {
+            "title": "Discount Percent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "achievement_count",
+          "discount_percent",
+          "discount_cap_percent",
+          "discount_per_achievement"
+        ],
+        "title": "CommunityRewardResponse",
+        "type": "object"
+      },
       "CompleteSignupRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3430,6 +3458,113 @@
           }
         ],
         "summary": "Me",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/v1/me/community-reward": {
+      "get": {
+        "description": "The PRO discount earned with community achievements (2 % each, up to 40 %).",
+        "operationId": "community_reward_v1_me_community_reward_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityRewardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Stable request/domain error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller-owned resource unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "State or uniqueness conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Non-reflective request validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "In-memory beta rate limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Redacted response-contract failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Provider or service unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Community Reward",
         "tags": [
           "profile"
         ]

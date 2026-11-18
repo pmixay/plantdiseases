@@ -65,7 +65,9 @@ from starlette.responses import Response as StarletteResponse
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
     from . import (
+        account_roles,
         community_forum,
+        community_moderation,
         routes_assistant,
         routes_community,
         routes_content,
@@ -73,6 +75,7 @@ try:
         routes_forum,
         routes_internal,
         routes_meta,
+        routes_moderation,
         training_store,
     )
     from .account_auth import (
@@ -300,7 +303,9 @@ try:
         record_error as telemetry_record_error,
     )
 except ImportError:
+    import account_roles
     import community_forum
+    import community_moderation
     import routes_assistant
     import routes_community
     import routes_content
@@ -308,6 +313,7 @@ except ImportError:
     import routes_forum
     import routes_internal
     import routes_meta
+    import routes_moderation
     import training_store
     from account_auth import (
         AccountAuthenticationError,
@@ -1455,6 +1461,10 @@ COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Likes are cheap and low-stakes compared to an opinion, so they get their
 # own (looser) daily cap rather than sharing the opinion quota.
 COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+# Community roles (expert / moderator / admin) live in the account service.
+# ``None`` when unconfigured: staff routes then fail closed with 503.
+community_roles = account_roles.community_roles_client
+
 # Forum write budgets, per signed account actor (not per address).
 FORUM_POST_DAILY_QUOTA = get_int("FORUM_POST_DAILY_QUOTA", 20)
 FORUM_ANSWER_DAILY_QUOTA = get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
@@ -4823,6 +4833,7 @@ for _routes in (
     routes_internal,
     routes_community,
     routes_forum,
+    routes_moderation,
     routes_content,
 ):
     _registered = len(api_router.routes)

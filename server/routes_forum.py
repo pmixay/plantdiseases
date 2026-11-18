@@ -198,6 +198,18 @@ def register(router: APIRouter, m) -> None:
         """A forum photo; follows its post's visibility (uploads: owner only)."""
         viewer = await viewer_of(request)
         path = await run(m.community_forum.media_file, media_id, viewer_actor_id=viewer)
+        if path is None and viewer is not None and m.community_roles is not None:
+            # Staff reviewing hidden or removed content still see its photos.
+            try:
+                roles = await asyncio.get_running_loop().run_in_executor(
+                    m._get_net_executor(), m.community_roles.roles_for, viewer
+                )
+            except m.account_roles.RolesUnavailable:
+                roles = []
+            if m.account_roles.can_act(roles, {"moderator", "expert"}):
+                path = await run(
+                    m.community_forum.media_file, media_id, viewer_actor_id=viewer, moderator=True
+                )
         if path is None:
             raise HTTPException(status_code=404, detail="media_not_found")
         return m._cached_image_response(

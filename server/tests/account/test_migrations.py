@@ -42,6 +42,12 @@ PLANTNET_BUDGET_MIGRATION_PATH = (
     / "versions"
     / "0009_plantnet_global_budget.py"
 )
+COMMUNITY_ROLES_MIGRATION_PATH = (
+    ACCOUNT_SERVER_DIR
+    / "migrations"
+    / "versions"
+    / "0011_community_roles_rewards.py"
+)
 BILLING_LIFECYCLE_MIGRATION_PATH = (
     ACCOUNT_SERVER_DIR
     / "migrations"
@@ -141,7 +147,7 @@ def _load_billing_lifecycle_migration() -> ModuleType:
 def test_single_linear_migration_head():
     config = Config(str(ACCOUNT_SERVER_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0010_billing_lifecycle_quota_policy"]
+    assert scripts.get_heads() == ["0011_community_roles_rewards"]
 
 
 def test_long_signup_revision_widens_alembic_version_and_freezes_check_name():
@@ -201,6 +207,8 @@ def test_migration_upgrade_matches_model_columns_and_downgrades_cleanly():
                 "vendor_budget_authorities",
                 "vendor_budget_daily",
                 "vendor_budget_receipts",
+                "community_roles",
+                "community_rewards",
             }
             assert set(inspector.get_table_names()) == baseline_tables
             for table_name in baseline_tables:
@@ -634,5 +642,42 @@ def test_billing_lifecycle_migration_matches_hardened_models_and_downgrades():
             plantnet.downgrade()
             pro.downgrade()
             assert inspect(connection).get_table_names() == ["accounts"]
+    finally:
+        engine.dispose()
+
+
+def test_community_roles_migration_matches_models_and_downgrades():
+    spec = importlib.util.spec_from_file_location(
+        "community_roles_migration", COMMUNITY_ROLES_MIGRATION_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    tables = {"community_roles", "community_rewards"}
+    try:
+        Base.metadata.tables["accounts"].create(engine)
+        with engine.begin() as connection:
+            migration.op = Operations(MigrationContext.configure(connection))
+            migration.upgrade()
+            inspector = inspect(connection)
+            for table_name in tables:
+                model = Base.metadata.tables[table_name]
+                assert {
+                    column["name"] for column in inspector.get_columns(table_name)
+                } == set(model.columns.keys())
+                assert {
+                    constraint["name"]
+                    for constraint in inspector.get_check_constraints(table_name)
+                } == {
+                    constraint.name
+                    for constraint in model.constraints
+                    if isinstance(constraint, CheckConstraint)
+                }
+            assert {index["name"] for index in inspector.get_indexes("community_roles")} == {
+                "ix_community_roles_account"
+            }
+            migration.downgrade()
+            assert set(inspect(connection).get_table_names()) == {"accounts"}
     finally:
         engine.dispose()

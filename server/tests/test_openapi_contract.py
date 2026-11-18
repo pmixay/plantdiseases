@@ -60,6 +60,23 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
         ("/api/community/forum/report", "post"),
         ("/api/community/forum/block", "post"),
         ("/api/community/activity", "get"),
+        ("/api/community/admin/me", "get"),
+        ("/api/community/admin/queue", "get"),
+        ("/api/community/admin/posts/{post_id}", "get"),
+        ("/api/community/admin/posts/{post_id}/action", "post"),
+        ("/api/community/admin/answers/{answer_id}/action", "post"),
+        ("/api/community/admin/answers/{answer_id}/verify", "post"),
+        ("/api/community/admin/reports/dismiss", "post"),
+        ("/api/community/admin/actors/{author_token}", "get"),
+        ("/api/community/admin/actors/{author_token}/sanction", "post"),
+        ("/api/community/admin/appeals/{appeal_id}/resolve", "post"),
+        ("/api/community/admin/audit", "get"),
+        ("/api/community/admin/roles", "get"),
+        ("/api/community/admin/roles", "post"),
+        ("/api/community/admin/posts/{post_id}/exclude-training", "post"),
+        ("/api/community/admin/images/ban", "post"),
+        ("/api/community/moderation/notices", "get"),
+        ("/api/community/moderation/appeals", "post"),
     )
     for path, method in protected:
         assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
