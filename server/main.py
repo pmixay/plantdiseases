@@ -65,10 +65,12 @@ from starlette.responses import Response as StarletteResponse
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
     from . import (
+        community_forum,
         routes_assistant,
         routes_community,
         routes_content,
         routes_diagnosis,
+        routes_forum,
         routes_internal,
         routes_meta,
         training_store,
@@ -298,10 +300,12 @@ try:
         record_error as telemetry_record_error,
     )
 except ImportError:
+    import community_forum
     import routes_assistant
     import routes_community
     import routes_content
     import routes_diagnosis
+    import routes_forum
     import routes_internal
     import routes_meta
     import training_store
@@ -1009,11 +1013,23 @@ _PUBLIC_COMMUNITY_READ_PATHS = frozenset(
 )
 
 
+_PUBLIC_FORUM_READ_PATHS = frozenset(
+    {
+        "/api/community/feed",
+        "/api/community/search",
+        "/api/community/spaces",
+    }
+)
+
+
 def _is_public_community_read(method: str, path: str) -> bool:
     return method in {"GET", "HEAD"} and (
         path in _PUBLIC_COMMUNITY_READ_PATHS
+        or path in _PUBLIC_FORUM_READ_PATHS
         or path.startswith("/api/community/opinions/")
         or path.startswith("/api/community/thumb/")
+        or path.startswith("/api/community/posts/")
+        or path.startswith("/api/community/media/")
     )
 
 
@@ -1439,6 +1455,11 @@ COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Likes are cheap and low-stakes compared to an opinion, so they get their
 # own (looser) daily cap rather than sharing the opinion quota.
 COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+# Forum write budgets, per signed account actor (not per address).
+FORUM_POST_DAILY_QUOTA = get_int("FORUM_POST_DAILY_QUOTA", 20)
+FORUM_ANSWER_DAILY_QUOTA = get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
+FORUM_MEDIA_DAILY_QUOTA = get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
+FORUM_REACTION_DAILY_QUOTA = get_int("FORUM_REACTION_DAILY_QUOTA", 500)
 _daily_write_lock = threading.Lock()
 _daily_write_counts: dict[tuple[int, str, str], int] = {}
 
@@ -2482,6 +2503,9 @@ async def _prune_loop() -> None:
             cleanup = await asyncio.get_running_loop().run_in_executor(
                 None, community_process_cleanup_jobs,
             )
+            forum = await asyncio.get_running_loop().run_in_executor(
+                None, community_forum.maintenance,
+            )
             removed_tm = await asyncio.get_running_loop().run_in_executor(
                 None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,
             )
@@ -2492,12 +2516,15 @@ async def _prune_loop() -> None:
                 or removed_tm
                 or cleanup["completed"]
                 or cleanup["retried"]
+                or any(forum.values())
             ):
                 logger.info(
-                    "Prune pass: training=%d/%d community=%d telemetry=%d cleanup=%d/%d",
+                    "Prune pass: training=%d/%d community=%d telemetry=%d cleanup=%d/%d "
+                    "forum=%s",
                     training_pruned["samples"], training_pruned["receipts"],
                     removed_cm, removed_tm,
                     cleanup["completed"], cleanup["retried"],
+                    forum,
                 )
         except asyncio.CancelledError:
             raise
@@ -4789,7 +4816,15 @@ def _refresh_popular_bg(
 # state and collaborators at call time — so patching a name here (as the
 # tests do) or reloading this module reaches every route. The handlers are
 # also bound here under their own names, where callers have always found them.
-for _routes in (routes_meta, routes_diagnosis, routes_assistant, routes_internal, routes_community, routes_content):
+for _routes in (
+    routes_meta,
+    routes_diagnosis,
+    routes_assistant,
+    routes_internal,
+    routes_community,
+    routes_forum,
+    routes_content,
+):
     _registered = len(api_router.routes)
     _routes.register(api_router, sys.modules[__name__])
     for _route in api_router.routes[_registered:]:

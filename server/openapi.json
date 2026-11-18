@@ -1680,6 +1680,966 @@
         }
       }
     },
+    "/api/community/spaces": {
+      "get": {
+        "summary": "Forum Spaces",
+        "description": "Curated spaces (plant families and problem topics) with post counts.",
+        "operationId": "forum_spaces_api_community_spaces_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/feed": {
+      "get": {
+        "summary": "Forum Feed",
+        "description": "One page of posts. ``needs_help`` lists unanswered questions, oldest first.",
+        "operationId": "forum_feed_api_community_feed_get",
+        "parameters": [
+          {
+            "name": "tab",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "needs_help",
+                "solved",
+                "mine"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Tab"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "hot",
+                "new",
+                "top"
+              ],
+              "type": "string",
+              "default": "hot",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "space",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Space"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/search": {
+      "get": {
+        "summary": "Forum Search",
+        "description": "Search titles, bodies and answers (RU and EN). Without ``q``, a scan's\n``condition`` and ``species`` find posts about the same plant and problem.",
+        "operationId": "forum_search_api_community_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "space",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Space"
+            }
+          },
+          {
+            "name": "solved",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Solved"
+            }
+          },
+          {
+            "name": "with_photos",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "With Photos"
+            }
+          },
+          {
+            "name": "condition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 48
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Condition"
+            }
+          },
+          {
+            "name": "species",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Species"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/posts/{post_id}": {
+      "get": {
+        "summary": "Forum Post Detail",
+        "description": "A post with its threaded answers; the AI verdict is the first answer.",
+        "operationId": "forum_post_detail_api_community_posts__post_id__get",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Forum Post Edit",
+        "operationId": "forum_post_edit_api_community_posts__post_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumPostEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Forum Post Delete",
+        "operationId": "forum_post_delete_api_community_posts__post_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/media/{media_id}": {
+      "get": {
+        "summary": "Forum Media File",
+        "description": "A forum photo; follows its post's visibility (uploads: owner only).",
+        "operationId": "forum_media_file_api_community_media__media_id__get",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/activity": {
+      "get": {
+        "summary": "Forum Activity",
+        "description": "New answers on my posts, replies to my answers and my accepted answers.",
+        "operationId": "forum_activity_api_community_activity_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Since"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/media": {
+      "post": {
+        "summary": "Forum Media Upload",
+        "description": "Upload one photo for a post or answer. With ``scan_token`` the bytes\nmust be the photo the server analysed, so the post can show its verdict.",
+        "operationId": "forum_media_upload_api_community_media_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_forum_media_upload_api_community_media_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/posts": {
+      "post": {
+        "summary": "Forum Post Create",
+        "operationId": "forum_post_create_api_community_posts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumPostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/posts/{post_id}/like": {
+      "post": {
+        "summary": "Forum Post Like",
+        "operationId": "forum_post_like_api_community_posts__post_id__like_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumLikeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/posts/{post_id}/answers": {
+      "post": {
+        "summary": "Forum Answer Create",
+        "operationId": "forum_answer_create_api_community_posts__post_id__answers_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumAnswerCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/posts/{post_id}/accept": {
+      "post": {
+        "summary": "Forum Answer Accept",
+        "operationId": "forum_answer_accept_api_community_posts__post_id__accept_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumAcceptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/answers/{answer_id}": {
+      "patch": {
+        "summary": "Forum Answer Edit",
+        "operationId": "forum_answer_edit_api_community_answers__answer_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumAnswerEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Forum Answer Delete",
+        "operationId": "forum_answer_delete_api_community_answers__answer_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/answers/{answer_id}/reaction": {
+      "post": {
+        "summary": "Forum Answer Reaction",
+        "description": "Like an answer, mark it not helpful (the only downvote), or clear.",
+        "operationId": "forum_answer_reaction_api_community_answers__answer_id__reaction_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumReactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/forum/report": {
+      "post": {
+        "summary": "Forum Report",
+        "description": "Report a post or answer with a fixed reason; no free text is stored.",
+        "operationId": "forum_report_api_community_forum_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/forum/block": {
+      "post": {
+        "summary": "Forum Block",
+        "description": "Block the author of a post or answer (same block list as the scan feed).",
+        "operationId": "forum_block_api_community_forum_block_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/plant-photo": {
       "get": {
         "summary": "Plant Photo",
@@ -2101,6 +3061,32 @@
         ],
         "title": "Body_feedback_image_upload_api_feedback_image_post"
       },
+      "Body_forum_media_upload_api_community_media_post": {
+        "properties": {
+          "image": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Image"
+          },
+          "scan_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image"
+        ],
+        "title": "Body_forum_media_upload_api_community_media_post"
+      },
       "Body_identify_endpoint_api_identify_post": {
         "properties": {
           "image": {
@@ -2423,6 +3409,431 @@
         ],
         "title": "FeedbackRequest",
         "description": "One structured correction authorized by an unlinkable receipt."
+      },
+      "ForumAcceptRequest": {
+        "properties": {
+          "answer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumAcceptRequest"
+      },
+      "ForumAnswerCreate": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 6000,
+            "title": "Body",
+            "default": ""
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Steps"
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
+          "media_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Media Ids"
+          },
+          "training_consent": {
+            "type": "boolean",
+            "title": "Training Consent",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumAnswerCreate"
+      },
+      "ForumAnswerEdit": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumAnswerEdit"
+      },
+      "ForumBlockRequest": {
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "post",
+              "answer"
+            ],
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Target Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "ForumBlockRequest"
+      },
+      "ForumLikeRequest": {
+        "properties": {
+          "liked": {
+            "type": "boolean",
+            "title": "Liked",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumLikeRequest"
+      },
+      "ForumPostCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question",
+              "scan",
+              "recovery",
+              "tip"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 400,
+            "title": "Title",
+            "default": ""
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 12000,
+            "title": "Body",
+            "default": ""
+          },
+          "space": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Space"
+          },
+          "species": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "urgent": {
+            "type": "boolean",
+            "title": "Urgent",
+            "default": false
+          },
+          "media_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Media Ids"
+          },
+          "scan_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Token"
+          },
+          "parent_post_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Post Id"
+          },
+          "training_consent": {
+            "type": "boolean",
+            "title": "Training Consent",
+            "default": false
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ForumPostCreate"
+      },
+      "ForumPostEdit": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 12000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Space"
+          },
+          "species": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "urgent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urgent"
+          },
+          "training_consent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Consent"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumPostEdit"
+      },
+      "ForumReactionRequest": {
+        "properties": {
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "like",
+                  "not_helpful"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumReactionRequest"
+      },
+      "ForumReportRequest": {
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "post",
+              "answer"
+            ],
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Target Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id",
+          "reason"
+        ],
+        "title": "ForumReportRequest"
       },
       "HTTPValidationError": {
         "properties": {

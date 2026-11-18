@@ -47,6 +47,19 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
         ("/api/community/my-scan-opinions", "get"),
         ("/api/community/view", "post"),
         ("/api/community/scan-counts", "post"),
+        ("/api/community/media", "post"),
+        ("/api/community/posts", "post"),
+        ("/api/community/posts/{post_id}", "patch"),
+        ("/api/community/posts/{post_id}", "delete"),
+        ("/api/community/posts/{post_id}/like", "post"),
+        ("/api/community/posts/{post_id}/answers", "post"),
+        ("/api/community/posts/{post_id}/accept", "post"),
+        ("/api/community/answers/{answer_id}", "patch"),
+        ("/api/community/answers/{answer_id}", "delete"),
+        ("/api/community/answers/{answer_id}/reaction", "post"),
+        ("/api/community/forum/report", "post"),
+        ("/api/community/forum/block", "post"),
+        ("/api/community/activity", "get"),
     )
     for path, method in protected:
         assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
@@ -63,3 +76,4 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
         sort_keys=True,
     )
     assert "user_pseudo_id" not in community_contract
+    assert "actor_id" not in community_contract

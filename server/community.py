@@ -323,6 +323,27 @@ _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
 
+# Other stores in this database (the forum) register here so account
+# deletion, nickname changes and blocks cover their content too.
+#   media_files(conn, actor) -> list[Path]   files to unlink before purge
+#   purge(conn, actor)                        delete rows inside the cleanup tx
+#   rename(conn, actor, nickname) -> int      update denormalized nicknames
+#   safety_targets[kind](conn, token)         -> (scan_id, opinion_id, actor, nick)
+_actor_hooks: list[dict] = []
+_extra_safety_targets: dict = {}
+
+
+def register_actor_hooks(
+    *,
+    media_files=None,
+    purge=None,
+    rename=None,
+    safety_targets: dict | None = None,
+) -> None:
+    """Let another store in ``community.db`` join deletion, rename and blocks."""
+    _actor_hooks.append({"media_files": media_files, "purge": purge, "rename": rename})
+    _extra_safety_targets.update(safety_targets or {})
+
 
 class AnalysisTokenUnknownError(ValueError):
     """The publication capability was not issued here or has expired."""
@@ -2225,6 +2246,9 @@ def _safety_target(
             (str(row[2]) if row[2] else None),
             row[3] or None,
         )
+    resolver = _extra_safety_targets.get(kind)
+    if resolver is not None:
+        return resolver(conn, token)
     return None
 
 
@@ -2250,6 +2274,9 @@ def record_content_report(
         raise ValueError("invalid_actor")
     if reason_clean not in COMMUNITY_REPORT_REASONS:
         raise ValueError("invalid_reason")
+    if kind not in {"scan", "opinion"}:
+        # Forum posts and answers have their own report queue.
+        raise ValueError("target_not_found")
     timestamp = int(time.time() if now is None else now)
     with _write_lock, _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -3877,7 +3904,12 @@ def update_actor_nickname(account_actor_id: str, nickname: str) -> int:
             "UPDATE community_opinions SET nickname = ? WHERE account_actor_id = ?",
             (cleaned, actor),
         ).rowcount
-    return int(scans or 0) + int(opinions or 0)
+        extra = sum(
+            int(hook["rename"](conn, actor, cleaned) or 0)
+            for hook in _actor_hooks
+            if hook.get("rename") is not None
+        )
+    return int(scans or 0) + int(opinions or 0) + extra
 
 
 def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str, int]:
@@ -3904,10 +3936,21 @@ def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str
                     (actor,),
                 ).fetchall()
             ]
+            extra_files = [
+                path
+                for hook in _actor_hooks
+                if hook.get("media_files") is not None
+                for path in hook["media_files"](conn, actor)
+            ]
         filesystem_failed = False
         for thumb in thumbs:
             try:
                 (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
+            except OSError:
+                filesystem_failed = True
+        for path in extra_files:
+            try:
+                Path(path).unlink(missing_ok=True)
             except OSError:
                 filesystem_failed = True
         if filesystem_failed:
@@ -3977,6 +4020,9 @@ def process_cleanup_jobs(*, now: int | None = None, limit: int = 20) -> dict[str
                     "DELETE FROM community_analysis_tokens WHERE claimed_actor_id = ?",
                     (actor,),
                 )
+                for hook in _actor_hooks:
+                    if hook.get("purge") is not None:
+                        hook["purge"](conn, actor)
                 # community_deleted_actors is the durable suppression marker.
                 # Once physical cleanup succeeds this retry row has no further
                 # purpose and would only duplicate the deleted actor UUID.
