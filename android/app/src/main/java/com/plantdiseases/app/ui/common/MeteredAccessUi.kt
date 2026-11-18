@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.StringRes
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.pro.ProActivity
 import java.time.Instant
@@ -12,7 +13,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
-/** Shared, bilingual upgrade affordance for server-enforced feature budgets. */
+/**
+ * Shared, bilingual dialog for server-enforced feature budgets. It offers PRO
+ * only while [ProUi.ENABLED]; otherwise the wording is plan-neutral.
+ */
 object MeteredAccessUi {
     fun handles(error: Throwable): Boolean = meteredDialogPolicy(error) != null
 
@@ -75,7 +79,32 @@ internal data class MeteredDialogPolicy(
     val resetAt: String?,
 )
 
-internal fun meteredDialogPolicy(error: Throwable): MeteredDialogPolicy? = when (error) {
+internal fun meteredDialogPolicy(
+    error: Throwable,
+    proOffered: Boolean = ProUi.ENABLED,
+): MeteredDialogPolicy? = when {
+    proOffered -> proMeteredDialogPolicy(error)
+    error is ScanRepository.ProRequiredException ->
+        // A zero allowance: today that is a guest asking for an account-only option.
+        MeteredDialogPolicy(
+            title = R.string.metered_pro_active_unavailable_title,
+            message = R.string.metered_unavailable_body,
+            offerPro = false,
+            remaining = error.remaining?.takeIf { it >= 0 },
+            resetAt = error.resetAt?.trim()?.takeIf(String::isNotEmpty),
+        )
+    error is ScanRepository.QuotaExhaustedException ->
+        MeteredDialogPolicy(
+            title = R.string.metered_quota_title,
+            message = R.string.metered_quota_body,
+            offerPro = false,
+            remaining = error.remaining.takeIf { it >= 0 },
+            resetAt = error.resetAt.trim().takeIf(String::isNotEmpty),
+        )
+    else -> null
+}
+
+private fun proMeteredDialogPolicy(error: Throwable): MeteredDialogPolicy? = when (error) {
     is ScanRepository.ProRequiredException -> {
         val proPlan = error.plan.isProPlan()
         MeteredDialogPolicy(

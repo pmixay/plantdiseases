@@ -65,7 +65,8 @@
     <string name="account_session_time_unknown">Неизвестно</string>
     <string name="account_logout">Выйти</string>
     <string name="account_delete">Удалить аккаунт</string>
-    <string name="account_delete_warning">Войдите снова для подтверждения. Данные аккаунта будут поставлены в очередь на удаление. Сканирования, сад и напоминания останутся на устройстве. Удаление аккаунта PlantDiseases не отменяет автопродление RuStore: сначала управляйте подпиской или отмените её в RuStore, чтобы избежать будущих списаний.</string>
+    <string name="account_delete_warning">Войдите снова для подтверждения. Данные аккаунта будут поставлены в очередь на удаление. Сканирования, сад и напоминания останутся на устройстве.</string>
+    <string name="account_delete_subscription_note">Удаление аккаунта PlantDiseases не отменяет автопродление RuStore: сначала управляйте подпиской или отмените её в RuStore, чтобы избежать будущих списаний.</string>
     <string name="account_delete_confirm">Войти снова и удалить</string>
     <string name="account_choose_reauth_provider">Подтвердить через связанный способ входа</string>
     <string name="account_link_restart_required">Связывание было прервано. Начните его заново, чтобы защитить аккаунт.</string>
@@ -1447,6 +1448,8 @@
 <string name="metered_quota_title">Дневной лимит облачных функций исчерпан</string>
 <string name="metered_quota_free_body">Бесплатный лимит на сегодня исчерпан. Текущие данные сохранены: попробуйте после обновления дневного лимита или откройте PRO с повышенными лимитами.</string>
 <string name="metered_quota_pro_body">Лимит добросовестного использования PRO на сегодня исчерпан. Текущие данные сохранены; попробуйте после обновления дневного лимита.</string>
+<string name="metered_quota_body">Облачный лимит на сегодня исчерпан. Текущие данные сохранены; попробуйте после обновления дневного лимита.</string>
+<string name="metered_unavailable_body">Эта облачная функция сейчас недоступна. Если вы не вошли в аккаунт PlantDiseases, войдите — для аккаунта действует дневной лимит. Текущие данные сохранены.</string>
 <string name="metered_quota_remaining_detail">Осталось в текущем дневном лимите: %1$d</string>
 <string name="metered_quota_reset_detail">Лимит обновится %1$s</string>
 <string name="metered_quota_reset_unknown_detail">Точное время обновления временно недоступно.</string>

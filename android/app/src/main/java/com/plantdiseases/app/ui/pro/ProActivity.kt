@@ -24,6 +24,7 @@ import com.plantdiseases.app.billing.PaySheetTheme
 import com.plantdiseases.app.billing.ProPaymentClient
 import com.plantdiseases.app.billing.ProStoreProduct
 import com.plantdiseases.app.billing.ProStorePurchase
+import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.databinding.ActivityProBinding
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.util.LocaleHelper
@@ -60,6 +61,12 @@ class ProActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!ProUi.ENABLED) {
+            // Reachable through the exported pay-return link even with every
+            // in-app entry point hidden.
+            finish()
+            return
+        }
         binding = ActivityProBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.toolbar.setNavigationOnClickListener { finish() }

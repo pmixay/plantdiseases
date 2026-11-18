@@ -34,8 +34,8 @@ x-account-environment: &account-environment
   RUSTORE_NOTIFICATION_KEY_EPOCH: "${RUSTORE_NOTIFICATION_KEY_EPOCH:-staging-v1}"
   RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "${RUSTORE_NOTIFICATION_MAX_ATTEMPTS:-8}"
   RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "${RUSTORE_NOTIFICATION_MAX_AGE_HOURS:-168}"
-  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-08-v1}"
-  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=0,plant_identification=1,ai_doctor=3,care_plan=5}"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v1}"
+  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=1,plant_identification=1,ai_doctor=3,care_plan=5}"
   ENTITLEMENT_PRO_DAILY_LIMITS: "${ENTITLEMENT_PRO_DAILY_LIMITS:-gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20}"
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ""

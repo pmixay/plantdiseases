@@ -416,3 +416,20 @@ def test_endpoint_404_when_uncacheable(client, monkeypatch):
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/missing.png"},
     )
     assert r.status_code == 404
+
+
+def test_thumb_host_is_allowed_and_folds_onto_upload(photos):
+    thumb = ("https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2e/M.jpg/"
+             "1280px-M.jpg?utm_source=en.wikipedia.org&utm_campaign=api")
+    assert photos.is_allowed_url(thumb)
+    assert photos.canonical_media_url(thumb) == (
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/M.jpg/1280px-M.jpg"
+    )
+    assert photos.proxy_path(thumb) == photos.proxy_path(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/M.jpg/1280px-M.jpg"
+    )
+
+
+def test_canonical_media_url_leaves_other_hosts_alone(photos):
+    url = "https://en.wikipedia.org/wiki/Special:FilePath/X.jpg?width=500"
+    assert photos.canonical_media_url(url) == url

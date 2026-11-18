@@ -7,7 +7,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. |
-| `account-server/` | Python, FastAPI, SQLAlchemy/Alembic, PostgreSQL | Separate account service: sign-in, sessions, deletion, PRO entitlements and quotas. |
+| `account-server/` | Python, FastAPI, SQLAlchemy/Alembic, PostgreSQL | Separate account service: sign-in, sessions, deletion, daily quotas (PRO entitlements exist but are dormant). |
 | `android/` | Kotlin, Gradle, Material 3 | Phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt). |
 | `site/` | Static HTML | One self-contained `index.html`; figures copied by hand from docs (`site/README.md` lists which). |
 | `docs/` | Markdown, SVG | Roadmap, model ledger, labeling plan. `docs/assets/*.svg` come from `docs/assets/generate_assets.py` — edit that, not the SVGs. |
@@ -175,7 +175,10 @@ URLs are baked at build time into `BuildConfig.APP_API_BASE_URL` / `ACCOUNT_API_
 no in-app override.
 
 **Accounts.** Identity lives in `account-server/` (own PostgreSQL), not the app API. It owns
-provider identities, sessions/refresh tokens, deletion state and PRO entitlements. The app
+provider identities, sessions/refresh tokens, deletion state and quotas. PRO is a
+distant-future idea: its billing/entitlement code stays in place but is switched off and
+invisible (`ProUi.ENABLED = false` in the app, `RUSTORE_*` off), and no user-facing text in
+the app or server may mention it. The app
 API and Community only see an Ed25519 access token (random community actor + nickname),
 verify it locally against the service's JWKS, then confirm the session is still current
 with the account service. Diagnosis and Community reading need no account; Community
