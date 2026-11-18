@@ -4,6 +4,4 @@
     <dimen name="forum_answer_photo_size">88dp</dimen>
     <dimen name="forum_thread_indent">16dp</dimen>
     <dimen name="forum_compose_thumb">72dp</dimen>
-    <!-- Negative: lifts the centre Scan button above the bottom bar. -->
-    <dimen name="scan_fab_offset">-22dp</dimen>
 </resources>

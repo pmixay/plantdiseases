@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             store = onboardingState,
             undimmedViews = { activeContext ->
                 if (activeContext == OnboardingContext.CAMERA && ::binding.isInitialized) {
-                    listOf(binding.bottomNavigation, binding.fabScan)
+                    listOf(binding.bottomNavigation)
                 } else {
                     emptyList()
                 }
@@ -235,16 +235,13 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (syncingBar) true else selectTab(item.itemId)
         }
-        // Scan is the raised centre button; the menu item underneath only
-        // carries the label, so a tap on either opens the scanner.
-        binding.fabScan.setOnClickListener {
-            binding.bottomNavigation.selectedItemId = R.id.cameraFragment
+        binding.bottomNavigation.findViewById<View>(R.id.cameraFragment)?.let { scanItem ->
+            onboardingCoordinator.registerAnchor(
+                key = OnboardingAnchorKey.BOTTOM_NAV_SCAN,
+                view = scanItem,
+                pauseAfterTarget = true,
+            )
         }
-        onboardingCoordinator.registerAnchor(
-            key = OnboardingAnchorKey.BOTTOM_NAV_SCAN,
-            view = binding.fabScan,
-            pauseAfterTarget = true,
-        )
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             // Pushed destinations always keep the toolbar — that's where their
@@ -327,10 +324,10 @@ class MainActivity : AppCompatActivity() {
             .setDuration(300L).setStartDelay(120L)
             .start()
 
-        val navHeight = binding.bottomBarContainer.height.toFloat()
+        val navHeight = binding.bottomNavigation.height.toFloat()
             .takeIf { it > 0f } ?: (80f * density)
-        binding.bottomBarContainer.translationY = navHeight
-        binding.bottomBarContainer.animate()
+        binding.bottomNavigation.translationY = navHeight
+        binding.bottomNavigation.animate()
             .translationY(0f)
             .setDuration(360L).setStartDelay(160L)
             .setInterpolator(decelerate)
