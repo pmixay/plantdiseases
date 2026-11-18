@@ -113,8 +113,7 @@ class ModerationNoticesActivity : AppCompatActivity() {
             .show()
     }
 
-    private inner class NoticeAdapter(private val items: List<ModNotice>) :
-        RecyclerView.Adapter<NoticeAdapter.Holder>() {
+    private inner class NoticeAdapter(private val items: List<ModNotice>) : RecyclerView.Adapter<NoticeAdapter.Holder>() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
             Holder(ItemModQueueBinding.inflate(LayoutInflater.from(parent.context), parent, false))

@@ -37,7 +37,9 @@ import javax.inject.Inject
  * marked not helpful; the asker accepts the one that solved it.
  */
 @AndroidEntryPoint
-class PostDetailActivity : AppCompatActivity(), ThreadActions {
+class PostDetailActivity :
+    AppCompatActivity(),
+    ThreadActions {
 
     @Inject
     lateinit var forum: ForumRepository

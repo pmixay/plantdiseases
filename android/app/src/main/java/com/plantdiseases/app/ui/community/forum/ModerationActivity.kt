@@ -105,8 +105,7 @@ class ModerationActivity : AppCompatActivity() {
         binding.tvEmpty.text = message
     }
 
-    private inner class QueueAdapter(private val items: List<ModQueueItem>) :
-        RecyclerView.Adapter<QueueAdapter.Holder>() {
+    private inner class QueueAdapter(private val items: List<ModQueueItem>) : RecyclerView.Adapter<QueueAdapter.Holder>() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
             Holder(ItemModQueueBinding.inflate(LayoutInflater.from(parent.context), parent, false))
