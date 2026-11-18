@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shutter "iris" click: the hole closes and reopens while the ring turns a
+     quarter. The end state equals the start, so the button looks unchanged at
+     rest. Started from CameraFragment.playShutterIris(). -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_scan_shutter">
+    <target
+        android:name="core"
+        android:animation="@animator/shutter_iris_core" />
+    <target
+        android:name="icon"
+        android:animation="@animator/shutter_iris_turn" />
+</animated-vector>

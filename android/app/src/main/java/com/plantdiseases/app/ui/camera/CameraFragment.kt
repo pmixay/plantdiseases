@@ -70,6 +70,9 @@ class CameraFragment : Fragment() {
 
     private var captureInFlight = false
 
+    /** Iris click and busy arc on the capture button; lives with the view. */
+    private var shutterMotion: ShutterMotion? = null
+
     /** Latest reachability reading. Offline the scan screen is limited to the
      *  on-device model — or, without one, to explaining why it can't scan. */
     private var isOffline = false
@@ -170,7 +173,7 @@ class CameraFragment : Fragment() {
         // Returning from the crop activity re-arms the shutter regardless
         // of outcome; navigateToAnalysis re-locks it on success.
         captureInFlight = false
-        binding.btnCapture.isEnabled = true
+        setShutterBusy(false)
         // Success is defined by BYTES ON DISK, not the library's result flag.
         // The cropper writes to our customOutputUri (pendingCropFile); a
         // back-press out of the crop screen returns either a null error or a
@@ -253,6 +256,7 @@ class CameraFragment : Fragment() {
     }
 
     private fun setupUI() {
+        shutterMotion = ShutterMotion(binding.btnCapture, binding.shutterBusy)
         binding.btnCapture.setOnClickListener { onCaptureClicked() }
         binding.btnGallery.setOnClickListener {
             // Same offline rule as the shutter — an imported photo needs the
@@ -630,7 +634,8 @@ class CameraFragment : Fragment() {
         }
 
         captureInFlight = true
-        binding.btnCapture.isEnabled = false
+        playShutterIris()
+        setShutterBusy(true)
 
         Haptics.medium(requireContext())
         playShutterFlash()
@@ -671,7 +676,7 @@ class CameraFragment : Fragment() {
                 override fun onError(exception: ImageCaptureException) {
                     captureInFlight = false
                     if (_binding == null || !isAdded) return
-                    binding.btnCapture.isEnabled = true
+                    setShutterBusy(false)
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.capture_error),
@@ -680,6 +685,14 @@ class CameraFragment : Fragment() {
                 }
             }
         )
+    }
+
+    private fun playShutterIris() {
+        shutterMotion?.click()
+    }
+
+    private fun setShutterBusy(busy: Boolean) {
+        shutterMotion?.setBusy(busy)
     }
 
     private fun playShutterFlash() {
@@ -820,6 +833,7 @@ class CameraFragment : Fragment() {
         // Re-arm the shutter in case we came back from gallery /
         // analysis without a fresh photo (cancelled, error, etc.).
         captureInFlight = false
+        setShutterBusy(false)
         // Re-sync the model-family chip from the persisted selection. Covers
         // the case where the picker sheet's callback was lost to a
         // config-change recreation while it was open — the chip would
@@ -857,6 +871,8 @@ class CameraFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        shutterMotion?.release()
+        shutterMotion = null
         if (!identifyMode) {
             (activity as? MainActivity)?.apply {
                 unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_PERMISSION, _binding?.btnGrantPermission)

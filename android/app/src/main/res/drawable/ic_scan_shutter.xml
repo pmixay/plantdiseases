@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ic_scan with named parts for avd_shutter_iris: the ring turns as group
+     "icon", and "core" fills the hole when scaled up (scale 0 at rest, so the
+     drawable looks exactly like ic_scan). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:name="icon"
+        android:pivotX="12"
+        android:pivotY="12">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM12,16c-2.21,0 -4,-1.79 -4,-4s1.79,-4 4,-4 4,1.79 4,4 -1.79,4 -4,4z" />
+        <group
+            android:name="core"
+            android:pivotX="12"
+            android:pivotY="12"
+            android:scaleX="0"
+            android:scaleY="0">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M12,7.6a4.4,4.4 0 1,0 0,8.8a4.4,4.4 0 1,0 0,-8.8z" />
+        </group>
+    </group>
+</vector>

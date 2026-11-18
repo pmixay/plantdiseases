@@ -183,19 +183,44 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/btn_capture"
+            <!-- Shutter plus its busy arc. The arc spins over the ring from the
+                 tap until the capture reaches the cropper or fails
+                 (CameraFragment.setShutterBusy). -->
+            <FrameLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:src="@drawable/ic_scan"
-                android:contentDescription="@string/take_photo"
-                app:fabSize="auto"
-                app:fabCustomSize="72dp"
-                app:maxImageSize="36dp"
-                app:backgroundTint="?attr/colorPrimary"
-                app:tint="?attr/colorOnPrimary"
-                app:elevation="6dp"
-                app:borderWidth="0dp" />
+                android:layout_height="wrap_content">
+
+                <com.google.android.material.floatingactionbutton.FloatingActionButton
+                    android:id="@+id/btn_capture"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@drawable/avd_shutter_iris"
+                    android:contentDescription="@string/take_photo"
+                    app:fabSize="auto"
+                    app:fabCustomSize="72dp"
+                    app:maxImageSize="36dp"
+                    app:backgroundTint="?attr/colorPrimary"
+                    app:tint="?attr/colorOnPrimary"
+                    app:elevation="6dp"
+                    app:borderWidth="0dp" />
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/shutter_busy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:elevation="16dp"
+                    android:importantForAccessibility="no"
+                    android:max="100"
+                    android:progress="20"
+                    android:visibility="gone"
+                    app:indicatorColor="?attr/colorOnPrimary"
+                    app:indicatorSize="46dp"
+                    app:trackColor="@android:color/transparent"
+                    app:trackCornerRadius="2dp"
+                    app:trackThickness="3dp" />
+
+            </FrameLayout>
 
             <Space
                 android:layout_width="0dp"
