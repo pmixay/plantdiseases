@@ -221,6 +221,12 @@ authoritative list.
 | `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
 | `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
+| `GET`  | `/api/community/feed` · `/api/community/search` · `/api/community/spaces` | Forum feed (`all` / `needs_help` / `solved` / `mine`, hot/new/top), RU+EN search with "search with my scan" filters, curated spaces |
+| `GET` · `POST` · `PATCH` · `DELETE` | `/api/community/posts[/{post_id}]` | Forum posts (question, scan with the server's verdict, recovery update, tip) with threaded answers |
+| `POST` | `/api/community/posts/{id}/like` · `/answers` · `/accept` · `/api/community/answers/{id}/reaction` | Like a post; answer with steps, diagnosis tag and photos; accept; like or mark an answer not helpful |
+| `POST` · `GET` | `/api/community/media[/{media_id}]` | Upload a re-encoded forum photo (optionally bound to an analysis token); serve it while its post is visible |
+| `GET`  | `/api/community/helpers/{author_token}` · `/api/community/me/achievements` | Level, achievements and helper stats (own view adds the achievement discount) |
+| `*`    | `/api/community/admin/…` · `/api/community/moderation/…` | Staff tools (queue, remove/restore, lock, sanctions, appeals, roles, audit) and members' notices and appeals |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
 Response shapes and validation rules are documented inline in

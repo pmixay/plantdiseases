@@ -41,6 +41,28 @@ the README status section and `docs/assets/per-class.svg`.
 
 ---
 
+## Community forum (2026-11)
+
+The Reddit-style forum, moderation, achievements and the community-label export
+landed on `ccr-333aa3d6-u20r4l`. Open items:
+
+- [ ] ★ **Create the first admin** on production after deploy:
+      `python manage_roles.py grant --nickname … --role admin` in the account-api
+      container (migration 0011 must run first).
+- [ ] ★ **Achievement discount, if PRO returns**: the account service already derives
+      2 % per achievement up to 40 % (`/v1/me/community-reward`); RuStore has one price
+      per product, so decide between 21 discount products per period or coarser
+      steps, and whether a revoked discount changes an auto-renewing price.
+- [ ] ★ **Notebook §2 cell for `tools/export_community_labels.py`**: load the export as
+      a `train_only` supplement grouped by `capture_family_id`; run
+      `tools/filter_supplement.py` against the OOD benchmark first.
+- [ ] Push notifications for answers and accepted answers (today: in-app activity
+      badge only), following spaces, and a desktop web admin panel.
+- [ ] Retire the legacy second-opinion endpoints once older app versions age out;
+      until then the maintenance pass copies their requests into the forum.
+
+---
+
 ## Ship accounts to RuStore
 
 1.9 ships accounts only: Yandex sign-in. PRO is not part of it and is hidden in the app (see Decisions). In order.

@@ -165,7 +165,7 @@
     <string name="forum_achievement_complete">Получено</string>
     <string name="forum_achievement_tier_earned">Ступень %1$d: %2$d. Получено</string>
     <string name="forum_achievement_tier_locked">Ступень %1$d: %2$d. Ещё нет</string>
-    <string name="forum_discount_title">Ваша скидка на PRO: %1$d%%</string>
+    <string name="forum_discount_title">Ваша скидка за достижения: %1$d%%</string>
     <string name="forum_discount_detail">Достижений: %1$d, по %2$d%% за каждое. Ещё %3$d до максимума в %4$d%%.</string>
     <string name="forum_discount_max">У вас максимальная скидка, %1$d%%.</string>
     <string name="forum_discount_waiting">Скидка откроется %1$s, через две недели после первой публикации.</string>

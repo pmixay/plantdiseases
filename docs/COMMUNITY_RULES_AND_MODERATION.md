@@ -51,6 +51,21 @@ Suggested operating targets:
 
 Report records are retained for at most 180 days. Blocks remain until unblocked or either linked account is deleted. Account deletion removes the actor's community content, reports, and both sides of any block relationship through the existing durable cleanup queue.
 
+## Forum moderation (posts and answers)
+
+The forum (Community tab) is moderated in the app by people with a role, not only from the server shell.
+
+- **Roles** live in the account service: *expert* (verifies diagnoses, reviews AI disagreements), *moderator* (all spaces, or one space) and *admin*. The first admin can only be created on the server:
+  `docker compose exec account-api python manage_roles.py grant --nickname NICK --role admin`.
+  Admins then grant and revoke expert and moderator roles from the app; the app API checks roles with the account service on every staff action and refuses with 503 when it cannot.
+- **Actions** need a fixed reason code (spam, harassment, dangerous advice, off topic, inappropriate photo, privacy, duplicate, other) that the member sees. Removal is reversible for 30 days, then the forum purge job erases text and photos. Moderators can also close answers, pin, and move posts between spaces; admins can exclude a post from training and ban a photo so look-alike uploads are refused.
+- **Automatic hiding:** a post or answer reported by three different members at level 2 or above is hidden until a moderator keeps or removes it.
+- **Sanctions** escalate warn → mute 24 h → mute 7 days → ban. Muted members can still like and report; banned members cannot write. Global moderators warn and mute; only admins ban.
+- **Appeals:** every decision affecting a member appears under Profile → Moderation notices with an Appeal button, usable once per decision for 30 days. A different moderator decides.
+- **Audit:** every action is written to an append-only log (who, what, reason, previous state), readable by admins in the app. Account deletion removes the member's sanctions and appeals and unlinks them from the log.
+- **Reward freezes:** members who mostly accept or like each other's answers have their achievement discount paused automatically and listed under Moderation → Rewards for an admin to review.
+- New members cannot post links for their first week, and admins can set `FORUM_BLOCKED_TERMS` (comma-separated) on the app server.
+
 ---
 
 # Правила сообщества и модерация PlantDiseases
@@ -92,3 +107,19 @@ PlantDiseases вправе удалить нарушающий правила м
 Рекомендуемый срок первичной проверки: до 24 часов для угроз, сексуальной эксплуатации, разглашения персональных данных и опасных или незаконных материалов; до 72 часов для остальных жалоб. Неоднозначный случай следует отклонить без удаления либо передать владельцу проекта.
 
 Записи о жалобах хранятся не более 180 дней. Блокировка хранится до отмены или удаления одного из аккаунтов. При удалении аккаунта существующая надёжная очередь очистки удаляет материалы автора, его жалобы и обе стороны связанных блокировок.
+
+## Модерация форума (публикации и ответы)
+
+Форум (вкладка «Сообщество») модерируют прямо в приложении люди с ролью, а не только с сервера.
+
+- **Роли** хранятся в сервисе аккаунтов: *эксперт* (подтверждает диагнозы, разбирает расхождения с ИИ), *модератор* (все разделы или один раздел) и *администратор*. Первого администратора можно назначить только на сервере:
+  `docker compose exec account-api python manage_roles.py grant --nickname NICK --role admin`.
+  Дальше администраторы назначают и снимают экспертов и модераторов в приложении; API приложения проверяет роль в сервисе аккаунтов при каждом действии и отвечает 503, если проверить не может.
+- **Действия** требуют фиксированной причины (спам, травля, опасный совет, не по теме, неподходящее фото, личные данные, повтор, другое), которую видит участник. Удаление можно отменить в течение 30 дней, затем текст и фото стираются. Модераторы также закрывают ответы, закрепляют и переносят публикации; администраторы исключают публикацию из обучения и запрещают фото, чтобы похожие загрузки отклонялись.
+- **Автоскрытие:** публикация или ответ, на которые пожаловались три разных участника 2-го уровня и выше, скрываются до решения модератора.
+- **Санкции** нарастают: предупреждение → ограничение на 24 часа → на 7 дней → блокировка. Ограниченный участник может ставить отметки и жаловаться; заблокированный не может писать. Предупреждают и ограничивают модераторы всех разделов, блокируют только администраторы.
+- **Апелляции:** каждое решение об участнике видно в «Профиль → Решения модераторов» с кнопкой «Обжаловать» — один раз на решение, в течение 30 дней. Решает другой модератор.
+- **Журнал:** каждое действие записывается в журнал без изменения задним числом (кто, что, причина, прежнее состояние); администраторы читают его в приложении. При удалении аккаунта санкции и апелляции участника удаляются, а журнал перестаёт на него указывать.
+- **Паузы наград:** если участники в основном принимают или отмечают ответы друг друга, их скидка за достижения автоматически приостанавливается и попадает в «Модерация → Награды» на проверку администратору.
+- Новые участники не могут добавлять ссылки первую неделю; администратор может задать `FORUM_BLOCKED_TERMS` (через запятую) на сервере приложения.
+

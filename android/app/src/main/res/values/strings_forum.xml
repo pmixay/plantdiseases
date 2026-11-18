@@ -163,7 +163,7 @@
     <string name="forum_achievement_complete">Complete</string>
     <string name="forum_achievement_tier_earned">Tier %1$d: %2$d. Earned</string>
     <string name="forum_achievement_tier_locked">Tier %1$d: %2$d. Not yet</string>
-    <string name="forum_discount_title">Your PRO discount: %1$d%%</string>
+    <string name="forum_discount_title">Your achievement discount: %1$d%%</string>
     <string name="forum_discount_detail">%1$d achievements, %2$d%% each. %3$d more to reach the %4$d%% maximum.</string>
     <string name="forum_discount_max">You have the maximum discount, %1$d%%.</string>
     <string name="forum_discount_waiting">Your discount unlocks on %1$s, two weeks after your first post.</string>
