@@ -6,14 +6,14 @@
         <item name="cornerSize">12dp</item>
     </style>
 
-    <style name="Forum.Meta">
+    <style name="Forum.Meta" parent="">
         <item name="android:textColor">@color/on_surface_secondary</item>
         <item name="android:textSize">@dimen/text_caption</item>
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
     </style>
 
-    <style name="Forum.Badge">
+    <style name="Forum.Badge" parent="">
         <item name="android:background">@drawable/bg_forum_badge</item>
         <item name="android:paddingStart">8dp</item>
         <item name="android:paddingEnd">8dp</item>
@@ -24,7 +24,7 @@
         <item name="android:maxLines">1</item>
     </style>
 
-    <style name="Forum.Action">
+    <style name="Forum.Action" parent="">
         <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
         <item name="android:drawablePadding">4dp</item>
         <item name="android:gravity">center_vertical</item>
