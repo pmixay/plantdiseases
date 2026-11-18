@@ -81,9 +81,20 @@ class GalleryFragment : Fragment() {
 
         binding.btnFirstScan.setOnClickListener {
             // Select the Scan bottom-nav tab (routes through MainActivity) rather
-            // than navigating the camera into Gallery's own back stack.
-            requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)
-                ?.selectedItemId = R.id.cameraFragment
+            // than navigating the camera into Gallery's own back stack. Opened
+            // as My scans from Profile there is no bar here, so bring the main
+            // screen forward on its scanner instead.
+            val bar = requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)
+            if (bar != null) {
+                bar.selectedItemId = R.id.cameraFragment
+            } else {
+                startActivity(
+                    Intent(requireContext(), MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(MainActivity.EXTRA_OPEN_SCANNER, true),
+                )
+                requireActivity().finish()
+            }
         }
 
         setupFilterChips()

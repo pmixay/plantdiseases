@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             store = onboardingState,
             undimmedViews = { activeContext ->
                 if (activeContext == OnboardingContext.CAMERA && ::binding.isInitialized) {
-                    listOf(binding.bottomNavigation)
+                    listOf(binding.bottomNavigation, binding.fabScan)
                 } else {
                     emptyList()
                 }
@@ -235,13 +235,16 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (syncingBar) true else selectTab(item.itemId)
         }
-        binding.bottomNavigation.findViewById<View>(R.id.cameraFragment)?.let { scanItem ->
-            onboardingCoordinator.registerAnchor(
-                key = OnboardingAnchorKey.BOTTOM_NAV_SCAN,
-                view = scanItem,
-                pauseAfterTarget = true,
-            )
+        // Scan is the raised centre button; the menu item underneath only
+        // carries the label, so a tap on either opens the scanner.
+        binding.fabScan.setOnClickListener {
+            binding.bottomNavigation.selectedItemId = R.id.cameraFragment
         }
+        onboardingCoordinator.registerAnchor(
+            key = OnboardingAnchorKey.BOTTOM_NAV_SCAN,
+            view = binding.fabScan,
+            pauseAfterTarget = true,
+        )
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             // Pushed destinations always keep the toolbar — that's where their
@@ -324,10 +327,10 @@ class MainActivity : AppCompatActivity() {
             .setDuration(300L).setStartDelay(120L)
             .start()
 
-        val navHeight = binding.bottomNavigation.height.toFloat()
+        val navHeight = binding.bottomBarContainer.height.toFloat()
             .takeIf { it > 0f } ?: (80f * density)
-        binding.bottomNavigation.translationY = navHeight
-        binding.bottomNavigation.animate()
+        binding.bottomBarContainer.translationY = navHeight
+        binding.bottomBarContainer.animate()
             .translationY(0f)
             .setDuration(360L).setStartDelay(160L)
             .setInterpolator(decelerate)
@@ -392,13 +395,14 @@ class MainActivity : AppCompatActivity() {
      *  arrow — see the [NavController] destination listener in [onCreate]. */
     fun applyTabChrome(@IdRes tabId: Int) {
         binding.appBar.visibility = View.GONE
-        if (tabId == R.id.galleryFragment) clearGalleryBadge()
+        if (tabId == R.id.profileFragment) clearGalleryBadge()
+        // The Community tab has no guided tour of its own: the existing
+        // Community chapter is anchored in the Nearby screen, which runs it.
         onboardingCoordinator.setContext(
             when (tabId) {
                 R.id.homeFragment -> OnboardingContext.HOME
                 R.id.cameraFragment -> OnboardingContext.CAMERA
                 R.id.gardenFragment -> OnboardingContext.GARDEN
-                R.id.galleryFragment -> OnboardingContext.GALLERY
                 R.id.profileFragment -> OnboardingContext.PROFILE
                 else -> null
             },
@@ -410,8 +414,8 @@ class MainActivity : AppCompatActivity() {
             OnboardingContext.HOME -> R.id.homeFragment
             OnboardingContext.CAMERA -> R.id.cameraFragment
             OnboardingContext.GARDEN -> R.id.gardenFragment
-            OnboardingContext.GALLERY -> R.id.galleryFragment
             OnboardingContext.PROFILE -> R.id.profileFragment
+            // My scans now opens from Profile, outside the tab bar.
             else -> return false
         }
         binding.bottomNavigation.selectedItemId = tabId
@@ -458,15 +462,27 @@ class MainActivity : AppCompatActivity() {
         applyTabChrome(R.id.homeFragment)
     }
 
-    // Gallery badge for new results
+    // New-result badge. My scans lives under Profile now, so the badge does too.
     fun showGalleryBadge() {
-        val badge = binding.bottomNavigation.getOrCreateBadge(R.id.galleryFragment)
+        val badge = binding.bottomNavigation.getOrCreateBadge(R.id.profileFragment)
         badge.isVisible = true
         badge.number = 1
     }
 
     private fun clearGalleryBadge() {
-        binding.bottomNavigation.removeBadge(R.id.galleryFragment)
+        binding.bottomNavigation.removeBadge(R.id.profileFragment)
+    }
+
+    /** Unread community activity (answers, replies, accepted answers). */
+    fun setCommunityBadge(count: Int) {
+        if (!::binding.isInitialized) return
+        if (count <= 0) {
+            binding.bottomNavigation.removeBadge(R.id.communityFragment)
+            return
+        }
+        val badge = binding.bottomNavigation.getOrCreateBadge(R.id.communityFragment)
+        badge.isVisible = true
+        badge.number = count
     }
 
     override fun onResume() {

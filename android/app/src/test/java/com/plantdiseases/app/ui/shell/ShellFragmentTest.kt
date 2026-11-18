@@ -86,8 +86,8 @@ class ShellFragmentTest {
             fired += item.itemId
             true
         }
-        bar.selectedItemId = R.id.galleryFragment
+        bar.selectedItemId = R.id.communityFragment
 
-        assertThat(fired).containsExactly(R.id.galleryFragment)
+        assertThat(fired).containsExactly(R.id.communityFragment)
     }
 }

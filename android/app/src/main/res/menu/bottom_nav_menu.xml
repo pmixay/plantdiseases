@@ -1,21 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Order must match ShellFragment.PAGES. Scan sits in the middle; its icon is
+     drawn by the raised fab_scan button in activity_main.xml, so the menu item
+     only carries the label and an empty placeholder icon. -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/homeFragment"
         android:icon="@drawable/ic_home"
         android:title="@string/tab_home" />
     <item
+        android:id="@+id/communityFragment"
+        android:icon="@drawable/ic_community"
+        android:title="@string/tab_community" />
+    <item
         android:id="@+id/cameraFragment"
-        android:icon="@drawable/ic_scan"
+        android:icon="@drawable/ic_tab_scan_placeholder"
         android:title="@string/tab_scan" />
     <item
         android:id="@+id/gardenFragment"
         android:icon="@drawable/ic_garden"
         android:title="@string/tab_garden" />
-    <item
-        android:id="@+id/galleryFragment"
-        android:icon="@drawable/ic_gallery"
-        android:title="@string/tab_gallery" />
     <item
         android:id="@+id/profileFragment"
         android:icon="@drawable/ic_profile"

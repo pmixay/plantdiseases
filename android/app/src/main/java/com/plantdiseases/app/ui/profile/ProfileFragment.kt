@@ -35,6 +35,13 @@ import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.data.repository.ForumRepository
+import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
+import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
+import com.plantdiseases.app.ui.community.forum.ModerationActivity
+import com.plantdiseases.app.ui.community.forum.ModerationNoticesActivity
+import com.plantdiseases.app.ui.gallery.MyScansActivity
+import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -73,6 +80,9 @@ class ProfileFragment : Fragment() {
 
     @Inject
     lateinit var entitlementRepository: EntitlementRepository
+
+    @Inject
+    lateinit var forumRepository: ForumRepository
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -179,6 +189,7 @@ class ProfileFragment : Fragment() {
         binding.privacyPolicyRow.setOnClickListener {
             startActivity(PrivacyPolicyActivity.intent(requireContext()))
         }
+        setupCommunityRows()
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue
         // a duplicate getStats() DB read on every fragment creation.
@@ -675,6 +686,71 @@ class ProfileFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadStats()
+        refreshModerationRow()
+    }
+
+    /** My scans (the former Gallery tab), achievements, moderation notices,
+     *  and — for staff only — the moderation tools. */
+    private fun setupCommunityRows() {
+        bindRow(binding.rowMyScans, R.drawable.ic_gallery, R.string.profile_my_scans, R.string.profile_my_scans_subtitle) {
+            startActivity(MyScansActivity.intent(requireContext()))
+        }
+        bindRow(
+            binding.rowAchievements,
+            R.drawable.ic_trophy,
+            R.string.forum_my_achievements,
+            R.string.profile_achievements_subtitle,
+        ) {
+            if (requireCommunitySignIn()) startActivity(HelperProfileActivity.intentForMe(requireContext()))
+        }
+        bindRow(
+            binding.rowModNotices,
+            R.drawable.ic_flag,
+            R.string.forum_moderation_notices,
+            R.string.profile_mod_notices_subtitle,
+        ) {
+            if (requireCommunitySignIn()) startActivity(ModerationNoticesActivity.intent(requireContext()))
+        }
+        bindRow(
+            binding.rowModeration,
+            R.drawable.ic_shield_check,
+            R.string.forum_moderation_tools,
+            R.string.profile_moderation_subtitle,
+        ) {
+            startActivity(ModerationActivity.intent(requireContext()))
+        }
+    }
+
+    private fun bindRow(
+        row: ItemProfileLinkRowBinding,
+        icon: Int,
+        title: Int,
+        subtitle: Int,
+        onClick: () -> Unit,
+    ) {
+        row.rowIcon.setImageResource(icon)
+        row.rowTitle.setText(title)
+        row.rowSubtitle.setText(subtitle)
+        row.root.setOnClickListener { onClick() }
+    }
+
+    private fun refreshModerationRow() {
+        if (!forumRepository.isSignedIn) {
+            binding.rowModeration.root.visibility = View.GONE
+            return
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            forumRepository.staffMe().onSuccess { me ->
+                _binding?.rowModeration?.root?.visibility = if (me.isStaff) View.VISIBLE else View.GONE
+            }
+        }
+    }
+
+    private fun requireCommunitySignIn(): Boolean {
+        if (forumRepository.isSignedIn) return true
+        Toast.makeText(requireContext(), R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
+        startActivity(AccountActivity.intent(requireContext()))
+        return false
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

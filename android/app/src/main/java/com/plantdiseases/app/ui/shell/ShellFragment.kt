@@ -14,7 +14,7 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentShellBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
-import com.plantdiseases.app.ui.gallery.GalleryFragment
+import com.plantdiseases.app.ui.community.forum.CommunityFragment
 import com.plantdiseases.app.ui.garden.GardenFragment
 import com.plantdiseases.app.ui.home.HomeFragment
 import com.plantdiseases.app.ui.profile.ProfileFragment
@@ -168,9 +168,9 @@ class ShellFragment : Fragment() {
 
         override fun createFragment(position: Int): Fragment = when (PAGES[position]) {
             R.id.homeFragment -> HomeFragment()
+            R.id.communityFragment -> CommunityFragment()
             R.id.cameraFragment -> CameraFragment()
             R.id.gardenFragment -> GardenFragment()
-            R.id.galleryFragment -> GalleryFragment()
             R.id.profileFragment -> ProfileFragment()
             else -> error("No page for position $position")
         }
@@ -184,9 +184,9 @@ class ShellFragment : Fragment() {
          */
         val PAGES = listOf(
             R.id.homeFragment,
+            R.id.communityFragment,
             R.id.cameraFragment,
             R.id.gardenFragment,
-            R.id.galleryFragment,
             R.id.profileFragment,
         )
 

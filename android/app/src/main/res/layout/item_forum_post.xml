@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/App.GlassCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="@dimen/space_lg"
+    android:layout_marginTop="@dimen/space_sm"
+    android:clickable="true"
+    android:focusable="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/iv_kind"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@null"
+                app:tint="@color/primary" />
+
+            <TextView
+                android:id="@+id/tv_kind"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/primary"
+                android:textSize="@dimen/text_caption" />
+
+            <TextView
+                android:id="@+id/tv_meta"
+                style="@style/Forum.Meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/tv_badge"
+                style="@style/Forum.Badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textAppearance="@style/TextAppearance.App.Title" />
+
+        <TextView
+            android:id="@+id/tv_excerpt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_body_sm" />
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/iv_photo"
+            android:layout_width="match_parent"
+            android:layout_height="168dp"
+            android:layout_marginTop="@dimen/space_sm"
+            android:background="@color/surface_container"
+            android:contentDescription="@string/forum_photo_description"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.ForumPhoto" />
+
+        <TextView
+            android:id="@+id/tv_ai"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_sm"
+            android:drawablePadding="6dp"
+            android:gravity="center_vertical"
+            android:textColor="@color/neutral_blue"
+            android:textSize="@dimen/text_caption"
+            android:visibility="gone"
+            app:drawableStartCompat="@drawable/ic_sparkle"
+            app:drawableTint="@color/neutral_blue" />
+
+        <TextView
+            android:id="@+id/tv_accepted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:drawablePadding="6dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/healthy_green"
+            android:textSize="@dimen/text_caption"
+            android:visibility="gone"
+            app:drawableStartCompat="@drawable/ic_check"
+            app:drawableTint="@color/healthy_green" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tv_like"
+                style="@style/Forum.Action"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/forum_like"
+                app:drawableStartCompat="@drawable/ic_heart" />
+
+            <TextView
+                android:id="@+id/tv_answers"
+                style="@style/Forum.Action"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_md"
+                app:drawableStartCompat="@drawable/ic_comment" />
+
+            <TextView
+                android:id="@+id/tv_author"
+                style="@style/Forum.Meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_toolbar_gradient"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@android:color/transparent"
+            app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="@color/toolbar_title"
+            app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
+            app:titleTextColor="@color/toolbar_title" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_thread"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="@dimen/space_lg" />
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true" />
+
+        <TextView
+            android:id="@+id/tv_error"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="@dimen/space_xl"
+            android:textColor="@color/on_surface_secondary"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tv_locked"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface_container"
+        android:drawablePadding="@dimen/space_sm"
+        android:gravity="center"
+        android:padding="@dimen/space_md"
+        android:text="@string/forum_locked_banner"
+        android:textColor="@color/on_surface_secondary"
+        android:visibility="gone"
+        app:drawableStartCompat="@drawable/ic_lock"
+        app:drawableTint="@color/on_surface_secondary" />
+
+    <LinearLayout
+        android:id="@+id/composer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface_container_low"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_md"
+        android:paddingVertical="@dimen/space_sm">
+
+        <LinearLayout
+            android:id="@+id/reply_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_reply_to"
+                style="@style/Forum.Meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:drawablePadding="4dp"
+                app:drawableStartCompat="@drawable/ic_reply"
+                app:drawableTint="@color/on_surface_secondary" />
+
+            <ImageButton
+                android:id="@+id/btn_cancel_reply"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/forum_cancel_reply"
+                android:src="@drawable/ic_close"
+                app:tint="@color/on_surface_secondary" />
+
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/et_steps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_xs"
+            android:hint="@string/forum_steps_hint"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="8"
+            android:textSize="@dimen/text_body_sm"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/ll_answer_photos"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone" />
+
+        <CheckBox
+            android:id="@+id/cb_answer_consent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/forum_training_consent_answer"
+            android:textSize="@dimen/text_caption"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_diagnosis_selected"
+            style="@style/Forum.Badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_xs"
+            android:textColor="@color/primary"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_photo"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/forum_add_photo"
+                android:src="@drawable/ic_image"
+                app:tint="@color/on_surface_secondary" />
+
+            <ImageButton
+                android:id="@+id/btn_steps"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/forum_add_steps"
+                android:src="@drawable/ic_steps"
+                app:tint="@color/on_surface_secondary" />
+
+            <ImageButton
+                android:id="@+id/btn_diagnosis"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/forum_add_diagnosis"
+                android:src="@drawable/ic_disease"
+                app:tint="@color/on_surface_secondary" />
+
+            <EditText
+                android:id="@+id/et_answer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/forum_answer_hint"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="5"
+                android:textSize="@dimen/text_body" />
+
+            <ImageButton
+                android:id="@+id/btn_send"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/forum_send"
+                android:src="@drawable/ic_send"
+                app:tint="@color/primary" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

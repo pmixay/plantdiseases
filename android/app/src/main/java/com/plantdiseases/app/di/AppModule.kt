@@ -30,6 +30,7 @@ import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
+import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -222,6 +223,13 @@ object AppModule {
     @Singleton
     fun provideFeedbackReceiptStore(@ApplicationContext context: Context): FeedbackReceiptStore =
         SharedPreferencesFeedbackReceiptStore(context)
+
+    @Provides
+    @Singleton
+    fun provideForumRepository(
+        apiClient: PlantApiClient,
+        authRepository: AuthRepository,
+    ): ForumRepository = ForumRepository(apiClient, authRepository)
 
     @Provides
     @Singleton

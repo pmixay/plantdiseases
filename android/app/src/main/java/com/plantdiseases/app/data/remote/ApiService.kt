@@ -120,7 +120,8 @@ class RetryInterceptor(
  * MockWebServer without a device.
  */
 class PlantApiClient(
-    private val baseUrl: String = ServerConfig.appBaseUrl,
+    /** Build-time API origin (a test seam); also used to build image URLs. */
+    val baseUrl: String = ServerConfig.appBaseUrl,
     /** Where call outcomes are published. Defaults to a private instance so
      *  tests (and any standalone use) need not wire one up. */
     private val reachabilityReporter: ReachabilityReporter = ReachabilityReporter(),

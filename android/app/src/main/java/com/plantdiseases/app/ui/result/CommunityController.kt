@@ -6,16 +6,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
-import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SimilarScans
 import com.plantdiseases.app.util.onConnectivityChanged
@@ -125,7 +124,7 @@ class CommunityController(
         // This control is not in the activity's enableWhileOnline set — it
         // needs the in-flight rule too, so it observes reachability itself.
         activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
-        showAsk(scan, isRu)
+        showAsk(scan)
         refreshSecondOpinion(scan, isRu)
     }
 
@@ -137,7 +136,7 @@ class CommunityController(
                     resp.wantsOpinion ->
                         showOpenRequest(scan, n, resp.opinionRequestedAt)
                     n > 0 -> showViewReplies(scan, n)
-                    else -> showAsk(scan, isRu)
+                    else -> showAsk(scan)
                 }
             }
         }
@@ -197,91 +196,18 @@ class CommunityController(
         btn.setOnClickListener { openReplies(scan) }
     }
 
-    private fun showAsk(scan: ScanEntity, isRu: Boolean) {
+    /** Ask state: new questions go to the community forum with the analysed
+     *  photo and the AI verdict attached. Requests opened before the forum
+     *  existed keep their waiting / replies states above. */
+    private fun showAsk(scan: ScanEntity) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
         applySecondOpinionEnabled()
-        btn.setText(R.string.result_get_second_opinion)
+        btn.setText(R.string.result_ask_community)
         btn.setOnClickListener {
             if (!requireAuthenticatedAction()) return@setOnClickListener
-            // Second opinions come FROM the community, so they require the
-            // community opt-in. Offer it in context instead of silently
-            // sharing the scan of a user who never enabled anything.
-            if (!CommunityPrefs.uploadsEnabled(activity)) {
-                promptEnableCommunity(scan, isRu)
-            } else {
-                beginRequest(scan, isRu)
-            }
+            activity.startActivity(ComposePostActivity.intentForScan(activity, scan.id))
         }
-    }
-
-    /** In-context community opt-in shown when a non-member asks for a second
-     *  opinion. Confirming requests coarse location (notifications are asked
-     *  separately, only once the request itself goes out). */
-    private fun promptEnableCommunity(scan: ScanEntity, isRu: Boolean) {
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.second_opinion_needs_community_title)
-            .setMessage(R.string.second_opinion_needs_community_body)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.community_enable_cta) { _, _ ->
-                if (!requireAuthenticatedAction()) return@setPositiveButton
-                requestCommunityOptIn { locationGranted ->
-                    if (!locationGranted) return@requestCommunityOptIn
-                    CommunityPrefs.enable(activity)
-                    com.plantdiseases.app.push.PushManager.registerIfEnabled(activity)
-                    beginRequest(scan, isRu)
-                }
-            }
-            .show()
-    }
-
-    private fun beginRequest(scan: ScanEntity, isRu: Boolean) {
-        if (repository.isAbstainedScan(scan)) return
-        opinionRequestInFlight = true
-        val btn = binding.btnSecondOpinion
-        applySecondOpinionEnabled()
-        btn.setText(R.string.result_second_opinion_waiting)
-        // Notifications are requested HERE — the one moment they're clearly
-        // needed (replies to YOUR ask) — not as part of the community opt-in.
-        ensureNotificationPermission()
-        activity.lifecycleScope.launch {
-            // Ensure the scan is in the community corpus so others can
-            // see the ask (force = explicit consent).
-            val upload = communityUploader.uploadFromEntity(scan, force = true)
-            if (upload != CommunityUploader.UploadOutcome.Uploaded) {
-                showRequestFailure(scan, isRu)
-                return@launch
-            }
-            repository.requestSecondOpinion(scan.clientScanId)
-                .onSuccess { flagged ->
-                    if (flagged) {
-                        opinionRequestInFlight = false
-                        // Fresh request: 0 replies, full 72 h window.
-                        showOpenRequest(
-                            scan,
-                            replyCount = 0,
-                            requestedAtSec = System.currentTimeMillis() / 1000L,
-                        )
-                        // Seed the notify baseline at 0 so the very next
-                        // reply counts as new, and flip the global init flag.
-                        OpinionPrefs.markInitialized(activity)
-                        OpinionPrefs.setSeen(activity, scan.clientScanId, 0)
-                    } else {
-                        showRequestFailure(scan, isRu)
-                    }
-                }
-                .onFailure { showRequestFailure(scan, isRu) }
-        }
-    }
-
-    private fun showRequestFailure(scan: ScanEntity, isRu: Boolean) {
-        opinionRequestInFlight = false
-        showAsk(scan, isRu)
-        Toast.makeText(
-            activity,
-            R.string.result_second_opinion_failed,
-            Toast.LENGTH_SHORT,
-        ).show()
     }
 
     fun bindSimilarScans(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {

@@ -417,6 +417,23 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <include
+            android:id="@+id/row_my_scans"
+            layout="@layout/item_profile_link_row" />
+
+        <include
+            android:id="@+id/row_achievements"
+            layout="@layout/item_profile_link_row" />
+
+        <include
+            android:id="@+id/row_mod_notices"
+            layout="@layout/item_profile_link_row" />
+
+        <include
+            android:id="@+id/row_moderation"
+            layout="@layout/item_profile_link_row"
+            android:visibility="gone" />
+
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/replay_guidance_row"
             style="@style/App.GlassCard"

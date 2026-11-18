@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_toolbar_gradient"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@android:color/transparent"
+            app:navigationIcon="@drawable/ic_close"
+            app:navigationIconTint="@color/toolbar_title"
+            app:title="@string/forum_compose_title"
+            app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
+            app:titleTextColor="@color/toolbar_title" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/space_lg">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chip_kind"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="@dimen/space_sm"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_question"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="@string/forum_kind_question"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_scan"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/forum_kind_scan"
+                    android:visibility="gone"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_recovery"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/forum_kind_recovery"
+                    android:visibility="gone"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_tip"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/forum_kind_tip"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+            </com.google.android.material.chip.ChipGroup>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_title"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:hint="@string/forum_field_title"
+                app:counterEnabled="true"
+                app:counterMaxLength="140">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapSentences"
+                    android:maxLength="140" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:hint="@string/forum_field_body">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="top"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLength="4000"
+                    android:minLines="3" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_similar"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/warning_amber_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:drawablePadding="6dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/forum_similar_title"
+                        android:textColor="@color/on_surface"
+                        app:drawableStartCompat="@drawable/ic_search"
+                        app:drawableTint="@color/warning_amber" />
+
+                    <LinearLayout
+                        android:id="@+id/ll_similar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/forum_field_photos"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm" />
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/ll_photos"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <ImageButton
+                        android:id="@+id/btn_add_photo"
+                        android:layout_width="@dimen/forum_compose_thumb"
+                        android:layout_height="@dimen/forum_compose_thumb"
+                        android:background="@drawable/bg_forum_badge"
+                        android:contentDescription="@string/forum_add_photo"
+                        android:src="@drawable/ic_add"
+                        app:tint="@color/on_surface_secondary" />
+
+                </LinearLayout>
+
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/tv_scan"
+                style="@style/Forum.Badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:drawablePadding="6dp"
+                android:textColor="@color/neutral_blue"
+                android:visibility="gone"
+                app:drawableStartCompat="@drawable/ic_sparkle"
+                app:drawableTint="@color/neutral_blue" />
+
+            <TextView
+                android:id="@+id/tv_space"
+                style="@style/Forum.Action"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:textColor="@color/on_surface"
+                app:drawableStartCompat="@drawable/ic_leaf" />
+
+            <TextView
+                android:id="@+id/tv_condition"
+                style="@style/Forum.Action"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/on_surface"
+                app:drawableStartCompat="@drawable/ic_disease" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:hint="@string/forum_field_species">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_species"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords"
+                    android:maxLength="80" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_consent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/forum_training_consent" />
+
+            <TextView
+                style="@style/Forum.Meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="4"
+                android:text="@string/forum_training_consent_hint" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_urgent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/forum_urgent" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_post"
+        style="@style/App.Button.Filled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/space_lg"
+        android:text="@string/forum_publish" />
+
+</LinearLayout>

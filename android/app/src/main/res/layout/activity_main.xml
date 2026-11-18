@@ -13,6 +13,7 @@
     android:id="@+id/root_coordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:clipChildren="false"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.AppBarLayout
@@ -54,17 +55,40 @@
         app:defaultNavHost="true"
         app:navGraph="@navigation/nav_graph" />
 
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottom_navigation"
+    <!-- Bottom bar with Scan raised in the centre. clipChildren=false here and
+         on the root lets fab_scan rise above the bar's top edge. -->
+    <FrameLayout
+        android:id="@+id/bottom_bar_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/background"
-        android:clipToPadding="false"
-        app:elevation="0dp"
-        app:labelVisibilityMode="labeled"
-        app:itemIconTint="@color/bottom_nav_color"
-        app:itemTextColor="@color/bottom_nav_color"
-        app:itemActiveIndicatorStyle="@style/App.BottomNavIndicator"
-        app:menu="@menu/bottom_nav_menu" />
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/background"
+            android:clipToPadding="false"
+            app:elevation="0dp"
+            app:labelVisibilityMode="labeled"
+            app:itemIconTint="@color/bottom_nav_color"
+            app:itemTextColor="@color/bottom_nav_color"
+            app:itemActiveIndicatorStyle="@style/App.BottomNavIndicator"
+            app:menu="@menu/bottom_nav_menu" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_scan"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="@dimen/scan_fab_offset"
+            android:contentDescription="@string/tab_scan"
+            app:backgroundTint="@color/primary"
+            app:fabSize="normal"
+            app:srcCompat="@drawable/ic_scan"
+            app:tint="@color/on_primary" />
+
+    </FrameLayout>
 
 </LinearLayout>
