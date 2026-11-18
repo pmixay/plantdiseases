@@ -79,7 +79,7 @@ class ForumRepositoryNetworkTest {
 
         val path = server.takeRequest().path.orEmpty()
         assertThat(path).startsWith("/api/community/search?")
-        assertThat(path).contains("q=white%20fuzz")
+        assertThat(path).contains("q=white+fuzz")
         assertThat(path).contains("solved=true")
         assertThat(path).contains("condition=pests")
         assertThat(path).doesNotContain("with_photos")
