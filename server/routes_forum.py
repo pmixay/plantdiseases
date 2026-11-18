@@ -226,6 +226,21 @@ def register(router: APIRouter, m) -> None:
         result = await run(m.community_forum.activity_for, principal.actor_id, since=since)
         return JSONResponse(content=result, headers=_NO_STORE)
 
+    @router.get("/community/helpers/{author_token}")
+    async def forum_helper_profile(author_token: str):
+        """A member's level, achievements and helper stats (public)."""
+        result = await run(m.community_achievements.progress_for_token, author_token)
+        return JSONResponse(content=result, headers=_NO_STORE)
+
+    @router.get("/community/me/achievements", dependencies=[Depends(m.community_bearer)])
+    async def forum_my_achievements(request: Request):
+        """My level and achievements, plus the PRO discount they have earned."""
+        principal = await m._require_account(request)
+        result = await run(
+            m.community_achievements.progress, principal.actor_id, include_private=True
+        )
+        return JSONResponse(content=result, headers=_NO_STORE)
+
     # ── writing ──────────────────────────────────────────────────────────
 
     @router.post("/community/media", dependencies=[Depends(m.community_bearer)])

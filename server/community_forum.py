@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     like_count         INTEGER NOT NULL DEFAULT 0,
     answer_count       INTEGER NOT NULL DEFAULT 0,
     accepted_answer_id INTEGER,
+    accepted_at        INTEGER,
     legacy_scan_id     TEXT    UNIQUE,
     locale             TEXT,
     created_at         INTEGER NOT NULL,
@@ -349,6 +350,7 @@ def init_db() -> None:
             conn.executescript(_SCHEMA)
             for table, column, decl in (
                 ("forum_posts", "training_excluded", "INTEGER NOT NULL DEFAULT 0"),
+                ("forum_posts", "accepted_at", "INTEGER"),
                 ("forum_answers", "verified_by_actor_id", "TEXT"),
                 ("forum_answers", "verified_at", "INTEGER"),
             ):
@@ -1688,8 +1690,9 @@ def accept_answer(
                 accepted_internal = int(answer[0])
                 answer_author = answer[4]
             conn.execute(
-                "UPDATE forum_posts SET accepted_answer_id = ?, last_activity_at = ? WHERE id = ?",
-                (accepted_internal, timestamp, int(post[0])),
+                "UPDATE forum_posts SET accepted_answer_id = ?, accepted_at = ?, "
+                "last_activity_at = ? WHERE id = ?",
+                (accepted_internal, timestamp if accepted_internal else None, timestamp, int(post[0])),
             )
             conn.execute("COMMIT")
         except Exception:

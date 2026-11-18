@@ -74,6 +74,12 @@ class ModRoleChange(BaseModel):
     grant: bool = True
 
 
+class ModRewardFreeze(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frozen: bool
+
+
 class ModImageBan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -149,9 +155,19 @@ def register(router: APIRouter, m) -> None:
     @router.get("/community/admin/queue", dependencies=[Depends(m.community_bearer)])
     async def moderation_queue(
         request: Request,
-        kind: Literal["reports", "hidden", "appeals"] = "reports",
+        kind: Literal["reports", "hidden", "appeals", "rewards", "label_review"] = "reports",
         limit: int = Query(50, ge=1, le=100),
     ):
+        """Moderation work by kind. ``label_review`` is for experts; ``rewards``
+        lists members whose achievement discount is frozen for review."""
+        if kind == "label_review":
+            await staff(request, _EXPERTS)
+            result = await run(m.community_labels.review_queue, limit=limit)
+            return JSONResponse(content=result, headers=_NO_STORE)
+        if kind == "rewards":
+            await global_moderator(request)
+            result = await run(m.community_achievements.frozen_queue, limit=limit)
+            return JSONResponse(content=result, headers=_NO_STORE)
         _principal, roles = await staff(request, _MODERATORS)
         scopes = m.account_roles.scopes_for(roles, _MODERATORS)
         result = await run(m.community_moderation.queue, kind=kind, scopes=scopes, limit=limit)
@@ -351,6 +367,22 @@ def register(router: APIRouter, m) -> None:
         )
         result.pop("actor_id", None)
         return JSONResponse(content={"ok": True, **result}, headers=_NO_STORE)
+
+    @router.post(
+        "/community/admin/actors/{author_token}/rewards",
+        dependencies=[Depends(m.community_bearer)],
+    )
+    async def moderation_reward_freeze(author_token: str, payload: ModRewardFreeze, request: Request):
+        """Admins freeze or clear a member's achievement discount."""
+        principal = await admin(request)
+        actor = await run(m.community_moderation.actor_for_token, author_token)
+        result = await run(
+            m.community_achievements.set_frozen,
+            admin_actor_id=principal.actor_id,
+            actor_id=actor,
+            frozen=payload.frozen,
+        )
+        return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.post(
         "/community/admin/posts/{post_id}/exclude-training",

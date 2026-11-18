@@ -66,7 +66,9 @@ from starlette.responses import Response as StarletteResponse
 try:
     from . import (
         account_roles,
+        community_achievements,
         community_forum,
+        community_labels,
         community_moderation,
         routes_assistant,
         routes_community,
@@ -304,7 +306,9 @@ try:
     )
 except ImportError:
     import account_roles
+    import community_achievements
     import community_forum
+    import community_labels
     import community_moderation
     import routes_assistant
     import routes_community
@@ -1036,6 +1040,7 @@ def _is_public_community_read(method: str, path: str) -> bool:
         or path.startswith("/api/community/thumb/")
         or path.startswith("/api/community/posts/")
         or path.startswith("/api/community/media/")
+        or path.startswith("/api/community/helpers/")
     )
 
 
@@ -1464,6 +1469,25 @@ COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 # Community roles (expert / moderator / admin) live in the account service.
 # ``None`` when unconfigured: staff routes then fail closed with 503.
 community_roles = account_roles.community_roles_client
+# Levels gate "not helpful", auto-hide reports and label weighting.
+community_achievements.install_hooks()
+
+
+def _forum_maintenance() -> dict:
+    """Legacy sync and pruning, consensus labels, then achievements and rewards."""
+    forum = community_forum.maintenance()
+    labels = community_labels.refresh()
+    client = community_roles
+    rewards = community_achievements.sync_rewards(
+        report=client.report_achievements if client is not None else None
+    )
+    return {
+        **forum,
+        "labelled": labels["labelled"],
+        "rewards_reported": rewards["reported"],
+        "reward_rings": rewards["rings"],
+    }
+
 
 # Forum write budgets, per signed account actor (not per address).
 FORUM_POST_DAILY_QUOTA = get_int("FORUM_POST_DAILY_QUOTA", 20)
@@ -2514,7 +2538,7 @@ async def _prune_loop() -> None:
                 None, community_process_cleanup_jobs,
             )
             forum = await asyncio.get_running_loop().run_in_executor(
-                None, community_forum.maintenance,
+                _get_net_executor(), _forum_maintenance,
             )
             removed_tm = await asyncio.get_running_loop().run_in_executor(
                 None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,

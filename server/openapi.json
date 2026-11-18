@@ -2172,6 +2172,66 @@
         }
       }
     },
+    "/api/community/helpers/{author_token}": {
+      "get": {
+        "summary": "Forum Helper Profile",
+        "description": "A member's level, achievements and helper stats (public).",
+        "operationId": "forum_helper_profile_api_community_helpers__author_token__get",
+        "parameters": [
+          {
+            "name": "author_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Author Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/me/achievements": {
+      "get": {
+        "summary": "Forum My Achievements",
+        "description": "My level and achievements, plus the PRO discount they have earned.",
+        "operationId": "forum_my_achievements_api_community_me_achievements_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/community/media": {
       "post": {
         "summary": "Forum Media Upload",
@@ -2665,6 +2725,7 @@
     "/api/community/admin/queue": {
       "get": {
         "summary": "Moderation Queue",
+        "description": "Moderation work by kind. ``label_review`` is for experts; ``rewards``\nlists members whose achievement discount is frozen for review.",
         "operationId": "moderation_queue_api_community_admin_queue_get",
         "security": [
           {
@@ -2680,7 +2741,9 @@
               "enum": [
                 "reports",
                 "hidden",
-                "appeals"
+                "appeals",
+                "rewards",
+                "label_review"
               ],
               "type": "string",
               "default": "reports",
@@ -3231,6 +3294,59 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/community/admin/actors/{author_token}/rewards": {
+      "post": {
+        "summary": "Moderation Reward Freeze",
+        "description": "Admins freeze or clear a member's achievement discount.",
+        "operationId": "moderation_reward_freeze_api_community_admin_actors__author_token__rewards_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "author_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Author Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModRewardFreeze"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/community/admin/posts/{post_id}/exclude-training": {
@@ -4768,6 +4884,20 @@
           "action"
         ],
         "title": "ModPostAction"
+      },
+      "ModRewardFreeze": {
+        "properties": {
+          "frozen": {
+            "type": "boolean",
+            "title": "Frozen"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "frozen"
+        ],
+        "title": "ModRewardFreeze"
       },
       "ModRoleChange": {
         "properties": {

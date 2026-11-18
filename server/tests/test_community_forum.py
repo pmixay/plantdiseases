@@ -41,6 +41,14 @@ def forum(community_store):
     return community_forum
 
 
+@pytest.fixture
+def no_level_gates(monkeypatch):
+    """Store mechanics without the level-2 requirement for "not helpful"."""
+    import community_forum
+
+    monkeypatch.setattr(community_forum, "can_mark_not_helpful", None)
+
+
 def _question(forum, author="asker", **overrides):
     media = forum.store_media(actor_id=_actor(author), image_bytes=_png())
     fields = {
@@ -122,7 +130,7 @@ def test_only_the_author_accepts(forum):
     assert error.value.status == 403
 
 
-def test_not_helpful_is_answers_only_and_switches_with_like(forum):
+def test_not_helpful_is_answers_only_and_switches_with_like(forum, no_level_gates):
     post = _question(forum)
     answer = forum.create_answer(
         actor_id=_actor("helper"), nickname="Helper", post_id=post["id"], body="Overwatering"
@@ -284,7 +292,7 @@ def _issue_scan(community_store, token: str, image: bytes, disease="powdery_mild
     )
 
 
-def test_scan_post_carries_the_server_verdict_as_first_answer(forum, community_store):
+def test_scan_post_carries_the_server_verdict_as_first_answer(forum, community_store, no_level_gates):
     image = _png((200, 200, 190))
     token = "scan-" + uuid.uuid4().hex
     _issue_scan(community_store, token, image)

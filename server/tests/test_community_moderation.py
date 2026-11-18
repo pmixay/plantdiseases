@@ -153,7 +153,8 @@ def test_answer_removal_unaccepts_and_keeps_thread(mod, forum):
     assert detail["answer_count"] == 1
 
 
-def test_three_reports_auto_hide_then_dismiss_restores(mod, forum):
+def test_three_reports_auto_hide_then_dismiss_restores(mod, forum, monkeypatch):
+    monkeypatch.setattr(mod, "reporter_counts", None)
     post = _post(forum, author="spammer", title="Cheap pots link")
     for reporter in ("r1", "r2"):
         forum.report_content(

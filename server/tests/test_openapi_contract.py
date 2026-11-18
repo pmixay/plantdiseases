@@ -77,6 +77,8 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
         ("/api/community/admin/images/ban", "post"),
         ("/api/community/moderation/notices", "get"),
         ("/api/community/moderation/appeals", "post"),
+        ("/api/community/me/achievements", "get"),
+        ("/api/community/admin/actors/{author_token}/rewards", "post"),
     )
     for path, method in protected:
         assert schema["paths"][path][method]["security"] == [{"HTTPBearer": []}]
