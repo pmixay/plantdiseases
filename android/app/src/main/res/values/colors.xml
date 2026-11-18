@@ -69,6 +69,11 @@
          pure-white background without looking corporate-grey. -->
     <color name="surface_container_low">#F4FBF6</color>
     <color name="surface_container">#ECF7F0</color>
+    <!-- Material 3 dialogs and menus paint these; without them they fall back
+         to the stock lilac baseline. -->
+    <color name="surface_container_high">#F7FBF8</color>
+    <color name="surface_container_highest">#EEF6F0</color>
+    <color name="surface_container_lowest">#FFFFFF</color>
 
     <!-- ─── Soft-card tokens ───────────────────────────────────────
          Layer with android:elevation + the matching frosted background

@@ -320,4 +320,12 @@
     <string name="mod_appeal_state_pending">апелляция на рассмотрении</string>
     <string name="mod_appeal_state_upheld">апелляция отклонена</string>
     <string name="mod_appeal_state_overturned">апелляция принята</string>
+    <string name="forum_filters">Фильтры</string>
+    <string name="forum_filters_active">Фильтры (%1$d)</string>
+    <string name="forum_filters_show">Показывать</string>
+    <string name="forum_filters_sort">Сортировка</string>
+    <string name="forum_filters_apply">Показать посты</string>
+    <string name="forum_filters_reset">Сбросить</string>
+    <string name="forum_filter_remove">Убрать фильтр: %1$s</string>
+    <string name="forum_nearby_map">Сканы рядом и карта</string>
 </resources>

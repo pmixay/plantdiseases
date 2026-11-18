@@ -6,12 +6,14 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
@@ -21,6 +23,7 @@ import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.model.StaffMe
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
+import com.plantdiseases.app.databinding.SheetForumFiltersBinding
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,9 +32,11 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * The Community tab: the forum feed with For you / Needs help / Solved / Mine
- * tabs, a space filter, sort, search, recent activity and the Ask button.
- * The older map and nearby-scans screens stay one tap away (Nearby).
+ * The Community tab: the forum feed, search, recent activity and the Ask
+ * button. What to show (For you / Needs help / Solved / Mine), the space and
+ * the order are chosen in a filter sheet; only the filters that differ from
+ * the default show under the header, each removable. The older map and
+ * nearby-scans screens are in the overflow menu.
  */
 @AndroidEntryPoint
 class CommunityFragment : Fragment() {
@@ -74,19 +79,14 @@ class CommunityFragment : Fragment() {
             }
         })
         binding.swipeRefresh.setOnRefreshListener { reload() }
-        binding.chipTabs.setOnCheckedStateChangeListener { _, checked -> onTabChanged(checked.firstOrNull()) }
-        binding.chipSpace.setOnClickListener { pickSpace() }
-        binding.chipNearby.setOnClickListener {
-            startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-        }
-        binding.tvSort.setOnClickListener { pickSort() }
+        binding.chipFilters.setOnClickListener { showFilters() }
         binding.btnSearch.setOnClickListener { startActivity(ForumSearchActivity.intent(requireContext())) }
         binding.btnActivity.setOnClickListener { showActivity() }
         binding.btnMore.setOnClickListener { showMoreMenu() }
         binding.fabAsk.setOnClickListener {
             if (requireSignIn()) startActivity(ComposePostActivity.intent(requireContext()))
         }
-        renderSort()
+        renderFilters()
         loadSpaces()
         reload()
     }
@@ -103,23 +103,6 @@ class CommunityFragment : Fragment() {
     }
 
     // ── feed ─────────────────────────────────────────────────────────────
-
-    private fun onTabChanged(chipId: Int?) {
-        val next = when (chipId) {
-            R.id.chip_needs_help -> TAB_NEEDS_HELP
-            R.id.chip_solved -> TAB_SOLVED
-            R.id.chip_mine -> TAB_MINE
-            else -> TAB_ALL
-        }
-        if (next == TAB_MINE && !requireSignIn()) {
-            binding.chipAll.isChecked = true
-            return
-        }
-        if (next == tab) return
-        tab = next
-        binding.tvSort.visibility = if (tab == TAB_NEEDS_HELP) View.GONE else View.VISIBLE
-        reload()
-    }
 
     private fun reload() {
         nextCursor = null
@@ -179,74 +162,107 @@ class CommunityFragment : Fragment() {
         }
     }
 
-    // ── spaces and sort ─────────────────────────────────────────────────
+    // ── filters ─────────────────────────────────────────────────────────
 
     private fun loadSpaces() {
         viewLifecycleOwner.lifecycleScope.launch {
             forum.spaces().onSuccess {
                 spaces = it
                 adapter.spaces = it
-                renderSpaceChip()
+                renderFilters()
             }
         }
     }
 
-    private fun pickSpace() {
-        if (spaces.isEmpty()) {
-            loadSpaces()
-            return
+    /** The filter sheet. Choices apply together on "Show posts". */
+    private fun showFilters() {
+        val context = requireContext()
+        if (spaces.isEmpty()) loadSpaces()
+        val sheet = SheetForumFiltersBinding.inflate(layoutInflater)
+        val dialog = BottomSheetDialog(context)
+        dialog.setContentView(sheet.root)
+
+        sheet.cgShow.check(SHOW_CHIPS.getValue(tab))
+        val spaceChips = mutableMapOf<Int, String?>()
+        fun addSpace(slug: String?, label: String, icon: Int) {
+            val chip = layoutInflater.inflate(R.layout.item_forum_filter_chip, sheet.cgSpace, false) as Chip
+            chip.id = View.generateViewId()
+            chip.text = label
+            chip.setChipIconResource(icon)
+            sheet.cgSpace.addView(chip)
+            spaceChips[chip.id] = slug
         }
-        val names = listOf(getString(R.string.forum_all_spaces)) +
-            spaces.map { ForumUi.spaceName(requireContext(), it.slug, spaces) }
-        val selected = spaces.indexOfFirst { it.slug == space } + 1
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.forum_spaces)
-            .setSingleChoiceItems(names.toTypedArray(), selected) { dialog, which ->
-                space = if (which == 0) null else spaces[which - 1].slug
-                renderSpaceChip()
+        addSpace(null, getString(R.string.forum_all_spaces), ForumUi.spaceIcon("leaf"))
+        spaces.forEach { addSpace(it.slug, ForumUi.spaceName(context, it.slug, spaces), ForumUi.spaceIcon(it.icon)) }
+        sheet.cgSpace.check(spaceChips.entries.firstOrNull { it.value == space }?.key ?: spaceChips.keys.first())
+        sheet.cgSort.check(SORT_CHIPS.getValue(sort))
+
+        fun syncSortSection() {
+            sheet.sortSection.visibility =
+                if (sheet.cgShow.checkedChipId == R.id.chip_show_needs_help) View.GONE else View.VISIBLE
+        }
+        syncSortSection()
+        sheet.cgShow.setOnCheckedStateChangeListener { _, _ -> syncSortSection() }
+        sheet.btnReset.setOnClickListener {
+            sheet.cgShow.check(R.id.chip_show_all)
+            sheet.cgSpace.check(spaceChips.keys.first())
+            sheet.cgSort.check(R.id.chip_sort_hot)
+        }
+        sheet.btnApply.setOnClickListener {
+            val nextTab = SHOW_CHIPS.entries.first { it.value == sheet.cgShow.checkedChipId }.key
+            if (nextTab == TAB_MINE && !requireSignIn()) {
                 dialog.dismiss()
-                reload()
+                return@setOnClickListener
             }
-            .show()
+            applyFilters(
+                nextTab = nextTab,
+                nextSpace = spaceChips[sheet.cgSpace.checkedChipId],
+                nextSort = SORT_CHIPS.entries.first { it.value == sheet.cgSort.checkedChipId }.key,
+            )
+            dialog.dismiss()
+        }
+        dialog.show()
     }
 
-    private fun renderSpaceChip() {
+    private fun applyFilters(nextTab: String = tab, nextSpace: String? = space, nextSort: String = sort) {
+        val changed = nextTab != tab || nextSpace != space || nextSort != sort
+        tab = nextTab
+        space = nextSpace
+        sort = nextSort
+        renderFilters()
+        if (changed) reload()
+    }
+
+    /** Only the filters that differ from the default, each with a remove icon. */
+    private fun renderFilters() {
         val b = _binding ?: return
-        val current = spaces.firstOrNull { it.slug == space }
-        b.chipSpace.text = if (current == null) {
-            getString(R.string.forum_all_spaces)
+        val context = requireContext()
+        val group = b.cgActiveFilters
+        group.removeAllViews()
+        fun add(label: String, icon: Int?, onRemove: () -> Unit) {
+            val chip = layoutInflater.inflate(R.layout.item_forum_active_filter, group, false) as Chip
+            chip.text = label
+            if (icon != null) chip.setChipIconResource(icon) else chip.isChipIconVisible = false
+            chip.closeIconContentDescription = getString(R.string.forum_filter_remove, label)
+            chip.setOnCloseIconClickListener { onRemove() }
+            chip.setOnClickListener { showFilters() }
+            group.addView(chip)
+        }
+        if (tab != TAB_ALL) add(getString(TAB_LABELS.getValue(tab)), null) { applyFilters(nextTab = TAB_ALL) }
+        space?.let { slug ->
+            val icon = spaces.firstOrNull { it.slug == slug }?.icon ?: "leaf"
+            add(ForumUi.spaceName(context, slug, spaces), ForumUi.spaceIcon(icon)) { applyFilters(nextSpace = null) }
+        }
+        if (sort != SORT_HOT && tab != TAB_NEEDS_HELP) {
+            add(getString(SORT_LABELS.getValue(sort)), null) { applyFilters(nextSort = SORT_HOT) }
+        }
+        val count = group.childCount
+        group.visibility = if (count == 0) View.GONE else View.VISIBLE
+        b.chipFilters.text = if (count == 0) {
+            getString(R.string.forum_filters)
         } else {
-            ForumUi.spaceName(requireContext(), current.slug, spaces)
+            getString(R.string.forum_filters_active, count)
         }
-        b.chipSpace.setChipIconResource(ForumUi.spaceIcon(current?.icon ?: "leaf"))
-    }
-
-    private fun pickSort() {
-        val popup = PopupMenu(requireContext(), binding.tvSort)
-        popup.menu.add(0, 0, 0, R.string.forum_sort_hot)
-        popup.menu.add(0, 1, 1, R.string.forum_sort_new)
-        popup.menu.add(0, 2, 2, R.string.forum_sort_top)
-        popup.setOnMenuItemClickListener { item ->
-            sort = when (item.itemId) {
-                1 -> SORT_NEW
-                2 -> SORT_TOP
-                else -> SORT_HOT
-            }
-            renderSort()
-            reload()
-            true
-        }
-        popup.show()
-    }
-
-    private fun renderSort() {
-        binding.tvSort.setText(
-            when (sort) {
-                SORT_NEW -> R.string.forum_sort_new
-                SORT_TOP -> R.string.forum_sort_top
-                else -> R.string.forum_sort_hot
-            },
-        )
     }
 
     // ── activity, staff, menu ───────────────────────────────────────────
@@ -318,7 +334,12 @@ class CommunityFragment : Fragment() {
         popup.menu.add(0, MENU_ACHIEVEMENTS, 0, R.string.forum_my_achievements)
         popup.menu.add(0, MENU_NOTICES, 1, R.string.forum_moderation_notices)
         if (staff?.isStaff == true) popup.menu.add(0, MENU_MODERATION, 2, R.string.forum_moderation_tools)
+        popup.menu.add(0, MENU_NEARBY, 3, R.string.forum_nearby_map)
         popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == MENU_NEARBY) {
+                startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
+                return@setOnMenuItemClickListener true
+            }
             if (!requireSignIn()) return@setOnMenuItemClickListener true
             val context = requireContext()
             when (item.itemId) {
@@ -356,5 +377,28 @@ class CommunityFragment : Fragment() {
         const val MENU_ACHIEVEMENTS = 1
         const val MENU_NOTICES = 2
         const val MENU_MODERATION = 3
+        const val MENU_NEARBY = 4
+        val SHOW_CHIPS = mapOf(
+            TAB_ALL to R.id.chip_show_all,
+            TAB_NEEDS_HELP to R.id.chip_show_needs_help,
+            TAB_SOLVED to R.id.chip_show_solved,
+            TAB_MINE to R.id.chip_show_mine,
+        )
+        val SORT_CHIPS = mapOf(
+            SORT_HOT to R.id.chip_sort_hot,
+            SORT_NEW to R.id.chip_sort_new,
+            SORT_TOP to R.id.chip_sort_top,
+        )
+        val TAB_LABELS = mapOf(
+            TAB_ALL to R.string.forum_tab_all,
+            TAB_NEEDS_HELP to R.string.forum_tab_needs_help,
+            TAB_SOLVED to R.string.forum_tab_solved,
+            TAB_MINE to R.string.forum_tab_mine,
+        )
+        val SORT_LABELS = mapOf(
+            SORT_HOT to R.string.forum_sort_hot,
+            SORT_NEW to R.string.forum_sort_new,
+            SORT_TOP to R.string.forum_sort_top,
+        )
     }
 }

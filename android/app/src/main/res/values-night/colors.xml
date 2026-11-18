@@ -53,6 +53,11 @@
          the background. -->
     <color name="surface_container_low">#161E18</color>
     <color name="surface_container">#1C261E</color>
+    <!-- Material 3 dialogs and menus paint these; without them they fall back
+         to the stock lilac baseline. -->
+    <color name="surface_container_high">#222D24</color>
+    <color name="surface_container_highest">#28342A</color>
+    <color name="surface_container_lowest">#0E140F</color>
 
     <!-- ─── Soft-card tokens (dark) ────────────────────────────────
          On dark backgrounds we use a faint white sheen instead of an

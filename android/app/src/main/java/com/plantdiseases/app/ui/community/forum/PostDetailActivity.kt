@@ -5,14 +5,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
@@ -24,6 +23,7 @@ import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.model.StaffMe
 import com.plantdiseases.app.data.repository.ForumRepository
+import com.plantdiseases.app.ui.garden.PhotoViewerActivity
 import com.plantdiseases.app.databinding.ActivityForumPostBinding
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.util.LocaleHelper
@@ -175,18 +175,8 @@ class PostDetailActivity :
         startActivity(intent(this, postId))
     }
 
-    override fun onOpenPhoto(mediaId: String) {
-        val image = ImageView(this)
-        image.adjustViewBounds = true
-        image.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        Glide.with(image).load(forum.mediaUrl(mediaId)).into(image)
-        MaterialAlertDialogBuilder(this)
-            .setView(image)
-            .setPositiveButton(R.string.forum_close, null)
-            .show()
+    override fun onOpenPhoto(mediaIds: List<String>, index: Int) {
+        PhotoViewerActivity.open(this, mediaIds.map(forum::mediaUrl), index)
     }
 
     override fun onReact(answer: ForumAnswer, reaction: String?) {

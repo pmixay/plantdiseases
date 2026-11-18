@@ -318,4 +318,12 @@
     <string name="mod_appeal_state_pending">appeal pending</string>
     <string name="mod_appeal_state_upheld">appeal declined</string>
     <string name="mod_appeal_state_overturned">appeal accepted</string>
+    <string name="forum_filters">Filters</string>
+    <string name="forum_filters_active">Filters (%1$d)</string>
+    <string name="forum_filters_show">Show</string>
+    <string name="forum_filters_sort">Sort by</string>
+    <string name="forum_filters_apply">Show posts</string>
+    <string name="forum_filters_reset">Reset</string>
+    <string name="forum_filter_remove">Remove filter: %1$s</string>
+    <string name="forum_nearby_map">Nearby scans and map</string>
 </resources>

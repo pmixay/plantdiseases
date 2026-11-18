@@ -29,7 +29,7 @@ interface ThreadActions {
     fun onOpenAuthor(authorToken: String)
     fun onPostUpdate()
     fun onOpenPost(postId: String)
-    fun onOpenPhoto(mediaId: String)
+    fun onOpenPhoto(mediaIds: List<String>, index: Int)
     fun onReact(answer: ForumAnswer, reaction: String?)
     fun onReply(answer: ForumAnswer)
     fun onAccept(answer: ForumAnswer)
@@ -133,11 +133,12 @@ class PostThreadAdapter(
             binding.llPhotos.removeAllViews()
             binding.photosScroll.visibility = if (media.isEmpty()) View.GONE else View.VISIBLE
             val height = context.resources.getDimensionPixelSize(R.dimen.forum_photo_height)
-            for (item in media) {
+            val ids = media.map { it.mediaId }
+            media.forEachIndexed { index, item ->
                 val ratio = if (item.width > 0 && item.height > 0) item.width.toFloat() / item.height else RATIO
                 val view = photoView(context, (height * ratio).toInt().coerceIn(height / 2, height * 2), height)
                 Glide.with(view).load(mediaUrl(item.mediaId)).centerCrop().into(view)
-                view.setOnClickListener { actions.onOpenPhoto(item.mediaId) }
+                view.setOnClickListener { actions.onOpenPhoto(ids, index) }
                 binding.llPhotos.addView(view)
             }
         }
@@ -271,10 +272,11 @@ class PostThreadAdapter(
             binding.llMedia.removeAllViews()
             binding.llMedia.visibility = if (media.isEmpty()) View.GONE else View.VISIBLE
             val size = context.resources.getDimensionPixelSize(R.dimen.forum_answer_photo_size)
-            for (item in media) {
+            val ids = media.map { it.mediaId }
+            media.forEachIndexed { index, item ->
                 val view = photoView(context, size, size)
                 Glide.with(view).load(mediaUrl(item.mediaId)).centerCrop().into(view)
-                view.setOnClickListener { actions.onOpenPhoto(item.mediaId) }
+                view.setOnClickListener { actions.onOpenPhoto(ids, index) }
                 binding.llMedia.addView(view)
             }
         }

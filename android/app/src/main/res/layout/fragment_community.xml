@@ -74,103 +74,41 @@
 
         </LinearLayout>
 
+        <!-- Filters live in a sheet; only the ones that differ from the
+             default appear here, each removable. -->
         <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none">
 
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chip_tabs"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/content_gutter"
-                android:paddingVertical="@dimen/space_sm"
-                app:chipSpacingHorizontal="@dimen/space_sm"
-                app:selectionRequired="true"
-                app:singleLine="true"
-                app:singleSelection="true">
+                android:paddingVertical="@dimen/space_sm">
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_all"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    android:id="@+id/chip_filters"
+                    style="@style/Widget.Material3.Chip.Assist"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="@string/forum_tab_all"
-                    app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
+                    android:text="@string/forum_filters"
+                    app:chipIcon="@drawable/ic_sort"
+                    app:chipIconTint="@color/primary" />
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_needs_help"
-                    style="@style/Widget.Material3.Chip.Filter"
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/cg_active_filters"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/forum_tab_needs_help"
-                    app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
+                    android:layout_marginStart="@dimen/space_sm"
+                    app:chipSpacingHorizontal="@dimen/space_sm"
+                    app:singleLine="true" />
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_solved"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/forum_tab_solved"
-                    app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_mine"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/forum_tab_mine"
-                    app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
-
-            </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
 
         </HorizontalScrollView>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/content_gutter">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_space"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/forum_all_spaces"
-                app:chipIcon="@drawable/ic_leaf"
-                app:chipIconTint="@color/primary" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_nearby"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_sm"
-                android:text="@string/forum_nearby"
-                app:chipIcon="@drawable/ic_map"
-                app:chipIconTint="@color/primary" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/tv_sort"
-                style="@style/Forum.Action"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/forum_sort"
-                app:drawableStartCompat="@drawable/ic_sort" />
-
-        </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
