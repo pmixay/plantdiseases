@@ -212,7 +212,6 @@
     <string name="telemetry_consent_title">Отправлять минимальные отчёты об ошибках</string>
     <string name="telemetry_consent_subtitle">Отчёты только с допустимыми техническими категориями, версией приложения, укрупнённой версией Android и безопасными этапами действий. Без текста ошибок, изображений, путей, аккаунта, установки, модели телефона и геолокации.</string>
     <string name="community_sign_in_required">Войдите, чтобы публиковать или изменять материалы сообщества. После входа нажмите действие ещё раз.</string>
-    <string name="community_location_cta">Разрешить приблизительную геолокацию</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
     <!-- Интерактивные контекстные подсказки -->
@@ -429,7 +428,6 @@
         <item>Другое нарушение правил</item>
     </string-array>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Лента сообщества</string>
     <string name="community_profile_title">Профиль</string>
     <string name="community_profile_avatar">Аватар профиля сообщества</string>
     <string name="community_open_profile">Открыть профиль %1$s</string>
@@ -440,7 +438,6 @@
     <string name="community_profile_posts">Публикации</string>
     <string name="community_profile_no_posts">Публичных сканов пока нет</string>
     <string name="community_profile_unavailable">Этот профиль недоступен</string>
-    <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
     <string name="privacy_policy_title">Политика конфиденциальности</string>
@@ -450,32 +447,21 @@
     <string name="notifications_clear_all">Очистить всё</string>
     <string name="notifications_clear_confirm_title">Очистить все уведомления?</string>
     <string name="notifications_clear_confirm_body">Список очистится полностью. Сами ответы, напоминания и подсказки никуда не денутся.</string>
-    <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
-    <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
     <!-- Community scope toggle -->
-    <string name="community_filter_nearby">Рядом</string>
-    <string name="community_filter_country">Страна</string>
-    <string name="community_filter_worldwide">Весь мир</string>
     <!-- Community scans map -->
     <string name="community_map_title">Карта сообщества</string>
-    <string name="nearby_action_map">Карта</string>
     <string name="community_map_near_me">Рядом со мной</string>
-    <string name="nearby_action_disable">Покинуть сообщество</string>
-    <string name="community_disable_title">Покинуть сообщество?</string>
-    <string name="community_disable_body">Вы перестанете делиться сканами и получать мнения. Уже опубликованные сканы остаются в корпусе сообщества.</string>
-    <string name="community_disable_confirm">Покинуть</string>
+    <string name="nearby_action_disable">Не делиться сканами</string>
+    <string name="community_disable_title">Перестать делиться сканами?</string>
+    <string name="community_disable_body">Новые сканы не будут публиковаться, и мнения по ним приходить не будут. Уже опубликованные сканы останутся в сообществе.</string>
+    <string name="community_disable_confirm">Перестать</string>
     <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
     <string name="community_map_truncated">Показаны последние сканы — приблизьте, чтобы увидеть все</string>
     <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
     <string name="community_map_group_title">Сканов здесь: %1$d</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
-    <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
     <!-- Сортировка ленты сообщества -->
-    <string name="nearby_sort_title">Сортировать по</string>
-    <string name="nearby_sort_recommended">Рекомендованные</string>
-    <string name="nearby_sort_newest">Новые</string>
-    <string name="nearby_sort_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_scope_global">по всему миру</string>

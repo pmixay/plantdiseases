@@ -318,7 +318,6 @@
     <string name="forum_filters_apply">Show posts</string>
     <string name="forum_filters_reset">Reset</string>
     <string name="forum_filter_remove">Remove filter: %1$s</string>
-    <string name="forum_nearby_map">Nearby scans and map</string>
     <string name="forum_post_edit">Edit</string>
     <string name="forum_compose_edit_title">Edit post</string>
     <string name="forum_edit_saved">Changes saved</string>

@@ -7,7 +7,7 @@ import android.content.Context
  *
  * Default is OFF: a fresh install neither contributes nor pulls community data
  * until the user explicitly opts in IN CONTEXT — by tapping "Enable" on the
- * result screen's "similar scans" card or on the Nearby screen. Enabling
+ * result screen's "similar scans" card or the second-opinion gate. Enabling
  * requests ``ACCESS_COARSE_LOCATION`` (so scans can be grouped by area) and
  * flips this on; nothing is shared before that. Delete-my-contributions still
  * clears any rows already shared.

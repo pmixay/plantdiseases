@@ -17,6 +17,8 @@ import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumPostCreateRequest
@@ -161,9 +163,11 @@ class ComposePostActivity : AppCompatActivity() {
         val size = resources.getDimensionPixelSize(R.dimen.forum_compose_thumb)
         val margin = resources.getDimensionPixelSize(R.dimen.space_sm)
         photos.forEachIndexed { index, (source, mediaId) ->
-            val view = ImageView(this)
+            val view = ShapeableImageView(this)
             view.layoutParams = LinearLayout.LayoutParams(size, size).apply { marginEnd = margin }
             view.scaleType = ImageView.ScaleType.CENTER_CROP
+            view.shapeAppearanceModel = ShapeAppearanceModel.builder(this, 0, R.style.ShapeAppearance_App_ForumPhoto)
+                .build()
             view.contentDescription = getString(R.string.forum_remove_photo)
             Glide.with(view).load(source).centerCrop().into(view)
             view.setOnClickListener {

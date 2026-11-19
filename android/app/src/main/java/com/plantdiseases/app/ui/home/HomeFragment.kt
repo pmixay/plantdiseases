@@ -31,7 +31,6 @@ import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
-import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.notifications.NotificationsActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -127,20 +126,15 @@ class HomeFragment : Fragment() {
             isOffline = !online
             _binding?.let { applyTrendingScopeNote(it) }
         }
-        // Species ID (PlantNet), symptom triage (scored server-side) and the
-        // community feed have no offline mode at all.
+        // Species ID (PlantNet) and symptom triage (scored server-side) have no
+        // offline mode at all.
         viewLifecycleOwner.enableWhileOnline(
             connectivity.isOnline,
             binding.cardIdentify,
             binding.tileSymptom,
-            binding.btnNearbyScans,
         )
         binding.tvGreeting.text = greeting()
 
-        binding.btnNearbyScans.setOnClickListener {
-            Haptics.tick(requireContext())
-            startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-        }
         binding.btnNotifications.setOnClickListener {
             Haptics.tick(requireContext())
             startActivity(Intent(requireContext(), NotificationsActivity::class.java))

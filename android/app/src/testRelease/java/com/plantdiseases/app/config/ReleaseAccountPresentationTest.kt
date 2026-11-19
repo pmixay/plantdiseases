@@ -61,7 +61,7 @@ class ReleaseAccountPresentationTest {
     fun releaseCommunityMenuExposesRulesModerationContactAndBlockManagement() {
         val anchor = View(context)
         val menu = PopupMenu(context, anchor)
-        menu.menuInflater.inflate(R.menu.nearby_scans_menu, menu.menu)
+        menu.menuInflater.inflate(R.menu.community_map_menu, menu.menu)
 
         assertThat(menu.menu.findItem(R.id.action_community_safety)).isNotNull()
         assertThat(context.getString(R.string.community_rules_body)).isNotEmpty()

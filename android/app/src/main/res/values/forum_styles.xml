@@ -127,4 +127,10 @@
         <item name="drawableEndCompat">@drawable/ic_chevron_right</item>
     </style>
 
+
+    <!-- Grow-from-corner window animation for the Community menu. -->
+    <style name="Forum.MenuAnimation" parent="">
+        <item name="android:windowEnterAnimation">@anim/forum_menu_enter</item>
+        <item name="android:windowExitAnimation">@anim/forum_menu_exit</item>
+    </style>
 </resources>

@@ -7,7 +7,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -26,7 +25,7 @@ import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
 import com.plantdiseases.app.ui.account.AccountActivity
-import com.plantdiseases.app.ui.community.NearbyScansActivity
+import com.plantdiseases.app.ui.community.CommunityMapActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -378,26 +377,32 @@ class CommunityFragment : Fragment() {
     }
 
     private fun showMoreMenu() {
-        val popup = PopupMenu(requireContext(), binding.btnMore)
-        popup.menu.add(0, MENU_ACHIEVEMENTS, 0, R.string.forum_my_achievements)
-        popup.menu.add(0, MENU_NOTICES, 1, R.string.forum_moderation_notices)
-        if (staff?.isStaff == true) popup.menu.add(0, MENU_MODERATION, 2, R.string.forum_moderation_tools)
-        popup.menu.add(0, MENU_NEARBY, 3, R.string.forum_nearby_map)
-        popup.setOnMenuItemClickListener { item ->
-            if (item.itemId == MENU_NEARBY) {
-                startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-                return@setOnMenuItemClickListener true
+        val context = requireContext()
+        val items = buildList {
+            add(
+                ForumMenu.Item(R.string.forum_my_achievements, R.drawable.ic_trophy, ForumMenu.Tone.AMBER) {
+                    if (requireSignIn()) startActivity(HelperProfileActivity.intentForMe(context))
+                },
+            )
+            add(
+                ForumMenu.Item(R.string.forum_moderation_notices, R.drawable.ic_shield_check, ForumMenu.Tone.GREEN) {
+                    if (requireSignIn()) startActivity(ModerationNoticesActivity.intent(context))
+                },
+            )
+            if (staff?.isStaff == true) {
+                add(
+                    ForumMenu.Item(R.string.forum_moderation_tools, R.drawable.ic_flag, ForumMenu.Tone.RED) {
+                        if (requireSignIn()) startActivity(ModerationActivity.intent(context))
+                    },
+                )
             }
-            if (!requireSignIn()) return@setOnMenuItemClickListener true
-            val context = requireContext()
-            when (item.itemId) {
-                MENU_ACHIEVEMENTS -> startActivity(HelperProfileActivity.intentForMe(context))
-                MENU_NOTICES -> startActivity(ModerationNoticesActivity.intent(context))
-                MENU_MODERATION -> startActivity(ModerationActivity.intent(context))
-            }
-            true
+            add(
+                ForumMenu.Item(R.string.community_map_title, R.drawable.ic_world_map, ForumMenu.Tone.BLUE) {
+                    startActivity(Intent(context, CommunityMapActivity::class.java))
+                },
+            )
         }
-        popup.show()
+        ForumMenu(binding.btnMore).show(items)
     }
 
     private fun requireSignIn(): Boolean {
@@ -422,10 +427,6 @@ class CommunityFragment : Fragment() {
         const val PREFETCH_DISTANCE = 3
         const val PREFS = "forum_prefs"
         const val KEY_SEEN = "activity_seen_at"
-        const val MENU_ACHIEVEMENTS = 1
-        const val MENU_NOTICES = 2
-        const val MENU_MODERATION = 3
-        const val MENU_NEARBY = 4
         val SHOW_CHIPS = mapOf(
             TAB_ALL to R.id.chip_show_all,
             TAB_NEEDS_HELP to R.id.chip_show_needs_help,

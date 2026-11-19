@@ -62,15 +62,6 @@
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="-0.01" />
 
-            <ImageButton
-                android:id="@+id/btn_nearby_scans"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_community"
-                app:tint="@color/on_surface"
-                android:contentDescription="@string/nearby_scans_cd" />
-
             <!-- Notification centre entry — community replies, care reminders,
                  garden alerts in one list. Badge shows the unread count and
                  hides at zero. -->

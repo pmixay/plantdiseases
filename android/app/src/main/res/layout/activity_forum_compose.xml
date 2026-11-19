@@ -183,10 +183,10 @@
                         android:id="@+id/btn_add_photo"
                         android:layout_width="@dimen/forum_compose_thumb"
                         android:layout_height="@dimen/forum_compose_thumb"
-                        android:background="@drawable/bg_forum_badge"
+                        android:background="@drawable/bg_forum_add_photo"
                         android:contentDescription="@string/forum_add_photo"
                         android:src="@drawable/ic_add"
-                        app:tint="@color/on_surface_secondary" />
+                        app:tint="@color/forum_ai_fg" />
 
                 </LinearLayout>
 
@@ -194,15 +194,22 @@
 
             <TextView
                 android:id="@+id/tv_scan"
-                style="@style/Forum.Badge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
+                android:layout_marginTop="@dimen/space_md"
+                android:background="@drawable/bg_forum_ai_chip"
                 android:drawablePadding="6dp"
-                android:textColor="@color/neutral_blue"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center_vertical"
+                android:maxLines="1"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="7dp"
+                android:textColor="@color/forum_ai_fg"
+                android:textSize="@dimen/text_body_sm"
                 android:visibility="gone"
                 app:drawableStartCompat="@drawable/ic_sparkle"
-                app:drawableTint="@color/neutral_blue" />
+                app:drawableTint="@color/forum_ai_fg" />
 
             <TextView
                 android:id="@+id/tv_space"

@@ -111,6 +111,7 @@ class CommunityMapActivity : AppCompatActivity() {
         binding = ActivityCommunityMapBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.toolbar.setNavigationOnClickListener { finish() }
+        setupToolbarMenu()
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
         supportFragmentManager.setFragmentResultListener(
@@ -164,6 +165,31 @@ class CommunityMapActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         binding.map.onResume()
+        updateLeaveItem()
+    }
+
+    /** Rules and blocked authors are always there; "stop sharing" only while
+     *  the user shares scans. */
+    private fun setupToolbarMenu() {
+        val safety = ScanCommunitySafety(this, scanRepository, authRepository) {
+            updateLeaveItem()
+            reload()
+        }
+        binding.toolbar.inflateMenu(R.menu.community_map_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_community_safety -> safety.showRules()
+                R.id.action_disable_community -> safety.confirmLeave()
+                else -> return@setOnMenuItemClickListener false
+            }
+            true
+        }
+        updateLeaveItem()
+    }
+
+    private fun updateLeaveItem() {
+        binding.toolbar.menu.findItem(R.id.action_disable_community)?.isVisible =
+            CommunityPrefs.uploadsEnabled(this)
     }
 
     override fun onPause() {
@@ -412,9 +438,8 @@ class CommunityMapActivity : AppCompatActivity() {
         )
     }
 
-    /** Optimistic like toggle for a row in the grouped-scans bottom sheet —
-     *  same contract as [NearbyScansActivity]'s, just parameterised by which
-     *  adapter instance owns the tapped row. */
+    /** Optimistic like toggle for a row in the grouped-scans bottom sheet,
+     *  parameterised by which adapter instance owns the tapped row. */
     private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
         if (authRepository.state.value !is AuthState.Authenticated) {
             Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()

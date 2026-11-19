@@ -3,7 +3,7 @@
     Notification centre: every community reply, care reminder and garden
     alert the app has ever surfaced, regardless of whether the system
     notification itself was allowed to post. Read-state and layout follow
-    the same toolbar/inset/empty-state pattern as NearbyScansActivity.
+    the app's usual toolbar/inset/empty-state pattern.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"

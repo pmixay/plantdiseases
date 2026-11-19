@@ -320,7 +320,6 @@
     <string name="forum_filters_apply">Показать посты</string>
     <string name="forum_filters_reset">Сбросить</string>
     <string name="forum_filter_remove">Убрать фильтр: %1$s</string>
-    <string name="forum_nearby_map">Сканы рядом и карта</string>
     <string name="forum_post_edit">Редактировать</string>
     <string name="forum_compose_edit_title">Редактирование</string>
     <string name="forum_edit_saved">Изменения сохранены</string>

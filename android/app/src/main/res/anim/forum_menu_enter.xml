@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Community menu opening: grows out of the top-end corner while fading in. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/decelerate_cubic"
+    android:duration="180">
+    <scale
+        android:fromXScale="0.85"
+        android:fromYScale="0.85"
+        android:pivotX="100%"
+        android:pivotY="0%"
+        android:toXScale="1"
+        android:toYScale="1" />
+    <alpha
+        android:fromAlpha="0"
+        android:toAlpha="1" />
+</set>

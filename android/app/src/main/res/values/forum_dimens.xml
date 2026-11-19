@@ -12,4 +12,6 @@
     <dimen name="forum_step_number">22dp</dimen>
     <dimen name="forum_reply_indent">12dp</dimen>
     <dimen name="forum_step_gap">10dp</dimen>
+    <dimen name="forum_menu_width">264dp</dimen>
+    <dimen name="forum_menu_shadow">10dp</dimen>
 </resources>

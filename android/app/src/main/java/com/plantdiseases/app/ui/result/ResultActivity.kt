@@ -159,8 +159,8 @@ class ResultActivity : AppCompatActivity() {
     }
 
     // In-context community opt-in from the result screen (the "enable community"
-    // button under the similar-scans card and the second-opinion gate). Mirrors
-    // NearbyScansActivity: request coarse location ONLY and flip community ON
+    // button under the similar-scans card and the second-opinion gate).
+    // Requests coarse location ONLY and flips community ON
     // when it's granted — so a denial leaves the "enable community" button in
     // place instead of silently enabling with no location. Notifications are
     // NOT part of joining; they're requested when the user asks for a second
