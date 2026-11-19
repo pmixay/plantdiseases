@@ -4,4 +4,12 @@
     <dimen name="forum_answer_photo_size">88dp</dimen>
     <dimen name="forum_thread_indent">16dp</dimen>
     <dimen name="forum_compose_thumb">72dp</dimen>
+    <dimen name="forum_text_meta">12sp</dimen>
+    <dimen name="forum_feed_photo_height">184dp</dimen>
+    <dimen name="forum_single_photo_height">240dp</dimen>
+    <dimen name="forum_avatar">32dp</dimen>
+    <dimen name="forum_avatar_small">26dp</dimen>
+    <dimen name="forum_step_number">22dp</dimen>
+    <dimen name="forum_reply_indent">12dp</dimen>
+    <dimen name="forum_step_gap">10dp</dimen>
 </resources>

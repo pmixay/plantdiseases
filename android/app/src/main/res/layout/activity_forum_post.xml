@@ -74,9 +74,9 @@
         android:id="@+id/composer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface_container_low"
+        android:background="@drawable/bg_forum_composer"
         android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_md"
+        android:paddingHorizontal="@dimen/space_sm"
         android:paddingVertical="@dimen/space_sm">
 
         <LinearLayout
@@ -112,7 +112,11 @@
             android:id="@+id/et_steps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="@dimen/space_xs"
+            android:layout_marginHorizontal="@dimen/space_xs"
+            android:layout_marginBottom="@dimen/space_sm"
+            android:background="@drawable/bg_forum_input"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
             android:hint="@string/forum_steps_hint"
             android:importantForAutofill="no"
             android:inputType="textMultiLine|textCapSentences"
@@ -152,7 +156,7 @@
 
             <ImageButton
                 android:id="@+id/btn_photo"
-                android:layout_width="40dp"
+                android:layout_width="38dp"
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/forum_add_photo"
@@ -161,7 +165,7 @@
 
             <ImageButton
                 android:id="@+id/btn_steps"
-                android:layout_width="40dp"
+                android:layout_width="38dp"
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/forum_add_steps"
@@ -170,32 +174,40 @@
 
             <ImageButton
                 android:id="@+id/btn_diagnosis"
-                android:layout_width="40dp"
+                android:layout_width="38dp"
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/forum_add_diagnosis"
-                android:src="@drawable/ic_disease"
+                android:src="@drawable/ic_first_aid"
                 app:tint="@color/on_surface_secondary" />
 
             <EditText
                 android:id="@+id/et_answer"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
                 android:layout_weight="1"
+                android:background="@drawable/bg_forum_input"
                 android:hint="@string/forum_answer_hint"
                 android:importantForAutofill="no"
                 android:inputType="textMultiLine|textCapSentences"
                 android:maxLines="5"
+                android:minHeight="44dp"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
                 android:textSize="@dimen/text_body" />
 
             <ImageButton
                 android:id="@+id/btn_send"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:layout_marginStart="@dimen/space_sm"
+                android:background="@drawable/bg_forum_send"
                 android:contentDescription="@string/forum_send"
+                android:padding="11dp"
+                android:scaleType="fitCenter"
                 android:src="@drawable/ic_send"
-                app:tint="@color/primary" />
+                app:tint="@color/on_primary" />
 
         </LinearLayout>
 

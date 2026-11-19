@@ -7,4 +7,7 @@
     android:layout_height="wrap_content"
     app:checkedIconEnabled="false"
     app:chipBackgroundColor="@color/chip_bg_color"
-    app:chipIconTint="@color/primary" />
+    app:chipStrokeColor="@color/forum_chip_stroke"
+    android:textColor="@color/forum_chip_text"
+    app:chipIconTint="@color/primary"
+    app:chipIconVisible="true" />

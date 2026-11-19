@@ -1,6 +1,12 @@
 package com.plantdiseases.app.ui.community.forum
 
+import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -48,43 +54,68 @@ class ForumPostAdapter(
 
         fun bind(post: ForumPost) {
             val context = binding.root.context
-            binding.ivKind.setImageResource(ForumUi.kindIcon(post.kind))
-            binding.tvKind.setText(ForumUi.kindLabel(post.kind))
-            binding.tvMeta.text = context.getString(
-                R.string.forum_meta_space_time,
-                ForumUi.spaceName(context, post.space, spaces),
-                ForumUi.relativeTime(post.createdAt),
-            )
-            bindBadge(post)
+            val nickname = post.author.nickname.ifBlank { context.getString(R.string.community_anonymous_author) }
+            ForumViews.bindAvatar(binding.tvAvatar, nickname)
+            binding.tvAuthor.text = nickname
+            binding.tvMeta.text = ForumViews.meta(context, post, spaces)
+            ForumViews.bindStatus(binding.tvBadge, ForumViews.feedStatus(post))
+
             val title = ForumUi.postTitle(context, post.title, post.kind, post.ai?.disease)
             val highlight = ContextCompat.getColor(context, R.color.search_highlight)
             binding.tvTitle.text = ForumUi.highlight(title, terms, highlight)
             binding.tvExcerpt.visibility = if (post.body.isBlank()) View.GONE else View.VISIBLE
             binding.tvExcerpt.text = ForumUi.highlight(post.body, terms, highlight)
 
-            val photo = post.media.firstOrNull()
-            if (photo == null) {
-                binding.ivPhoto.visibility = View.GONE
-                Glide.with(binding.ivPhoto).clear(binding.ivPhoto)
-            } else {
-                binding.ivPhoto.visibility = View.VISIBLE
-                Glide.with(binding.ivPhoto).load(mediaUrl(photo.mediaId)).centerCrop().into(binding.ivPhoto)
-            }
+            bindPhoto(post)
+            bindSolution(context, post)
+            bindActions(context, post)
+            binding.root.setOnClickListener { onOpen(post) }
+        }
 
-            val ai = post.ai
-            binding.tvAi.visibility = if (ai == null) View.GONE else View.VISIBLE
-            if (ai != null) {
-                val percent = ((ai.confidence ?: 0.0) * 100).toInt()
-                binding.tvAi.text = context.getString(
+        /** First photo; scans carry PlantVision's verdict on it (or under the title without a photo). */
+        private fun bindPhoto(post: ForumPost) {
+            val context = binding.root.context
+            val photo = post.media.firstOrNull()
+            val verdict = post.ai?.let { ai ->
+                context.getString(
                     R.string.forum_ai_summary,
                     ForumUi.conditionLabel(context, ai.disease),
-                    percent,
+                    ((ai.confidence ?: 0.0) * PERCENT).toInt(),
                 )
             }
-            val excerpt = post.acceptedExcerpt
-            binding.tvAccepted.visibility = if (post.solved && !excerpt.isNullOrBlank()) View.VISIBLE else View.GONE
-            binding.tvAccepted.text = context.getString(R.string.forum_accepted_excerpt, excerpt.orEmpty())
+            if (photo == null) {
+                binding.photoFrame.visibility = View.GONE
+                Glide.with(binding.ivPhoto).clear(binding.ivPhoto)
+            } else {
+                binding.photoFrame.visibility = View.VISIBLE
+                Glide.with(binding.ivPhoto).load(mediaUrl(photo.mediaId)).centerCrop().into(binding.ivPhoto)
+            }
+            binding.tvAiPhoto.visibility = if (photo != null && verdict != null) View.VISIBLE else View.GONE
+            binding.tvAiPhoto.text = verdict
+            binding.tvAi.visibility = if (photo == null && verdict != null) View.VISIBLE else View.GONE
+            binding.tvAi.text = verdict
+            val photos = maxOf(post.mediaCount, post.media.size)
+            binding.tvPhotoCount.visibility = if (photo != null && photos > 1) View.VISIBLE else View.GONE
+            binding.tvPhotoCount.text = photos.toString()
+        }
 
+        private fun bindSolution(context: Context, post: ForumPost) {
+            val excerpt = post.acceptedExcerpt?.takeIf { post.solved && it.isNotBlank() }
+            binding.tvAccepted.visibility = if (excerpt == null) View.GONE else View.VISIBLE
+            if (excerpt == null) return
+            val label = context.getString(R.string.forum_mark_solution)
+            val text = SpannableStringBuilder(label).append("  ").append(excerpt)
+            text.setSpan(StyleSpan(Typeface.BOLD), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(
+                ForegroundColorSpan(ContextCompat.getColor(context, R.color.healthy_green)),
+                0,
+                label.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            binding.tvAccepted.text = text
+        }
+
+        private fun bindActions(context: Context, post: ForumPost) {
             binding.tvLike.text = post.likeCount.toString()
             binding.tvLike.setCompoundDrawablesRelativeWithIntrinsicBounds(
                 if (post.likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart,
@@ -101,27 +132,12 @@ class ForumPostAdapter(
             binding.tvLike.isEnabled = !post.author.isMe
             binding.tvLike.setOnClickListener { onLike(post) }
             binding.tvAnswers.text = post.answerCount.toString()
-            binding.tvAuthor.text = post.author.nickname
-            binding.root.setOnClickListener { onOpen(post) }
-        }
-
-        private fun bindBadge(post: ForumPost) {
-            val context = binding.root.context
-            val (text, color) = when {
-                post.solved -> R.string.forum_badge_solved to R.color.healthy_green
-                post.urgent -> R.string.forum_badge_urgent to R.color.disease_red
-                post.answerCount == 0 && (post.kind == "question" || post.kind == "scan") ->
-                    R.string.forum_badge_unanswered to R.color.warning_amber
-                post.pinned -> R.string.forum_badge_pinned to R.color.primary
-                else -> null to null
-            }
-            if (text == null || color == null) {
-                binding.tvBadge.visibility = View.GONE
-                return
-            }
-            binding.tvBadge.visibility = View.VISIBLE
-            binding.tvBadge.setText(text)
-            binding.tvBadge.setTextColor(ContextCompat.getColor(context, color))
+            // Invite an answer where one is still missing: answering is what
+            // the levels and achievements reward.
+            val askingKind = post.kind == "question" || post.kind == "scan"
+            val needsHelp = askingKind && !post.solved && !post.locked && post.answerCount == 0 && !post.author.isMe
+            binding.btnHelp.visibility = if (needsHelp) View.VISIBLE else View.GONE
+            binding.btnHelp.setOnClickListener { onOpen(post) }
         }
     }
 
@@ -130,5 +146,6 @@ class ForumPostAdapter(
             override fun areItemsTheSame(oldItem: ForumPost, newItem: ForumPost) = oldItem.id == newItem.id
             override fun areContentsTheSame(oldItem: ForumPost, newItem: ForumPost) = oldItem == newItem
         }
+        const val PERCENT = 100
     }
 }

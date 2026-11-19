@@ -48,11 +48,8 @@
     <string name="forum_kind_scan">Скан</string>
     <string name="forum_kind_recovery">Как дела у растения</string>
     <string name="forum_kind_tip">Совет</string>
-    <string name="forum_meta_space_time">%1$s · %2$s</string>
-    <string name="forum_meta_kind_space_time">%1$s · %2$s · %3$s</string>
     <string name="forum_scan_title_fallback">Прав ли ИИ? Он говорит: %1$s</string>
-    <string name="forum_ai_summary">Ответ ИИ: %1$s, %2$d%%</string>
-    <string name="forum_accepted_excerpt">Принятый ответ: %1$s</string>
+    <string name="forum_ai_summary">PlantVision: %1$s · %2$d%%</string>
     <string name="forum_badge_solved">Решено</string>
     <string name="forum_badge_urgent">Срочно</string>
     <string name="forum_badge_unanswered">Пока без ответов</string>
@@ -60,7 +57,7 @@
     <string name="forum_badge_locked">Ответы закрыты</string>
     <string name="forum_badge_hidden">Скрыто на проверку</string>
     <string name="forum_badge_asker">Автор вопроса</string>
-    <string name="forum_badge_expert_verified">Эксперт</string>
+    <string name="forum_badge_expert_verified">Проверено экспертом</string>
     <string name="forum_like">Нравится</string>
     <string name="forum_photo_description">Фото растения</string>
 
@@ -72,12 +69,9 @@
         <item quantity="other">%d ответа</item>
     </plurals>
     <string name="forum_ai_answer_title">PlantVision</string>
-    <string name="forum_ai_verdict">%1$s · %2$d%%</string>
     <string name="forum_removed_author">Удалено</string>
     <string name="forum_answer_removed">Этот ответ удалён.</string>
     <string name="forum_diagnosis_tag">Диагноз: %1$s</string>
-    <string name="forum_mark_accepted">Принят автором вопроса</string>
-    <string name="forum_mark_verified">Подтверждён экспертом</string>
     <string name="forum_not_helpful">Не помогло</string>
     <string name="forum_reply">Ответить</string>
     <string name="forum_accept">Принять</string>
@@ -331,4 +325,8 @@
     <string name="forum_post_edit">Редактировать</string>
     <string name="forum_compose_edit_title">Редактирование</string>
     <string name="forum_edit_saved">Изменения сохранены</string>
+    <string name="forum_mark_solution">Решение</string>
+    <string name="forum_help_cta">Помочь</string>
+    <string name="forum_ai_note">Автоматическая оценка по фото. Сверьте её с ответами ниже.</string>
+    <string name="forum_ai_confidence">%1$d%%</string>
 </resources>

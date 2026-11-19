@@ -5,8 +5,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:background="@color/surface">
+    android:layout_height="wrap_content">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -56,7 +55,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/forum_tab_all"
                 app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chip_show_needs_help"
@@ -65,7 +66,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/forum_tab_needs_help"
                 app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chip_show_solved"
@@ -74,7 +77,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/forum_tab_solved"
                 app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chip_show_mine"
@@ -83,7 +88,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/forum_tab_mine"
                 app:checkedIconEnabled="false"
-                app:chipBackgroundColor="@color/chip_bg_color" />
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
         </com.google.android.material.chip.ChipGroup>
 
@@ -136,7 +143,9 @@
                     android:layout_height="wrap_content"
                     android:text="@string/forum_sort_hot"
                     app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
+                    app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chip_sort_new"
@@ -145,7 +154,9 @@
                     android:layout_height="wrap_content"
                     android:text="@string/forum_sort_new"
                     app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
+                    app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chip_sort_top"
@@ -154,7 +165,9 @@
                     android:layout_height="wrap_content"
                     android:text="@string/forum_sort_top"
                     app:checkedIconEnabled="false"
-                    app:chipBackgroundColor="@color/chip_bg_color" />
+                    app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
 
             </com.google.android.material.chip.ChipGroup>
 

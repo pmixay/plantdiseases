@@ -48,11 +48,8 @@
     <string name="forum_kind_scan">Scan</string>
     <string name="forum_kind_recovery">Recovery update</string>
     <string name="forum_kind_tip">Tip</string>
-    <string name="forum_meta_space_time">%1$s · %2$s</string>
-    <string name="forum_meta_kind_space_time">%1$s · %2$s · %3$s</string>
     <string name="forum_scan_title_fallback">Is the AI right? It says %1$s</string>
-    <string name="forum_ai_summary">AI answer: %1$s, %2$d%%</string>
-    <string name="forum_accepted_excerpt">Accepted answer: %1$s</string>
+    <string name="forum_ai_summary">PlantVision: %1$s · %2$d%%</string>
     <string name="forum_badge_solved">Solved</string>
     <string name="forum_badge_urgent">Urgent</string>
     <string name="forum_badge_unanswered">No answers yet</string>
@@ -60,7 +57,7 @@
     <string name="forum_badge_locked">Locked</string>
     <string name="forum_badge_hidden">Hidden while reviewed</string>
     <string name="forum_badge_asker">Asker</string>
-    <string name="forum_badge_expert_verified">Expert</string>
+    <string name="forum_badge_expert_verified">Expert-checked</string>
     <string name="forum_like">Like</string>
     <string name="forum_photo_description">Photo of the plant</string>
 
@@ -70,12 +67,9 @@
         <item quantity="other">%d answers</item>
     </plurals>
     <string name="forum_ai_answer_title">PlantVision</string>
-    <string name="forum_ai_verdict">%1$s · %2$d%%</string>
     <string name="forum_removed_author">Removed</string>
     <string name="forum_answer_removed">This answer was removed.</string>
     <string name="forum_diagnosis_tag">Diagnosis: %1$s</string>
-    <string name="forum_mark_accepted">Accepted by the asker</string>
-    <string name="forum_mark_verified">Verified by an expert</string>
     <string name="forum_not_helpful">Not helpful</string>
     <string name="forum_reply">Reply</string>
     <string name="forum_accept">Accept</string>
@@ -329,4 +323,8 @@
     <string name="forum_post_edit">Edit</string>
     <string name="forum_compose_edit_title">Edit post</string>
     <string name="forum_edit_saved">Changes saved</string>
+    <string name="forum_mark_solution">Solution</string>
+    <string name="forum_help_cta">Help</string>
+    <string name="forum_ai_note">An automatic estimate from the photo. Compare it with the answers below.</string>
+    <string name="forum_ai_confidence">%1$d%%</string>
 </resources>

@@ -121,4 +121,15 @@
     <color name="moon_glow">#22FFFFFF</color>
     <color name="pro_gate_scrim_start">#B31A211D</color>
     <color name="pro_gate_scrim_end">#F70E1511</color>
+
+    <!-- Community forum surfaces (see values/colors.xml). -->
+    <color name="forum_card_stroke">#1F2B23</color>
+    <color name="forum_ai_bg">#10241A</color>
+    <color name="forum_ai_stroke">#1D4A2F</color>
+    <color name="forum_ai_fg">#4ADE80</color>
+    <color name="forum_ai_track">#1C3A27</color>
+    <color name="forum_solution_stroke">#2F7D4B</color>
+    <color name="forum_solution_box">#14241A</color>
+    <color name="forum_photo_scrim">#99000000</color>
+    <color name="forum_on_photo">#FFFFFF</color>
 </resources>

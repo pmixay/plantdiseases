@@ -149,4 +149,17 @@
     <color name="moon_terminator_glow">#66E8B87A</color>
     <color name="pro_gate_scrim_start">#B3FFFFFF</color>
     <color name="pro_gate_scrim_end">#F7FFFFFF</color>
+
+    <!-- Community forum surfaces. PlantVision's answer is a green-tinted card
+         (brand green, not the old info blue); the accepted solution is an
+         outlined card; feed cards get a softer stroke than card_stroke. -->
+    <color name="forum_card_stroke">#E1ECE4</color>
+    <color name="forum_ai_bg">#EEF9F2</color>
+    <color name="forum_ai_stroke">#C6EBD3</color>
+    <color name="forum_ai_fg">#15803D</color>
+    <color name="forum_ai_track">#D2F1DD</color>
+    <color name="forum_solution_stroke">#7CCB97</color>
+    <color name="forum_solution_box">#F0F9F3</color>
+    <color name="forum_photo_scrim">#99000000</color>
+    <color name="forum_on_photo">#FFFFFF</color>
 </resources>

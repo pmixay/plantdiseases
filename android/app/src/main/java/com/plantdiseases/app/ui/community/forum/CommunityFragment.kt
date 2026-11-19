@@ -80,7 +80,7 @@ class CommunityFragment : Fragment() {
         })
         binding.swipeRefresh.setOnRefreshListener { reload() }
         binding.chipFilters.setOnClickListener { showFilters() }
-        binding.btnSearch.setOnClickListener { startActivity(ForumSearchActivity.intent(requireContext())) }
+        binding.searchBar.setOnClickListener { startActivity(ForumSearchActivity.intent(requireContext())) }
         binding.btnActivity.setOnClickListener { showActivity() }
         binding.btnMore.setOnClickListener { showMoreMenu() }
         binding.fabAsk.setOnClickListener {
@@ -257,7 +257,7 @@ class CommunityFragment : Fragment() {
             add(getString(SORT_LABELS.getValue(sort)), null) { applyFilters(nextSort = SORT_HOT) }
         }
         val count = group.childCount
-        group.visibility = if (count == 0) View.GONE else View.VISIBLE
+        b.activeFiltersScroll.visibility = if (count == 0) View.GONE else View.VISIBLE
         b.chipFilters.text = if (count == 0) {
             getString(R.string.forum_filters)
         } else {

@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The post at the top of a thread: author, status, title, text, species
+     and condition, photos, recovery-update links, actions, then the answers
+     heading. PostThreadAdapter.HeaderHolder binds it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="@dimen/space_lg">
+    android:paddingHorizontal="@dimen/space_lg"
+    android:paddingTop="@dimen/space_lg"
+    android:paddingBottom="@dimen/space_xs">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -14,18 +19,15 @@
 
         <TextView
             android:id="@+id/tv_avatar"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:background="@drawable/bg_circle_surface_variant"
-            android:fontFamily="sans-serif-medium"
-            android:gravity="center"
-            android:textColor="@android:color/white"
-            android:textSize="@dimen/text_caption" />
+            style="@style/Forum.Avatar"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:importantForAccessibility="no" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_sm"
+            android:layout_marginStart="10dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
@@ -38,7 +40,7 @@
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:textColor="@color/on_surface"
-                android:textSize="@dimen/text_body_sm" />
+                android:textSize="@dimen/text_body" />
 
             <TextView
                 android:id="@+id/tv_meta"
@@ -50,9 +52,10 @@
 
         <TextView
             android:id="@+id/tv_badge"
-            style="@style/Forum.Badge"
+            style="@style/Forum.Pill"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
             android:visibility="gone" />
 
     </LinearLayout>
@@ -61,8 +64,8 @@
         android:id="@+id/tv_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_md"
-        android:textAppearance="@style/TextAppearance.App.Headline"
+        android:layout_marginTop="14dp"
+        android:textAppearance="@style/TextAppearance.App.Forum.ThreadTitle"
         android:textIsSelectable="true" />
 
     <TextView
@@ -70,27 +73,49 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_sm"
+        android:lineSpacingExtra="3dp"
         android:textColor="@color/on_surface"
         android:textIsSelectable="true"
-        android:textSize="@dimen/text_body" />
+        android:textSize="15sp" />
 
-    <TextView
-        android:id="@+id/tv_tags"
+    <LinearLayout
+        android:id="@+id/tags_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_sm"
-        android:drawablePadding="6dp"
-        android:textColor="@color/primary"
-        android:textSize="@dimen/text_caption"
-        android:visibility="gone"
-        app:drawableStartCompat="@drawable/ic_leaf"
-        app:drawableTint="@color/primary" />
+        android:layout_marginTop="@dimen/space_md"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_species"
+            style="@style/Forum.Pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/primary_light"
+            android:ellipsize="end"
+            android:maxWidth="200dp"
+            android:textColor="@color/primary"
+            android:textStyle="italic"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_condition"
+            style="@style/Forum.Pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:textColor="@color/on_surface"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
     <HorizontalScrollView
         android:id="@+id/photos_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_md"
+        android:layout_marginTop="14dp"
+        android:fillViewport="true"
         android:scrollbars="none"
         android:visibility="gone">
 
@@ -112,7 +137,6 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_sm"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -139,22 +163,34 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_update"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.Material3.Button.TonalButton.Icon"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="14dp"
             android:text="@string/forum_post_edit"
+            android:textSize="@dimen/text_body_sm"
             android:visibility="gone"
-            app:icon="@drawable/ic_note_pencil" />
+            app:icon="@drawable/ic_note_pencil"
+            app:iconSize="16dp" />
 
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="6dp"
+        android:background="@color/divider" />
 
     <TextView
         android:id="@+id/tv_answers_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_md"
+        android:layout_marginTop="14dp"
         android:fontFamily="sans-serif-medium"
-        android:textColor="@color/on_surface_secondary"
-        android:textSize="@dimen/text_body_sm" />
+        android:textColor="@color/on_surface"
+        android:textSize="@dimen/text_title_sm" />
 
 </LinearLayout>

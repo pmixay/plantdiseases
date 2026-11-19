@@ -3,6 +3,8 @@ package com.plantdiseases.app.ui.community.forum
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -21,7 +23,6 @@ import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.databinding.ItemForumAnswerBinding
 import com.plantdiseases.app.databinding.ItemForumPostHeaderBinding
-import com.plantdiseases.app.util.Avatars
 
 /** What the thread screen does when someone taps something in the thread. */
 interface ThreadActions {
@@ -84,26 +85,15 @@ class PostThreadAdapter(
         fun bind(post: ForumPost) {
             val context = binding.root.context
             val nickname = post.author.nickname.ifBlank { context.getString(R.string.community_anonymous_author) }
-            binding.tvAvatar.text = Avatars.monogramForNick(nickname)
-            binding.tvAvatar.backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(nickname))
+            ForumViews.bindAvatar(binding.tvAvatar, nickname)
             binding.tvAuthor.text = nickname
             binding.tvAuthor.setOnClickListener { post.author.authorToken?.let(actions::onOpenAuthor) }
-            binding.tvMeta.text = context.getString(
-                R.string.forum_meta_kind_space_time,
-                context.getString(ForumUi.kindLabel(post.kind)),
-                ForumUi.spaceName(context, post.space, spaces),
-                ForumUi.relativeTime(post.createdAt),
-            )
-            bindBadge(context, post)
+            binding.tvMeta.text = ForumViews.meta(context, post, spaces)
+            ForumViews.bindStatus(binding.tvBadge, ForumViews.threadStatus(post))
             binding.tvTitle.text = ForumUi.postTitle(context, post.title, post.kind, post.ai?.disease)
             binding.tvBody.visibility = if (post.body.isBlank()) View.GONE else View.VISIBLE
             binding.tvBody.text = post.body
-            val tags = listOfNotNull(
-                post.species?.takeIf { it.isNotBlank() },
-                post.condition?.let { ForumUi.conditionLabel(context, it) },
-            )
-            binding.tvTags.visibility = if (tags.isEmpty()) View.GONE else View.VISIBLE
-            binding.tvTags.text = tags.joinToString(" · ")
+            bindTags(context, post)
             bindPhotos(context, post.media)
             bindUpdates(context, post)
             bindLike(context, post)
@@ -117,19 +107,21 @@ class PostThreadAdapter(
             )
         }
 
-        private fun bindBadge(context: Context, post: ForumPost) {
-            val (text, color) = when {
-                post.solved -> R.string.forum_badge_solved to R.color.healthy_green
-                post.locked -> R.string.forum_badge_locked to R.color.on_surface_secondary
-                post.state == "hidden" -> R.string.forum_badge_hidden to R.color.warning_amber
-                post.urgent -> R.string.forum_badge_urgent to R.color.disease_red
-                else -> null to null
-            }
-            binding.tvBadge.visibility = if (text == null) View.GONE else View.VISIBLE
-            if (text != null && color != null) {
-                binding.tvBadge.setText(text)
-                binding.tvBadge.setTextColor(ContextCompat.getColor(context, color))
-            }
+        /** Species and condition as two pills. */
+        private fun bindTags(context: Context, post: ForumPost) {
+            val species = post.species?.takeIf { it.isNotBlank() }
+            val condition = post.condition?.takeIf { it.isNotBlank() }?.let { ForumUi.conditionLabel(context, it) }
+            binding.tagsRow.visibility = if (species == null && condition == null) View.GONE else View.VISIBLE
+            binding.tvSpecies.visibility = if (species == null) View.GONE else View.VISIBLE
+            binding.tvSpecies.text = species
+            ForumViews.setSmallIcon(binding.tvSpecies, R.drawable.ic_leaf, TAG_ICON_DP)
+            binding.tvSpecies.compoundDrawableTintList =
+                ColorStateList.valueOf(ContextCompat.getColor(context, R.color.primary))
+            binding.tvCondition.visibility = if (condition == null) View.GONE else View.VISIBLE
+            binding.tvCondition.text = condition
+            ForumViews.setSmallIcon(binding.tvCondition, R.drawable.ic_first_aid, TAG_ICON_DP)
+            binding.tvCondition.compoundDrawableTintList =
+                ColorStateList.valueOf(ContextCompat.getColor(context, R.color.on_surface_secondary))
         }
 
         private fun bindPhotos(context: Context, media: List<ForumMedia>) {
@@ -139,7 +131,18 @@ class PostThreadAdapter(
             val ids = media.map { it.mediaId }
             media.forEachIndexed { index, item ->
                 val ratio = if (item.width > 0 && item.height > 0) item.width.toFloat() / item.height else RATIO
-                val view = photoView(context, (height * ratio).toInt().coerceIn(height / 2, height * 2), height)
+                val view = if (media.size == 1) {
+                    // One photo fills the width (the scroller fills its viewport).
+                    photoView(context, 0, context.resources.getDimensionPixelSize(R.dimen.forum_single_photo_height))
+                        .also { photo ->
+                            (photo.layoutParams as LinearLayout.LayoutParams).apply {
+                                weight = 1f
+                                marginEnd = 0
+                            }
+                        }
+                } else {
+                    photoView(context, (height * ratio).toInt().coerceIn(height / 2, height * 2), height)
+                }
                 Glide.with(view).load(mediaUrl(item.mediaId)).centerCrop().into(view)
                 view.setOnClickListener { actions.onOpenPhoto(ids, index, it) }
                 binding.llPhotos.addView(view)
@@ -187,19 +190,15 @@ class PostThreadAdapter(
 
         fun bind(post: ForumPost, answer: ForumAnswer) {
             val context = binding.root.context
-            val indent = context.resources.getDimensionPixelSize(R.dimen.forum_thread_indent) * answer.depth
+            val res = context.resources
             binding.answerRoot.setPaddingRelative(
-                context.resources.getDimensionPixelSize(R.dimen.space_lg) + indent,
+                res.getDimensionPixelSize(R.dimen.space_lg) + res.getDimensionPixelSize(R.dimen.forum_reply_indent) * answer.depth,
                 binding.answerRoot.paddingTop,
                 binding.answerRoot.paddingEnd,
                 binding.answerRoot.paddingBottom,
             )
-            val lineColor = when {
-                answer.accepted -> R.color.healthy_green
-                answer.isAi -> R.color.neutral_blue
-                else -> R.color.divider
-            }
-            binding.threadLine.setBackgroundColor(ContextCompat.getColor(context, lineColor))
+            binding.threadLine.visibility = if (answer.depth > 0) View.VISIBLE else View.GONE
+            bindCard(context, answer)
             bindAuthor(context, post, answer)
             if (answer.isRemoved) {
                 bindRemoved(context)
@@ -210,40 +209,77 @@ class PostThreadAdapter(
             bindAi(context, post, answer)
             binding.tvBody.visibility = if (answer.body.isBlank()) View.GONE else View.VISIBLE
             binding.tvBody.text = answer.body
-            binding.tvSteps.visibility = if (answer.steps.isEmpty()) View.GONE else View.VISIBLE
-            binding.tvSteps.text = answer.steps.mapIndexed { index, step -> "${index + 1}. $step" }.joinToString("\n")
-            val diagnosis = answer.diagnosis?.takeIf { !answer.isAi }
-            binding.tvDiagnosis.visibility = if (diagnosis == null) View.GONE else View.VISIBLE
-            binding.tvDiagnosis.text = context.getString(
-                R.string.forum_diagnosis_tag,
-                ForumUi.conditionLabel(context, diagnosis),
-            )
+            bindSteps(context, answer.steps)
+            bindDiagnosis(context, answer)
             bindMedia(context, answer.media)
-            bindMarks(context, answer)
             bindActions(context, post, answer)
+        }
+
+        /** PlantVision's answer is a green-tinted card; the accepted solution is outlined and labelled. */
+        private fun bindCard(context: Context, answer: ForumAnswer) {
+            val background = when {
+                answer.isRemoved -> null
+                answer.isAi -> R.drawable.bg_forum_ai_card
+                answer.accepted -> R.drawable.bg_forum_solution_card
+                else -> null
+            }
+            val card = binding.answerCard
+            if (background == null) {
+                card.background = null
+                card.setPadding(0, 0, 0, 0)
+            } else {
+                card.setBackgroundResource(background)
+                val padding = context.resources.getDimensionPixelSize(R.dimen.space_md)
+                card.setPadding(padding, padding, padding, context.resources.getDimensionPixelSize(R.dimen.space_xs))
+            }
+            // "✓ Solution · Expert-checked", "✓ Solution" or "Expert-checked" above the answer.
+            val marks = listOfNotNull(
+                context.getString(R.string.forum_mark_solution).takeIf { answer.accepted },
+                context.getString(R.string.forum_badge_expert_verified).takeIf { answer.verified },
+            ).takeUnless { answer.isRemoved }.orEmpty()
+            binding.tvMarks.visibility = if (marks.isEmpty()) View.GONE else View.VISIBLE
+            if (marks.isNotEmpty()) {
+                binding.tvMarks.text = marks.joinToString(" · ")
+                val icon = if (answer.accepted) R.drawable.ic_check else R.drawable.ic_shield_check
+                ForumViews.setSmallIcon(binding.tvMarks, icon, MARK_ICON_DP)
+                binding.tvMarks.compoundDrawableTintList =
+                    ColorStateList.valueOf(ContextCompat.getColor(context, R.color.healthy_green))
+            }
         }
 
         private fun bindAuthor(context: Context, post: ForumPost, answer: ForumAnswer) {
             binding.ivAi.visibility = if (answer.isAi) View.VISIBLE else View.GONE
+            binding.tvAvatar.visibility = if (answer.isAi) View.GONE else View.VISIBLE
             val author = answer.author
-            binding.tvAuthor.text = when {
+            val name = when {
                 answer.isAi -> context.getString(R.string.forum_ai_answer_title)
                 author == null -> context.getString(R.string.forum_removed_author)
                 else -> author.nickname.ifBlank { context.getString(R.string.community_anonymous_author) }
             }
+            binding.tvAuthor.text = name
+            binding.tvAuthor.setTextColor(
+                ContextCompat.getColor(context, if (answer.isAi) R.color.forum_ai_fg else R.color.on_surface),
+            )
+            if (!answer.isAi) ForumViews.bindAvatar(binding.tvAvatar, name)
             binding.tvAuthor.setOnClickListener { author?.authorToken?.let(actions::onOpenAuthor) }
-            val badge = when {
-                author?.isPostAuthor == true -> R.string.forum_badge_asker
-                answer.verified -> R.string.forum_badge_expert_verified
-                else -> null
-            }
-            binding.tvAuthorBadge.visibility = if (badge == null) View.GONE else View.VISIBLE
-            badge?.let { binding.tvAuthorBadge.setText(it) }
+            bindAuthorBadge(context, answer)
             binding.tvTime.text = ForumUi.relativeTime(answer.createdAt)
             binding.btnMore.visibility = if (answer.isRemoved || !actions.hasAnswerMenu(answer)) View.GONE else View.VISIBLE
             binding.btnMore.setOnClickListener { actions.onAnswerMenu(answer, it) }
             binding.btnAccept.visibility = View.GONE
             if (post.locked) binding.tvReply.visibility = View.GONE
+        }
+
+        /** "Asker" next to the question author's own answers and replies. */
+        private fun bindAuthorBadge(context: Context, answer: ForumAnswer) {
+            val badge = binding.tvAuthorBadge
+            val asker = answer.author?.isPostAuthor == true
+            badge.visibility = if (asker) View.VISIBLE else View.GONE
+            if (!asker) return
+            badge.setText(R.string.forum_badge_asker)
+            badge.setTextColor(ContextCompat.getColor(context, R.color.on_surface_secondary))
+            badge.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.surface_container))
+            ForumViews.setSmallIcon(badge, null, TAG_ICON_DP)
         }
 
         private fun bindRemoved(context: Context) {
@@ -252,23 +288,70 @@ class PostThreadAdapter(
             binding.tvBody.setText(R.string.forum_answer_removed)
             binding.tvBody.setTypeface(null, Typeface.ITALIC)
             binding.tvBody.setTextColor(ContextCompat.getColor(context, R.color.on_surface_secondary))
-            binding.tvSteps.visibility = View.GONE
+            binding.llSteps.visibility = View.GONE
             binding.tvDiagnosis.visibility = View.GONE
             binding.llMedia.visibility = View.GONE
-            binding.tvMarks.visibility = View.GONE
             binding.actions.visibility = View.GONE
         }
 
         private fun bindAi(context: Context, post: ForumPost, answer: ForumAnswer) {
             binding.aiBlock.visibility = if (answer.isAi) View.VISIBLE else View.GONE
             if (!answer.isAi) return
-            val confidence = ((post.ai?.confidence ?: 0.0) * 100).toInt()
-            binding.tvAiVerdict.text = context.getString(
-                R.string.forum_ai_verdict,
-                ForumUi.conditionLabel(context, answer.diagnosis ?: post.ai?.disease),
-                confidence,
-            )
+            val confidence = ((post.ai?.confidence ?: 0.0) * PERCENT).toInt()
+            binding.tvAiVerdict.text = ForumUi.conditionLabel(context, answer.diagnosis ?: post.ai?.disease)
             binding.pbAi.progress = confidence
+            binding.tvAiConfidence.text = context.getString(R.string.forum_ai_confidence, confidence)
+        }
+
+        /** Steps as a numbered list with round number markers. */
+        private fun bindSteps(context: Context, steps: List<String>) {
+            val container = binding.llSteps
+            container.removeAllViews()
+            container.visibility = if (steps.isEmpty()) View.GONE else View.VISIBLE
+            val res = context.resources
+            val size = res.getDimensionPixelSize(R.dimen.forum_step_number)
+            val primary = ContextCompat.getColor(context, R.color.primary)
+            val onSurface = ContextCompat.getColor(context, R.color.on_surface)
+            steps.forEachIndexed { index, step ->
+                val row = LinearLayout(context)
+                row.orientation = LinearLayout.HORIZONTAL
+                row.layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = res.getDimensionPixelSize(R.dimen.space_sm) }
+                val number = TextView(context)
+                number.layoutParams = LinearLayout.LayoutParams(size, size)
+                number.setBackgroundResource(R.drawable.bg_forum_step_number)
+                number.gravity = Gravity.CENTER
+                number.text = (index + 1).toString()
+                number.setTextColor(primary)
+                number.setTypeface(number.typeface, Typeface.BOLD)
+                number.setTextSize(TypedValue.COMPLEX_UNIT_PX, res.getDimension(R.dimen.forum_text_meta))
+                val label = TextView(context)
+                label.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = res.getDimensionPixelSize(R.dimen.forum_step_gap)
+                }
+                label.text = step
+                label.setTextColor(onSurface)
+                label.setTextSize(TypedValue.COMPLEX_UNIT_PX, res.getDimension(R.dimen.text_body))
+                label.setPadding(0, res.getDimensionPixelSize(R.dimen.space_xxs), 0, 0)
+                row.addView(number)
+                row.addView(label)
+                container.addView(row)
+            }
+        }
+
+        private fun bindDiagnosis(context: Context, answer: ForumAnswer) {
+            val diagnosis = answer.diagnosis?.takeIf { !answer.isAi }
+            binding.tvDiagnosis.visibility = if (diagnosis == null) View.GONE else View.VISIBLE
+            if (diagnosis == null) return
+            binding.tvDiagnosis.text = context.getString(
+                R.string.forum_diagnosis_tag,
+                ForumUi.conditionLabel(context, diagnosis),
+            )
+            ForumViews.setSmallIcon(binding.tvDiagnosis, R.drawable.ic_first_aid, TAG_ICON_DP)
+            binding.tvDiagnosis.compoundDrawableTintList =
+                ColorStateList.valueOf(ContextCompat.getColor(context, R.color.primary))
         }
 
         private fun bindMedia(context: Context, media: List<ForumMedia>) {
@@ -282,15 +365,6 @@ class PostThreadAdapter(
                 view.setOnClickListener { actions.onOpenPhoto(ids, index, it) }
                 binding.llMedia.addView(view)
             }
-        }
-
-        private fun bindMarks(context: Context, answer: ForumAnswer) {
-            val marks = listOfNotNull(
-                context.getString(R.string.forum_mark_accepted).takeIf { answer.accepted },
-                context.getString(R.string.forum_mark_verified).takeIf { answer.verified },
-            )
-            binding.tvMarks.visibility = if (marks.isEmpty()) View.GONE else View.VISIBLE
-            binding.tvMarks.text = marks.joinToString(" · ")
         }
 
         private fun bindActions(context: Context, post: ForumPost, answer: ForumAnswer) {
@@ -344,5 +418,8 @@ class PostThreadAdapter(
         const val TYPE_ANSWER = 1
         const val RATIO = 4f / 3f
         const val PADDING_SMALL = 6
+        const val PERCENT = 100
+        const val TAG_ICON_DP = 14
+        const val MARK_ICON_DP = 16
     }
 }
