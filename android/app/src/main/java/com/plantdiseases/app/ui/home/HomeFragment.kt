@@ -27,6 +27,7 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
@@ -73,6 +74,9 @@ class HomeFragment : Fragment() {
 
     @Inject
     lateinit var notificationRepository: NotificationRepository
+
+    @Inject
+    lateinit var forumSync: ForumNotificationSync
 
     // Use the app's persisted UI language (LocaleHelper), NOT the device
     // locale: a Russian phone with the app switched to English must send
@@ -243,6 +247,10 @@ class HomeFragment : Fragment() {
         super.onResume()
         loadPopular()
         refreshNotificationBadge()
+        viewLifecycleOwner.lifecycleScope.launch {
+            forumSync.sync()
+            refreshNotificationBadge()
+        }
     }
 
     /** No live observer (this app has no Flow/LiveData plumbing over Room —
@@ -251,6 +259,7 @@ class HomeFragment : Fragment() {
     private fun refreshNotificationBadge() {
         viewLifecycleOwner.lifecycleScope.launch {
             val count = notificationRepository.getUnreadCount()
+            (activity as? MainActivity)?.refreshHomeBadge()
             val badge = _binding?.tvNotificationsBadge ?: return@launch
             if (count <= 0) {
                 badge.visibility = View.GONE

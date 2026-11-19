@@ -12,7 +12,6 @@
 
     <!-- Лента -->
     <string name="forum_search">Поиск по сообществу</string>
-    <string name="forum_activity">Активность</string>
     <string name="forum_decision_title">Решение модератора</string>
     <string name="forum_decision_details">Подробнее</string>
     <string name="forum_quoted">«%1$s»</string>
@@ -33,7 +32,9 @@
     <string name="forum_empty_needs_help">На все свежие вопросы уже ответили. Спасибо всем, кто помогает.</string>
     <string name="forum_empty_solved">Решённых вопросов здесь пока нет.</string>
     <string name="forum_empty_mine">Вы ещё ничего не публиковали.</string>
-    <string name="forum_activity_empty">Пока ничего нового.</string>
+    <string name="forum_notif_answer_title">Новый ответ</string>
+    <string name="forum_notif_reply_title">Новый ответ вам</string>
+    <string name="forum_notif_accepted_title">Ваш ответ помог</string>
     <string name="forum_activity_answer">%1$s ответил(а) на «%2$s»</string>
     <string name="forum_activity_reply">%1$s ответил(а) вам в «%2$s»</string>
     <string name="forum_activity_accepted">Ваш ответ приняли в «%1$s»</string>

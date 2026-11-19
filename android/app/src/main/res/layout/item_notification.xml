@@ -1,37 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One row in the notification centre: a type icon, title + body, a
-    relative timestamp, and an unread accent dot. Swipe to dismiss (wired
-    in NotificationsActivity via ItemTouchHelper); tap marks it read and
-    opens NotificationRouter.intentFor(deeplink).
+    One row in the notification centre: a type icon on a tinted disc, title +
+    body, a relative timestamp and, while unread, a red dot. Swipe to dismiss
+    (wired in NotificationsActivity via ItemTouchHelper); tap marks it read
+    and opens NotificationRouter.intentFor(deeplink).
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
     android:background="?attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
     android:paddingHorizontal="@dimen/space_lg"
     android:paddingVertical="@dimen/space_md">
 
-    <View
-        android:id="@+id/dot_notification_unread"
-        android:layout_width="8dp"
-        android:layout_height="8dp"
-        android:layout_marginEnd="@dimen/space_sm"
-        android:background="@drawable/bg_circle_surface_variant"
-        android:backgroundTint="@color/primary" />
-
     <ImageView
         android:id="@+id/iv_notification_icon"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:layout_marginEnd="@dimen/space_md"
+        android:background="@drawable/bg_forum_menu_icon"
         android:contentDescription="@null"
-        app:tint="@color/on_surface_secondary"
+        android:padding="9dp"
         tools:src="@drawable/ic_community" />
 
     <LinearLayout
@@ -40,37 +32,54 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/tv_notification_title"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="@dimen/text_body"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="@color/on_surface"
-            android:maxLines="1"
-            android:ellipsize="end"
-            tools:text="Community second opinions" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tv_notification_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_body"
+                tools:text="New answer" />
+
+            <TextView
+                android:id="@+id/tv_notification_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_caption"
+                tools:text="2h" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tv_notification_body"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary"
-            android:maxLines="2"
             android:ellipsize="end"
-            tools:text="Someone agreed with Leaf Spot on your scan." />
+            android:maxLines="2"
+            android:textColor="@color/on_surface_secondary"
+            android:textSize="@dimen/text_body_sm"
+            tools:text="Likikkpa answered “Pyrus”" />
 
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tv_notification_time"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/space_sm"
-        android:textSize="@dimen/text_caption"
-        android:textColor="@color/on_surface_secondary"
-        tools:text="2h" />
+    <View
+        android:id="@+id/dot_notification_unread"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="@dimen/space_md"
+        android:background="@drawable/bg_circle_surface_variant"
+        android:backgroundTint="@color/disease_red" />
 
 </LinearLayout>

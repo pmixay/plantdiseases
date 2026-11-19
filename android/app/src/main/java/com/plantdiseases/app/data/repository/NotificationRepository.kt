@@ -29,6 +29,10 @@ class NotificationRepository(
             )
         }
 
+    /** Stores a row built elsewhere (e.g. a Community event with its own time). */
+    suspend fun insert(entity: NotificationEntity): Long =
+        withContext(Dispatchers.IO) { notificationDao.insert(entity) }
+
     suspend fun markRead(id: Long) = withContext(Dispatchers.IO) {
         notificationDao.markRead(id, System.currentTimeMillis())
     }

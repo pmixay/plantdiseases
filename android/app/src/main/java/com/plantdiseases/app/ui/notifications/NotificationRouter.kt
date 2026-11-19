@@ -2,7 +2,10 @@ package com.plantdiseases.app.ui.notifications
 
 import android.content.Context
 import android.content.Intent
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.ui.community.MyScanRepliesActivity
+import com.plantdiseases.app.ui.community.forum.ModerationNoticesActivity
+import com.plantdiseases.app.ui.community.forum.PostDetailActivity
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
 
 /** Resolves a [com.plantdiseases.app.data.local.NotificationEntity.deeplink]
@@ -18,6 +21,8 @@ object NotificationRouter {
         }
         return when (prefix) {
             "community" -> MyScanRepliesActivity.intentFor(context, id)
+            ForumNotificationSync.LINK_POST -> PostDetailActivity.intent(context, id)
+            ForumNotificationSync.LINK_DECISION -> ModerationNoticesActivity.intent(context)
             "plant" -> id.toLongOrNull()?.let { plantId ->
                 Intent(context, PlantDetailActivity::class.java)
                     .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plantId)

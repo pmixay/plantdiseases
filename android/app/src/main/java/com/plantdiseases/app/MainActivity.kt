@@ -11,6 +11,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
@@ -18,6 +19,7 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.billing.EntitlementRepository
+import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -32,6 +34,7 @@ import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -67,6 +70,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var entitlementRepository: EntitlementRepository
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
@@ -471,19 +477,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Unread community activity (answers, replies, accepted answers). */
-    fun setCommunityBadge(count: Int) {
-        if (!::binding.isInitialized) return
-        if (count <= 0) {
-            binding.bottomNavigation.removeBadge(R.id.communityFragment)
-            return
+    /**
+     * A red dot on the Главная tab, Android notification-dot style, while the
+     * notification centre has unread rows. The count itself is on Home's bell.
+     */
+    fun refreshHomeBadge() {
+        lifecycleScope.launch {
+            val unread = notificationRepository.getUnreadCount()
+            if (!::binding.isInitialized) return@launch
+            if (unread <= 0) {
+                binding.bottomNavigation.removeBadge(R.id.homeFragment)
+            } else {
+                binding.bottomNavigation.getOrCreateBadge(R.id.homeFragment).apply {
+                    clearNumber()
+                    isVisible = true
+                }
+            }
         }
-        val badge = binding.bottomNavigation.getOrCreateBadge(R.id.communityFragment)
-        badge.isVisible = true
-        badge.number = count
     }
 
     override fun onResume() {
         super.onResume()
+        refreshHomeBadge()
         (application as PlantDiseasesApp).retryPendingAccountLogouts()
         // RuStore callbacks, renewals, cancellations and grace/hold changes
         // can happen while this process stays alive. Refresh from the account

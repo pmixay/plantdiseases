@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.ActivityNotificationsBinding
 import com.plantdiseases.app.util.LocaleHelper
@@ -26,7 +27,9 @@ import javax.inject.Inject
 /**
  * Every community reply, care reminder and garden alert the app has ever
  * surfaced, regardless of whether the system notification itself was
- * allowed to post — see [com.plantdiseases.app.util.NotificationCenter].
+ * allowed to post — see [com.plantdiseases.app.util.NotificationCenter] —
+ * plus Community answers and moderators' decisions ([ForumNotificationSync]).
+ * Unread rows sit under "New", the rest under "Earlier".
  * Tap marks a row read and routes via [NotificationRouter]; swipe dismisses
  * one row; the overflow menu marks everything read or clears the list.
  */
@@ -38,6 +41,9 @@ class NotificationsActivity : AppCompatActivity() {
 
     @Inject
     lateinit var notificationRepository: NotificationRepository
+
+    @Inject
+    lateinit var forumSync: ForumNotificationSync
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -89,6 +95,11 @@ class NotificationsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         load()
+        // Community events land in the list as they arrive from the server.
+        lifecycleScope.launch {
+            forumSync.sync()
+            load()
+        }
     }
 
     private fun load() {
@@ -125,12 +136,15 @@ class NotificationsActivity : AppCompatActivity() {
                 target: RecyclerView.ViewHolder,
             ): Boolean = false
 
+            override fun getSwipeDirs(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int =
+                if (adapter.itemAt(viewHolder.bindingAdapterPosition) == null) 0 else super.getSwipeDirs(recyclerView, viewHolder)
+
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                 val position = viewHolder.bindingAdapterPosition
                 val item = adapter.itemAt(position) ?: return
                 adapter.removeAt(position)
                 lifecycleScope.launch { notificationRepository.delete(item.id) }
-                if (adapter.itemCount == 0) {
+                if (adapter.notificationCount() == 0) {
                     binding.rvNotifications.visibility = View.GONE
                     binding.stateLayout.visibility = View.VISIBLE
                 }

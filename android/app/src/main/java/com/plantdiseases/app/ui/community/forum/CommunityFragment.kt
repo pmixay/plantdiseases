@@ -16,12 +16,11 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.model.ForumActivityItem
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
-import com.plantdiseases.app.data.model.ModNotice
 import com.plantdiseases.app.data.model.StaffMe
 import com.plantdiseases.app.data.repository.CommunityAvatarSync
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
@@ -46,6 +45,9 @@ class CommunityFragment : Fragment() {
     lateinit var forum: ForumRepository
 
     @Inject
+    lateinit var forumSync: ForumNotificationSync
+
+    @Inject
     lateinit var avatarSync: CommunityAvatarSync
 
     private var _binding: FragmentCommunityBinding? = null
@@ -59,8 +61,6 @@ class CommunityFragment : Fragment() {
     private var nextCursor: String? = null
     private var loadJob: Job? = null
     private var staff: StaffMe? = null
-    private var activityItems: List<ForumActivityItem> = emptyList()
-    private var notices: List<ModNotice> = emptyList()
     private var photoPromptShowing = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -88,7 +88,6 @@ class CommunityFragment : Fragment() {
         binding.swipeRefresh.setOnRefreshListener { reload() }
         binding.chipFilters.setOnClickListener { showFilters() }
         binding.searchBar.setOnClickListener { startActivity(ForumSearchActivity.intent(requireContext())) }
-        binding.btnActivity.setOnClickListener { showActivity() }
         binding.btnMore.setOnClickListener { showMoreMenu() }
         binding.fabAsk.setOnClickListener {
             if (requireSignIn()) startActivity(ComposePostActivity.intent(requireContext()))
@@ -316,55 +315,15 @@ class CommunityFragment : Fragment() {
 
     // ── activity, staff, menu ───────────────────────────────────────────
 
+    /** Pulls Community events into the notification centre (Home's bell) and
+     *  updates the Главная tab's dot; a new moderator decision pops up here. */
     private fun refreshActivity() {
-        if (!forum.isSignedIn) {
-            _binding?.activityDot?.visibility = View.GONE
-            (activity as? MainActivity)?.setCommunityBadge(0)
-            return
-        }
+        if (!forum.isSignedIn) return
         viewLifecycleOwner.lifecycleScope.launch {
-            val answers = forum.activity(since = 0).getOrNull()
-            val decisions = forum.notices().getOrNull()
-            if (answers == null && decisions == null) return@launch
-            answers?.let { activityItems = it.items }
-            decisions?.let { notices = it.items }
-            val seen = lastSeenActivity()
-            val unseen = activityItems.count { it.createdAt > seen } + notices.count { it.createdAt > seen }
-            _binding?.activityDot?.visibility = if (unseen > 0) View.VISIBLE else View.GONE
-            (activity as? MainActivity)?.setCommunityBadge(unseen)
+            forumSync.sync()
+            (activity as? MainActivity)?.refreshHomeBadge()
             showNewDecision()
         }
-    }
-
-    /** Community notifications: answers and replies to the user, accepted
-     *  answers, and moderators' decisions about their posts, newest first. */
-    private fun showActivity() {
-        if (!requireSignIn()) return
-        val context = requireContext()
-        val entries = activityItems.map { item ->
-            val title = item.postTitle?.takeIf { it.isNotBlank() } ?: getString(R.string.forum_kind_scan)
-            val label = when (item.type) {
-                "answer_accepted" -> getString(R.string.forum_activity_accepted, title)
-                "reply_to_answer" -> getString(R.string.forum_activity_reply, item.nickname, title)
-                else -> getString(R.string.forum_activity_answer, item.nickname, title)
-            }
-            Notification(item.createdAt, label) { startActivity(PostDetailActivity.intent(context, item.postId)) }
-        } + notices.map { notice ->
-            Notification(notice.createdAt, ForumUi.modNoticeHeading(context, notice)) {
-                startActivity(ModerationNoticesActivity.intent(context))
-            }
-        }
-        if (entries.isEmpty()) {
-            toast(getString(R.string.forum_activity_empty))
-            return
-        }
-        val sorted = entries.sortedByDescending { it.createdAt }
-        markActivitySeen()
-        MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.forum_activity)
-            .setItems(sorted.map { it.label }.toTypedArray()) { _, which -> sorted[which].open() }
-            .setPositiveButton(R.string.forum_close, null)
-            .show()
     }
 
     /**
@@ -375,7 +334,7 @@ class CommunityFragment : Fragment() {
     private fun showNewDecision() {
         if (!isResumed || isHidden) return
         val prefs = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val newest = notices.maxByOrNull { it.createdAt } ?: return
+        val newest = forumSync.notices.maxByOrNull { it.createdAt } ?: return
         if (newest.createdAt <= prefs.getLong(KEY_DECISION_SHOWN, 0L)) return
         prefs.edit().putLong(KEY_DECISION_SHOWN, newest.createdAt).apply()
         if (System.currentTimeMillis() / MILLIS - newest.createdAt > DECISION_POPUP_MAX_AGE_S) return
@@ -393,17 +352,6 @@ class CommunityFragment : Fragment() {
                 startActivity(ModerationNoticesActivity.intent(context))
             }
             .show()
-    }
-
-    private fun lastSeenActivity(): Long =
-        requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_SEEN, 0L)
-
-    private fun markActivitySeen() {
-        val newest = (activityItems.map { it.createdAt } + notices.map { it.createdAt }).maxOrNull() ?: return
-        requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putLong(KEY_SEEN, newest).apply()
-        _binding?.activityDot?.visibility = View.GONE
-        (activity as? MainActivity)?.setCommunityBadge(0)
     }
 
     private fun refreshStaff() {
@@ -451,9 +399,6 @@ class CommunityFragment : Fragment() {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
-    /** One row of the notifications list. */
-    private class Notification(val createdAt: Long, val label: String, val open: () -> Unit)
-
     private companion object {
         const val TAB_ALL = "all"
         const val TAB_NEEDS_HELP = "needs_help"
@@ -464,7 +409,6 @@ class CommunityFragment : Fragment() {
         const val SORT_TOP = "top"
         const val PREFETCH_DISTANCE = 3
         const val PREFS = "forum_prefs"
-        const val KEY_SEEN = "activity_seen_at"
         const val KEY_DECISION_SHOWN = "decision_shown_at"
         const val MILLIS = 1000L
         const val DECISION_POPUP_MAX_AGE_S = 7 * 24 * 60 * 60L

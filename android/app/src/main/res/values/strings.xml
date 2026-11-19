@@ -448,6 +448,8 @@
     <string name="privacy_policy_title">Privacy Policy</string>
     <string name="privacy_policy_subtitle">See how scan photos and other app data are handled.</string>
     <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
+    <string name="notifications_section_new">New</string>
+    <string name="notifications_section_earlier">Earlier</string>
     <string name="notifications_mark_all_read">Mark all read</string>
     <string name="notifications_clear_all">Clear all</string>
     <string name="notifications_clear_confirm_title">Clear all notifications?</string>

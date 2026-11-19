@@ -12,7 +12,6 @@
 
     <!-- Feed -->
     <string name="forum_search">Search the community</string>
-    <string name="forum_activity">Activity</string>
     <string name="forum_decision_title">A moderator\'s decision</string>
     <string name="forum_decision_details">Details</string>
     <string name="forum_quoted">“%1$s”</string>
@@ -33,7 +32,9 @@
     <string name="forum_empty_needs_help">Every recent question has an answer. Thank you, helpers.</string>
     <string name="forum_empty_solved">No solved questions here yet.</string>
     <string name="forum_empty_mine">You haven\'t posted yet.</string>
-    <string name="forum_activity_empty">Nothing new yet.</string>
+    <string name="forum_notif_answer_title">New answer</string>
+    <string name="forum_notif_reply_title">New reply</string>
+    <string name="forum_notif_accepted_title">Your answer helped</string>
     <string name="forum_activity_answer">%1$s answered “%2$s”</string>
     <string name="forum_activity_reply">%1$s replied to you on “%2$s”</string>
     <string name="forum_activity_accepted">Your answer was accepted on “%1$s”</string>
