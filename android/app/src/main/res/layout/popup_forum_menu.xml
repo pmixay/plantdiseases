@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Community overflow menu: a rounded card of icon rows, shown by
-     ForumMenu in a PopupWindow. The outer padding leaves room for the shadow. -->
+     ForumMenu in a PopupWindow. The outer padding holds the drawn shadow;
+     nothing here uses elevation. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:background="@drawable/bg_forum_menu_shadow"
     android:padding="@dimen/forum_menu_shadow">
 
     <LinearLayout
@@ -12,7 +14,6 @@
         android:layout_height="wrap_content"
         android:background="@drawable/bg_forum_menu"
         android:clipToOutline="true"
-        android:elevation="8dp"
         android:orientation="vertical"
         android:paddingVertical="6dp" />
 
