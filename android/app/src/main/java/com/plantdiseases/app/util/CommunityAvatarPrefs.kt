@@ -56,6 +56,7 @@ class CommunityAvatarPrefs(context: Context) {
         private const val KEY_CHOICE = "show"
         private const val KEY_ASKED = "asked"
         private const val KEY_PUBLISHED = "published"
+
         // "rejected2": refusals saved by the first release also counted a
         // server without the avatar route (404) as a refusal; a new key drops them.
         private const val KEY_REJECTED = "rejected2"
