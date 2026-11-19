@@ -232,6 +232,27 @@ def register(router: APIRouter, m) -> None:
         result = await run(m.community_achievements.progress_for_token, author_token)
         return JSONResponse(content=result, headers=_NO_STORE)
 
+    @router.get("/community/avatars/{author_token}")
+    async def forum_avatar_file(
+        author_token: str,
+        request: Request,
+        v: int | None = Query(None, ge=0, description="avatar_version from the author object"),
+    ):
+        """A member's profile photo (public, 404 when none). A URL carrying the
+        current ``avatar_version`` as ``v`` may be cached for a long time."""
+        found = await run(m.community_forum.avatar_file, author_token)
+        if found is None:
+            raise HTTPException(status_code=404, detail="avatar_not_found")
+        path, version = found
+        cache_control = (
+            "public, max-age=604800, immutable"
+            if v == version
+            else "public, max-age=300, must-revalidate"
+        )
+        return m._cached_image_response(
+            request, path, media_type="image/jpeg", cache_control=cache_control
+        )
+
     @router.get("/community/me/achievements", dependencies=[Depends(m.community_bearer)])
     async def forum_my_achievements(request: Request):
         """My level and achievements, plus the PRO discount they have earned."""
@@ -264,6 +285,28 @@ def register(router: APIRouter, m) -> None:
             scan_token=scan_token,
         )
         return JSONResponse(content=result, status_code=201, headers=_NO_STORE)
+
+    @router.put("/community/me/avatar", dependencies=[Depends(m.community_bearer)])
+    async def forum_avatar_upload(request: Request, image: UploadFile = File(...)):
+        """Publish or replace my profile photo, shown beside my posts and answers.
+        It is re-encoded as a square JPEG without metadata."""
+        principal = await m._require_account(request)
+        spend("forum_avatar", principal.actor_id, m.FORUM_AVATAR_DAILY_QUOTA)
+        if image.content_type and image.content_type not in m._COMMUNITY_ALLOWED_TYPES:
+            raise HTTPException(status_code=400, detail="unsupported_image_type")
+        body = await m._read_upload(image)
+        m._validate_image_bytes(body)
+        result = await run(
+            m.community_forum.set_avatar, actor_id=principal.actor_id, image_bytes=body
+        )
+        return JSONResponse(content=result, headers=_NO_STORE)
+
+    @router.delete("/community/me/avatar", dependencies=[Depends(m.community_bearer)])
+    async def forum_avatar_delete(request: Request):
+        """Withdraw my profile photo from Community."""
+        principal = await m._require_account(request)
+        removed = await run(m.community_forum.delete_avatar, actor_id=principal.actor_id)
+        return JSONResponse(content={"ok": True, "removed": removed}, headers=_NO_STORE)
 
     @router.post("/community/posts", dependencies=[Depends(m.community_bearer)])
     async def forum_post_create(payload: ForumPostCreate, request: Request):

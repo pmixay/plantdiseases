@@ -532,6 +532,44 @@ def ban_image(*, admin_actor_id: str, media_id: str, now: int | None = None) -> 
     return {"action_id": public_id}
 
 
+def remove_avatar(
+    *,
+    moderator_actor_id: str,
+    author_token: str,
+    ban_image: bool = True,
+    now: int | None = None,
+) -> dict:
+    """Take down a member's profile photo; by default refuse it as a future upload."""
+    init_db()
+    timestamp = _now(now)
+    token = (author_token or "").strip()
+    with _tx() as conn:
+        row = conn.execute(
+            "SELECT actor_id FROM forum_avatars WHERE author_token = ?", (token,)
+        ).fetchone()
+        if row is None:
+            raise ForumError("avatar_not_found", 404)
+        actor = str(row[0])
+        filename, phash = community_forum.remove_avatar_row(conn, actor) or ("", None)
+        action_id, public_id = _log(
+            conn,
+            moderator=moderator_actor_id,
+            action="remove_avatar",
+            target_type="avatar",
+            target_actor=actor,
+            now=timestamp,
+        )
+        if ban_image and phash:
+            conn.execute(
+                "INSERT OR IGNORE INTO forum_banned_images (dhash, action_id, created_at) "
+                "VALUES (?, ?, ?)",
+                (phash, action_id, timestamp),
+            )
+    if filename:
+        community_forum.unlink_avatar(filename)
+    return {"action_id": public_id, "image_banned": bool(ban_image and phash)}
+
+
 def record_role_change(
     *,
     admin_actor_id: str,

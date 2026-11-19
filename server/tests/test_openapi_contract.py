@@ -78,6 +78,9 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
         ("/api/community/moderation/notices", "get"),
         ("/api/community/moderation/appeals", "post"),
         ("/api/community/me/achievements", "get"),
+        ("/api/community/me/avatar", "put"),
+        ("/api/community/me/avatar", "delete"),
+        ("/api/community/admin/actors/{author_token}/avatar/remove", "post"),
         ("/api/community/admin/actors/{author_token}/rewards", "post"),
     )
     for path, method in protected:
