@@ -1,20 +1,12 @@
 package com.plantdiseases.app.ui.home
 
 import android.content.Intent
-import android.graphics.Canvas
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Shader
 import android.os.Bundle
 import android.provider.Settings
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ReplacementSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.lifecycle.lifecycleScope
@@ -453,49 +445,15 @@ class HomeFragment : Fragment() {
 
     private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
         // "Popular near <city>" (nearby) / "Popular in <country>" (country) /
-        // "Popular worldwide" (no location). The place word always gets the
-        // green gradient.
+        // "Popular worldwide" (no location), in the title's own colour.
         val country = (if (isRu) popular?.countryNameRu else popular?.countryNameEn)
             ?.takeIf { it.isNotBlank() }
         val region = popular?.region?.takeIf { it.isNotBlank() }
-        val accent: String
-        val title: String
-        when {
-            popular?.source == "nearby" && region != null -> {
-                accent = region
-                title = getString(R.string.home_popular_near, region)
-            }
-            country != null -> {
-                accent = country
-                title = getString(R.string.home_popular_in_country, country)
-            }
-            else -> {
-                // Worldwide (community off / no scans anywhere). Accent the
-                // word(s) after the leading "Popular" / "Популярно".
-                title = getString(R.string.home_popular_worldwide)
-                val sp = title.indexOf(' ')
-                accent = if (sp in 0 until title.lastIndex) title.substring(sp + 1) else title
-            }
+        b.tvSpeciesTitle.text = when {
+            popular?.source == "nearby" && region != null -> getString(R.string.home_popular_near, region)
+            country != null -> getString(R.string.home_popular_in_country, country)
+            else -> getString(R.string.home_popular_worldwide)
         }
-        // Gradient-accent the place name (everything matched in the title).
-        val s = title.indexOf(accent)
-        val start = if (s >= 0) s else 0
-        val end = if (s >= 0) s + accent.length else title.length
-        val spannable = SpannableString(title)
-        if (end > start) {
-            val gradient = intArrayOf(
-                ContextCompat.getColor(requireContext(), R.color.gradient_start),
-                ContextCompat.getColor(requireContext(), R.color.gradient_mid),
-                ContextCompat.getColor(requireContext(), R.color.gradient_end),
-            )
-            spannable.setSpan(
-                GradientTextSpan(gradient),
-                start,
-                end,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-        }
-        b.tvSpeciesTitle.text = spannable
     }
 
     private fun renderDiseases(b: FragmentHomeBinding, popular: PopularResponse?) {
@@ -552,49 +510,5 @@ class HomeFragment : Fragment() {
                     .into(target)
             }
         }
-    }
-}
-
-/**
- * Paints its character range with a horizontal multi-stop gradient (used for
- * the green accent word in the Home "Popular in <country>" / "Popular
- * worldwide" title). A [ReplacementSpan] is used rather than a plain shader on
- * the whole TextView so the gradient is aligned to — and clamped within — the
- * exact accented substring, regardless of where it sits on the line.
- */
-private class GradientTextSpan(private val colors: IntArray) : ReplacementSpan() {
-    override fun getSize(
-        paint: Paint,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        fm: Paint.FontMetricsInt?,
-    ): Int {
-        if (fm != null) {
-            val pfm = paint.fontMetricsInt
-            fm.ascent = pfm.ascent
-            fm.descent = pfm.descent
-            fm.top = pfm.top
-            fm.bottom = pfm.bottom
-        }
-        return kotlin.math.ceil(paint.measureText(text, start, end).toDouble()).toInt()
-    }
-
-    override fun draw(
-        canvas: Canvas,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-        paint: Paint,
-    ) {
-        val width = paint.measureText(text, start, end)
-        val previous = paint.shader
-        paint.shader = LinearGradient(x, 0f, x + width, 0f, colors, null, Shader.TileMode.CLAMP)
-        canvas.drawText(text, start, end, x, y.toFloat(), paint)
-        paint.shader = previous
     }
 }
