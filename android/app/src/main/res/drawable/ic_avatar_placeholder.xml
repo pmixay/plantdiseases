@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder for the round 144dp profile avatars. The 25% inset lives in the
+     drawable, not in view or content padding: ShapeableImageView builds its
+     circle mask from the view padding and corrupts it when padding changes at
+     runtime (see ui/common/AvatarImage.kt). With centerCrop the icon fills the
+     middle half of the circle, i.e. 36dp of air on each side at 144dp. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_profile"
+    android:inset="25%" />
