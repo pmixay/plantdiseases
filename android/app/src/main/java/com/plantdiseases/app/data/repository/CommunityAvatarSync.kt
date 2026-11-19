@@ -90,7 +90,7 @@ class CommunityAvatarSync @Inject constructor(
                 Outcome.PUBLISHED
             },
             onFailure = { error ->
-                if (error is ForumRepository.ForumException && Plan.isRefusal(error.status)) {
+                if (error is ForumRepository.ForumException && Plan.isRefusal(error.code)) {
                     prefs.setRejected(account, fingerprint)
                     Outcome.REJECTED
                 } else {
@@ -128,12 +128,14 @@ class CommunityAvatarSync @Inject constructor(
         fun desired(choice: Boolean?, fingerprint: String?, rejectedFingerprint: String?): String? =
             fingerprint?.takeIf { choice == true && it != rejectedFingerprint }
 
-        /** A refusal that retrying the same photo will not fix (not auth, timeout or quota). */
-        fun isRefusal(status: Int): Boolean = status in CLIENT_ERRORS && status !in RETRYABLE
+        /**
+         * True only when the server rejected the photo itself (unreadable,
+         * unsupported or banned). Anything else, such as a server that does
+         * not have the avatar route yet (404), being muted, offline or over
+         * quota, is retried on a later sync.
+         */
+        fun isRefusal(code: String): Boolean = code in PHOTO_REFUSALS
 
-        private val CLIENT_ERRORS = 400..499
-
-        // Signed out, timed out, or over today's quota: the same photo may succeed later.
-        private val RETRYABLE = setOf(401, 408, 429)
+        private val PHOTO_REFUSALS = setOf("invalid_image", "unsupported_image_type", "image_not_allowed")
     }
 }

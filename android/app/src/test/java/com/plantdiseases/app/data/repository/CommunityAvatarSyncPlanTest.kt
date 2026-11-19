@@ -36,10 +36,13 @@ class CommunityAvatarSyncPlanTest {
 
     @Test
     fun onlyLastingRefusalsStopRetries() {
-        assertThat(plan.isRefusal(422)).isTrue()
-        assertThat(plan.isRefusal(403)).isTrue()
-        assertThat(plan.isRefusal(401)).isFalse()
-        assertThat(plan.isRefusal(429)).isFalse()
-        assertThat(plan.isRefusal(500)).isFalse()
+        assertThat(plan.isRefusal("invalid_image")).isTrue()
+        assertThat(plan.isRefusal("unsupported_image_type")).isTrue()
+        assertThat(plan.isRefusal("image_not_allowed")).isTrue()
+        // A server without the avatar route answers 404 "Not Found": retry after it is updated.
+        assertThat(plan.isRefusal("Not Found")).isFalse()
+        assertThat(plan.isRefusal("muted")).isFalse()
+        assertThat(plan.isRefusal("daily_quota_reached")).isFalse()
+        assertThat(plan.isRefusal("http_500")).isFalse()
     }
 }
