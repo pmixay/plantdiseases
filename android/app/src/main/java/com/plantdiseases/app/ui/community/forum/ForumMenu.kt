@@ -62,6 +62,9 @@ class ForumMenu(private val anchor: View) {
             binding.menuRows.addView(row.root)
         }
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        // The window's own shadow follows its rectangular bounds and shows as
+        // square corners; the rounded card casts the only shadow.
+        popup.elevation = 0f
         popup.isOutsideTouchable = true
         popup.animationStyle = R.style.Forum_MenuAnimation
         // The card's outer padding is shadow room; pull it back so the card's
