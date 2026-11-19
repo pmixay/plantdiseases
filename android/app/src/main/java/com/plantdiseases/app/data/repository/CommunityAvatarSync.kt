@@ -40,9 +40,15 @@ class CommunityAvatarSync @Inject constructor(
     /** What a [sync] changed on the server. */
     enum class Outcome { NOTHING, PUBLISHED, WITHDRAWN, REJECTED, FAILED }
 
+    /** What a [restore] changed on the device. */
+    enum class RestoreOutcome { NOTHING, RESTORED, FAILED }
+
     private val prefs = CommunityAvatarPrefs(context)
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Accounts whose server photo this process already restored or found absent; guarded by [mutex]. */
+    private val restoreSettled = mutableSetOf<String>()
 
     /** The signed-in member's community actor id, or null for guests. */
     fun accountId(): String? =
@@ -68,6 +74,57 @@ class CommunityAvatarSync @Inject constructor(
 
     /** Upload or withdraw so the server matches the member's choice and current photo. */
     suspend fun sync(): Outcome = scope.async { mutex.withLock { reconcile() } }.await()
+
+    /**
+     * Bring back the profile photo the member already shows in Community when
+     * this device has none (the app was reinstalled, or this is a new phone):
+     * the local copy and the "show" choice live only on the device, the
+     * published photo on the server.
+     *
+     * Downloads the member's own public photo, stores it as the local profile
+     * photo and records it as shown and already published, so the next [sync]
+     * neither re-uploads it nor asks again. Does nothing for guests, when a
+     * local photo exists, when the member chose not to show one on this
+     * device, or when the server holds none. Asks the server at most once per
+     * account per process unless a request failed.
+     */
+    suspend fun restore(): RestoreOutcome = scope.async { mutex.withLock { restoreLocked() } }.await()
+
+    private suspend fun restoreLocked(): RestoreOutcome {
+        val account = accountId() ?: return RestoreOutcome.NOTHING
+        if (account in restoreSettled) return RestoreOutcome.NOTHING
+        if (!Plan.shouldRestore(prefs.choice(account), hasLocalPhoto = avatarStore.current(account) != null)) {
+            return RestoreOutcome.NOTHING
+        }
+        val me = forum.myAchievements().getOrElse { return RestoreOutcome.FAILED }
+        val token = me.authorToken
+        val version = me.avatarVersion
+        if (token.isNullOrBlank() || version == null) {
+            restoreSettled += account
+            return RestoreOutcome.NOTHING
+        }
+        val bytes = forum.downloadAvatar(token, version).getOrElse { error ->
+            if (error is ForumRepository.ForumException && error.status == HTTP_NOT_FOUND) {
+                restoreSettled += account
+                return RestoreOutcome.NOTHING
+            }
+            return RestoreOutcome.FAILED
+        }
+        // Signed out or switched accounts while downloading: not this account's photo to keep.
+        if (accountId() != account) return RestoreOutcome.NOTHING
+        val restored = avatarStore.restore(account, bytes).getOrElse {
+            restoreSettled += account // an unreadable photo will not get better on retry
+            return RestoreOutcome.FAILED
+        }
+        restoreSettled += account
+        // A photo picked meanwhile wins and goes through the usual ask/sync path.
+        restored ?: return RestoreOutcome.NOTHING
+        val fingerprint = fingerprint(restored) ?: return RestoreOutcome.FAILED
+        prefs.setChoice(account, true, fingerprint)
+        prefs.setPublished(account, fingerprint)
+        prefs.setRejected(account, null)
+        return RestoreOutcome.RESTORED
+    }
 
     private suspend fun reconcile(): Outcome {
         val account = accountId() ?: return Outcome.NOTHING
@@ -129,6 +186,12 @@ class CommunityAvatarSync @Inject constructor(
             fingerprint?.takeIf { choice == true && it != rejectedFingerprint }
 
         /**
+         * Restore the server's photo only when the device has none and the
+         * member did not choose, on this device, to keep their photo private.
+         */
+        fun shouldRestore(choice: Boolean?, hasLocalPhoto: Boolean): Boolean = !hasLocalPhoto && choice != false
+
+        /**
          * True only when the server rejected the photo itself (unreadable,
          * unsupported or banned). Anything else, such as a server that does
          * not have the avatar route yet (404), being muted, offline or over
@@ -137,5 +200,9 @@ class CommunityAvatarSync @Inject constructor(
         fun isRefusal(code: String): Boolean = code in PHOTO_REFUSALS
 
         private val PHOTO_REFUSALS = setOf("invalid_image", "unsupported_image_type", "image_not_allowed")
+    }
+
+    private companion object {
+        const val HTTP_NOT_FOUND = 404
     }
 }

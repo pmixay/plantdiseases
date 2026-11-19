@@ -61,6 +61,42 @@ class ProfileAvatarStoreTest {
     }
 
     @Test
+    fun restoredPhotoIsSanitizedAndNeverReplacesALocalOne() = runTest {
+        val downloaded = createImage(900, 900, Bitmap.CompressFormat.JPEG).let { file ->
+            file.readBytes().also { file.delete() }
+        }
+        val accountId = "account-${UUID.randomUUID()}"
+        val source = createImage(320, 240)
+        try {
+            val restored = store.restore(accountId, downloaded).getOrThrow()
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(restored!!.absolutePath, bounds)
+            assertThat(restored.canonicalPath).startsWith(context.noBackupFilesDir.canonicalPath)
+            assertThat(maxOf(bounds.outWidth, bounds.outHeight)).isAtMost(512)
+            assertThat(store.current(accountId)).isEqualTo(restored)
+
+            val picked = store.replace(accountId, Uri.fromFile(source)).getOrThrow().readBytes()
+            assertThat(store.restore(accountId, downloaded).getOrThrow()).isNull()
+            assertThat(store.current(accountId)?.readBytes()).isEqualTo(picked)
+        } finally {
+            store.clear(accountId)
+            source.delete()
+        }
+    }
+
+    @Test
+    fun emptyOrOversizedDownloadIsRefusedWithoutAPhoto() = runTest {
+        val accountId = "account-${UUID.randomUUID()}"
+        try {
+            assertThat(store.restore(accountId, ByteArray(0)).isFailure).isTrue()
+            assertThat(store.restore(accountId, ByteArray(16 * 1_024 * 1_024 + 1)).isFailure).isTrue()
+            assertThat(store.current(accountId)).isNull()
+        } finally {
+            store.clear(accountId)
+        }
+    }
+
+    @Test
     fun editorWorkingCopyIsBoundedAndLivesOnlyInCache() = runTest {
         val source = createImage(2_400, 1_200)
         var staged: File? = null
@@ -77,13 +113,17 @@ class ProfileAvatarStoreTest {
         }
     }
 
-    private fun createImage(width: Int, height: Int): File {
-        val source = File.createTempFile("avatar_source_", ".png", context.cacheDir)
+    private fun createImage(
+        width: Int,
+        height: Int,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+    ): File {
+        val source = File.createTempFile("avatar_source_", ".image", context.cacheDir)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         try {
             bitmap.eraseColor(Color.rgb(34, 139, 74))
             source.outputStream().use { output ->
-                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                check(bitmap.compress(format, 100, output))
             }
         } finally {
             bitmap.recycle()

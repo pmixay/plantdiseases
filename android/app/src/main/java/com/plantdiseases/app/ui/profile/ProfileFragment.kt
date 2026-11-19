@@ -92,6 +92,7 @@ class ProfileFragment : Fragment() {
     private var loadedAvatarSessionId: String? = null
     private var activeAvatarAccountId: String? = null
     private var providerAvatarUrl: String? = null
+    private var showingLocalAvatar = false
     private var pendingAvatarAccountId: String? = null
     private var pendingAvatarSourceFile: File? = null
     private var pendingAvatarOutputFile: File? = null
@@ -242,6 +243,7 @@ class ProfileFragment : Fragment() {
             if (loadedAvatarSessionId != state.session.sessionId) {
                 loadedAvatarSessionId = state.session.sessionId
                 loadProfileAvatar(auth, state.session.sessionId)
+                restoreProfileAvatar()
             }
         }
     }
@@ -269,11 +271,34 @@ class ProfileFragment : Fragment() {
         }
     }
 
+    /**
+     * The local photo and the "show in Community" choice do not survive a
+     * reinstall, but the photo the member shows in Community does: bring it
+     * back as the profile photo (see [CommunityAvatarSync.restore]).
+     */
+    private fun restoreProfileAvatar() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            if (communityAvatarSync.restore() == CommunityAvatarSync.RestoreOutcome.RESTORED && _binding != null) {
+                showProfileAvatar(activeAvatarAccountId, providerAvatarUrl)
+                bindCommunityPhotoToggle()
+            }
+        }
+    }
+
+    /** Picks up a local photo that appeared while away (restored on the Account screen). */
+    private fun refreshLocalAvatar() {
+        val accountId = activeAvatarAccountId ?: return
+        if (!showingLocalAvatar && profileAvatarStore.current(accountId) != null) {
+            showProfileAvatar(accountId, providerAvatarUrl)
+        }
+    }
+
     private fun showProfileAvatar(accountId: String?, avatarUrl: String?) {
         val avatar = _binding?.ivProfileAvatar ?: return
         Glide.with(this).clear(avatar)
-        val source: Any? = accountId?.let(profileAvatarStore::current)
-            ?: avatarUrl?.takeIf { it.startsWith("https://") }
+        val local = accountId?.let(profileAvatarStore::current)
+        showingLocalAvatar = local != null
+        val source: Any? = local ?: avatarUrl?.takeIf { it.startsWith("https://") }
         // Never touch the avatar's padding here: this runs before the first
         // measure after a recreate (language switch), which is exactly when
         // ShapeableImageView mis-applies padding changes (see AvatarImage).
@@ -682,6 +707,8 @@ class ProfileFragment : Fragment() {
         super.onResume()
         loadStats()
         refreshModerationRow()
+        refreshLocalAvatar()
+        restoreProfileAvatar()
         bindCommunityPhotoToggle()
     }
 

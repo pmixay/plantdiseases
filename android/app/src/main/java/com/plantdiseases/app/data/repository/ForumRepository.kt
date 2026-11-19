@@ -151,6 +151,27 @@ class ForumRepository(
     fun avatarUrl(authorToken: String, version: Long): String =
         "${apiClient.baseUrl}api/community/avatars/$authorToken?v=$version"
 
+    /**
+     * Download a member's public profile photo (the bytes behind [avatarUrl]),
+     * bounded in size. A missing photo fails with a 404 [ForumException].
+     */
+    suspend fun downloadAvatar(authorToken: String, version: Long): Result<ByteArray> = withContext(Dispatchers.IO) {
+        if (!AUTHOR_TOKEN.matches(authorToken)) {
+            return@withContext Result.failure(ForumException(404, "avatar_not_found"))
+        }
+        mapped {
+            val response = apiClient.httpClient.get("api/community/avatars/$authorToken") {
+                parameter("v", version)
+            }
+            if (!response.status.isSuccess()) response.failure()
+            val declared = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            if (declared != null && declared > MAX_AVATAR_BYTES) throw ForumException(413, "avatar_too_large")
+            val bytes = response.body<ByteArray>()
+            if (bytes.isEmpty() || bytes.size > MAX_AVATAR_BYTES) throw ForumException(413, "avatar_too_large")
+            bytes
+        }
+    }
+
     // ── writing ───────────────────────────────────────────────────────────
 
     /**
@@ -393,5 +414,10 @@ class ForumRepository(
         is SocketTimeoutException, is java.net.ConnectException -> ScanRepository.ServerTimeoutException()
         is UnknownHostException -> ScanRepository.NoNetworkException()
         else -> error
+    }
+
+    private companion object {
+        const val MAX_AVATAR_BYTES = 4 * 1_024 * 1_024
+        val AUTHOR_TOKEN = Regex("[A-Za-z0-9]{1,64}")
     }
 }

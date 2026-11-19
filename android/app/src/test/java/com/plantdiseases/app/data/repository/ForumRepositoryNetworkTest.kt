@@ -8,6 +8,7 @@ import com.plantdiseases.app.data.remote.RetryInterceptor
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -152,5 +153,33 @@ class ForumRepositoryNetworkTest {
         assertThat(repo.deleteAvatar().exceptionOrNull())
             .isInstanceOf(AuthenticationRequiredException::class.java)
         assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun avatarDownloadReturnsThePublicPhotoBytes() = runBlocking {
+        val photo = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3)
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "image/jpeg")
+                .setBody(Buffer().write(photo)),
+        )
+
+        val bytes = repo.downloadAvatar("ca1", 7L).getOrThrow()
+
+        val request = server.takeRequest()
+        assertThat(request.path).isEqualTo("/api/community/avatars/ca1?v=7")
+        assertThat(request.getHeader("Authorization")).isNull()
+        assertThat(bytes).isEqualTo(photo)
+    }
+
+    @Test
+    fun missingOrMalformedAvatarFailsAsNotFound() = runBlocking {
+        server.enqueue(json("""{"detail":"avatar_not_found"}""", code = 404))
+        val missing = repo.downloadAvatar("ca1", 7L).exceptionOrNull() as ForumRepository.ForumException
+        assertThat(missing.status).isEqualTo(404)
+        assertThat(missing.code).isEqualTo("avatar_not_found")
+
+        val malformed = repo.downloadAvatar("../me", 7L).exceptionOrNull() as ForumRepository.ForumException
+        assertThat(malformed.status).isEqualTo(404)
+        assertThat(server.requestCount).isEqualTo(1)
     }
 }

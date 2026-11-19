@@ -67,6 +67,27 @@ class ProfileAvatarStore @Inject constructor(
         Result.failure(ImageUtils.ImageDecodeException("Avatar is too large", failure))
     }
 
+    /**
+     * Store a photo downloaded from the member's own Community profile as the
+     * local profile photo (after a reinstall, the server holds the only copy).
+     * The bytes go through the same sanitizer as a picked photo. A local photo
+     * that already exists wins: the result is then `null` and nothing changes.
+     */
+    suspend fun restore(accountId: String, jpeg: ByteArray): Result<File?> = try {
+        val avatar = withContext(Dispatchers.IO) {
+            mutationMutex.withLock {
+                if (current(accountId) != null) null else restoreLocked(accountId, jpeg)
+            }
+        }
+        Result.success(avatar)
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    } catch (failure: OutOfMemoryError) {
+        Result.failure(ImageUtils.ImageDecodeException("Avatar is too large", failure))
+    }
+
     suspend fun clear(accountId: String) {
         withContext(Dispatchers.IO) {
             mutationMutex.withLock {
@@ -76,19 +97,36 @@ class ProfileAvatarStore @Inject constructor(
     }
 
     private fun replaceLocked(accountId: String, source: Uri): File {
-        val directory = avatarDirectory()
-        val staged = File.createTempFile("profile_avatar_", ".tmp", directory)
-        try {
-            val sanitized = sanitizeSource(
-                source,
-                maxDimension = AVATAR_MAX_DIMENSION,
-                quality = AVATAR_JPEG_QUALITY,
-            )
-            if (sanitized.bytes.isEmpty() || sanitized.bytes.size > MAX_STORED_BYTES) {
-                throw ImageUtils.ImageDecodeException("Avatar output is invalid")
-            }
-            writeSynced(staged, sanitized.bytes)
+        val sanitized = sanitizeSource(
+            source,
+            maxDimension = AVATAR_MAX_DIMENSION,
+            quality = AVATAR_JPEG_QUALITY,
+        )
+        return install(accountId, sanitized)
+    }
 
+    private fun restoreLocked(accountId: String, jpeg: ByteArray): File {
+        if (jpeg.isEmpty() || jpeg.size > MAX_SOURCE_BYTES) {
+            throw ImageUtils.ImageDecodeException("Avatar source is invalid")
+        }
+        val sourceCopy = File.createTempFile("profile_avatar_source_", ".image", context.cacheDir)
+        val sanitized = try {
+            writeSynced(sourceCopy, jpeg)
+            imageSanitizer.sanitize(sourceCopy, maxDimension = AVATAR_MAX_DIMENSION, quality = AVATAR_JPEG_QUALITY)
+        } finally {
+            sourceCopy.delete()
+        }
+        return install(accountId, sanitized)
+    }
+
+    /** Atomically make [sanitized] the account's profile photo. */
+    private fun install(accountId: String, sanitized: SanitizedImage): File {
+        if (sanitized.bytes.isEmpty() || sanitized.bytes.size > MAX_STORED_BYTES) {
+            throw ImageUtils.ImageDecodeException("Avatar output is invalid")
+        }
+        val staged = File.createTempFile("profile_avatar_", ".tmp", avatarDirectory())
+        try {
+            writeSynced(staged, sanitized.bytes)
             val target = avatarFile(accountId)
             try {
                 Files.move(

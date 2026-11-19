@@ -36,6 +36,7 @@ import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.account.AccountProfile
 import com.plantdiseases.app.data.account.AccountSession
 import com.plantdiseases.app.data.account.AuthProvider
+import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.databinding.ActivityAccountBinding
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.crop.CropContract
@@ -78,6 +79,9 @@ class AccountActivity : AppCompatActivity() {
 
     @Inject
     lateinit var profileAvatarStore: ProfileAvatarStore
+
+    @Inject
+    lateinit var communityAvatarSync: CommunityAvatarSync
 
     private lateinit var binding: ActivityAccountBinding
     private var yandexSdk: YandexAuthSdk? = null
@@ -349,6 +353,7 @@ class AccountActivity : AppCompatActivity() {
             binding.avatarPicker.isEnabled = true
             applyProfileNicknameEditingPolicy()
             showProfileAvatar(profile.communityActorId, profile.primaryProvider.avatarUrl)
+            restoreProfileAvatar(profile, expectedSessionId)
             authRepository.sessions()
                 .onSuccess { sessions ->
                     if (currentSessionId() == expectedSessionId) renderSessions(sessions)
@@ -814,6 +819,19 @@ class AccountActivity : AppCompatActivity() {
     private fun showAvatarPlaceholder() {
         Glide.with(this).clear(binding.ivAvatar)
         AvatarImage.showPlaceholder(binding.ivAvatar)
+    }
+
+    /**
+     * After a reinstall the photo shown in Community is the only copy of the
+     * profile photo: bring it back here (see [CommunityAvatarSync.restore]).
+     */
+    private fun restoreProfileAvatar(profile: AccountProfile, expectedSessionId: String) {
+        lifecycleScope.launch {
+            val outcome = communityAvatarSync.restore()
+            if (outcome == CommunityAvatarSync.RestoreOutcome.RESTORED && currentSessionId() == expectedSessionId) {
+                showProfileAvatar(profile.communityActorId, profile.primaryProvider.avatarUrl)
+            }
+        }
     }
 
     private fun showProfileAvatar(accountId: String, avatarUrl: String?) {

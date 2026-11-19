@@ -9,6 +9,17 @@ class CommunityAvatarSyncPlanTest {
     private val plan = CommunityAvatarSync.Plan
 
     @Test
+    fun restoresOnlyWithoutALocalPhotoAndWithoutAPrivateChoice() {
+        // Reinstall: nothing on the device, the server copy comes back.
+        assertThat(plan.shouldRestore(choice = null, hasLocalPhoto = false)).isTrue()
+        assertThat(plan.shouldRestore(choice = true, hasLocalPhoto = false)).isTrue()
+        // "Keep on device" chosen here, or a local photo exists: never overwrite.
+        assertThat(plan.shouldRestore(choice = false, hasLocalPhoto = false)).isFalse()
+        assertThat(plan.shouldRestore(choice = null, hasLocalPhoto = true)).isFalse()
+        assertThat(plan.shouldRestore(choice = true, hasLocalPhoto = true)).isFalse()
+    }
+
+    @Test
     fun asksOnFirstSightOfAPhotoOnly() {
         assertThat(plan.shouldAsk(choice = null, askedFingerprint = null, fingerprint = "a")).isTrue()
         assertThat(plan.shouldAsk(choice = null, askedFingerprint = null, fingerprint = null)).isFalse()
