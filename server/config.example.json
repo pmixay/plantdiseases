@@ -35,6 +35,8 @@
     "_pro_quota_note": "These process-local guest limits protect paid server work without forcing registration. Signed-in Free/PRO limits are authoritative in the account service; Aqua remains unlimited on-device."
   },
   "ai": {
+    "species_info_contact": "",
+    "_species_info_contact_note": "A URL or e-mail put in the User-Agent of the species-info lookups (Wikipedia, Wikidata, Commons, iNaturalist). Wikimedia throttles anonymous clients first; blank still works.",
     "openrouter_api_key": "",
     "openrouter_api_key_file": "",
     "openrouter_model": "openai/gpt-6-luna",

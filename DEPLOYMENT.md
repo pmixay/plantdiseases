@@ -214,6 +214,11 @@ direct and file forms, a symlink, a group/world-readable file, or an
 empty/oversized one disables the integration without logging the value or the
 path.
 
+**Species info and photos.** `/api/species-info` reads Wikipedia, then
+Wikidata, Commons and iNaturalist; no key is needed. Set `species_info_contact`
+(a URL or e-mail) so Wikimedia sees a contactable User-Agent and throttles the
+server less. Blank still works.
+
 **PlantNet — species identification.** Key from
 <https://my.plantnet.org/account/doc> (free tier 500 IDs/day) → `plantnet_api_key`
 (or its `_FILE` form) → restart. Verify: `/api/identify` returns
