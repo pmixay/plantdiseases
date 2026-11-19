@@ -10,6 +10,7 @@ serving an English summary. External HTTP is fully mocked — no network.
 """
 from __future__ import annotations
 
+import time
 import urllib.parse
 
 import pytest
@@ -18,8 +19,9 @@ import species_info
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(monkeypatch):
     species_info._cache.clear()
+    monkeypatch.setattr(species_info, "_RETRY_DELAY_S", 0)
     yield
     species_info._cache.clear()
 
@@ -28,7 +30,10 @@ def test_cache_evicts_oldest_not_flush_all(monkeypatch):
     """At the cap the cache drops the single oldest entry (LRU), it does NOT
     flush everything (the old flush-all thrashed under many species in flight)."""
     monkeypatch.setattr(species_info, "_CACHE_MAX", 3)
-    monkeypatch.setattr(species_info, "_fetch", lambda name, lang: {"title": name, "lang": lang})
+    monkeypatch.setattr(
+        species_info, "_fetch",
+        lambda name, lang: {"title": name, "lang": lang, "image_url": "https://x/y.jpg"},
+    )
     for nm in ("Aaa", "Bbb", "Ccc"):
         species_info.fetch_species_info(nm, "en")
     assert len(species_info._cache) == 3
@@ -353,3 +358,308 @@ def test_media_images_upsize_only_when_the_file_can_supply_it(monkeypatch):
         # snaps again on the way out.
         "https://upload.example/thumb/a/ab/B.jpg/320px-B.jpg",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Fallback chain: Wikidata -> Commons -> iNaturalist -> genus; transient cache
+# ---------------------------------------------------------------------------
+
+ROSA = "Rosa abietina"
+_WD_SEARCH = {"search": [{"id": "Q1", "match": {"type": "label", "text": ROSA}}]}
+_WD_ENTITIES = {"entities": {"Q1": {
+    "id": "Q1",
+    "claims": {
+        "P225": [{"mainsnak": {"datavalue": {"value": ROSA}}}],
+        "P18": [{"mainsnak": {"datavalue": {"value": "Rosa abietina 02.JPG"}}}],
+        "P373": [{"mainsnak": {"datavalue": {"value": "Rosa abietina"}}}],
+    },
+    "sitelinks": {
+        "enwiki": {"title": "Rosa abietina (synonym page)"},
+        "ruwiki": {"title": "Роза пихтолистная"},
+    },
+}}}
+_COMMONS_FILE = {"query": {"pages": [{
+    "title": "File:Rosa abietina 02.JPG",
+    "imageinfo": [{
+        "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/R.JPG/1280px-R.JPG",
+        "extmetadata": {
+            "Artist": {"value": '<a href="//x">Jane Doe</a>'},
+            "LicenseShortName": {"value": "CC BY-SA 4.0"},
+        },
+    }],
+}]}}
+_INAT = {"results": [{
+    "id": 487634, "name": ROSA,
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Rosa abietina",
+    "wikipedia_summary": "<i><b>Rosa abietina</b></i> is a species of rose.",
+    "default_photo": {
+        "license_code": None, "attribution": "(c) X, all rights reserved",
+        "large_url": "https://static.inaturalist.org/photos/1/large.jpeg",
+    },
+    "taxon_photos": [{"photo": {
+        "license_code": "cc-by", "attribution": "(c) Y, some rights reserved (CC BY)",
+        "large_url": "https://static.inaturalist.org/photos/2/large.jpeg",
+    }}],
+}]}
+
+
+class _Net:
+    """Fake ``requests.get`` routed by substring; records every URL asked for."""
+
+    def __init__(self, monkeypatch, routes):
+        self.routes = routes  # substring -> payload | status int | callable
+        self.calls: list[str] = []
+        import requests
+
+        monkeypatch.setattr(requests, "get", self.get)
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append(url)
+        assert headers and "PlantDiseases" in headers["User-Agent"]
+        for needle, handler in self.routes.items():
+            if needle in url:
+                if callable(handler):
+                    handler = handler(url, params)
+                if isinstance(handler, int):
+                    return _FakeResp(status_code=handler)
+                return _FakeResp(payload=handler)
+        return _FakeResp(status_code=404)
+
+
+def _wikidata_handler(url, params):
+    return _WD_SEARCH if params["action"] == "wbsearchentities" else _WD_ENTITIES
+
+
+def _now() -> float:
+    return time.time()
+
+
+def test_wikidata_sitelink_finds_article_filed_under_another_title(monkeypatch):
+    """No article under the scientific name on ru/en, but Wikidata lists the ru
+    article under its own title — the card gets it, not 'no entry'."""
+    ru_summary = {**_RU_SUMMARY, "title": "Роза пихтолистная"}
+
+    def ru_summary_for(url, params):
+        return ru_summary if "%D0%A0" in url else 404
+
+    net = _Net(monkeypatch, {
+        "ru.wikipedia.org/api/rest_v1/page/summary": ru_summary_for,
+        "wikidata.org": _wikidata_handler,
+        "/page/media-list/": {"items": []},
+        "/w/api.php": {"query": {"pages": [{}]}},  # no langlinks
+    })
+    info = species_info.fetch_species_info(ROSA, "ru")
+    assert info and info["title"] == "Роза пихтолистная"
+    assert info["lang"] == "ru" and info["level"] == "species"
+    assert any("wikidata.org" in u for u in net.calls)
+
+
+def test_missing_lead_image_filled_from_wikidata_p18_via_commons(monkeypatch):
+    en_no_image = {"type": "standard", "title": ROSA, "extract": "A stub about a rose."}
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": en_no_image,
+        "/page/media-list/": {"items": []},
+        "wikidata.org": _wikidata_handler,
+        "commons.wikimedia.org": _COMMONS_FILE,
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["extract"] == "A stub about a rose."
+    assert info["image_url"].endswith("1280px-R.JPG")
+    assert info["images"][0] == info["image_url"]
+    assert info["image_credit"] == "Jane Doe"
+    assert info["image_license"] == "CC BY-SA 4.0"
+
+
+def test_commons_category_used_when_wikidata_has_no_p18(monkeypatch):
+    entities = {"entities": {"Q1": {
+        **_WD_ENTITIES["entities"]["Q1"],
+        "claims": {
+            "P225": [{"mainsnak": {"datavalue": {"value": ROSA}}}],
+            "P373": [{"mainsnak": {"datavalue": {"value": "Rosa abietina"}}}],
+        },
+    }}}
+    category = {"query": {"pages": [
+        {"title": "File:Rosa abietina herbarium sheet.jpg", "index": 1,
+         "imageinfo": [{"thumburl": "https://thumb.wikimedia.org/a/1280px-H.jpg"}]},
+        {"title": "File:Rosa abietina fruit.jpg", "index": 2,
+         "imageinfo": [{"thumburl": "https://thumb.wikimedia.org/b/1280px-F.jpg"}]},
+        {"title": "File:Rosa abietina map.svg", "index": 3,
+         "imageinfo": [{"thumburl": "https://thumb.wikimedia.org/c/1280px-M.svg.png"}]},
+    ]}}
+
+    def wikidata(url, params):
+        return _WD_SEARCH if params["action"] == "wbsearchentities" else entities
+
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": {"extract": "Stub."},
+        "/page/media-list/": {"items": []},
+        "wikidata.org": wikidata,
+        "commons.wikimedia.org": category,
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["image_url"] == "https://thumb.wikimedia.org/b/1280px-F.jpg"  # not the herbarium sheet
+
+
+def test_inaturalist_used_when_wikipedia_and_wikidata_have_nothing(monkeypatch):
+    _Net(monkeypatch, {
+        "wikipedia.org": 404,
+        "wikidata.org": {"search": []},
+        "api.inaturalist.org": _INAT,
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["source"] == "inaturalist" and info["level"] == "species"
+    assert info["extract"] == "Rosa abietina is a species of rose."  # HTML stripped
+    # Skips the all-rights-reserved default photo, takes the CC BY one.
+    assert info["image_url"].endswith("/photos/2/large.jpeg")
+    assert info["image_license"] == "CC BY"
+    assert "Y" in info["image_credit"]
+    assert info["page_url"] == "https://en.wikipedia.org/wiki/Rosa_abietina"
+
+
+def test_inaturalist_photo_ignored_without_open_licence(monkeypatch):
+    inat = {"results": [{**_INAT["results"][0], "taxon_photos": []}]}
+    _Net(monkeypatch, {
+        "wikipedia.org": 404, "wikidata.org": {"search": []}, "api.inaturalist.org": inat,
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["image_url"] is None  # text only; never an all-rights-reserved photo
+
+
+def test_inaturalist_requires_exact_name_match(monkeypatch):
+    other = {"results": [{**_INAT["results"][0], "name": "Rosa abietina var. other"}]}
+    _Net(monkeypatch, {
+        "wikipedia.org": 404, "wikidata.org": {"search": []}, "api.inaturalist.org": other,
+    })
+    assert species_info.fetch_species_info(ROSA, "en") is None
+
+
+_GENUS_EN = {
+    "type": "standard", "title": "Rosa",
+    "extract": "Rosa is a genus of about 150 species of flowering plants in the family Rosaceae.",
+    "thumbnail": {"source": "https://en.example/rosa.jpg"},
+}
+
+
+def test_genus_is_last_resort_and_labelled(monkeypatch):
+    def summary(url, params):
+        return _GENUS_EN if url.endswith("/Rosa") else 404
+
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": summary,
+        "/page/media-list/": {"items": []},
+        "wikidata.org": {"search": []},
+        "api.inaturalist.org": {"results": []},
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["title"] == "Rosa" and info["level"] == "genus"
+
+
+def test_genus_fallback_rejects_unrelated_article(monkeypatch):
+    """'Xyzzy' is a video-game article, not a plant genus: no genus card."""
+    game = {
+        "type": "standard", "title": "Colossal Cave Adventure",
+        "extract": "Colossal Cave Adventure is a text-based game.",
+        "thumbnail": {"source": "https://en.example/g.png"},
+    }
+
+    def summary(url, params):
+        return game if url.endswith("/Xyzzy") else 404
+
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": summary,
+        "/page/media-list/": {"items": []},
+        "wikidata.org": {"search": []},
+        "api.inaturalist.org": {"results": []},
+    })
+    assert species_info.fetch_species_info("Xyzzy plantus", "en") is None
+
+
+def test_transient_failure_is_not_cached_like_a_real_miss(monkeypatch):
+    """A 429 from Wikipedia must not be remembered for a week as 'no article'."""
+    _Net(monkeypatch, {"wikipedia.org": 429, "wikidata.org": 503, "api.inaturalist.org": 500})
+    assert species_info.fetch_species_info(ROSA, "en") is None
+    expiry = species_info._cache[(ROSA.lower(), "en")][0]
+    assert expiry - _now() <= species_info._TRANSIENT_TTL_S + 1
+
+    # The next request retries and succeeds once the upstream recovers.
+    species_info._cache[(ROSA.lower(), "en")] = (0, None)  # simulate TTL expiry
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": _EN_SUMMARY,
+        "/page/media-list/": {"items": []},
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info and info["extract"].startswith("Heptapleurum")
+
+
+def test_definite_miss_cached_for_hours_not_a_week(monkeypatch):
+    _Net(monkeypatch, {
+        "wikipedia.org": 404, "wikidata.org": {"search": []},
+        "api.inaturalist.org": {"results": []},
+    })
+    assert species_info.fetch_species_info(ROSA, "en") is None
+    ttl = species_info._cache[(ROSA.lower(), "en")][0] - _now()
+    assert species_info._TRANSIENT_TTL_S < ttl <= species_info._MISS_TTL_S + 1
+
+
+def test_degraded_answer_during_outage_is_retried_soon(monkeypatch):
+    """Species page 429s but the genus page answers: serve the genus, yet retry
+    the species lookup within minutes, not a week."""
+    def summary(url, params):
+        return _GENUS_EN if url.endswith("/Rosa") else 429
+
+    _Net(monkeypatch, {
+        "en.wikipedia.org/api/rest_v1/page/summary": summary,
+        "/page/media-list/": {"items": []},
+        "wikidata.org": 429, "api.inaturalist.org": 429,
+    })
+    info = species_info.fetch_species_info(ROSA, "en")
+    assert info["level"] == "genus"
+    assert species_info._cache[(ROSA.lower(), "en")][0] - _now() <= species_info._TRANSIENT_TTL_S + 1
+
+
+def test_wikidata_ignores_non_taxon_items(monkeypatch):
+    search = {"search": [
+        {"id": "Q9", "match": {"type": "label", "text": ROSA}},  # no P225: not a taxon
+        {"id": "Q8", "match": {"type": "alias", "text": ROSA}},  # accepted-name taxon (synonym hit)
+    ]}
+    entities = {"entities": {
+        "Q9": {"id": "Q9", "claims": {}, "sitelinks": {"enwiki": {"title": "Surname"}}},
+        "Q8": {
+            "id": "Q8",
+            "claims": {"P225": [{"mainsnak": {"datavalue": {"value": "Rosa pinus"}}}]},
+            "sitelinks": {"enwiki": {"title": "Rosa pinus"}},
+        },
+    }}
+
+    def wikidata(url, params):
+        return search if params["action"] == "wbsearchentities" else entities
+
+    _Net(monkeypatch, {"wikidata.org": wikidata})
+    found = species_info._wikidata_lookup(ROSA)
+    assert found and found["qid"] == "Q8"
+    assert found["sitelinks"] == {"en": "Rosa pinus"}
+
+
+def test_user_agent_is_descriptive_and_takes_deployment_contact(monkeypatch):
+    monkeypatch.setenv("SPECIES_INFO_CONTACT", "ops@example.org")
+    assert "ops@example.org" in species_info._build_user_agent()
+    monkeypatch.delenv("SPECIES_INFO_CONTACT")
+    assert species_info._build_user_agent().startswith("PlantDiseases/")
+
+
+def test_species_info_endpoint_exposes_level_and_credit_and_short_cache(client, monkeypatch):
+    import main as server_main
+
+    def fake(name, lang="en"):
+        return {
+            "title": "Rosa", "extract": "genus text", "level": "genus",
+            "image_url": "https://upload.wikimedia.org/a.jpg", "images": [],
+            "lang": "en", "image_credit": "Jane", "image_license": "CC BY",
+        }
+
+    monkeypatch.setattr(server_main, "fetch_species_info", fake)
+    r = client.get("/api/species-info?name=Rosa%20abietina")
+    body = r.json()
+    assert body["level"] == "genus" and body["image_credit"] == "Jane"
+    assert body["image_license"] == "CC BY"
+    assert r.headers["cache-control"] == "public, max-age=900"

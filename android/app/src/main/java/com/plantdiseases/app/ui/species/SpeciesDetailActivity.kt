@@ -596,7 +596,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             applySavedDataNote()
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
-                    info.extract ?: getString(R.string.identify_no_info)
+                    WikipediaAttribution.displayExtract(this@SpeciesDetailActivity, info)
+                        ?: getString(R.string.identify_no_info)
                 revealExtractToggleIfClipped()
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity)
@@ -616,12 +617,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 // and licence one tap away.
                 binding.btnWikipediaAttribution.visibility = View.VISIBLE
                 binding.btnWikipediaAttribution.setOnClickListener {
-                    WikipediaAttribution.show(
-                        this@SpeciesDetailActivity,
-                        info.title,
-                        info.pageUrl,
-                        info.translated,
-                    )
+                    WikipediaAttribution.show(this@SpeciesDetailActivity, info)
                 }
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)

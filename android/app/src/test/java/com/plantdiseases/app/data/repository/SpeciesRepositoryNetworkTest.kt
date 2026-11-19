@@ -51,7 +51,7 @@ class SpeciesRepositoryNetworkTest {
     @Test
     fun speciesInfo_reusesExistingDiskCacheAcrossRepositoryInstances() = runBlocking {
         val cached = SpeciesInfoResponse(available = true, title = "Cached ficus")
-        ResponseCache.put("species:v3:ficus elastica|en", cached, ResponseCache.TTL_SPECIES_MS)
+        ResponseCache.put("species:v4:ficus elastica|en", cached, ResponseCache.TTL_SPECIES_MS)
 
         val result = ScanRepository(FakeScanDao(), client).getSpeciesInfo(" Ficus elastica ", "en")
 
@@ -74,6 +74,22 @@ class SpeciesRepositoryNetworkTest {
         assertThat(server.takeRequest().path).contains("locale=en")
         assertThat(server.takeRequest().path).contains("locale=en")
         assertThat(server.takeRequest().path).contains("locale=ru")
+    }
+
+    @Test
+    fun speciesInfo_genusLevelOrPhotolessAnswerIsCachedOnlyBriefly() = runBlocking {
+        enqueueJson("""{"available":true,"title":"Rosa","level":"genus","image_url":"api/plant-photo?u=x"}""")
+        repository.getSpeciesInfo("Rosa abietina", "en").getOrThrow()
+        assertThat(cacheDirectory.listFiles()!!.single().readText())
+            .contains("\"ttlMs\":${ResponseCache.TTL_SPECIES_DEGRADED_MS}")
+    }
+
+    @Test
+    fun speciesInfo_completeAnswerUsesLongTtl() = runBlocking {
+        enqueueJson("""{"available":true,"title":"Rosa abietina","level":"species","image_url":"api/plant-photo?u=x"}""")
+        repository.getSpeciesInfo("Rosa abietina", "en").getOrThrow()
+        assertThat(cacheDirectory.listFiles()!!.single().readText())
+            .contains("\"ttlMs\":${ResponseCache.TTL_SPECIES_MS}")
     }
 
     @Test

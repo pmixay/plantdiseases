@@ -1147,6 +1147,10 @@
     <string name="wikipedia_attribution_body">Описание и фото взяты из Википедии. Тексты Википедии доступны по лицензии Creative Commons «С указанием авторства — С сохранением условий» 4.0 (CC BY-SA 4.0).</string>
     <string name="wikipedia_attribution_photos">Фотографии взяты с Викисклада; у каждой своя лицензия, указанная на странице файла.</string>
     <string name="wikipedia_attribution_translated">Текст переведён автоматически: статьи на вашем языке пока нет.</string>
+    <string name="wikipedia_attribution_photo_credit">Фото: %1$s.</string>
+    <string name="wikipedia_attribution_photo_credit_licence">Фото: %1$s (%2$s).</string>
+    <string name="species_info_genus_note">Статьи именно об этом виде пока нет — ниже описан род «%1$s».</string>
+    <string name="species_info_genus_note_plain">Статьи именно об этом виде пока нет — ниже описан его род.</string>
     <string name="wikipedia_attribution_licence">Лицензия</string>
     <string name="wikipedia_attribution_close">Закрыть</string>
     <string name="species_info_expand">Показать полное описание</string>
