@@ -23,11 +23,11 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.AchievementProgress
 import com.plantdiseases.app.data.model.DiscountState
+import com.plantdiseases.app.data.model.ForumAuthor
 import com.plantdiseases.app.data.model.HelperProfile
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.ActivityHelperProfileBinding
 import com.plantdiseases.app.databinding.ItemAchievementBinding
-import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -79,9 +79,14 @@ class HelperProfileActivity : AppCompatActivity() {
         binding.scroll.visibility = View.VISIBLE
         val nickname = profile.nickname.ifBlank { getString(R.string.community_anonymous_author) }
         // A white disc with the nickname colour as text, so it reads on the green hero.
-        binding.tvAvatar.text = Avatars.monogramForNick(nickname)
-        binding.tvAvatar.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.on_hero))
-        binding.tvAvatar.setTextColor(Avatars.colorFor(nickname))
+        ForumViews.bindAvatar(
+            binding.tvAvatar,
+            binding.ivAvatarPhoto,
+            nickname,
+            ForumAuthor(nickname = nickname, authorToken = profile.authorToken, avatarVersion = profile.avatarVersion),
+            forum::avatarUrl,
+            onHero = true,
+        )
         binding.tvNickname.text = nickname
         binding.tvLevel.text = getString(
             R.string.forum_level_line,

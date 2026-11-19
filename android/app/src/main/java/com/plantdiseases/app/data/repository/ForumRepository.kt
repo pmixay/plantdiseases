@@ -8,6 +8,7 @@ import com.plantdiseases.app.data.model.ForumAcceptRequest
 import com.plantdiseases.app.data.model.ForumActivityResponse
 import com.plantdiseases.app.data.model.ForumAnswer
 import com.plantdiseases.app.data.model.ForumAnswerCreateRequest
+import com.plantdiseases.app.data.model.ForumAvatarUpload
 import com.plantdiseases.app.data.model.ForumBlockRequest
 import com.plantdiseases.app.data.model.ForumLikeRequest
 import com.plantdiseases.app.data.model.ForumLikeResponse
@@ -45,6 +46,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -141,6 +143,14 @@ class ForumRepository(
     /** URL of a forum photo, for Glide. Public while its post is visible. */
     fun mediaUrl(mediaId: String): String = "${apiClient.baseUrl}api/community/media/$mediaId"
 
+    /**
+     * URL of a member's public profile photo, for Glide. [version] is the
+     * author's `avatar_version`: a new photo gets a new URL, so caches never
+     * show a replaced one.
+     */
+    fun avatarUrl(authorToken: String, version: Long): String =
+        "${apiClient.baseUrl}api/community/avatars/$authorToken?v=$version"
+
     // ── writing ───────────────────────────────────────────────────────────
 
     /**
@@ -167,6 +177,32 @@ class ForumRepository(
                 ),
             )
         }
+    }
+
+    /** Publish (or replace) my profile photo in Community; the server crops it square. */
+    suspend fun uploadAvatar(jpeg: ByteArray): Result<ForumAvatarUpload> = write { token ->
+        apiClient.httpClient.put("api/community/me/avatar") {
+            bearer(token)
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "image",
+                            jpeg,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, "image/jpeg")
+                                append(HttpHeaders.ContentDisposition, "filename=\"avatar.jpg\"")
+                            },
+                        )
+                    },
+                ),
+            )
+        }
+    }
+
+    /** Withdraw my profile photo from Community. */
+    suspend fun deleteAvatar(): Result<Unit> = writeUnit { token ->
+        apiClient.httpClient.delete("api/community/me/avatar") { bearer(token) }
     }
 
     suspend fun createPost(request: ForumPostCreateRequest): Result<ForumPost> = write { token ->

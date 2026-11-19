@@ -330,4 +330,14 @@
     <string name="forum_ai_confidence">%1$d%%</string>
     <string name="forum_leaves_count">Листиков: %1$d</string>
     <string name="forum_two_parts">%1$s · %2$s</string>
+
+    <!-- Фото профиля в Сообществе: только с согласия, вопрос один раз на фото; переключатель в Профиле. -->
+    <string name="community_photo_prompt_title">Показывать ваше фото в Сообществе?</string>
+    <string name="community_photo_prompt_message">Показывать фото профиля рядом с вашими вопросами и ответами в Сообществе? Его увидят все, кто читает Сообщество. Выключить можно в любой момент в Профиле.</string>
+    <string name="community_photo_prompt_show">Показывать</string>
+    <string name="community_photo_prompt_not_now">Не сейчас</string>
+    <string name="community_photo_setting_title">Показывать моё фото в Сообществе</string>
+    <string name="community_photo_setting_subtitle">Фото профиля видно рядом с вашими вопросами и ответами. Если выключить, оно останется только на этом устройстве и будет удалено из Сообщества.</string>
+    <string name="community_photo_rejected">Это фото нельзя показать в Сообществе. Выберите другое в профиле.</string>
+    <string name="community_photo_failed">Не удалось обновить фото в Сообществе. Попробуем снова, когда вы откроете Сообщество.</string>
 </resources>

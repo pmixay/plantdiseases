@@ -86,6 +86,12 @@ class ModImageBan(BaseModel):
     media_id: str = Field(..., min_length=32, max_length=32)
 
 
+class ModAvatarRemove(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ban_image: bool = True
+
+
 class MemberAppeal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -285,6 +291,24 @@ def register(router: APIRouter, m) -> None:
             reason_code=payload.reason_code,
             hours=payload.hours,
             note=payload.note,
+        )
+        return JSONResponse(content=result, headers=_NO_STORE)
+
+    @router.post(
+        "/community/admin/actors/{author_token}/avatar/remove",
+        dependencies=[Depends(m.community_bearer)],
+    )
+    async def moderation_remove_avatar(
+        author_token: str, payload: ModAvatarRemove, request: Request
+    ):
+        """Take down a member's profile photo (global moderators); by default the
+        same picture is refused as a future upload."""
+        principal, _roles = await global_moderator(request)
+        result = await run(
+            m.community_moderation.remove_avatar,
+            moderator_actor_id=principal.actor_id,
+            author_token=author_token,
+            ban_image=payload.ban_image,
         )
         return JSONResponse(content=result, headers=_NO_STORE)
 

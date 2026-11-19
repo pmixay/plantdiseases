@@ -328,4 +328,14 @@
     <string name="forum_ai_confidence">%1$d%%</string>
     <string name="forum_leaves_count">%1$d leaves</string>
     <string name="forum_two_parts">%1$s · %2$s</string>
+
+    <!-- Community profile photo: opt-in, asked once per photo; Profile toggle. -->
+    <string name="community_photo_prompt_title">Show your photo in Community?</string>
+    <string name="community_photo_prompt_message">Show your profile photo next to your posts and answers in Community? Anyone who reads Community will see it. You can turn it off any time in Profile.</string>
+    <string name="community_photo_prompt_show">Show</string>
+    <string name="community_photo_prompt_not_now">Not now</string>
+    <string name="community_photo_setting_title">Show my photo in Community</string>
+    <string name="community_photo_setting_subtitle">Your profile photo appears next to your posts and answers. When off, it stays on this device and is removed from Community.</string>
+    <string name="community_photo_rejected">Community can\'t show this photo. Choose another one in your profile.</string>
+    <string name="community_photo_failed">Couldn\'t update your photo in Community. We\'ll try again when you open Community.</string>
 </resources>

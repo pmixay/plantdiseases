@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.model.ForumActivityItem
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.model.StaffMe
+import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
@@ -44,6 +45,9 @@ class CommunityFragment : Fragment() {
     @Inject
     lateinit var forum: ForumRepository
 
+    @Inject
+    lateinit var avatarSync: CommunityAvatarSync
+
     private var _binding: FragmentCommunityBinding? = null
     private val binding get() = _binding!!
 
@@ -56,6 +60,7 @@ class CommunityFragment : Fragment() {
     private var loadJob: Job? = null
     private var staff: StaffMe? = null
     private var activityItems: List<ForumActivityItem> = emptyList()
+    private var photoPromptShowing = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentCommunityBinding.inflate(inflater, container, false)
@@ -66,6 +71,7 @@ class CommunityFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
+            avatarUrl = forum::avatarUrl,
             onOpen = { post -> startActivity(PostDetailActivity.intent(requireContext(), post.id)) },
             onLike = ::toggleLike,
         )
@@ -95,11 +101,53 @@ class CommunityFragment : Fragment() {
         super.onResume()
         refreshActivity()
         refreshStaff()
+        offerProfilePhoto()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    // ── profile photo ────────────────────────────────────────────────────
+
+    /**
+     * The profile photo stays on the device unless the member agrees: ask
+     * once per photo, otherwise quietly bring the server in line with their
+     * choice (a changed photo is re-uploaded, a removed one withdrawn).
+     */
+    private fun offerProfilePhoto() {
+        if (photoPromptShowing) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            if (!avatarSync.shouldAsk()) {
+                onPhotoSynced(avatarSync.sync())
+                return@launch
+            }
+            if (_binding == null || photoPromptShowing) return@launch
+            photoPromptShowing = true
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.community_photo_prompt_title)
+                .setMessage(R.string.community_photo_prompt_message)
+                .setPositiveButton(R.string.community_photo_prompt_show) { _, _ -> answerPhotoPrompt(true) }
+                .setNegativeButton(R.string.community_photo_prompt_not_now) { _, _ -> answerPhotoPrompt(false) }
+                .setOnCancelListener { answerPhotoPrompt(false) }
+                .setOnDismissListener { photoPromptShowing = false }
+                .show()
+        }
+    }
+
+    private fun answerPhotoPrompt(show: Boolean) {
+        viewLifecycleOwner.lifecycleScope.launch { onPhotoSynced(avatarSync.setShown(show)) }
+    }
+
+    private fun onPhotoSynced(outcome: CommunityAvatarSync.Outcome) {
+        if (_binding == null) return
+        when (outcome) {
+            CommunityAvatarSync.Outcome.PUBLISHED, CommunityAvatarSync.Outcome.WITHDRAWN -> reload()
+            CommunityAvatarSync.Outcome.REJECTED ->
+                Toast.makeText(requireContext(), R.string.community_photo_rejected, Toast.LENGTH_LONG).show()
+            CommunityAvatarSync.Outcome.NOTHING, CommunityAvatarSync.Outcome.FAILED -> Unit
+        }
     }
 
     // ── feed ─────────────────────────────────────────────────────────────

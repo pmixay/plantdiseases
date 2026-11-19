@@ -481,6 +481,7 @@ def progress(actor_id: str, *, include_private: bool = False, now: int | None = 
     return {
         "author_token": community.public_account_author_token(actor),
         "nickname": (nickname[0] if nickname else "") or "",
+        "avatar_version": community_forum.avatar_version(actor),
         "level": level,
         "level_name": LEVELS[level - 1][0],
         "leaves": points,

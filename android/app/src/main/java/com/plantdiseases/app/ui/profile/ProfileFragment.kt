@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.data.repository.ForumRepository
+import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
@@ -82,6 +83,9 @@ class ProfileFragment : Fragment() {
 
     @Inject
     lateinit var forumRepository: ForumRepository
+
+    @Inject
+    lateinit var communityAvatarSync: CommunityAvatarSync
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -679,6 +683,28 @@ class ProfileFragment : Fragment() {
         super.onResume()
         loadStats()
         refreshModerationRow()
+        bindCommunityPhotoToggle()
+    }
+
+    /** "Show my photo in Community": off keeps the photo on the device and withdraws it. */
+    private fun bindCommunityPhotoToggle() {
+        val signedIn = BuildConfig.ACCOUNT_UI_ENABLED && communityAvatarSync.accountId() != null
+        binding.communityPhotoRow.visibility = if (signedIn) View.VISIBLE else View.GONE
+        val toggle = binding.switchCommunityPhoto
+        toggle.setOnCheckedChangeListener(null)
+        toggle.isChecked = signedIn && communityAvatarSync.isShown()
+        toggle.setOnCheckedChangeListener { _, show ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                val message = when (communityAvatarSync.setShown(show)) {
+                    CommunityAvatarSync.Outcome.REJECTED -> R.string.community_photo_rejected
+                    CommunityAvatarSync.Outcome.FAILED -> R.string.community_photo_failed
+                    else -> null
+                }
+                if (message != null && _binding != null) {
+                    Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     /** My scans (the former Gallery tab), achievements, moderation notices,

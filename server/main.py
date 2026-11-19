@@ -1493,6 +1493,7 @@ def _forum_maintenance() -> dict:
 FORUM_POST_DAILY_QUOTA = get_int("FORUM_POST_DAILY_QUOTA", 20)
 FORUM_ANSWER_DAILY_QUOTA = get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
 FORUM_MEDIA_DAILY_QUOTA = get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
+FORUM_AVATAR_DAILY_QUOTA = get_int("FORUM_AVATAR_DAILY_QUOTA", 10)
 FORUM_REACTION_DAILY_QUOTA = get_int("FORUM_REACTION_DAILY_QUOTA", 500)
 _daily_write_lock = threading.Lock()
 _daily_write_counts: dict[tuple[int, str, str], int] = {}

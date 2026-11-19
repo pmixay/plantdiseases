@@ -2210,6 +2210,63 @@
         }
       }
     },
+    "/api/community/avatars/{author_token}": {
+      "get": {
+        "summary": "Forum Avatar File",
+        "description": "A member's profile photo (public, 404 when none). A URL carrying the\ncurrent ``avatar_version`` as ``v`` may be cached for a long time.",
+        "operationId": "forum_avatar_file_api_community_avatars__author_token__get",
+        "parameters": [
+          {
+            "name": "author_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Author Token"
+            }
+          },
+          {
+            "name": "v",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "avatar_version from the author object",
+              "title": "V"
+            },
+            "description": "avatar_version from the author object"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/me/achievements": {
       "get": {
         "summary": "Forum My Achievements",
@@ -2263,6 +2320,68 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/me/avatar": {
+      "put": {
+        "summary": "Forum Avatar Upload",
+        "description": "Publish or replace my profile photo, shown beside my posts and answers.\nIt is re-encoded as a square JPEG without metadata.",
+        "operationId": "forum_avatar_upload_api_community_me_avatar_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_forum_avatar_upload_api_community_me_avatar_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Forum Avatar Delete",
+        "description": "Withdraw my profile photo from Community.",
+        "operationId": "forum_avatar_delete_api_community_me_avatar_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -3121,6 +3240,59 @@
         }
       }
     },
+    "/api/community/admin/actors/{author_token}/avatar/remove": {
+      "post": {
+        "summary": "Moderation Remove Avatar",
+        "description": "Take down a member's profile photo (global moderators); by default the\nsame picture is refused as a future upload.",
+        "operationId": "moderation_remove_avatar_api_community_admin_actors__author_token__avatar_remove_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "author_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Author Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModAvatarRemove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/admin/appeals/{appeal_id}/resolve": {
       "post": {
         "summary": "Moderation Resolve Appeal",
@@ -3915,6 +4087,20 @@
           "image"
         ],
         "title": "Body_feedback_image_upload_api_feedback_image_post"
+      },
+      "Body_forum_avatar_upload_api_community_me_avatar_put": {
+        "properties": {
+          "image": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Image"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image"
+        ],
+        "title": "Body_forum_avatar_upload_api_community_me_avatar_put"
       },
       "Body_forum_media_upload_api_community_media_post": {
         "properties": {
@@ -4784,6 +4970,18 @@
           "decision"
         ],
         "title": "ModAppealDecision"
+      },
+      "ModAvatarRemove": {
+        "properties": {
+          "ban_image": {
+            "type": "boolean",
+            "title": "Ban Image",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModAvatarRemove"
       },
       "ModDismiss": {
         "properties": {

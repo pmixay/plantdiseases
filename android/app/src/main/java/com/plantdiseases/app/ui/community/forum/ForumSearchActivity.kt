@@ -56,6 +56,7 @@ class ForumSearchActivity : AppCompatActivity() {
         ForumInsets.apply(this, binding.searchBar, binding.root)
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
+            avatarUrl = forum::avatarUrl,
             onOpen = { post -> startActivity(PostDetailActivity.intent(this, post.id)) },
             onLike = ::toggleLike,
         )

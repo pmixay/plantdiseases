@@ -26,6 +26,7 @@ import com.plantdiseases.app.databinding.ItemForumPostBinding
  */
 class ForumPostAdapter(
     private val mediaUrl: (String) -> String,
+    private val avatarUrl: AvatarUrl,
     private val onOpen: (ForumPost) -> Unit,
     private val onLike: (ForumPost) -> Unit,
 ) : ListAdapter<ForumPost, ForumPostAdapter.Holder>(DIFF) {
@@ -55,7 +56,7 @@ class ForumPostAdapter(
         fun bind(post: ForumPost) {
             val context = binding.root.context
             val nickname = post.author.nickname.ifBlank { context.getString(R.string.community_anonymous_author) }
-            ForumViews.bindAvatar(binding.tvAvatar, nickname)
+            ForumViews.bindAvatar(binding.tvAvatar, binding.ivAvatarPhoto, nickname, post.author, avatarUrl)
             binding.tvAuthor.text = nickname
             binding.tvMeta.text = ForumViews.meta(context, post, spaces)
             ForumViews.bindStatus(binding.tvBadge, ForumViews.feedStatus(post))

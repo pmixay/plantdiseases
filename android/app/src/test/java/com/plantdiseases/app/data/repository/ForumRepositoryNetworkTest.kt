@@ -124,4 +124,33 @@ class ForumRepositoryNetworkTest {
     fun mediaUrlsUseTheApiOrigin() {
         assertThat(repo.mediaUrl("fmabc")).isEqualTo("${server.url("/")}api/community/media/fmabc")
     }
+
+    @Test
+    fun avatarVersionDecodesAndBustsTheUrl() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"id":"fp0123456789abcdef0123456789ab","kind":"tip","title":"t","body":"b",
+                 "author":{"nickname":"Fern","author_token":"ca1","is_me":false,"avatar_version":1763560000123},
+                 "answers":[{"id":"fa1","depth":0,"is_ai":false,"author":{"nickname":"Ivy","author_token":"ca2",
+                   "avatar_version":null},"body":"x","created_at":1800000000}],
+                 "created_at":1800000000,"last_activity_at":1800000000}
+                """.trimIndent(),
+            ),
+        )
+        val post = repo.post("fp0123456789abcdef0123456789ab").getOrThrow()
+
+        assertThat(post.author.avatarVersion).isEqualTo(1_763_560_000_123L)
+        assertThat(post.answers.single().author?.avatarVersion).isNull()
+        assertThat(repo.avatarUrl("ca1", 7L)).isEqualTo("${server.url("/")}api/community/avatars/ca1?v=7")
+    }
+
+    @Test
+    fun avatarWritesRequireAnAccount() = runBlocking {
+        assertThat(repo.uploadAvatar(byteArrayOf(1, 2, 3)).exceptionOrNull())
+            .isInstanceOf(AuthenticationRequiredException::class.java)
+        assertThat(repo.deleteAvatar().exceptionOrNull())
+            .isInstanceOf(AuthenticationRequiredException::class.java)
+        assertThat(server.requestCount).isEqualTo(0)
+    }
 }

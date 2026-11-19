@@ -3,16 +3,22 @@ package com.plantdiseases.app.ui.community.forum
 import android.content.Context
 import android.content.res.ColorStateList
 import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
+import com.bumptech.glide.Glide
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.ForumAuthor
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.util.Avatars
 import kotlin.math.roundToInt
+
+/** Builds a profile photo URL from an author token and its `avatar_version`. */
+typealias AvatarUrl = (authorToken: String, version: Long) -> String
 
 /** View binding shared by the feed card and the thread: avatar, status pill, meta line. */
 object ForumViews {
@@ -65,10 +71,38 @@ object ForumViews {
         view.compoundDrawableTintList = ColorStateList.valueOf(foreground)
     }
 
-    /** Monogram avatar in a colour derived from the nickname. */
-    fun bindAvatar(view: TextView, nickname: String) {
-        view.text = Avatars.monogramForNick(nickname)
-        view.backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(nickname))
+    /**
+     * The one place a forum avatar is bound. The monogram (a colour derived
+     * from the nickname) is always set; when the author shows a profile photo
+     * it is loaded over it, circle-cropped. Until the photo arrives, or if it
+     * fails to load, the transparent photo view leaves the monogram showing.
+     * [onHero] draws the monogram as a white disc with coloured text, for the
+     * green profile header.
+     */
+    fun bindAvatar(
+        monogram: TextView,
+        photo: ImageView,
+        nickname: String,
+        author: ForumAuthor?,
+        avatarUrl: AvatarUrl,
+        onHero: Boolean = false,
+    ) {
+        monogram.text = Avatars.monogramForNick(nickname)
+        if (onHero) {
+            monogram.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(monogram.context, R.color.on_hero))
+            monogram.setTextColor(Avatars.colorFor(nickname))
+        } else {
+            monogram.backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(nickname))
+        }
+        val token = author?.authorToken
+        val version = author?.avatarVersion
+        if (token.isNullOrBlank() || version == null) {
+            Glide.with(photo).clear(photo)
+            photo.visibility = View.GONE
+            return
+        }
+        photo.visibility = View.VISIBLE
+        Glide.with(photo).load(avatarUrl(token, version)).circleCrop().into(photo)
     }
 
     /** "Tip · Pests · 5 days ago"; questions are the default kind and are not named. */

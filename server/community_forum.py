@@ -18,6 +18,9 @@ Model
   only downvote in the community.
 * Photos are uploaded first (``store_media``), decoded, orientation-fixed,
   resized and re-encoded without metadata, then attached to a post or answer.
+* A member may publish one profile photo (``set_avatar``): a square,
+  re-encoded JPEG served by author token, shown beside their posts and
+  answers. Authors carry ``avatar_version`` so clients can cache-bust.
 * Search uses SQLite FTS5 with the trigram tokenizer, so Russian word endings
   still match; it degrades to ``LIKE`` when FTS5 is unavailable.
 
@@ -98,11 +101,13 @@ MEDIA_MAX_SOURCE_PIXELS = 40_000_000
 MEDIA_MAX_SOURCE_BYTES = 10 * 1024 * 1024
 MEDIA_MAX_STORED_BYTES = 1_500 * 1024
 MEDIA_JPEG_QUALITY = 85
+AVATAR_EDGE = 512
 
 _POST_PREFIX = "fp"
 _ANSWER_PREFIX = "fa"
 _MEDIA_PREFIX = "fm"
 _PUBLIC_ID = re.compile(r"(fp|fa|fm)[0-9a-f]{30}\Z")
+_AUTHOR_TOKEN = re.compile(r"ca[0-9a-f]{30}\Z")
 _SLUG = re.compile(r"[a-z][a-z0-9_]{0,31}\Z")
 _LABEL = re.compile(r"[a-z][a-z0-9_]{0,47}\Z")
 _LOCALE = re.compile(r"[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})?\Z")
@@ -250,6 +255,15 @@ CREATE TABLE IF NOT EXISTS forum_media (
 CREATE INDEX IF NOT EXISTS ix_forum_media_post   ON forum_media(post_id, position);
 CREATE INDEX IF NOT EXISTS ix_forum_media_answer ON forum_media(answer_id, position);
 CREATE INDEX IF NOT EXISTS ix_forum_media_owner  ON forum_media(owner_actor_id, created_at);
+
+CREATE TABLE IF NOT EXISTS forum_avatars (
+    actor_id     TEXT    PRIMARY KEY,
+    author_token TEXT    NOT NULL UNIQUE,
+    filename     TEXT    NOT NULL,
+    phash        TEXT,
+    version      INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS forum_reports (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -510,12 +524,8 @@ def _dhash(image: Image.Image) -> str:
     return f"{bits:016x}"
 
 
-def sanitize_image(image_bytes: bytes) -> tuple[bytes, int, int, str]:
-    """Decode, orient, bound and re-encode a photo with no source metadata.
-
-    Returns ``(jpeg_bytes, width, height, dhash)``. Raises ``ForumError`` for
-    anything that is not a reasonable photo.
-    """
+def _open_photo(image_bytes: bytes) -> Image.Image:
+    """Decode and orient an upload as RGB, refusing anything unreasonable."""
     if not image_bytes or len(image_bytes) > MEDIA_MAX_SOURCE_BYTES:
         raise ForumError("invalid_image", 413 if image_bytes else 422)
     try:
@@ -528,13 +538,15 @@ def sanitize_image(image_bytes: bytes) -> tuple[bytes, int, int, str]:
             ):
                 raise ForumError("invalid_image")
             opened.load()
-            image = ImageOps.exif_transpose(opened).convert("RGB")
+            return ImageOps.exif_transpose(opened).convert("RGB")
     except ForumError:
         raise
     except (Image.DecompressionBombError, OSError, UnidentifiedImageError, ValueError):
         raise ForumError("invalid_image") from None
-    if max(image.size) > MEDIA_LONG_EDGE:
-        image.thumbnail((MEDIA_LONG_EDGE, MEDIA_LONG_EDGE), Image.Resampling.LANCZOS)
+
+
+def _encode_clean(image: Image.Image) -> tuple[bytes, Image.Image]:
+    """Copy pixels into a fresh image (no metadata) and encode a bounded JPEG."""
     clean = Image.new("RGB", image.size)
     clean.paste(image)
     out = io.BytesIO()
@@ -549,7 +561,32 @@ def sanitize_image(image_bytes: bytes) -> tuple[bytes, int, int, str]:
     body = out.getvalue()
     if len(body) > MEDIA_MAX_STORED_BYTES:
         raise ForumError("invalid_image", 413)
+    return body, clean
+
+
+def sanitize_image(image_bytes: bytes) -> tuple[bytes, int, int, str]:
+    """Decode, orient, bound and re-encode a photo with no source metadata.
+
+    Returns ``(jpeg_bytes, width, height, dhash)``. Raises ``ForumError`` for
+    anything that is not a reasonable photo.
+    """
+    image = _open_photo(image_bytes)
+    if max(image.size) > MEDIA_LONG_EDGE:
+        image.thumbnail((MEDIA_LONG_EDGE, MEDIA_LONG_EDGE), Image.Resampling.LANCZOS)
+    body, clean = _encode_clean(image)
     return body, clean.size[0], clean.size[1], _dhash(clean)
+
+
+def sanitize_avatar(image_bytes: bytes) -> tuple[bytes, int, str]:
+    """A profile photo: centre-cropped square, at most ``AVATAR_EDGE`` px.
+
+    Returns ``(jpeg_bytes, edge, dhash)``; same refusals as ``sanitize_image``.
+    """
+    image = _open_photo(image_bytes)
+    edge = min(AVATAR_EDGE, *image.size)
+    square = ImageOps.fit(image, (edge, edge), Image.Resampling.LANCZOS)
+    body, clean = _encode_clean(square)
+    return body, edge, _dhash(clean)
 
 
 def scan_ref_for(token: str) -> str:
@@ -756,6 +793,139 @@ def _unlink_media(filenames: Iterable[str]) -> bool:
     return ok
 
 
+# ── profile photos ──────────────────────────────────────────────────────
+
+
+def _avatar_filename() -> str:
+    return f"av{secrets.token_hex(15)}.jpg"
+
+
+def _avatar_versions(conn: sqlite3.Connection, actors: Iterable[str | None]) -> dict[str, int]:
+    """``avatar_version`` per actor that has a profile photo."""
+    wanted = sorted({a for a in actors if a})
+    if not wanted:
+        return {}
+    placeholders = ",".join("?" * len(wanted))
+    try:
+        rows = conn.execute(
+            f"SELECT actor_id, version FROM forum_avatars "  # nosec B608
+            f"WHERE actor_id IN ({placeholders})",
+            tuple(wanted),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def avatar_version(actor_id: str | None) -> int | None:
+    """The current profile-photo version of one actor, or ``None``."""
+    actor = community._normalise_actor_id(actor_id)
+    if actor is None:
+        return None
+    init_db()
+    with community._connect() as conn:
+        return _avatar_versions(conn, [actor]).get(actor)
+
+
+def set_avatar(*, actor_id: str, image_bytes: bytes, now: int | None = None) -> dict:
+    """Publish (or replace) the member's profile photo.
+
+    The photo is re-encoded like any forum photo, cropped square, and refused
+    when it matches a banned image or the member may not write.
+    """
+    init_db()
+    actor = _actor(actor_id)
+    timestamp = _now(now)
+    body, edge, phash = sanitize_avatar(image_bytes)
+    filename = _avatar_filename()
+    folder = media_dir()
+    target = folder / filename
+    temporary = folder / f".{filename}.tmp"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(body)
+        temporary.chmod(0o600)
+        os.replace(temporary, target)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        logger.warning("Failed to write a profile photo")
+        raise ForumError("media_write_failed", 500) from None
+    token = _author_token(actor)
+    try:
+        with community._write_lock, community._connect() as conn:
+            _require_live_actor(conn, actor)
+            _guard(conn, actor, "write")
+            for guard in list(media_guards):
+                guard(conn, actor, phash)
+            previous = conn.execute(
+                "SELECT filename, version FROM forum_avatars WHERE actor_id = ?", (actor,)
+            ).fetchone()
+            # Milliseconds, strictly increasing per actor, so a client URL
+            # carrying the version never serves a replaced photo from cache.
+            version = max(time.time_ns() // 1_000_000, int(previous[1]) + 1 if previous else 0)
+            conn.execute(
+                "INSERT INTO forum_avatars (actor_id, author_token, filename, phash, version, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(actor_id) DO UPDATE SET "
+                "filename = excluded.filename, phash = excluded.phash, "
+                "version = excluded.version, updated_at = excluded.updated_at",
+                (actor, token, filename, phash, version, timestamp),
+            )
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    if previous is not None:
+        _unlink_media([str(previous[0])])
+    return {"author_token": token, "avatar_version": version, "size": edge}
+
+
+def remove_avatar_row(conn: sqlite3.Connection, actor: str) -> tuple[str, str | None] | None:
+    """Delete the row inside the caller's transaction; returns ``(filename, phash)``.
+
+    The caller unlinks the file (``unlink_avatar``) after the commit.
+    """
+    row = conn.execute(
+        "SELECT filename, phash FROM forum_avatars WHERE actor_id = ?", (actor,)
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute("DELETE FROM forum_avatars WHERE actor_id = ?", (actor,))
+    return str(row[0]), (str(row[1]) if row[1] else None)
+
+
+def unlink_avatar(filename: str) -> None:
+    _unlink_media([filename])
+
+
+def delete_avatar(*, actor_id: str) -> bool:
+    """Withdraw the member's profile photo. Returns whether one existed."""
+    init_db()
+    actor = _actor(actor_id)
+    with community._write_lock, community._connect() as conn:
+        removed = remove_avatar_row(conn, actor)
+    if removed is None:
+        return False
+    unlink_avatar(removed[0])
+    return True
+
+
+def avatar_file(author_token: str) -> tuple[Path, int] | None:
+    """``(path, version)`` of a member's public profile photo, or ``None``."""
+    token = (author_token or "").strip()
+    if not _AUTHOR_TOKEN.fullmatch(token):
+        return None
+    init_db()
+    with community._connect() as conn:
+        row = conn.execute(
+            "SELECT filename, version FROM forum_avatars WHERE author_token = ? "
+            "AND actor_id NOT IN (SELECT actor_id FROM community_deleted_actors)",
+            (token,),
+        ).fetchone()
+    if row is None:
+        return None
+    path = media_dir() / str(row[0])
+    return (path, int(row[1])) if path.is_file() else None
+
+
 # ── search index ───────────────────────────────────────────────────────
 
 
@@ -895,6 +1065,7 @@ def _post_card(
             "nickname": nickname or "",
             "author_token": author_token,
             "is_me": bool(viewer and viewer == author),
+            "avatar_version": _avatar_versions(conn, [author]).get(author),
         },
         "ai": (
             {
@@ -1207,6 +1378,7 @@ def _answers_for(conn: sqlite3.Connection, post_id: int, post_row: tuple, viewer
         ).fetchall():
             reactions[int(answer_id)] = str(reaction)
     media = _media_for(conn, answer_ids=[int(r[0]) for r in rows if r[11] == "visible"])
+    avatars = _avatar_versions(conn, [r[4] for r in rows if r[11] == "visible" and not r[7]])
 
     def score(answer_id: int) -> tuple:
         r = by_id[answer_id]
@@ -1243,6 +1415,7 @@ def _answers_for(conn: sqlite3.Connection, post_id: int, post_row: tuple, viewer
                             "author_token": r[5],
                             "is_me": bool(viewer and viewer == r[4]),
                             "is_post_author": r[4] == post_author,
+                            "avatar_version": avatars.get(r[4]) if r[4] else None,
                         }
                     ),
                     "body": r[8] if visible else "",
@@ -2051,6 +2224,10 @@ def _actor_media_files(conn: sqlite3.Connection, actor: str) -> list[Path]:
         ).fetchall()
     except sqlite3.OperationalError:
         return []  # forum schema not created in this DB yet
+    with contextlib.suppress(sqlite3.OperationalError):
+        rows += conn.execute(
+            "SELECT filename FROM forum_avatars WHERE actor_id = ?", (actor,)
+        ).fetchall()
     folder = media_dir()
     return [folder / str(row[0]) for row in rows]
 
@@ -2152,6 +2329,7 @@ def _purge_actor(conn: sqlite3.Connection, actor: str) -> None:
         )
     conn.execute("DELETE FROM forum_answers WHERE author_actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_media WHERE owner_actor_id = ?", (actor,))
+    conn.execute("DELETE FROM forum_avatars WHERE actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_post_likes WHERE actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_answer_reactions WHERE actor_id = ?", (actor,))
     conn.execute(

@@ -420,6 +420,57 @@
                         android:contentDescription="@string/telemetry_consent_title" />
                 </LinearLayout>
 
+                <!-- Show the local profile photo in Community (opt-in); only for a
+                     signed-in member. Wired to CommunityAvatarSync. -->
+                <LinearLayout
+                    android:id="@+id/community_photo_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginVertical="@dimen/space_md"
+                        android:background="@color/divider" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/community_photo_setting_title"
+                                android:textAppearance="@style/TextAppearance.App.Title" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xxs"
+                                android:text="@string/community_photo_setting_subtitle"
+                                android:textColor="@color/on_surface_secondary"
+                                android:textSize="@dimen/text_body_sm" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_community_photo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_md"
+                            android:contentDescription="@string/community_photo_setting_title" />
+                    </LinearLayout>
+                </LinearLayout>
+
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
