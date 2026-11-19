@@ -8,12 +8,14 @@
     <string name="profile_my_scans">My scans</string>
     <string name="profile_my_scans_subtitle">Every scan you have made, with filters</string>
     <string name="profile_achievements_subtitle">Your level, achievements and helper stats</string>
-    <string name="profile_mod_notices_subtitle">Moderation decisions about your posts, and appeals</string>
     <string name="profile_moderation_subtitle">Reports, appeals and label review</string>
 
     <!-- Feed -->
     <string name="forum_search">Search the community</string>
     <string name="forum_activity">Activity</string>
+    <string name="forum_decision_title">A moderator\'s decision</string>
+    <string name="forum_decision_details">Details</string>
+    <string name="forum_quoted">“%1$s”</string>
     <string name="forum_more">More</string>
     <string name="forum_tab_all">For you</string>
     <string name="forum_tab_needs_help">Needs help</string>
@@ -196,7 +198,7 @@
     <string name="forum_error_generic">Something went wrong. Try again.</string>
     <string name="forum_error_offline">Can\'t reach the server. Check your connection.</string>
     <string name="forum_error_muted">You are muted for now, so you can\'t post or answer. You can still like and report.</string>
-    <string name="forum_error_banned">Your account can\'t take part in the community. You can appeal in Moderation notices.</string>
+    <string name="forum_error_banned">Your account can\'t take part in the community. You can appeal from Community notifications (the bell).</string>
     <string name="forum_error_level_required">Marking answers as not helpful unlocks at level 2 (Sprout).</string>
     <string name="forum_error_links">Links are allowed after your first week in the community.</string>
     <string name="forum_error_blocked_terms">This text contains words that aren\'t allowed here.</string>

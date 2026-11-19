@@ -8,12 +8,14 @@
     <string name="profile_my_scans">Мои сканы</string>
     <string name="profile_my_scans_subtitle">Все ваши сканы, с фильтрами</string>
     <string name="profile_achievements_subtitle">Ваш уровень, достижения и статистика помощи</string>
-    <string name="profile_mod_notices_subtitle">Решения модераторов по вашим публикациям и апелляции</string>
     <string name="profile_moderation_subtitle">Жалобы, апелляции и проверка меток</string>
 
     <!-- Лента -->
     <string name="forum_search">Поиск по сообществу</string>
     <string name="forum_activity">Активность</string>
+    <string name="forum_decision_title">Решение модератора</string>
+    <string name="forum_decision_details">Подробнее</string>
+    <string name="forum_quoted">«%1$s»</string>
     <string name="forum_more">Ещё</string>
     <string name="forum_tab_all">Для вас</string>
     <string name="forum_tab_needs_help">Нужна помощь</string>
@@ -198,7 +200,7 @@
     <string name="forum_error_generic">Что-то пошло не так. Попробуйте ещё раз.</string>
     <string name="forum_error_offline">Нет связи с сервером. Проверьте подключение.</string>
     <string name="forum_error_muted">Пока вы не можете публиковать и отвечать. Ставить отметки и жаловаться можно.</string>
-    <string name="forum_error_banned">Ваш аккаунт не может участвовать в сообществе. Подать апелляцию можно в разделе «Решения модераторов».</string>
+    <string name="forum_error_banned">Ваш аккаунт не может участвовать в сообществе. Подать апелляцию можно из уведомлений сообщества (колокольчик).</string>
     <string name="forum_error_level_required">Отмечать ответы как «Не помогло» можно со 2-го уровня («Росток»).</string>
     <string name="forum_error_links">Ссылки можно добавлять после первой недели в сообществе.</string>
     <string name="forum_error_blocked_terms">В тексте есть недопустимые слова.</string>

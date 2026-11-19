@@ -39,7 +39,6 @@ import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
 import com.plantdiseases.app.ui.community.forum.ModerationActivity
-import com.plantdiseases.app.ui.community.forum.ModerationNoticesActivity
 import com.plantdiseases.app.ui.gallery.MyScansActivity
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.crop.CropContract
@@ -707,8 +706,9 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    /** My scans (the former Gallery tab), achievements, moderation notices,
-     *  and — for staff only — the moderation tools. */
+    /** My scans (the former Gallery tab), achievements and — for staff
+     *  only — the moderation tools. Moderation decisions about the user's own
+     *  posts arrive in Community's notifications instead. */
     private fun setupCommunityRows() {
         bindRow(binding.rowMyScans, R.drawable.ic_gallery, R.string.profile_my_scans, R.string.profile_my_scans_subtitle) {
             startActivity(MyScansActivity.intent(requireContext()))
@@ -720,14 +720,6 @@ class ProfileFragment : Fragment() {
             R.string.profile_achievements_subtitle,
         ) {
             if (requireCommunitySignIn()) startActivity(HelperProfileActivity.intentForMe(requireContext()))
-        }
-        bindRow(
-            binding.rowModNotices,
-            R.drawable.ic_flag,
-            R.string.forum_moderation_notices,
-            R.string.profile_mod_notices_subtitle,
-        ) {
-            if (requireCommunitySignIn()) startActivity(ModerationNoticesActivity.intent(requireContext()))
         }
         bindRow(
             binding.rowModeration,

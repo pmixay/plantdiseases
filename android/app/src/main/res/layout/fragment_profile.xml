@@ -484,10 +484,6 @@
             layout="@layout/item_profile_link_row" />
 
         <include
-            android:id="@+id/row_mod_notices"
-            layout="@layout/item_profile_link_row" />
-
-        <include
             android:id="@+id/row_moderation"
             layout="@layout/item_profile_link_row"
             android:visibility="gone" />

@@ -30,7 +30,8 @@ import javax.inject.Inject
 /**
  * Moderation decisions about the member's own content or account, each with
  * its reason, and an Appeal button that works once per decision. A different
- * moderator reviews the appeal.
+ * moderator reviews the appeal. Opened from Community notifications or the
+ * one-time popup a new decision shows; there is no menu entry for it.
  */
 @AndroidEntryPoint
 class ModerationNoticesActivity : AppCompatActivity() {
@@ -125,13 +126,8 @@ class ModerationNoticesActivity : AppCompatActivity() {
         inner class Holder(private val binding: ItemModQueueBinding) : RecyclerView.ViewHolder(binding.root) {
             fun bind(notice: ModNotice) {
                 val context = this@ModerationNoticesActivity
-                val reason = ForumUi.MOD_REASONS.firstOrNull { it.first == notice.reasonCode }?.second
                 binding.severity.setBackgroundColor(ContextCompat.getColor(context, R.color.warning_amber))
-                binding.tvHeading.text = getString(
-                    R.string.mod_notice_heading,
-                    actionText(notice),
-                    reason?.let { getString(it) } ?: getString(R.string.mod_reason_reports),
-                )
+                binding.tvHeading.text = ForumUi.modNoticeHeading(context, notice)
                 binding.tvExcerpt.text = notice.postTitle.orEmpty()
                 binding.tvExcerpt.visibility = if (notice.postTitle.isNullOrBlank()) View.GONE else View.VISIBLE
                 binding.tvMeta.text = listOfNotNull(
@@ -150,19 +146,6 @@ class ModerationNoticesActivity : AppCompatActivity() {
             }
         }
     }
-
-    private fun actionText(notice: ModNotice): String = getString(
-        when (notice.action) {
-            "remove" -> if (notice.targetType == "answer") R.string.mod_notice_answer_removed else R.string.mod_notice_post_removed
-            "hide_auto" -> R.string.mod_notice_hidden
-            "warn" -> R.string.mod_notice_warned
-            "mute" -> R.string.mod_notice_muted
-            "ban" -> R.string.mod_notice_ban
-            "lock" -> R.string.mod_notice_locked
-            "move" -> R.string.mod_notice_moved
-            else -> R.string.mod_action_other
-        },
-    )
 
     private fun appealStateText(state: String): String = getString(
         when (state) {

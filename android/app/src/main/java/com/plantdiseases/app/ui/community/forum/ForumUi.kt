@@ -12,6 +12,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthenticationRequiredException
 import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.model.ForumSpace
+import com.plantdiseases.app.data.model.ModNotice
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.DiseaseLabels
@@ -58,6 +59,25 @@ object ForumUi {
         "privacy" to R.string.mod_reason_privacy,
         "duplicate" to R.string.mod_reason_duplicate,
         "other_rules" to R.string.mod_reason_other,
+    )
+
+    /** "Post removed · Spam": what a moderator did and why. */
+    fun modNoticeHeading(context: Context, notice: ModNotice): String {
+        val reason = MOD_REASONS.firstOrNull { it.first == notice.reasonCode }?.second ?: R.string.mod_reason_reports
+        return context.getString(R.string.mod_notice_heading, modActionText(context, notice), context.getString(reason))
+    }
+
+    private fun modActionText(context: Context, notice: ModNotice): String = context.getString(
+        when (notice.action) {
+            "remove" -> if (notice.targetType == "answer") R.string.mod_notice_answer_removed else R.string.mod_notice_post_removed
+            "hide_auto" -> R.string.mod_notice_hidden
+            "warn" -> R.string.mod_notice_warned
+            "mute" -> R.string.mod_notice_muted
+            "ban" -> R.string.mod_notice_ban
+            "lock" -> R.string.mod_notice_locked
+            "move" -> R.string.mod_notice_moved
+            else -> R.string.mod_action_other
+        },
     )
 
     fun isRu(context: Context): Boolean = LocaleHelper.isRussian(context)

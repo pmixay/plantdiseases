@@ -19,6 +19,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ForumActivityItem
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
+import com.plantdiseases.app.data.model.ModNotice
 import com.plantdiseases.app.data.model.StaffMe
 import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.data.repository.ForumRepository
@@ -59,6 +60,7 @@ class CommunityFragment : Fragment() {
     private var loadJob: Job? = null
     private var staff: StaffMe? = null
     private var activityItems: List<ForumActivityItem> = emptyList()
+    private var notices: List<ModNotice> = emptyList()
     private var photoPromptShowing = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -321,37 +323,75 @@ class CommunityFragment : Fragment() {
             return
         }
         viewLifecycleOwner.lifecycleScope.launch {
-            forum.activity(since = 0).onSuccess { response ->
-                activityItems = response.items
-                val unseen = response.items.count { it.createdAt > lastSeenActivity() }
-                _binding?.activityDot?.visibility = if (unseen > 0) View.VISIBLE else View.GONE
-                (activity as? MainActivity)?.setCommunityBadge(unseen)
-            }
+            val answers = forum.activity(since = 0).getOrNull()
+            val decisions = forum.notices().getOrNull()
+            if (answers == null && decisions == null) return@launch
+            answers?.let { activityItems = it.items }
+            decisions?.let { notices = it.items }
+            val seen = lastSeenActivity()
+            val unseen = activityItems.count { it.createdAt > seen } + notices.count { it.createdAt > seen }
+            _binding?.activityDot?.visibility = if (unseen > 0) View.VISIBLE else View.GONE
+            (activity as? MainActivity)?.setCommunityBadge(unseen)
+            showNewDecision()
         }
     }
 
+    /** Community notifications: answers and replies to the user, accepted
+     *  answers, and moderators' decisions about their posts, newest first. */
     private fun showActivity() {
         if (!requireSignIn()) return
         val context = requireContext()
-        if (activityItems.isEmpty()) {
-            toast(getString(R.string.forum_activity_empty))
-            return
-        }
-        val labels = activityItems.map { item ->
+        val entries = activityItems.map { item ->
             val title = item.postTitle?.takeIf { it.isNotBlank() } ?: getString(R.string.forum_kind_scan)
-            when (item.type) {
+            val label = when (item.type) {
                 "answer_accepted" -> getString(R.string.forum_activity_accepted, title)
                 "reply_to_answer" -> getString(R.string.forum_activity_reply, item.nickname, title)
                 else -> getString(R.string.forum_activity_answer, item.nickname, title)
             }
+            Notification(item.createdAt, label) { startActivity(PostDetailActivity.intent(context, item.postId)) }
+        } + notices.map { notice ->
+            Notification(notice.createdAt, ForumUi.modNoticeHeading(context, notice)) {
+                startActivity(ModerationNoticesActivity.intent(context))
+            }
         }
+        if (entries.isEmpty()) {
+            toast(getString(R.string.forum_activity_empty))
+            return
+        }
+        val sorted = entries.sortedByDescending { it.createdAt }
         markActivitySeen()
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.forum_activity)
-            .setItems(labels.toTypedArray()) { _, which ->
-                startActivity(PostDetailActivity.intent(context, activityItems[which].postId))
-            }
+            .setItems(sorted.map { it.label }.toTypedArray()) { _, which -> sorted[which].open() }
             .setPositiveButton(R.string.forum_close, null)
+            .show()
+    }
+
+    /**
+     * A moderator's decision the user has not been shown yet pops up once, over
+     * Community; after that it lives only in the notifications. Decisions older
+     * than [DECISION_POPUP_MAX_AGE_S] are not worth interrupting for.
+     */
+    private fun showNewDecision() {
+        if (!isResumed || isHidden) return
+        val prefs = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val newest = notices.maxByOrNull { it.createdAt } ?: return
+        if (newest.createdAt <= prefs.getLong(KEY_DECISION_SHOWN, 0L)) return
+        prefs.edit().putLong(KEY_DECISION_SHOWN, newest.createdAt).apply()
+        if (System.currentTimeMillis() / MILLIS - newest.createdAt > DECISION_POPUP_MAX_AGE_S) return
+        val context = requireContext()
+        val message = listOfNotNull(
+            ForumUi.modNoticeHeading(context, newest),
+            newest.postTitle?.takeIf { it.isNotBlank() }?.let { getString(R.string.forum_quoted, it) },
+        ).joinToString("\n")
+        MaterialAlertDialogBuilder(context)
+            .setIcon(R.drawable.ic_shield_check)
+            .setTitle(R.string.forum_decision_title)
+            .setMessage(message)
+            .setNegativeButton(R.string.forum_close, null)
+            .setPositiveButton(R.string.forum_decision_details) { _, _ ->
+                startActivity(ModerationNoticesActivity.intent(context))
+            }
             .show()
     }
 
@@ -359,7 +399,7 @@ class CommunityFragment : Fragment() {
         requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_SEEN, 0L)
 
     private fun markActivitySeen() {
-        val newest = activityItems.maxOfOrNull { it.createdAt } ?: return
+        val newest = (activityItems.map { it.createdAt } + notices.map { it.createdAt }).maxOrNull() ?: return
         requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putLong(KEY_SEEN, newest).apply()
         _binding?.activityDot?.visibility = View.GONE
@@ -382,11 +422,6 @@ class CommunityFragment : Fragment() {
             add(
                 ForumMenu.Item(R.string.forum_my_achievements, R.drawable.ic_trophy, ForumMenu.Tone.AMBER) {
                     if (requireSignIn()) startActivity(HelperProfileActivity.intentForMe(context))
-                },
-            )
-            add(
-                ForumMenu.Item(R.string.forum_moderation_notices, R.drawable.ic_shield_check, ForumMenu.Tone.GREEN) {
-                    if (requireSignIn()) startActivity(ModerationNoticesActivity.intent(context))
                 },
             )
             if (staff?.isStaff == true) {
@@ -416,6 +451,9 @@ class CommunityFragment : Fragment() {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
+    /** One row of the notifications list. */
+    private class Notification(val createdAt: Long, val label: String, val open: () -> Unit)
+
     private companion object {
         const val TAB_ALL = "all"
         const val TAB_NEEDS_HELP = "needs_help"
@@ -427,6 +465,9 @@ class CommunityFragment : Fragment() {
         const val PREFETCH_DISTANCE = 3
         const val PREFS = "forum_prefs"
         const val KEY_SEEN = "activity_seen_at"
+        const val KEY_DECISION_SHOWN = "decision_shown_at"
+        const val MILLIS = 1000L
+        const val DECISION_POPUP_MAX_AGE_S = 7 * 24 * 60 * 60L
         val SHOW_CHIPS = mapOf(
             TAB_ALL to R.id.chip_show_all,
             TAB_NEEDS_HELP to R.id.chip_show_needs_help,
