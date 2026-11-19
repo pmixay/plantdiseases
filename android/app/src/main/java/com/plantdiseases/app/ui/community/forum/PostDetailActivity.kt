@@ -79,7 +79,7 @@ class PostDetailActivity :
             onPostMenu(item.itemId)
             true
         }
-        adapter = PostThreadAdapter(forum::mediaUrl, this)
+        adapter = PostThreadAdapter(forum::mediaUrl, forum::avatarUrl, this)
         moderation = ModerationController(this, forum) { load() }
         binding.rvThread.layoutManager = LinearLayoutManager(this)
         binding.rvThread.adapter = adapter

@@ -16,6 +16,8 @@ data class ForumAuthor(
     @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
     @SerializedName("is_me") @SerialName("is_me") val isMe: Boolean = false,
     @SerializedName("is_post_author") @SerialName("is_post_author") val isPostAuthor: Boolean = false,
+    /** Set when the member shows a profile photo; changes whenever the photo does. */
+    @SerializedName("avatar_version") @SerialName("avatar_version") val avatarVersion: Long? = null,
 )
 
 @Serializable
@@ -122,6 +124,13 @@ data class ForumMediaUpload(
     @SerializedName("media_id") @SerialName("media_id") val mediaId: String,
     @SerializedName("width") @SerialName("width") val width: Int = 0,
     @SerializedName("height") @SerialName("height") val height: Int = 0,
+)
+
+/** Reply to `PUT /api/community/me/avatar`. */
+@Serializable
+data class ForumAvatarUpload(
+    @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
+    @SerializedName("avatar_version") @SerialName("avatar_version") val avatarVersion: Long? = null,
 )
 
 @Serializable
@@ -259,6 +268,7 @@ data class DiscountState(
 data class HelperProfile(
     @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
     @SerializedName("nickname") @SerialName("nickname") val nickname: String = "",
+    @SerializedName("avatar_version") @SerialName("avatar_version") val avatarVersion: Long? = null,
     @SerializedName("level") @SerialName("level") val level: Int = 1,
     @SerializedName("level_name") @SerialName("level_name") val levelName: String = "seedling",
     @SerializedName("leaves") @SerialName("leaves") val leaves: Int = 0,

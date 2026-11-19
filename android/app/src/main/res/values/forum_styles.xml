@@ -57,6 +57,16 @@
     </style>
 
     <!-- Status pill (Solved, Urgent, …): colour and icon are set in code. -->
+    <!-- A member's profile photo laid over the monogram; shown only when the
+         author has one (ForumViews.bindAvatar). -->
+    <style name="Forum.AvatarPhoto" parent="">
+        <item name="android:contentDescription">@null</item>
+        <item name="android:importantForAccessibility">no</item>
+        <item name="android:scaleType">centerCrop</item>
+        <item name="android:visibility">gone</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Avatar</item>
+    </style>
+
     <style name="Forum.Pill" parent="Forum.Badge">
         <item name="android:drawablePadding">4dp</item>
         <item name="android:gravity">center_vertical</item>

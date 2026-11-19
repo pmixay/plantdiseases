@@ -47,6 +47,7 @@ interface ThreadActions {
  */
 class PostThreadAdapter(
     private val mediaUrl: (String) -> String,
+    private val avatarUrl: AvatarUrl,
     private val actions: ThreadActions,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -85,7 +86,7 @@ class PostThreadAdapter(
         fun bind(post: ForumPost) {
             val context = binding.root.context
             val nickname = post.author.nickname.ifBlank { context.getString(R.string.community_anonymous_author) }
-            ForumViews.bindAvatar(binding.tvAvatar, nickname)
+            ForumViews.bindAvatar(binding.tvAvatar, binding.ivAvatarPhoto, nickname, post.author, avatarUrl)
             binding.tvAuthor.text = nickname
             binding.tvAuthor.setOnClickListener { post.author.authorToken?.let(actions::onOpenAuthor) }
             binding.tvMeta.text = ForumViews.meta(context, post, spaces)
@@ -250,6 +251,10 @@ class PostThreadAdapter(
         private fun bindAuthor(context: Context, post: ForumPost, answer: ForumAnswer) {
             binding.ivAi.visibility = if (answer.isAi) View.VISIBLE else View.GONE
             binding.tvAvatar.visibility = if (answer.isAi) View.GONE else View.VISIBLE
+            if (answer.isAi) {
+                Glide.with(binding.ivAvatarPhoto).clear(binding.ivAvatarPhoto)
+                binding.ivAvatarPhoto.visibility = View.GONE
+            }
             val author = answer.author
             val name = when {
                 answer.isAi -> context.getString(R.string.forum_ai_answer_title)
@@ -260,7 +265,7 @@ class PostThreadAdapter(
             binding.tvAuthor.setTextColor(
                 ContextCompat.getColor(context, if (answer.isAi) R.color.forum_ai_fg else R.color.on_surface),
             )
-            if (!answer.isAi) ForumViews.bindAvatar(binding.tvAvatar, name)
+            if (!answer.isAi) ForumViews.bindAvatar(binding.tvAvatar, binding.ivAvatarPhoto, name, author, avatarUrl)
             binding.tvAuthor.setOnClickListener { author?.authorToken?.let(actions::onOpenAuthor) }
             bindAuthorBadge(context, answer)
             binding.tvTime.text = ForumUi.relativeTime(answer.createdAt)
