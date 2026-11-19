@@ -122,8 +122,7 @@
     <string name="forum_scan_attached">Scan attached: %1$s, %2$d%%</string>
     <string name="forum_scan_unavailable">This scan can\'t be shared. Only server scans from the last 30 days can.</string>
     <string name="forum_training_consent">Let PlantVision learn from these photos</string>
-    <string name="forum_training_consent_hint">If the community agrees on a diagnosis, the photos help train the model. Location and camera details are removed. Off unless you turn it on.</string>
-    <string name="forum_urgent">Urgent: spreading fast</string>
+    <string name="forum_training_consent_hint">If the community agrees on a diagnosis, the photos help train the model. Location and camera details are removed. You can turn this off.</string>
     <string name="forum_publish">Post</string>
 
     <!-- Search -->

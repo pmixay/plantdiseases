@@ -266,7 +266,6 @@ class ComposePostActivity : AppCompatActivity() {
                     binding.etSpecies.setText(post.species.orEmpty())
                     space = post.space
                     condition = post.condition
-                    binding.switchUrgent.isChecked = post.urgent
                     binding.switchConsent.isChecked = post.trainingConsent == true
                     renderSpace()
                     renderCondition()
@@ -295,7 +294,6 @@ class ComposePostActivity : AppCompatActivity() {
             space = space,
             species = binding.etSpecies.text?.toString()?.trim().orEmpty(),
             condition = condition,
-            urgent = binding.switchUrgent.isChecked,
             trainingConsent = binding.switchConsent.isChecked,
         )
         lifecycleScope.launch {
@@ -337,7 +335,7 @@ class ComposePostActivity : AppCompatActivity() {
             space = space,
             species = binding.etSpecies.text?.toString()?.trim()?.takeIf { it.isNotEmpty() },
             condition = condition,
-            urgent = binding.switchUrgent.isChecked,
+            urgent = false,
             mediaIds = photos.map { it.second },
             scanToken = scanToken,
             parentPostId = parentPostId,

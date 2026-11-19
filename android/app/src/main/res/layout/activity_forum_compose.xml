@@ -206,20 +206,19 @@
 
             <TextView
                 android:id="@+id/tv_space"
-                style="@style/Forum.Action"
+                style="@style/Forum.PickerRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                android:textColor="@color/on_surface"
                 app:drawableStartCompat="@drawable/ic_leaf" />
 
             <TextView
                 android:id="@+id/tv_condition"
-                style="@style/Forum.Action"
+                style="@style/Forum.PickerRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="@color/on_surface"
-                app:drawableStartCompat="@drawable/ic_disease" />
+                android:layout_marginTop="@dimen/space_sm"
+                app:drawableStartCompat="@drawable/ic_first_aid" />
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -242,6 +241,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
+                android:checked="true"
                 android:text="@string/forum_training_consent" />
 
             <TextView
@@ -250,13 +250,6 @@
                 android:layout_height="wrap_content"
                 android:maxLines="4"
                 android:text="@string/forum_training_consent_hint" />
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switch_urgent"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:text="@string/forum_urgent" />
 
         </LinearLayout>
 
