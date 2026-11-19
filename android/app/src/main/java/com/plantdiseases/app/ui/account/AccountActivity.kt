@@ -1,6 +1,5 @@
 package com.plantdiseases.app.ui.account
 
-import android.content.res.ColorStateList
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
@@ -14,14 +13,12 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -40,6 +37,7 @@ import com.plantdiseases.app.data.account.AccountProfile
 import com.plantdiseases.app.data.account.AccountSession
 import com.plantdiseases.app.data.account.AuthProvider
 import com.plantdiseases.app.databinding.ActivityAccountBinding
+import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.LocaleHelper
@@ -815,12 +813,7 @@ class AccountActivity : AppCompatActivity() {
 
     private fun showAvatarPlaceholder() {
         Glide.with(this).clear(binding.ivAvatar)
-        val padding = (36 * resources.displayMetrics.density).toInt()
-        binding.ivAvatar.setPadding(padding, padding, padding, padding)
-        binding.ivAvatar.imageTintList = ColorStateList.valueOf(
-            ContextCompat.getColor(this, R.color.on_hero),
-        )
-        binding.ivAvatar.setImageResource(R.drawable.ic_profile)
+        AvatarImage.showPlaceholder(binding.ivAvatar)
     }
 
     private fun showProfileAvatar(accountId: String, avatarUrl: String?) {
@@ -828,15 +821,7 @@ class AccountActivity : AppCompatActivity() {
             ?: avatarUrl?.takeIf { it.startsWith("https://") }
             ?: return showAvatarPlaceholder()
         Glide.with(this).clear(binding.ivAvatar)
-        binding.ivAvatar.setPadding(0, 0, 0, 0)
-        binding.ivAvatar.imageTintList = null
-        Glide.with(this)
-            .load(source)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
-            .circleCrop()
-            .error(R.drawable.ic_profile)
-            .into(binding.ivAvatar)
+        AvatarImage.loadPhoto(Glide.with(this), binding.ivAvatar, source)
     }
 
     private fun openAvatarEditor(uri: Uri) {

@@ -1,6 +1,5 @@
 package com.plantdiseases.app.ui.profile
 
-import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
@@ -19,7 +18,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
@@ -37,6 +35,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
+import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
 import com.plantdiseases.app.ui.community.forum.ModerationActivity
 import com.plantdiseases.app.ui.community.forum.ModerationNoticesActivity
@@ -272,25 +271,14 @@ class ProfileFragment : Fragment() {
         Glide.with(this).clear(avatar)
         val source: Any? = accountId?.let(profileAvatarStore::current)
             ?: avatarUrl?.takeIf { it.startsWith("https://") }
-        // ShapeableImageView keeps content padding separately from view
-        // padding (setPadding adds it back), so the placeholder inset is set and
-        // cleared here; a photo fills the whole circle.
+        // Never touch the avatar's padding here: this runs before the first
+        // measure after a recreate (language switch), which is exactly when
+        // ShapeableImageView mis-applies padding changes (see AvatarImage).
         if (source == null) {
-            val padding = 36.dp()
-            avatar.setContentPadding(padding, padding, padding, padding)
-            avatar.imageTintList = ColorStateList.valueOf(color(R.color.on_hero))
-            avatar.setImageResource(R.drawable.ic_profile)
-            return
+            AvatarImage.showPlaceholder(avatar)
+        } else {
+            AvatarImage.loadPhoto(Glide.with(this), avatar, source)
         }
-        avatar.setContentPadding(0, 0, 0, 0)
-        avatar.imageTintList = null
-        Glide.with(this)
-            .load(source)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
-            .circleCrop()
-            .error(R.drawable.ic_profile)
-            .into(avatar)
     }
 
     private fun openAvatarEditor(uri: Uri) {
