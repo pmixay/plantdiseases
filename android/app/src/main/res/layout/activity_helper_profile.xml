@@ -43,112 +43,122 @@
                 android:orientation="vertical"
                 android:padding="@dimen/space_lg">
 
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/App.GlassCard.Strong"
+                <!-- Hero: the same leaf-green gradient card as Profile and
+                     Garden, with the member's level, leaves and helper stats. -->
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_hero_card"
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_xl">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:id="@+id/tv_avatar"
-                                android:layout_width="56dp"
-                                android:layout_height="56dp"
-                                android:background="@drawable/bg_circle_surface_variant"
-                                android:fontFamily="sans-serif-medium"
-                                android:gravity="center"
-                                android:textColor="@android:color/white"
-                                android:textSize="@dimen/text_title" />
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_md"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:id="@+id/tv_nickname"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:ellipsize="end"
-                                    android:maxLines="1"
-                                    android:textAppearance="@style/TextAppearance.App.Title" />
-
-                                <TextView
-                                    android:id="@+id/tv_level"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:textColor="@color/primary"
-                                    android:textSize="@dimen/text_body_sm" />
-
-                            </LinearLayout>
-
-                        </LinearLayout>
-
-                        <com.google.android.material.progressindicator.LinearProgressIndicator
-                            android:id="@+id/pb_level"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_md"
-                            android:max="100"
-                            app:trackCornerRadius="3dp" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
                         <TextView
-                            android:id="@+id/tv_next_level"
-                            style="@style/Forum.Meta"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:maxLines="2" />
+                            android:id="@+id/tv_avatar"
+                            style="@style/Forum.Avatar"
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            android:importantForAccessibility="no"
+                            android:textSize="22sp" />
 
                         <LinearLayout
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_md"
-                            android:orientation="horizontal">
+                            android:layout_marginStart="@dimen/space_lg"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
                             <TextView
-                                android:id="@+id/tv_stat_accepted"
-                                android:layout_width="0dp"
+                                android:id="@+id/tv_nickname"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:ellipsize="end"
+                                android:fontFamily="sans-serif-black"
+                                android:letterSpacing="-0.01"
+                                android:maxLines="1"
+                                android:textColor="@color/on_hero"
+                                android:textSize="24sp" />
 
                             <TextView
-                                android:id="@+id/tv_stat_saved"
-                                android:layout_width="0dp"
+                                android:id="@+id/tv_level"
+                                android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body_sm" />
-
-                            <TextView
-                                android:id="@+id/tv_stat_taught"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:layout_marginTop="6dp"
+                                android:background="@drawable/bg_forum_badge"
+                                android:backgroundTint="@color/hero_stat_bg"
+                                android:drawablePadding="6dp"
+                                android:fontFamily="sans-serif-medium"
+                                android:gravity="center_vertical"
+                                android:paddingHorizontal="10dp"
+                                android:paddingVertical="4dp"
+                                android:textColor="@color/on_hero"
+                                android:textSize="@dimen/forum_text_meta"
+                                app:drawableStartCompat="@drawable/ic_leaf"
+                                app:drawableTint="@color/on_hero" />
 
                         </LinearLayout>
 
                     </LinearLayout>
 
-                </com.google.android.material.card.MaterialCardView>
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/pb_level"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xl"
+                        android:max="100"
+                        app:indicatorColor="@color/on_hero"
+                        app:indicatorTrackGapSize="0dp"
+                        app:trackColor="@color/hero_stat_bg"
+                        app:trackCornerRadius="4dp"
+                        app:trackStopIndicatorSize="0dp"
+                        app:trackThickness="8dp" />
+
+                    <TextView
+                        android:id="@+id/tv_next_level"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:maxLines="2"
+                        android:textColor="@color/on_hero_secondary"
+                        android:textSize="@dimen/forum_text_meta" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tv_stat_accepted"
+                            style="@style/Forum.HeroStat"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1" />
+
+                        <TextView
+                            android:id="@+id/tv_stat_saved"
+                            style="@style/Forum.HeroStat"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:layout_weight="1" />
+
+                        <TextView
+                            android:id="@+id/tv_stat_taught"
+                            style="@style/Forum.HeroStat"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:layout_weight="1" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
 
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_discount"
@@ -200,14 +210,17 @@
                     android:id="@+id/tv_achievements_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
+                    android:layout_marginTop="@dimen/space_xl"
                     android:textAppearance="@style/TextAppearance.App.Title" />
 
+                <!-- Cards carry 5dp margins; -5dp here lines their edges up
+                     with the hero card. -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rv_achievements"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
+                    android:layout_marginHorizontal="-5dp"
+                    android:layout_marginTop="@dimen/space_xs"
                     android:nestedScrollingEnabled="false" />
 
             </LinearLayout>

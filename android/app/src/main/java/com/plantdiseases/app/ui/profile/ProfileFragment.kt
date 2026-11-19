@@ -134,10 +134,11 @@ class ProfileFragment : Fragment() {
             if (ProUi.ENABLED && BuildConfig.ACCOUNT_UI_ENABLED) View.VISIBLE else View.GONE
         binding.proCard.setOnClickListener { startActivity(ProActivity.intent(requireContext())) }
         if (BuildConfig.ACCOUNT_UI_ENABLED) {
-            binding.accountCard.visibility = View.VISIBLE
-            binding.btnManageAccount.setOnClickListener {
+            val openAccount = View.OnClickListener {
                 startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(requireContext()))
             }
+            binding.btnManageAccount.setOnClickListener(openAccount)
+            binding.btnEditProfile.setOnClickListener(openAccount)
             binding.profileAvatarPicker.setOnClickListener {
                 if (activeAvatarAccountId != null) {
                     avatarPicker.launch(
@@ -201,23 +202,23 @@ class ProfileFragment : Fragment() {
             is AuthState.Unavailable -> state.lastAuthenticated
             else -> null
         }
-        binding.accountStatus.text = when {
-            authenticated != null -> authenticated.profile.nickname
+        // Signed in: the nickname with an edit button beside it. Otherwise the
+        // hero says where the account stands and offers the way in.
+        binding.tvProfileHeroSubtitle.text = when {
+            authenticated != null -> getString(R.string.profile_subtitle)
             state is AuthState.Restoring -> getString(R.string.account_restoring)
-            state is AuthState.Guest -> getString(R.string.account_guest)
             state is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             state is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
-            else -> getString(R.string.account_guest)
+            else -> getString(R.string.profile_subtitle)
         }
-        val buttonText = when {
-            authenticated != null -> R.string.account_edit_profile
-            state is AuthState.ProfileRequired -> R.string.account_finish_creation
-            state is AuthState.Guest -> R.string.account_sign_in_or_create
-            else -> R.string.account_manage
-        }
-        binding.btnManageAccount.setText(buttonText)
-        binding.btnManageAccount.setIconResource(
-            if (authenticated != null) R.drawable.ic_note_pencil else R.drawable.ic_profile,
+        binding.btnEditProfile.visibility = if (authenticated != null) View.VISIBLE else View.GONE
+        binding.btnManageAccount.visibility = if (authenticated == null) View.VISIBLE else View.GONE
+        binding.btnManageAccount.setText(
+            when (state) {
+                is AuthState.ProfileRequired -> R.string.account_finish_creation
+                is AuthState.Guest -> R.string.account_sign_in_or_create
+                else -> R.string.account_manage
+            },
         )
         binding.tvProfileHeroTitle.text = authenticated?.profile?.nickname
             ?: getString(R.string.tab_profile)
@@ -271,14 +272,17 @@ class ProfileFragment : Fragment() {
         Glide.with(this).clear(avatar)
         val source: Any? = accountId?.let(profileAvatarStore::current)
             ?: avatarUrl?.takeIf { it.startsWith("https://") }
+        // ShapeableImageView keeps content padding separately from view
+        // padding (setPadding adds it back), so the placeholder inset is set and
+        // cleared here; a photo fills the whole circle.
         if (source == null) {
             val padding = 36.dp()
-            avatar.setPadding(padding, padding, padding, padding)
+            avatar.setContentPadding(padding, padding, padding, padding)
             avatar.imageTintList = ColorStateList.valueOf(color(R.color.on_hero))
             avatar.setImageResource(R.drawable.ic_profile)
             return
         }
-        avatar.setPadding(0, 0, 0, 0)
+        avatar.setContentPadding(0, 0, 0, 0)
         avatar.imageTintList = null
         Glide.with(this)
             .load(source)

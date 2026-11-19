@@ -147,8 +147,8 @@
     <string name="forum_level_gardener">Садовод</string>
     <string name="forum_level_botanist">Ботаник</string>
     <string name="forum_level_plant_doctor">Доктор растений</string>
-    <string name="forum_level_line">%1$s · уровень %2$d · листиков: %3$d</string>
-    <string name="forum_level_next">Ещё %1$d листиков до уровня «%2$s»</string>
+    <string name="forum_level_line">%1$s · уровень %2$d</string>
+    <string name="forum_level_next">ещё %1$d листиков до уровня «%2$s»</string>
     <string name="forum_level_max">Достигнут высший уровень</string>
     <string name="forum_stat_accepted">%1$d\nпринято</string>
     <string name="forum_stat_saved">%1$d\nспасено растений</string>
@@ -329,4 +329,6 @@
     <string name="forum_help_cta">Помочь</string>
     <string name="forum_ai_note">Автоматическая оценка по фото. Сверьте её с ответами ниже.</string>
     <string name="forum_ai_confidence">%1$d%%</string>
+    <string name="forum_leaves_count">Листиков: %1$d</string>
+    <string name="forum_two_parts">%1$s · %2$s</string>
 </resources>

@@ -145,7 +145,7 @@
     <string name="forum_level_gardener">Gardener</string>
     <string name="forum_level_botanist">Botanist</string>
     <string name="forum_level_plant_doctor">Plant Doctor</string>
-    <string name="forum_level_line">%1$s · level %2$d · %3$d leaves</string>
+    <string name="forum_level_line">%1$s · level %2$d</string>
     <string name="forum_level_next">%1$d leaves to %2$s</string>
     <string name="forum_level_max">Highest level reached</string>
     <string name="forum_stat_accepted">%1$d\naccepted</string>
@@ -327,4 +327,6 @@
     <string name="forum_help_cta">Help</string>
     <string name="forum_ai_note">An automatic estimate from the photo. Compare it with the answers below.</string>
     <string name="forum_ai_confidence">%1$d%%</string>
+    <string name="forum_leaves_count">%1$d leaves</string>
+    <string name="forum_two_parts">%1$s · %2$s</string>
 </resources>

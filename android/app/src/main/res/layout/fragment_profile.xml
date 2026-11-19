@@ -60,8 +60,8 @@
                     android:layout_gravity="center"
                     android:background="@color/hero_stat_bg"
                     android:contentDescription="@null"
-                    android:padding="36dp"
                     android:scaleType="centerCrop"
+                    app:contentPadding="36dp"
                     android:src="@drawable/ic_profile"
                     app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
                     app:strokeColor="@color/hero_stat_stroke"
@@ -69,16 +69,50 @@
                     app:tint="@color/on_hero" />
             </FrameLayout>
 
-            <TextView
-                android:id="@+id/tv_profile_hero_title"
+            <!-- Nickname with the edit button right after it; a long nickname
+                 shrinks (ellipsizes) instead of pushing the button off. -->
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02"
-                android:text="@string/tab_profile"
-                android:textColor="@color/on_hero"
-                android:textSize="28sp" />
+                android:layout_marginTop="@dimen/space_md">
+
+                <TextView
+                    android:id="@+id/tv_profile_hero_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="-0.02"
+                    android:maxLines="1"
+                    android:text="@string/tab_profile"
+                    android:textColor="@color/on_hero"
+                    android:textSize="28sp"
+                    app:layout_constrainedWidth="true"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/btn_edit_profile"
+                    app:layout_constraintHorizontal_bias="0"
+                    app:layout_constraintHorizontal_chainStyle="packed"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <ImageButton
+                    android:id="@+id/btn_edit_profile"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/account_edit_profile"
+                    android:padding="8dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_note_pencil"
+                    android:visibility="gone"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/tv_profile_hero_title"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:tint="@color/on_hero" />
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <TextView
                 android:id="@+id/tv_profile_hero_subtitle"
@@ -89,6 +123,21 @@
                 android:text="@string/profile_subtitle"
                 android:textColor="@color/on_hero_secondary"
                 android:textSize="@dimen/text_body" />
+
+            <!-- Signed out, restoring or unfinished account: the way in. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_manage_account"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:minHeight="56dp"
+                android:text="@string/account_sign_in_or_create"
+                android:textColor="@color/hero_solid"
+                android:visibility="gone"
+                app:backgroundTint="@color/on_hero"
+                app:icon="@drawable/ic_profile"
+                app:iconTint="@color/hero_solid" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
@@ -146,47 +195,6 @@
                     android:contentDescription="@null"
                     android:src="@drawable/ic_chevron_right"
                     app:tint="@color/primary" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/account_card"
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/account_title"
-                    android:textAppearance="@style/TextAppearance.App.Title" />
-
-                <TextView
-                    android:id="@+id/account_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="@string/account_guest"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_title" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_manage_account"
-                    style="@style/App.Button.Filled"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:minHeight="56dp"
-                    android:text="@string/account_sign_in_or_create"
-                    app:icon="@drawable/ic_profile" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

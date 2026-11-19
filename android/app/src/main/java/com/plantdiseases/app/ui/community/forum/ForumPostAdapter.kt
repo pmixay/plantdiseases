@@ -132,6 +132,9 @@ class ForumPostAdapter(
             binding.tvLike.isEnabled = !post.author.isMe
             binding.tvLike.setOnClickListener { onLike(post) }
             binding.tvAnswers.text = post.answerCount.toString()
+            // Clickable so the card's pressed state is not passed down to it
+            // (a non-clickable child with a ripple lights up with the card).
+            binding.tvAnswers.setOnClickListener { onOpen(post) }
             // Invite an answer where one is still missing: answering is what
             // the levels and achievements reward.
             val askingKind = post.kind == "question" || post.kind == "scan"
