@@ -225,6 +225,8 @@ authoritative list.
 | `GET` · `POST` · `PATCH` · `DELETE` | `/api/community/posts[/{post_id}]` | Forum posts (question, scan with the server's verdict, recovery update, tip) with threaded answers |
 | `POST` | `/api/community/posts/{id}/like` · `/answers` · `/accept` · `/api/community/answers/{id}/reaction` | Like a post; answer with steps, diagnosis tag and photos; accept; like or mark an answer not helpful |
 | `POST` · `GET` | `/api/community/media[/{media_id}]` | Upload a re-encoded forum photo (optionally bound to an analysis token); serve it while its post is visible |
+| `PUT` · `DELETE` | `/api/community/me/avatar` | Publish (re-encoded square JPEG, ≤ 512 px) or withdraw my Community profile photo; opt-in in the app, account required |
+| `GET`  | `/api/community/avatars/{author_token}` | A member's public profile photo (404 when none); authors in the feed and threads carry `avatar_version`, sent back as `?v=` to cache-bust |
 | `GET`  | `/api/community/helpers/{author_token}` · `/api/community/me/achievements` | Level, achievements and helper stats (own view adds the achievement discount) |
 | `*`    | `/api/community/admin/…` · `/api/community/moderation/…` | Staff tools (queue, remove/restore, lock, sanctions, appeals, roles, audit) and members' notices and appeals |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
