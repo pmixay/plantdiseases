@@ -25,6 +25,12 @@ def photos(tmp_path, monkeypatch):
 
 def test_is_allowed_url_guards_host(photos):
     assert photos.is_allowed_url("https://upload.wikimedia.org/a.jpg")
+    assert photos.is_allowed_url(
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/F.jpg/330px-F.jpg",
+    )
+    assert photos.is_allowed_url("https://static.inaturalist.org/photos/1/large.jpeg")
+    assert not photos.is_allowed_url("https://api.inaturalist.org/v1/taxa")
+    assert not photos.is_allowed_url("https://evil.thumb.wikimedia.org/a.jpg")
     assert photos.is_allowed_url("https://en.wikipedia.org/a.png")
     assert photos.is_allowed_url("https://ru.wikipedia.org/a.png")
     assert not photos.is_allowed_url("https://evil.com/a.jpg")
@@ -433,3 +439,13 @@ def test_thumb_host_is_allowed_and_folds_onto_upload(photos):
 def test_canonical_media_url_leaves_other_hosts_alone(photos):
     url = "https://en.wikipedia.org/wiki/Special:FilePath/X.jpg?width=500"
     assert photos.canonical_media_url(url) == url
+
+
+def test_original_from_thumb_host_points_back_to_upload(photos):
+    thumb = (
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/F.jpg/960px-F.jpg"
+        "?utm_source=x"
+    )
+    assert photos._original_from_thumb(thumb) == (
+        "https://upload.wikimedia.org/wikipedia/commons/a/ab/F.jpg"
+    )

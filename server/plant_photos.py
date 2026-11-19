@@ -50,13 +50,19 @@ _USER_AGENT = (
 
 # Only these exact hosts are fetched. The endpoint is public, so a suffix-wide
 # allowlist would unnecessarily trust every present and future Wikimedia
-# subdomain. These are the only hosts emitted by species_info's en/ru lookups.
+# subdomain. These are the only hosts emitted by species_info's lookups.
+# ``thumb.wikimedia.org`` is where the Wikipedia/Commons APIs now point their
+# thumbnail URLs (it serves the same bytes as upload.wikimedia.org); leaving it
+# off the list dropped EVERY lead image the REST summary returned.
+# ``static.inaturalist.org`` hosts the CC-licensed iNaturalist photos used as a
+# fallback when Wikimedia has no photo of a species.
 _ALLOWED_HOSTS = frozenset({
     "upload.wikimedia.org",
     # Wikipedia's REST summary now hands out lead images on this host (same
     # path layout and bytes as upload.wikimedia.org, plus utm_* tracking
     # parameters). canonical_media_url() folds it back onto upload.
     "thumb.wikimedia.org",
+    "static.inaturalist.org",
     "en.wikipedia.org",
     "ru.wikipedia.org",
 })
@@ -192,8 +198,11 @@ def _original_from_thumb(url: str) -> str | None:
     rest = parts[cut + 1:-1]
     if not rest:
         return None
+    # Originals are only served from upload.wikimedia.org, never from the
+    # thumbnail host the render URL may carry.
+    host = "upload.wikimedia.org" if parsed.hostname == "thumb.wikimedia.org" else parsed.netloc
     return urllib.parse.urlunparse(
-        parsed._replace(path="/".join(parts[:cut] + rest), query=""),
+        parsed._replace(netloc=host, path="/".join(parts[:cut] + rest), query=""),
     )
 
 

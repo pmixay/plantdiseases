@@ -125,6 +125,7 @@ def register(router: APIRouter, m) -> None:
         # its photo. (fetch_species_info is cached, so the extra EN call is cheap.)
         image_url = info.get("image_url")
         images = info.get("images") or []
+        credit, licence = info.get("image_credit"), info.get("image_license")
         if lang != "en":
             en_info = await loop.run_in_executor(
                 m._get_net_executor(), lambda: m.fetch_species_info(n, "en"),
@@ -132,6 +133,7 @@ def register(router: APIRouter, m) -> None:
             if en_info and (en_info.get("images") or en_info.get("image_url")):
                 image_url = en_info.get("image_url")
                 images = en_info.get("images") or ([image_url] if image_url else [])
+                credit, licence = en_info.get("image_credit"), en_info.get("image_license")
         # Route the Wikipedia photos through the server's cache so the app loads
         # them from our domain (reliable where Wikimedia is blocked). Unproxyable
         # entries drop to None/out so the card just omits them.
@@ -139,13 +141,22 @@ def register(router: APIRouter, m) -> None:
             **info,
             "image_url": m.plant_photo_proxy(image_url),
             "images": [p for p in (m.plant_photo_proxy(i) for i in images) if p],
+            # Author + licence of the photo (set for Commons / iNaturalist
+            # fallbacks; null for a Wikipedia lead image).
+            "image_credit": credit,
+            "image_license": licence,
         }
         # Species facts are stable; carry a long Cache-Control so a CDN / HTTP cache
         # reuses it too (symmetric with /species-diseases). The app has its own
         # 7-day ResponseCache, so this mainly helps any intermediary layer.
+        # A degraded answer (genus-level, or no photo yet) is revalidated soon
+        # so the species-level / photo-bearing answer replaces it once found.
+        complete = info.get("level") != "genus" and bool(proxied["image_url"])
         return JSONResponse(
             content={"available": True, **proxied},
-            headers={"Cache-Control": "public, max-age=604800"},
+            headers={
+                "Cache-Control": "public, max-age=604800" if complete else "public, max-age=900",
+            },
         )
 
 

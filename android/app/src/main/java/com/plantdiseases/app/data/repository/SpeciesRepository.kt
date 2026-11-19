@@ -22,7 +22,10 @@ internal class SpeciesRepository(private val apiClient: PlantApiClient) {
             // v3: those proxied URLs now point at a card-sized Wikimedia render
             // instead of the multi-megabyte original, which is what made lead
             // photos time out and fall back to a placeholder.
-            val cacheKey = "species:v3:${name.trim().lowercase()}|$locale"
+            // v4: entries cached before the server learned the new thumbnail
+            // host and the Wikidata/iNaturalist fallbacks are photo-less
+            // misses that would otherwise stick for a week.
+            val cacheKey = "species:v4:${name.trim().lowercase()}|$locale"
             ResponseCache
                 .get(cacheKey, SpeciesInfoResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
@@ -31,11 +34,18 @@ internal class SpeciesRepository(private val apiClient: PlantApiClient) {
                 if (body != null) {
                     // Don't cache a transient "unavailable" (e.g. Wikipedia
                     // miss / rate-limit) — only a real hit is worth keeping.
+                    // A genus-level or photo-less hit is kept only briefly so
+                    // the complete answer replaces it once the server has it.
                     if (body.available) {
+                        val complete = !body.imageUrl.isNullOrBlank() && body.level != "genus"
                         ResponseCache.put(
                             cacheKey,
                             body,
-                            ResponseCache.TTL_SPECIES_MS,
+                            if (complete) {
+                                ResponseCache.TTL_SPECIES_MS
+                            } else {
+                                ResponseCache.TTL_SPECIES_DEGRADED_MS
+                            },
                         )
                     }
                     Result.success(body)

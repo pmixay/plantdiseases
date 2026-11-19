@@ -211,7 +211,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
                 photo.isVisible = true
             }
 
-            info.extract?.trim()?.takeIf { it.isNotEmpty() }?.let { extract ->
+            WikipediaAttribution.displayExtract(context, info)?.let { extract ->
                 descriptionView.text = extract
                 descriptionView.isVisible = true
                 revealToggleIfClipped()
@@ -222,7 +222,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
             if (photo.isVisible || descriptionView.isVisible) {
                 attributionButton.isVisible = true
                 attributionButton.setOnClickListener {
-                    WikipediaAttribution.show(context, info.title, info.pageUrl, info.translated)
+                    WikipediaAttribution.show(context, info)
                 }
             }
         }

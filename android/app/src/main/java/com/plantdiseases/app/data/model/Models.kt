@@ -919,6 +919,13 @@ data class SpeciesInfoResponse(
     /** True when `extract` was machine-translated into the requested locale
      *  because no Wikipedia article existed in that language. */
     @SerializedName("translated") @SerialName("translated") val translated: Boolean = false,
+    /** "species", or "genus" when no species-level article exists and the
+     *  text describes the species' genus instead. Absent on older servers. */
+    @SerializedName("level") @SerialName("level") val level: String? = null,
+    /** Author and licence of the photo when it did not come from the
+     *  Wikipedia lead image (Wikimedia Commons / iNaturalist fallbacks). */
+    @SerializedName("image_credit") @SerialName("image_credit") val imageCredit: String? = null,
+    @SerializedName("image_license") @SerialName("image_license") val imageLicense: String? = null,
 )
 
 /**

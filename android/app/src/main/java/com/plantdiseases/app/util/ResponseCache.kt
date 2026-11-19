@@ -45,6 +45,11 @@ object ResponseCache {
     // once it becomes available.
     val TTL_SPECIES_MISS_MS: Long = TimeUnit.HOURS.toMillis(6)
 
+    // A species-info answer that is only genus-level or has no photo yet: the
+    // server keeps retrying the species-level sources, so recheck soon rather
+    // than pinning the degraded card for a week.
+    val TTL_SPECIES_DEGRADED_MS: Long = TimeUnit.MINUTES.toMillis(30)
+
     // The popular bundle is a live community-scan aggregate, so cache it only
     // very briefly — a new nearby scan should surface near-live, not after
     // half an hour. The server invalidates its own bundle cache on every

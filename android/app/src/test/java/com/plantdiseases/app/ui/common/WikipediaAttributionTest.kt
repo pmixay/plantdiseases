@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -42,5 +43,47 @@ class WikipediaAttributionTest {
         assertThat(text).contains("«Монстера»")
         assertThat(text).contains("CC BY-SA 4.0")
         assertThat(text).contains("переведён автоматически")
+    }
+
+    @Test
+    fun namesPhotoAuthorAndLicenceWhenTheServerSuppliesThem() {
+        val text = WikipediaAttribution.message(
+            context,
+            "Rosa abietina",
+            machineTranslated = false,
+            photoCredit = "Jane Doe",
+            photoLicense = "CC BY-SA 4.0",
+        )
+        assertThat(text).contains("Jane Doe")
+        assertThat(text).contains("(CC BY-SA 4.0)")
+    }
+
+    @Test
+    fun genusLevelExtractIsLabelled_speciesLevelIsNot() {
+        val genus = SpeciesInfoResponse(
+            available = true,
+            title = "Rosa",
+            extract = "Rosa is a genus.",
+            level = "genus",
+        )
+        val species = genus.copy(level = "species")
+        val labelled = WikipediaAttribution.displayExtract(context, genus)
+        assertThat(labelled).contains("genus “Rosa”")
+        assertThat(labelled).contains("Rosa is a genus.")
+        assertThat(WikipediaAttribution.displayExtract(context, species))
+            .isEqualTo("Rosa is a genus.")
+        assertThat(WikipediaAttribution.displayExtract(context, genus.copy(extract = " "))).isNull()
+    }
+
+    @Test
+    @Config(qualifiers = "ru")
+    fun genusNoteIsRussianInRuLocale() {
+        val genus = SpeciesInfoResponse(
+            available = true,
+            title = "Роза",
+            extract = "Роза — род.",
+            level = "genus",
+        )
+        assertThat(WikipediaAttribution.displayExtract(context, genus)).contains("«Роза»")
     }
 }
