@@ -10,7 +10,6 @@ import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
-import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -24,34 +23,15 @@ import kotlinx.coroutines.launch
  * Owns every community-facing surface on the result screen: the similar-scans
  * carousel (country/global scope resolved by the server), the second-opinion
  * ask/wait/view control, and the activity readout on the user's own shared
- * scan. Community upload happens here too: asking for a second opinion forces
- * the scan into the shared corpus.
- *
- * The notification permission launcher stays on the activity; this controller
- * drives it through [ensureNotificationPermission].
+ * scan.
  */
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
-    private val communityUploader: CommunityUploader,
     private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
-    private val ensureNotificationPermission: () -> Unit,
-    // Requests coarse location (+ notifications) and reports back whether
-    // location was granted. Owned by the activity because permission launchers
-    // must be registered before the activity starts. See ResultActivity.
-    private val requestCommunityOptIn: (onResult: (Boolean) -> Unit) -> Unit,
 ) {
-
-    /**
-     * True from the moment an ask is sent until the server answers. The
-     * control must stay disabled across a STOPPED→STARTED cycle in that
-     * window: the button still reads "waiting…" but keeps `showAsk`'s
-     * listener, so re-enabling it fires a *second* request — a duplicate
-     * community upload and a duplicate ask.
-     */
-    private var opinionRequestInFlight = false
 
     // Remembered so onResume() can re-probe the request/reply state after
     // the user comes back from MyScanRepliesActivity (e.g. having tapped
@@ -64,16 +44,9 @@ class CommunityController(
         refreshSecondOpinion(scan)
     }
 
-    /**
-     * The one writer of this button's enabled state.
-     *
-     * It has two independent reasons to be off — no server, or an ask already
-     * in flight — and they used to be owned by different code that overwrote
-     * each other in whichever order ran last. Everything that renders the
-     * control goes through here.
-     */
+    /** The one writer of this button's enabled state: off while there is no server. */
     private fun applySecondOpinionEnabled() {
-        binding.btnSecondOpinion.isEnabled = connectivity.lastKnownOnline && !opinionRequestInFlight
+        binding.btnSecondOpinion.isEnabled = connectivity.lastKnownOnline
     }
 
     private fun displayName(key: String, isRu: Boolean): String =
@@ -119,8 +92,8 @@ class CommunityController(
             return
         }
         lastScan = scan
-        // This control is not in the activity's enableWhileOnline set — it
-        // needs the in-flight rule too, so it observes reachability itself.
+        // This control is not in the activity's enableWhileOnline set, so it
+        // observes reachability itself.
         activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
         showAsk(scan)
         refreshSecondOpinion(scan)
@@ -218,7 +191,6 @@ class CommunityController(
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
-        binding.btnEnableSimilar.visibility = View.GONE
         if (repository.isAbstainedScan(scan)) return
 
         // Accepted scans use their probability-backed diagnostic class. An

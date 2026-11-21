@@ -41,7 +41,6 @@
     <string name="account_create">Create account</string>
     <string name="account_finish_creation">Finish creating account</string>
     <string name="account_cancel_signup">Cancel and stay Guest</string>
-    <string name="account_provider_avatar">Profile picture</string>
     <string name="account_change_avatar">Change profile picture</string>
     <string name="account_avatar_update_failed">Couldn\'t use that picture. Try another image.</string>
     <string name="account_provider_name">%1$s · %2$s</string>
@@ -141,8 +140,6 @@
     <string name="unknown_error">Unknown error occurred</string>
     <string name="image_decode_error_title">Cannot Read Image</string>
     <string name="image_decode_error_detail">The file appears to be corrupt or in an unsupported format. Please try a different photo.</string>
-    <string name="image_too_large_title">Image Too Large</string>
-    <string name="image_too_large_detail">Not enough memory to process this photo. Try a smaller image.</string>
     <string name="retry">Retry</string>
     <string name="cancel">Cancel</string>
 
@@ -354,13 +351,11 @@
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_my_vote">Your opinion: %1$s</string>
-    <string name="community_opinion_more">More options</string>
     <string name="community_opinion_change">Change opinion</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
-    <string name="community_opinion_loading">Loading community replies…</string>
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
@@ -395,14 +390,9 @@
     <string name="community_author_unblocked">Author unblocked.</string>
     <string name="community_unknown_author">Unknown author</string>
     <string name="community_moderation_url" translatable="false">mailto:gavel8980@gmail.com</string>
-    <string name="gallery_community_badge">💬 %1$d</string>
-    <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
-    <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
-    <string name="second_opinion_needs_community_title">Enable community?</string>
-    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. By enabling, you agree to the Community Rules; reporting, blocking, and moderation contact are available in the community screen. You can leave anytime.</string>
     <string name="second_opinion_waiting_hours">Waiting for opinions · %1$d h left</string>
     <string name="second_opinion_open_replies">Opinions (%1$d) · %2$d h left</string>
     <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
@@ -417,20 +407,8 @@
     <string name="community_open_replies">Open %1$d replies</string>
     <string name="community_replies_locked_short">Replies locked</string>
     <string name="community_replies_locked_readable">Replies are read-only because the owner is not asking for opinions</string>
-    <string name="community_opinion_locked_body">Replies are read-only. The owner did not request a second opinion, or their request has ended.</string>
-    <string name="community_opinion_locked_toast">This opinion request has ended.</string>
     <string name="community_report_action">Report</string>
     <string name="community_block_action">Block author</string>
-    <string name="community_blocked">Author blocked.</string>
-    <string-array name="community_report_reason_labels">
-        <item>Sexual content</item>
-        <item>Violence or threats</item>
-        <item>Hate or harassment</item>
-        <item>Illegal or dangerous advice</item>
-        <item>Spam or misleading content</item>
-        <item>Privacy or impersonation</item>
-        <item>Other rules violation</item>
-    </string-array>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="community_profile_title">Profile</string>
@@ -467,7 +445,6 @@
     <string name="community_map_empty">No community scans in this area yet</string>
     <string name="community_map_group_title">%1$d scans here</string>
     <!-- In-context community opt-in -->
-    <string name="community_enable_cta">Enable community</string>
     <!-- Community feed ordering -->
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>

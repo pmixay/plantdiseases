@@ -32,7 +32,6 @@ class ForumMenu(private val anchor: View) {
     )
 
     enum class Tone(@ColorRes val foreground: Int, @ColorRes val background: Int) {
-        GREEN(R.color.primary, R.color.primary_light),
         AMBER(R.color.warning_amber, R.color.warning_amber_bg),
         RED(R.color.disease_red, R.color.disease_red_bg),
         BLUE(R.color.neutral_blue, R.color.neutral_blue_bg),

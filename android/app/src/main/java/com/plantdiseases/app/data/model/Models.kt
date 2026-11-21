@@ -802,11 +802,6 @@ data class ScanHistoryItem(
     val timestamp: Long,
     /** Globally unique community id, empty for legacy/local-only rows. */
     val clientScanId: String = "",
-    /** Activity counts filled by the Gallery's batched account-protected query. */
-    val communityOpinions: Int = 0,
-    val communityViews: Int = 0,
-    /** Opinions received since this scan's thread was last opened. */
-    val newOpinions: Int = 0,
 )
 
 /**

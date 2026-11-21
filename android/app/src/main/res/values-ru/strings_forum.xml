@@ -22,8 +22,6 @@
     <string name="forum_tab_mine">Мои</string>
     <string name="forum_all_spaces">Все разделы</string>
     <string name="forum_spaces">Разделы</string>
-    <string name="forum_nearby">Рядом</string>
-    <string name="forum_sort">Сортировка</string>
     <string name="forum_sort_hot">Популярные</string>
     <string name="forum_sort_new">Новые</string>
     <string name="forum_sort_top">Лучшие за неделю</string>
@@ -157,7 +155,6 @@
     <string name="forum_stat_taught">%1$d\nметок для ИИ</string>
     <string name="forum_achievements_title">Достижения · %1$d из %2$d</string>
     <string name="forum_achievement_progress">%1$d / %2$d</string>
-    <string name="forum_achievement_progress_tier">%1$d / %2$d · ступень %3$d из %4$d</string>
     <string name="forum_achievement_complete">Получено</string>
     <string name="forum_achievement_tier_earned">Ступень %1$d: %2$d. Получено</string>
     <string name="forum_achievement_tier_locked">Ступень %1$d: %2$d. Ещё нет</string>
