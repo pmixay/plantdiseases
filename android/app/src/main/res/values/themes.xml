@@ -37,8 +37,11 @@
         <item name="colorSurfaceContainerLowest">@color/surface_container_lowest</item>
         <!-- Edge-to-edge: transparent status bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Light pages, dark bar icons. Screens that draw a photo or the
+             camera under the status bar switch to light icons themselves. -->
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightNavigationBar">true</item>
 
         <!-- Material default for top app bar uses a tonal surface — we
              want our liquid-glass header instead, so leave this off. -->
@@ -56,9 +59,11 @@
 
     <style name="TextAppearance.App.Toolbar" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textSize">@dimen/text_title</item>
-        <!-- Bumped medium → black so the toolbar title sits visibly
-             on top of the vivid green hero gradient. -->
+        <!-- The page-header type of the Home and Community tabs. The
+             explicit weight keeps the black face: the Material parent's
+             weight would otherwise win over the family. -->
         <item name="android:fontFamily">sans-serif-black</item>
+        <item name="android:textFontWeight">900</item>
         <item name="android:letterSpacing">-0.01</item>
     </style>
 

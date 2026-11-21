@@ -101,15 +101,16 @@
     </style>
 
     <!-- A number and its label on a hero card (achievements screen). -->
-    <style name="Forum.HeroStat" parent="">
-        <item name="android:background">@drawable/bg_forum_hero_stat</item>
+    <!-- Stat tile (helper profile): a neutral surface chip, full-ink text. -->
+    <style name="Forum.StatTile" parent="">
+        <item name="android:background">@drawable/bg_stat_pill</item>
         <item name="android:gravity">center</item>
         <item name="android:lineSpacingExtra">2dp</item>
         <item name="android:paddingTop">10dp</item>
         <item name="android:paddingBottom">10dp</item>
         <item name="android:paddingStart">4dp</item>
         <item name="android:paddingEnd">4dp</item>
-        <item name="android:textColor">@color/on_hero</item>
+        <item name="android:textColor">@color/on_surface</item>
         <item name="android:textSize">@dimen/forum_text_meta</item>
     </style>
 

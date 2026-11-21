@@ -19,14 +19,13 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <!-- Adaptive header: green gradient in light theme, flat surface in dark
-         (the gradient drawable is overridden in drawable-night). toolbar_title
-         is theme-aware so it stays legible on both. -->
+    <!-- Plain page header, like the Home and Community tabs: the page
+         background with the title and icons in toolbar_title (page ink). -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
@@ -34,7 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
-            app:contentScrim="@drawable/bg_toolbar_gradient"
+            app:contentScrim="@color/background"
             app:expandedTitleGravity="bottom"
             app:expandedTitleMarginStart="@dimen/space_lg"
             app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"

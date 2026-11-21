@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Dark-theme toolbar background. The green gradient (see the light-theme
-     drawable) reads as a heavy slab in dark mode, so here the bar is a flat
-     surface that blends into the dark background — no green band under the
-     status bar. The toolbar_title colour stays legible on it. The light
-     theme keeps the gradient. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/surface" />
-</shape>

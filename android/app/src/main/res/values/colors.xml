@@ -46,10 +46,9 @@
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#FFFFFF</color>
 
-    <!-- Toolbar background (subtle vertical gradient with mid stop). -->
-    <color name="toolbar_top">#16A34A</color>
-    <color name="toolbar_bottom">#22C55E</color>
-    <color name="toolbar_title">#FFFFFF</color>
+    <!-- Toolbars are plain page headers (no coloured band): the title and
+         icons use the page ink. -->
+    <color name="toolbar_title">@color/on_surface</color>
 
     <!-- ─── Surface: Light theme ──────────────────────────────────
          True white surfaces with a very subtle green tint on

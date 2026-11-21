@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Room detail — one room's plant collection (or the Unassigned bucket).
-    Same scaffold shape as activity_plant_detail.xml: a gradient app bar
+    Same scaffold shape as activity_plant_detail.xml: a plain app bar
     with a custom title, a scrolling content column RoomDetailActivity
     populates in code (item_plant_card rows, reusing the exact card the
     old flat Garden list used) plus an empty state when the room holds
@@ -19,7 +19,7 @@
         android:id="@+id/room_detail_app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -44,8 +44,8 @@
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:textColor="@color/toolbar_title"
-                    android:textSize="22sp"
-                    android:fontFamily="sans-serif-medium"
+                    android:textSize="@dimen/text_title"
+                    android:fontFamily="sans-serif-black"
                     tools:text="Кабинет" />
 
                 <TextView
@@ -54,7 +54,7 @@
                     android:layout_height="wrap_content"
                     android:maxLines="1"
                     android:ellipsize="end"
-                    android:textColor="@color/on_hero_secondary"
+                    android:textColor="@color/toolbar_title"
                     android:textSize="@dimen/text_body_sm"
                     tools:text="3 plants" />
 

@@ -17,7 +17,7 @@
         android:id="@+id/care_task_app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -42,8 +42,8 @@
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:textColor="@color/toolbar_title"
-                    android:textSize="20sp"
-                    android:fontFamily="sans-serif-medium"
+                    android:textSize="@dimen/text_title"
+                    android:fontFamily="sans-serif-black"
                     tools:text="Обработка" />
 
                 <TextView
@@ -51,7 +51,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:maxLines="1"
-                    android:textColor="@color/on_hero_secondary"
+                    android:textColor="@color/toolbar_title"
                     android:textSize="@dimen/text_body_sm"
                     tools:text="12:00" />
 

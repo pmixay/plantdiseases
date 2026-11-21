@@ -396,6 +396,12 @@ class MainActivity : AppCompatActivity() {
      *  arrow — see the [NavController] destination listener in [onCreate]. */
     fun applyTabChrome(@IdRes tabId: Int) {
         binding.appBar.visibility = View.GONE
+        // Pages are plain light surfaces with dark bar icons; the camera tab
+        // draws its black preview under the status bar and needs light ones.
+        val nightMask = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val night = nightMask == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val darkIcons = !night && tabId != R.id.cameraFragment
+        WindowCompat.getInsetsController(window, binding.root).isAppearanceLightStatusBars = darkIcons
         if (tabId == R.id.profileFragment) clearGalleryBadge()
         // The Community tab has no guided tour of its own: the existing
         // Community chapter is anchored in the Nearby screen, which runs it.

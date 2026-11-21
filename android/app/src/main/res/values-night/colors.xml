@@ -36,10 +36,6 @@
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#F0FDF4</color>
 
-    <!-- Toolbar background (subtle vertical gradient) -->
-    <color name="toolbar_top">#14532D</color>
-    <color name="toolbar_bottom">#166534</color>
-    <color name="toolbar_title">#F0FDF4</color>
 
     <!-- ─── Surface: Dark theme ─────────────────────────────────── -->
     <color name="background">#0A0F0C</color>

@@ -52,6 +52,11 @@ class PhotoCompareActivity : AppCompatActivity() {
 
         binding = ActivityPhotoCompareBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Black photo backdrop: light system-bar icons in both themes.
+        androidx.core.view.WindowCompat.getInsetsController(window, binding.root).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())

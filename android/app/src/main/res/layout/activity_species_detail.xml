@@ -2,7 +2,7 @@
 <!--
     Full-screen species detail, opened from the Home "Trending species"
     carousel (and reusable elsewhere). A large Wikipedia lead photo under a
-    gradient toolbar, then the common/scientific name, then the body as a
+    plain toolbar, then the common/scientific name, then the body as a
     stack of collapsible sections:
 
         About       encyclopedia blurb + Wikipedia link   (open by default)
@@ -37,7 +37,7 @@
         android:id="@+id/appbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar

@@ -60,7 +60,7 @@ class AvatarImageTest {
         ).forEach { (layout, id) ->
             val (_, avatar) = inflate(layout, id)
             assertNoPadding(avatar)
-            assertCircular(avatar, size = 144.dp().toFloat())
+            assertCircular(avatar, size = 72.dp().toFloat())
             assertThat(avatar.drawable).isInstanceOf(InsetDrawable::class.java)
         }
     }
@@ -76,8 +76,8 @@ class AvatarImageTest {
 
         attachAndLayout(root)
 
-        assertThat(avatar.width).isEqualTo(144.dp())
-        assertThat(avatar.height).isEqualTo(144.dp())
+        assertThat(avatar.width).isEqualTo(72.dp())
+        assertThat(avatar.height).isEqualTo(72.dp())
         assertNoPadding(avatar)
         assertCircular(avatar, size = avatar.width.toFloat())
         assertThat(avatar.imageTintList).isNull()
@@ -114,7 +114,7 @@ class AvatarImageTest {
         val inset = avatar.drawable as InsetDrawable
         val outer = inset.bounds
         val icon = inset.drawable!!.bounds
-        // 25% on each side: the icon fills the middle half, 36dp of 144dp.
+        // 25% on each side: the icon fills the middle half, 18dp of 72dp.
         assertThat(icon.width() * 2).isWithin(2).of(outer.width())
         assertThat(icon.left - outer.left).isWithin(1).of(outer.width() / 4)
     }
