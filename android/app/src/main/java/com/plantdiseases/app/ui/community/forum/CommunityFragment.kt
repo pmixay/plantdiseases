@@ -26,6 +26,7 @@ import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.community.CommunityMapActivity
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -70,6 +71,7 @@ class CommunityFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applyStatusBarTopInset()
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
             avatarUrl = forum::avatarUrl,

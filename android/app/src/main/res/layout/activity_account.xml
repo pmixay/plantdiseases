@@ -8,6 +8,7 @@
     android:background="@color/background">
 
     <LinearLayout
+        android:id="@+id/account_column"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
@@ -20,6 +21,7 @@
             app:navigationIcon="@drawable/ic_back" />
 
         <androidx.core.widget.NestedScrollView
+            android:id="@+id/account_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"

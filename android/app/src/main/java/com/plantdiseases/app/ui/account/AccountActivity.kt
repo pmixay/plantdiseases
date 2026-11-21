@@ -14,7 +14,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -156,6 +159,7 @@ class AccountActivity : AppCompatActivity() {
         }
         binding = ActivityAccountBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyAccountWindowInsets(binding.root, binding.accountColumn, binding.accountScroll)
         pendingAvatarAccountId = savedInstanceState?.getString(STATE_AVATAR_ACCOUNT_ID)
         pendingAvatarSourceFile = savedInstanceState?.getString(STATE_AVATAR_SOURCE)?.let(::File)
         pendingAvatarOutputFile = savedInstanceState?.getString(STATE_AVATAR_OUTPUT)?.let(::File)
@@ -1237,6 +1241,16 @@ internal fun emailAddressIsValid(email: String): Boolean {
         return false
     }
     return "$local@$domain".length <= EMAIL_MAX_LENGTH
+}
+
+/** Clears the status bar with the toolbar column and the navigation bar with the scroll. */
+internal fun applyAccountWindowInsets(root: View, column: View, scroll: View) {
+    ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        column.updatePadding(top = bars.top)
+        scroll.updatePadding(bottom = bars.bottom)
+        insets
+    }
 }
 
 internal fun emailAuthenticationError(

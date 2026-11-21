@@ -55,8 +55,11 @@ class NotificationsActivity : AppCompatActivity() {
         binding = ActivityNotificationsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
-            view.updatePadding(top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top)
+        val listBottomBase = binding.rvNotifications.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.appBar.updatePadding(top = bars.top)
+            binding.rvNotifications.updatePadding(bottom = listBottomBase + bars.bottom)
             insets
         }
         binding.toolbar.setNavigationOnClickListener { finish() }

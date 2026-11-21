@@ -54,8 +54,10 @@ class MyScanRepliesActivity : AppCompatActivity() {
         binding = ActivityMyScanRepliesBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
-            view.updatePadding(top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.appBar.updatePadding(top = bars.top)
+            binding.repliesScroll.updatePadding(bottom = bars.bottom)
             insets
         }
         binding.toolbar.setNavigationOnClickListener { finish() }
