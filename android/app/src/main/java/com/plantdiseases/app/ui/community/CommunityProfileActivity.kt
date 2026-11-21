@@ -18,6 +18,7 @@ import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityProfileBinding
 import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.community.forum.ForumInsets
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.DiseaseLabels
@@ -60,6 +61,7 @@ class CommunityProfileActivity : AppCompatActivity() {
         }
         binding = ActivityCommunityProfileBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ForumInsets.apply(this, binding.appBar, binding.root)
         binding.toolbar.setNavigationOnClickListener { finish() }
 
         adapter = NearbyScansAdapter(

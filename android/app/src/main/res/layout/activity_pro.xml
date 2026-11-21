@@ -15,6 +15,7 @@
         app:navigationIcon="@drawable/ic_back" />
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/pro_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
