@@ -213,6 +213,12 @@ detail screen only.
 - **Optional integrations degrade gracefully, never crash.** Missing `PLANTNET_API_KEY` /
   `OPENROUTER_API_KEY` / FCM creds → endpoints return `available:false` and the app shows a
   specific "not configured" UX. Preserve this.
+- **Typography: no grey text, plain punctuation.** Text uses `@color/on_surface`; the muted
+  ink `on_surface_secondary` (also `colorOnSurfaceVariant`) is for icon tints only, never
+  text; don't fade text with alpha to make it secondary. Captions are 12sp minimum and bold. UI text
+  (strings, layouts, Kotlin literals, server content) has no middle dot, em dash or en
+  dash: use `-`, `,` or `:`. `DesignSystemRulesTest` (app) and `tests/test_text_style.py`
+  (server) enforce this; LLM and Wikipedia text is normalised by `server/text_style.py`.
 - **Bilingual everywhere.** New diagnosis content, error cards and UI strings need EN and
   RU (server: `diseases_data.py`; app: `strings.xml` + `values-ru`).
 - **Lint is zero-tolerance.** Server: ruff (`server/pyproject.toml`). Android: ktlint +

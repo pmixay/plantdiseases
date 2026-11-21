@@ -50,9 +50,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
                 android:accessibilityHeading="true"
+                android:fontFamily="sans-serif-black"
                 android:gravity="center"
+                android:letterSpacing="-0.02"
                 android:text="@string/onboarding_title"
-                android:textAppearance="@style/TextAppearance.App.Headline" />
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_headline" />
 
             <!-- Row: your data is secure -->
             <LinearLayout

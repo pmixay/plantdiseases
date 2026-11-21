@@ -33,7 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/space_xs"
+            android:paddingTop="@dimen/space_sm"
             android:paddingBottom="@dimen/space_3xl">
 
         <!-- Page title + nearby-scans action. Used to live in the shared
@@ -156,7 +156,7 @@
                         android:layout_width="30dp"
                         android:layout_height="30dp"
                         android:src="@drawable/ic_scan"
-                        app:tint="@android:color/white"
+                        app:tint="@color/on_primary"
                         android:contentDescription="@string/home_scan_title" />
 
                     <TextView
@@ -164,7 +164,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:text="@string/home_scan_title"
-                        android:textColor="@android:color/white"
+                        android:textColor="@color/on_primary"
                         android:textStyle="bold"
                         android:textSize="@dimen/text_title_sm" />
 
@@ -172,7 +172,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/home_scan_sub"
-                        android:textColor="#D9FFFFFF"
+                        android:textColor="@color/on_primary"
                         android:textSize="@dimen/text_caption" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

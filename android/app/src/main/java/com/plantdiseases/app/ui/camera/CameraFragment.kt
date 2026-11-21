@@ -313,8 +313,8 @@ class CameraFragment : Fragment() {
      *  run on — which offline is Aqua, not whatever the user last picked. */
     private fun refreshModelFamilyChip() {
         val family = effectiveFamily()
-        binding.btnModelFamily.setText(family.labelRes)
-        binding.btnModelFamily.setIconResource(family.iconRes)
+        binding.tvModelFamily.setText(family.labelRes)
+        binding.ivModelFamilyIcon.setImageResource(family.iconRes)
     }
 
     /**
