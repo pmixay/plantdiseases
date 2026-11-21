@@ -23,13 +23,11 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
-import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
@@ -86,9 +84,6 @@ class ResultActivity : AppCompatActivity() {
     lateinit var careRepository: CareRepository
 
     @Inject
-    lateinit var communityUploader: CommunityUploader
-
-    @Inject
     lateinit var authRepository: AuthRepository
 
     @Inject
@@ -139,72 +134,9 @@ class ResultActivity : AppCompatActivity() {
             this,
             binding,
             scanRepository,
-            communityUploader,
             authRepository,
             connectivity,
-            ::ensureNotificationPermission,
-            ::requestCommunityOptIn,
         )
-    }
-
-    // Notifications-only prompt, fired when the user asks for a second opinion
-    // so the reply can actually reach them. nm.notify() no-ops if denied.
-    private val notifPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, granted)
-        if (granted) {
-            startOpinionDelivery()
-        }
-    }
-
-    // In-context community opt-in from the result screen (the "enable community"
-    // button under the similar-scans card and the second-opinion gate).
-    // Requests coarse location ONLY and flips community ON
-    // when it's granted — so a denial leaves the "enable community" button in
-    // place instead of silently enabling with no location. Notifications are
-    // NOT part of joining; they're requested when the user asks for a second
-    // opinion (see ensureNotificationPermission). The pending callback carries
-    // the grant result back to whichever surface asked.
-    private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
-
-    private val communityOptInLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val locationGranted = granted ||
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        pendingCommunityOptIn?.invoke(locationGranted)
-        pendingCommunityOptIn = null
-    }
-
-    private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
-        pendingCommunityOptIn = onResult
-        communityOptInLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-    }
-
-    private fun ensureNotificationPermission() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
-            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
-            startOpinionDelivery()
-        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
-            startOpinionDelivery()
-        }
-    }
-
-    private fun startOpinionDelivery() {
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-        (application as PlantDiseasesApp).scheduleOpinionChecks()
-        (application as PlantDiseasesApp).checkOpinionsNow()
     }
 
     override fun attachBaseContext(newBase: Context) {

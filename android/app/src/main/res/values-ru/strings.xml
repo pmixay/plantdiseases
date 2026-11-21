@@ -38,7 +38,6 @@
     <string name="account_create">Создать аккаунт</string>
     <string name="account_finish_creation">Завершить создание аккаунта</string>
     <string name="account_cancel_signup">Отменить и остаться гостем</string>
-    <string name="account_provider_avatar">Фото профиля</string>
     <string name="account_change_avatar">Изменить фото профиля</string>
     <string name="account_avatar_update_failed">Не удалось использовать фото. Выберите другое изображение.</string>
     <string name="account_provider_name">%1$s: %2$s</string>
@@ -145,8 +144,6 @@
     <string name="unknown_error">Произошла неизвестная ошибка</string>
     <string name="image_decode_error_title">Не удалось прочитать фото</string>
     <string name="image_decode_error_detail">Файл повреждён или имеет неподдерживаемый формат. Попробуйте другое фото.</string>
-    <string name="image_too_large_title">Слишком большое фото</string>
-    <string name="image_too_large_detail">Не хватает памяти для обработки. Попробуйте фото поменьше.</string>
     <string name="retry">Повторить</string>
     <string name="cancel">Отмена</string>
 
@@ -355,13 +352,11 @@
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_my_vote">Ваше мнение: %1$s</string>
-    <string name="community_opinion_more">Ещё</string>
     <string name="community_opinion_change">Изменить мнение</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
     <string name="community_opinion_empty">Пока нет мнений - будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
-    <string name="community_opinion_loading">Загружаем ответы сообщества…</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
@@ -397,14 +392,9 @@
     <string name="community_unblock_confirm">Разблокировать</string>
     <string name="community_author_unblocked">Автор разблокирован.</string>
     <string name="community_unknown_author">Неизвестный автор</string>
-    <string name="gallery_community_badge">💬 %1$d</string>
-    <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
-    <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
-    <string name="second_opinion_needs_community_title">Включить сообщество?</string>
-    <string name="second_opinion_needs_community_body">Второе мнение дают участники сообщества. Включение анонимно поделится этим сканом, использует примерное местоположение и позволит другим высказаться. Включая функцию, вы принимаете Правила сообщества; жалобы, блокировка и связь с модерацией доступны на экране сообщества. Покинуть сообщество можно в любой момент.</string>
     <string name="second_opinion_waiting_hours">Ждём мнения, осталось %1$d ч</string>
     <string name="second_opinion_open_replies">Мнения: %1$d, осталось %2$d ч</string>
     <string name="second_opinion_sheet_status">Запрос активен, осталось %1$d ч. О новых ответах придёт уведомление.</string>
@@ -417,20 +407,8 @@
     <string name="community_open_replies">Открыть ответы: %1$d</string>
     <string name="community_replies_locked_short">Ответы закрыты</string>
     <string name="community_replies_locked_readable">Ответы доступны только для чтения: владелец не запрашивает мнения</string>
-    <string name="community_opinion_locked_body">Ответы доступны только для чтения. Владелец не запрашивал второе мнение либо запрос уже завершён.</string>
-    <string name="community_opinion_locked_toast">Запрос второго мнения уже завершён.</string>
     <string name="community_report_action">Пожаловаться</string>
     <string name="community_block_action">Заблокировать автора</string>
-    <string name="community_blocked">Автор заблокирован.</string>
-    <string-array name="community_report_reason_labels">
-        <item>Контент сексуального характера</item>
-        <item>Насилие или угрозы</item>
-        <item>Ненависть или травля</item>
-        <item>Незаконный или опасный совет</item>
-        <item>Спам или ложная информация</item>
-        <item>Нарушение приватности или подмена личности</item>
-        <item>Другое нарушение правил</item>
-    </string-array>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="community_profile_title">Профиль</string>
     <string name="community_profile_avatar">Аватар профиля сообщества</string>
@@ -466,7 +444,6 @@
     <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
     <string name="community_map_group_title">Сканов здесь: %1$d</string>
     <!-- In-context community opt-in -->
-    <string name="community_enable_cta">Включить сообщество</string>
     <!-- Сортировка ленты сообщества -->
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>

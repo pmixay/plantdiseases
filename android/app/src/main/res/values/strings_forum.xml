@@ -22,8 +22,6 @@
     <string name="forum_tab_mine">Mine</string>
     <string name="forum_all_spaces">All spaces</string>
     <string name="forum_spaces">Spaces</string>
-    <string name="forum_nearby">Nearby</string>
-    <string name="forum_sort">Sort</string>
     <string name="forum_sort_hot">Hot</string>
     <string name="forum_sort_new">New</string>
     <string name="forum_sort_top">Top this week</string>
@@ -155,7 +153,6 @@
     <string name="forum_stat_taught">%1$d\nlabels taught</string>
     <string name="forum_achievements_title">Achievements: %1$d of %2$d</string>
     <string name="forum_achievement_progress">%1$d / %2$d</string>
-    <string name="forum_achievement_progress_tier">%1$d / %2$d, tier %3$d of %4$d</string>
     <string name="forum_achievement_complete">Complete</string>
     <string name="forum_achievement_tier_earned">Tier %1$d: %2$d. Earned</string>
     <string name="forum_achievement_tier_locked">Tier %1$d: %2$d. Not yet</string>

@@ -117,14 +117,6 @@ object ForumUi {
         else -> R.string.forum_kind_question
     }
 
-    @DrawableRes
-    fun kindIcon(kind: String): Int = when (kind) {
-        "scan" -> R.drawable.ic_scan
-        "recovery" -> R.drawable.ic_rotate
-        "tip" -> R.drawable.ic_tips
-        else -> R.drawable.ic_question
-    }
-
     fun relativeTime(epochSeconds: Long): CharSequence = DateUtils.getRelativeTimeSpanString(
         epochSeconds * 1000L,
         System.currentTimeMillis(),

@@ -11,10 +11,8 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -79,26 +77,6 @@ object ImageUtils {
         } catch (_: Exception) {
             Log.w(TAG, "Gallery save failed")
             false
-        }
-    }
-
-    /** Compatibility wrapper for non-network callers that still need a file.
-     * All upload paths use [UploadImageSanitizer] directly; this wrapper uses
-     * the same metadata-stripping implementation so it cannot become a weaker
-     * second encoding path. */
-    @Throws(ImageDecodeException::class)
-    fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
-        val sanitized = DefaultUploadImageSanitizer.sanitize(
-            File(imagePath),
-            maxDimension = maxSize,
-        )
-        val outputFile = File.createTempFile("sanitized_upload_", ".jpg", context.cacheDir)
-        try {
-            FileOutputStream(outputFile).use { it.write(sanitized.bytes) }
-            return outputFile
-        } catch (failure: Exception) {
-            outputFile.delete()
-            throw failure
         }
     }
 
@@ -231,14 +209,6 @@ object ImageUtils {
         }
     }
 
-    private fun rotateIfNeeded(imagePath: String, bitmap: Bitmap): Bitmap {
-        val orientation = ExifInterface(imagePath).getAttributeInt(
-            ExifInterface.TAG_ORIENTATION,
-            ExifInterface.ORIENTATION_NORMAL
-        )
-        return applyExifOrientation(orientation, bitmap)
-    }
-
     /** Apply an EXIF [orientation] to [bitmap], returning a new upright bitmap
      *  (or the original when no transform is needed). */
     internal fun applyExifOrientation(orientation: Int, bitmap: Bitmap): Bitmap {
@@ -340,33 +310,6 @@ object ImageUtils {
             days in 2..30 -> context.getString(com.plantdiseases.app.R.string.date_days_ago, days)
             else -> formatTimestamp(timestamp)
         }
-    }
-
-    /**
-     * SHA-256 of [file]'s bytes, lowercase hex. Returns null when the
-     * file is missing or unreadable — callers (feedback submission)
-     * treat the hash as optional and must not block on it.
-     *
-     * Streams 8 KiB buffers so large images don't materialise in
-     * memory. Must be called off the UI thread.
-     */
-    fun sha256Hex(file: File): String? = try {
-        val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { input ->
-            val buffer = ByteArray(8 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        digest.digest().joinToString("") { "%02x".format(it) }
-    } catch (_: IOException) {
-        Log.w(TAG, "Local image hash failed")
-        null
-    } catch (_: SecurityException) {
-        Log.w(TAG, "Local image hash permission denied")
-        null
     }
 
     /**

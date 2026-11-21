@@ -2,13 +2,11 @@ package com.plantdiseases.app.pipeline
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.plantdiseases.app.util.ImageUtils
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,41 +23,6 @@ import java.io.FileOutputStream
 class ImageUtilsInstrumentedTest {
 
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
-
-    @Test
-    fun prepareImageForUpload_downscalesLargeImageToMaxEdge() {
-        val src = saveJpeg(solid(2000, 1500, Color.rgb(40, 160, 60)), "src_large.jpg")
-        val out = ImageUtils.prepareImageForUpload(ctx, src.absolutePath, maxSize = 1024)
-
-        assertTrue("output exists", out.exists())
-        assertTrue("output non-empty", out.length() > 0)
-        val bounds = decodeBounds(out)
-        assertEquals(1024, maxOf(bounds.first, bounds.second))
-        // 1500 * (1024/2000) == 768
-        assertEquals(768, minOf(bounds.first, bounds.second))
-
-        src.delete()
-        out.delete()
-    }
-
-    @Test
-    fun prepareImageForUpload_doesNotUpscaleSmallImage() {
-        val src = saveJpeg(solid(240, 180, Color.rgb(10, 120, 10)), "src_small.jpg")
-        val out = ImageUtils.prepareImageForUpload(ctx, src.absolutePath, maxSize = 1024)
-        val bounds = decodeBounds(out)
-        assertEquals(240, maxOf(bounds.first, bounds.second))
-        src.delete()
-        out.delete()
-    }
-
-    @Test
-    fun prepareImageForUpload_throwsOnCorruptFile() {
-        val bad = File(ctx.cacheDir, "corrupt.jpg").apply { writeText("definitely not an image") }
-        assertThrows(ImageUtils.ImageDecodeException::class.java) {
-            ImageUtils.prepareImageForUpload(ctx, bad.absolutePath)
-        }
-        bad.delete()
-    }
 
     @Test
     fun computeBlurScore_sharpImageScoresHigherThanFlat() {
@@ -97,21 +60,9 @@ class ImageUtilsInstrumentedTest {
             .apply { setPixels(pixels, 0, size, 0, 0, size, size) }
     }
 
-    private fun saveJpeg(bmp: Bitmap, name: String): File =
-        File(ctx.cacheDir, name).also { f ->
-            FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-            bmp.recycle()
-        }
-
     private fun savePng(bmp: Bitmap, name: String): File =
         File(ctx.cacheDir, name).also { f ->
             FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
         }
-
-    private fun decodeBounds(file: File): Pair<Int, Int> {
-        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, opts)
-        return opts.outWidth to opts.outHeight
-    }
 }

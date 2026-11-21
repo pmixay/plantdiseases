@@ -71,7 +71,6 @@ class PlantRepository(
                 plant = plant,
                 scanCount = scans.size,
                 latestScan = scans.maxByOrNull { it.timestamp },
-                lastJournalEntry = journal.firstOrNull(),
                 nextAction = soonestReminderDueAt(reminders, journal),
                 roomName = plant.roomId?.let { roomNamesById[it] },
                 health = getPlantHealth(plant.id, scans, activePlansByPlant[plant.id], nowMs),
@@ -587,7 +586,6 @@ class PlantRepository(
         val plant: PlantEntity,
         val scanCount: Int,
         val latestScan: ScanEntity?,
-        val lastJournalEntry: PlantJournalEntity?,
         val nextAction: NextAction? = null,
         val roomName: String? = null,
         val health: PlantHealth.Verdict = PlantHealth.Verdict(

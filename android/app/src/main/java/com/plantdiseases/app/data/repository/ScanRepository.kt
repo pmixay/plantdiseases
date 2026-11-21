@@ -694,36 +694,6 @@ class ScanRepository(
         }
 
     /**
-     * Flag the scanner's OWN scan as wanting a community second opinion.
-     * The scanner doesn't suggest a diagnosis — they raise a hand and
-     * wait for others to weigh in. Returns `true` when the server
-     * actually flagged an owned community row; `false` (still a success)
-     * when no owned row exists yet — the community upload is
-     * fire-and-forget and the user may have opted out of sharing. Callers must
-     * treat that false result as a failed request rather than showing a local
-     * waiting state that the server does not know about.
-     */
-    suspend fun requestSecondOpinion(
-        scanId: String,
-    ): Result<Boolean> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/request-opinion") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
-                            scanId = scanId,
-                        ),
-                    )
-                }
-                response
-                    .protectedBody<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
-                    .flagged
-            }
-        }
-
-    /**
      * Withdraw an open second-opinion request on the user's OWN scan —
      * the community stops seeing the ask and no further opinion
      * notifications arrive for it. Opinions already left stay visible.
@@ -1135,44 +1105,6 @@ class ScanRepository(
             }
         }
 
-    /** Record that this account scrolled past (not necessarily opened) up to
-     *  50 shared scans in the feed. Same fire-and-forget contract as
-     *  [recordCommunityView]; the caller is expected to have already
-     *  filtered out ids already reported this screen session. */
-    suspend fun recordCommunityViews(scanIds: List<String>): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            if (scanIds.isEmpty()) return@withContext Result.success(Unit)
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/view") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityViewRequest(
-                            scanIds = scanIds.take(50),
-                        ),
-                    )
-                }
-                response.requireProtectedSuccess()
-            }
-        }
-
-    /** Batched {opinions, views} per scan for account-owned Gallery rows. */
-    suspend fun getCommunityScanCounts(
-        scanIds: List<String>,
-    ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
-        withContext(Dispatchers.IO) {
-            if (scanIds.isEmpty()) return@withContext emptyMap()
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/scan-counts") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
-                }
-                response.protectedBody<com.plantdiseases.app.data.model.CommunityScanCountsResponse>()
-                    .counts
-            }.getOrDefault(emptyMap())
-        }
-
     /** Like or unlike a shared scan. Returns the resulting liked state on
      *  success — the caller should already have applied it optimistically
      *  and only needs to roll back on failure. */
@@ -1509,16 +1441,6 @@ class ScanRepository(
             gson.fromJson(json, type)
         } catch (e: Exception) {
             emptyMap()
-        }
-    }
-
-    /** Parse the JSON-encoded toxic-species list (cats/dogs/horses/...). */
-    fun parseToxicSpeciesList(json: String?): List<String> {
-        if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
-        } catch (e: Exception) {
-            emptyList()
         }
     }
 
