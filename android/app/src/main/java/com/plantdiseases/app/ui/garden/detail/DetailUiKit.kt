@@ -65,7 +65,7 @@ internal fun AppCompatActivity.statPill(
     val box = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        background = getDrawable(R.drawable.bg_plant_stat_pill)
+        background = getDrawable(R.drawable.bg_stat_pill)
         setPadding(10.dp(this@statPill), 10.dp(this@statPill), 10.dp(this@statPill), 10.dp(this@statPill))
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             .apply { if (endMargin) marginEnd = 8.dp(this@statPill) }
@@ -74,16 +74,16 @@ internal fun AppCompatActivity.statPill(
         TextView(this).apply {
             text = value
             textSize = 18f
-            setTextColor(getColor(R.color.hero_stat_text))
+            setTextColor(getColor(R.color.on_surface))
             typeface = Typeface.DEFAULT_BOLD
         },
     )
     box.addView(
         TextView(this).apply {
             text = label
-            textSize = 11f
-            setTextColor(getColor(R.color.hero_stat_text))
-            alpha = 0.82f
+            textSize = 12f
+            setTextColor(getColor(R.color.on_surface))
+            typeface = Typeface.DEFAULT_BOLD
         },
     )
     return box

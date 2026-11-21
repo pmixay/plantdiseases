@@ -78,14 +78,12 @@ class HelperProfileActivity : AppCompatActivity() {
     private fun render(profile: HelperProfile) {
         binding.scroll.visibility = View.VISIBLE
         val nickname = profile.nickname.ifBlank { getString(R.string.community_anonymous_author) }
-        // A white disc with the nickname colour as text, so it reads on the green hero.
         ForumViews.bindAvatar(
             binding.tvAvatar,
             binding.ivAvatarPhoto,
             nickname,
             ForumAuthor(nickname = nickname, authorToken = profile.authorToken, avatarVersion = profile.avatarVersion),
             forum::avatarUrl,
-            onHero = true,
         )
         binding.tvNickname.text = nickname
         binding.tvLevel.text = getString(
