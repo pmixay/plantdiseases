@@ -330,7 +330,7 @@ class GardenFragment : Fragment() {
                 getString(ReminderPresets.fallbackLabelRes(view.task.type))
             else -> view.task.title
         }
-        row.careTaskSubtitle.text = view.roomName?.let { "${view.plantName} · $it" } ?: view.plantName
+        row.careTaskSubtitle.text = view.roomName?.let { "${view.plantName}, $it" } ?: view.plantName
         row.careTaskCheckbox.isChecked = false
         row.careTaskCheckbox.contentDescription = getString(R.string.task_mark_done)
         row.careTaskCheckbox.setOnClickListener {
@@ -440,7 +440,7 @@ class GardenFragment : Fragment() {
                 TextView(requireContext()).apply {
                     text = getString(R.string.garden_search_empty, query)
                     textSize = 14f
-                    setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                    setTextColor(requireContext().getColor(R.color.on_surface))
                     gravity = Gravity.CENTER
                     setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
                 }
@@ -509,7 +509,7 @@ class GardenFragment : Fragment() {
             TextView(requireContext()).apply {
                 text = getString(R.string.room_why_hint)
                 textSize = 13f
-                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                setTextColor(requireContext().getColor(R.color.on_surface))
                 setLineSpacing(3.dp().toFloat(), 1f)
                 setPadding(4.dp(), 0, 4.dp(), 8.dp())
             }
@@ -586,7 +586,7 @@ class GardenFragment : Fragment() {
         layoutParams = LinearLayout.LayoutParams(56.dp(), 56.dp()).apply { marginStart = 8.dp() }
         gravity = Gravity.CENTER
         textSize = 13f
-        setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+        setTextColor(requireContext().getColor(R.color.on_surface))
         setBackgroundResource(R.drawable.bg_thumb_rounded)
     }
 

@@ -61,7 +61,7 @@ object ForumUi {
         "other_rules" to R.string.mod_reason_other,
     )
 
-    /** "Post removed · Spam": what a moderator did and why. */
+    /** "Post removed, Spam": what a moderator did and why. */
     fun modNoticeHeading(context: Context, notice: ModNotice): String {
         val reason = MOD_REASONS.firstOrNull { it.first == notice.reasonCode }?.second ?: R.string.mod_reason_reports
         return context.getString(R.string.mod_notice_heading, modActionText(context, notice), context.getString(reason))

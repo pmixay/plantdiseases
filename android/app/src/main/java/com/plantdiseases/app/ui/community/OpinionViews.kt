@@ -69,7 +69,7 @@ object OpinionViews {
             TextView(ctx).apply {
                 text = ctx.getString(R.string.community_vote_percent, pct)
                 textSize = 13f
-                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
             },
         )
         row.addView(labelLine)
@@ -188,7 +188,7 @@ object OpinionViews {
                         DateUtils.FORMAT_ABBREV_RELATIVE,
                     )
                     textSize = 12f
-                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -243,7 +243,7 @@ object OpinionViews {
                     TextView(ctx).apply {
                         text = ctx.getString(R.string.community_report_action)
                         textSize = 12f
-                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                         setPadding(0, dp(6), dp(16), dp(6))
                         isClickable = true
                         isFocusable = true
@@ -256,7 +256,7 @@ object OpinionViews {
                     TextView(ctx).apply {
                         text = ctx.getString(R.string.community_block_action)
                         textSize = 12f
-                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                        setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                         setPadding(0, dp(6), dp(8), dp(6))
                         isClickable = true
                         isFocusable = true

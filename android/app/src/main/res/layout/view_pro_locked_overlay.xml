@@ -38,7 +38,7 @@
         android:gravity="center"
         android:maxLines="3"
         android:text="@string/pro_lunar_locked_body"
-        android:textColor="@color/on_surface_secondary"
+        android:textColor="@color/on_surface"
         android:textSize="@dimen/text_body_sm" />
 
     <com.google.android.material.button.MaterialButton

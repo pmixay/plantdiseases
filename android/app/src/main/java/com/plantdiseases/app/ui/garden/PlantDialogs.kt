@@ -210,7 +210,7 @@ internal fun buildRoomPickerRow(
     var rooms = initialRooms
     val label = TextView(ctx).apply {
         textSize = 13f
-        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+        setTextColor(ctx.getColor(R.color.on_surface))
     }
     var currentRoomId = initialRoomId
     fun applyLabel() {
@@ -245,8 +245,9 @@ internal fun buildRoomPickerRow(
                 addView(
                     TextView(ctx).apply {
                         text = ctx.getString(R.string.plant_room)
-                        textSize = 11f
-                        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+                        textSize = 12f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setTextColor(ctx.getColor(R.color.on_surface))
                     }
                 )
                 addView(label)

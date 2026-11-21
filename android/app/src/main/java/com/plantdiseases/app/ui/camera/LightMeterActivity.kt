@@ -243,7 +243,7 @@ class LightMeterActivity :
         }
     }
 
-    /** The log-scaled tick row (1 · 10 · 100 · 1k · 10k · 30k) placed
+    /** The log-scaled tick row (1, 10, 100, 1k, 10k, 30k) placed
      *  into the gauge card's light_scale_row container. Each label is
      *  preceded by a weighted spacer matching the bar's log position so
      *  the labels line up with the progress bar underneath. */
@@ -271,8 +271,9 @@ class LightMeterActivity :
             bar.addView(
                 TextView(this).apply {
                     text = formatLuxLabel(lux)
-                    textSize = 10f
-                    setTextColor(getColor(R.color.on_surface_secondary))
+                    textSize = 12f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(getColor(R.color.on_surface))
                 }
             )
         }
@@ -300,7 +301,7 @@ class LightMeterActivity :
                     TextView(this@LightMeterActivity).apply {
                         text = getString(R.string.light_no_sensor)
                         textSize = 14f
-                        setTextColor(getColor(R.color.on_surface_secondary))
+                        setTextColor(getColor(R.color.on_surface))
                         gravity = Gravity.CENTER
                         setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
                     }
@@ -498,7 +499,7 @@ class LightMeterActivity :
         sensorManager?.unregisterListener(this)
         cameraProvider?.unbindAll()
         // Persist the session peak back to the launching plant so
-        // the Care Plan card can show "measured here: N lx · 3 days
+        // the Care Plan card can show "measured here: N lx, 3 days
         // ago". onPause runs reliably for both back-button and
         // home-button exits; doing it on a click would miss the
         // common "user just navigates away" exit.

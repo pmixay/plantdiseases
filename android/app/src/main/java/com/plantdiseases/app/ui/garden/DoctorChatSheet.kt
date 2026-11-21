@@ -491,9 +491,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         bubble.addView(
             TextView(requireContext()).apply {
                 text = formatTime(timestamp)
-                textSize = 10f
-                setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
-                alpha = 0.85f
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text))
                 gravity = Gravity.END
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,

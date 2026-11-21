@@ -73,7 +73,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textColor="@color/on_surface"
             android:textStyle="italic"
             android:visibility="gone"
             tools:text="Monstera deliciosa"
@@ -104,7 +104,7 @@
             android:lineSpacingExtra="2dp"
             android:maxLines="@integer/species_info_collapsed_lines"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textColor="@color/on_surface"
             android:visibility="gone"
             tools:text="Monstera deliciosa is a species of flowering plant native to tropical forests of southern Mexico, south to Panama."
             tools:visibility="visible" />

@@ -325,7 +325,7 @@
                             android:layout_weight="1"
                             android:text="@string/confidence_label"
                             android:textSize="@dimen/text_body"
-                            android:textColor="@color/on_surface_secondary" />
+                            android:textColor="@color/on_surface" />
 
                         <TextView
                             android:id="@+id/tv_confidence"
@@ -354,7 +354,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <!-- One compact, actionable confidence advisory. It is
                          deliberately in the verdict card so uncertain scans
@@ -397,7 +397,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xs"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body_sm"
                             android:lineSpacingExtra="2dp" />
 
@@ -627,7 +627,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                        android:textColor="@color/on_surface" />
 
                     <!-- Empty state shown when the region has no recent
                          scans yet. Keeps the card on screen so the user
@@ -640,7 +640,7 @@
                         android:gravity="center"
                         android:padding="@dimen/space_lg"
                         android:textAppearance="@style/TextAppearance.App.Body"
-                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textColor="@color/on_surface"
                         android:visibility="gone" />
 
                     <androidx.recyclerview.widget.RecyclerView
@@ -698,7 +698,7 @@
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/alternatives_subtitle"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <LinearLayout
                         android:id="@+id/alternatives_layout"
@@ -738,7 +738,7 @@
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/feedback_subtitle"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <LinearLayout
                         android:id="@+id/feedback_choice_row"

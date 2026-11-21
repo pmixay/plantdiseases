@@ -122,7 +122,7 @@
                     android:id="@+id/tv_species_scientific"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
                     android:textStyle="italic" />
 
@@ -203,7 +203,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/section_about_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -393,7 +393,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/section_fertiliser_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -475,7 +475,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/section_tips_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -549,7 +549,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xs"
                                 android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 android:lineSpacingExtra="2dp" />
 
                         </LinearLayout>
@@ -616,7 +616,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/flowering_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -662,7 +662,7 @@
                                     android:layout_marginStart="@dimen/space_md"
                                     android:layout_weight="1"
                                     android:text="@string/flowering_loading"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_body_sm" />
 
                             </LinearLayout>
@@ -686,7 +686,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/space_sm"
                                     android:lineSpacingExtra="2dp"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_body_sm"
                                     android:visibility="gone" />
 
@@ -728,7 +728,7 @@
                                             android:layout_height="wrap_content"
                                             android:layout_marginTop="@dimen/space_xs"
                                             android:lineSpacingExtra="2dp"
-                                            android:textColor="@color/on_surface_secondary"
+                                            android:textColor="@color/on_surface"
                                             android:textSize="@dimen/text_body_sm" />
 
                                     </LinearLayout>
@@ -801,7 +801,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/native_range_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -847,7 +847,7 @@
                                     android:layout_marginStart="@dimen/space_md"
                                     android:layout_weight="1"
                                     android:text="@string/native_range_loading"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_body_sm" />
 
                             </LinearLayout>
@@ -865,7 +865,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/space_xs"
                                     android:lineSpacingExtra="2dp"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_body_sm" />
 
                                 <com.plantdiseases.app.ui.widget.WorldMapView
@@ -940,7 +940,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/lunar_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 
@@ -1032,7 +1032,7 @@
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:text="@string/section_diseases_subtitle"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_surface"
                                     android:textSize="@dimen/text_caption" />
                             </LinearLayout>
 

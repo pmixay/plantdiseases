@@ -247,7 +247,7 @@ abstract class PlantReminderDao {
 //
 // Persists every reminder firing + its disposition (pending / done /
 // snoozed / skipped). The plant-detail "Reminders" surface reads this
-// to show a streak ("last watered 3 days ago · 5-day streak"); the
+// to show a streak ("last watered 3 days ago, 5-day streak"); the
 // notification-action receivers write into it when the user taps
 // Done / Snooze on a fired notification. ``fired_at`` is the epoch
 // when the WorkManager worker ran; ``done_at`` is set on disposition.

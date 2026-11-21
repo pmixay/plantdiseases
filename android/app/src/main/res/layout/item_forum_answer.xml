@@ -183,7 +183,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/forum_ai_note"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/forum_text_meta" />
 
                 </LinearLayout>

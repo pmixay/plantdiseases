@@ -182,7 +182,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_profile_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -364,7 +364,7 @@
                             android:layout_marginTop="@dimen/space_xxs"
                             android:text="@string/autosave_subtitle"
                             android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:lineSpacingExtra="1dp" />
 
                     </LinearLayout>
@@ -408,7 +408,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xxs"
                             android:text="@string/telemetry_consent_subtitle"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body_sm" />
                     </LinearLayout>
 
@@ -458,7 +458,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xxs"
                                 android:text="@string/community_photo_setting_subtitle"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 android:textSize="@dimen/text_body_sm" />
                         </LinearLayout>
 
@@ -530,7 +530,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
                         android:text="@string/replay_guidance_subtitle"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -585,7 +585,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
                         android:text="@string/privacy_policy_subtitle"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -676,7 +676,7 @@
                                 android:id="@+id/tv_health_rate"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="—"
+                                android:text="-"
                                 android:textSize="24sp"
                                 android:textColor="@color/on_surface"
                                 android:fontFamily="sans-serif-medium"
@@ -687,7 +687,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/accuracy_rate"
                                 android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 android:gravity="center"
                                 android:lineSpacingMultiplier="0.95" />
                         </LinearLayout>
@@ -740,7 +740,7 @@
                         android:layout_marginEnd="@dimen/space_md"
                         android:text="@string/most_common_disease"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <TextView
                         android:id="@+id/tv_common_disease"
@@ -832,7 +832,7 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/start_scanning_hint"
                 android:textSize="@dimen/text_body"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:gravity="center" />
 
             <com.google.android.material.button.MaterialButton
@@ -867,7 +867,7 @@
                 android:layout_marginTop="@dimen/space_xs"
                 android:padding="@dimen/space_sm"
                 android:textSize="@dimen/text_caption"
-                android:textColor="@color/on_surface_secondary" />
+                android:textColor="@color/on_surface" />
 
         </LinearLayout>
 

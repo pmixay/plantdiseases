@@ -88,7 +88,7 @@
                             android:layout_marginStart="6dp"
                             android:layout_marginBottom="14dp"
                             android:text="@string/water_calc_result_unit"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="18sp" />
 
                     </LinearLayout>
@@ -253,7 +253,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:text="@string/water_calc_disclaimer"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm"
                 android:lineSpacingExtra="2dp" />
 

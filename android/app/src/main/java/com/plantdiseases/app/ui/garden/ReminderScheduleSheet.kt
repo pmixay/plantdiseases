@@ -196,7 +196,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         )
         val description = reminder.description?.trim()?.takeIf { it.isNotEmpty() }
         row.reminderMeta.text =
-            if (description != null) "$meta · $description" else meta
+            if (description != null) "$meta, $description" else meta
 
         row.reminderSwitch.setOnCheckedChangeListener(null)
         row.reminderSwitch.isChecked = reminder.enabled

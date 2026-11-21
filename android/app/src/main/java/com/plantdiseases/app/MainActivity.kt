@@ -80,18 +80,16 @@ class MainActivity : AppCompatActivity() {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
 
-    /** One-time pop-up for minimal error reports: pre-ticked, so the default is on. */
+    /** One-time question about minimal error reports: an icon card with Yes / No
+     *  at the bottom. Yes is the positive (default) action. */
     private fun maybeAskTelemetryChoice() {
         val prefs = PrivacyConsentPrefs(this)
         if (!prefs.telemetryChoicePending) return
-        val checked = booleanArrayOf(true)
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.telemetry_consent_title)
-            .setMultiChoiceItems(arrayOf(getString(R.string.telemetry_consent_subtitle)), checked) { _, which, on ->
-                checked[which] = on
-            }
+            .setView(R.layout.dialog_telemetry_consent)
             .setCancelable(false)
-            .setPositiveButton(R.string.telemetry_prompt_ok) { _, _ -> prefs.setTelemetryEnabled(checked[0]) }
+            .setPositiveButton(R.string.telemetry_prompt_yes) { _, _ -> prefs.setTelemetryEnabled(true) }
+            .setNegativeButton(R.string.telemetry_prompt_no) { _, _ -> prefs.setTelemetryEnabled(false) }
             .show()
     }
 

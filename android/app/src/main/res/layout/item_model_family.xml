@@ -61,7 +61,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:textSize="@dimen/text_body_sm"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="@color/on_surface" />
     </LinearLayout>
 
     <!-- Decorative: selection is announced on the row itself via a state

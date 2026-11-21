@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ─── Brand · Vivid leaf-green palette ───────────────────────
+    <!-- ─── Brand: Vivid leaf-green palette ───────────────────────
          PictureThis-style: a saturated, fresh green that pops on
          white surfaces. The primary is Tailwind green-600 — vivid
          enough to read as a brand identity, dark enough for AAA
@@ -41,7 +41,7 @@
          mode — these stay light in both themes because the hero
          gradient stays green in both. -->
     <color name="on_hero">#FFFFFF</color>
-    <color name="on_hero_secondary">#CCFFFFFF</color>
+    <color name="on_hero_secondary">#F2FFFFFF</color>
     <color name="hero_stat_bg">#29FFFFFF</color>
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#FFFFFF</color>
@@ -51,7 +51,7 @@
     <color name="toolbar_bottom">#22C55E</color>
     <color name="toolbar_title">#FFFFFF</color>
 
-    <!-- ─── Surface · Light theme ──────────────────────────────────
+    <!-- ─── Surface: Light theme ──────────────────────────────────
          True white surfaces with a very subtle green tint on
          ``surface_variant`` for grouped panels. Body text is a deep
          botanical green-black so dark-on-white reads botanical rather
@@ -60,7 +60,10 @@
     <color name="surface">#FFFFFF</color>
     <color name="surface_variant">#F0FDF4</color>
     <color name="on_surface">#052E16</color>
-    <color name="on_surface_secondary">#4B5563</color>
+    <!-- Muted ink, not grey: a deep leaf-green that keeps 11:1 contrast on
+         white. Never used for text under 14sp (that text uses on_surface);
+         at 14sp and up it is paired with a bold or medium weight. -->
+    <color name="on_surface_secondary">#21412F</color>
 
     <!-- Card tonal ramp for App.GlassCard / *.Strong. Without these the
          cards fall back to the Material3 baseline (lavender-tinted greys)
@@ -132,7 +135,7 @@
     <color name="chat_bubble_bot_bg">#F3F4F6</color>
     <color name="chat_bubble_user_bg">#DCFCE7</color>
     <color name="chat_bubble_text">#052E16</color>
-    <color name="chat_bubble_text_secondary">#4B5563</color>
+    <color name="chat_bubble_text_secondary">#21412F</color>
 
     <!-- Lunar calendar + moon phase -->
     <color name="lunar_good_bg">#DCFCE7</color>

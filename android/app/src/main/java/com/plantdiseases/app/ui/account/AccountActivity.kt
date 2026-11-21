@@ -234,6 +234,7 @@ class AccountActivity : AppCompatActivity() {
         binding.guestGroup.isVisible = guestVisible
         if (!guestVisible) binding.etPassword.text?.clear()
         binding.btnLater.isVisible = onboardingEntry && guestVisible
+        binding.tvHeroSubtitle.isVisible = guestVisible
         binding.nicknameGroup.isVisible = state is AuthState.ProfileRequired
         binding.accountGroup.isVisible = state is AuthState.Authenticated
         binding.btnRetryAccount.isVisible = state is AuthState.Unavailable
@@ -246,7 +247,7 @@ class AccountActivity : AppCompatActivity() {
         }
         applySignupNicknameEditingPolicy(state)
         binding.tvState.text = when (state) {
-            AuthState.Guest -> getString(R.string.account_guest)
+            AuthState.Guest -> getString(R.string.account_login_title)
             AuthState.Restoring -> getString(R.string.account_restoring)
             is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
@@ -1020,8 +1021,7 @@ class AccountActivity : AppCompatActivity() {
         setEnabledRecursively(binding.content, !active)
         if (!active) {
             // Recursive re-enabling must never turn an unavailable provider
-            // into a clickable control. VK remains a visible, disabled roadmap
-            // item in the Yandex-only 1.9 release.
+            // into a clickable control: re-apply provider visibility and state.
             configureSignInProviders()
             if (privateProfile == null) {
                 binding.btnLinkYandex.isEnabled = false
@@ -1059,11 +1059,9 @@ class AccountActivity : AppCompatActivity() {
         binding.btnEmailCreate.isEnabled = BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED
         binding.btnYandex.isVisible = yandexAvailable
         binding.btnYandex.isEnabled = yandexAvailable
-        binding.btnVk.isVisible = true
+        // A provider that isn't configured in this build is not shown at all.
+        binding.btnVk.isVisible = vkAvailable
         binding.btnVk.isEnabled = vkAvailable
-        binding.btnVk.setText(
-            if (vkAvailable) R.string.account_continue_vk else R.string.account_vk_coming_soon,
-        )
     }
 
     private fun setEnabledRecursively(view: android.view.View, enabled: Boolean) {

@@ -52,7 +52,7 @@
     <string name="forum_kind_recovery">Как дела у растения</string>
     <string name="forum_kind_tip">Совет</string>
     <string name="forum_scan_title_fallback">Прав ли ИИ? Он говорит: %1$s</string>
-    <string name="forum_ai_summary">PlantVision: %1$s · %2$d%%</string>
+    <string name="forum_ai_summary">PlantVision: %1$s, %2$d%%</string>
     <string name="forum_badge_solved">Решено</string>
     <string name="forum_badge_urgent">Срочно</string>
     <string name="forum_badge_unanswered">Пока без ответов</string>
@@ -138,7 +138,7 @@
     <string name="forum_filter_condition">Проблема</string>
     <string name="forum_filter_any_condition">Любая проблема</string>
     <string name="forum_search_with_scan">Искать по последнему скану</string>
-    <string name="forum_scan_search_detail">%1$s · %2$s</string>
+    <string name="forum_scan_search_detail">%1$s, %2$s</string>
     <string name="forum_search_prompt">Ищите на русском или английском или выберите проблему.</string>
     <string name="forum_search_empty">Ничего не нашлось. Попробуйте другие слова или меньше фильтров.</string>
 
@@ -149,15 +149,15 @@
     <string name="forum_level_gardener">Садовод</string>
     <string name="forum_level_botanist">Ботаник</string>
     <string name="forum_level_plant_doctor">Доктор растений</string>
-    <string name="forum_level_line">%1$s · уровень %2$d</string>
+    <string name="forum_level_line">%1$s, уровень %2$d</string>
     <string name="forum_level_next">ещё %1$d листиков до уровня «%2$s»</string>
     <string name="forum_level_max">Достигнут высший уровень</string>
     <string name="forum_stat_accepted">%1$d\nпринято</string>
     <string name="forum_stat_saved">%1$d\nспасено растений</string>
     <string name="forum_stat_taught">%1$d\nметок для ИИ</string>
-    <string name="forum_achievements_title">Достижения · %1$d из %2$d</string>
+    <string name="forum_achievements_title">Достижения: %1$d из %2$d</string>
     <string name="forum_achievement_progress">%1$d / %2$d</string>
-    <string name="forum_achievement_progress_tier">%1$d / %2$d · ступень %3$d из %4$d</string>
+    <string name="forum_achievement_progress_tier">%1$d / %2$d, ступень %3$d из %4$d</string>
     <string name="forum_achievement_complete">Получено</string>
     <string name="forum_achievement_tier_earned">Ступень %1$d: %2$d. Получено</string>
     <string name="forum_achievement_tier_locked">Ступень %1$d: %2$d. Ещё нет</string>
@@ -265,7 +265,7 @@
     <string name="mod_target_post">Публикация</string>
     <string name="mod_target_answer">Ответ</string>
     <string name="mod_state">состояние: %1$s</string>
-    <string name="mod_report_heading">%1$s · жалоб: %2$d · %3$s</string>
+    <string name="mod_report_heading">%1$s, жалоб: %2$d, %3$s</string>
     <string name="mod_hidden_heading">%1$s скрыт(а) автоматически после жалоб</string>
     <string name="mod_appeal_heading">Апелляция: %1$s (%2$s)</string>
     <string name="mod_appeal_no_text">Без сообщения.</string>
@@ -295,7 +295,7 @@
 
     <!-- Решения и апелляции -->
     <string name="mod_notices_empty">Модераторы не принимали решений о вас.</string>
-    <string name="mod_notice_heading">%1$s · %2$s</string>
+    <string name="mod_notice_heading">%1$s: %2$s</string>
     <string name="mod_notice_post_removed">Ваша публикация удалена</string>
     <string name="mod_notice_answer_removed">Ваш ответ удалён</string>
     <string name="mod_notice_hidden">Скрыто после нескольких жалоб</string>
@@ -331,7 +331,7 @@
     <string name="forum_ai_note">Автоматическая оценка по фото. Сверьте её с ответами ниже.</string>
     <string name="forum_ai_confidence">%1$d%%</string>
     <string name="forum_leaves_count">Листиков: %1$d</string>
-    <string name="forum_two_parts">%1$s · %2$s</string>
+    <string name="forum_two_parts">%1$s, %2$s</string>
 
     <!-- Фото профиля в Сообществе: только с согласия, вопрос один раз на фото; переключатель в Профиле. -->
     <string name="community_photo_prompt_title">Показывать ваше фото в Сообществе?</string>

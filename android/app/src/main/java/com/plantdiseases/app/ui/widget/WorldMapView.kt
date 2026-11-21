@@ -82,7 +82,7 @@ class WorldMapView @JvmOverloads constructor(
 
         selectionHint.apply {
             text = context.getString(R.string.native_range_tap_hint)
-            setTextColor(color(R.color.on_surface_secondary))
+            setTextColor(color(R.color.on_surface))
             textSize = 14f
             isVisible = true
             layoutParams = LayoutParams(

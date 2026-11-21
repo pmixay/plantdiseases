@@ -214,7 +214,7 @@ class PlantReminderWorker(
         ) {
             android.util.Log.w(
                 "PlantReminderWorker",
-                "POST_NOTIFICATIONS missing — recorded the reminder in the " +
+                "POST_NOTIFICATIONS missing - recorded the reminder in the " +
                     "notification centre but skipped the system notification " +
                     "for plant_id=$plantId type=$reminderType. Ask the user " +
                     "to re-grant the notification permission in Settings.",

@@ -73,7 +73,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:gravity="center"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <LinearLayout
@@ -155,7 +155,7 @@
                 android:layout_gravity="center"
                 android:gravity="center"
                 android:paddingHorizontal="@dimen/space_2xl"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body"
                 android:visibility="gone" />
 

@@ -253,7 +253,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:padding="@dimen/space_xl"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:visibility="gone" />
 
     </FrameLayout>

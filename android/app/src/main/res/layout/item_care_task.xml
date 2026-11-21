@@ -59,9 +59,9 @@
             android:layout_height="wrap_content"
             android:maxLines="1"
             android:ellipsize="end"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:textSize="@dimen/text_caption"
-            tools:text="Venus flytrap · Office" />
+            tools:text="Venus flytrap, Office" />
 
     </LinearLayout>
 

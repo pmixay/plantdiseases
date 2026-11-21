@@ -51,7 +51,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:padding="@dimen/space_xl"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:visibility="gone" />
 
     </FrameLayout>
@@ -65,7 +65,7 @@
         android:gravity="center"
         android:padding="@dimen/space_md"
         android:text="@string/forum_locked_banner"
-        android:textColor="@color/on_surface_secondary"
+        android:textColor="@color/on_surface"
         android:visibility="gone"
         app:drawableStartCompat="@drawable/ic_lock"
         app:drawableTint="@color/on_surface_secondary" />

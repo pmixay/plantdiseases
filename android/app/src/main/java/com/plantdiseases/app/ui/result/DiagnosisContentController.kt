@@ -136,13 +136,13 @@ class DiagnosisContentController(
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 text = name
                 textSize = if (isMain) 14f else 13f
-                setTextColor(activity.getColor(if (isMain) R.color.on_surface else R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 if (isMain) typeface = Typeface.DEFAULT_BOLD
             }
             val percentView = TextView(activity).apply {
                 text = activity.getString(R.string.confidence_format, percent)
                 textSize = if (isMain) 14f else 13f
-                setTextColor(activity.getColor(if (isMain) R.color.primary else R.color.on_surface_secondary))
+                setTextColor(activity.getColor(if (isMain) R.color.primary else R.color.on_surface))
                 if (isMain) typeface = Typeface.DEFAULT_BOLD
             }
             nameRow.addView(nameView)

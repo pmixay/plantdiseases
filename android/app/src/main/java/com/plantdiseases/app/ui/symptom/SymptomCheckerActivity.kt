@@ -365,7 +365,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
                                 },
                             )
                             textSize = 12f
-                            setTextColor(getColor(if (result.rank <= 1) R.color.primary else R.color.on_surface_secondary))
+                            setTextColor(getColor(if (result.rank <= 1) R.color.primary else R.color.on_surface))
                             typeface = android.graphics.Typeface.create(
                                 "sans-serif-medium",
                                 android.graphics.Typeface.NORMAL,
@@ -397,7 +397,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
                             TextView(this@SymptomCheckerActivity).apply {
                                 text = desc
                                 textSize = 14f
-                                setTextColor(getColor(R.color.on_surface_secondary))
+                                setTextColor(getColor(R.color.on_surface))
                                 setLineSpacing(2f, 1f)
                                 layoutParams = LinearLayout.LayoutParams(
                                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -465,7 +465,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
         addView(
             TextView(this@SymptomCheckerActivity).apply {
                 this.text = "•"
-                setTextColor(getColor(R.color.on_surface_secondary))
+                setTextColor(getColor(R.color.on_surface))
                 textSize = 14f
             }
         )

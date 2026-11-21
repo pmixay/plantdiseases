@@ -96,7 +96,7 @@ internal fun Context.factRow(iconRes: Int, label: String, value: String): View =
             text = label
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
-            setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface_secondary))
+            setTextColor(ContextCompat.getColor(this@factRow, R.color.on_surface))
             setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body_sm))
         }
         val valueView = TextView(this@factRow).apply {
@@ -205,7 +205,7 @@ internal fun Context.sectionRow(
     subtitle: String?,
     iconRes: Int,
     trailing: String? = null,
-    trailingColor: Int = R.color.on_surface_secondary,
+    trailingColor: Int = R.color.on_surface,
     iconTint: Int = R.color.primary,
     thumb: ((ImageView) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
@@ -251,7 +251,7 @@ internal fun Context.sectionRow(
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
                         setTextColor(
-                            ContextCompat.getColor(this@sectionRow, R.color.on_surface_secondary),
+                            ContextCompat.getColor(this@sectionRow, R.color.on_surface),
                         )
                     },
                 )

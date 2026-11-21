@@ -56,7 +56,7 @@
                 android:ellipsize="end"
                 tools:text="Leafy Sage 7" />
 
-            <!-- Place · distance · time, on one line — long place names still
+            <!-- Place - distance - time, on one line — long place names still
                  leave room for the always-relevant distance/time tail because
                  they share a single ellipsized TextView via buildWhen(). -->
             <TextView
@@ -64,7 +64,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textSize="@dimen/text_caption"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textColor="@color/on_surface"
                 android:maxLines="1"
                 android:ellipsize="end"
                 tools:text="Berlin, Germany" />
@@ -74,10 +74,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textSize="@dimen/text_caption"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textColor="@color/on_surface"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="≈ 3 km · 2 hr. ago" />
+                tools:text="≈ 3 km, 2 hr. ago" />
         </LinearLayout>
 
         <!-- Scanner is waiting on the community for a second opinion.
@@ -174,7 +174,7 @@
                 android:layout_marginStart="@dimen/space_xs"
                 android:textSize="@dimen/text_body_sm"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 tools:text="14" />
 
         </LinearLayout>
@@ -206,7 +206,7 @@
                 android:layout_marginStart="@dimen/space_xs"
                 android:textSize="@dimen/text_body_sm"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 tools:text="7" />
 
         </LinearLayout>
@@ -237,7 +237,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_xs"
                 android:textSize="@dimen/text_body_sm"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 tools:text="48" />
 
         </LinearLayout>

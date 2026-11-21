@@ -34,7 +34,7 @@ object ForumViews {
         URGENT(R.string.forum_badge_urgent, R.color.disease_red, R.color.disease_red_bg, R.drawable.ic_clock),
         UNANSWERED(R.string.forum_badge_unanswered, R.color.warning_amber, R.color.warning_amber_bg, null),
         PINNED(R.string.forum_badge_pinned, R.color.primary, R.color.primary_light, R.drawable.ic_pin),
-        LOCKED(R.string.forum_badge_locked, R.color.on_surface_secondary, R.color.surface_container, R.drawable.ic_lock),
+        LOCKED(R.string.forum_badge_locked, R.color.on_surface, R.color.surface_container, R.drawable.ic_lock),
         HIDDEN(R.string.forum_badge_hidden, R.color.warning_amber, R.color.warning_amber_bg, null),
     }
 
@@ -105,14 +105,14 @@ object ForumViews {
         Glide.with(photo).load(avatarUrl(token, version)).circleCrop().into(photo)
     }
 
-    /** "Tip · Pests · 5 days ago"; questions are the default kind and are not named. */
+    /** "Tip, Pests, 5 days ago"; questions are the default kind and are not named. */
     fun meta(context: Context, post: ForumPost, spaces: List<ForumSpace>): String {
         val parts = buildList {
             if (post.kind != "question") add(context.getString(ForumUi.kindLabel(post.kind)))
             add(ForumUi.spaceName(context, post.space, spaces))
             add(ForumUi.relativeTime(post.createdAt).toString())
         }
-        return parts.joinToString(" · ")
+        return parts.joinToString(", ")
     }
 
     /** Puts [icon] before the text at [sizeDp], or removes it when null. */

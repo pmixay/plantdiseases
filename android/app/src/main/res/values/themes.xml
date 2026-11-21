@@ -24,6 +24,9 @@
         <item name="colorSurfaceVariant">@color/surface_variant</item>
         <item name="colorOnSurface">@color/on_surface</item>
         <item name="colorOnSurfaceVariant">@color/on_surface_secondary</item>
+        <!-- Framework/Material "secondary text" defaults (hints, helper text,
+             dialog supporting text) use the muted ink instead of stock grey. -->
+        <item name="android:textColorSecondary">@color/on_surface_secondary</item>
         <!-- Card tonal containers used by App.GlassCard / *.Strong. Without
              these, cards fall back to the Material3 baseline (lavender greys)
              and clash with the white + green palette in light mode. -->
@@ -78,13 +81,15 @@
 
     <style name="TextAppearance.App.Body" parent="TextAppearance.Material3.BodyMedium">
         <item name="android:textSize">@dimen/text_body</item>
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
         <item name="android:lineSpacingExtra">3sp</item>
     </style>
 
+    <!-- Small text is never muted: captions use full ink and a bold weight. -->
     <style name="TextAppearance.App.Caption" parent="TextAppearance.Material3.LabelSmall">
         <item name="android:textSize">@dimen/text_caption</item>
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textStyle">bold</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
     </style>
@@ -148,7 +153,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginStart">@dimen/space_md</item>
         <item name="android:textSize">@dimen/text_body_sm</item>
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
     </style>
 
     <!-- Compact pill chip for status / count badges. -->

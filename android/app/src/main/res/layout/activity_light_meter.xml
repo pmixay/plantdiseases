@@ -84,7 +84,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="-4dp"
                         android:text="@string/light_lux"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="18sp"
                         android:gravity="center" />
 
@@ -126,7 +126,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/light_needs_header"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body" />
 
             <com.google.android.material.card.MaterialCardView
@@ -154,14 +154,14 @@
                         android:textColor="@color/on_surface"
                         android:textSize="15sp"
                         android:fontFamily="sans-serif-medium"
-                        tools:text="Ideal for Tropical: 500 – 3000 lux" />
+                        tools:text="Ideal for Tropical: 500-3000 lux" />
 
                     <TextView
                         android:id="@+id/light_species_status"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         tools:text="Good light" />
 

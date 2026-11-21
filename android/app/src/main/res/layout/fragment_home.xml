@@ -33,7 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/space_lg"
+            android:paddingTop="@dimen/space_xs"
             android:paddingBottom="@dimen/space_3xl">
 
         <!-- Page title + nearby-scans action. Used to live in the shared
@@ -118,7 +118,7 @@
             android:layout_marginTop="2dp"
             android:paddingHorizontal="@dimen/content_gutter"
             android:text="@string/home_subtitle"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:textSize="@dimen/text_body" />
 
         <!-- Hero actions -->
@@ -215,7 +215,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/home_identify_sub"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_caption" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -297,7 +297,7 @@
                     android:id="@+id/tv_trending_scope"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_caption" />
             </LinearLayout>
 

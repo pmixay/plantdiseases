@@ -67,7 +67,7 @@
             android:layout_marginTop="@dimen/space_xs"
             android:text="@string/community_opinion_subtitle"
             android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary" />
+            android:textColor="@color/on_surface" />
 
         <!-- Current diagnosis block — styled like the scan-result status card
              (icon + ALLCAPS label + verdict + confidence/species line) so the
@@ -108,7 +108,7 @@
                         android:letterSpacing="0.05"
                         android:fontFamily="sans-serif-medium"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <TextView
                         android:id="@+id/tv_opinion_current"
@@ -129,7 +129,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:visibility="gone"
                         tools:text="Confidence 87%"
                         tools:visibility="visible" />
@@ -212,7 +212,7 @@
                 android:layout_marginStart="@dimen/space_xs"
                 android:textSize="@dimen/text_body_sm"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 tools:text="14" />
 
         </LinearLayout>
@@ -271,7 +271,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:textAppearance="@style/TextAppearance.App.Body"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 tools:text="Your opinion: Leaf Spot" />
 
             <com.google.android.material.button.MaterialButton
@@ -328,7 +328,7 @@
             android:layout_marginTop="@dimen/space_sm"
             android:text="@string/community_opinion_empty"
             android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:visibility="gone" />
 
         <!-- Class picker -->

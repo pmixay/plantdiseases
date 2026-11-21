@@ -93,7 +93,19 @@
                         android:textColor="@color/on_hero_secondary"
                         android:textSize="@dimen/text_body"
                         android:visibility="gone"
-                        tools:text="Yandex ID · gardener" />
+                        tools:text="Yandex ID, gardener" />
+
+                    <TextView
+                        android:id="@+id/tv_hero_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center"
+                        android:text="@string/account_login_pitch"
+                        android:textColor="@color/on_hero"
+                        android:textSize="@dimen/text_body"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
                 </LinearLayout>
 
                 <TextView
@@ -103,7 +115,7 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:gravity="center"
                     android:text="@string/account_synthetic_notice"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
                     android:visibility="gone" />
 
@@ -129,25 +141,11 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/account_join_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xs"
-                            android:text="@string/account_guest_body"
-                            android:textColor="@color/on_surface_secondary"
-                            android:textSize="@dimen/text_body" />
-
                         <LinearLayout
                             android:id="@+id/email_auth_group"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_lg"
+                            android:layout_marginBottom="@dimen/space_md"
                             android:orientation="vertical">
 
                             <TextView
@@ -232,21 +230,11 @@
                                 android:textSize="@dimen/text_body_sm" />
                         </LinearLayout>
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_lg"
-                            android:gravity="center"
-                            android:text="@string/account_or_provider"
-                            android:textColor="@color/on_surface_secondary"
-                            android:textSize="@dimen/text_body_sm" />
-
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_yandex"
                             style="@style/App.Button.Yandex"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_md"
                             android:text="@string/account_continue_yandex"
                             app:icon="@drawable/ic_yandex_id" />
 
@@ -257,7 +245,8 @@
                             android:layout_height="56dp"
                             android:layout_marginTop="@dimen/space_sm"
                             android:enabled="false"
-                            android:text="@string/account_vk_coming_soon"
+                            android:text="@string/account_continue_vk"
+                            android:visibility="gone"
                             app:cornerRadius="28dp" />
 
                         <com.google.android.material.button.MaterialButton
@@ -295,7 +284,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xs"
                             android:text="@string/account_finish_profile_body"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body" />
 
                         <com.google.android.material.textfield.TextInputLayout
@@ -403,7 +392,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xs"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 tools:text="Yandex ID" />
 
                             <com.google.android.material.button.MaterialButton

@@ -107,7 +107,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:visibility="gone" />
                     </LinearLayout>
                 </LinearLayout>
@@ -128,7 +128,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary" />
+                    android:textColor="@color/on_surface" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_replies_stop_request"
@@ -178,7 +178,7 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/community_opinion_replies_empty"
                 android:textSize="@dimen/text_body_sm"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:visibility="gone" />
 
         </LinearLayout>

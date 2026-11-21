@@ -264,7 +264,7 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.addView(
             TextView(context).apply {
                 text = context.getString(R.string.care_plan_disease_note)
-                textSize = 11f
+                textSize = 12f
                 setTextColor(context.getColor(R.color.on_hero_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 letterSpacing = 0.06f
@@ -745,7 +745,7 @@ class CarePlanCardView @JvmOverloads constructor(
                     metricChip(
                         R.drawable.ic_treatment,
                         context.getString(R.string.care_plan_detail_temperature).uppercase(),
-                        parts.joinToString("  ·  "),
+                        parts.joinToString(", "),
                     )
                 )
             }
@@ -798,9 +798,9 @@ class CarePlanCardView @JvmOverloads constructor(
         text.addView(
             TextView(context).apply {
                 this.text = label
-                textSize = 11f
+                textSize = 12f
                 letterSpacing = 0.08f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
+                setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             }
         )
@@ -957,7 +957,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 text = context.getString(row.labelRes)
                 textSize = 12f
                 letterSpacing = 0.06f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
+                setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             }
         )
@@ -1045,7 +1045,7 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun seasonNote(text: String): View = TextView(context).apply {
         this.text = text
         textSize = 12f
-        setTextColor(context.getColor(R.color.on_surface_secondary))
+        setTextColor(context.getColor(R.color.on_surface))
         setTypeface(typeface, Typeface.ITALIC)
         setLineSpacing(2.dp().toFloat(), 1f)
         layoutParams = LinearLayout.LayoutParams(
@@ -1073,9 +1073,9 @@ class CarePlanCardView @JvmOverloads constructor(
         header.addView(
             TextView(context).apply {
                 text = context.getString(labelRes).uppercase()
-                textSize = 11f
+                textSize = 12f
                 letterSpacing = 0.08f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
+                setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1127,7 +1127,7 @@ class CarePlanCardView @JvmOverloads constructor(
         labelRow.addView(
             TextView(context).apply {
                 text = label.uppercase()
-                textSize = 11f
+                textSize = 12f
                 setTextColor(context.getColor(R.color.on_hero_secondary))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 letterSpacing = 0.08f
@@ -1140,7 +1140,7 @@ class CarePlanCardView @JvmOverloads constructor(
         box.addView(labelRow)
         box.addView(
             TextView(context).apply {
-                text = value.ifBlank { "—" }
+                text = value.ifBlank { "-" }
                 textSize = 16f
                 setTextColor(context.getColor(R.color.on_hero))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -1161,7 +1161,7 @@ class CarePlanCardView @JvmOverloads constructor(
             R.string.care_plan_watering_days,
             plan.wateringDaysInt
         )
-        else -> "—"
+        else -> "-"
     }
 
     private fun lightTierLabel(tier: String): String = when (tier) {

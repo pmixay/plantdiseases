@@ -154,7 +154,8 @@ class CareDayActivity : AppCompatActivity() {
 
     private fun sectionHeader(@StringRes textRes: Int): View = TextView(this).apply {
         text = getString(textRes).uppercase()
-        textSize = 11f
+        textSize = 12f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
         letterSpacing = 0.06f
         setTextColor(getColor(R.color.disease_red))
         layoutParams = LinearLayout.LayoutParams(
@@ -178,7 +179,7 @@ class CareDayActivity : AppCompatActivity() {
             else -> view.task.title
         }
         row.careTaskSubtitle.text = if (view.roomName != null) {
-            "${view.plantName} · ${view.roomName}"
+            "${view.plantName}, ${view.roomName}"
         } else {
             view.plantName
         }

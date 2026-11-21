@@ -225,7 +225,7 @@ class SpotlightOverlay private constructor(
             ViewCompat.setAccessibilityHeading(this, true)
         }
         body.apply {
-            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurface))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setLineSpacing(3.dp.toFloat(), 1f)
         }
@@ -246,7 +246,7 @@ class SpotlightOverlay private constructor(
         next.rotation = 180f
         counter.apply {
             gravity = Gravity.CENTER
-            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurface))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         }
         navigation.addView(previous, LinearLayout.LayoutParams(48.dp, 48.dp))

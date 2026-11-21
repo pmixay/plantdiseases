@@ -244,7 +244,7 @@ class DetailHeaderController(
                 text = activity.getString(R.string.action_more_title)
                 textSize = 13f
                 letterSpacing = 0.06f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setPadding(16.dp(), 8.dp(), 16.dp(), 10.dp())
             },

@@ -126,7 +126,7 @@ class ForumPostAdapter(
             )
             val likeColor = ContextCompat.getColor(
                 context,
-                if (post.likedByMe) R.color.disease_red else R.color.on_surface_secondary,
+                if (post.likedByMe) R.color.disease_red else R.color.on_surface,
             )
             binding.tvLike.compoundDrawableTintList = ColorStateList.valueOf(likeColor)
             binding.tvLike.setTextColor(likeColor)

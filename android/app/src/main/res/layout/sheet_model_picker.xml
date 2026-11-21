@@ -21,7 +21,7 @@
         android:layout_marginTop="@dimen/space_xs"
         android:text="@string/model_family_subtitle"
         android:textSize="@dimen/text_body_sm"
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        android:textColor="@color/on_surface" />
 
     <LinearLayout
         android:id="@+id/model_family_container"

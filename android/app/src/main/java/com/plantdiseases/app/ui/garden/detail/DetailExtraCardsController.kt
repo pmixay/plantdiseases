@@ -256,7 +256,7 @@ class DetailExtraCardsController(
                 ImageUtils.formatRelativeDate(activity, ts),
             )
             textSize = 12f
-            setTextColor(activity.getColor(R.color.on_surface_secondary))
+            setTextColor(activity.getColor(R.color.on_surface))
             setPadding(4.dp(), 0, 4.dp(), 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -315,7 +315,7 @@ class DetailExtraCardsController(
                     String.format(Locale.getDefault(), "%.1f", s.meanGapDays),
                 )
                 textSize = 12f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -498,7 +498,7 @@ class DetailExtraCardsController(
                                         },
                                     )
                                     textSize = 12f
-                                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                                    setTextColor(activity.getColor(R.color.on_surface))
                                     maxLines = 2
                                     ellipsize = android.text.TextUtils.TruncateAt.END
                                     layoutParams = LinearLayout.LayoutParams(
@@ -624,7 +624,7 @@ class DetailExtraCardsController(
                                         activity.getString(R.string.light_meter_entry_subtitle)
                                     }
                                     textSize = 12f
-                                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                                    setTextColor(activity.getColor(R.color.on_surface))
                                     maxLines = 2
                                     ellipsize = android.text.TextUtils.TruncateAt.END
                                     layoutParams = LinearLayout.LayoutParams(
@@ -722,7 +722,7 @@ class DetailExtraCardsController(
                                 TextView(activity).apply {
                                     text = activity.getString(R.string.water_calc_entry_subtitle)
                                     textSize = 12f
-                                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                                    setTextColor(activity.getColor(R.color.on_surface))
                                     maxLines = 2
                                     ellipsize = android.text.TextUtils.TruncateAt.END
                                     layoutParams = LinearLayout.LayoutParams(
@@ -799,7 +799,7 @@ class DetailExtraCardsController(
                                 TextView(activity).apply {
                                     text = activity.getString(R.string.doctor_stub_subtitle)
                                     textSize = 12f
-                                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                                    setTextColor(activity.getColor(R.color.on_surface))
                                     maxLines = 1
                                     ellipsize = android.text.TextUtils.TruncateAt.END
                                     layoutParams = LinearLayout.LayoutParams(
@@ -880,7 +880,7 @@ class DetailExtraCardsController(
 
         val meta = TextView(activity).apply {
             textSize = 12f
-            setTextColor(activity.getColor(R.color.on_surface_secondary))
+            setTextColor(activity.getColor(R.color.on_surface))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -891,7 +891,7 @@ class DetailExtraCardsController(
 
         // Loading state.
         trendChip.text = activity.getString(R.string.progression_loading)
-        trendChip.setTextColor(activity.getColor(R.color.on_surface_secondary))
+        trendChip.setTextColor(activity.getColor(R.color.on_surface))
         meta.text = ""
 
         // Server expects oldest-first; cap to the 12 newest to keep
@@ -923,7 +923,7 @@ class DetailExtraCardsController(
                     "improving" -> activity.getColor(R.color.healthy_green)
                     "worsening" -> activity.getColor(R.color.disease_red)
                     "stable" -> activity.getColor(R.color.neutral_blue)
-                    else -> activity.getColor(R.color.on_surface_secondary)
+                    else -> activity.getColor(R.color.on_surface)
                 }
                 trendChip.text = trendLabel
                 trendChip.setTextColor(trendColor)
@@ -1076,7 +1076,7 @@ class DetailExtraCardsController(
                         PlantHealth.MIN_SCANS_FOR_SCORE,
                     )
                     textSize = 13f
-                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setTextColor(activity.getColor(R.color.on_surface))
                     setLineSpacing(3.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1184,7 +1184,7 @@ class DetailExtraCardsController(
                         steps.size,
                     )
                     textSize = 13f
-                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setTextColor(activity.getColor(R.color.on_surface))
                     setLineSpacing(3.dp().toFloat(), 1f)
                 }
             )
@@ -1203,7 +1203,7 @@ class DetailExtraCardsController(
             TextView(activity).apply {
                 text = diseaseLabel
                 textSize = 13f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1217,7 +1217,7 @@ class DetailExtraCardsController(
             TextView(activity).apply {
                 text = activity.getString(R.string.treatment_step_of, currentStepNumber, steps.size)
                 textSize = 12f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1280,7 +1280,7 @@ class DetailExtraCardsController(
                     text = stateLine
                     textSize = 12f
                     setTextColor(
-                        activity.getColor(if (isOverdue) R.color.disease_red else R.color.on_surface_secondary),
+                        activity.getColor(if (isOverdue) R.color.disease_red else R.color.on_surface),
                     )
                 }
             )

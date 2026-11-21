@@ -134,7 +134,7 @@ class ModerationNoticesActivity : AppCompatActivity() {
                     ForumUi.relativeTime(notice.createdAt).toString(),
                     getString(R.string.mod_notice_automatic).takeIf { notice.automatic },
                     notice.appealState?.let { appealStateText(it) },
-                ).joinToString(" · ")
+                ).joinToString(", ")
                 binding.btnPrimary.visibility = if (notice.canAppeal) View.VISIBLE else View.GONE
                 binding.btnPrimary.setText(R.string.mod_appeal)
                 binding.btnPrimary.setOnClickListener { appeal(notice) }

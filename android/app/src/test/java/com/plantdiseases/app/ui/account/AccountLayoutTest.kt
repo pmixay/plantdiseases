@@ -45,8 +45,10 @@ class AccountLayoutTest {
         assertThat(root.findViewById<TextInputEditText>(R.id.et_password).isSaveEnabled).isFalse()
         assertThat(root.findViewById<MaterialButton>(R.id.btn_later).text.toString())
             .isEqualTo(context.getString(R.string.account_later))
-        assertThat(context.getString(R.string.account_guest_body).lowercase())
+        assertThat(context.getString(R.string.account_login_pitch).lowercase())
             .doesNotContain("session")
+        assertThat(context.getString(R.string.account_login_pitch).lowercase())
+            .doesNotContain("community")
         assertThat(context.getString(R.string.account_email_beta_warning).lowercase())
             .contains("recovery")
     }

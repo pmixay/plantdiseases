@@ -215,14 +215,14 @@ class RoomDetailActivity : AppCompatActivity() {
         dot.visibility = View.VISIBLE
     }
 
-    /** Short "label · N%" line for the plant row — the room's subtitle
+    /** Short "label, N%" line for the plant row — the room's subtitle
      *  leads with health instead of repeating the plant's own name. Without
      *  a score (too few recent scans) it falls back to just the label
      *  ("No scans yet", "Too few recent scans", "Treatment") rather than a
      *  blank line. */
     private fun healthSummaryLine(health: PlantHealth.Verdict): String {
         val label = getString(PlantHealthUi.labelRes(health))
-        return health.score?.let { "$label · $it%" } ?: label
+        return health.score?.let { "$label, $it%" } ?: label
     }
 
     private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {

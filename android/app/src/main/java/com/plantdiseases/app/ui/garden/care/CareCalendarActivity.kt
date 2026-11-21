@@ -193,8 +193,9 @@ class CareCalendarActivity : AppCompatActivity() {
                     addView(
                         TextView(this@CareCalendarActivity).apply {
                             text = this@CareCalendarActivity.getString(labelRes)
-                            textSize = 11f
-                            setTextColor(this@CareCalendarActivity.getColor(R.color.on_surface_secondary))
+                            textSize = 12f
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                            setTextColor(this@CareCalendarActivity.getColor(R.color.on_surface))
                             setPadding(4.dp(), 0, 0, 0)
                         }
                     )

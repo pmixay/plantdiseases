@@ -113,10 +113,10 @@
                         android:id="@+id/care_task_plant_step"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         android:visibility="gone"
-                        tools:text="Шаг 2 из 5 · Фунгицид"
+                        tools:text="Шаг 2 из 5, Фунгицид"
                         tools:visibility="visible" />
 
                 </LinearLayout>
@@ -145,7 +145,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body"
                     android:lineSpacingExtra="3dp"
                     tools:text="Обработать растение препаратом от серой гнили (ботритис)." />
@@ -200,25 +200,25 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
-                    tools:text="Рано утром или вечером — не под прямым солнцем." />
+                    tools:text="Рано утром или вечером - не под прямым солнцем." />
 
                 <TextView
                     android:id="@+id/care_task_temp_range"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xxs"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
-                    tools:text="Температура воздуха: 15–26 °C" />
+                    tools:text="Температура воздуха: 15-26 °C" />
 
                 <TextView
                     android:id="@+id/care_task_dry_hours"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xxs"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
                     tools:text="Избегайте осадков в ближайшие 12 часов" />
 
@@ -253,7 +253,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
                     android:text="@string/task_products_disclaimer"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_caption"
                     android:lineSpacingExtra="2dp" />
 
@@ -281,7 +281,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
                     tools:text="Последний раз: 5 мая" />
 

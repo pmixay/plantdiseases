@@ -7,7 +7,7 @@
     </style>
 
     <style name="Forum.Meta" parent="">
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
         <item name="android:textSize">@dimen/forum_text_meta</item>
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
@@ -31,7 +31,7 @@
         <item name="android:minHeight">36dp</item>
         <item name="android:paddingStart">4dp</item>
         <item name="android:paddingEnd">8dp</item>
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
         <item name="android:textSize">@dimen/text_body_sm</item>
         <item name="drawableTint">@color/on_surface_secondary</item>
     </style>

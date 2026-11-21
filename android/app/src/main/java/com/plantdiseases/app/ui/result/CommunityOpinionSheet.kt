@@ -357,7 +357,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         likeIcon?.imageTintList = android.content.res.ColorStateList.valueOf(
             ContextCompat.getColor(
                 requireContext(),
-                if (likedByMe) R.color.primary else R.color.on_surface_secondary,
+                if (likedByMe) R.color.primary else R.color.on_surface,
             ),
         )
     }

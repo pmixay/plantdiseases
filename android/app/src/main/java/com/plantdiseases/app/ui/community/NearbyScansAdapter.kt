@@ -180,7 +180,7 @@ class NearbyScansAdapter(
             likeIcon.imageTintList = android.content.res.ColorStateList.valueOf(
                 ContextCompat.getColor(
                     itemView.context,
-                    if (item.likedByMe) R.color.primary else R.color.on_surface_secondary,
+                    if (item.likedByMe) R.color.primary else R.color.on_surface,
                 ),
             )
             likeRow.setOnClickListener { onLike(item) }
@@ -198,13 +198,13 @@ class NearbyScansAdapter(
             return formatRegion(locality, countryLabel(item))
         }
 
-        /** "≈ 3 km · 2 hr. ago" — the distance (nearby scope only) + the
+        /** "≈ 3 km, 2 hr. ago" — the distance (nearby scope only) + the
          *  relative time, on their own always-visible line. */
         private fun buildWhen(item: CommunityScanItem): String =
             listOf(
                 formatDistance(item.distanceKm),
                 formatTimeAgo(item.createdAt),
-            ).filter { it.isNotEmpty() }.joinToString(" · ")
+            ).filter { it.isNotEmpty() }.joinToString(", ")
 
         /** "≈ N km" — the whole screen is "near you", so the suffix is
          *  redundant and only stole space from the recency stamp. Coords are

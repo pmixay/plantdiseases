@@ -530,7 +530,7 @@ class ProfileFragment : Fragment() {
         label.setTextColor(
             androidx.core.content.ContextCompat.getColor(
                 requireContext(),
-                if (active) R.color.on_primary else R.color.on_surface_secondary,
+                if (active) R.color.on_primary else R.color.on_surface,
             ),
         )
     }
@@ -648,7 +648,7 @@ class ProfileFragment : Fragment() {
             binding.barWeek.setBars(
                 weeklyBars(real),
                 barColor = color(R.color.primary),
-                labelColor = color(R.color.on_surface_secondary),
+                labelColor = color(R.color.on_surface),
                 valueColor = color(R.color.on_surface),
             )
             renderTopIssues(real)
@@ -667,7 +667,7 @@ class ProfileFragment : Fragment() {
             } else {
                 0
             }
-            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
+            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "-"
             binding.progressHealthRing.max = 100
             binding.progressHealthRing.setProgressCompat(ratePct, true)
 

@@ -32,7 +32,7 @@ object PlantHealthUi {
         PlantHealth.Status.HEALTHY, PlantHealth.Status.RECOVERING -> R.color.healthy_green
         PlantHealth.Status.WATCH -> R.color.warning_amber
         PlantHealth.Status.POOR, PlantHealth.Status.TREATMENT -> R.color.disease_red
-        PlantHealth.Status.UNKNOWN -> R.color.on_surface_secondary
+        PlantHealth.Status.UNKNOWN -> R.color.on_surface
     }
 
     /** Trend colour: a change inside the noise band stays neutral instead
@@ -40,7 +40,7 @@ object PlantHealthUi {
     @ColorRes
     fun trendColorRes(trend: PlantHealth.Trend): Int = when (trend) {
         PlantHealth.Trend.IMPROVING -> R.color.healthy_green
-        PlantHealth.Trend.STABLE -> R.color.on_surface_secondary
+        PlantHealth.Trend.STABLE -> R.color.on_surface
         PlantHealth.Trend.DECLINING -> R.color.disease_red
     }
 

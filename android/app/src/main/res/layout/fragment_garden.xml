@@ -184,9 +184,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
-                        tools:text="3 tasks · 1 overdue" />
+                        tools:text="3 tasks, 1 overdue" />
 
                     <LinearLayout
                         android:id="@+id/garden_do_today_list"
@@ -284,7 +284,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
                     android:text="@string/empty_garden_hint"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body"
                     android:gravity="center"
                     android:lineSpacingExtra="4dp" />

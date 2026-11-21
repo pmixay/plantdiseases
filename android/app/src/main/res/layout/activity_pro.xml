@@ -127,7 +127,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_lunar_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
 
                     <TextView
@@ -147,7 +147,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_models_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
 
                     <TextView
@@ -167,7 +167,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_care_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -201,7 +201,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         android:visibility="gone"
                         tools:text="Monthly subscription" />
@@ -246,7 +246,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         android:visibility="gone"
                         tools:text="Annual subscription" />
@@ -284,7 +284,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:gravity="center"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm"
                 android:visibility="gone" />
 
@@ -328,7 +328,7 @@
                 android:gravity="center"
                 android:lineSpacingExtra="2dp"
                 android:text="@string/pro_renewal_disclosure"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_caption" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

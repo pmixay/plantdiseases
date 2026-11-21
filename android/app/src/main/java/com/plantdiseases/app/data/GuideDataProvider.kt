@@ -49,7 +49,7 @@ PREVENTION:
 • Keep leaves dry
             """.trimIndent(),
             contentRu = """
-Мучнистая роса — одно из самых распространённых грибковых заболеваний растений. Проявляется в виде белого или серого порошкообразного налёта на поверхности листьев.
+Мучнистая роса - одно из самых распространённых грибковых заболеваний растений. Проявляется в виде белого или серого порошкообразного налёта на поверхности листьев.
 
 СИМПТОМЫ:
 • Белый/серый порошкообразный налёт на листьях
@@ -96,8 +96,8 @@ SYMPTOMS:
 
 TREATMENT:
 1. Cut off affected leaves with sterile scissors
-2. Apply a copper-based fungicide / bactericide weekly for 2–3 weeks
-3. Switch to bottom watering — keep foliage dry
+2. Apply a copper-based fungicide / bactericide weekly for 2-3 weeks
+3. Switch to bottom watering - keep foliage dry
 4. Improve airflow and let the top of the substrate dry between waterings
 5. Disinfect tools with 70% alcohol between plants
 
@@ -108,7 +108,7 @@ PREVENTION:
 • Sterilise pots and saucers before reuse
             """.trimIndent(),
             contentRu = """
-Пятнистость листьев — общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других растениях, когда листья слишком долго остаются влажными.
+Пятнистость листьев - общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других растениях, когда листья слишком долго остаются влажными.
 
 СИМПТОМЫ:
 • Тёмно-коричневые / чёрные пятна с жёлтым ореолом
@@ -118,8 +118,8 @@ PREVENTION:
 
 ЛЕЧЕНИЕ:
 1. Обрежьте поражённые листья стерильными ножницами
-2. Обрабатывайте фунгицидом на основе меди раз в неделю 2–3 недели
-3. Перейдите на полив снизу — листья держите сухими
+2. Обрабатывайте фунгицидом на основе меди раз в неделю 2-3 недели
+3. Перейдите на полив снизу - листья держите сухими
 4. Улучшите воздухообмен, давайте верхнему слою субстрата просыхать
 5. Дезинфицируйте инструмент 70% спиртом между растениями
 
@@ -149,7 +149,7 @@ SYMPTOMS:
 • White fuzzy mold may appear on the underside in humid rooms
 
 TREATMENT:
-1. Remove and destroy every affected part — do not compost
+1. Remove and destroy every affected part - do not compost
 2. Apply a systemic or copper-based fungicide
 3. Reduce watering and let the substrate dry deeply
 4. Raise the room temperature above 20 °C and lower humidity
@@ -162,7 +162,7 @@ PREVENTION:
 • Inspect the collection weekly during cool, damp weather
             """.trimIndent(),
             contentRu = """
-Фитофтороз — быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. Чаще всего возникает при переувлажнении в сочетании с прохладой.
+Фитофтороз - быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. Чаще всего возникает при переувлажнении в сочетании с прохладой.
 
 СИМПТОМЫ:
 • Крупные тёмные водянистые пятна на листьях
@@ -171,11 +171,11 @@ PREVENTION:
 • Во влажных помещениях на нижней стороне появляется белая пушистая плесень
 
 ЛЕЧЕНИЕ:
-1. Удалите и уничтожьте все поражённые части — не в компост
+1. Удалите и уничтожьте все поражённые части - не в компост
 2. Обработайте системным фунгицидом или препаратом на основе меди
 3. Сократите полив, дайте субстрату глубоко просохнуть
 4. Поднимите температуру выше 20 °C и снизьте влажность
-5. Если поражено больше половины растения — утилизируйте его
+5. Если поражено больше половины растения - утилизируйте его
 
 ПРОФИЛАКТИКА:
 • Никогда не оставляйте горшки в воде
@@ -218,7 +218,7 @@ PREVENTION:
 • Don't let pots sit in water
             """.trimIndent(),
             contentRu = """
-Корневая гниль — опасное заболевание, вызванное переувлажнением или плохим дренажом. Корни заливаются водой, теряют кислород и начинают разлагаться.
+Корневая гниль - опасное заболевание, вызванное переувлажнением или плохим дренажом. Корни заливаются водой, теряют кислород и начинают разлагаться.
 
 СИМПТОМЫ:
 • Увядание при влажной почве
@@ -303,8 +303,8 @@ PREVENTION:
             id = "viral_disease",
             titleEn = "Viral Disease (Mosaic / Curl / Ringspot)",
             titleRu = "Вирусные заболевания (мозаика / курчавость / кольцевая пятнистость)",
-            descriptionEn = "Mottled light/dark pattern, leaf curl or chlorotic rings — no cure exists",
-            descriptionRu = "Пёстрый узор, скрученность листьев или хлоротичные кольца — лечения нет",
+            descriptionEn = "Mottled light/dark pattern, leaf curl or chlorotic rings - no cure exists",
+            descriptionRu = "Пёстрый узор, скрученность листьев или хлоротичные кольца - лечения нет",
             contentEn = """
 Mosaic virus causes a distinctive mottled pattern of light and dark green on leaves. Leaves may be distorted or curled. There is no cure.
 
@@ -492,7 +492,7 @@ PREVENTION:
 • Clean leaves regularly with a damp cloth
             """.trimIndent(),
             contentRu = """
-Паутинный клещ — мелкие паукообразные, которые высасывают сок из клеток растений, вызывая пятнистость и обесцвечивание листьев с тонкой паутиной.
+Паутинный клещ - мелкие паукообразные, которые высасывают сок из клеток растений, вызывая пятнистость и обесцвечивание листьев с тонкой паутиной.
 
 СИМПТОМЫ:
 • Тонкая паутина между листьями и стеблями
@@ -546,7 +546,7 @@ PREVENTION:
 • Encourage beneficial insects
             """.trimIndent(),
             contentRu = """
-Тля — мелкие мягкотелые насекомые, питающиеся соком растений. Скапливаются на молодых побегах и нижней стороне листьев.
+Тля - мелкие мягкотелые насекомые, питающиеся соком растений. Скапливаются на молодых побегах и нижней стороне листьев.
 
 СИМПТОМЫ:
 • Скопления мелких насекомых на стеблях и бутонах
@@ -600,7 +600,7 @@ PREVENTION:
 • Avoid overwatering and excessive nitrogen fertilizer
             """.trimIndent(),
             contentRu = """
-Мучнистые червецы — мягкотелые насекомые, покрытые белым восковым налётом. Скапливаются в пазухах листьев, на стеблях и нижней стороне листьев.
+Мучнистые червецы - мягкотелые насекомые, покрытые белым восковым налётом. Скапливаются в пазухах листьев, на стеблях и нижней стороне листьев.
 
 СИМПТОМЫ:
 • Белые ватообразные или восковые скопления
@@ -651,10 +651,10 @@ PREVENTION:
 • Inspect new plants before purchase
 • Keep plants well-ventilated
 • Avoid overcrowding
-• Monitor regularly — early detection is key
+• Monitor regularly - early detection is key
             """.trimIndent(),
             contentRu = """
-Щитовки — мелкие неподвижные вредители, прикрепляющиеся к стеблям и листьям под защитным щитком. Высасывают сок и ослабляют растение.
+Щитовки - мелкие неподвижные вредители, прикрепляющиеся к стеблям и листьям под защитным щитком. Высасывают сок и ослабляют растение.
 
 СИМПТОМЫ:
 • Мелкие коричневые или белые бугорки на стеблях
@@ -666,14 +666,14 @@ PREVENTION:
 1. Соскребите отдельных щитовок мягкой щёткой
 2. Обработайте спиртом на ватной палочке
 3. Опрыскайте садовым маслом для удушения
-4. При сильном поражении — системный инсектицид
+4. При сильном поражении - системный инсектицид
 5. Повторяйте обработку каждые 2 недели
 
 ПРОФИЛАКТИКА:
 • Осматривайте новые растения перед покупкой
 • Обеспечьте хорошую вентиляцию
 • Избегайте скученности
-• Регулярно осматривайте — ранее обнаружение ключевое
+• Регулярно осматривайте - ранее обнаружение ключевое
             """.trimIndent(),
             iconRes = R.drawable.ic_pest,
             category = GuideCategory.PESTS
@@ -691,7 +691,7 @@ PREVENTION:
 Proper watering is the single most important factor in plant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
 
 GOLDEN RULES:
-1. Check before watering — stick your finger 2-3 cm into soil
+1. Check before watering - stick your finger 2-3 cm into soil
 2. Water thoroughly until it drains from the bottom
 3. Empty saucers after 30 minutes
 4. Use room-temperature water
@@ -720,14 +720,14 @@ SEE ALSO:
 • [Humidity Control](guide:humidity_guide)
             """.trimIndent(),
             contentRu = """
-Правильный полив — самый важный фактор здоровья растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
+Правильный полив - самый важный фактор здоровья растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
 
 ЗОЛОТЫЕ ПРАВИЛА:
-1. Проверяйте перед поливом — воткните палец на 2-3 см в почву
+1. Проверяйте перед поливом - воткните палец на 2-3 см в почву
 2. Поливайте обильно, пока вода не потечёт из дренажного отверстия
 3. Сливайте воду из поддонов через 30 минут
 4. Используйте воду комнатной температуры
-5. Зимой поливайте реже, летом — чаще
+5. Зимой поливайте реже, летом - чаще
 
 ПРИЗНАКИ ПЕРЕУВЛАЖНЕНИЯ:
 • Пожелтение нижних листьев
@@ -745,7 +745,7 @@ SEE ALSO:
 • Лучше поливать утром
 • Группируйте растения по потребности в воде
 • Рассмотрите горшки с автополивом
-• Дождевая или фильтрованная вода — идеальный вариант
+• Дождевая или фильтрованная вода - идеальный вариант
 
 СМ. ТАКЖЕ:
 • [Требования к освещению](guide:light_guide)
@@ -906,7 +906,7 @@ BEST TIME: Spring (start of growing season)
 
 TIPS:
 • Always use pots with drainage holes
-• Don't go too big — oversized pots hold excess moisture
+• Don't go too big - oversized pots hold excess moisture
 • Use appropriate soil mix for your plant type
             """.trimIndent(),
             contentRu = """
@@ -949,14 +949,14 @@ TIPS:
 Fertilizing provides essential nutrients that potting soil eventually depletes. Feed during the growing season (spring-summer).
 
 NPK BASICS:
-• N (Nitrogen) — leaf and stem growth
-• P (Phosphorus) — root and flower development
-• K (Potassium) — overall plant health and disease resistance
+• N (Nitrogen) - leaf and stem growth
+• P (Phosphorus) - root and flower development
+• K (Potassium) - overall plant health and disease resistance
 
 WHEN TO FERTILIZE:
 • Active growing season: every 2-4 weeks
 • Winter: reduce to once a month or stop entirely
-• Never fertilize a dry plant — water first
+• Never fertilize a dry plant - water first
 • Skip for 4-6 weeks after repotting
 
 HOW TO FERTILIZE:
@@ -972,7 +972,7 @@ SIGNS OF OVER-FERTILIZING:
 • Slow growth (paradoxically)
 
 TIPS:
-• Less is more — it's easier to fix under-feeding than over-feeding
+• Less is more - it's easier to fix under-feeding than over-feeding
 • Use balanced fertilizer (10-10-10) for most plants
 • Flowering plants need higher phosphorus (e.g., 10-30-20)
 • Organic options: worm castings, compost tea, fish emulsion
@@ -981,14 +981,14 @@ TIPS:
 Подкормка обеспечивает необходимые питательные вещества, которые со временем истощаются в почве. Подкармливайте в период вегетации (весна-лето).
 
 ОСНОВЫ NPK:
-• N (Азот) — рост листьев и стеблей
-• P (Фосфор) — развитие корней и цветов
-• K (Калий) — общее здоровье и устойчивость к болезням
+• N (Азот) - рост листьев и стеблей
+• P (Фосфор) - развитие корней и цветов
+• K (Калий) - общее здоровье и устойчивость к болезням
 
 КОГДА ПОДКАРМЛИВАТЬ:
 • Период роста: каждые 2-4 недели
 • Зимой: раз в месяц или прекратить полностью
-• Никогда не удобряйте сухое растение — сначала полейте
+• Никогда не удобряйте сухое растение - сначала полейте
 • Пропустите 4-6 недель после пересадки
 
 КАК ПОДКАРМЛИВАТЬ:
@@ -1004,7 +1004,7 @@ TIPS:
 • Замедление роста (парадоксально)
 
 СОВЕТЫ:
-• Меньше — лучше, перекормку исправить сложнее
+• Меньше - лучше, перекормку исправить сложнее
 • Используйте сбалансированное удобрение (10-10-10) для большинства
 • Цветущим нужен повышенный фосфор (10-30-20)
 • Органика: биогумус, компостный чай, рыбная эмульсия
@@ -1023,11 +1023,11 @@ TIPS:
 The right soil mix ensures proper drainage, aeration, and nutrient availability for your plants.
 
 SOIL COMPONENTS:
-• Peat moss/coco coir — retains moisture
-• Perlite — improves drainage and aeration
-• Vermiculite — retains moisture and nutrients
-• Bark chips — drainage and aeration for orchids/epiphytes
-• Sand — improves drainage for succulents
+• Peat moss/coco coir - retains moisture
+• Perlite - improves drainage and aeration
+• Vermiculite - retains moisture and nutrients
+• Bark chips - drainage and aeration for orchids/epiphytes
+• Sand - improves drainage for succulents
 
 COMMON MIXES:
 • Standard mix: 2 parts peat + 1 part perlite + 1 part compost
@@ -1043,7 +1043,7 @@ SIGNS OF BAD SOIL:
 
 TIPS:
 • Replace soil every 1-2 years
-• Never use garden soil for indoor plants — it compacts
+• Never use garden soil for indoor plants - it compacts
 • Sterilize homemade mixes to prevent pests
 • pH of 6.0-7.0 suits most plants
             """.trimIndent(),
@@ -1051,11 +1051,11 @@ TIPS:
 Правильная почвенная смесь обеспечивает дренаж, аэрацию и доступность питательных веществ.
 
 КОМПОНЕНТЫ ПОЧВЫ:
-• Торф/кокосовое волокно — удерживает влагу
-• Перлит — улучшает дренаж и аэрацию
-• Вермикулит — удерживает влагу и питательные вещества
-• Кора — дренаж для орхидей/эпифитов
-• Песок — улучшает дренаж для суккулентов
+• Торф/кокосовое волокно - удерживает влагу
+• Перлит - улучшает дренаж и аэрацию
+• Вермикулит - удерживает влагу и питательные вещества
+• Кора - дренаж для орхидей/эпифитов
+• Песок - улучшает дренаж для суккулентов
 
 РАСПРОСТРАНЁННЫЕ СМЕСИ:
 • Стандартная: 2 части торфа + 1 часть перлита + 1 часть компоста
@@ -1071,7 +1071,7 @@ TIPS:
 
 СОВЕТЫ:
 • Обновляйте почву каждые 1-2 года
-• Не используйте садовую землю — она уплотняется
+• Не используйте садовую землю - она уплотняется
 • Стерилизуйте самодельные смеси
 • pH 6.0-7.0 подходит для большинства растений
             """.trimIndent(),
@@ -1091,7 +1091,7 @@ Plants respond to seasonal changes even indoors. Adjust your care routine throug
 SPRING (March-May):
 • Increase watering as growth accelerates
 • Start fertilizing again (every 2-4 weeks)
-• Repot if needed — best time of year
+• Repot if needed - best time of year
 • Prune leggy growth from winter
 • Check for pests waking up
 
@@ -1099,14 +1099,14 @@ SUMMER (June-August):
 • Water more frequently (may need daily checks)
 • Continue regular fertilizing
 • Provide shade from intense afternoon sun
-• Monitor for pests — they're most active now
+• Monitor for pests - they're most active now
 • Increase humidity if using AC
 
 FALL (September-November):
 • Gradually reduce watering and fertilizing
 • Bring outdoor plants inside before frost
 • Move plants to brighter spots as days shorten
-• Stop repotting — plants are slowing down
+• Stop repotting - plants are slowing down
 • Check for hitchhiker pests on returning plants
 
 WINTER (December-February):
@@ -1122,7 +1122,7 @@ WINTER (December-February):
 ВЕСНА (Март-Май):
 • Увеличьте полив по мере ускорения роста
 • Начните подкормки (каждые 2-4 недели)
-• Пересадите при необходимости — лучшее время
+• Пересадите при необходимости - лучшее время
 • Обрежьте вытянувшийся зимний рост
 • Проверьте на пробуждающихся вредителей
 
@@ -1130,14 +1130,14 @@ WINTER (December-February):
 • Поливайте чаще (проверяйте ежедневно)
 • Продолжайте регулярные подкормки
 • Защитите от интенсивного полуденного солнца
-• Следите за вредителями — они наиболее активны
+• Следите за вредителями - они наиболее активны
 • Увеличьте влажность при работающем кондиционере
 
 ОСЕНЬ (Сентябрь-Ноябрь):
 • Постепенно сокращайте полив и подкормки
 • Занесите уличные растения до морозов
 • Переместите к более светлым местам
-• Прекратите пересадки — рост замедляется
+• Прекратите пересадки - рост замедляется
 • Проверьте вернувшиеся растения на вредителей
 
 ЗИМА (Декабрь-Февраль):
@@ -1158,10 +1158,10 @@ WINTER (December-February):
             id = "healthy",
             titleEn = "Healthy Plant",
             titleRu = "Здоровое растение",
-            descriptionEn = "What a thriving plant looks like — and how to keep it that way",
+            descriptionEn = "What a thriving plant looks like - and how to keep it that way",
             descriptionRu = "Как выглядит здоровое растение и как его таким сохранить",
             contentEn = """
-A healthy plant is your baseline — knowing what "good" looks like makes problems easy to catch early.
+A healthy plant is your baseline - knowing what "good" looks like makes problems easy to catch early.
 
 SIGNS OF A HEALTHY PLANT:
 • Firm, evenly coloured leaves with no spots or yellowing
@@ -1183,7 +1183,7 @@ EARLY WARNING SIGNS:
 Catching these early is far easier than treating a full-blown problem.
             """.trimIndent(),
             contentRu = """
-Здоровое растение — это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
+Здоровое растение - это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
 
 ПРИЗНАКИ ЗДОРОВОГО РАСТЕНИЯ:
 • Плотные, равномерно окрашенные листья без пятен и пожелтения
@@ -1253,7 +1253,7 @@ PREVENTION:
 ПРИЧИНЫ:
 • Почва полностью пересыхает между поливами
 • Низкая влажность и сухой тёплый воздух
-• Тесный горшок — корни не удерживают воду
+• Тесный горшок - корни не удерживают воду
 • Пропущенные поливы в жару
 
 ЛЕЧЕНИЕ:
@@ -1338,10 +1338,10 @@ PREVENTION:
             id = "edema",
             titleEn = "Edema",
             titleRu = "Отёк (эдема)",
-            descriptionEn = "Corky bumps from a water imbalance — not an infection",
-            descriptionRu = "Пробковые бугорки от дисбаланса влаги — не инфекция",
+            descriptionEn = "Corky bumps from a water imbalance - not an infection",
+            descriptionRu = "Пробковые бугорки от дисбаланса влаги - не инфекция",
             contentEn = """
-Edema is a harmless physiological disorder — not a pest or infection. It happens when roots take up water faster than the leaves can release it, so cells burst and form bumps.
+Edema is a harmless physiological disorder - not a pest or infection. It happens when roots take up water faster than the leaves can release it, so cells burst and form bumps.
 
 SYMPTOMS:
 • Small water-blister bumps on leaf undersides
@@ -1358,7 +1358,7 @@ TREATMENT:
 1. Water less, and only when the topsoil is dry
 2. Improve air flow and light
 3. Avoid watering on cool, cloudy days
-4. Don't remove healthy leaves — the damage is cosmetic
+4. Don't remove healthy leaves - the damage is cosmetic
 
 PREVENTION:
 • Let soil dry slightly between waterings
@@ -1366,7 +1366,7 @@ PREVENTION:
 • Avoid big swings between soil and air temperature
             """.trimIndent(),
             contentRu = """
-Отёк (эдема) — безвредное физиологическое нарушение, а не вредитель или инфекция. Возникает, когда корни поглощают воду быстрее, чем листья её испаряют, и клетки лопаются, образуя бугорки.
+Отёк (эдема) - безвредное физиологическое нарушение, а не вредитель или инфекция. Возникает, когда корни поглощают воду быстрее, чем листья её испаряют, и клетки лопаются, образуя бугорки.
 
 СИМПТОМЫ:
 • Мелкие водянистые бугорки на изнанке листьев
@@ -1383,7 +1383,7 @@ PREVENTION:
 1. Поливайте реже и только когда верхний слой сухой
 2. Улучшите циркуляцию воздуха и освещение
 3. Не поливайте в прохладные пасмурные дни
-4. Не удаляйте здоровые листья — повреждение косметическое
+4. Не удаляйте здоровые листья - повреждение косметическое
 
 ПРОФИЛАКТИКА:
 • Давайте почве слегка просыхать между поливами
@@ -1401,7 +1401,7 @@ PREVENTION:
             descriptionEn = "Bleached or brown patches from too much direct light",
             descriptionRu = "Выгоревшие или коричневые пятна от избытка прямого света",
             contentEn = """
-Sunburn (leaf scorch from light) appears as bleached, brown or crispy patches where strong direct sun hits the leaves — most common after a plant is moved into brighter light too quickly.
+Sunburn (leaf scorch from light) appears as bleached, brown or crispy patches where strong direct sun hits the leaves - most common after a plant is moved into brighter light too quickly.
 
 SYMPTOMS:
 • Bleached white, yellow or brown patches
@@ -1417,7 +1417,7 @@ CAUSES:
 TREATMENT:
 1. Move the plant to bright, indirect light
 2. Trim badly damaged leaves if unsightly (cosmetic)
-3. Keep watering normal — don't overcompensate
+3. Keep watering normal - don't overcompensate
 4. Let new growth come in adapted to the spot
 
 PREVENTION:
@@ -1426,7 +1426,7 @@ PREVENTION:
 • Avoid watering leaves in strong sun
             """.trimIndent(),
             contentRu = """
-Солнечный ожог (от света) выглядит как выгоревшие, коричневые или сухие пятна там, где сильное прямое солнце попало на листья — чаще всего после слишком быстрого переноса на яркий свет.
+Солнечный ожог (от света) выглядит как выгоревшие, коричневые или сухие пятна там, где сильное прямое солнце попало на листья - чаще всего после слишком быстрого переноса на яркий свет.
 
 СИМПТОМЫ:
 • Выгоревшие белые, жёлтые или коричневые пятна
@@ -1442,7 +1442,7 @@ PREVENTION:
 ЛЕЧЕНИЕ:
 1. Переставьте растение на яркий рассеянный свет
 2. Обрежьте сильно повреждённые листья, если некрасиво (косметика)
-3. Поливайте как обычно — не переусердствуйте
+3. Поливайте как обычно - не переусердствуйте
 4. Дайте новому росту адаптироваться к месту
 
 ПРОФИЛАКТИКА:
@@ -1464,10 +1464,10 @@ PREVENTION:
 Most plant pests are tiny sap-suckers that weaken the plant and leave tell-tale signs. The combined "Pests" diagnosis covers the most common culprits.
 
 COMMON CULPRITS:
-• Mealybugs — white cottony fluff in leaf joints
-• Scale — small brown bumps on stems and leaf veins
-• Spider mites — fine webbing and pale stippling
-• Aphids — clusters of tiny green / black insects on new growth
+• Mealybugs - white cottony fluff in leaf joints
+• Scale - small brown bumps on stems and leaf veins
+• Spider mites - fine webbing and pale stippling
+• Aphids - clusters of tiny green / black insects on new growth
 
 SYMPTOMS:
 • Sticky "honeydew" residue on leaves or nearby surfaces
@@ -1485,17 +1485,17 @@ TREATMENT:
 PREVENTION:
 • Inspect new plants before bringing them home
 • Check leaf undersides during watering
-• Keep plants healthy — stressed plants attract pests
+• Keep plants healthy - stressed plants attract pests
 • Wipe leaves and keep humidity up (mites love dry air)
             """.trimIndent(),
             contentRu = """
-Большинство вредителей растений — крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает самых распространённых виновников.
+Большинство вредителей растений - крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает самых распространённых виновников.
 
 ЧАСТЫЕ ВИНОВНИКИ:
-• Мучнистые червецы — белый ватный пушок в пазухах листьев
-• Щитовка — мелкие коричневые бугорки на стеблях и жилках
-• Паутинный клещ — тонкая паутинка и бледные точки
-• Тля — скопления мелких зелёных / чёрных насекомых на молодом росте
+• Мучнистые червецы - белый ватный пушок в пазухах листьев
+• Щитовка - мелкие коричневые бугорки на стеблях и жилках
+• Паутинный клещ - тонкая паутинка и бледные точки
+• Тля - скопления мелких зелёных / чёрных насекомых на молодом росте
 
 СИМПТОМЫ:
 • Липкий налёт («медвяная роса») на листьях и рядом
@@ -1513,7 +1513,7 @@ PREVENTION:
 ПРОФИЛАКТИКА:
 • Осматривайте новые растения перед покупкой
 • Проверяйте изнанку листьев при поливе
-• Держите растения здоровыми — стресс привлекает вредителей
+• Держите растения здоровыми - стресс привлекает вредителей
 • Протирайте листья и поддерживайте влажность (клещи любят сухой воздух)
             """.trimIndent(),
             iconRes = R.drawable.ic_pest,
@@ -1533,41 +1533,41 @@ PREVENTION:
 The scanner is built to be honest about uncertainty: it would rather admit it isn't sure than guess. Here's how to read what it shows you.
 
 THE CONFIDENCE SCORE:
-• The percentage is calibrated — 80% means "right about 8 times out of 10", not marketing
+• The percentage is calibrated - 80% means "right about 8 times out of 10", not marketing
 • High confidence on a sharp, close-up leaf photo is usually trustworthy
 • Low confidence is a signal to gather more evidence, not a verdict
 
 WHEN THE APP ISN'T SURE:
-• Instead of guessing, it shows several candidate conditions — treat them all as plausible
+• Instead of guessing, it shows several candidate conditions - treat them all as plausible
 • "Not a plant / blurry photo" means the photo couldn't be read: retake it closer, steadier and in better light; nothing is saved to your history
 • A healthy-looking verdict with low confidence still deserves a second look a few days later
 
 WHAT TO DO NEXT:
 1. Check the alternatives card and compare with the example photos
-2. Retake the photo — one sharp leaf filling the frame changes a lot
+2. Retake the photo - one sharp leaf filling the frame changes a lot
 3. Run the [symptom checker](tool:symptom) to triage by what you see
 4. Ask the community for a second opinion right from the result screen
-5. If a result was wrong, use the feedback button — corrections retrain the model
+5. If a result was wrong, use the feedback button - corrections retrain the model
             """.trimIndent(),
             contentRu = """
 Сканер честен в своей неуверенности: он скорее признает сомнение, чем станет угадывать. Вот как читать то, что он показывает.
 
 ОЦЕНКА УВЕРЕННОСТИ:
-• Процент откалиброван — 80% значит «прав примерно в 8 случаях из 10», а не маркетинг
+• Процент откалиброван - 80% значит «прав примерно в 8 случаях из 10», а не маркетинг
 • Высокая уверенность на чётком крупном фото листа обычно надёжна
-• Низкая уверенность — повод собрать больше данных, а не приговор
+• Низкая уверенность - повод собрать больше данных, а не приговор
 
 КОГДА ПРИЛОЖЕНИЕ СОМНЕВАЕТСЯ:
-• Вместо угадывания оно показывает несколько кандидатов — считайте каждый возможным
+• Вместо угадывания оно показывает несколько кандидатов - считайте каждый возможным
 • «Не растение / размытое фото» значит, что снимок не удалось прочитать: переснимите ближе, ровнее и при лучшем свете; в историю такое не сохраняется
 • Вердикту «здоровое» с низкой уверенностью стоит устроить повторную проверку через пару дней
 
 ЧТО ДЕЛАТЬ ДАЛЬШЕ:
 1. Посмотрите карточку альтернатив и сравните с примерами фото
-2. Переснимите фото — один чёткий лист на весь кадр многое меняет
+2. Переснимите фото - один чёткий лист на весь кадр многое меняет
 3. Пройдите [проверку симптомов](tool:symptom), чтобы уточнить по признакам
 4. Запросите второе мнение сообщества прямо с экрана результата
-5. Если результат был неверным — нажмите кнопку обратной связи: исправления дообучают модель
+5. Если результат был неверным - нажмите кнопку обратной связи: исправления дообучают модель
             """.trimIndent(),
             iconRes = R.drawable.ic_scan,
             category = GuideCategory.HELP

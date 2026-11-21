@@ -109,7 +109,7 @@ class DetailTimelineController(
                     (scan.confidence * 100).toInt(),
                 )
                 textSize = 12f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -249,7 +249,7 @@ class DetailTimelineController(
             )
         }
         val subPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = activity.getColor(R.color.on_surface_secondary)
+            color = activity.getColor(R.color.on_surface)
             textSize = 38f
         }
         val brandPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {

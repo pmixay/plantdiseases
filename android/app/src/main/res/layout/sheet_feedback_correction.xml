@@ -43,7 +43,7 @@
             android:layout_marginTop="@dimen/space_xs"
             android:text="@string/feedback_sheet_subtitle"
             android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary" />
+            android:textColor="@color/on_surface" />
 
         <!-- Currently-predicted diagnosis pill (set programmatically). -->
         <com.google.android.material.card.MaterialCardView
@@ -76,7 +76,7 @@
                     android:layout_marginStart="@dimen/space_sm"
                     android:text="@string/feedback_sheet_we_thought"
                     android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary" />
+                    android:textColor="@color/on_surface" />
 
                 <TextView
                     android:id="@+id/tv_predicted_name"

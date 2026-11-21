@@ -52,7 +52,7 @@
     <string name="forum_kind_recovery">Recovery update</string>
     <string name="forum_kind_tip">Tip</string>
     <string name="forum_scan_title_fallback">Is the AI right? It says %1$s</string>
-    <string name="forum_ai_summary">PlantVision: %1$s · %2$d%%</string>
+    <string name="forum_ai_summary">PlantVision: %1$s, %2$d%%</string>
     <string name="forum_badge_solved">Solved</string>
     <string name="forum_badge_urgent">Urgent</string>
     <string name="forum_badge_unanswered">No answers yet</string>
@@ -136,7 +136,7 @@
     <string name="forum_filter_condition">Condition</string>
     <string name="forum_filter_any_condition">Any condition</string>
     <string name="forum_search_with_scan">Search with your last scan</string>
-    <string name="forum_scan_search_detail">%1$s · %2$s</string>
+    <string name="forum_scan_search_detail">%1$s, %2$s</string>
     <string name="forum_search_prompt">Search in Russian or English, or filter by condition.</string>
     <string name="forum_search_empty">Nothing found. Try other words or fewer filters.</string>
 
@@ -147,15 +147,15 @@
     <string name="forum_level_gardener">Gardener</string>
     <string name="forum_level_botanist">Botanist</string>
     <string name="forum_level_plant_doctor">Plant Doctor</string>
-    <string name="forum_level_line">%1$s · level %2$d</string>
+    <string name="forum_level_line">%1$s, level %2$d</string>
     <string name="forum_level_next">%1$d leaves to %2$s</string>
     <string name="forum_level_max">Highest level reached</string>
     <string name="forum_stat_accepted">%1$d\naccepted</string>
     <string name="forum_stat_saved">%1$d\nplants saved</string>
     <string name="forum_stat_taught">%1$d\nlabels taught</string>
-    <string name="forum_achievements_title">Achievements · %1$d of %2$d</string>
+    <string name="forum_achievements_title">Achievements: %1$d of %2$d</string>
     <string name="forum_achievement_progress">%1$d / %2$d</string>
-    <string name="forum_achievement_progress_tier">%1$d / %2$d · tier %3$d of %4$d</string>
+    <string name="forum_achievement_progress_tier">%1$d / %2$d, tier %3$d of %4$d</string>
     <string name="forum_achievement_complete">Complete</string>
     <string name="forum_achievement_tier_earned">Tier %1$d: %2$d. Earned</string>
     <string name="forum_achievement_tier_locked">Tier %1$d: %2$d. Not yet</string>
@@ -263,7 +263,7 @@
     <string name="mod_target_post">Post</string>
     <string name="mod_target_answer">Answer</string>
     <string name="mod_state">state: %1$s</string>
-    <string name="mod_report_heading">%1$s · %2$d reports · %3$s</string>
+    <string name="mod_report_heading">%1$s, %2$d reports, %3$s</string>
     <string name="mod_hidden_heading">%1$s hidden automatically after reports</string>
     <string name="mod_appeal_heading">Appeal: %1$s (%2$s)</string>
     <string name="mod_appeal_no_text">No message.</string>
@@ -293,7 +293,7 @@
 
     <!-- Member notices and appeals -->
     <string name="mod_notices_empty">No moderation decisions about you.</string>
-    <string name="mod_notice_heading">%1$s · %2$s</string>
+    <string name="mod_notice_heading">%1$s: %2$s</string>
     <string name="mod_notice_post_removed">Your post was removed</string>
     <string name="mod_notice_answer_removed">Your answer was removed</string>
     <string name="mod_notice_hidden">Hidden after several reports</string>
@@ -329,7 +329,7 @@
     <string name="forum_ai_note">An automatic estimate from the photo. Compare it with the answers below.</string>
     <string name="forum_ai_confidence">%1$d%%</string>
     <string name="forum_leaves_count">%1$d leaves</string>
-    <string name="forum_two_parts">%1$s · %2$s</string>
+    <string name="forum_two_parts">%1$s, %2$s</string>
 
     <!-- Community profile photo: opt-in, asked once per photo; Profile toggle. -->
     <string name="community_photo_prompt_title">Show your photo in Community?</string>

@@ -285,7 +285,7 @@ object AquaModelManager {
             if (!actualSha.equals(modelSha, ignoreCase = true)) {
                 Log.w(
                     TAG,
-                    "Aqua model sha mismatch (got $actualSha, want $modelSha) — discarding",
+                    "Aqua model sha mismatch (got $actualSha, want $modelSha) - discarding",
                 )
                 return false
             }

@@ -80,7 +80,7 @@ class GardenAttachController(
                 TextView(activity).apply {
                     text = activity.getString(R.string.add_to_garden_hint)
                     textSize = 13f
-                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setTextColor(activity.getColor(R.color.on_surface))
                     setPadding(0, 0, 0, activity.dpx(12))
                 },
             )

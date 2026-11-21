@@ -81,9 +81,9 @@ internal fun AppCompatActivity.statPill(
     box.addView(
         TextView(this).apply {
             text = label
-            textSize = 11f
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             setTextColor(getColor(R.color.hero_stat_text))
-            alpha = 0.82f
         },
     )
     return box
@@ -148,7 +148,7 @@ internal fun AppCompatActivity.actionTile(
                 addView(
                     TextView(this@actionTile).apply {
                         text = getString(labelRes)
-                        textSize = 11f
+                        textSize = 12f
                         gravity = Gravity.CENTER
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
@@ -197,7 +197,7 @@ internal fun AppCompatActivity.emptyState(imageRes: Int, title: String, body: St
                 text = body
                 textSize = 14f
                 gravity = Gravity.CENTER
-                setTextColor(getColor(R.color.on_surface_secondary))
+                setTextColor(getColor(R.color.on_surface))
                 setLineSpacing(4.dp(this@emptyState).toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,

@@ -178,7 +178,7 @@ class PostThreadAdapter(
             )
             val color = ContextCompat.getColor(
                 context,
-                if (post.likedByMe) R.color.disease_red else R.color.on_surface_secondary,
+                if (post.likedByMe) R.color.disease_red else R.color.on_surface,
             )
             binding.tvLike.compoundDrawableTintList = ColorStateList.valueOf(color)
             binding.tvLike.setTextColor(color)
@@ -233,14 +233,14 @@ class PostThreadAdapter(
                 val padding = context.resources.getDimensionPixelSize(R.dimen.space_md)
                 card.setPadding(padding, padding, padding, context.resources.getDimensionPixelSize(R.dimen.space_xs))
             }
-            // "✓ Solution · Expert-checked", "✓ Solution" or "Expert-checked" above the answer.
+            // "✓ Solution, Expert-checked", "✓ Solution" or "Expert-checked" above the answer.
             val marks = listOfNotNull(
                 context.getString(R.string.forum_mark_solution).takeIf { answer.accepted },
                 context.getString(R.string.forum_badge_expert_verified).takeIf { answer.verified },
             ).takeUnless { answer.isRemoved }.orEmpty()
             binding.tvMarks.visibility = if (marks.isEmpty()) View.GONE else View.VISIBLE
             if (marks.isNotEmpty()) {
-                binding.tvMarks.text = marks.joinToString(" · ")
+                binding.tvMarks.text = marks.joinToString(", ")
                 val icon = if (answer.accepted) R.drawable.ic_check else R.drawable.ic_shield_check
                 ForumViews.setSmallIcon(binding.tvMarks, icon, MARK_ICON_DP)
                 binding.tvMarks.compoundDrawableTintList =
@@ -282,7 +282,7 @@ class PostThreadAdapter(
             badge.visibility = if (asker) View.VISIBLE else View.GONE
             if (!asker) return
             badge.setText(R.string.forum_badge_asker)
-            badge.setTextColor(ContextCompat.getColor(context, R.color.on_surface_secondary))
+            badge.setTextColor(ContextCompat.getColor(context, R.color.on_surface))
             badge.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.surface_container))
             ForumViews.setSmallIcon(badge, null, TAG_ICON_DP)
         }
@@ -292,7 +292,7 @@ class PostThreadAdapter(
             binding.tvBody.visibility = View.VISIBLE
             binding.tvBody.setText(R.string.forum_answer_removed)
             binding.tvBody.setTypeface(null, Typeface.ITALIC)
-            binding.tvBody.setTextColor(ContextCompat.getColor(context, R.color.on_surface_secondary))
+            binding.tvBody.setTextColor(ContextCompat.getColor(context, R.color.on_surface))
             binding.llSteps.visibility = View.GONE
             binding.tvDiagnosis.visibility = View.GONE
             binding.llMedia.visibility = View.GONE
@@ -401,7 +401,7 @@ class PostThreadAdapter(
 
         private fun styleReaction(context: Context, view: TextView, count: Int, active: Boolean, activeColor: Int) {
             view.text = if (count > 0) count.toString() else ""
-            val color = ContextCompat.getColor(context, if (active) activeColor else R.color.on_surface_secondary)
+            val color = ContextCompat.getColor(context, if (active) activeColor else R.color.on_surface)
             view.compoundDrawableTintList = ColorStateList.valueOf(color)
             view.setTextColor(color)
         }

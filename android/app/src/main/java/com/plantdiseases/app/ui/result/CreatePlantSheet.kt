@@ -320,7 +320,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                     TextView(ctx).apply {
                         this.text = sci
                         textSize = 12f
-                        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+                        setTextColor(ctx.getColor(R.color.on_surface))
                         setTypeface(typeface, android.graphics.Typeface.ITALIC)
                         maxLines = 1
                         ellipsize = android.text.TextUtils.TruncateAt.END

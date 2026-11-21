@@ -195,9 +195,9 @@ class FloweringChartView @JvmOverloads constructor(
         barPaint.alpha = 148
         emptyBarPaint.color = context.getColor(R.color.primary)
         emptyBarPaint.alpha = 52
-        labelPaint.color = context.getColor(R.color.on_surface_secondary)
+        labelPaint.color = context.getColor(R.color.on_surface)
         labelPaint.alpha = 210
-        axisLabelPaint.color = context.getColor(R.color.on_surface_secondary)
+        axisLabelPaint.color = context.getColor(R.color.on_surface)
         axisLabelPaint.alpha = 230
         axisGuidePaint.color = context.getColor(R.color.divider)
         axisGuidePaint.alpha = 150

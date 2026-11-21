@@ -93,7 +93,7 @@ class HelperProfileActivity : AppCompatActivity() {
             getString(ForumUi.levelName(profile.level)),
             profile.level,
         )
-        // "Leaves: 420 · 580 leaves to Botanist" under the bar.
+        // "Leaves: 420, 580 leaves to Botanist" under the bar.
         val leaves = getString(R.string.forum_leaves_count, profile.leaves)
         val next = profile.nextLevelLeaves
         if (next == null) {
@@ -194,7 +194,7 @@ class HelperProfileActivity : AppCompatActivity() {
                 val (foreground, background) = when {
                     complete -> R.color.warning_amber to R.color.warning_amber_bg
                     earned -> R.color.primary to R.color.primary_light
-                    else -> R.color.on_surface_secondary to R.color.surface_container
+                    else -> R.color.on_surface to R.color.surface_container
                 }
                 val accent = ContextCompat.getColor(context, foreground)
                 binding.ivBadge.setImageResource(ForumUi.achievementIcon(item.key))
