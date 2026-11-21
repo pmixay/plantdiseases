@@ -24,7 +24,7 @@ class ReleaseAccountPresentationTest {
     )
 
     @Test
-    fun releaseLayoutDefaultsToYandexAvailableAndVkComingSoon() {
+    fun releaseLayoutDefaultsToYandexAvailableAndVkHidden() {
         val root = LayoutInflater.from(context).inflate(R.layout.activity_account, null)
         val yandex = root.findViewById<MaterialButton>(R.id.btn_yandex)
         val vk = root.findViewById<MaterialButton>(R.id.btn_vk)
@@ -32,9 +32,11 @@ class ReleaseAccountPresentationTest {
         assertThat(yandex.visibility).isEqualTo(View.VISIBLE)
         assertThat(yandex.isEnabled).isTrue()
         assertThat(yandex.icon).isNotNull()
-        assertThat(vk.visibility).isEqualTo(View.VISIBLE)
+        // A provider that isn't configured is not shown at all (no "coming
+        // soon" state); AccountActivity reveals VK only when it is enabled.
+        assertThat(vk.visibility).isEqualTo(View.GONE)
         assertThat(vk.isEnabled).isFalse()
-        assertThat(vk.text.toString()).isEqualTo(context.getString(R.string.account_vk_coming_soon))
+        assertThat(vk.text.toString()).isEqualTo(context.getString(R.string.account_continue_vk))
     }
 
     @Test

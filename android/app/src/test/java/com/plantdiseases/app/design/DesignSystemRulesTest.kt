@@ -28,7 +28,7 @@ class DesignSystemRulesTest {
             .flatMap { file ->
                 VALUE.findAll(stripComments(file.readText()))
                     .filter { m -> FORBIDDEN.any { it in m.groupValues[2] } }
-                    .map { m -> "${file.parentFile.name}/${file.name}: ${m.groupValues[2].take(80)}" }
+                    .map { m -> "${file.parentFile?.name}/${file.name}: ${m.groupValues[2].take(80)}" }
                     .toList()
             }
         assertWithMessage("Use '-' or ',' instead of a middle dot or long dash").that(offenders).isEmpty()
@@ -77,13 +77,13 @@ class DesignSystemRulesTest {
         val resources = res.listFiles { f -> f.isDirectory && f.name.startsWith("drawable") }!!
             .flatMap { it.listFiles()!!.toList() }
             .filter { heroName.containsMatchIn(it.nameWithoutExtension) }
-            .map { "${it.parentFile.name}/${it.name}" } +
+            .map { "${it.parentFile?.name}/${it.name}" } +
             res.listFiles { f -> f.isDirectory && f.name.startsWith("values") }!!
                 .flatMap { dir -> dir.listFiles { f -> f.extension == "xml" }!!.toList() }
                 .flatMap { file ->
                     Regex("""<(color|style|dimen) name="([^"]+)"""").findAll(file.readText())
                         .filter { heroName.containsMatchIn(it.groupValues[2]) }
-                        .map { "${file.parentFile.name}/${file.name}: ${it.groupValues[2]}" }
+                        .map { "${file.parentFile?.name}/${file.name}: ${it.groupValues[2]}" }
                         .toList()
                 }
         val references = File("src/main").walkTopDown()
