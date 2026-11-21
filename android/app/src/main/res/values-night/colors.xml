@@ -3,7 +3,7 @@
     <!-- ─── Brand: Vivid leaf-green palette (dark) ───────────────
          On dark surfaces the saturated greens read overwhelming and
          the body-text contrast inverts. We pull primary up to Tailwind
-         green-400, dark the hero / toolbar to green-700, and keep
+         green-400 and keep
          primary_light as a deep desaturated green so chips on the
          dark surface stay readable. -->
     <color name="primary">#4ADE80</color>
@@ -19,22 +19,6 @@
     <color name="primary_dark">#16A34A</color>
     <color name="secondary">#22C55E</color>
     <color name="on_secondary">#052E16</color>
-    <!-- Gradient stops -->
-    <color name="gradient_start">#14532D</color>
-    <color name="gradient_mid">#166534</color>
-    <color name="gradient_end">#16A34A</color>
-    <color name="hero_gradient_start">#14532D</color>
-    <color name="hero_gradient_mid">#166534</color>
-    <color name="hero_gradient_end">#22C55E</color>
-    <color name="hero_solid">#15803D</color>
-    <!-- Hero-surface text: the dark-theme hero gradient is a deep
-         green, so the copy stays light (mirrors hero_stat_text)
-         instead of inheriting the inverted ``on_primary``. -->
-    <color name="on_hero">#F0FDF4</color>
-    <color name="on_hero_secondary">#F2F0FDF4</color>
-    <color name="hero_stat_bg">#33FFFFFF</color>
-    <color name="hero_stat_stroke">#52FFFFFF</color>
-    <color name="hero_stat_text">#F0FDF4</color>
 
 
     <!-- ─── Surface: Dark theme ─────────────────────────────────── -->

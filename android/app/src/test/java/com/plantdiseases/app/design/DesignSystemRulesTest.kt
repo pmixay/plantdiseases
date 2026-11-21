@@ -13,6 +13,9 @@ import java.io.File
  *   `colorOnSurfaceVariant`): small text uses `on_surface`, and the muted
  *   ink is for icon tints only.
  * - The caption size, the smallest text step, stays at 12sp or more.
+ * - There is no "hero" element (green gradient header blocks): page headers
+ *   are plain, like the Home and Community tabs. No hero drawable or colour
+ *   exists, and nothing references one.
  */
 class DesignSystemRulesTest {
 
@@ -68,6 +71,31 @@ class DesignSystemRulesTest {
         assertWithMessage("text_caption").that(caption).isAtLeast(12)
     }
 
+    @Test
+    fun noHeroElement() {
+        val heroName = Regex("(?i)hero|^gradient_(start|mid|end)$|^bg_toolbar_gradient$|^bg_care_plan_gradient$")
+        val resources = res.listFiles { f -> f.isDirectory && f.name.startsWith("drawable") }!!
+            .flatMap { it.listFiles()!!.toList() }
+            .filter { heroName.containsMatchIn(it.nameWithoutExtension) }
+            .map { "${it.parentFile.name}/${it.name}" } +
+            res.listFiles { f -> f.isDirectory && f.name.startsWith("values") }!!
+                .flatMap { dir -> dir.listFiles { f -> f.extension == "xml" }!!.toList() }
+                .flatMap { file ->
+                    Regex("""<(color|style|dimen) name="([^"]+)"""").findAll(file.readText())
+                        .filter { heroName.containsMatchIn(it.groupValues[2]) }
+                        .map { "${file.parentFile.name}/${file.name}: ${it.groupValues[2]}" }
+                        .toList()
+                }
+        val references = File("src/main").walkTopDown()
+            .filter { it.isFile && (it.extension == "xml" || it.extension == "kt") }
+            .flatMap { file ->
+                HERO_REF.findAll(file.readText()).map { "${file.name}: ${it.value}" }
+            }
+            .toList()
+        assertWithMessage("Hero resources are gone from the design system").that(resources).isEmpty()
+        assertWithMessage("Use a plain page header, not a hero resource").that(references).isEmpty()
+    }
+
     private fun layoutFiles(): List<File> =
         listOf("layout", "menu", "navigation").flatMap { dir ->
             File(res, dir).listFiles { f -> f.extension == "xml" }?.toList().orEmpty()
@@ -91,5 +119,6 @@ class DesignSystemRulesTest {
         val TEXT_COLOR = Regex("""android:textColor\s*=\s*"([^"]*)"""")
         val TEXT_VIEW = Regex("(TextView|Chip|Button|EditText|CheckBox|RadioButton)$")
         val STYLE_TEXT_COLOR = Regex("""<item name="android:textColor">([^<]*)</item>""")
+        val HERO_REF = Regex("""(@|R\.)(color|drawable|style)[/.][\w.]*(hero|Hero)\w*""")
     }
 }

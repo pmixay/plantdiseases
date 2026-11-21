@@ -25,27 +25,6 @@
     <color name="primary_dark">#15803D</color>
     <color name="secondary">#4ADE80</color>
     <color name="on_secondary">#052E16</color>
-    <!-- Gradient stops (ordered dark -> medium -> light). The hero
-         leans bright so the green reads as "fresh leaf" rather than
-         "deep forest" — PictureThis-style bold header. -->
-    <color name="gradient_start">#15803D</color>
-    <color name="gradient_mid">#16A34A</color>
-    <color name="gradient_end">#4ADE80</color>
-    <color name="hero_gradient_start">#15803D</color>
-    <color name="hero_gradient_mid">#22C55E</color>
-    <color name="hero_gradient_end">#4ADE80</color>
-    <color name="hero_solid">#16A34A</color>
-    <!-- Text/icon colours for content sitting ON the hero gradient
-         (bg_garden_hero / bg_care_plan_gradient). Unlike ``on_primary``
-         — which tracks the *button* primary and flips dark in night
-         mode — these stay light in both themes because the hero
-         gradient stays green in both. -->
-    <color name="on_hero">#FFFFFF</color>
-    <color name="on_hero_secondary">#F2FFFFFF</color>
-    <color name="hero_stat_bg">#29FFFFFF</color>
-    <color name="hero_stat_stroke">#52FFFFFF</color>
-    <color name="hero_stat_text">#FFFFFF</color>
-
     <!-- Toolbars are plain page headers (no coloured band): the title and
          icons use the page ink. -->
     <color name="toolbar_title">@color/on_surface</color>

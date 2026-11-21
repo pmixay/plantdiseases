@@ -219,6 +219,12 @@ detail screen only.
   (strings, layouts, Kotlin literals, server content) has no middle dot, em dash or en
   dash: use `-`, `,` or `:`. `DesignSystemRulesTest` (app) and `tests/test_text_style.py`
   (server) enforce this; LLM and Wikipedia text is normalised by `server/text_style.py`.
+- **Plain page headers, no hero blocks.** Every screen's header follows the Home and Community
+  tabs: page background, a 20sp black title in page ink (`TextAppearance.App.Toolbar` for
+  toolbars, whose colour is `toolbar_title` = page ink), actions beside it, supporting text
+  below. No green gradient bands or cards behind headers; `DesignSystemRulesTest` fails if a
+  hero drawable or colour comes back. Light pages use dark status-bar icons; screens that draw
+  a photo or the camera under the status bar switch to light icons themselves.
 - **Bilingual everywhere.** New diagnosis content, error cards and UI strings need EN and
   RU (server: `diseases_data.py`; app: `strings.xml` + `values-ru`).
 - **Lint is zero-tolerance.** Server: ruff (`server/pyproject.toml`). Android: ktlint +
