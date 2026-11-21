@@ -860,7 +860,7 @@ class DetailExtraCardsController(
             textSize = 12f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
-            background = activity.getDrawable(R.drawable.bg_plant_stat_pill)
+            background = activity.getDrawable(R.drawable.bg_stat_pill)
         }
         val titleRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1114,7 +1114,7 @@ class DetailExtraCardsController(
                     textSize = 12f
                     setTextColor(activity.getColor(PlantHealthUi.trendColorRes(trend)))
                     setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
-                    background = activity.getDrawable(R.drawable.bg_plant_stat_pill)
+                    background = activity.getDrawable(R.drawable.bg_stat_pill)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,

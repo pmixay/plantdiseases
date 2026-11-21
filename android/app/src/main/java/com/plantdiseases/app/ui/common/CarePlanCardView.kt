@@ -17,7 +17,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanResponse
 
 /**
- * Self-contained green-gradient Care Plan card.
+ * Self-contained Care Plan card: a plain card with a summary section and an expandable details section.
  *
  * Renders one of three states — loading, error, or filled — and exposes
  * `bind*` callers from any host. Polished design lives entirely here so
@@ -29,7 +29,7 @@ class CarePlanCardView @JvmOverloads constructor(
     defStyle: Int = 0,
 ) : MaterialCardView(context, attrs, defStyle) {
 
-    private val gradient: LinearLayout
+    private val summarySection: LinearLayout
     private val verticalStack: LinearLayout
     private val accordionHeader: LinearLayout
     private val accordionChevron: ImageView
@@ -80,20 +80,17 @@ class CarePlanCardView @JvmOverloads constructor(
         }
 
     init {
-        radius = 20.dp().toFloat()
+        radius = resources.getDimension(R.dimen.radius_lg)
         cardElevation = 0f
+        strokeWidth = resources.getDimensionPixelSize(R.dimen.glass_stroke_width)
+        strokeColor = context.getColor(R.color.card_stroke)
         useCompatPadding = false
         setContentPadding(0, 0, 0, 0)
         setCardBackgroundColor(context.getColor(R.color.surface))
 
-        // The card stacks two surfaces vertically: a green gradient
-        // section that hosts the high-impact summary (pills, key
-        // action, follow-up) and a surface-coloured section that
-        // hosts the verbose details when the user expands them. The
-        // gradient was readable on a 4-pill summary but saturated to
-        // near-black under a long detail panel — colour-shifting
-        // both halves to the same gradient would push every body
-        // paragraph below the legibility floor.
+        // The card stacks two sections vertically on one surface: the summary
+        // (pills, key action, follow-up) and the verbose details the user
+        // expands. Both use on_surface text on the card background.
         verticalStack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LayoutParams(
@@ -103,12 +100,11 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         addView(verticalStack)
 
-        gradient = LinearLayout(context).apply {
+        summarySection = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_care_plan_gradient)
             setPadding(20.dp(), 20.dp(), 20.dp(), 18.dp())
         }
-        verticalStack.addView(gradient)
+        verticalStack.addView(summarySection)
 
         // Header row — leaf icon + title + subtitle
         accordionHeader = LinearLayout(context).apply {
@@ -120,12 +116,11 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         accordionHeader.addView(
             FrameLayout(context).apply {
-                setBackgroundResource(R.drawable.bg_circle_semi)
                 layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
                 addView(
                     ImageView(context).apply {
                         setImageResource(R.drawable.ic_care)
-                        setColorFilter(context.getColor(R.color.on_hero))
+                        setColorFilter(context.getColor(R.color.primary))
                         layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
                     }
                 )
@@ -142,12 +137,12 @@ class CarePlanCardView @JvmOverloads constructor(
         titleView = TextView(context).apply {
             text = context.getString(R.string.care_plan_title)
             textSize = 18f
-            setTextColor(context.getColor(R.color.on_hero))
+            setTextColor(context.getColor(R.color.on_surface))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
         subtitleView = TextView(context).apply {
             textSize = 12f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
+            setTextColor(context.getColor(R.color.on_surface))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -158,7 +153,7 @@ class CarePlanCardView @JvmOverloads constructor(
         accordionHeader.addView(titles)
         accordionChevron = ImageView(context).apply {
             setImageResource(R.drawable.ic_chevron_down)
-            setColorFilter(context.getColor(R.color.on_hero))
+            setColorFilter(context.getColor(R.color.primary))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             layoutParams = LinearLayout.LayoutParams(20.dp(), 20.dp()).apply {
                 marginStart = 8.dp()
@@ -168,7 +163,7 @@ class CarePlanCardView @JvmOverloads constructor(
         accordionHeader.setOnClickListener {
             setSectionExpanded(!sectionExpanded)
         }
-        gradient.addView(accordionHeader)
+        summarySection.addView(accordionHeader)
 
         // Status container (loading / error / pills swap inside this)
         statusContainer = LinearLayout(context).apply {
@@ -179,7 +174,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 16.dp() }
         }
-        gradient.addView(statusContainer)
+        summarySection.addView(statusContainer)
 
         // ── Loading state ──
         loadingView = LinearLayout(context).apply {
@@ -190,7 +185,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 ProgressBar(context).apply {
                     isIndeterminate = true
                     indeterminateTintList = android.content.res.ColorStateList.valueOf(
-                        context.getColor(R.color.on_hero)
+                        context.getColor(R.color.primary)
                     )
                     layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
                 }
@@ -199,7 +194,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 TextView(context).apply {
                     text = context.getString(R.string.care_plan_loading)
                     textSize = 14f
-                    setTextColor(context.getColor(R.color.on_hero))
+                    setTextColor(context.getColor(R.color.on_surface))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -217,8 +212,7 @@ class CarePlanCardView @JvmOverloads constructor(
         errorBody = TextView(context).apply {
             text = context.getString(R.string.care_plan_unavailable)
             textSize = 13f
-            setTextColor(context.getColor(R.color.on_hero))
-            alpha = 0.92f
+            setTextColor(context.getColor(R.color.on_surface))
         }
         retryButton = MaterialButton(
             context,
@@ -226,12 +220,12 @@ class CarePlanCardView @JvmOverloads constructor(
             com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_retry)
-            setTextColor(context.getColor(R.color.on_hero))
+            setTextColor(context.getColor(R.color.on_surface))
             strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
+                context.getColor(R.color.primary)
             )
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
+                context.getColor(R.color.primary)
             )
             cornerRadius = 14.dp()
             layoutParams = LinearLayout.LayoutParams(
@@ -265,14 +259,14 @@ class CarePlanCardView @JvmOverloads constructor(
             TextView(context).apply {
                 text = context.getString(R.string.care_plan_disease_note)
                 textSize = 12f
-                setTextColor(context.getColor(R.color.on_hero_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(context.getColor(R.color.on_surface))
+                typeface = Typeface.DEFAULT_BOLD
                 letterSpacing = 0.06f
             }
         )
         noteBody = TextView(context).apply {
             textSize = 14f
-            setTextColor(context.getColor(R.color.on_hero))
+            setTextColor(context.getColor(R.color.on_surface))
             setLineSpacing(3.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -284,7 +278,7 @@ class CarePlanCardView @JvmOverloads constructor(
 
         followUpView = TextView(context).apply {
             textSize = 13f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
+            setTextColor(context.getColor(R.color.on_surface))
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -299,12 +293,12 @@ class CarePlanCardView @JvmOverloads constructor(
             com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_use_for_reminders)
-            setTextColor(context.getColor(R.color.on_hero))
+            setTextColor(context.getColor(R.color.on_surface))
             strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
+                context.getColor(R.color.primary)
             )
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
+                context.getColor(R.color.primary)
             )
             cornerRadius = 14.dp()
             visibility = View.GONE
@@ -319,7 +313,7 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         statusContainer.addView(applyToRemindersBtn)
 
-        // The "Show details" toggle stays inside the gradient (it
+        // The "Show details" toggle stays inside the summary section (it
         // controls the section below). The details container itself
         // lives on the surface-colored section.
         detailsToggle = MaterialButton(
@@ -328,9 +322,9 @@ class CarePlanCardView @JvmOverloads constructor(
             androidx.appcompat.R.attr.borderlessButtonStyle,
         ).apply {
             text = context.getString(R.string.care_plan_show_details)
-            setTextColor(context.getColor(R.color.on_hero))
+            setTextColor(context.getColor(R.color.on_surface))
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
+                context.getColor(R.color.primary)
             )
             setIconResource(R.drawable.ic_chevron_down)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_END
@@ -346,10 +340,8 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         statusContainer.addView(detailsToggle)
 
-        // Details panel — sits BELOW the gradient on the card's
-        // base surface. Surface-on-on_surface contrast is the same as
-        // every other card in the app, so a 14-row checklist remains
-        // readable instead of fading into the gradient's mid-green.
+        // Details panel — sits BELOW the summary section on the card's
+        // base surface, same contrast as every other card in the app.
         // Each detail row null-guards independently so a sparse plan
         // collapses unused sections instead of rendering empty ones.
         detailsContainer = LinearLayout(context).apply {
@@ -378,7 +370,7 @@ class CarePlanCardView @JvmOverloads constructor(
     /**
      * Single source of truth for the detail panel. The toggle only exists
      * while details are collapsible; the panel itself additionally needs the
-     * card's own section open (it is a sibling of the gradient, not a child
+     * card's own section open (it is a sibling of the summary section, not a child
      * of the container the accordion hides).
      */
     private fun applyDetailsState() {
@@ -801,7 +793,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 textSize = 12f
                 letterSpacing = 0.08f
                 setTextColor(context.getColor(R.color.on_surface))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                typeface = Typeface.DEFAULT_BOLD
             }
         )
         text.addView(
@@ -1076,7 +1068,7 @@ class CarePlanCardView @JvmOverloads constructor(
                 textSize = 12f
                 letterSpacing = 0.08f
                 setTextColor(context.getColor(R.color.on_surface))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                typeface = Typeface.DEFAULT_BOLD
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1120,7 +1112,7 @@ class CarePlanCardView @JvmOverloads constructor(
         labelRow.addView(
             ImageView(context).apply {
                 setImageResource(iconRes)
-                setColorFilter(context.getColor(R.color.on_hero))
+                setColorFilter(context.getColor(R.color.primary))
                 layoutParams = LinearLayout.LayoutParams(15.dp(), 15.dp())
             }
         )
@@ -1128,8 +1120,8 @@ class CarePlanCardView @JvmOverloads constructor(
             TextView(context).apply {
                 text = label.uppercase()
                 textSize = 12f
-                setTextColor(context.getColor(R.color.on_hero_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(context.getColor(R.color.on_surface))
+                typeface = Typeface.DEFAULT_BOLD
                 letterSpacing = 0.08f
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1142,7 +1134,7 @@ class CarePlanCardView @JvmOverloads constructor(
             TextView(context).apply {
                 text = value.ifBlank { "-" }
                 textSize = 16f
-                setTextColor(context.getColor(R.color.on_hero))
+                setTextColor(context.getColor(R.color.on_surface))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END

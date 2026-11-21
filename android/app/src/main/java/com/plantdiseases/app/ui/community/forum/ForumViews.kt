@@ -76,8 +76,6 @@ object ForumViews {
      * from the nickname) is always set; when the author shows a profile photo
      * it is loaded over it, circle-cropped. Until the photo arrives, or if it
      * fails to load, the transparent photo view leaves the monogram showing.
-     * [onHero] draws the monogram as a white disc with coloured text, for the
-     * green profile header.
      */
     fun bindAvatar(
         monogram: TextView,
@@ -85,15 +83,9 @@ object ForumViews {
         nickname: String,
         author: ForumAuthor?,
         avatarUrl: AvatarUrl,
-        onHero: Boolean = false,
     ) {
         monogram.text = Avatars.monogramForNick(nickname)
-        if (onHero) {
-            monogram.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(monogram.context, R.color.on_hero))
-            monogram.setTextColor(Avatars.colorFor(nickname))
-        } else {
-            monogram.backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(nickname))
-        }
+        monogram.backgroundTintList = ColorStateList.valueOf(Avatars.colorFor(nickname))
         val token = author?.authorToken
         val version = author?.avatarVersion
         if (token.isNullOrBlank() || version == null) {
