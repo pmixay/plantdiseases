@@ -73,7 +73,7 @@ def register(router: APIRouter, m) -> None:
             m.logger.warning("Community publication capability rejected")
             raise HTTPException(
                 status_code=422,
-                detail="Unknown scan_id — re-scan before sharing to the community.",
+                detail="Unknown scan_id - re-scan before sharing to the community.",
             )
 
         geo = m._client_location(payload.country, payload.region, lat, lon)
@@ -131,7 +131,7 @@ def register(router: APIRouter, m) -> None:
         except m.AnalysisTokenUnknownError as exc:
             raise HTTPException(
                 status_code=422,
-                detail="Unknown scan_id — re-scan before sharing to the community.",
+                detail="Unknown scan_id - re-scan before sharing to the community.",
             ) from exc
         except m.AnalysisImageMismatchError as exc:
             raise HTTPException(

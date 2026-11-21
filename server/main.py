@@ -1793,7 +1793,7 @@ async def _inference_slot(request: Request):
         )
         raise HTTPException(
             status_code=503,
-            detail="Server busy — try again in a few seconds",
+            detail="Server busy - try again in a few seconds",
             headers={"Retry-After": str(INFER_BUSY_RETRY_AFTER_SECONDS)},
         )
     slot = _InferenceSlot(client_ip)
@@ -2118,7 +2118,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ):
             self._warned_about_xff = True
             logger.warning(
-                "Received X-Forwarded-For but TRUSTED_PROXIES is empty — "
+                "Received X-Forwarded-For but TRUSTED_PROXIES is empty - "
                 "every client behind the proxy shares one rate-limit bucket. "
                 "Set TRUSTED_PROXIES to the proxy CIDR to honour XFF."
             )
@@ -2573,7 +2573,7 @@ async def _prune_loop() -> None:
 
 app = FastAPI(
     title="PlantDiseases API",
-    description="AI-powered plant disease detection — two-stage pipeline",
+    description="AI-powered plant disease detection \u2014 two-stage pipeline",
     version=APP_VERSION,
     root_path=APP_ROOT_PATH,
     lifespan=lifespan,
@@ -3349,7 +3349,7 @@ async def _analyze_image_admitted(
         raise HTTPException(
             status_code=400,
             detail=f"Image resolution too small ({img_w}x{img_h}). "
-                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
+                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px - please retake the photo.",
         )
 
     # Reject malformed/unsupported photos before spending a user's allowance,
@@ -4083,7 +4083,7 @@ async def _identify_admitted(
         raise HTTPException(
             status_code=400,
             detail=f"Image resolution too small ({img_w}x{img_h}). "
-                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
+                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px - please retake the photo.",
         )
 
     try:

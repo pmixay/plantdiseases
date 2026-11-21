@@ -35,8 +35,10 @@ from collections import OrderedDict
 
 try:
     from .config import get_str
+    from .text_style import plain_punctuation
 except ImportError:  # flat layout (uvicorn run from server/)
     from config import get_str
+    from text_style import plain_punctuation
 
 logger = logging.getLogger("plantdiseases.species_info")
 
@@ -173,6 +175,10 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
                 "lang": lang,
                 "translated": True,
             }
+
+    # The app shows no em/en dashes or middle dots; Wikipedia prose has plenty.
+    if payload is not None and payload.get("extract"):
+        payload = {**payload, "extract": plain_punctuation(payload["extract"])}
 
     if payload is None:
         ttl = _TRANSIENT_TTL_S if transient else _MISS_TTL_S
