@@ -235,9 +235,34 @@ object ImageUtils {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
+    /** Longest edge the cropper works at. Matches the cap the old pre-crop
+     *  re-encode pass used, so the crop output size downstream is unchanged. */
+    const val CROP_MAX_EDGE = 2048
+
+    private const val MAX_DECODE_SAMPLE = 32
+
+    /**
+     * Largest power-of-two `inSampleSize` that still leaves the decoded long
+     * edge at or above [maxEdge] (1 when the image is already within it).
+     * The remaining exact shrink to [maxEdge] is a single scale of a bitmap
+     * that is at most 2x too big, instead of a full-resolution decode.
+     */
+    internal fun cropSampleSize(width: Int, height: Int, maxEdge: Int = CROP_MAX_EDGE): Int {
+        var sample = 1
+        val longEdge = maxOf(width, height)
+        while (longEdge / (sample * 2) >= maxEdge) sample *= 2
+        return sample
+    }
+
     /**
      * Decode [uri] to a software (ARGB_8888) bitmap with its EXIF orientation
-     * baked in — ready to display and crop. Used by the custom cropper.
+     * baked in, long edge capped at [maxEdge] - ready to display and crop.
+     * Used by the custom cropper.
+     *
+     * Large inputs (gallery picks, some camera sensors) are decoded with a
+     * power-of-two `inSampleSize` and then scaled once to exactly [maxEdge],
+     * before rotation, so no full-resolution bitmap and no re-encode pass is
+     * needed. Images within the cap decode untouched.
      *
      * Decodes via [BitmapFactory] rather than an image loader on purpose: a
      * HARDWARE-config bitmap can't be read back or used as a `createBitmap`
@@ -246,20 +271,51 @@ object ImageUtils {
      * large or cloud-backed source can block while the bytes stream in.
      * Returns null on any decode failure.
      */
-    fun decodeUpright(context: Context, uri: Uri): Bitmap? {
+    fun decodeUpright(context: Context, uri: Uri, maxEdge: Int = CROP_MAX_EDGE): Bitmap? {
         return try {
-            val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
-            val decoded = context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input, null, opts)
-            } ?: return null
-            val orientation = context.contentResolver.openInputStream(uri)?.use { input ->
+            val resolver = context.contentResolver
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            var sample = cropSampleSize(bounds.outWidth, bounds.outHeight, maxEdge)
+            var decoded: Bitmap? = null
+            while (decoded == null && sample <= MAX_DECODE_SAMPLE) {
+                try {
+                    val opts = BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                        inSampleSize = sample
+                    }
+                    val stream = resolver.openInputStream(uri) ?: return null
+                    decoded = stream.use { BitmapFactory.decodeStream(it, null, opts) }
+                    if (decoded == null) return null
+                } catch (_: OutOfMemoryError) {
+                    Log.w(TAG, "OOM in crop decode; retrying smaller")
+                    sample *= 2
+                }
+            }
+            val raw = decoded ?: return null
+
+            val ratio = maxEdge.toFloat() / maxOf(raw.width, raw.height)
+            val capped = if (ratio < 1f) {
+                Bitmap.createScaledBitmap(
+                    raw,
+                    (raw.width * ratio).toInt().coerceAtLeast(1),
+                    (raw.height * ratio).toInt().coerceAtLeast(1),
+                    true,
+                ).also { if (it !== raw) raw.recycle() }
+            } else {
+                raw
+            }
+
+            val orientation = resolver.openInputStream(uri)?.use { input ->
                 ExifInterface(input).getAttributeInt(
                     ExifInterface.TAG_ORIENTATION,
                     ExifInterface.ORIENTATION_NORMAL
                 )
             } ?: ExifInterface.ORIENTATION_NORMAL
-            val upright = applyExifOrientation(orientation, decoded)
-            if (upright !== decoded) decoded.recycle()
+            val upright = applyExifOrientation(orientation, capped)
+            if (upright !== capped) capped.recycle()
             upright
         } catch (_: IOException) {
             Log.w(TAG, "Image decode failed")
