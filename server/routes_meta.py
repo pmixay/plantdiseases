@@ -98,7 +98,7 @@ def register(router: APIRouter, m) -> None:
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
         return {
             "status": "ok",
-            "version": m.APP_VERSION,
+            "version": m.app_version.APP_VERSION,
             "num_classes": len(m.pipeline.classifier.CLASS_NAMES),
             "uptime_seconds": round(uptime, 1),
             "total_requests": m._snapshot_metrics()["total_requests"],
@@ -198,8 +198,8 @@ def register(router: APIRouter, m) -> None:
                 "expected": m.ACCOUNT_FEATURE_EXPECTED,
                 "available": bool(getattr(m.account_authenticator, "configured", False)),
             },
-            "version": m.APP_VERSION,
-            "server_version": m.APP_VERSION,
+            "version": m.app_version.APP_VERSION,
+            "server_version": m.app_version.APP_VERSION,
             "model_version": model_version,
             "model": model,
             "classes": classes_list,
@@ -235,7 +235,7 @@ def register(router: APIRouter, m) -> None:
         snap = m._snapshot_metrics()
         plantnet = m.ai_services.plantnet_metrics_snapshot()
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
-        version = _prom_label(m.APP_VERSION)
+        version = _prom_label(m.app_version.APP_VERSION)
 
         lines = [
             "# HELP plantdiseases_uptime_seconds Seconds since the server started.",

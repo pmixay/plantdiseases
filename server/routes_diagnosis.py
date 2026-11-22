@@ -116,7 +116,7 @@ def register(router: APIRouter, m) -> None:
         triage = symptoms.diagnose(payload.answers)
         results = []
         for item in triage["results"]:
-            card = m._compact_care_card(item["class"])
+            card = m.analysis_payload.compact_care_card(item["class"])
             card["score"] = item["score"]
             card["confidence"] = item["confidence"]
             card["rank"] = item["rank"]
@@ -124,7 +124,7 @@ def register(router: APIRouter, m) -> None:
         # When nothing scored, hand back the generic "unknown" guidance card so
         # the screen is never blank — and flag low confidence.
         if not results:
-            fallback = m._compact_care_card("unknown")
+            fallback = m.analysis_payload.compact_care_card("unknown")
             fallback["score"] = 0.0
             fallback["confidence"] = 0.0
             fallback["rank"] = 1

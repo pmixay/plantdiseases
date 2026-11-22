@@ -24,9 +24,9 @@ RESPONSE_KEYS = {
 
 @pytest.fixture
 def build():
-    import main as server_main
 
     def _build(result, **overrides):
+        import analysis_payload
         kwargs = {
             "scan_id": "scan-abc",
             "species_payload": None,
@@ -36,7 +36,7 @@ def build():
             "family_fallback_reason": None,
         }
         kwargs.update(overrides)
-        return server_main.build_analyze_payload(result, **kwargs)
+        return analysis_payload.build_analyze_payload(result, **kwargs)
 
     return _build
 
@@ -70,8 +70,8 @@ def _species(scientific="Ficus elastica"):
 
 
 def test_accepted_payload_has_the_full_contract(build):
+    import app_version
     import diseases_data
-    import main as server_main
 
     payload = build(_result(), species_payload=_species())
 
@@ -84,7 +84,7 @@ def test_accepted_payload_has_the_full_contract(build):
     assert payload["is_healthy"] is False
     assert payload["scan_id"] == "scan-abc"
     assert payload["is_repeat"] is False
-    assert payload["server_version"] == server_main.APP_VERSION
+    assert payload["server_version"] == app_version.APP_VERSION
     info = diseases_data.DISEASES_DATABASE["leaf_spot"]
     assert payload["disease_name"] == info["name_en"]
     assert payload["treatment_ru"] == info["treatment_ru"]
