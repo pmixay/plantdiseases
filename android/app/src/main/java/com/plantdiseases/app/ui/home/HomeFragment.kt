@@ -485,6 +485,7 @@ class HomeFragment : Fragment() {
         val cached = speciesImageCache[scientificName]
         if (cached != null) {
             Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(cached))
+                .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                 .placeholder(R.drawable.ic_plant_placeholder)
                 // Disk-cache the bytes (like every other call site) so a slow
                 // connection only ever downloads each carousel photo once.
@@ -504,6 +505,7 @@ class HomeFragment : Fragment() {
             speciesImageCache[scientificName] = url
             if (url != null) {
                 Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                    .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                     .placeholder(R.drawable.ic_plant_placeholder)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .error(R.drawable.ic_plant_placeholder)

@@ -90,9 +90,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
                     android:lineSpacingExtra="3dp"
-                    android:text="@string/garden_subtitle"
                     android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_body" />
+                    android:textSize="@dimen/text_body"
+                    android:visibility="gone" />
 
             </LinearLayout>
 

@@ -205,6 +205,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
             info.imageUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { url ->
                 Glide.with(context)
                     .load(ServerConfig.photoUrl(url))
+                    .timeout(ServerConfig.PHOTO_TIMEOUT_MS)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .transform(CenterCrop(), RoundedCorners(PHOTO_CORNER_RADIUS_PX))
                     .into(photo)

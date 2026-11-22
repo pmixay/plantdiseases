@@ -1,5 +1,7 @@
 package com.plantdiseases.app.ui.profile
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
@@ -30,23 +32,24 @@ import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.billing.EntitlementState
 import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.CommunityAvatarSync
+import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.data.repository.ForumRepository
-import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
+import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
 import com.plantdiseases.app.ui.community.forum.ModerationActivity
-import com.plantdiseases.app.ui.gallery.MyScansActivity
-import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.crop.CropContract
+import com.plantdiseases.app.ui.gallery.MyScansActivity
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ProfileAvatarStore
@@ -55,9 +58,9 @@ import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.util.Calendar
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class ProfileFragment : Fragment() {
@@ -105,6 +108,18 @@ class ProfileFragment : Fragment() {
 
     private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
         completeAvatarEdit(result)
+    }
+
+    // Community sharing needs coarse location (scans are grouped by area).
+    private val communityLocationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            enableCommunitySharing()
+        } else {
+            _binding?.switchCommunityShare?.isChecked = false
+            Toast.makeText(requireContext(), R.string.community_share_needs_location, Toast.LENGTH_LONG).show()
+        }
     }
 
     // Count-up animators, cancelled in onDestroyView so they don't keep
@@ -186,6 +201,7 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
+        setupCommunityShareToggle()
         setupPrivacyConsentToggles()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
@@ -205,14 +221,14 @@ class ProfileFragment : Fragment() {
             is AuthState.Unavailable -> state.lastAuthenticated
             else -> null
         }
-        // Signed in: the nickname with an edit button beside it. Otherwise the
-        // hero says where the account stands and offers the way in.
+        // The name beside the avatar: the nickname when signed in, "Guest"
+        // when not, or where the account stands while it resolves.
         binding.tvProfileHeroSubtitle.text = when {
-            authenticated != null -> getString(R.string.profile_subtitle)
+            authenticated != null -> authenticated.profile.nickname
             state is AuthState.Restoring -> getString(R.string.account_restoring)
             state is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             state is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
-            else -> getString(R.string.profile_subtitle)
+            else -> getString(R.string.profile_guest_name)
         }
         binding.btnEditProfile.visibility = if (authenticated != null) View.VISIBLE else View.GONE
         binding.btnManageAccount.visibility = if (authenticated == null) View.VISIBLE else View.GONE
@@ -223,8 +239,7 @@ class ProfileFragment : Fragment() {
                 else -> R.string.account_manage
             },
         )
-        binding.tvProfileHeroTitle.text = authenticated?.profile?.nickname
-            ?: getString(R.string.tab_profile)
+        binding.tvProfileHeroTitle.setText(R.string.tab_profile)
 
         val accountId = authenticated?.profile?.communityActorId
         if (activeAvatarAccountId != accountId) {
@@ -566,6 +581,40 @@ class ProfileFragment : Fragment() {
         sw.setOnCheckedChangeListener { _, isChecked ->
             AutosavePrefs.setEnabled(requireContext(), isChecked)
         }
+    }
+
+    /** Community sharing opt-in. Off by default; turning it on needs an
+     *  account (uploads are signed) and coarse location (scans are grouped by
+     *  area), the same consent the old in-context prompt asked for. */
+    private fun setupCommunityShareToggle() {
+        val sw = binding.switchCommunityShare
+        sw.isChecked = CommunityPrefs.uploadsEnabled(requireContext())
+        sw.setOnCheckedChangeListener { _, isChecked ->
+            when {
+                !isChecked -> CommunityPrefs.setUploadsEnabled(requireContext(), false)
+                CommunityPrefs.uploadsEnabled(requireContext()) -> Unit
+                authRepository.state.value !is AuthState.Authenticated -> {
+                    sw.isChecked = false
+                    Toast.makeText(requireContext(), R.string.community_share_needs_account, Toast.LENGTH_LONG).show()
+                    if (BuildConfig.ACCOUNT_UI_ENABLED) {
+                        startActivity(AccountActivity.intent(requireContext()))
+                    }
+                }
+                hasCoarseLocation() -> enableCommunitySharing()
+                else -> communityLocationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+        }
+    }
+
+    private fun hasCoarseLocation(): Boolean =
+        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun enableCommunitySharing() {
+        val ctx = context ?: return
+        CommunityPrefs.enable(ctx)
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(ctx)
+        _binding?.switchCommunityShare?.isChecked = true
     }
 
     private fun setupPrivacyConsentToggles() {

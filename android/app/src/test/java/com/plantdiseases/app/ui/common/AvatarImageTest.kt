@@ -55,12 +55,12 @@ class AvatarImageTest {
     @Test
     fun avatarLayouts_haveNoPaddingAndAFullCircleShape() {
         listOf(
-            R.layout.fragment_profile to R.id.iv_profile_avatar,
-            R.layout.activity_account to R.id.iv_avatar,
-        ).forEach { (layout, id) ->
+            Triple(R.layout.fragment_profile, R.id.iv_profile_avatar, 72),
+            Triple(R.layout.activity_account, R.id.iv_avatar, 112),
+        ).forEach { (layout, id, sizeDp) ->
             val (_, avatar) = inflate(layout, id)
             assertNoPadding(avatar)
-            assertCircular(avatar, size = 72.dp().toFloat())
+            assertCircular(avatar, size = sizeDp.dp().toFloat())
             assertThat(avatar.drawable).isInstanceOf(InsetDrawable::class.java)
         }
     }

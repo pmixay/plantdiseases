@@ -36,8 +36,8 @@ class AccountLayoutTest {
         val avatar = root.findViewById<ShapeableImageView>(R.id.iv_avatar)
 
         assertThat(root.findViewById<FrameLayout>(R.id.avatar_picker)).isNotNull()
-        assertThat(avatar.layoutParams.width).isEqualTo(72.dp())
-        assertThat(avatar.layoutParams.height).isEqualTo(72.dp())
+        assertThat(avatar.layoutParams.width).isEqualTo(112.dp())
+        assertThat(avatar.layoutParams.height).isEqualTo(112.dp())
         assertThat(root.findViewById<MaterialButton>(R.id.btn_yandex).layoutParams.width)
             .isEqualTo(ViewGroup.LayoutParams.MATCH_PARENT)
         assertThat(root.findViewById<MaterialButton>(R.id.btn_vk).layoutParams.width)

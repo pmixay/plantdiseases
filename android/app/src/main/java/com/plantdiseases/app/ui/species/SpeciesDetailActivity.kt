@@ -602,6 +602,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity)
                         .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                        .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                         .placeholder(R.drawable.ic_plant_placeholder)
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
@@ -791,6 +792,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
             Glide.with(this)
                 .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 // Decode straight to the 120dp thumbnail size instead of the

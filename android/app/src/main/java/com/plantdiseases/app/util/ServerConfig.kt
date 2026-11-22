@@ -13,6 +13,11 @@ object ServerConfig {
      * domain — reliable where Wikimedia is blocked. Absolute URLs (older cached
      * responses, or anything already http) are passed through unchanged.
      */
+    /** Glide timeout for photos served through the server's photo proxy. A
+     *  first, uncached photo waits on Wikimedia (and on its throttle, see
+     *  server/plant_photos.py); Glide's 2.5 s default gave up before that. */
+    const val PHOTO_TIMEOUT_MS = 30_000
+
     fun photoUrl(raw: String): String =
         if (raw.isBlank() || raw.startsWith("http", ignoreCase = true)) raw else appBaseUrl + raw
 }

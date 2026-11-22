@@ -221,9 +221,12 @@ class GardenFragment : Fragment() {
         binding.gardenActionRow.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
         updateFabVisibility()
 
+        // Rooms, plants and scans once the garden has any; no generic tagline
+        // for an empty garden (the empty state below says what to do).
         val scanTotal = allSummaries.sumOf { it.scanCount }
-        binding.gardenSummaryBody.text = if (hasGardenContent) {
-            getString(
+        binding.gardenSummaryBody.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
+        if (hasGardenContent) {
+            binding.gardenSummaryBody.text = getString(
                 R.string.garden_subtitle_combined,
                 resources.getQuantityString(R.plurals.room_count, allRooms.size, allRooms.size),
                 resources.getQuantityString(
@@ -233,8 +236,6 @@ class GardenFragment : Fragment() {
                     resources.getQuantityString(R.plurals.scan_count, scanTotal, scanTotal),
                 ),
             )
-        } else {
-            getString(R.string.garden_subtitle)
         }
 
         binding.gardenSearchLayout.visibility = if (searchVisible) View.VISIBLE else View.GONE

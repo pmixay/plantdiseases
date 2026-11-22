@@ -6,11 +6,11 @@ import android.content.Context
  * Opt-in state for the community scan corpus.
  *
  * Default is OFF: a fresh install neither contributes nor pulls community data
- * until the user explicitly opts in IN CONTEXT — by tapping "Enable" on the
- * result screen's "similar scans" card or the second-opinion gate. Enabling
- * requests ``ACCESS_COARSE_LOCATION`` (so scans can be grouped by area) and
- * flips this on; nothing is shared before that. Delete-my-contributions still
- * clears any rows already shared.
+ * until the user opts in with Profile's "Share scans with the community"
+ * switch. Turning it on needs an account and ``ACCESS_COARSE_LOCATION`` (so
+ * scans can be grouped by area); nothing is shared before that. Turning it off
+ * (there, or "leave" on the community map) stops new uploads;
+ * delete-my-contributions still clears any rows already shared.
  */
 object CommunityPrefs {
     private const val PREFS_NAME = "plantdiseases_community"

@@ -496,8 +496,6 @@
     <!-- My Garden -->
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
-    <string name="garden_subtitle">Все растения, сканы и полив в одном месте.</string>
-    <string name="profile_subtitle">Ваши растения, активность и настройки.</string>
     <string name="add_plant">Добавить</string>
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
@@ -871,6 +869,11 @@
     <string name="symptom_opt_pests_none">Не вижу</string>
 
     <!-- Autosave snapped scan photos to the device gallery -->
+    <string name="profile_guest_name">Гость</string>
+    <string name="community_share_title">Делиться сканами с сообществом</string>
+    <string name="community_share_subtitle">Ваши сканы (фото, диагноз и примерный район) появятся на карте сообщества и в популярных растениях.</string>
+    <string name="community_share_needs_account">Войдите, чтобы делиться сканами с сообществом</string>
+    <string name="community_share_needs_location">Местоположение нужно, чтобы группировать сканы по району; без него обмен выключен</string>
     <string name="autosave_title">Автосохранение фото в галерею</string>
     <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>
 

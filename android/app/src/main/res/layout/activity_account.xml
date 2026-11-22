@@ -31,6 +31,7 @@
 
             <LinearLayout
                 android:id="@+id/content"
+                android:gravity="center_vertical"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -38,20 +39,20 @@
                 android:paddingTop="@dimen/space_md"
                 android:paddingBottom="@dimen/space_3xl">
 
-                <!-- Page header, like Profile: the avatar beside the account state
-                     ("Log in to your account" or the nickname), the provider line and,
-                     for guests, the sign-in pitch. No coloured block. -->
+                <!-- Page header, centred: the avatar above the account state ("Log in
+                     to your account" or the nickname), the provider line and, for guests,
+                     the sign-in pitch. No coloured block. -->
                 <LinearLayout
                     android:id="@+id/account_hero"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical">
 
                     <FrameLayout
                         android:id="@+id/avatar_picker"
-                        android:layout_width="72dp"
-                        android:layout_height="72dp"
+                        android:layout_width="112dp"
+                        android:layout_height="112dp"
                         android:clickable="true"
                         android:contentDescription="@string/account_change_avatar"
                         android:enabled="false"
@@ -60,8 +61,8 @@
 
                         <com.google.android.material.imageview.ShapeableImageView
                             android:id="@+id/iv_avatar"
-                            android:layout_width="72dp"
-                            android:layout_height="72dp"
+                            android:layout_width="112dp"
+                            android:layout_height="112dp"
                             android:layout_gravity="center"
                             android:background="@color/icon_bg"
                             android:contentDescription="@null"
@@ -71,44 +72,40 @@
                             app:tint="@color/primary" />
                     </FrameLayout>
 
-                    <LinearLayout
-                        android:layout_width="0dp"
+                    <TextView
+                        android:id="@+id/tv_state"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/space_lg"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:accessibilityHeading="true"
+                        android:fontFamily="sans-serif-black"
+                        android:gravity="center"
+                        android:letterSpacing="-0.02"
+                        android:textColor="@color/on_surface"
+                        android:textSize="28sp"
+                        tools:text="likikikpa" />
 
-                        <TextView
-                            android:id="@+id/tv_state"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:accessibilityHeading="true"
-                            android:fontFamily="sans-serif-black"
-                            android:letterSpacing="-0.01"
-                            android:textColor="@color/on_surface"
-                            android:textSize="@dimen/text_title"
-                            tools:text="likikikpa" />
+                    <TextView
+                        android:id="@+id/tv_provider_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:visibility="gone"
+                        tools:text="Yandex ID: gardener" />
 
-                        <TextView
-                            android:id="@+id/tv_provider_name"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:textColor="@color/on_surface"
-                            android:textSize="@dimen/text_body"
-                            android:visibility="gone"
-                            tools:text="Yandex ID: gardener" />
-
-                        <TextView
-                            android:id="@+id/tv_hero_subtitle"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/account_login_pitch"
-                            android:textColor="@color/on_surface"
-                            android:textSize="@dimen/text_body"
-                            android:visibility="gone" />
-                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tv_hero_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center"
+                        android:text="@string/account_login_pitch"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:visibility="gone" />
                 </LinearLayout>
 
                 <TextView

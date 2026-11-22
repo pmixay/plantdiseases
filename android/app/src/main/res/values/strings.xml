@@ -504,8 +504,6 @@
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
-    <string name="garden_subtitle">Every plant, scan and watering in one place.</string>
-    <string name="profile_subtitle">Your plants, activity and settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
@@ -868,6 +866,11 @@
     <string name="symptom_opt_pests_none">None I can see</string>
 
     <!-- Autosave snapped scan photos to the device gallery -->
+    <string name="profile_guest_name">Guest</string>
+    <string name="community_share_title">Share scans with the community</string>
+    <string name="community_share_subtitle">Adds your scans (photo, diagnosis and approximate area) to the community map and popular plants.</string>
+    <string name="community_share_needs_account">Sign in to share scans with the community</string>
+    <string name="community_share_needs_location">Location access groups your scans by area; sharing stays off without it</string>
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
     <string name="autosave_album" translatable="false">PlantDiseases</string>
