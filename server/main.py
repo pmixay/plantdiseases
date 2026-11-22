@@ -76,6 +76,7 @@ try:
         community_labels,
         config,
         deps,
+        feedback_labels,
         plant_photos,
         popular_bundle,
         popular_plants,
@@ -110,6 +111,7 @@ except ImportError:
     import community_labels
     import config
     import deps
+    import feedback_labels
     import pipeline as pipeline_module
     import plant_photos
     import popular_bundle
@@ -2276,7 +2278,7 @@ class CommunityScanRequest(BaseModel):
     @field_validator("scan_id")
     @classmethod
     def _safe_token(cls, v: str) -> str:
-        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
+        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in v):
             raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
         return v
 
@@ -2308,9 +2310,9 @@ class CommunityScanRequest(BaseModel):
         # ``not_a_plant`` and the deferred physiological classes are
         # legal community-share values too — they're still useful
         # signals for the retraining loop.
-        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
             raise ValueError(
-                f"disease must be one of {sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}"
+                f"disease must be one of {sorted(feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS)}"
             )
         return cleaned
 
@@ -2321,58 +2323,6 @@ class CommunityScanRequest(BaseModel):
             return None
         cleaned = v.strip().lower()[:8]
         return cleaned or None
-
-
-# Classes the production head can actually predict. Tracks the
-# ``class_names`` declaration in ``models/classes.json`` via
-# ``classifier.DEFAULT_CLASS_NAMES`` so we only have one source of
-# truth — feedback's ``out_of_head`` flag falls out the moment a
-# correction lands outside this set.
-try:
-    from .classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
-except ImportError:
-    from classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
-
-_FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
-
-# Out-of-head corrections — physiological classes the
-# v2.2 head doesn't carry yet, plus a structured catch-all key. We accept
-# them on /api/feedback (otherwise the user has no way to tell us
-# "your model can't say this") and tag each row with ``out_of_head=1``
-# so retraining can prioritise expanding the label set.
-# ``leaf_scorch_underwatering`` and ``nutrient_deficiency`` moved
-# into the head set (train_notebook.ipynb §1) and now arrive via
-# ``_FEEDBACK_IN_HEAD_CLASSES`` instead.
-_FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
-    "edema",
-    "sunburn_or_scorch",
-    "other",
-    # "The reject was wrong — there IS a plant here." Sent by the app's
-    # single-action feedback on a not_a_plant / blur verdict; these rows
-    # (plus their uploaded images) are exactly what the rejection head
-    # needs for retraining.
-    "is_a_plant",
-})
-
-_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = (
-    _FEEDBACK_IN_HEAD_CLASSES | _FEEDBACK_OUT_OF_HEAD_CLASSES
-)
-
-_FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
-    "wrong_class",
-    "low_quality_image",
-    "occluded",
-    "multiple_plants",
-    "ambiguous_symptoms",
-    "other",
-})
-
-# Opaque server capabilities use a URL-safe alphabet. Community still names
-# its publication capability ``scan_id`` for API compatibility; feedback uses
-# a separate receipt that is never accepted by community endpoints.
-_SCAN_ID_ALLOWED = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-)
 
 
 class FeedbackRequest(BaseModel):
@@ -2388,7 +2338,7 @@ class FeedbackRequest(BaseModel):
     @field_validator("feedback_receipt")
     @classmethod
     def _safe_receipt(cls, value: str) -> str:
-        if any(ch not in _SCAN_ID_ALLOWED for ch in value):
+        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in value):
             raise ValueError("invalid feedback receipt")
         return value
 
@@ -2400,10 +2350,10 @@ class FeedbackRequest(BaseModel):
         cleaned = v.strip().lower()
         if not cleaned:
             return None
-        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
             raise ValueError(
                 f"corrected_class must be one of "
-                f"{sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}; got {v!r}"
+                f"{sorted(feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS)}; got {v!r}"
             )
         return cleaned
 
@@ -2415,9 +2365,9 @@ class FeedbackRequest(BaseModel):
         cleaned = v.strip().lower()
         if not cleaned:
             return None
-        if cleaned not in _FEEDBACK_ALLOWED_REASONS:
+        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_REASONS:
             raise ValueError(
-                f"reason must be one of {sorted(_FEEDBACK_ALLOWED_REASONS)}; got {v!r}"
+                f"reason must be one of {sorted(feedback_labels.FEEDBACK_ALLOWED_REASONS)}; got {v!r}"
             )
         return cleaned
 

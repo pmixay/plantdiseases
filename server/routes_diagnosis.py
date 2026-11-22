@@ -199,7 +199,7 @@ def register(router: APIRouter, m) -> None:
             )
         out_of_head: bool | None = None
         if payload.corrected_class:
-            out_of_head = payload.corrected_class not in m._FEEDBACK_IN_HEAD_CLASSES
+            out_of_head = payload.corrected_class not in m.feedback_labels.FEEDBACK_IN_HEAD_CLASSES
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
@@ -286,7 +286,7 @@ def register(router: APIRouter, m) -> None:
                 None, m.training_store.sanitize_training_image, crop
             )
             out_of_head = (
-                payload.corrected_class not in m._FEEDBACK_IN_HEAD_CLASSES
+                payload.corrected_class not in m.feedback_labels.FEEDBACK_IN_HEAD_CLASSES
                 if payload.corrected_class
                 else None
             )

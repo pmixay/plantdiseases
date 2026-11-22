@@ -112,7 +112,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=exc.status, detail=exc.code) from None
 
     def check_label(value: str | None) -> None:
-        if value and value.strip().lower() not in m._FEEDBACK_ALLOWED_CORRECTIONS:
+        if value and value.strip().lower() not in m.feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
             raise HTTPException(status_code=422, detail="unknown_label")
 
     def spend(operation: str, actor_id: str, limit: int) -> None:
