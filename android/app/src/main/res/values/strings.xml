@@ -473,6 +473,19 @@
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
     <string name="channel_community_name">Community</string>
     <string name="channel_community_desc">Second opinions on scans you shared</string>
+    <string name="channel_forum_answers_name">Community answers</string>
+    <string name="channel_forum_answers_desc">Answers on your posts, replies to your answers and accepted answers</string>
+    <string name="forum_answer_notifs_title">Answers to my posts</string>
+    <string name="forum_answer_notifs_subtitle">Notify me when someone answers my question or replies to my answer.</string>
+    <string name="forum_notif_more_title">More community answers</string>
+    <plurals name="forum_notif_answers_count">
+        <item quantity="one">%1$d new answer on %2$s</item>
+        <item quantity="other">%1$d new answers on %2$s</item>
+    </plurals>
+    <plurals name="forum_notif_more_body">
+        <item quantity="one">New answers on %1$d more post. Open Community to read them.</item>
+        <item quantity="other">New answers on %1$d more posts. Open Community to read them.</item>
+    </plurals>
 
     <!-- About model -->
     <!-- Rate limit -->

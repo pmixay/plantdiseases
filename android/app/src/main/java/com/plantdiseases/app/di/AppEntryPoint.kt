@@ -4,6 +4,7 @@ import android.content.Context
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.InstallationIdProvider
 import com.plantdiseases.app.auth.LogoutRetryScheduler
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -59,6 +60,8 @@ interface AppEntryPoint {
     fun accountDisclosurePrefs(): AccountDisclosurePrefs
 
     fun installationIdProvider(): InstallationIdProvider
+
+    fun forumNotificationSync(): ForumNotificationSync
 }
 
 /** `EntryPointAccessors.fromApplication` against the given context's

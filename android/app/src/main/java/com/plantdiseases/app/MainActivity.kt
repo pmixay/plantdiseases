@@ -190,6 +190,9 @@ class MainActivity : AppCompatActivity() {
         // closed records now instead of at the next periodic tick. The poll
         // runs even when popup notifications are off because it also drives
         // Community V2's in-app notification centre.
+        // Answers on the user's community posts: the same poll-instead-of-push
+        // arrangement, off when the user turned the notifications off.
+        (application as PlantDiseasesApp).scheduleForumAnswerChecks()
         val opinionAction = opinionWorkAction(
             BuildConfig.ACCOUNT_UI_ENABLED,
             com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this),

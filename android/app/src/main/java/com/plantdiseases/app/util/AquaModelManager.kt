@@ -380,9 +380,25 @@ object AquaModelManager {
             }
         }
         numericTriple("normalize_mean", positive = false) &&
-            numericTriple("normalize_std", positive = true)
+            numericTriple("normalize_std", positive = true) &&
+            validOod(classes, unique.toList())
     } catch (_: Exception) {
         false
+    }
+
+    /** The optional `ood` block (notebook §5's MaxLogit floor); same rules as
+     *  [AquaOodGate.fromSidecar] and the server's `_valid_aqua_ood`. */
+    private fun validOod(classes: JsonObject, names: List<String>): Boolean {
+        val ood = classes.get("ood") ?: return true
+        if (ood.isJsonNull) return true
+        if (!ood.isJsonObject) return false
+        val floor = ood.asJsonObject.get("max_logit_floor")
+        if (floor == null || floor.isJsonNull) return true
+        if (!floor.isJsonPrimitive || !floor.asJsonPrimitive.isNumber) return false
+        val scope = ood.asJsonObject.get("max_logit_scope")
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            ?.asString
+        return runCatching { AquaOodGate.fromSidecar(floor.asDouble, scope, names) != null }.getOrDefault(false)
     }
 
     private fun validateStagedTensorContract(model: File, classes: JsonObject) {

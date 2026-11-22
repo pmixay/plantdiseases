@@ -53,6 +53,23 @@ class ForumNotificationSyncPlanTest {
     }
 
     @Test
+    fun answerEventsLinkToTheAnswerInThePost() {
+        val item = ForumActivityItem(
+            type = "reply_to_answer",
+            postId = "p9",
+            answerId = "a3",
+            postTitle = "Pyrus",
+            nickname = "Ann",
+            createdAt = 9,
+        )
+        val event = ForumNotificationSync.Plan.events(listOf(item), emptyList(), watermark = 0).single()
+
+        assertThat(event.deeplink).isEqualTo("forum_post:p9:a3")
+        assertThat(event.postId).isEqualTo("p9")
+        assertThat(event.answerId).isEqualTo("a3")
+    }
+
+    @Test
     fun nothingNew_nothingStored() {
         val events = ForumNotificationSync.Plan.events(listOf(answer("answer_on_post", 5)), emptyList(), watermark = 5)
 

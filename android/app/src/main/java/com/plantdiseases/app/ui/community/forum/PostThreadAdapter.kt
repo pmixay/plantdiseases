@@ -54,6 +54,20 @@ class PostThreadAdapter(
     private var post: ForumPost? = null
     private var spaces: List<ForumSpace> = emptyList()
 
+    /** The answer a notification opened the post at, tinted for a moment. */
+    var highlightedAnswerId: String? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
+
+    /** Adapter position of [answerId], or -1 when the thread lacks it. */
+    fun positionOf(answerId: String): Int {
+        val index = post?.answers?.indexOfFirst { it.id == answerId } ?: -1
+        return if (index < 0) -1 else index + 1
+    }
+
     /** A guest's like, not-helpful and reply actions are drawn locked (gray);
      *  their taps still reach [actions], which offer sign-in. */
     var guest: Boolean = false
@@ -205,6 +219,16 @@ class PostThreadAdapter(
         fun bind(post: ForumPost, answer: ForumAnswer) {
             val context = binding.root.context
             val res = context.resources
+            binding.answerRoot.foreground = if (answer.id == highlightedAnswerId) {
+                android.graphics.drawable.ColorDrawable(
+                    androidx.core.graphics.ColorUtils.setAlphaComponent(
+                        ContextCompat.getColor(context, R.color.primary),
+                        HIGHLIGHT_ALPHA,
+                    ),
+                )
+            } else {
+                null
+            }
             binding.answerRoot.setPaddingRelative(
                 res.getDimensionPixelSize(R.dimen.space_lg) + res.getDimensionPixelSize(R.dimen.forum_reply_indent) * answer.depth,
                 binding.answerRoot.paddingTop,
@@ -452,5 +476,6 @@ class PostThreadAdapter(
         const val PERCENT = 100
         const val TAG_ICON_DP = 14
         const val MARK_ICON_DP = 16
+        const val HIGHLIGHT_ALPHA = 0x29
     }
 }

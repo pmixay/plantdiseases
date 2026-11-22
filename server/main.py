@@ -4624,9 +4624,39 @@ def _valid_aqua_classes(meta: object) -> bool:
                 return False
         return True
 
-    return _valid_triple("normalize_mean", positive=False) and _valid_triple(
+    if not (_valid_triple("normalize_mean", positive=False) and _valid_triple(
         "normalize_std", positive=True,
-    )
+    )):
+        return False
+    return _valid_aqua_ood(meta.get("ood", None), names) if "ood" in meta else True
+
+
+# Scopes the on-device MaxLogit floor may be scored over (notebook §5,
+# ``AquaClassifier``); the server's own gate uses the same two.
+_AQUA_OOD_SCOPES = frozenset({"plant_only", "all_classes"})
+
+
+def _valid_aqua_ood(ood, names: list) -> bool:
+    """The optional ``classes.json -> ood`` block of an Aqua sidecar.
+
+    Absent, or present with a null floor, means the gate is off and the app
+    serves exactly as before. A present floor must be a finite number with a
+    known scope; ``plant_only`` needs a ``not_a_plant`` column to exclude.
+    Mirrors ``AquaOodGate.parse`` in the app.
+    """
+    if ood is None:
+        return True
+    if not isinstance(ood, dict):
+        return False
+    floor = ood.get("max_logit_floor")
+    if floor is None:
+        return True
+    if isinstance(floor, bool) or not isinstance(floor, (int, float)) or not math.isfinite(float(floor)):
+        return False
+    scope = ood.get("max_logit_scope")
+    if scope not in _AQUA_OOD_SCOPES:
+        return False
+    return scope != "plant_only" or "not_a_plant" in names
 
 
 def _aqua_classes_sha256(meta: dict) -> str:

@@ -464,6 +464,23 @@
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
     <string name="channel_community_name">Сообщество</string>
     <string name="channel_community_desc">Вторые мнения о сканах, которыми вы поделились</string>
+    <string name="channel_forum_answers_name">Ответы в сообществе</string>
+    <string name="channel_forum_answers_desc">Ответы на ваши посты, ответы на ваши ответы и принятые ответы</string>
+    <string name="forum_answer_notifs_title">Ответы на мои посты</string>
+    <string name="forum_answer_notifs_subtitle">Сообщать, когда кто-то отвечает на мой вопрос или на мой ответ.</string>
+    <string name="forum_notif_more_title">Ещё ответы в сообществе</string>
+    <plurals name="forum_notif_answers_count">
+        <item quantity="one">%1$d новый ответ в «%2$s»</item>
+        <item quantity="few">%1$d новых ответа в «%2$s»</item>
+        <item quantity="many">%1$d новых ответов в «%2$s»</item>
+        <item quantity="other">%1$d новых ответа в «%2$s»</item>
+    </plurals>
+    <plurals name="forum_notif_more_body">
+        <item quantity="one">Новые ответы ещё в %1$d посте. Откройте сообщество, чтобы прочитать.</item>
+        <item quantity="few">Новые ответы ещё в %1$d постах. Откройте сообщество, чтобы прочитать.</item>
+        <item quantity="many">Новые ответы ещё в %1$d постах. Откройте сообщество, чтобы прочитать.</item>
+        <item quantity="other">Новые ответы ещё в %1$d поста. Откройте сообщество, чтобы прочитать.</item>
+    </plurals>
 
     <!-- About model -->
     <!-- Rate limit -->

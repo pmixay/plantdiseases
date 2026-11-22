@@ -432,8 +432,9 @@ class AnalysisActivity : AppCompatActivity() {
     ): com.plantdiseases.app.data.model.AnalysisResponse? =
         withContext(Dispatchers.Default) {
             // The user may acknowledge the blur dialog to inspect the neutral
-            // result, but failed QA cannot enter the Aqua classifier. Aqua has
-            // no calibrated OOD overlay to rescue an accepted argmax later.
+            // result, but failed QA cannot enter the Aqua classifier: its only
+            // later refusals are the not_a_plant head and the sidecar's
+            // MaxLogit floor, neither of which judges sharpness.
             if (imageQualityRejected) {
                 return@withContext AquaInference.buildImageQualityAbstention()
             }
@@ -447,12 +448,15 @@ class AnalysisActivity : AppCompatActivity() {
                 classifier = activeClassifier
                 val bitmap = AquaClassifier.decodeForInference(imagePath) ?: return@withContext null
                 // Recycle in finally so a classify() failure can't leak the bitmap.
-                val probs = try {
+                val prediction = try {
                     activeClassifier.classify(bitmap)
                 } finally {
                     bitmap.recycle()
                 }
-                val response = AquaInference.buildResponse(probs)
+                val response = AquaInference.buildResponse(
+                    prediction.probabilities,
+                    outOfDistribution = prediction.outOfDistribution,
+                )
                 if (response.diagnosticContractViolation() != null) {
                     Log.w(TAG, "Aqua envelope violated diagnostic contract")
                     TelemetryReporter.report("aqua_inference", "invalid_envelope", family = "aqua")

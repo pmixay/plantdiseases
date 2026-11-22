@@ -262,6 +262,13 @@ class PlantDiseasesApp : Application() {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = getString(R.string.channel_community_desc) },
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_FORUM_ANSWERS,
+                getString(R.string.channel_forum_answers_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = getString(R.string.channel_forum_answers_desc) },
+        )
     }
 
     /** Poll for new second opinions on shared scans roughly hourly. Called
@@ -295,6 +302,37 @@ class PlantDiseasesApp : Application() {
             androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
+    }
+
+    /** Poll Community for answers on the user's posts every half hour and
+     *  notify ([com.plantdiseases.app.worker.ForumAnswerCheckWorker]), or stop
+     *  when the user turned answer notifications off in Profile. Called from
+     *  MainActivity and the Profile switch (not Application.onCreate, for the
+     *  same WorkManager-timing reason as the opinion poll). */
+    fun scheduleForumAnswerChecks() {
+        val work = androidx.work.WorkManager.getInstance(this)
+        val name = com.plantdiseases.app.worker.ForumAnswerCheckWorker.PERIODIC
+        if (!BuildConfig.ACCOUNT_UI_ENABLED ||
+            !com.plantdiseases.app.util.ForumNotificationPrefs.answersEnabled(this)
+        ) {
+            work.cancelUniqueWork(name)
+            return
+        }
+        val request = androidx.work.PeriodicWorkRequestBuilder<
+            com.plantdiseases.app.worker.ForumAnswerCheckWorker
+            >(
+            30,
+            java.util.concurrent.TimeUnit.MINUTES,
+            10,
+            java.util.concurrent.TimeUnit.MINUTES,
+        )
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        work.enqueueUniquePeriodicWork(name, androidx.work.ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     /** Warm Glide's disk cache with the guide/disease example photos so they
@@ -354,6 +392,7 @@ class PlantDiseasesApp : Application() {
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
         const val CHANNEL_COMMUNITY = "community"
+        const val CHANNEL_FORUM_ANSWERS = "forum_answers"
 
         // Only minimized crash state is stashed for reporting on next launch.
         private const val TELEMETRY_PREFS = "plantdiseases_telemetry"

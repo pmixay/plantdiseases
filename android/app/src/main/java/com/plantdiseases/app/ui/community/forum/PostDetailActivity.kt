@@ -50,6 +50,10 @@ class PostDetailActivity :
     private lateinit var moderation: ModerationController
 
     private val postId: String by lazy { intent.getStringExtra(EXTRA_POST_ID).orEmpty() }
+
+    // The answer a notification points at: scrolled to and tinted once.
+    private val targetAnswerId: String? by lazy { intent.getStringExtra(EXTRA_ANSWER_ID) }
+    private var targetShown = false
     private var post: ForumPost? = null
     private var spaces: List<ForumSpace> = emptyList()
     private var staff: StaffMe? = null
@@ -175,9 +179,24 @@ class PostDetailActivity :
         binding.tvError.visibility = View.GONE
         binding.toolbar.title = ForumUi.spaceName(this, loaded.space, spaces)
         adapter.submit(loaded, spaces)
+        showTargetAnswer()
         binding.tvLocked.visibility = if (loaded.locked) View.VISIBLE else View.GONE
         binding.composer.visibility = if (loaded.locked) View.GONE else View.VISIBLE
         buildPostMenu(loaded)
+    }
+
+    private fun showTargetAnswer() {
+        val target = targetAnswerId ?: return
+        if (targetShown) return
+        val position = adapter.positionOf(target)
+        if (position < 0) return
+        targetShown = true
+        binding.rvThread.post {
+            (binding.rvThread.layoutManager as? LinearLayoutManager)
+                ?.scrollToPositionWithOffset(position, resources.getDimensionPixelSize(R.dimen.space_lg))
+        }
+        adapter.highlightedAnswerId = target
+        binding.rvThread.postDelayed({ adapter.highlightedAnswerId = null }, HIGHLIGHT_MS)
     }
 
     // ── post menu ────────────────────────────────────────────────────────
@@ -471,6 +490,8 @@ class PostDetailActivity :
 
     companion object {
         private const val EXTRA_POST_ID = "extra_forum_post_id"
+        private const val EXTRA_ANSWER_ID = "extra_forum_answer_id"
+        private const val HIGHLIGHT_MS = 2_500L
         private const val MAX_ANSWER_PHOTOS = 3
         private const val MAX_STEPS = 8
         private const val MENU_DELETE = 1
@@ -479,7 +500,10 @@ class PostDetailActivity :
         private const val MENU_MODERATE = 4
         private const val MENU_UPDATE = 5
 
-        fun intent(context: Context, postId: String): Intent =
-            Intent(context, PostDetailActivity::class.java).putExtra(EXTRA_POST_ID, postId)
+        /** The post; with [answerId], scrolled to that answer (notifications). */
+        fun intent(context: Context, postId: String, answerId: String? = null): Intent =
+            Intent(context, PostDetailActivity::class.java)
+                .putExtra(EXTRA_POST_ID, postId)
+                .apply { if (!answerId.isNullOrBlank()) putExtra(EXTRA_ANSWER_ID, answerId) }
     }
 }

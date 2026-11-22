@@ -48,6 +48,7 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
+import com.plantdiseases.app.util.ForumNotificationPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ProfileAvatarStore
@@ -106,6 +107,12 @@ class ProfileFragment : Fragment() {
 
     // Community-only rows (achievements) offer sign-in in place.
     private val quickSignIn = QuickSignIn.of(this)
+
+    // Turning answer notifications on asks for the Android 13+ permission;
+    // without it the switch stays on and the notification centre still fills.
+    private val notificationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { }
 
     private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
         completeAvatarEdit(result)
@@ -190,6 +197,7 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
+        setupForumAnswerNotificationsToggle()
         setupPrivacyConsentToggles()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
@@ -568,6 +576,27 @@ class ProfileFragment : Fragment() {
         sw.isChecked = AutosavePrefs.enabled(requireContext())
         sw.setOnCheckedChangeListener { _, isChecked ->
             AutosavePrefs.setEnabled(requireContext(), isChecked)
+        }
+    }
+
+    /** Answers on the user's community posts: on by default; off stops the
+     *  background check (the in-app notification centre still lists them). */
+    private fun setupForumAnswerNotificationsToggle() {
+        val sw = binding.switchForumAnswerNotifs
+        sw.isChecked = ForumNotificationPrefs.answersEnabled(requireContext())
+        sw.setOnCheckedChangeListener { _, isChecked ->
+            val ctx = requireContext()
+            ForumNotificationPrefs.setAnswersEnabled(ctx, isChecked)
+            (ctx.applicationContext as com.plantdiseases.app.PlantDiseasesApp).scheduleForumAnswerChecks()
+            if (isChecked &&
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    ctx,
+                    android.Manifest.permission.POST_NOTIFICATIONS,
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 

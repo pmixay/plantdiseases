@@ -21,7 +21,9 @@ object NotificationRouter {
         }
         return when (prefix) {
             "community" -> MyScanRepliesActivity.intentFor(context, id)
-            ForumNotificationSync.LINK_POST -> PostDetailActivity.intent(context, id)
+            ForumNotificationSync.LINK_POST -> id.split(":", limit = 2).let { parts ->
+                PostDetailActivity.intent(context, parts[0], answerId = parts.getOrNull(1))
+            }
             ForumNotificationSync.LINK_DECISION -> ModerationNoticesActivity.intent(context)
             "plant" -> id.toLongOrNull()?.let { plantId ->
                 Intent(context, PlantDetailActivity::class.java)

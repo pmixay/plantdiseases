@@ -97,3 +97,41 @@ def test_aqua_manifest_rejects_sidecar_the_client_cannot_install(
             classes["_model_sha256"] = "0" * 64
         (tmp_path / "classes.json").write_text(json.dumps(classes))
         assert client.get("/api/aqua/manifest").json() == {"available": False}
+
+
+def test_aqua_manifest_passes_a_valid_ood_floor_through(client, monkeypatch, tmp_path):
+    (tmp_path / "aqua_classifier.tflite").write_bytes(b"model")
+    monkeypatch.setattr(server_main, "AQUA_STATIC_DIR", tmp_path)
+    server_main._aqua_model_sha256.cache_clear()
+    for ood in (
+        None,
+        {"max_logit_floor": None, "max_logit_scope": "plant_only"},
+        {"max_logit_floor": 3.25, "max_logit_scope": "plant_only"},
+        {"max_logit_floor": 2, "max_logit_scope": "all_classes"},
+    ):
+        classes = _valid_classes()
+        classes["class_names"] = ["healthy", "leaf_spot", "not_a_plant"]
+        classes["ood"] = ood
+        (tmp_path / "classes.json").write_text(json.dumps(classes))
+        body = client.get("/api/aqua/manifest").json()
+        assert body["available"] is True, ood
+        assert body["classes"]["ood"] == ood
+
+
+def test_aqua_manifest_rejects_an_ood_floor_the_client_cannot_apply(client, monkeypatch, tmp_path):
+    (tmp_path / "aqua_classifier.tflite").write_bytes(b"model")
+    monkeypatch.setattr(server_main, "AQUA_STATIC_DIR", tmp_path)
+    server_main._aqua_model_sha256.cache_clear()
+    for names, ood in (
+        (["healthy", "not_a_plant"], "3.0"),
+        (["healthy", "not_a_plant"], {"max_logit_floor": "3.0", "max_logit_scope": "plant_only"}),
+        (["healthy", "not_a_plant"], {"max_logit_floor": True, "max_logit_scope": "plant_only"}),
+        (["healthy", "not_a_plant"], {"max_logit_floor": 3.0, "max_logit_scope": "mystery"}),
+        (["healthy", "not_a_plant"], {"max_logit_floor": 3.0}),
+        (["healthy", "leaf_spot"], {"max_logit_floor": 3.0, "max_logit_scope": "plant_only"}),
+    ):
+        classes = _valid_classes()
+        classes["class_names"] = names
+        classes["ood"] = ood
+        (tmp_path / "classes.json").write_text(json.dumps(classes))
+        assert client.get("/api/aqua/manifest").json() == {"available": False}, ood
