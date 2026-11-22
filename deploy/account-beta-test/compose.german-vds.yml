@@ -263,7 +263,6 @@ services:
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
       # Push is intentionally disabled for this beta; owner updates are polled.
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       AQUA_STATIC_DIR: /app/models/aqua
@@ -279,7 +278,6 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
       OPENROUTER_API_KEY: ""
-      FCM_CREDENTIALS_FILE: ""
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${BETA_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"

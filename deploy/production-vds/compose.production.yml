@@ -258,8 +258,6 @@ services:
       # Credentials are mode-0400 files owned by the app uid; never environment values.
       PLANTNET_API_KEY_FILE: ""
       OPENROUTER_API_KEY_FILE: ${PROD_OPENROUTER_KEY_FILE:-}
-      FCM_CREDENTIALS_FILE: ${PROD_FCM_CREDENTIALS_FILE:-}
-      PUSH_DB_PATH: /data/legacy-push/push.db
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${PROD_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"
@@ -310,7 +308,6 @@ services:
       - prod_telemetry:/data/telemetry
       - prod_app_cache:/data/app-cache
       - prod_app_logs:/data/logs
-      - prod_legacy_push:/data/legacy-push
     networks:
       - prod-edge
     healthcheck:
@@ -374,5 +371,3 @@ volumes:
     name: ${PROD_VOLUME_PREFIX}_app_cache
   prod_app_logs:
     name: ${PROD_VOLUME_PREFIX}_app_logs
-  prod_legacy_push:
-    name: ${PROD_VOLUME_PREFIX}_legacy_push

@@ -107,7 +107,7 @@ load, verify and run models. Pipeline contract: [`MODEL_CARD.md`](server/models/
 
 ## Project status
 
-**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 39 API routes.
+**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 76 API operations.
 Per-run numbers live in [`docs/MODEL_HISTORY.md`](docs/MODEL_HISTORY.md); the roadmap
 below is a summary of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

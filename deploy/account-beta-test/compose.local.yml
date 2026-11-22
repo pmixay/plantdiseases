@@ -170,7 +170,6 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
       OPENROUTER_API_KEY: ""
-      FCM_CREDENTIALS_FILE: ""
       CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
       TRUSTED_PROXIES: ""
       RATE_LIMIT_RPS: "100"

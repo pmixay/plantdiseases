@@ -54,8 +54,6 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
       a `train_only` supplement grouped by `capture_family_id`; run
       `tools/filter_supplement.py` against the OOD benchmark first.
 - [ ] Following spaces, and a desktop web admin panel.
-- [ ] Retire the legacy second-opinion endpoints once older app versions age out;
-      until then the maintenance pass copies their requests into the forum.
 - [ ] Home's "Popular near you" shows only to community members; it could offer
       joining (`ui/community/CommunityJoin`) like the map, result and species page.
 
@@ -265,8 +263,6 @@ None blocks a release.
 - [ ] **`android/app/build.gradle.kts`** (TFLite dependency comment) still says Aqua
       is provisioned at `assets/models/aqua_classifier.tflite`; it is downloaded to
       `filesDir/aqua/`. Its test-fork comment also still counts "~58 Robolectric classes".
-- [ ] **README route count.** The status line says 39 API routes; `openapi.json` has
-      82 operations (the forum and moderation routes added most of them).
 - [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
       maximising gamma".
 
@@ -276,7 +272,7 @@ None blocks a release.
 
 - [ ] Spider-mite split from `pests` (deferred; precision already high).
 - [ ] More UI languages (server content is already bilingual).
-- [ ] Expert-human consultation (ties into 2.8 safety escalation; builds on the second-opinion loop).
+- [ ] Expert-human consultation (ties into 2.8 safety escalation; builds on the community forum).
 
 ---
 

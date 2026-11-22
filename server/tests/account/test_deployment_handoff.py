@@ -193,8 +193,6 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     assert app["TELEMETRY_ENABLED"] == "false"
     assert app["PLANTNET_API_KEY"] == ""
     assert app["OPENROUTER_API_KEY"] == ""
-    assert app["FCM_CREDENTIALS_FILE"] == ""
-    assert app["ACCOUNT_NOTIFICATION_URL"] == ""
     assert app["INTERNAL_SERVICE_TOKEN_FILE"] == (
         "/run/internal-token/internal.token"
     )
@@ -490,7 +488,7 @@ def test_privacy_policy_matches_account_release():
         "RuStore",
     ):
         assert not_live not in privacy, f"policy still describes {not_live}"
-    assert "Publishing a scan or submitting an opinion requires sign-in" in privacy
+    assert "Publishing a scan or a forum post requires sign-in" in privacy
     assert "It currently has no automatic expiry" not in privacy
     assert "It is kept for 30 days after deletion and then erased" in privacy
     assert "Do not post identifiers, tokens or account details in a public issue" in privacy
