@@ -23,6 +23,10 @@ except ImportError:
     import config
     import diseases_data
     import feedback_labels
+try:
+    from . import community_http
+except ImportError:
+    import community_http
 
 
 def _to_public_feed_item(
@@ -390,7 +394,7 @@ def register(router: APIRouter, m) -> None:
                 ),
             )
         except ValueError as exc:
-            m._raise_community_safety_error(exc)
+            community_http.raise_community_safety_error(exc)
             raise AssertionError("unreachable") from exc
         return JSONResponse(
             content={"ok": True, "created": bool(created)},
@@ -419,7 +423,7 @@ def register(router: APIRouter, m) -> None:
                 ),
             )
         except ValueError as exc:
-            m._raise_community_safety_error(exc)
+            community_http.raise_community_safety_error(exc)
             raise AssertionError("unreachable") from exc
         return JSONResponse(
             content={"ok": True, **result},
@@ -1110,7 +1114,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
         # Streams off the event loop; supports 304 revalidation. Thumbnails
         # are always re-encoded to JPEG by community._save_thumbnail.
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request, path,
             media_type="image/jpeg",
             cache_control="public, max-age=300, must-revalidate",

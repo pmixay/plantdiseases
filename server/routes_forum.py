@@ -16,6 +16,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import community_http, config
+except ImportError:
+    import community_http
+    import config
+
 
 class ForumPostCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -99,6 +106,13 @@ class ForumBlockRequest(BaseModel):
 
 
 _NO_STORE = {"Cache-Control": "no-store"}
+
+# Forum write budgets, per signed account actor (not per address).
+FORUM_POST_DAILY_QUOTA = config.get_int("FORUM_POST_DAILY_QUOTA", 20)
+FORUM_ANSWER_DAILY_QUOTA = config.get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
+FORUM_MEDIA_DAILY_QUOTA = config.get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
+FORUM_AVATAR_DAILY_QUOTA = config.get_int("FORUM_AVATAR_DAILY_QUOTA", 10)
+FORUM_REACTION_DAILY_QUOTA = config.get_int("FORUM_REACTION_DAILY_QUOTA", 500)
 
 
 def register(router: APIRouter, m) -> None:
@@ -212,7 +226,7 @@ def register(router: APIRouter, m) -> None:
                 )
         if path is None:
             raise HTTPException(status_code=404, detail="media_not_found")
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request,
             path,
             media_type="image/jpeg",
@@ -249,7 +263,7 @@ def register(router: APIRouter, m) -> None:
             if v == version
             else "public, max-age=300, must-revalidate"
         )
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request, path, media_type="image/jpeg", cache_control=cache_control
         )
 
@@ -273,7 +287,7 @@ def register(router: APIRouter, m) -> None:
         """Upload one photo for a post or answer. With ``scan_token`` the bytes
         must be the photo the server analysed, so the post can show its verdict."""
         principal = await m._require_account(request)
-        spend("forum_media", principal.actor_id, m.FORUM_MEDIA_DAILY_QUOTA)
+        spend("forum_media", principal.actor_id, FORUM_MEDIA_DAILY_QUOTA)
         if image.content_type and image.content_type not in m._COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(status_code=400, detail="unsupported_image_type")
         body = await m._read_upload(image)
@@ -291,7 +305,7 @@ def register(router: APIRouter, m) -> None:
         """Publish or replace my profile photo, shown beside my posts and answers.
         It is re-encoded as a square JPEG without metadata."""
         principal = await m._require_account(request)
-        spend("forum_avatar", principal.actor_id, m.FORUM_AVATAR_DAILY_QUOTA)
+        spend("forum_avatar", principal.actor_id, FORUM_AVATAR_DAILY_QUOTA)
         if image.content_type and image.content_type not in m._COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(status_code=400, detail="unsupported_image_type")
         body = await m._read_upload(image)
@@ -312,7 +326,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_post_create(payload: ForumPostCreate, request: Request):
         principal = await m._require_account(request)
         check_label(payload.condition)
-        spend("forum_post", principal.actor_id, m.FORUM_POST_DAILY_QUOTA)
+        spend("forum_post", principal.actor_id, FORUM_POST_DAILY_QUOTA)
         result = await run(
             m.community_forum.create_post,
             actor_id=principal.actor_id,
@@ -354,7 +368,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_post_like(post_id: str, payload: ForumLikeRequest, request: Request):
         principal = await m._require_account(request)
         if payload.liked:
-            spend("forum_reaction", principal.actor_id, m.FORUM_REACTION_DAILY_QUOTA)
+            spend("forum_reaction", principal.actor_id, FORUM_REACTION_DAILY_QUOTA)
         result = await run(
             m.community_forum.set_post_like,
             actor_id=principal.actor_id,
@@ -369,7 +383,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_answer_create(post_id: str, payload: ForumAnswerCreate, request: Request):
         principal = await m._require_account(request)
         check_label(payload.diagnosis)
-        spend("forum_answer", principal.actor_id, m.FORUM_ANSWER_DAILY_QUOTA)
+        spend("forum_answer", principal.actor_id, FORUM_ANSWER_DAILY_QUOTA)
         result = await run(
             m.community_forum.create_answer,
             actor_id=principal.actor_id,
@@ -426,7 +440,7 @@ def register(router: APIRouter, m) -> None:
         """Like an answer, mark it not helpful (the only downvote), or clear."""
         principal = await m._require_account(request)
         if payload.reaction is not None:
-            spend("forum_reaction", principal.actor_id, m.FORUM_REACTION_DAILY_QUOTA)
+            spend("forum_reaction", principal.actor_id, FORUM_REACTION_DAILY_QUOTA)
         result = await run(
             m.community_forum.set_answer_reaction,
             actor_id=principal.actor_id,
@@ -465,6 +479,6 @@ def register(router: APIRouter, m) -> None:
                 ),
             )
         except ValueError as exc:
-            m._raise_community_safety_error(exc)
+            community_http.raise_community_safety_error(exc)
             raise AssertionError("unreachable") from exc
         return JSONResponse(content={"ok": True, **result}, headers=_NO_STORE)

@@ -27,6 +27,10 @@ try:
 except ImportError:
     import community_geo
     import config
+try:
+    from . import community_http
+except ImportError:
+    import community_http
 
 
 logger = logging.getLogger("plantdiseases")
@@ -320,7 +324,7 @@ def register(router: APIRouter, m) -> None:
             (webp, "image/webp") if webp is not None
             else (path, m.plant_photos.media_type_for(path))
         )
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request, serve,
             media_type=media,
             cache_control="public, max-age=604800",
@@ -346,7 +350,7 @@ def register(router: APIRouter, m) -> None:
             None, _guide_webp_variant, path,
         )
         serve, media = (webp, "image/webp") if webp is not None else (path, "image/png")
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request, serve,
             media_type=media,
             cache_control="public, max-age=604800",

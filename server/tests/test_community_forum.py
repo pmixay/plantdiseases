@@ -604,9 +604,9 @@ def test_http_rule_errors_map_to_status_codes(client, community_store):
 
 
 def test_http_post_quota(client, community_store, monkeypatch):
-    import main
+    import routes_forum
 
-    monkeypatch.setattr(main, "FORUM_POST_DAILY_QUOTA", 1)
+    monkeypatch.setattr(routes_forum, "FORUM_POST_DAILY_QUOTA", 1)
     first = client.post(
         "/api/community/posts",
         json={"kind": "tip", "title": "One", "body": "b"},
