@@ -1044,7 +1044,20 @@ data class CarePlanRequest(
     @SerializedName("locale") @SerialName("locale") val locale: String = "en",
     /** Optional season override — `null` lets the server pick from today's date. */
     @SerializedName("season") @SerialName("season") val season: String? = null,
-)
+    /** What the plan is for; only [PURPOSE_SCAN] spends the daily care-plan allowance. */
+    @SerializedName("purpose") @SerialName("purpose") val purpose: String = PURPOSE_SCAN,
+) {
+    companion object {
+        /** Adapted to a diagnosis: the scan result and the plant it was saved to. */
+        const val PURPOSE_SCAN = "scan"
+
+        /** A species' general care on the species page: never metered. */
+        const val PURPOSE_SPECIES = "species"
+
+        /** The structured plan behind a garden treatment checklist: no AI summary, never metered. */
+        const val PURPOSE_CHECKLIST = "checklist"
+    }
+}
 
 /** /api/symptom-diagnose request — a map of stable questionId → optionId
  *  (the question/option IDs ship in the app and are scored server-side). */

@@ -490,8 +490,10 @@ class _PolishCache:
     def __init__(self):
         self.polished: set[str | None] = set()
         self.paid_calls = 0
+        self.calls: list[dict] = []
 
     def __call__(self, **kwargs):
+        self.calls.append(kwargs)
         species = kwargs.get("species")
         if species in self.polished:
             return {"summary_md": "polished", "cached": True}
@@ -535,6 +537,53 @@ def test_only_uncached_care_plan_polish_spends_allowance(client, monkeypatch):
     assert other.json() == {"detail": "quota_exhausted"}
     assert fake.paid_calls == 1
     assert sum(server_main._guest_feature_counts.values()) == 1
+
+
+def test_species_page_plan_is_never_metered(client, monkeypatch):
+    fake = _PolishCache()
+    monkeypatch.setattr(server_main, "generate_care_plan", fake)
+    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
+
+    for species in ("Ficus elastica", "Monstera deliciosa"):
+        response = client.post(
+            "/api/care-plan",
+            # A disease sent with the species purpose is ignored: the general
+            # plan is always the healthy-plant one.
+            json={"disease": "root_rot", "species": species, "purpose": "species"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["summary_md"] == "polished"
+
+    assert fake.paid_calls == 2
+    assert {call["disease"] for call in fake.calls} == {"healthy"}
+    assert not server_main._guest_feature_counts
+
+
+def test_garden_checklist_plan_is_never_polished_or_metered(client, monkeypatch):
+    fake = _PolishCache()
+    monkeypatch.setattr(server_main, "generate_care_plan", fake)
+    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
+
+    for _ in range(2):
+        response = client.post(
+            "/api/care-plan",
+            json={"disease": "root_rot", "species": "Ficus elastica", "purpose": "checklist"},
+        )
+        assert response.status_code == 200, response.text
+
+    assert fake.paid_calls == 0
+    assert all(call["polish"] is False for call in fake.calls)
+    assert not server_main._guest_feature_counts
+
+
+def test_unknown_care_plan_purpose_is_rejected(client):
+    response = client.post(
+        "/api/care-plan",
+        json={"disease": "healthy", "purpose": "free_please"},
+    )
+    assert response.status_code == 422
 
 
 def test_chat_refused_before_the_model_costs_no_allowance(client, monkeypatch):

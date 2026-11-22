@@ -88,18 +88,30 @@ def register(router: APIRouter, m) -> None:
         Past ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served
         without the LLM polish.
 
-        Only a fresh LLM polish spends the caller's daily care-plan allowance:
-        a cached polished summary and the rules-based plan cost nothing, so
-        they are served without touching it.
+        Only a plan adapted to a scan (``purpose="scan"``, the default) spends
+        the caller's daily care-plan allowance, and only for a fresh LLM
+        polish: a cached polished summary and the rules-based plan cost
+        nothing. A species page's general plan (``purpose="species"``) is
+        always the healthy-plant plan and never metered; its polish is still
+        bounded by the per-IP allowance and shared through the cache. A garden
+        checklist (``purpose="checklist"``) needs only the structured plan, so
+        it is never polished or metered.
         """
         if m.pipeline is None:
             raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+        purpose = payload.purpose
         disease = payload.disease.strip()
+        if purpose == "species":
+            # A species' general care, never a diagnosis: keeps this unmetered
+            # path from serving disease-specific plans.
+            disease = "healthy"
         if disease not in m.DISEASES_DATABASE and disease != "unknown":
             # Don't reject — just normalise unknown to ``unknown``. Keeps the
             # endpoint forgiving while still producing a useful plan.
             disease = "unknown"
         loop = asyncio.get_running_loop()
+        polish = purpose != "checklist"
+        metered = purpose == "scan"
 
         def build(*, polish: bool, cached_polish_only: bool = False) -> dict:
             return m.generate_care_plan(
@@ -114,24 +126,27 @@ def register(router: APIRouter, m) -> None:
 
         plan = await loop.run_in_executor(
             m._get_net_executor(),
-            lambda: build(polish=True, cached_polish_only=True),
+            lambda: build(polish=polish, cached_polish_only=True),
         )
         if (
-            not plan.get("cached")
+            polish
+            and not plan.get("cached")
             and m.openrouter_configured()
             and m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
         ):
-            await m._authorize_metered_feature(request, feature="care_plan")
+            if metered:
+                await m._authorize_metered_feature(request, feature="care_plan")
             plan = await loop.run_in_executor(
                 m._get_net_executor(),
                 lambda: build(polish=True),
             )
-            # Another request may have cached the same summary meanwhile.
-            await m._release_metered_feature_if_no_upstream_attempt(
-                request,
-                feature="care_plan",
-                upstream_attempted=not plan.get("cached"),
-            )
+            if metered:
+                # Another request may have cached the same summary meanwhile.
+                await m._release_metered_feature_if_no_upstream_attempt(
+                    request,
+                    feature="care_plan",
+                    upstream_attempted=not plan.get("cached"),
+                )
         toxicity = m.lookup_pet_toxicity(payload.species) if payload.species else {
             "toxic_to_pets": False, "species_list": [], "source": "unknown",
         }

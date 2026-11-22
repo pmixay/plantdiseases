@@ -239,6 +239,9 @@ class GardenAttachController(
                 species = speciesHint,
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
+                // Background checklist fill: the structured plan is enough,
+                // so it never spends the user's care-plan allowance.
+                purpose = CarePlanRequest.PURPOSE_CHECKLIST,
             )
         ).onSuccess { plan ->
             careRepository.ensureTreatmentPlanForScan(

@@ -466,3 +466,34 @@ def test_http_safety_contract_never_accepts_actor_id_and_filters_signed_reads(
         headers=_headers(reporter_label),
     )
     assert removed.status_code == 200
+
+
+def test_species_scans_come_nearest_first_with_distance(safety_store):
+    community = safety_store
+    places = {
+        "far-scan": ("DE", "Berlin", 52.52, 13.40),
+        "country-scan": ("RU", "Kazan", 55.79, 49.12),
+        "near-scan": ("RU", "Moscow", 55.76, 37.63),
+    }
+    for scan_id, (country, city, lat, lon) in places.items():
+        community.record_scan(
+            scan_id=scan_id,
+            account_actor_id=_actor(scan_id),
+            country=country,
+            region=city,
+            city=city,
+            lat=lat,
+            lon=lon,
+            disease="healthy",
+            species="Ficus elastica",
+            nickname="Fern",
+        )
+
+    anchored = community.scans_by_species("Ficus elastica", country="RU", lat=55.75, lon=37.62)
+    assert [row["scan_id"] for row in anchored] == ["near-scan", "country-scan", "far-scan"]
+    assert anchored[0]["distance_km"] is not None and anchored[0]["distance_km"] < 5
+    assert all("lat" not in row and "lon" not in row for row in anchored)
+
+    unanchored = community.scans_by_species("Ficus elastica")
+    assert {row["scan_id"] for row in unanchored} == set(places)
+    assert all(row["distance_km"] is None for row in unanchored)

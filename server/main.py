@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -3667,6 +3668,13 @@ class CarePlanRequest(BaseModel):
     # (northern-hemisphere default). Accepted values: ``"growing"``
     # or ``"dormant"``.
     season: str | None = Field(default=None, max_length=16)
+    # What the plan is for. ``scan``: adapted to a diagnosis (the scan result
+    # and the plant it was saved to); a fresh AI summary spends the daily
+    # care-plan allowance. ``species``: a species' general care (species
+    # page), always the healthy-plant plan and never metered. ``checklist``:
+    # the structured plan behind a garden treatment checklist, no AI summary,
+    # never metered.
+    purpose: Literal["scan", "species", "checklist"] = "scan"
 
 
 class SymptomDiagnoseRequest(BaseModel):

@@ -2997,46 +2997,90 @@ def scans_by_species(
     exclude_user_pseudo_id: str | None = None,
     exclude_account_actor_id: str | None = None,
     viewer_account_actor_id: str | None = None,
+    country: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float = NEARBY_RADIUS_KM,
 ) -> list[dict]:
-    """Community scans of one species (by scientific name), newest first,
-    across all regions — for the result screen's 'other <species> in the
-    community' strip."""
+    """Community scans of one species (by scientific name), newest first —
+    the species page's "scans of this species near you" strip.
+
+    With the requester's coarse location (community members) the strip is
+    nearest first: scans within ``radius_km``, then the rest of the country,
+    then everywhere, so it stays filled; each row carries ``distance_km``.
+    Without a location it spans all regions and shows no distance."""
     init_db()
     sci = (scientific or "").strip().lower()
     if not sci:
         return []
     limit = max(1, min(int(limit), 50))
     extra = ""
-    params: list = [sci]
+    extra_params: list = []
     if exclude_user_pseudo_id:
         extra += " AND user_pseudo_id != ?"
-        params.append(exclude_user_pseudo_id)
+        extra_params.append(exclude_user_pseudo_id)
     if exclude_account_actor_id:
         extra += " AND (account_actor_id IS NULL OR account_actor_id != ?)"
-        params.append(exclude_account_actor_id)
+        extra_params.append(exclude_account_actor_id)
     blocked_clause, blocked_params = _blocked_actor_clause(
         viewer_account_actor_id
     )
     extra += blocked_clause
-    params.extend(blocked_params)
+    extra_params.extend(blocked_params)
     if _HIDDEN_COMMUNITY_DISEASES:
         extra += _hidden_clause()
-        params.extend(_HIDDEN_COMMUNITY_DISEASES)
+        extra_params.extend(_HIDDEN_COMMUNITY_DISEASES)
+
+    has_coords = lat is not None and lon is not None
+    # Geo passes, nearest first; the last one has no geo predicate at all.
+    passes: list[tuple[str, list, bool]] = []
+    if has_coords:
+        passes.append((
+            " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+            list(_bbox(lat, lon, radius_km)), True,
+        ))
+    if country:
+        passes.append((" AND country = ?", [country], False))
+    passes.append(("", [], False))
+
+    out: list[dict] = []
+    seen: set[str] = set()
     with _connect() as conn:
-        # _FEED_COLUMNS and all clauses are fixed server-owned SQL.
-        rows = conn.execute(
-            f"SELECT {_FEED_COLUMNS} "  # nosec B608
-            "FROM community_scans WHERE species_lower = ?"
-            + extra
-            + " ORDER BY created_at DESC LIMIT ?",
-            (*params, limit),
-        ).fetchall()
-    out = [_row_to_dict(r) for r in rows]
-    # This cross-region strip has no requester anchor to measure from, so we
-    # just drop the raw coords (never leaked to viewers); no distance shown.
+        for geo_clause, geo_params, refine in passes:
+            if len(out) >= limit:
+                break
+            # Over-fetch: the radius pass trims a box to a circle and later
+            # passes repeat rows an earlier pass already took.
+            take = limit * 3 if refine else limit + len(out)
+            # _FEED_COLUMNS and all clauses are fixed server-owned SQL.
+            rows = conn.execute(
+                f"SELECT {_FEED_COLUMNS} "  # nosec B608
+                "FROM community_scans WHERE species_lower = ?"
+                + geo_clause
+                + extra
+                + " ORDER BY created_at DESC LIMIT ?",
+                (sci, *geo_params, *extra_params, take),
+            ).fetchall()
+            for raw in rows:
+                row = _row_to_dict(raw)
+                if refine and (
+                    row["lat"] is None or row["lon"] is None
+                    or _haversine_km(lat, lon, row["lat"], row["lon"]) > radius_km
+                ):
+                    continue
+                if row["scan_id"] in seen:
+                    continue
+                seen.add(row["scan_id"])
+                out.append(row)
+    out = out[:limit]
+    # A viewer gets an approximate distance, never another user's coords.
     for row in out:
-        row.pop("lat", None)
-        row.pop("lon", None)
+        rlat, rlon = row.pop("lat", None), row.pop("lon", None)
+        row["distance_km"] = (
+            round(_haversine_km(lat, lon, rlat, rlon), 1)
+            if has_coords and rlat is not None and rlon is not None
+            else None
+        )
     return out
 
 

@@ -1123,28 +1123,68 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Other community scans of this species. Moved here from the
-                     scan result screen so every species surface lives on one
-                     page; hidden when the community has nothing for it. -->
+                <!-- Community scans of this species near the user. Members
+                     see them nearest first; everyone else sees the join button
+                     over a blurred preview (CommunityJoin), like the result
+                     screen's nearby scans. Hidden only when the request fails. -->
                 <TextView
                     android:id="@+id/tv_species_community_label"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
                     android:fontFamily="sans-serif-medium"
-                    android:text="@string/species_community_others"
+                    android:text="@string/species_community_nearby"
                     android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body"
                     android:visibility="gone" />
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rv_species_community"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_species_community_join"
+                    style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
-                    android:clipToPadding="false"
-                    android:orientation="horizontal"
+                    android:minHeight="48dp"
+                    android:text="@string/similar_scans_join_cta"
+                    android:visibility="gone"
+                    app:cornerRadius="@dimen/radius_md"
+                    app:icon="@drawable/ic_map"
+                    app:iconGravity="textStart"
+                    app:iconSize="20dp" />
+
+                <TextView
+                    android:id="@+id/tv_species_community_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:text="@string/species_community_empty"
+                    android:textAppearance="@style/TextAppearance.App.Body"
+                    android:textColor="@color/on_surface"
                     android:visibility="gone" />
+
+                <FrameLayout
+                    android:id="@+id/species_community_strip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:visibility="gone">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_species_community"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clipToPadding="false"
+                        android:orientation="horizontal" />
+
+                    <View
+                        android:id="@+id/species_community_lock_overlay"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?attr/selectableItemBackground"
+                        android:contentDescription="@string/similar_scans_join_cta"
+                        android:visibility="gone" />
+
+                </FrameLayout>
 
             </LinearLayout>
         </LinearLayout>

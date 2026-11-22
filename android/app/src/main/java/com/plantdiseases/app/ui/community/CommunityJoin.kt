@@ -3,7 +3,10 @@ package com.plantdiseases.app.ui.community
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -19,8 +22,8 @@ import com.plantdiseases.app.util.CommunityPrefs
  * Joining the community. Membership means location access plus sharing: a
  * member's accepted server scans are published to the community (photo,
  * diagnosis, approximate area) while they are signed in. Features that show
- * scans by area (the community map, nearby scans on a result) require it, so
- * they call [ensureMember], which explains what joining shares, asks for
+ * scans by area (the community map, nearby scans on a result and on a species
+ * page) require it, so they call [ensureMember], which explains what joining shares, asks for
  * coarse location and turns sharing on. There is no separate sharing switch;
  * leaving (the map's menu) turns it off.
  *
@@ -91,3 +94,25 @@ class CommunityJoin(private val activity: ComponentActivity) {
         }
     }
 }
+
+/**
+ * A members-only strip of nearby scans, as non-members see it: [strip] blurred
+ * under [joinButton], with no taps, scrolling or screen-reader focus on its
+ * cells; [overlay] (a clickable view laid over the strip) takes a tap anywhere
+ * on it, so it can ask to join like the button. Members see it plain.
+ */
+fun lockNearbyPreview(strip: View, overlay: View, joinButton: View, locked: Boolean) {
+    val radius = NEARBY_PREVIEW_BLUR_DP * strip.resources.displayMetrics.density
+    strip.setRenderEffect(
+        if (locked) RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP) else null,
+    )
+    strip.importantForAccessibility = if (locked) {
+        View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    } else {
+        View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+    }
+    overlay.visibility = if (locked) View.VISIBLE else View.GONE
+    joinButton.visibility = if (locked) View.VISIBLE else View.GONE
+}
+
+private const val NEARBY_PREVIEW_BLUR_DP = 12f

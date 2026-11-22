@@ -34,6 +34,7 @@ import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.FeedbackReceiptStore
 import com.plantdiseases.app.util.NoOpFeedbackReceiptStore
+import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.SanitizedImage
 import com.plantdiseases.app.util.UploadImageSanitizer
 import io.ktor.client.call.body
@@ -524,11 +525,23 @@ class ScanRepository(
             // v3: the server's LLM summary now covers the follow-up checkpoint
             // and red flags, so v2 entries hold a materially poorer plan for
             // the rest of their week — re-fetch instead of serving it.
-            val cacheKey = "careplan:v3:${request.disease}|${request.species}" +
+            //
+            // A species-page plan is the same plan as a healthy scan's, so the
+            // two share an entry. A checklist plan has no AI summary: it reuses
+            // a cached full plan but is stored apart, so it never stands in for
+            // the full plan on the result or plant screens.
+            val planKey = "careplan:v3:${request.disease}|${request.species}" +
                 "|${request.light}|${request.locale}|${request.season ?: ""}"
+            val checklist = request.purpose == CarePlanRequest.PURPOSE_CHECKLIST
+            val cacheKey = if (checklist) "$planKey|checklist" else planKey
             com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, CarePlanResponse::class.java)
+                .get(planKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
+            if (checklist) {
+                com.plantdiseases.app.util.ResponseCache
+                    .get(cacheKey, CarePlanResponse::class.java)
+                    ?.let { return@withContext Result.success(it) }
+            }
             try {
                 val requestId = UUID.randomUUID().toString()
                 val response = optionalMeteredCall { token ->
@@ -1659,9 +1672,12 @@ class ScanRepository(
         speciesRepository.fetchSpeciesProfile(name, common, locale)
 
     /** Community scans of one species (scientific name), across regions. */
+    /** Community scans of one species. A member's coarse location orders them
+     *  nearest first (server-side); without it they span all regions. */
     suspend fun communityScansBySpecies(
         species: String,
         limit: Int = 12,
+        region: ResolvedRegion? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             optionalAccountGet { token ->
@@ -1669,6 +1685,10 @@ class ScanRepository(
                     token?.let { bearer(it) }
                     parameter("species", species)
                     parameter("limit", limit)
+                    region?.country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
+                    region?.locality?.let { parameter("region", it) }
+                    region?.lat?.let { parameter("lat", it) }
+                    region?.lon?.let { parameter("lon", it) }
                 }
             }
         }

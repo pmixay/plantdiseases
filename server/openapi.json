@@ -463,7 +463,7 @@
     "/api/care-plan": {
       "post": {
         "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.\n\nOnly a fresh LLM polish spends the caller's daily care-plan allowance:\na cached polished summary and the rules-based plan cost nothing, so\nthey are served without touching it.",
+        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.\n\nOnly a plan adapted to a scan (``purpose=\"scan\"``, the default) spends\nthe caller's daily care-plan allowance, and only for a fresh LLM\npolish: a cached polished summary and the rules-based plan cost\nnothing. A species page's general plan (``purpose=\"species\"``) is\nalways the healthy-plant plan and never metered; its polish is still\nbounded by the per-IP allowance and shared through the cache. A garden\nchecklist (``purpose=\"checklist\"``) needs only the structured plan, so\nit is never polished or metered.",
         "operationId": "care_plan_endpoint_api_care_plan_post",
         "requestBody": {
           "content": {
@@ -1590,7 +1590,7 @@
     "/api/community/by-species": {
       "get": {
         "summary": "Community By Species",
-        "description": "Community scans of one species (by scientific name), across all\nregions — the result screen's 'other <species> in the community' strip.",
+        "description": "Community scans of one species (by scientific name) — the species\npage's \"scans of this species near you\" strip. A community member's\napp sends its coarse location (``lat``/``lon`` + ``country``), which\norders the strip nearest first with a distance per row; without it\nthe strip spans all regions.",
         "operationId": "community_by_species_api_community_by_species_get",
         "parameters": [
           {
@@ -1617,6 +1617,70 @@
               "type": "integer",
               "default": 12,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lon"
             }
           }
         ],
@@ -4185,6 +4249,16 @@
               }
             ],
             "title": "Season"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "scan",
+              "species",
+              "checklist"
+            ],
+            "title": "Purpose",
+            "default": "scan"
           }
         },
         "type": "object",

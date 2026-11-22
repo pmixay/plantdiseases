@@ -331,7 +331,8 @@
 
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
-    <string name="species_community_others">Other scans of this species</string>
+    <string name="species_community_nearby">Scans of this species near you</string>
+    <string name="species_community_empty">No community scans of this species yet.</string>
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans in your country</string>

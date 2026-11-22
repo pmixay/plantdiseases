@@ -837,13 +837,21 @@ def register(router: APIRouter, m) -> None:
         request: Request,
         species: str | None = None,
         limit: int = 12,
+        country: str | None = None,
+        region: str | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
     ):
-        """Community scans of one species (by scientific name), across all
-        regions — the result screen's 'other <species> in the community' strip."""
+        """Community scans of one species (by scientific name) — the species
+        page's "scans of this species near you" strip. A community member's
+        app sends its coarse location (``lat``/``lon`` + ``country``), which
+        orders the strip nearest first with a distance per row; without it
+        the strip spans all regions."""
         principal = await m._optional_account(request)
         sci = (species or "").strip()
         if not sci:
             raise HTTPException(status_code=422, detail="Invalid species")
+        geo = m._client_location(country, region, lat, lon)
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
@@ -852,6 +860,9 @@ def register(router: APIRouter, m) -> None:
                 limit=max(1, min(int(limit), 50)),
                 exclude_account_actor_id=principal.actor_id if principal else None,
                 viewer_account_actor_id=principal.actor_id if principal else None,
+                country=geo["country"],
+                lat=geo["lat"],
+                lon=geo["lon"],
             ),
         )
         species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]

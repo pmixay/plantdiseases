@@ -330,7 +330,8 @@
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
 
     <string name="species_card_title">Определённый вид</string>
-    <string name="species_community_others">Другие сканы этого вида</string>
+    <string name="species_community_nearby">Сканы этого вида рядом с вами</string>
+    <string name="species_community_empty">Сканов этого вида в сообществе пока нет.</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы в вашей стране</string>
     <plurals name="similar_scans_subtitle_count">

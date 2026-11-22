@@ -1,7 +1,5 @@
 package com.plantdiseases.app.ui.result
 
-import android.graphics.RenderEffect
-import android.graphics.Shader
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -9,6 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.community.CommunityJoin
+import com.plantdiseases.app.ui.community.lockNearbyPreview
 import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
@@ -333,27 +332,10 @@ class CommunityController(
         }
     }
 
-    /**
-     * Non-members see the strip as a blurred preview under the join button:
-     * no taps, scrolling or screen-reader focus on the cells; a tap anywhere
-     * on it asks to join, like the button. Members see it plain.
-     */
-    private fun setPreviewLocked(locked: Boolean) {
-        val rv = binding.rvSimilarScans
-        val radius = PREVIEW_BLUR_DP * activity.resources.displayMetrics.density
-        rv.setRenderEffect(
-            if (locked) RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP) else null,
-        )
-        rv.importantForAccessibility = if (locked) {
-            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        } else {
-            View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-        }
-        binding.similarLockOverlay.visibility = if (locked) View.VISIBLE else View.GONE
-        binding.btnSimilarJoin.visibility = if (locked) View.VISIBLE else View.GONE
-    }
-
-    private companion object {
-        const val PREVIEW_BLUR_DP = 12f
-    }
+    private fun setPreviewLocked(locked: Boolean) = lockNearbyPreview(
+        strip = binding.rvSimilarScans,
+        overlay = binding.similarLockOverlay,
+        joinButton = binding.btnSimilarJoin,
+        locked = locked,
+    )
 }
