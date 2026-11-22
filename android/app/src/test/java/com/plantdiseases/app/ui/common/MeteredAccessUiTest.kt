@@ -124,6 +124,28 @@ class MeteredAccessUiTest {
         assertFalse(policy.offerPro)
         assertEquals(R.string.metered_pro_active_unavailable_title, policy.title)
         assertEquals(R.string.metered_unavailable_body, policy.message)
+        // Nothing to wait for: a lock, no reset line, and a way to sign in.
+        assertEquals(R.drawable.ic_lock, policy.icon)
+        assertNull(policy.resetAt)
+        assertTrue(policy.offerSignIn)
+    }
+
+    @Test
+    fun `quota exhaustion shows a clock and no sign-in offer`() {
+        val policy = requireNotNull(
+            meteredDialogPolicy(
+                ScanRepository.QuotaExhaustedException(
+                    plan = "free",
+                    limit = 10,
+                    remaining = 0,
+                    resetAt = "2026-09-01T00:00:00Z",
+                ),
+                proOffered = false,
+            ),
+        )
+
+        assertEquals(R.drawable.ic_clock, policy.icon)
+        assertFalse(policy.offerSignIn)
     }
 
     @Test
