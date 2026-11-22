@@ -1104,7 +1104,7 @@ async def _optional_account(request: Request) -> AccountPrincipal | None:
 _GUEST_FEATURE_LIMITS = {
     "gamma_analysis": max(0, get_int("GUEST_GAMMA_ANALYSIS_DAILY_QUOTA", 5)),
     "frontier_analysis": 0,
-    "plant_identification": max(0, get_int("GUEST_IDENTIFY_DAILY_QUOTA", 1)),
+    "plant_identification": max(0, get_int("GUEST_IDENTIFY_DAILY_QUOTA", 10)),
     "ai_doctor": max(0, get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 3)),
     "care_plan": max(0, get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 5)),
 }

@@ -539,3 +539,26 @@ async def test_analyze_survives_exhausted_optional_identification_quota(monkeypa
         "best": None,
         "candidates": [],
     }
+
+
+def test_guest_gets_ten_species_identifications_a_day():
+    """Guests (no account) may identify ten photos per day; the eleventh is
+    refused until the daily reset, and a new day starts a fresh allowance."""
+    import main as server_main
+
+    assert server_main._GUEST_FEATURE_LIMITS["plant_identification"] == 10
+    day = 20_000
+    address = "203.0.113.77"
+    decisions = [
+        server_main._consume_guest_feature(
+            feature="plant_identification", address=address, request_id=f"r{i}", day=day,
+        )
+        for i in range(11)
+    ]
+    assert all(d.allowed for d in decisions[:10])
+    assert not decisions[10].allowed
+    assert decisions[9].remaining == 0
+    tomorrow = server_main._consume_guest_feature(
+        feature="plant_identification", address=address, request_id="next", day=day + 1,
+    )
+    assert tomorrow.allowed

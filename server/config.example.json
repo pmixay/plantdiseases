@@ -29,7 +29,7 @@
     "fold_whole_frame_vote": true,
     "_fold_note": "Classify the whole frame alongside the detected crops and fold it into the mean vote as one extra member (see MODEL_CARD.md). On by default \u2014 it is what recovers an over-cropped leaf shot. Turning it off saves one full ViT forward per scan and is the first latency lever to reach for, at the cost of that recovery.",
     "guest_gamma_analysis_daily_quota": 5,
-    "guest_identify_daily_quota": 1,
+    "guest_identify_daily_quota": 10,
     "guest_ai_doctor_daily_quota": 3,
     "guest_care_plan_daily_quota": 5,
     "_pro_quota_note": "These process-local guest limits protect paid server work without forcing registration. Signed-in Free/PRO limits are authoritative in the account service; Aqua remains unlimited on-device."
