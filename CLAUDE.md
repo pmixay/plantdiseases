@@ -21,9 +21,10 @@ keep the old spelling — don't rename `classifier_name: "plantvision"`,
 `plantvision_*.tar` / `plantvision_export_*` names or the `plantvision-aqua-bundle-v1`
 digest tag.
 
-**Privacy policy:** `android/app/src/main/assets/privacy_policy.html` (shown by
-`ui/legal/PrivacyPolicyActivity`) is the canonical data-disclosure surface: it must work
-offline and describe the build the reader is running. The hosted copy is root
+**Privacy policy:** `android/app/src/main/assets/privacy_policy.html` (parsed by
+`ui/legal/PrivacyPolicyParser` and rendered as native views by `PrivacyPolicyActivity`, no
+WebView) is the canonical data-disclosure surface: it must work offline and describe the
+build the reader is running. Keep its `h1`/`h2`/`p`/`li` + `data-ru`/`data-en` structure. The hosted copy is root
 `privacy.html`; its structured markers (contact, deleted-actor disclosure) must match
 `deploy/account-beta-test/release-policy-gates.json` (checked by
 `server/tests/account/test_deployment_handoff.py`) — change them together.

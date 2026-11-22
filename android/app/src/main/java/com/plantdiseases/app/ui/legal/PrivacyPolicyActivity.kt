@@ -111,7 +111,9 @@ class PrivacyPolicyActivity : AppCompatActivity() {
         }
         TextViewCompat.setTextAppearance(view, appearance)
         if (block.kind == PolicyBlockKind.HEADING || block.kind == PolicyBlockKind.UPDATED) {
-            view.setTypeface(view.typeface, android.graphics.Typeface.BOLD)
+            // Plain bold face: the Title style's weight-600 typeface ignores a
+            // BOLD style flag layered on top of it.
+            view.typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         if (block.kind == PolicyBlockKind.BULLET) {
             // One span over the whole item gives every wrapped line the hanging indent.
