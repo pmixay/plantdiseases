@@ -1038,29 +1038,42 @@ class DetailExtraCardsController(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
         }
-        val accent = View(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(3.dp(), LinearLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(statusColor)
-        }
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
-        val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(accent)
-        row.addView(body)
-        card.addView(row)
+        card.addView(body)
 
         val titleRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        // Heart in a tinted circle, coloured by status once there is one
+        // (no side stripe: the status colour lives on the icon and score).
+        val iconTint = if (verdict.status == PlantHealth.Status.UNKNOWN) {
+            activity.getColor(R.color.primary)
+        } else {
+            statusColor
+        }
+        titleRow.addView(
+            ImageView(activity).apply {
+                setImageResource(R.drawable.ic_heart)
+                setBackgroundResource(R.drawable.bg_icon_circle)
+                imageTintList = android.content.res.ColorStateList.valueOf(iconTint)
+                setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
+                contentDescription = null
+                layoutParams = LinearLayout.LayoutParams(36.dp(), 36.dp()).apply { marginEnd = 12.dp() }
+            },
+        )
         val title = TextView(activity).apply {
             text = activity.getString(R.string.plant_health_title)
-            textSize = 15f
+            textSize = 16f
             setTextColor(activity.getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         titleRow.addView(title)
