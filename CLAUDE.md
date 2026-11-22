@@ -159,11 +159,14 @@ Safety gates (the reason for the architecture):
 pipeline instance. Preserve: an unknown family string falls back to the default; an
 unavailable family answers HTTP 200 `available:false`, not an error. Details: `README.md`.
 
-**Server layout:** `main.py` is the HTTP layer (app, middleware, shared state, helpers) and
-wires the flat modules beside it (`ls server/`). The route handlers live in `routes_*.py`;
-each `register(router, m)` gets the `main` module and must reach anything defined in or
-imported by `main` as `m.name` at call time — never `from main import …` — because the
-tests patch names on `main`. That is also why `main.py` is exempt from F401. Privacy-sensitive: `training_store.py` and `telemetry.py` are
+**Server layout:** `main.py` is the HTTP layer (app, middleware, admission, limiter and quota
+state, metrics, lifespan) and wires the flat modules beside it (`ls server/`). The route
+handlers live in `routes_*.py`, each with its own request models and helpers; each
+`register(router, m)` gets the `main` module and reaches `main`'s state as `m.name` and other
+modules as `m.module.name` at call time — never `from main import …` — so a test's patch is
+seen. Tests patch the module that owns a name (`community`, `ai_services`, `routes_forum`, …);
+code moved out of `main` that needs its state takes `m` as its first argument (`analysis.py`).
+Shared route dependencies live in `deps.py`. Privacy-sensitive: `training_store.py` and `telemetry.py` are
 consent-gated and de-identified (no account, actor, device or IP data; no free text).
 `account_*.py` are fail-closed clients to the account service. `beta_runtime.py` /
 `synthetic_pipeline.py` are a weight-free pipeline for local/staging only — never a

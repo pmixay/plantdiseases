@@ -32,8 +32,6 @@ recorded. Line counts are approximate; re-measure before acting on one.
       review's conditions (Model track, "Data").
 - [ ] ★ **Run the paired ON/OFF augmentation ablation on Colab at `SEED=0`** (human
       run; Model track, "Experiments that are not data").
-- [ ] **Finish the `main.py` split**: `deps.py`, then module imports instead of the
-      alias block (Architecture follow-ups).
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
 the README status section and `docs/assets/per-class.svg`.
@@ -193,17 +191,7 @@ Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Finish the `main.py` split (~4,960 lines left).** The ~84 route handlers
-      now live in eight `routes_*.py` modules that reach `main` as `m.name` at call
-      time, which is what keeps the tests' in-place patches working. Still in `main.py`: 6 middlewares, 16 Pydantic
-      models, 2 thread pools, limiter/ban/quota/admission state, metrics, lifespan
-      and every helper. Next, one PR each: (1) `deps.py` — `Depends` appears only
-      as the `community_bearer` route dependency and the quota preambles are still
-      hand-copied; (2) replace the ~400-line duplicated alias-import block with
-      module imports, moving the tests' patch targets with it, then drop
-      `main.py`'s F401 exemption (`server/pyproject.toml`); (3) move each route
-      group's helpers next to its routes, smallest first, community last.
-- [ ] **Group Pydantic models into `schemas.py`** with shared `Annotated` types.
+- [ ] **Shared `Annotated` types for request models** (they now sit beside their routes).
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
       (the Android client mints these ids).
