@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-import httpx
+import httpx2
 import pytest
 
 import main as server_main
@@ -646,12 +646,12 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
     ai_services.generate_care_plan = lambda **_: {"summary_md": "rules"}
     ai_services.openrouter_configured = lambda: True
     operation_id = str(uuid.uuid4())
-    transport = httpx.ASGITransport(app=server_main.app, client=("127.0.0.1", 43123))
+    transport = httpx2.ASGITransport(app=server_main.app, client=("127.0.0.1", 43123))
     try:
         with server_main._guest_feature_lock:
             server_main._guest_feature_counts.clear()
             server_main._guest_feature_receipts.clear()
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
             invalid = await async_client.post(
                 "/api/analyze",
                 files={"image": ("leaf.txt", b"not an image", "text/plain")},
