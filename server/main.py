@@ -72,7 +72,6 @@ try:
         community,
         community_achievements,
         community_forum,
-        community_geo,
         community_labels,
         config,
         deps,
@@ -107,7 +106,6 @@ except ImportError:
     import community
     import community_achievements
     import community_forum
-    import community_geo
     import community_labels
     import config
     import deps
@@ -2214,117 +2212,6 @@ api_router = APIRouter(prefix="/api")
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-def _to_public_feed_item(
-    row: dict, *, opinions: dict, views: dict | None = None,
-) -> dict:
-    """Make one community-feed row safe to hand to a viewer (in place).
-
-    Every viewer-facing feed does the same four things, and forgetting any one
-    of them is a leak rather than a cosmetic bug — which is why they live here
-    instead of being retyped per handler:
-
-    1. annotate the row with its second-opinion count (and, on the feeds that
-       show it, its view count) so the card can badge it;
-    2. swap the real ``scan_id`` for the public token — the real id authorises
-       ``/api/feedback`` writes and must never reach another user (see
-       ``community.public_scan_token``);
-    3. drop the private keyset-pagination fields the query attaches;
-    4. localize the country code so cards show "Poland"/"Польша", not "PL".
-
-    Rows that already carry a count (the recommended ranking computes its own
-    in SQL) keep it. ``views=None`` means this feed does not expose a view
-    count, so the key is not added.
-    """
-    sid = str(row.get("scan_id"))
-    row.setdefault("opinion_count", opinions.get(sid, 0))
-    if views is not None:
-        row.setdefault("view_count", views.get(sid, 0))
-    row["scan_id"] = row.pop("public_id", None) or row["scan_id"]
-    row.pop("_cursor_score", None)
-    row.pop("_cursor_row_id", None)
-    community_geo.localize_item_country(row)
-    return row
-
-
-def _normalise_nickname(raw: str | None) -> str | None:
-    """Sanitise a community nickname: drop non-printable chars (keeps unicode
-    letters so Russian handles survive), trim, cap at 48. Empty → None."""
-    if not raw:
-        return None
-    cleaned = "".join(ch for ch in raw if ch.isprintable()).strip()[:48]
-    return cleaned or None
-
-
-class CommunityScanRequest(BaseModel):
-    """Upload metadata for a single community-shared scan. The image
-    bytes ride on a separate multipart field on the upload endpoint
-    so a thin client never has to base64-encode anything.
-
-    Hierarchy: ``country`` is the canonical top bucket (ISO code or
-    country name); ``region`` is the optional sub-country locality
-    (city, admin area). Older clients that still send the legacy
-    composite as ``region`` get auto-split — the country tail lands
-    in ``country`` and the leading segment in ``region``.
-    """
-
-    scan_id: str = Field(..., min_length=8, max_length=64)
-    country: str | None = Field(default=None, min_length=2, max_length=80)
-    region: str = Field(default="", max_length=80)
-    disease: str = Field(..., min_length=1, max_length=64)
-    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    species: str | None = Field(default=None, max_length=128)
-    species_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    locale: str | None = Field(default=None, max_length=8)
-    @field_validator("scan_id")
-    @classmethod
-    def _safe_token(cls, v: str) -> str:
-        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in v):
-            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
-        return v
-
-    @field_validator("country")
-    @classmethod
-    def _safe_country(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = community_geo.normalise_country(v)
-        if not cleaned:
-            raise ValueError(
-                "country must be a country name or ISO code (no control chars)"
-            )
-        return cleaned
-
-    @field_validator("region")
-    @classmethod
-    def _safe_region(cls, v: str) -> str:
-        # Empty is legal — country-only writes are supported.
-        cleaned = community_geo.normalise_locality(v)
-        if v and not cleaned:
-            raise ValueError("region contains invalid characters")
-        return cleaned
-
-    @field_validator("disease")
-    @classmethod
-    def _known_disease(cls, v: str) -> str:
-        cleaned = v.strip().lower()
-        # ``not_a_plant`` and the deferred physiological classes are
-        # legal community-share values too — they're still useful
-        # signals for the retraining loop.
-        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
-            raise ValueError(
-                f"disease must be one of {sorted(feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS)}"
-            )
-        return cleaned
-
-    @field_validator("locale")
-    @classmethod
-    def _normalise_locale(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        cleaned = v.strip().lower()[:8]
-        return cleaned or None
-
-
 class FeedbackRequest(BaseModel):
     """One structured correction authorized by an unlinkable receipt."""
 
@@ -2388,27 +2275,6 @@ class FeedbackRequest(BaseModel):
 _COMMUNITY_ALLOWED_TYPES = set(ALLOWED_CONTENT_TYPES)
 
 
-class CommunityOpinionRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
-    suggested_disease: str = Field(..., min_length=1, max_length=64)
-    note: str | None = Field(default=None, max_length=500)
-
-
-class CommunityReportRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_type: str = Field(..., min_length=4, max_length=7)
-    target_id: str = Field(..., min_length=1, max_length=128)
-    reason: str = Field(..., min_length=1, max_length=32)
-
-
-class CommunityBlockRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_type: str = Field(..., min_length=4, max_length=7)
-    target_id: str = Field(..., min_length=1, max_length=128)
-
-
 def _raise_community_safety_error(error: ValueError) -> None:
     code = str(error)
     if code == "report_limit":
@@ -2424,64 +2290,6 @@ def _raise_community_safety_error(error: ValueError) -> None:
     }:
         raise HTTPException(status_code=422, detail=code) from None
     raise HTTPException(status_code=500, detail="community_safety_failed") from None
-
-
-class CommunityRequestOpinionRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
-
-
-class CommunityViewRequest(BaseModel):
-    # ``scan_id`` (singular) is the original single-open shape, kept required
-    # in name only — older installs still send it alone. ``scan_ids`` is the
-    # newer batch shape for reporting many feed impressions in one call. A
-    # request must carry at least one of the two; see the validator below.
-    scan_id: str | None = Field(None, max_length=128)
-    scan_ids: list[str] | None = Field(None, max_length=50)
-
-    @model_validator(mode="after")
-    def _require_a_target(self) -> "CommunityViewRequest":
-        if not (self.scan_id or "").strip() and not any(
-            (s or "").strip() for s in (self.scan_ids or [])
-        ):
-            raise ValueError("scan_id or scan_ids is required")
-        return self
-
-
-class CommunityLikeRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
-    liked: bool = True
-
-
-_COMMUNITY_REPORT_REASONS = {
-    "sexual_content",
-    "violence_or_threats",
-    "hate_or_harassment",
-    "illegal_or_dangerous",
-    "spam_or_misleading",
-    "privacy_or_impersonation",
-    "other_rules_violation",
-}
-
-
-class CommunityScanCountsRequest(BaseModel):
-    scan_ids: list[str] = Field(..., max_length=500)
-
-
-def _valid_bbox(
-    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
-) -> tuple[float, float, float, float] | None:
-    """Sanity-check + clamp a map bbox. Returns ``(lo_lat, lo_lon, hi_lat,
-    hi_lon)`` within ±90/±180, or ``None`` when degenerate / out of range."""
-    try:
-        lo_lat, hi_lat = sorted((float(min_lat), float(max_lat)))
-        lo_lon, hi_lon = sorted((float(min_lon), float(max_lon)))
-    except (TypeError, ValueError):
-        return None
-    lo_lat, hi_lat = max(-90.0, lo_lat), min(90.0, hi_lat)
-    lo_lon, hi_lon = max(-180.0, lo_lon), min(180.0, hi_lon)
-    if hi_lat <= lo_lat or hi_lon <= lo_lon:
-        return None
-    return (lo_lat, lo_lon, hi_lat, hi_lon)
 
 
 def _cached_image_response(

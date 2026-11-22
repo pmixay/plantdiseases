@@ -11,17 +11,207 @@ import asyncio
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# A collaborator module (never a name patched on ``main``) is imported here;
+# Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import account_internal
+    from . import account_internal, community_geo, diseases_data, feedback_labels
 except ImportError:
     import account_internal
-try:
-    from . import diseases_data
-except ImportError:
+    import community_geo
     import diseases_data
+    import feedback_labels
+
+
+def _to_public_feed_item(
+    row: dict, *, opinions: dict, views: dict | None = None,
+) -> dict:
+    """Make one community-feed row safe to hand to a viewer (in place).
+
+    Every viewer-facing feed does the same four things, and forgetting any one
+    of them is a leak rather than a cosmetic bug — which is why they live here
+    instead of being retyped per handler:
+
+    1. annotate the row with its second-opinion count (and, on the feeds that
+       show it, its view count) so the card can badge it;
+    2. swap the real ``scan_id`` for the public token — the real id authorises
+       ``/api/feedback`` writes and must never reach another user (see
+       ``community.public_scan_token``);
+    3. drop the private keyset-pagination fields the query attaches;
+    4. localize the country code so cards show "Poland"/"Польша", not "PL".
+
+    Rows that already carry a count (the recommended ranking computes its own
+    in SQL) keep it. ``views=None`` means this feed does not expose a view
+    count, so the key is not added.
+    """
+    sid = str(row.get("scan_id"))
+    row.setdefault("opinion_count", opinions.get(sid, 0))
+    if views is not None:
+        row.setdefault("view_count", views.get(sid, 0))
+    row["scan_id"] = row.pop("public_id", None) or row["scan_id"]
+    row.pop("_cursor_score", None)
+    row.pop("_cursor_row_id", None)
+    community_geo.localize_item_country(row)
+    return row
+
+
+def _normalise_nickname(raw: str | None) -> str | None:
+    """Sanitise a community nickname: drop non-printable chars (keeps unicode
+    letters so Russian handles survive), trim, cap at 48. Empty → None."""
+    if not raw:
+        return None
+    cleaned = "".join(ch for ch in raw if ch.isprintable()).strip()[:48]
+    return cleaned or None
+
+
+class CommunityScanRequest(BaseModel):
+    """Upload metadata for a single community-shared scan. The image
+    bytes ride on a separate multipart field on the upload endpoint
+    so a thin client never has to base64-encode anything.
+
+    Hierarchy: ``country`` is the canonical top bucket (ISO code or
+    country name); ``region`` is the optional sub-country locality
+    (city, admin area). Older clients that still send the legacy
+    composite as ``region`` get auto-split — the country tail lands
+    in ``country`` and the leading segment in ``region``.
+    """
+
+    scan_id: str = Field(..., min_length=8, max_length=64)
+    country: str | None = Field(default=None, min_length=2, max_length=80)
+    region: str = Field(default="", max_length=80)
+    disease: str = Field(..., min_length=1, max_length=64)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    species: str | None = Field(default=None, max_length=128)
+    species_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    locale: str | None = Field(default=None, max_length=8)
+    @field_validator("scan_id")
+    @classmethod
+    def _safe_token(cls, v: str) -> str:
+        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("country")
+    @classmethod
+    def _safe_country(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = community_geo.normalise_country(v)
+        if not cleaned:
+            raise ValueError(
+                "country must be a country name or ISO code (no control chars)"
+            )
+        return cleaned
+
+    @field_validator("region")
+    @classmethod
+    def _safe_region(cls, v: str) -> str:
+        # Empty is legal — country-only writes are supported.
+        cleaned = community_geo.normalise_locality(v)
+        if v and not cleaned:
+            raise ValueError("region contains invalid characters")
+        return cleaned
+
+    @field_validator("disease")
+    @classmethod
+    def _known_disease(cls, v: str) -> str:
+        cleaned = v.strip().lower()
+        # ``not_a_plant`` and the deferred physiological classes are
+        # legal community-share values too — they're still useful
+        # signals for the retraining loop.
+        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"disease must be one of {sorted(feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS)}"
+            )
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
+
+
+class CommunityOpinionRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    suggested_disease: str = Field(..., min_length=1, max_length=64)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CommunityReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=1, max_length=32)
+
+
+class CommunityBlockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: str = Field(..., min_length=4, max_length=7)
+    target_id: str = Field(..., min_length=1, max_length=128)
+
+
+class CommunityRequestOpinionRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+
+
+class CommunityViewRequest(BaseModel):
+    # ``scan_id`` (singular) is the original single-open shape, kept required
+    # in name only — older installs still send it alone. ``scan_ids`` is the
+    # newer batch shape for reporting many feed impressions in one call. A
+    # request must carry at least one of the two; see the validator below.
+    scan_id: str | None = Field(None, max_length=128)
+    scan_ids: list[str] | None = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def _require_a_target(self) -> "CommunityViewRequest":
+        if not (self.scan_id or "").strip() and not any(
+            (s or "").strip() for s in (self.scan_ids or [])
+        ):
+            raise ValueError("scan_id or scan_ids is required")
+        return self
+
+
+class CommunityLikeRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    liked: bool = True
+
+
+_COMMUNITY_REPORT_REASONS = {
+    "sexual_content",
+    "violence_or_threats",
+    "hate_or_harassment",
+    "illegal_or_dangerous",
+    "spam_or_misleading",
+    "privacy_or_impersonation",
+    "other_rules_violation",
+}
+
+
+class CommunityScanCountsRequest(BaseModel):
+    scan_ids: list[str] = Field(..., max_length=500)
+
+
+def _valid_bbox(
+    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+) -> tuple[float, float, float, float] | None:
+    """Sanity-check + clamp a map bbox. Returns ``(lo_lat, lo_lon, hi_lat,
+    hi_lon)`` within ±90/±180, or ``None`` when degenerate / out of range."""
+    try:
+        lo_lat, hi_lat = sorted((float(min_lat), float(max_lat)))
+        lo_lon, hi_lon = sorted((float(min_lon), float(max_lon)))
+    except (TypeError, ValueError):
+        return None
+    lo_lat, hi_lat = max(-90.0, lo_lat), min(90.0, hi_lat)
+    lo_lon, hi_lon = max(-180.0, lo_lon), min(180.0, hi_lon)
+    if hi_lat <= lo_lat or hi_lon <= lo_lon:
+        return None
+    return (lo_lat, lo_lon, hi_lat, hi_lon)
 
 
 def register(router: APIRouter, m) -> None:
@@ -55,7 +245,7 @@ def register(router: APIRouter, m) -> None:
 
         principal = await m._require_account(request)
         try:
-            payload = m.CommunityScanRequest(
+            payload = CommunityScanRequest(
                 scan_id=scan_id,
                 country=country,
                 region=region,
@@ -89,7 +279,7 @@ def register(router: APIRouter, m) -> None:
                 detail="Unknown scan_id - re-scan before sharing to the community.",
             )
 
-        geo = m.community_geo.client_location(payload.country, payload.region, lat, lon)
+        geo = community_geo.client_location(payload.country, payload.region, lat, lon)
 
         # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
         # image body — an over-quota client should be rejected without us
@@ -170,7 +360,7 @@ def register(router: APIRouter, m) -> None:
         "/community/safety/report", dependencies=[Depends(m.community_bearer)]
     )
     async def community_report_content(
-        payload: m.CommunityReportRequest, request: Request,
+        payload: CommunityReportRequest, request: Request,
     ):
         """Queue a report bound to the signed actor and stored content author.
 
@@ -204,7 +394,7 @@ def register(router: APIRouter, m) -> None:
         "/community/safety/block", dependencies=[Depends(m.community_bearer)]
     )
     async def community_block_author(
-        payload: m.CommunityBlockRequest, request: Request,
+        payload: CommunityBlockRequest, request: Request,
     ):
         """Block the verified author resolved from an opaque content token."""
         principal = await m._require_account(request)
@@ -261,7 +451,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/community/opinion", dependencies=[Depends(m.community_bearer)])
-    async def community_opinion_submit(payload: m.CommunityOpinionRequest, request: Request):
+    async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
         """Record one community 'second opinion' on a shared scan.
 
         The suggested disease must be a known classifier class so the consensus
@@ -365,7 +555,7 @@ def register(router: APIRouter, m) -> None:
         "/community/request-opinion", dependencies=[Depends(m.community_bearer)]
     )
     async def community_request_opinion(
-        payload: m.CommunityRequestOpinionRequest, request: Request,
+        payload: CommunityRequestOpinionRequest, request: Request,
     ):
         """Flag the scanner's own shared scan as wanting a second opinion.
 
@@ -407,7 +597,7 @@ def register(router: APIRouter, m) -> None:
         "/community/request-opinion/cancel", dependencies=[Depends(m.community_bearer)]
     )
     async def community_request_opinion_cancel(
-        payload: m.CommunityRequestOpinionRequest, request: Request,
+        payload: CommunityRequestOpinionRequest, request: Request,
     ):
         """Withdraw an open second-opinion request on the caller's own scan.
 
@@ -483,7 +673,7 @@ def register(router: APIRouter, m) -> None:
         if profile is None:
             raise HTTPException(status_code=404, detail="profile_not_found")
         for item in profile.get("items", []):
-            m.community_geo.localize_item_country(item)
+            community_geo.localize_item_country(item)
         return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
 
 
@@ -501,7 +691,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/community/view", dependencies=[Depends(m.community_bearer)])
-    async def community_record_scan_view(payload: m.CommunityViewRequest, request: Request):
+    async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
         """Record that the caller opened (or merely scrolled past) someone
         else's shared scan — one id via ``scan_id``, or up to 50 via
         ``scan_ids`` for feed-scroll impressions. Deduped per viewer
@@ -539,7 +729,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/community/like", dependencies=[Depends(m.community_bearer)])
-    async def community_like_scan(payload: m.CommunityLikeRequest, request: Request):
+    async def community_like_scan(payload: CommunityLikeRequest, request: Request):
         """Like or unlike a shared scan. A self-like is refused (0 either way);
         liking your own scan makes no more sense than viewing it does."""
         principal = await m._require_account(request)
@@ -568,7 +758,7 @@ def register(router: APIRouter, m) -> None:
 
     @router.post("/community/scan-counts", dependencies=[Depends(m.community_bearer)])
     async def community_scan_counts_endpoint(
-        payload: m.CommunityScanCountsRequest, request: Request,
+        payload: CommunityScanCountsRequest, request: Request,
     ):
         """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
         caller's own rows in one round-trip. Unknown/zero scans are omitted."""
@@ -636,7 +826,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recent" and recommendation_cursor is not None \
                 and recommendation_cursor[0] != 0:
             raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
-        geo = m.community_geo.client_location(country, region, lat, lon)
+        geo = community_geo.client_location(country, region, lat, lon)
         country_norm = geo["country"]
         scope_norm = (scope or "nearby").strip().lower()
         if scope_norm not in ("nearby", "country", "worldwide"):
@@ -738,8 +928,8 @@ def register(router: APIRouter, m) -> None:
             r.pop("_cursor_score", None)
             r.pop("_cursor_row_id", None)
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m.community_geo.localize_item_country(r)
-        meta = m.community_geo.country_display(country_norm)
+            community_geo.localize_item_country(r)
+        meta = community_geo.country_display(country_norm)
         # Tell the client which filter was actually served + the nearby label.
         if worldwide:
             meta["scope"] = "worldwide"
@@ -784,7 +974,7 @@ def register(router: APIRouter, m) -> None:
         sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
         signals an over-full bbox."""
         principal = await m._optional_account(request)
-        box = m._valid_bbox(min_lat, min_lon, max_lat, max_lon)
+        box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
         if box is None:
             raise HTTPException(status_code=422, detail="Invalid bbox")
         lo_lat, lo_lon, hi_lat, hi_lon = box
@@ -813,7 +1003,7 @@ def register(router: APIRouter, m) -> None:
         for r in rows:
             r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-            m.community_geo.localize_item_country(r)
+            community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows, "truncated": data["truncated"]})
 
 
@@ -827,7 +1017,7 @@ def register(router: APIRouter, m) -> None:
 
         Public; returns only cell centers + counts (each ≥ 3 scans), never per-scan
         coords; ``not_a_plant`` excluded."""
-        box = m._valid_bbox(min_lat, min_lon, max_lat, max_lon)
+        box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
         if box is None:
             raise HTTPException(status_code=422, detail="Invalid bbox")
         lo_lat, lo_lon, hi_lat, hi_lon = box
@@ -861,7 +1051,7 @@ def register(router: APIRouter, m) -> None:
         sci = (species or "").strip()
         if not sci:
             raise HTTPException(status_code=422, detail="Invalid species")
-        geo = m.community_geo.client_location(country, region, lat, lon)
+        geo = community_geo.client_location(country, region, lat, lon)
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
@@ -887,7 +1077,7 @@ def register(router: APIRouter, m) -> None:
             # Public token only — never the community publication capability.
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m.community_geo.localize_item_country(r)
+            community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows})
 
 

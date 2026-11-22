@@ -23,8 +23,9 @@ from PIL import Image
 
 # Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import config
+    from . import community_geo, config
 except ImportError:
+    import community_geo
     import config
 
 
@@ -419,7 +420,7 @@ def register(router: APIRouter, m) -> None:
         worldwide bundle. Cached per (country, coords, locale); a stale entry is
         served immediately and refreshed in the background so a user never waits on
         the per-species Wikipedia calls."""
-        geo = m.community_geo.client_location(country, region, lat, lon)
+        geo = community_geo.client_location(country, region, lat, lon)
         country_norm = geo["country"]
         lat_n, lon_n = geo["lat"], geo["lon"]
         city_n = geo["city"]
