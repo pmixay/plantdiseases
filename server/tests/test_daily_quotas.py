@@ -92,6 +92,7 @@ def test_plantnet_allowance_is_shared_by_analyze_and_identify(client, m, monkeyp
 
 
 def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
+    import routes_assistant
     monkeypatch.setattr(m._chat_quota, "limit", 1)
     client.post("/api/chat", json={"session_id": "s1", "message": "hi"})
 
@@ -101,7 +102,7 @@ def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
     body = r.json()
     assert body["available"] is False
     assert body["reason"] == "daily_quota"
-    assert body["fallback"] == m._QUOTA_UNAVAILABLE_TEXT["ru"]
+    assert body["fallback"] == routes_assistant._QUOTA_UNAVAILABLE_TEXT["ru"]
 
 
 def test_care_plan_past_quota_drops_only_the_llm_polish(client, m, monkeypatch):

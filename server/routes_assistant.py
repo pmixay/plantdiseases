@@ -9,9 +9,11 @@ it) is seen by the routes exactly as before.
 
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 # chat_reply outcomes decided before any model call.
 _CHAT_NO_COST_REASONS = frozenset({
@@ -23,9 +25,40 @@ _CHAT_NO_COST_REASONS = frozenset({
 })
 
 
+_QUOTA_UNAVAILABLE_TEXT = {
+    "en": "You've reached today's limit for this feature. It resets at midnight UTC.",
+    "ru": "Дневной лимит для этой функции исчерпан. Он обновится в полночь по UTC.",
+}
+
+
+class ChatRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=2000)
+    locale: str = Field(default="en", max_length=8)
+    diagnosis: dict | None = None
+
+
+class CarePlanRequest(BaseModel):
+    disease: str = Field(..., min_length=1, max_length=64)
+    species: str | None = Field(default=None, max_length=128)
+    light: str = Field(default="bright_indirect", max_length=32)
+    locale: str = Field(default="en", max_length=8)
+    # Optional season override; ``None`` auto-detects from today's date
+    # (northern-hemisphere default). Accepted values: ``"growing"``
+    # or ``"dormant"``.
+    season: str | None = Field(default=None, max_length=16)
+    # What the plan is for. ``scan``: adapted to a diagnosis (the scan result
+    # and the plant it was saved to); a fresh AI summary spends the daily
+    # care-plan allowance. ``species``: a species' general care (species
+    # page), always the healthy-plant plan and never metered. ``checklist``:
+    # the structured plan behind a garden treatment checklist, no AI summary,
+    # never metered.
+    purpose: Literal["scan", "species", "checklist"] = "scan"
+
+
 def register(router: APIRouter, m) -> None:
     @router.post("/chat")
-    async def chat_endpoint(request: Request, payload: m.ChatRequest):
+    async def chat_endpoint(request: Request, payload: ChatRequest):
         """AI Plant Doctor — OpenRouter chat completion (default model
         ``openai/gpt-5.6-luna``).
 
@@ -41,7 +74,7 @@ def register(router: APIRouter, m) -> None:
                 "reason": "daily_quota",
                 # The app shows ``fallback`` verbatim, so builds that predate
                 # this reason still tell the user what happened.
-                "fallback": m._QUOTA_UNAVAILABLE_TEXT[lang],
+                "fallback": _QUOTA_UNAVAILABLE_TEXT[lang],
             })
         # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
         # before they hit chat_reply so a malicious client can't push a
@@ -78,7 +111,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/care-plan")
-    async def care_plan_endpoint(request: Request, payload: m.CarePlanRequest):
+    async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
         """Build a watering / fertilising / humidity schedule for a plant.
 
         Always returns a usable rules-based plan; when an OpenRouter key

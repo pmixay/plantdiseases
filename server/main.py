@@ -39,7 +39,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -1219,10 +1218,6 @@ def _require_daily_quota(quota: _DailyQuota, request: Request) -> None:
         )
 
 
-_QUOTA_UNAVAILABLE_TEXT = {
-    "en": "You've reached today's limit for this feature. It resets at midnight UTC.",
-    "ru": "Дневной лимит для этой функции исчерпан. Он обновится в полночь по UTC.",
-}
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
 TELEMETRY_ENABLED = config.get_bool("TELEMETRY_ENABLED", True)
@@ -3215,31 +3210,6 @@ async def _analyze_image_admitted(
 
 
 # ── Smart APIs ──────────────────────────────────────────────────────
-
-
-class ChatRequest(BaseModel):
-    session_id: str = Field(..., min_length=1, max_length=64)
-    message: str = Field(..., min_length=1, max_length=2000)
-    locale: str = Field(default="en", max_length=8)
-    diagnosis: dict | None = None
-
-
-class CarePlanRequest(BaseModel):
-    disease: str = Field(..., min_length=1, max_length=64)
-    species: str | None = Field(default=None, max_length=128)
-    light: str = Field(default="bright_indirect", max_length=32)
-    locale: str = Field(default="en", max_length=8)
-    # Optional season override; ``None`` auto-detects from today's date
-    # (northern-hemisphere default). Accepted values: ``"growing"``
-    # or ``"dormant"``.
-    season: str | None = Field(default=None, max_length=16)
-    # What the plan is for. ``scan``: adapted to a diagnosis (the scan result
-    # and the plant it was saved to); a fresh AI summary spends the daily
-    # care-plan allowance. ``species``: a species' general care (species
-    # page), always the healthy-plant plan and never metered. ``checklist``:
-    # the structured plan behind a garden treatment checklist, no AI summary,
-    # never metered.
-    purpose: Literal["scan", "species", "checklist"] = "scan"
 
 
 class SymptomDiagnoseRequest(BaseModel):
