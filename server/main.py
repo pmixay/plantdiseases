@@ -2553,13 +2553,6 @@ def _apply_abstention_presentation(payload: dict) -> dict:
     return payload
 
 
-_PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
-
-
-def _prom_label(value: str) -> str:
-    return value.translate(_PROM_LABEL_ESCAPE)
-
-
 async def _species_identify_best_effort(
     image_bytes: bytes,
     *,
@@ -3809,65 +3802,6 @@ async def _identify_admitted(
 # bytes; an attacker can lie about Content-Type but the magic bytes
 # don't lie.
 _COMMUNITY_ALLOWED_TYPES = set(ALLOWED_CONTENT_TYPES)
-
-
-class TelemetryErrorRequest(BaseModel):
-    """One consented report containing only allowlisted technical enums."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    telemetry_consent: bool = False
-    telemetry_consent_version: str | None = Field(default=None, max_length=32)
-    stage: str = Field(..., min_length=1, max_length=32)
-    kind: str = Field(..., min_length=1, max_length=32)
-    fatal: bool = False
-    http_status: int | None = Field(default=None, ge=100, le=599)
-    family: str | None = Field(default=None, max_length=16)
-    app_version: str | None = Field(default=None, max_length=32)
-    android_api: int | None = Field(default=None, ge=1, le=100)
-    breadcrumbs: list[str] | None = Field(default=None, max_length=20)
-
-    @field_validator("stage")
-    @classmethod
-    def _known_stage(cls, value: str) -> str:
-        if value not in telemetry.ALLOWED_STAGES:
-            raise ValueError("stage is not allowlisted")
-        return value
-
-    @field_validator("kind")
-    @classmethod
-    def _known_kind(cls, value: str) -> str:
-        if value not in telemetry.ALLOWED_KINDS:
-            raise ValueError("kind is not allowlisted")
-        return value
-
-    @field_validator("family")
-    @classmethod
-    def _known_family(cls, value: str | None) -> str | None:
-        if value is not None and value not in telemetry.ALLOWED_FAMILIES:
-            raise ValueError("family is not allowlisted")
-        return value
-
-    @field_validator("app_version")
-    @classmethod
-    def _safe_app_version(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not value or any(
-            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._+-"
-            for character in value
-        ):
-            raise ValueError("app_version is invalid")
-        return value
-
-    @field_validator("breadcrumbs")
-    @classmethod
-    def _known_breadcrumbs(cls, values: list[str] | None) -> list[str] | None:
-        if values is None:
-            return None
-        if any(value not in telemetry.ALLOWED_BREADCRUMBS for value in values):
-            raise ValueError("breadcrumb is not allowlisted")
-        return values
 
 
 class CommunityOpinionRequest(BaseModel):

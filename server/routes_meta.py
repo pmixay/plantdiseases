@@ -13,7 +13,80 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.responses import Response as StarletteResponse
+
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import telemetry
+except ImportError:
+    import telemetry
+
+
+_PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
+
+
+def _prom_label(value: str) -> str:
+    return value.translate(_PROM_LABEL_ESCAPE)
+
+
+class TelemetryErrorRequest(BaseModel):
+    """One consented report containing only allowlisted technical enums."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    telemetry_consent: bool = False
+    telemetry_consent_version: str | None = Field(default=None, max_length=32)
+    stage: str = Field(..., min_length=1, max_length=32)
+    kind: str = Field(..., min_length=1, max_length=32)
+    fatal: bool = False
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    family: str | None = Field(default=None, max_length=16)
+    app_version: str | None = Field(default=None, max_length=32)
+    android_api: int | None = Field(default=None, ge=1, le=100)
+    breadcrumbs: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("stage")
+    @classmethod
+    def _known_stage(cls, value: str) -> str:
+        if value not in telemetry.ALLOWED_STAGES:
+            raise ValueError("stage is not allowlisted")
+        return value
+
+    @field_validator("kind")
+    @classmethod
+    def _known_kind(cls, value: str) -> str:
+        if value not in telemetry.ALLOWED_KINDS:
+            raise ValueError("kind is not allowlisted")
+        return value
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str | None) -> str | None:
+        if value is not None and value not in telemetry.ALLOWED_FAMILIES:
+            raise ValueError("family is not allowlisted")
+        return value
+
+    @field_validator("app_version")
+    @classmethod
+    def _safe_app_version(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or any(
+            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._+-"
+            for character in value
+        ):
+            raise ValueError("app_version is invalid")
+        return value
+
+    @field_validator("breadcrumbs")
+    @classmethod
+    def _known_breadcrumbs(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        if any(value not in telemetry.ALLOWED_BREADCRUMBS for value in values):
+            raise ValueError("breadcrumb is not allowlisted")
+        return values
 
 
 def register(router: APIRouter, m) -> None:
@@ -162,7 +235,7 @@ def register(router: APIRouter, m) -> None:
         snap = m._snapshot_metrics()
         plantnet = m.ai_services.plantnet_metrics_snapshot()
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
-        version = m._prom_label(m.APP_VERSION)
+        version = _prom_label(m.APP_VERSION)
 
         lines = [
             "# HELP plantdiseases_uptime_seconds Seconds since the server started.",
@@ -194,7 +267,7 @@ def register(router: APIRouter, m) -> None:
         ]
         for class_name, count in sorted(snap["class_counts"].items()):
             lines.append(
-                f'plantdiseases_class_predictions_total{{class="{m._prom_label(class_name)}"}} {count}'
+                f'plantdiseases_class_predictions_total{{class="{_prom_label(class_name)}"}} {count}'
             )
 
         lines.extend(
@@ -231,7 +304,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/telemetry/errors")
-    async def telemetry_errors(payload: m.TelemetryErrorRequest, request: Request):
+    async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
         """Record minimized error telemetry only under the current consent text."""
         if not m.TELEMETRY_ENABLED or not payload.telemetry_consent:
             return JSONResponse(content={"ok": True, "recorded": False})
