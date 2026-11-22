@@ -66,12 +66,21 @@ from starlette.responses import Response as StarletteResponse
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
     from . import (
+        account_auth,
+        account_entitlements,
         account_roles,
+        ai_services,
+        beta_runtime,
+        community,
         community_achievements,
         community_forum,
         community_labels,
-        community_moderation,
+        config,
+        countries,
         deps,
+        diseases_data,
+        plant_photos,
+        popular_plants,
         routes_assistant,
         routes_community,
         routes_content,
@@ -80,246 +89,32 @@ try:
         routes_internal,
         routes_meta,
         routes_moderation,
+        runtime_paths,
+        species_info,
+        synthetic_pipeline,
+        telemetry,
         training_store,
     )
-    from .account_auth import (
-        AccountAuthenticationError,
-        AccountAuthenticationUnavailable,
-        AccountPrincipal,
-        build_account_authenticator,
-    )
-    from .account_entitlements import (
-        EntitlementDecision,
-        EntitlementUnavailable,
-        account_entitlement_client,
-    )
-    from .account_internal import (
-        internal_service_authorized,
-    )
-    from .account_internal import (
-        send_account_opinion_notification as _send_account_opinion_notification,
-    )
-    from .ai_services import (  # type: ignore[import-not-found]
-        care_plan_metrics_snapshot,
-        chat_metrics_snapshot,
-        chat_reply,
-        compare_progression_history,
-        generate_care_plan,
-        identify_species,
-        openrouter_configured,
-        plantnet_cache_lookup,
-        plantnet_configured,
-        plantnet_metrics_snapshot,
-        prompt_cache_metrics_snapshot,
-        species_common_diseases,
-        species_profile,
-    )
-    from .beta_runtime import allow_synthetic_pipeline
-    from .community import (
-        COMMUNITY_THUMB_DIR,
-        AnalysisImageMismatchError,
-        AnalysisTokenConflictError,
-        AnalysisTokenUnknownError,
-        OpinionTargetUnavailableError,
-    )
-    from .community import (
-        account_owner_of as community_account_owner_of,
-    )
-    from .community import (
-        actor_blocks as community_actor_blocks,
-    )
-    from .community import (
-        anonymous_popular_snapshot as community_anonymous_popular_snapshot,
-    )
-    from .community import (
-        block_content_author as community_block_content_author,
-    )
-    from .community import (
-        clear_wants_opinion as community_clear_wants_opinion,
-    )
-    from .community import (
-        decode_recommendation_cursor as community_decode_recommendation_cursor,
-    )
-    from .community import (
-        density_grid as community_density_grid,
-    )
-    from .community import (
-        encode_recommendation_cursor as community_encode_recommendation_cursor,
-    )
-    from .community import (
-        init_db as init_community_db,
-    )
-    from .community import (
-        is_analysis_token_issued as community_analysis_token_issued,
-    )
-    from .community import (
-        like_counts as community_like_counts,
-    )
-    from .community import (
-        map_scans as community_map_scans,
-    )
-    from .community import (
-        nearby_scans as community_nearby_scans,
-    )
-    from .community import (
-        opinion_counts as community_opinion_counts,
-    )
-    from .community import (
-        opinion_counts_for_actor as community_opinion_counts_for_actor,
-    )
-    from .community import (
-        opinion_open as community_opinion_open,
-    )
-    from .community import (
-        opinions_for as community_opinions_for,
-    )
-    from .community import (
-        popular_snapshot as community_popular_snapshot,
-    )
-    from .community import (
-        process_cleanup_jobs as community_process_cleanup_jobs,
-    )
-    from .community import (
-        prune_older_than as community_prune_older_than,
-    )
-    from .community import (
-        public_account_profile as community_public_account_profile,
-    )
-    from .community import (
-        recommended_scans as community_recommended_scans,
-    )
-    from .community import (
-        record_analysis_scan as community_record_analysis_scan,
-    )
-    from .community import (
-        record_analysis_token as community_record_analysis_token,
-    )
-    from .community import (
-        record_anonymous_scan as community_record_anonymous_scan,
-    )
-    from .community import (
-        record_content_report as community_record_content_report,
-    )
-    from .community import (
-        record_opinion_with_status as community_record_opinion,
-    )
-    from .community import (
-        record_views as community_record_views,
-    )
-    from .community import (
-        region_summary as community_region_summary,
-    )
-    from .community import (
-        request_actor_deletion as community_request_actor_deletion,
-    )
-    from .community import (
-        resolve_scan_token as community_resolve_scan_token,
-    )
-    from .community import (
-        scan_counts_for_actor as community_scan_counts_for_actor,
-    )
-    from .community import (
-        scan_exists as community_scan_exists,
-    )
-    from .community import (
-        scans_by_species as community_scans_by_species,
-    )
-    from .community import (
-        set_like as community_set_like,
-    )
-    from .community import (
-        set_wants_opinion as community_set_wants_opinion,
-    )
-    from .community import (
-        stats_snapshot as community_stats_snapshot,
-    )
-    from .community import (
-        thumbnail_is_visible as community_thumbnail_is_visible,
-    )
-    from .community import (
-        unblock_actor as community_unblock_actor,
-    )
-    from .community import (
-        update_actor_nickname as community_update_actor_nickname,
-    )
-    from .community import (
-        view_counts as community_view_counts,
-    )
-    from .community import (
-        wants_opinion as community_wants_opinion,
-    )
-    from .config import get, get_bool, get_float, get_int, get_list, get_str
-    from .countries import COUNTRY_NAMES, to_iso_alpha2
-    from .diseases_data import (
-        DISEASES_DATABASE,
-        lookup_pet_toxicity,
-    )
-    from .pipeline import (
-        ABSTENTION_REASON_NAP as _ABSTENTION_REASON_NAP,
-    )
-    from .pipeline import (
-        ABSTENTION_REASON_UNKNOWN as _ABSTENTION_REASON_UNKNOWN,
-    )
-    from .pipeline import (
-        PlantDiseasePipeline,
-        _derive_abstention,
-    )
-    from .plant_photos import (
-        get_or_fetch as plant_photo_get_or_fetch,
-    )
-    from .plant_photos import (
-        is_allowed_url as plant_photo_allowed,
-    )
-    from .plant_photos import (
-        media_type_for as plant_photo_media_type,
-    )
-    from .plant_photos import (
-        name_proxy_path as plant_photo_name_proxy,
-    )
-    from .plant_photos import (
-        proxy_path as plant_photo_proxy,
-    )
-    from .plant_photos import prune_cache as plant_photo_prune_cache
-    from .plant_photos import warm as plant_photo_warm
-    from .popular_plants import popular_for
-    from .runtime_paths import normalize_root_path
-    from .species_info import fetch_species_info
-    from .symptoms import diagnose as symptom_diagnose
-    from .synthetic_pipeline import SyntheticPipeline
-    from .telemetry import (
-        ALLOWED_BREADCRUMBS as TELEMETRY_ALLOWED_BREADCRUMBS,
-    )
-    from .telemetry import (
-        ALLOWED_FAMILIES as TELEMETRY_ALLOWED_FAMILIES,
-    )
-    from .telemetry import (
-        ALLOWED_KINDS as TELEMETRY_ALLOWED_KINDS,
-    )
-    from .telemetry import (
-        ALLOWED_STAGES as TELEMETRY_ALLOWED_STAGES,
-    )
-    from .telemetry import (
-        android_api_bucket as telemetry_android_api_bucket,
-    )
-    from .telemetry import (
-        http_status_bucket as telemetry_http_status_bucket,
-    )
-    from .telemetry import (
-        init_db as init_telemetry_db,
-    )
-    from .telemetry import (
-        prune_older_than as telemetry_prune_older_than,
-    )
-    from .telemetry import (
-        record_error as telemetry_record_error,
+    from . import (
+        pipeline as pipeline_module,
     )
 except ImportError:
+    import account_auth
+    import account_entitlements
     import account_roles
+    import ai_services
+    import beta_runtime
+    import community
     import community_achievements
     import community_forum
     import community_labels
-    import community_moderation
+    import config
+    import countries
     import deps
+    import diseases_data
+    import pipeline as pipeline_module
+    import plant_photos
+    import popular_plants
     import routes_assistant
     import routes_community
     import routes_content
@@ -328,238 +123,11 @@ except ImportError:
     import routes_internal
     import routes_meta
     import routes_moderation
+    import runtime_paths
+    import species_info
+    import synthetic_pipeline
+    import telemetry
     import training_store
-    from account_auth import (
-        AccountAuthenticationError,
-        AccountAuthenticationUnavailable,
-        AccountPrincipal,
-        build_account_authenticator,
-    )
-    from account_entitlements import (
-        EntitlementDecision,
-        EntitlementUnavailable,
-        account_entitlement_client,
-    )
-    from account_internal import (
-        internal_service_authorized,
-    )
-    from account_internal import (
-        send_account_opinion_notification as _send_account_opinion_notification,
-    )
-    from ai_services import (
-        care_plan_metrics_snapshot,
-        chat_metrics_snapshot,
-        chat_reply,
-        compare_progression_history,
-        generate_care_plan,
-        identify_species,
-        openrouter_configured,
-        plantnet_cache_lookup,
-        plantnet_configured,
-        plantnet_metrics_snapshot,
-        prompt_cache_metrics_snapshot,
-        species_common_diseases,
-        species_profile,
-    )
-    from beta_runtime import allow_synthetic_pipeline
-    from community import (
-        COMMUNITY_THUMB_DIR,
-        AnalysisImageMismatchError,
-        AnalysisTokenConflictError,
-        AnalysisTokenUnknownError,
-        OpinionTargetUnavailableError,
-    )
-    from community import (
-        account_owner_of as community_account_owner_of,
-    )
-    from community import (
-        actor_blocks as community_actor_blocks,
-    )
-    from community import (
-        anonymous_popular_snapshot as community_anonymous_popular_snapshot,
-    )
-    from community import (
-        block_content_author as community_block_content_author,
-    )
-    from community import (
-        clear_wants_opinion as community_clear_wants_opinion,
-    )
-    from community import (
-        decode_recommendation_cursor as community_decode_recommendation_cursor,
-    )
-    from community import (
-        density_grid as community_density_grid,
-    )
-    from community import (
-        encode_recommendation_cursor as community_encode_recommendation_cursor,
-    )
-    from community import (
-        init_db as init_community_db,
-    )
-    from community import (
-        is_analysis_token_issued as community_analysis_token_issued,
-    )
-    from community import (
-        like_counts as community_like_counts,
-    )
-    from community import (
-        map_scans as community_map_scans,
-    )
-    from community import (
-        nearby_scans as community_nearby_scans,
-    )
-    from community import (
-        opinion_counts as community_opinion_counts,
-    )
-    from community import (
-        opinion_counts_for_actor as community_opinion_counts_for_actor,
-    )
-    from community import (
-        opinion_open as community_opinion_open,
-    )
-    from community import (
-        opinions_for as community_opinions_for,
-    )
-    from community import (
-        popular_snapshot as community_popular_snapshot,
-    )
-    from community import (
-        process_cleanup_jobs as community_process_cleanup_jobs,
-    )
-    from community import (
-        prune_older_than as community_prune_older_than,
-    )
-    from community import (
-        public_account_profile as community_public_account_profile,
-    )
-    from community import (
-        recommended_scans as community_recommended_scans,
-    )
-    from community import (
-        record_analysis_scan as community_record_analysis_scan,
-    )
-    from community import (
-        record_analysis_token as community_record_analysis_token,
-    )
-    from community import (
-        record_anonymous_scan as community_record_anonymous_scan,
-    )
-    from community import (
-        record_content_report as community_record_content_report,
-    )
-    from community import (
-        record_opinion_with_status as community_record_opinion,
-    )
-    from community import (
-        record_views as community_record_views,
-    )
-    from community import (
-        region_summary as community_region_summary,
-    )
-    from community import (
-        request_actor_deletion as community_request_actor_deletion,
-    )
-    from community import (
-        resolve_scan_token as community_resolve_scan_token,
-    )
-    from community import (
-        scan_counts_for_actor as community_scan_counts_for_actor,
-    )
-    from community import (
-        scan_exists as community_scan_exists,
-    )
-    from community import (
-        scans_by_species as community_scans_by_species,
-    )
-    from community import (
-        set_like as community_set_like,
-    )
-    from community import (
-        set_wants_opinion as community_set_wants_opinion,
-    )
-    from community import (
-        stats_snapshot as community_stats_snapshot,
-    )
-    from community import (
-        thumbnail_is_visible as community_thumbnail_is_visible,
-    )
-    from community import (
-        unblock_actor as community_unblock_actor,
-    )
-    from community import (
-        update_actor_nickname as community_update_actor_nickname,
-    )
-    from community import (
-        view_counts as community_view_counts,
-    )
-    from community import (
-        wants_opinion as community_wants_opinion,
-    )
-    from config import get, get_bool, get_float, get_int, get_list, get_str
-    from countries import COUNTRY_NAMES, to_iso_alpha2
-    from diseases_data import (
-        DISEASES_DATABASE,
-        lookup_pet_toxicity,
-    )
-    from pipeline import (
-        ABSTENTION_REASON_NAP as _ABSTENTION_REASON_NAP,
-    )
-    from pipeline import (
-        ABSTENTION_REASON_UNKNOWN as _ABSTENTION_REASON_UNKNOWN,
-    )
-    from pipeline import (
-        PlantDiseasePipeline,
-        _derive_abstention,
-    )
-    from plant_photos import (
-        get_or_fetch as plant_photo_get_or_fetch,
-    )
-    from plant_photos import (
-        is_allowed_url as plant_photo_allowed,
-    )
-    from plant_photos import (
-        media_type_for as plant_photo_media_type,
-    )
-    from plant_photos import (
-        name_proxy_path as plant_photo_name_proxy,
-    )
-    from plant_photos import (
-        proxy_path as plant_photo_proxy,
-    )
-    from plant_photos import prune_cache as plant_photo_prune_cache
-    from plant_photos import warm as plant_photo_warm
-    from popular_plants import popular_for
-    from runtime_paths import normalize_root_path
-    from species_info import fetch_species_info
-    from symptoms import diagnose as symptom_diagnose
-    from synthetic_pipeline import SyntheticPipeline
-    from telemetry import (
-        ALLOWED_BREADCRUMBS as TELEMETRY_ALLOWED_BREADCRUMBS,
-    )
-    from telemetry import (
-        ALLOWED_FAMILIES as TELEMETRY_ALLOWED_FAMILIES,
-    )
-    from telemetry import (
-        ALLOWED_KINDS as TELEMETRY_ALLOWED_KINDS,
-    )
-    from telemetry import (
-        ALLOWED_STAGES as TELEMETRY_ALLOWED_STAGES,
-    )
-    from telemetry import (
-        android_api_bucket as telemetry_android_api_bucket,
-    )
-    from telemetry import (
-        http_status_bucket as telemetry_http_status_bucket,
-    )
-    from telemetry import (
-        init_db as init_telemetry_db,
-    )
-    from telemetry import (
-        prune_older_than as telemetry_prune_older_than,
-    )
-    from telemetry import (
-        record_error as telemetry_record_error,
-    )
 
 
 _SERVER_VERSION = "1.0"
@@ -609,10 +177,10 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, ensure_ascii=False)
 
 # ── Logging ──────────────────────────────────────────────────────────
-LOG_DIR = Path(get_str("LOG_DIR", "logs"))
+LOG_DIR = Path(config.get_str("LOG_DIR", "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
-USE_STRUCTURED_LOGS = get("STRUCTURED_LOGS", False, cast=bool)
+USE_STRUCTURED_LOGS = config.get("STRUCTURED_LOGS", False, cast=bool)
 if USE_STRUCTURED_LOGS:
     _log_fmt = JSONFormatter(datefmt="%Y-%m-%d %H:%M:%S")
 else:
@@ -638,28 +206,30 @@ logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler]
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
-ENVIRONMENT = get_str("ENVIRONMENT", "").strip().lower()
-ACCOUNT_BETA_SYNTHETIC_PIPELINE = allow_synthetic_pipeline(
+ENVIRONMENT = config.get_str("ENVIRONMENT", "").strip().lower()
+ACCOUNT_BETA_SYNTHETIC_PIPELINE = beta_runtime.allow_synthetic_pipeline(
     environment=ENVIRONMENT,
-    requested=get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
-    synthetic_staging_acknowledged=get_bool(
+    requested=config.get_bool("ACCOUNT_BETA_SYNTHETIC_PIPELINE", False),
+    synthetic_staging_acknowledged=config.get_bool(
         "ACCOUNT_BETA_SYNTHETIC_DATA_ONLY",
         False,
     ),
 )
-APP_ROOT_PATH = normalize_root_path(get_str("APP_ROOT_PATH", ""))
-POPULAR_WARM_ENABLED = get_bool("POPULAR_WARM_ENABLED", True)
-ACCOUNT_FEATURE_EXPECTED = get_bool(
+APP_ROOT_PATH = runtime_paths.normalize_root_path(config.get_str("APP_ROOT_PATH", ""))
+POPULAR_WARM_ENABLED = config.get_bool("POPULAR_WARM_ENABLED", True)
+ACCOUNT_FEATURE_EXPECTED = config.get_bool(
     "ACCOUNT_FEATURE_EXPECTED",
     bool(
-        get_str("ACCOUNT_API_BASE_URL", "").strip()
-        or get_str("ACCOUNT_ISSUER", "").strip()
+        config.get_str("ACCOUNT_API_BASE_URL", "").strip()
+        or config.get_str("ACCOUNT_ISSUER", "").strip()
     ),
 )
-account_authenticator = build_account_authenticator(expected=ACCOUNT_FEATURE_EXPECTED)
+account_authenticator = account_auth.build_account_authenticator(expected=ACCOUNT_FEATURE_EXPECTED)
 community_bearer = HTTPBearer(auto_error=False)
+# ``Depends`` target for routes that only need the signed-in account (see deps.py).
+account_dependency = deps.account_required(sys.modules[__name__])
 
-MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
+MODELS_DIR = Path(config.get_str("MODELS_DIR", "models"))
 # These anchors identify the bundle directory only. Strict verification reads
 # bundle_manifest.json and returns the exact checksummed ONNX paths; there is no
 # filename preference or graph fallback.
@@ -683,18 +253,18 @@ CLASSIFIER_PATH = MODELS_DIR / "classifier.onnx"
 #                grey it out in the model picker.
 KNOWN_FAMILIES = ("aqua", "gamma", "frontier")
 DEFAULT_FAMILY = "gamma"
-FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
+FRONTIER_ENABLED = config.get_bool("FRONTIER_ENABLED", False)
 # Frontier lives in its own complete manifest-bound directory so no detector,
 # classifier, taxonomy, or calibration file can collide with gamma's bundle.
-FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
+FRONTIER_MODELS_DIR = Path(config.get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
 FRONTIER_DETECTOR_PATH = FRONTIER_MODELS_DIR / "detector.onnx"
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
 # ── De-identified training-capture trust knobs ───────────────────────
 # Confident weak labels become ``auto_yes``; uncertainty remains ``pending``
 # for offline-only review. No serving-side human/admin queue exists.
-TRAINING_TRUST_CONFORMAL = get_bool("TRAINING_TRUST_CONFORMAL", True)
-TRAINING_CONF_HIGH = get_float("TRAINING_CONF_HIGH", 0.85)
+TRAINING_TRUST_CONFORMAL = config.get_bool("TRAINING_TRUST_CONFORMAL", True)
+TRAINING_CONF_HIGH = config.get_float("TRAINING_CONF_HIGH", 0.85)
 # Value-driven scan retention: every disease class is high training signal and
 # is always kept; the abundant easy class (healthy; not_a_plant is dropped
 # upstream) is sampled at TRAINING_HEALTHY_KEEP_RATE so confident-healthy photos
@@ -708,17 +278,17 @@ DISEASE_CLASSES = {
 # The operator switch is necessary but never sufficient: each analyze request
 # must separately present the current disclosure version. Automatic capture
 # stores only a detector-backed leaf crop, never a full room/background frame.
-TRAINING_CAPTURE_ENABLED = get_bool("TRAINING_CAPTURE_ENABLED", False)
-TRAINING_CONSENT_VERSION = get_str(
+TRAINING_CAPTURE_ENABLED = config.get_bool("TRAINING_CAPTURE_ENABLED", False)
+TRAINING_CONSENT_VERSION = config.get_str(
     "TRAINING_CONSENT_VERSION", "model-improvement-v1"
 ).strip()
-TRAINING_RETENTION_DAYS = get_int("TRAINING_RETENTION_DAYS", 90)
-TRAINING_MAX_IMAGES = get_int("TRAINING_MAX_IMAGES", 20000)
+TRAINING_RETENTION_DAYS = config.get_int("TRAINING_RETENTION_DAYS", 90)
+TRAINING_MAX_IMAGES = config.get_int("TRAINING_MAX_IMAGES", 20000)
 # Value caps: confident scans of the abundant easy class (healthy) are sampled
 # at this rate so a flood of confident-healthy photos can't drown the disease
 # corpus; per-class daily cap bounds disk regardless of class.
-TRAINING_HEALTHY_KEEP_RATE = get_float("TRAINING_HEALTHY_KEEP_RATE", 0.1)
-TRAINING_DAILY_CAP_PER_CLASS = get_int("TRAINING_DAILY_CAP_PER_CLASS", 50)
+TRAINING_HEALTHY_KEEP_RATE = config.get_float("TRAINING_HEALTHY_KEEP_RATE", 0.1)
+TRAINING_DAILY_CAP_PER_CLASS = config.get_int("TRAINING_DAILY_CAP_PER_CLASS", 50)
 
 # ── Guide example photos ─────────────────────────────────────────────
 # Disease/pest example photos used by the app's guide + after-scan strip.
@@ -726,7 +296,7 @@ TRAINING_DAILY_CAP_PER_CLASS = get_int("TRAINING_DAILY_CAP_PER_CLASS", 50)
 # APK so the app stays small; the client downloads + disk-caches them, so
 # once seen they remain available offline. Path is resolved relative to this
 # module so it works whether uvicorn runs from server/ or the repo root.
-GUIDE_STATIC_DIR = Path(get_str(
+GUIDE_STATIC_DIR = Path(config.get_str(
     "GUIDE_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "guide")))
 
 # ── Aqua on-device model hosting ─────────────────────────────────────
@@ -737,13 +307,13 @@ GUIDE_STATIC_DIR = Path(get_str(
 # the server model. Publish ``aqua/aqua_classifier.tflite`` plus
 # ``aqua/classes.json`` from the same verified combined bundle here. The
 # endpoint binds both file digests and the combined-bundle identity.
-AQUA_STATIC_DIR = Path(get_str(
+AQUA_STATIC_DIR = Path(config.get_str(
     "AQUA_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "aqua")))
 
 # Model artefacts are NOT committed or auto-downloaded. Extract one complete
 # notebook bundle tree into MODELS_DIR. Boot is fail-fast on a missing/invalid
 # manifest, changed bytes, mixed runs, or a serving-contract mismatch.
-MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
+MAX_FILE_SIZE = config.get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 # Ceiling on the WHOLE request body, for every route and content type.
 # MAX_FILE_SIZE above only ever bound the image field of a multipart upload,
 # which left every JSON endpoint (/api/chat, /api/care-plan, /api/community/*,
@@ -755,9 +325,9 @@ MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 # Sized off MAX_FILE_SIZE plus 2 MB of slack, because the largest legitimate
 # request IS a multipart image upload: the parts, boundaries and headers
 # around the image must fit under this too.
-MAX_REQUEST_BYTES = get_int("MAX_REQUEST_BYTES", MAX_FILE_SIZE + 2 * 1024 * 1024)
-MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
-PLANTNET_IMAGE_MAX_DIMENSION = get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
+MAX_REQUEST_BYTES = config.get_int("MAX_REQUEST_BYTES", MAX_FILE_SIZE + 2 * 1024 * 1024)
+MAX_IMAGE_DIMENSION = config.get_int("MAX_IMAGE_DIMENSION", 4096)
+PLANTNET_IMAGE_MAX_DIMENSION = config.get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
 # diagnostic signal but the blur gate passes it (upscaled noise has
 # high Laplacian variance) and the detector/classifier then emit a
@@ -766,8 +336,8 @@ PLANTNET_IMAGE_MAX_DIMENSION = get_int("PLANTNET_IMAGE_MAX_DIMENSION", 1024)
 # severity). Anything below
 # this on the short side is short-circuited to a clean 400 so the
 # client asks the user to retake instead of trusting a fake diagnosis.
-MIN_IMAGE_DIMENSION = get_int("MIN_IMAGE_DIMENSION", 48)
-INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
+MIN_IMAGE_DIMENSION = config.get_int("MIN_IMAGE_DIMENSION", 48)
+INFERENCE_TIMEOUT = config.get_float("INFERENCE_TIMEOUT", 30.0)
 
 # Same-photo dedup. Users frequently re-upload the same JPEG within
 # minutes (gallery picker mis-tap, "did the verdict change?" curiosity,
@@ -783,8 +353,8 @@ INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 # someone else's diagnosis. The TTL is 12h — long enough that the same
 # scan re-opened later in the day still hits, short enough that a reship
 # of the model isn't masked by stale verdicts for more than half a day.
-ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 24 * 3600)
-ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
+ANALYZE_CACHE_TTL_SECONDS = config.get_int("ANALYZE_CACHE_TTL_SECONDS", 24 * 3600)
+ANALYZE_CACHE_MAX_ENTRIES = config.get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _analyze_cache_lock = threading.Lock()
 
@@ -833,7 +403,7 @@ def _is_webp(head: bytes, contents: bytes) -> bool:
     )
 
 
-RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 2.0)
+RATE_LIMIT_RPS = config.get_float("RATE_LIMIT_RPS", 2.0)
 # Burst capacity on top of the steady-state rate. One user SCAN fans out into
 # many requests — analyze + identify + capabilities + aqua/manifest + care-plan
 # + species-info + community/nearby + community/by-species + opinions — so a
@@ -841,12 +411,12 @@ RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 2.0)
 # overflow was a 429, and 5 of those tripped the abuse auto-ban below (the
 # "Server error: 403 for no reason" users saw). 20 absorbs a couple of scans'
 # fan-out back-to-back before the steady rate takes over.
-RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 20.0)
-TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
+RATE_LIMIT_BURST = config.get_float("RATE_LIMIT_BURST", 20.0)
+TRUSTED_PROXIES = set(config.get_list("TRUSTED_PROXIES", []))
 
 # API Keys configuration
-REQUIRE_API_KEY = get("REQUIRE_API_KEY", False, cast=bool)
-api_keys_raw = get("API_KEYS", {})
+REQUIRE_API_KEY = config.get("REQUIRE_API_KEY", False, cast=bool)
+api_keys_raw = config.get("API_KEYS", {})
 if isinstance(api_keys_raw, str):
     try:
         API_KEYS = json.loads(api_keys_raw)
@@ -859,7 +429,7 @@ else:
 _quota_lock = threading.Lock()
 _in_memory_quotas: dict[str, dict[str, int]] = {}  # key -> {date_str: count}
 _api_key_feature_receipts: dict[
-    tuple[int, str, str, str], EntitlementDecision
+    tuple[int, str, str, str], account_entitlements.EntitlementDecision
 ] = {}
 _MAX_API_KEY_FEATURE_RECEIPTS = 50_000
 
@@ -890,9 +460,9 @@ _in_memory_bans: dict[str, float] = {} # identifier -> banned_until
 # a transient 429 into a 5-minute 403. You now need ~40 over-limit requests in
 # a minute (well beyond any legitimate UI) to earn a ban. Configurable so
 # operators can tighten/loosen without a code change.
-VIOLATION_THRESHOLD = get_int("VIOLATION_THRESHOLD", 40)
-VIOLATION_WINDOW = get_float("VIOLATION_WINDOW", 60.0)
-BAN_DURATION = get_float("BAN_DURATION", 300.0)
+VIOLATION_THRESHOLD = config.get_int("VIOLATION_THRESHOLD", 40)
+VIOLATION_WINDOW = config.get_float("VIOLATION_WINDOW", 60.0)
+BAN_DURATION = config.get_float("BAN_DURATION", 300.0)
 
 def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
     """Check if the daily quota is exceeded, and if not, increment it.
@@ -930,7 +500,7 @@ def _consume_api_key_feature(
     feature: str,
     request_id: str,
     day: int | None = None,
-) -> EntitlementDecision:
+) -> account_entitlements.EntitlementDecision:
     """Consume the legacy key's existing daily quota exactly once per operation.
 
     Metered routes defer their generic middleware quota increment to this
@@ -947,7 +517,7 @@ def _consume_api_key_feature(
     with _quota_lock:
         previous = _api_key_feature_receipts.get(receipt_key)
         if previous is not None:
-            return EntitlementDecision(
+            return account_entitlements.EntitlementDecision(
                 allowed=previous.allowed,
                 replayed=True,
                 plan=previous.plan,
@@ -973,7 +543,7 @@ def _consume_api_key_feature(
                 day_dict.pop(old_day, None)
         used = day_dict.get(day_text, 0)
         if daily_limit > 0 and used >= daily_limit:
-            decision = EntitlementDecision(
+            decision = account_entitlements.EntitlementDecision(
                 allowed=False,
                 replayed=False,
                 plan="free",
@@ -987,7 +557,7 @@ def _consume_api_key_feature(
             if daily_limit > 0:
                 used += 1
                 day_dict[day_text] = used
-            decision = EntitlementDecision(
+            decision = account_entitlements.EntitlementDecision(
                 allowed=True,
                 replayed=False,
                 plan="free",
@@ -1080,7 +650,7 @@ def _bearer_token(request: Request) -> str | None:
     return token or None
 
 
-async def _require_account(request: Request) -> AccountPrincipal:
+async def _require_account(request: Request) -> account_auth.AccountPrincipal:
     token = _bearer_token(request)
     if token is None:
         raise HTTPException(
@@ -1092,17 +662,17 @@ async def _require_account(request: Request) -> AccountPrincipal:
         return await asyncio.get_running_loop().run_in_executor(
             _get_net_executor(), account_authenticator.authenticate, token,
         )
-    except AccountAuthenticationError:
+    except account_auth.AccountAuthenticationError:
         raise HTTPException(
             status_code=401,
             detail="auth_required",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
-    except AccountAuthenticationUnavailable:
+    except account_auth.AccountAuthenticationUnavailable:
         raise HTTPException(status_code=503, detail="account_auth_unavailable") from None
 
 
-async def _optional_account(request: Request) -> AccountPrincipal | None:
+async def _optional_account(request: Request) -> account_auth.AccountPrincipal | None:
     token = _bearer_token(request)
     # The public API historically also accepts opaque API keys in the Bearer
     # slot. Only a compact three-part JWT is an account credential; treating
@@ -1117,15 +687,15 @@ async def _optional_account(request: Request) -> AccountPrincipal | None:
 # below; these process-local counters are only a budget guard for callers that
 # deliberately use the app without an account. They are never persisted.
 _GUEST_FEATURE_LIMITS = {
-    "gamma_analysis": max(0, get_int("GUEST_GAMMA_ANALYSIS_DAILY_QUOTA", 5)),
-    "frontier_analysis": max(0, get_int("GUEST_FRONTIER_ANALYSIS_DAILY_QUOTA", 1)),
-    "plant_identification": max(0, get_int("GUEST_IDENTIFY_DAILY_QUOTA", 10)),
-    "ai_doctor": max(0, get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 5)),
-    "care_plan": max(0, get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 10)),
+    "gamma_analysis": max(0, config.get_int("GUEST_GAMMA_ANALYSIS_DAILY_QUOTA", 5)),
+    "frontier_analysis": max(0, config.get_int("GUEST_FRONTIER_ANALYSIS_DAILY_QUOTA", 1)),
+    "plant_identification": max(0, config.get_int("GUEST_IDENTIFY_DAILY_QUOTA", 10)),
+    "ai_doctor": max(0, config.get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 5)),
+    "care_plan": max(0, config.get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 10)),
 }
 _guest_feature_lock = threading.Lock()
 _guest_feature_counts: dict[tuple[int, str, str], int] = {}
-_guest_feature_receipts: dict[tuple[int, str, str, str], EntitlementDecision] = {}
+_guest_feature_receipts: dict[tuple[int, str, str, str], account_entitlements.EntitlementDecision] = {}
 _MAX_GUEST_RECEIPTS = 50_000
 
 
@@ -1153,7 +723,7 @@ def _consume_guest_feature(
     address: str,
     request_id: str,
     day: int | None = None,
-) -> EntitlementDecision:
+) -> account_entitlements.EntitlementDecision:
     limit = _GUEST_FEATURE_LIMITS[feature]
     day = int(time.time()) // 86_400 if day is None else day
     count_key = (day, feature, address)
@@ -1162,7 +732,7 @@ def _consume_guest_feature(
     with _guest_feature_lock:
         previous = _guest_feature_receipts.get(receipt_key)
         if previous is not None:
-            return EntitlementDecision(
+            return account_entitlements.EntitlementDecision(
                 allowed=previous.allowed,
                 replayed=True,
                 plan=previous.plan,
@@ -1189,7 +759,7 @@ def _consume_guest_feature(
         used = _guest_feature_counts.get(count_key, 0)
         if used >= limit:
             reason = "pro_required" if limit == 0 else "quota_exhausted"
-            decision = EntitlementDecision(
+            decision = account_entitlements.EntitlementDecision(
                 allowed=False,
                 replayed=False,
                 plan="free",
@@ -1202,7 +772,7 @@ def _consume_guest_feature(
         else:
             used += 1
             _guest_feature_counts[count_key] = used
-            decision = EntitlementDecision(
+            decision = account_entitlements.EntitlementDecision(
                 allowed=True,
                 replayed=False,
                 plan="free",
@@ -1215,10 +785,10 @@ def _consume_guest_feature(
         return decision
 
 
-def _released_decision(previous: EntitlementDecision) -> EntitlementDecision:
+def _released_decision(previous: account_entitlements.EntitlementDecision) -> account_entitlements.EntitlementDecision:
     """Represent an exact-once local release without enabling UUID reuse."""
 
-    return EntitlementDecision(
+    return account_entitlements.EntitlementDecision(
         allowed=True,
         replayed=True,
         plan=previous.plan,
@@ -1312,7 +882,7 @@ async def _release_metered_feature_if_no_upstream_attempt(
     if reservation.source != "account":
         return False
 
-    client = account_entitlement_client
+    client = account_entitlements.account_entitlement_client
     if client is None:
         return False
     try:
@@ -1325,7 +895,7 @@ async def _release_metered_feature_if_no_upstream_attempt(
                 request_id=reservation.request_id,
             ),
         )
-    except EntitlementUnavailable:
+    except account_entitlements.EntitlementUnavailable:
         # The authority may have committed before the connection failed. Its
         # endpoint is idempotent; retaining the allowance locally is safest
         # when the release outcome cannot be confirmed.
@@ -1343,7 +913,7 @@ async def _authorize_metered_feature(
     request: Request,
     *,
     feature: str,
-) -> EntitlementDecision:
+) -> account_entitlements.EntitlementDecision:
     request_id = _quota_request_id(request)
     reservation_day = int(time.time()) // 86_400
     legacy_principal = getattr(
@@ -1390,7 +960,7 @@ async def _authorize_metered_feature(
             day=reservation_day,
         )
     else:
-        client = account_entitlement_client
+        client = account_entitlements.account_entitlement_client
         if client is None:
             raise HTTPException(status_code=503, detail="entitlement_service_unavailable")
         try:
@@ -1403,7 +973,7 @@ async def _authorize_metered_feature(
                     request_id=request_id,
                 ),
             )
-        except EntitlementUnavailable:
+        except account_entitlements.EntitlementUnavailable:
             raise HTTPException(
                 status_code=503,
                 detail="entitlement_service_unavailable",
@@ -1453,7 +1023,7 @@ async def _authorize_optional_species_lookup(request: Request) -> dict | None:
     instead of failing the already-authorized diagnosis.
     """
 
-    if not plantnet_configured():
+    if not ai_services.plantnet_configured():
         return None
     try:
         await _authorize_metered_feature(request, feature="plant_identification")
@@ -1477,12 +1047,12 @@ async def _authorize_optional_species_lookup(request: Request) -> dict | None:
 # Daily write quotas use the live connection address only in process memory.
 # Addresses and hashes never enter feedback, training, or account-era
 # community rows.
-FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
-COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
-COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
+FEEDBACK_DAILY_QUOTA = config.get_int("FEEDBACK_DAILY_QUOTA", 200)
+COMMUNITY_DAILY_QUOTA = config.get_int("COMMUNITY_DAILY_QUOTA", 50)
+COMMUNITY_OPINION_DAILY_QUOTA = config.get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Likes are cheap and low-stakes compared to an opinion, so they get their
 # own (looser) daily cap rather than sharing the opinion quota.
-COMMUNITY_LIKE_DAILY_QUOTA = get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+COMMUNITY_LIKE_DAILY_QUOTA = config.get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 # Community roles (expert / moderator / admin) live in the account service.
 # ``None`` when unconfigured: staff routes then fail closed with 503.
 community_roles = account_roles.community_roles_client
@@ -1507,11 +1077,11 @@ def _forum_maintenance() -> dict:
 
 
 # Forum write budgets, per signed account actor (not per address).
-FORUM_POST_DAILY_QUOTA = get_int("FORUM_POST_DAILY_QUOTA", 20)
-FORUM_ANSWER_DAILY_QUOTA = get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
-FORUM_MEDIA_DAILY_QUOTA = get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
-FORUM_AVATAR_DAILY_QUOTA = get_int("FORUM_AVATAR_DAILY_QUOTA", 10)
-FORUM_REACTION_DAILY_QUOTA = get_int("FORUM_REACTION_DAILY_QUOTA", 500)
+FORUM_POST_DAILY_QUOTA = config.get_int("FORUM_POST_DAILY_QUOTA", 20)
+FORUM_ANSWER_DAILY_QUOTA = config.get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
+FORUM_MEDIA_DAILY_QUOTA = config.get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
+FORUM_AVATAR_DAILY_QUOTA = config.get_int("FORUM_AVATAR_DAILY_QUOTA", 10)
+FORUM_REACTION_DAILY_QUOTA = config.get_int("FORUM_REACTION_DAILY_QUOTA", 500)
 _daily_write_lock = threading.Lock()
 _daily_write_counts: dict[tuple[int, str, str], int] = {}
 
@@ -1537,19 +1107,19 @@ def _consume_daily_write(operation: str, address: str, limit: int) -> bool:
 # from running up the OpenRouter bill or draining PlantNet's 500-a-day pool
 # for everyone, which a 2 req/s bucket alone allows (~170k requests a day).
 # Sized far above any real user's day; ``0`` disables one.
-ANALYZE_DAILY_QUOTA = get_int("ANALYZE_DAILY_QUOTA", 300)
-IDENTIFY_DAILY_QUOTA = get_int("IDENTIFY_DAILY_QUOTA", 150)
+ANALYZE_DAILY_QUOTA = config.get_int("ANALYZE_DAILY_QUOTA", 300)
+IDENTIFY_DAILY_QUOTA = config.get_int("IDENTIFY_DAILY_QUOTA", 150)
 # PlantNet calls per IP, shared by the /api/analyze fan-out and /api/identify.
 # Past it a scan still gets its diagnosis, without the species block.
-PLANTNET_DAILY_QUOTA_PER_IP = get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
+PLANTNET_DAILY_QUOTA_PER_IP = config.get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
 # AI Plant Doctor turns per IP. The per-session caps in ai_services reset
 # with every new client-chosen session_id; this one does not.
-CHAT_DAILY_QUOTA = get_int("CHAT_DAILY_QUOTA", 100)
+CHAT_DAILY_QUOTA = config.get_int("CHAT_DAILY_QUOTA", 100)
 # LLM-polished care plans per IP. Past it the rules-based plan is served.
-CARE_PLAN_DAILY_QUOTA = get_int("CARE_PLAN_DAILY_QUOTA", 200)
+CARE_PLAN_DAILY_QUOTA = config.get_int("CARE_PLAN_DAILY_QUOTA", 200)
 # /api/species-diseases + /api/species-profile together, per IP. Their caches
 # key on client-chosen names, so every new string is a billable miss.
-SPECIES_AI_DAILY_QUOTA = get_int("SPECIES_AI_DAILY_QUOTA", 400)
+SPECIES_AI_DAILY_QUOTA = config.get_int("SPECIES_AI_DAILY_QUOTA", 400)
 
 
 def _client_key(client_ip: str) -> str:
@@ -1655,20 +1225,20 @@ _QUOTA_UNAVAILABLE_TEXT = {
 }
 # Client error/problem telemetry ingestion. Errors-only, opt-out here; the
 # cap + retention live in telemetry.py.
-TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
-TELEMETRY_CONSENT_VERSION = get_str(
+TELEMETRY_ENABLED = config.get_bool("TELEMETRY_ENABLED", True)
+TELEMETRY_CONSENT_VERSION = config.get_str(
     "TELEMETRY_CONSENT_VERSION", "telemetry-errors-v1"
 ).strip()
-TELEMETRY_DAILY_CAP_PER_IP = get_int("TELEMETRY_DAILY_CAP_PER_IP", 200)
-TELEMETRY_RETENTION_DAYS = get_int("TELEMETRY_RETENTION_DAYS", 30)
+TELEMETRY_DAILY_CAP_PER_IP = config.get_int("TELEMETRY_DAILY_CAP_PER_IP", 200)
+TELEMETRY_RETENTION_DAYS = config.get_int("TELEMETRY_RETENTION_DAYS", 30)
 # Retention windows (days). Daily background task in the FastAPI
 # lifespan drops rows past this age.
-COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
-PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
+COMMUNITY_RETENTION_DAYS = config.get_int("COMMUNITY_RETENTION_DAYS", 90)
+PRUNE_INTERVAL_SECONDS = config.get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
 
 # Server-issued community publication tokens are separate from feedback
 # receipts and expire independently.
-COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = get_int(
+COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = config.get_int(
     "COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS", 30
 )
 
@@ -1687,7 +1257,7 @@ COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = get_int(
 # putting it here would queue millisecond DB ops behind a 30-second
 # inference (head-of-line blocking), stalling every non-scan endpoint
 # whenever a scan is in flight.
-INFER_WORKERS = get_int("INFER_WORKERS", 1)
+INFER_WORKERS = config.get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 
@@ -1701,7 +1271,7 @@ _executor_lock = threading.Lock()
 # call was observed as 90–110 s of client latency, all of it queueing.
 # These threads sleep on network I/O, not CPU, so the pool is sized for
 # concurrency, not cores.
-NET_WORKERS = get_int("NET_WORKERS", 16)
+NET_WORKERS = config.get_int("NET_WORKERS", 16)
 _net_executor: ThreadPoolExecutor | None = None
 
 
@@ -1742,9 +1312,9 @@ def _get_net_executor() -> ThreadPoolExecutor:
 # honours (one retry for a POST). The global cap bounds memory — each slot
 # holds at most one raw upload plus one decoded image — and the per-IP cap
 # stops one client from holding every slot. ``0`` disables either cap.
-INFER_MAX_INFLIGHT = get_int("INFER_MAX_INFLIGHT", 4 * max(1, INFER_WORKERS))
-INFER_MAX_INFLIGHT_PER_IP = get_int("INFER_MAX_INFLIGHT_PER_IP", 2)
-INFER_BUSY_RETRY_AFTER_SECONDS = get_int("INFER_BUSY_RETRY_AFTER_SECONDS", 3)
+INFER_MAX_INFLIGHT = config.get_int("INFER_MAX_INFLIGHT", 4 * max(1, INFER_WORKERS))
+INFER_MAX_INFLIGHT_PER_IP = config.get_int("INFER_MAX_INFLIGHT_PER_IP", 2)
+INFER_BUSY_RETRY_AFTER_SECONDS = config.get_int("INFER_BUSY_RETRY_AFTER_SECONDS", 3)
 
 _admission_lock = threading.Lock()
 _inference_inflight = 0
@@ -1857,7 +1427,7 @@ def _record_error() -> None:
 # a dashboard or scraper has no use for them fresher than its own interval, so
 # requests inside the TTL share one snapshot instead of each re-scanning the
 # tables. 0 disables the cache.
-METRICS_SNAPSHOT_TTL_SECONDS = max(0.0, get_float("METRICS_SNAPSHOT_TTL_SECONDS", 5.0))
+METRICS_SNAPSHOT_TTL_SECONDS = max(0.0, config.get_float("METRICS_SNAPSHOT_TTL_SECONDS", 5.0))
 _metrics_store_snapshot: tuple[float, dict, dict] | None = None
 
 
@@ -1877,9 +1447,9 @@ async def _metrics_store_snapshots() -> tuple[dict, dict]:
     # Blocking sqlite3, so both hop to a worker thread.
     loop = asyncio.get_running_loop()
     training = await loop.run_in_executor(None, training_store.training_counts)
-    community = await loop.run_in_executor(None, community_stats_snapshot)
-    _metrics_store_snapshot = (time.monotonic(), training, community)
-    return training, community
+    community_stats = await loop.run_in_executor(None, community.stats_snapshot)
+    _metrics_store_snapshot = (time.monotonic(), training, community_stats)
+    return training, community_stats
 
 
 def _snapshot_metrics() -> dict:
@@ -1897,10 +1467,10 @@ def _snapshot_metrics() -> dict:
         }
 
 
-pipeline: PlantDiseasePipeline | SyntheticPipeline | None = None
+pipeline: pipeline_module.PlantDiseasePipeline | synthetic_pipeline.SyntheticPipeline | None = None
 # Optional second pipeline for the frontier family. Stays ``None`` unless
 # FRONTIER_ENABLED is set AND the frontier artefacts load cleanly at boot.
-pipeline_frontier: PlantDiseasePipeline | None = None
+pipeline_frontier: pipeline_module.PlantDiseasePipeline | None = None
 
 
 def _normalise_family(family: str | None) -> str:
@@ -1926,7 +1496,7 @@ def _family_available(family: str) -> bool:
     return pipeline is not None
 
 
-def _pipeline_for_family(family: str) -> PlantDiseasePipeline | SyntheticPipeline | None:
+def _pipeline_for_family(family: str) -> pipeline_module.PlantDiseasePipeline | synthetic_pipeline.SyntheticPipeline | None:
     """Resolve the pipeline instance that should serve this family."""
     if family == "frontier":
         return pipeline_frontier
@@ -1949,7 +1519,7 @@ def _persist_community_analysis_token(
 ) -> bool:
     """Persist a publication proof; report failure without leaking a phantom token."""
     try:
-        community_record_analysis_token(
+        community.record_analysis_token(
             token,
             disease=disease,
             confidence=confidence,
@@ -2455,16 +2025,16 @@ async def lifespan(app: FastAPI):
     _inference_executor = _get_inference_executor()
     _net_executor = _get_net_executor()
     training_store.init_db()
-    init_community_db()
-    init_telemetry_db()
+    community.init_db()
+    telemetry.init_db()
     # One complete notebook-produced bundle must already be present under
     # MODELS_DIR. The constructor verifies its manifest, hashes, lineage and
     # serving contract before loading the exact selected graphs.
     if ACCOUNT_BETA_SYNTHETIC_PIPELINE:
-        pipeline = SyntheticPipeline()
+        pipeline = synthetic_pipeline.SyntheticPipeline()
         logger.warning("Synthetic test-only inference pipeline enabled")
     else:
-        pipeline = PlantDiseasePipeline(
+        pipeline = pipeline_module.PlantDiseasePipeline(
             detector_path=DETECTOR_PATH,
             classifier_path=CLASSIFIER_PATH,
             require_bundle_manifest=True,
@@ -2483,7 +2053,7 @@ async def lifespan(app: FastAPI):
     # artefacts not provisioned yet" from taking the whole server down.
     if FRONTIER_ENABLED and not ACCOUNT_BETA_SYNTHETIC_PIPELINE:
         try:
-            pipeline_frontier = PlantDiseasePipeline(
+            pipeline_frontier = pipeline_module.PlantDiseasePipeline(
                 detector_path=FRONTIER_DETECTOR_PATH,
                 classifier_path=FRONTIER_CLASSIFIER_PATH,
                 require_bundle_manifest=True,
@@ -2550,16 +2120,16 @@ async def _prune_loop() -> None:
                 TRAINING_MAX_IMAGES,
             )
             removed_cm = await asyncio.get_running_loop().run_in_executor(
-                None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
+                None, community.prune_older_than, COMMUNITY_RETENTION_DAYS,
             )
             cleanup = await asyncio.get_running_loop().run_in_executor(
-                None, community_process_cleanup_jobs,
+                None, community.process_cleanup_jobs,
             )
             forum = await asyncio.get_running_loop().run_in_executor(
                 _get_net_executor(), _forum_maintenance,
             )
             removed_tm = await asyncio.get_running_loop().run_in_executor(
-                None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,
+                None, telemetry.prune_older_than, TELEMETRY_RETENTION_DAYS,
             )
             if (
                 training_pruned["samples"]
@@ -2642,7 +2212,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     )
 
 # ── CORS ─────────────────────────────────────────────────────────────
-ALLOWED_ORIGINS = get_list(
+ALLOWED_ORIGINS = config.get_list(
     "CORS_ORIGINS", ["http://localhost:3000", "http://127.0.0.1:3000"],
 )
 if ALLOWED_ORIGINS == ["*"]:
@@ -2802,7 +2372,7 @@ def _record_popular_contribution(species: str | None, disease: str) -> None:
     tally (species + class only; see community.record_anonymous_scan).
     Fail-soft: never affects the response."""
     try:
-        community_record_anonymous_scan(species, disease)
+        community.record_anonymous_scan(species, disease)
     except Exception:  # noqa: BLE001 - background bookkeeping only
         logger.warning("Popular tally update failed")
 
@@ -2820,7 +2390,7 @@ def _record_training_candidate(
     stored = False
     try:
         class_name = str(result.get("class_name") or "")
-        if not TRAINING_CAPTURE_ENABLED or _derive_abstention(result)[0]:
+        if not TRAINING_CAPTURE_ENABLED or pipeline_module._derive_abstention(result)[0]:
             return
         detection = result.get("detection") or {}
         safe_crop = training_store.extract_safe_leaf_crop(image, detection)
@@ -2900,7 +2470,7 @@ def _compact_care_card(cls: str) -> dict:
     """Bilingual care card for one class, used in the dual-care prediction
     set so the client can render a second full care card without a second
     round-trip."""
-    info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+    info = diseases_data.DISEASES_DATABASE.get(cls, diseases_data.DISEASES_DATABASE["unknown"])
     return {
         "class": cls,
         "name_en": info.get("name_en", cls.replace("_", " ").title()),
@@ -2942,7 +2512,7 @@ def _apply_abstention_presentation(payload: dict) -> dict:
     pet toxicity, conformal set and disease flag) is neutralised. A natural
     trained-head ``not_a_plant`` keeps its established NAP copy.
     """
-    abstained, reason = _derive_abstention(payload)
+    abstained, reason = pipeline_module._derive_abstention(payload)
     payload["abstained"] = abstained
     payload["abstention_reason"] = reason
     payload["verdict_status"] = "abstained" if abstained else "accepted"
@@ -2961,15 +2531,15 @@ def _apply_abstention_presentation(payload: dict) -> dict:
     payload["species"] = {
         "available": False,
         "source": (
-            "skipped_nap" if reason == _ABSTENTION_REASON_NAP
+            "skipped_nap" if reason == pipeline_module.ABSTENTION_REASON_NAP
             else "skipped_abstained"
         ),
         "best": None,
         "candidates": [],
     }
 
-    if reason != _ABSTENTION_REASON_NAP:
-        neutral = DISEASES_DATABASE["unknown"]
+    if reason != pipeline_module.ABSTENTION_REASON_NAP:
+        neutral = diseases_data.DISEASES_DATABASE["unknown"]
         payload["disease_name"] = neutral["name_en"]
         payload["disease_name_ru"] = neutral["name_ru"]
         payload["description"] = neutral["description_en"]
@@ -3026,7 +2596,7 @@ async def _species_identify_best_effort(
                     # keyword-only — run_in_executor only takes positional
                     # args, so we wrap in a lambda. Passing positionally
                     # raises TypeError at call time and surfaces as a 500.
-                    lambda: identify_species(
+                    lambda: ai_services.identify_species(
                         image_bytes, organ="auto", lang=lang,
                     ),
                 ),
@@ -3114,8 +2684,8 @@ def build_analyze_payload(
     all_probs = result.get("all_probs", {})
     warnings = list(result.get("warnings", []))
     top_k = list(result.get("top_k", []))
-    abstained, abstention_reason = _derive_abstention(result)
-    disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
+    abstained, abstention_reason = pipeline_module._derive_abstention(result)
+    disease_info = diseases_data.DISEASES_DATABASE.get(class_name, diseases_data.DISEASES_DATABASE["unknown"])
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
@@ -3127,7 +2697,7 @@ def build_analyze_payload(
     top_k_localised = []
     for entry in top_k:
         cls = entry.get("class", "")
-        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+        info = diseases_data.DISEASES_DATABASE.get(cls, diseases_data.DISEASES_DATABASE["unknown"])
         top_k_localised.append({
             "class": cls,
             "confidence": entry.get("confidence", 0.0),
@@ -3163,10 +2733,10 @@ def build_analyze_payload(
             "items": [
                 {
                     "class": cls,
-                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                    "name_en": diseases_data.DISEASES_DATABASE.get(cls, diseases_data.DISEASES_DATABASE["unknown"]).get(
                         "name_en", cls.replace("_", " ").title()
                     ),
-                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                    "name_ru": diseases_data.DISEASES_DATABASE.get(cls, diseases_data.DISEASES_DATABASE["unknown"]).get(
                         "name_ru", cls
                     ),
                 }
@@ -3190,7 +2760,7 @@ def build_analyze_payload(
             "available": False,
             "source": (
                 "skipped_nap"
-                if abstention_reason == _ABSTENTION_REASON_NAP
+                if abstention_reason == pipeline_module.ABSTENTION_REASON_NAP
                 else "skipped_abstained"
             ),
             "best": None, "candidates": [],
@@ -3203,7 +2773,7 @@ def build_analyze_payload(
     # copy rather than falsely reassuring.
     auto_best = (species_payload or {}).get("best") or {}
     toxicity_species = None if abstained else (species_override or auto_best.get("scientific_name"))
-    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
+    toxicity = diseases_data.lookup_pet_toxicity(toxicity_species) if toxicity_species else {
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
@@ -3427,7 +2997,7 @@ async def _analyze_image_admitted(
         _apply_abstention_presentation(cached_payload)
         species_override = (species or "").strip() or None
         if species_override and not cached_payload["abstained"]:
-            overridden = lookup_pet_toxicity(species_override)
+            overridden = diseases_data.lookup_pet_toxicity(species_override)
             cached_payload["toxic_to_pets"] = overridden["toxic_to_pets"]
             cached_payload["toxic_species_list"] = overridden["species_list"]
             cached_payload["toxicity_source"] = overridden["source"]
@@ -3490,7 +3060,7 @@ async def _analyze_image_admitted(
     cached_species = await loop.run_in_executor(
         None,
         functools.partial(
-            plantnet_cache_lookup,
+            ai_services.plantnet_cache_lookup,
             species_image_bytes,
             organ="auto",
             lang=plantnet_lang,
@@ -3501,7 +3071,7 @@ async def _analyze_image_admitted(
         # its diagnosis, without the species block. A cache hit costs no
         # lookup and is never counted.
         species_payload = await _plantnet_quota_exhausted()
-    elif cached_species is None and plantnet_configured():
+    elif cached_species is None and ai_services.plantnet_configured():
         species_payload = await _authorize_optional_species_lookup(request)
         species_authorized = species_payload is None
     if species_payload is None:
@@ -3542,11 +3112,11 @@ async def _analyze_image_admitted(
 
     class_name = result["class_name"]
     confidence = result["confidence"]
-    abstained, abstention_reason = _derive_abstention(result)
+    abstained, abstention_reason = pipeline_module._derive_abstention(result)
 
     elapsed = time.time() - start_time
     metric_class = (
-        f"abstained:{abstention_reason or _ABSTENTION_REASON_UNKNOWN}"
+        f"abstained:{abstention_reason or pipeline_module.ABSTENTION_REASON_UNKNOWN}"
         if abstained else class_name
     )
     _record_analysis(metric_class, elapsed * 1000)
@@ -3732,7 +3302,7 @@ def _normalise_country(raw: str | None) -> str:
     # splits across locale-specific representations and the popular / nearby
     # aggregation (and the curated ``popular_for`` map, which only matches
     # 2-letter codes) disagree per locale.
-    return to_iso_alpha2(cleaned)
+    return countries.to_iso_alpha2(cleaned)
 
 
 def _normalise_locality(raw: str | None) -> str:
@@ -3772,7 +3342,7 @@ def _country_display(country: str | None) -> dict:
             "country_name_ru": "по всему миру",
             "scope": "global",
         }
-    en, ru = COUNTRY_NAMES.get(code, (country or code, country or code))
+    en, ru = countries.COUNTRY_NAMES.get(code, (country or code, country or code))
     return {
         "country": code if len(code) == 2 else country,
         "country_name_en": en,
@@ -3797,7 +3367,7 @@ def _localize_item_country(row: dict) -> None:
         row["country_name_en"] = None
         row["country_name_ru"] = None
         return
-    en, ru = COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
+    en, ru = countries.COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
     row["country_name_en"] = en
     row["country_name_ru"] = ru
 
@@ -4175,7 +3745,7 @@ async def _identify_admitted(
     cached_result = await loop.run_in_executor(
         None,
         functools.partial(
-            plantnet_cache_lookup,
+            ai_services.plantnet_cache_lookup,
             external_image,
             organ=organ,
             lang=plantnet_lang,
@@ -4192,7 +3762,7 @@ async def _identify_admitted(
                 "source": "quota",
                 "organ": organ,
             })
-        if plantnet_configured():
+        if ai_services.plantnet_configured():
             await _authorize_metered_feature(request, feature="plant_identification")
             identification_authorized = True
     try:
@@ -4200,7 +3770,7 @@ async def _identify_admitted(
         if result is None:
             result = await loop.run_in_executor(
                 _get_net_executor(),
-                lambda: identify_species(
+                lambda: ai_services.identify_species(
                     external_image,
                     organ=organ,
                     lang=plantnet_lang,
@@ -4269,21 +3839,21 @@ class TelemetryErrorRequest(BaseModel):
     @field_validator("stage")
     @classmethod
     def _known_stage(cls, value: str) -> str:
-        if value not in TELEMETRY_ALLOWED_STAGES:
+        if value not in telemetry.ALLOWED_STAGES:
             raise ValueError("stage is not allowlisted")
         return value
 
     @field_validator("kind")
     @classmethod
     def _known_kind(cls, value: str) -> str:
-        if value not in TELEMETRY_ALLOWED_KINDS:
+        if value not in telemetry.ALLOWED_KINDS:
             raise ValueError("kind is not allowlisted")
         return value
 
     @field_validator("family")
     @classmethod
     def _known_family(cls, value: str | None) -> str | None:
-        if value is not None and value not in TELEMETRY_ALLOWED_FAMILIES:
+        if value is not None and value not in telemetry.ALLOWED_FAMILIES:
             raise ValueError("family is not allowlisted")
         return value
 
@@ -4304,7 +3874,7 @@ class TelemetryErrorRequest(BaseModel):
     def _known_breadcrumbs(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
             return None
-        if any(value not in TELEMETRY_ALLOWED_BREADCRUMBS for value in values):
+        if any(value not in telemetry.ALLOWED_BREADCRUMBS for value in values):
             raise ValueError("breadcrumb is not allowlisted")
         return values
 
@@ -4538,8 +4108,8 @@ def _guide_webp_variant(src: Path) -> Path | None:
 # species-detail hero, so 1000 px keeps the hero crisp while still cutting a
 # multi-MB Wikimedia original to tens of KB. Config-driven so a deploy can tune
 # the bandwidth/quality trade-off without a code change.
-_PLANT_PHOTO_MAX_SIDE = get_int("PLANT_PHOTO_MAX_SIDE", 1000)
-_PLANT_PHOTO_QUALITY = get_int("PLANT_PHOTO_QUALITY", 80)
+_PLANT_PHOTO_MAX_SIDE = config.get_int("PLANT_PHOTO_MAX_SIDE", 1000)
+_PLANT_PHOTO_QUALITY = config.get_int("PLANT_PHOTO_QUALITY", 80)
 
 
 # Cache the model digest by (path, mtime, size) so we hash the (multi-MB)
@@ -4659,7 +4229,7 @@ def _aqua_bundle_sha256(model_sha256: str, classes_sha256: str) -> str:
 # being pinned for hours. The (static) per-species photos are NOT re-resolved
 # on a rebuild: they're served by the by-name /api/plant-photo proxy, which has
 # its own long-lived disk cache. So a short bundle TTL is cheap.
-_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 1800)
+_POPULAR_TTL_S = config.get_int("POPULAR_BUNDLE_TTL_SECONDS", 1800)
 _popular_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _popular_lock = threading.Lock()
 _POPULAR_CACHE_MAX = 64
@@ -4671,7 +4241,7 @@ _POPULAR_MAX_CARDS = 10
 # A placeholder (scan-less country) is cached only briefly so it flips to real
 # data within minutes of the first scan in that scope; real data keeps the
 # full TTL since aggregates move slowly.
-_POPULAR_PLACEHOLDER_TTL_S = get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
+_POPULAR_PLACEHOLDER_TTL_S = config.get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
 
 
 def _popular_cache_key(
@@ -4708,7 +4278,7 @@ async def _warm_placeholder_images() -> None:
     loop = asyncio.get_running_loop()
     seen: set[str] = set()
     warmed_photos: set[str] = set()
-    for p in popular_for(None):
+    for p in popular_plants.popular_for(None):
         if p.scientific in seen:
             continue
         seen.add(p.scientific)
@@ -4716,7 +4286,7 @@ async def _warm_placeholder_images() -> None:
             info = None
             with contextlib.suppress(Exception):
                 info = await loop.run_in_executor(
-                    _get_net_executor(), lambda s=p.scientific, n=lang: fetch_species_info(s, n),
+                    _get_net_executor(), lambda s=p.scientific, n=lang: species_info.fetch_species_info(s, n),
                 )
             # Pre-cache the lead photo bytes too, so the very first carousel
             # request serves images instantly from our disk cache.
@@ -4725,7 +4295,7 @@ async def _warm_placeholder_images() -> None:
                 warmed_photos.add(url)
                 with contextlib.suppress(Exception):
                     await loop.run_in_executor(
-                        _get_net_executor(), lambda u=url: plant_photo_get_or_fetch(u),
+                        _get_net_executor(), lambda u=url: plant_photos.get_or_fetch(u),
                     )
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
@@ -4742,10 +4312,10 @@ def _worldwide_snapshot() -> dict:
     """Worldwide popularity: the anonymous tally of every consented, accepted
     diagnosis (community members included, location or not); the community
     corpus only while the tally is still empty (e.g. right after deploy)."""
-    anonymous = community_anonymous_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+    anonymous = community.anonymous_popular_snapshot(limit=_POPULAR_MAX_CARDS)
     if anonymous.get("top_species") or anonymous.get("top_diseases"):
         return anonymous
-    return community_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+    return community.popular_snapshot(limit=_POPULAR_MAX_CARDS)
 
 
 def _build_popular_bundle(
@@ -4771,11 +4341,11 @@ def _build_popular_bundle(
     source = "worldwide"
     region_label: str | None = None
     if lat is not None and lon is not None:
-        s = community_popular_snapshot(lat=lat, lon=lon, limit=_POPULAR_MAX_CARDS)
+        s = community.popular_snapshot(lat=lat, lon=lon, limit=_POPULAR_MAX_CARDS)
         if _has(s):
             snap, source, region_label = s, "nearby", city
     if snap is None and country:
-        s = community_popular_snapshot(country=country, limit=_POPULAR_MAX_CARDS)
+        s = community.popular_snapshot(country=country, limit=_POPULAR_MAX_CARDS)
         if _has(s):
             snap, source = s, "country"
     if snap is None:
@@ -4810,11 +4380,11 @@ def _build_popular_bundle(
                 # different or missing lead photo, which made two distinct
                 # species look identical in one locale but not another. Titles
                 # stay localized; only the picture is pinned to EN.
-                "image_url": plant_photo_name_proxy(p.scientific, "en"),
+                "image_url": plant_photos.name_proxy_path(p.scientific, "en"),
                 "count": 0,
                 "percent": 0,
             }
-            for p in popular_for(country)[:_POPULAR_MAX_CARDS]
+            for p in popular_plants.popular_for(country)[:_POPULAR_MAX_CARDS]
         ]
         return {
             **_country_display(country),
@@ -4834,7 +4404,7 @@ def _build_popular_bundle(
         # Only the localized title needs resolving here (cached); the photo is
         # resolved + cached on demand by the by-name proxy, so a species that
         # only just trended (a fresh scan) still gets an image.
-        info = fetch_species_info(scientific, lang)
+        info = species_info.fetch_species_info(scientific, lang)
         title = (info or {}).get("title") or scientific
         # A localized title can collapse two distinct species to one name (e.g.
         # RU Wikipedia titles both "Spathiphyllum" and "Spathiphyllum
@@ -4849,7 +4419,7 @@ def _build_popular_bundle(
             "common_en": title,
             "common_ru": title,
             # English lead image for every locale — see the placeholder branch.
-            "image_url": plant_photo_name_proxy(scientific, "en"),
+            "image_url": plant_photos.name_proxy_path(scientific, "en"),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
         })
@@ -4859,7 +4429,7 @@ def _build_popular_bundle(
     # scans stay first with their percentages, the curated picks follow with
     # zero counts (the client shows those without a percentage).
     seen = {it["scientific"].lower() for it in items}
-    for p in popular_for(country if source != "worldwide" else None):
+    for p in popular_plants.popular_for(country if source != "worldwide" else None):
         if len(items) >= _POPULAR_MAX_CARDS:
             break
         if p.scientific.lower() in seen:
@@ -4869,7 +4439,7 @@ def _build_popular_bundle(
             "scientific": p.scientific,
             "common_en": p.common_en,
             "common_ru": p.common_ru,
-            "image_url": plant_photo_name_proxy(p.scientific, "en"),
+            "image_url": plant_photos.name_proxy_path(p.scientific, "en"),
             "count": 0,
             "percent": 0,
         })
@@ -4956,8 +4526,8 @@ if __name__ == "__main__":
         app,
         # The API is intentionally reachable on the container network; the
         # reviewed ingress/firewall owns public exposure and TLS termination.
-        host=get_str("HOST", "0.0.0.0"),  # nosec B104
-        port=get_int("PORT", 8000),
-        forwarded_allow_ips=get_str("FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        host=config.get_str("HOST", "0.0.0.0"),  # nosec B104
+        port=config.get_int("PORT", 8000),
+        forwarded_allow_ips=config.get_str("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         proxy_headers=True,
     )

@@ -12,6 +12,13 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+# A collaborator module (never a name patched on ``main``) is imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import symptoms
+except ImportError:
+    import symptoms
+
 
 def register(router: APIRouter, m) -> None:
     @router.post("/analyze")
@@ -106,7 +113,7 @@ def register(router: APIRouter, m) -> None:
         returns 200 with a usable payload — an empty questionnaire just yields
         an empty shortlist + the ``unknown`` guidance card.
         """
-        triage = m.symptom_diagnose(payload.answers)
+        triage = symptoms.diagnose(payload.answers)
         results = []
         for item in triage["results"]:
             card = m._compact_care_card(item["class"])
@@ -140,7 +147,7 @@ def register(router: APIRouter, m) -> None:
         without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
         (422 past it), so the computation stays a few microseconds of event-loop
         time."""
-        return JSONResponse(content=m.compare_progression_history(payload.history))
+        return JSONResponse(content=m.ai_services.compare_progression_history(payload.history))
 
 
     @router.post("/feedback")

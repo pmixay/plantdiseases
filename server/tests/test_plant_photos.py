@@ -275,10 +275,10 @@ def test_download_bounds_redirect_chain(photos, monkeypatch):
 
 
 def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
-    import main as server_main
+    import plant_photos
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/x.png"},
     )
@@ -293,13 +293,14 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     from PIL import Image
 
     import main as server_main
+    import plant_photos
     src = tmp_path / "big.png"
     Image.new("RGB", (2400, 1600), (10, 120, 30)).save(src, format="PNG")
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: src)
     prune_calls = []
     monkeypatch.setattr(
-        server_main,
-        "plant_photo_prune_cache",
+        plant_photos,
+        "prune_cache",
         lambda: prune_calls.append(True),
     )
     r = client.get(
@@ -321,6 +322,7 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
     monkeypatch,
 ):
     import main as server_main
+    import plant_photos
 
     src = tmp_path / "oversized.png"
     src.write_bytes(_PNG)
@@ -340,7 +342,7 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
             loaded = True
             raise AssertionError("oversized image must be rejected before decode")
 
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda _url: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda _url: src)
     monkeypatch.setattr(server_main.Image, "open", lambda _path: _OversizedImage())
 
     response = client.get(
@@ -393,14 +395,15 @@ def test_endpoint_missing_source_is_400(client):
 def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
     """The by-name form fully resolves the photo server-side (Wikipedia lookup
     → byte cache), so the popular carousel needs only the species name."""
-    import main as server_main
+    import plant_photos
+    import species_info
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
     monkeypatch.setattr(
-        server_main, "fetch_species_info",
+        species_info, "fetch_species_info",
         lambda n, lang="en": {"image_url": "https://upload.wikimedia.org/x.png"},
     )
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"name": "Ficus elastica", "locale": "en"},
     )
@@ -409,15 +412,15 @@ def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
 
 
 def test_endpoint_by_name_404_when_unresolvable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "fetch_species_info", lambda n, lang="en": None)
+    import species_info
+    monkeypatch.setattr(species_info, "fetch_species_info", lambda n, lang="en": None)
     r = client.get("/api/plant-photo", params={"name": "Nope nope"})
     assert r.status_code == 404
 
 
 def test_endpoint_404_when_uncacheable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: None)
+    import plant_photos
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: None)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/missing.png"},
     )

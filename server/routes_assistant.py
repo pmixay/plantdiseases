@@ -49,12 +49,12 @@ def register(router: APIRouter, m) -> None:
         diagnosis = payload.diagnosis
         if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
             raise HTTPException(status_code=400, detail="diagnosis context too large")
-        metered = m.openrouter_configured()
+        metered = m.ai_services.openrouter_configured()
         if metered:
             await m._authorize_metered_feature(request, feature="ai_doctor")
         result = await asyncio.get_running_loop().run_in_executor(
             m._get_net_executor(),
-            lambda: m.chat_reply(
+            lambda: m.ai_services.chat_reply(
                 session_id=payload.session_id,
                 user_message=payload.message,
                 locale=payload.locale,
@@ -105,7 +105,7 @@ def register(router: APIRouter, m) -> None:
             # A species' general care, never a diagnosis: keeps this unmetered
             # path from serving disease-specific plans.
             disease = "healthy"
-        if disease not in m.DISEASES_DATABASE and disease != "unknown":
+        if disease not in m.diseases_data.DISEASES_DATABASE and disease != "unknown":
             # Don't reject — just normalise unknown to ``unknown``. Keeps the
             # endpoint forgiving while still producing a useful plan.
             disease = "unknown"
@@ -114,7 +114,7 @@ def register(router: APIRouter, m) -> None:
         metered = purpose == "scan"
 
         def build(*, polish: bool, cached_polish_only: bool = False) -> dict:
-            return m.generate_care_plan(
+            return m.ai_services.generate_care_plan(
                 disease=disease,
                 species=payload.species,
                 light=payload.light,
@@ -131,7 +131,7 @@ def register(router: APIRouter, m) -> None:
         if (
             polish
             and not plan.get("cached")
-            and m.openrouter_configured()
+            and m.ai_services.openrouter_configured()
             and m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
         ):
             if metered:
@@ -147,7 +147,7 @@ def register(router: APIRouter, m) -> None:
                     feature="care_plan",
                     upstream_attempted=not plan.get("cached"),
                 )
-        toxicity = m.lookup_pet_toxicity(payload.species) if payload.species else {
+        toxicity = m.diseases_data.lookup_pet_toxicity(payload.species) if payload.species else {
             "toxic_to_pets": False, "species_list": [], "source": "unknown",
         }
         plan = {
@@ -168,7 +168,7 @@ def register(router: APIRouter, m) -> None:
         lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
         loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(
-            m._get_net_executor(), lambda: m.fetch_species_info(n, lang),
+            m._get_net_executor(), lambda: m.species_info.fetch_species_info(n, lang),
         )
         if info is None:
             # Don't let an intermediary cache a transient Wikipedia miss.
@@ -185,7 +185,7 @@ def register(router: APIRouter, m) -> None:
         credit, licence = info.get("image_credit"), info.get("image_license")
         if lang != "en":
             en_info = await loop.run_in_executor(
-                m._get_net_executor(), lambda: m.fetch_species_info(n, "en"),
+                m._get_net_executor(), lambda: m.species_info.fetch_species_info(n, "en"),
             )
             if en_info and (en_info.get("images") or en_info.get("image_url")):
                 image_url = en_info.get("image_url")
@@ -197,11 +197,11 @@ def register(router: APIRouter, m) -> None:
         # Fetch the gallery into the photo cache now, politely and one at a
         # time, so the card's burst of image requests finds them cached rather
         # than tripping Wikimedia's throttle (see plant_photos.warm).
-        m.plant_photo_warm([image_url, *images])
+        m.plant_photos.warm([image_url, *images])
         proxied = {
             **info,
-            "image_url": m.plant_photo_proxy(image_url),
-            "images": [p for p in (m.plant_photo_proxy(i) for i in images) if p],
+            "image_url": m.plant_photos.proxy_path(image_url),
+            "images": [p for p in (m.plant_photos.proxy_path(i) for i in images) if p],
             # Author + licence of the photo (set for Commons / iNaturalist
             # fallbacks; null for a Wikipedia lead image).
             "image_credit": credit,
@@ -250,7 +250,7 @@ def register(router: APIRouter, m) -> None:
         # part of the shared cache key, so it must not shape the cached answer.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.species_common_diseases(n, lang=lang),
+            m._get_net_executor(), lambda: m.ai_services.species_common_diseases(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}
@@ -292,7 +292,7 @@ def register(router: APIRouter, m) -> None:
         # ``common`` is accepted for client compatibility and ignored, as above.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.species_profile(n, lang=lang),
+            m._get_net_executor(), lambda: m.ai_services.species_profile(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}

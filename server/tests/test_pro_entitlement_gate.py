@@ -149,9 +149,10 @@ def test_guest_retry_with_same_idempotency_key_cannot_rerun_inference(client, pn
 
 
 def test_signed_in_usage_is_authorized_by_account_service(client, png_bytes):
+    import account_entitlements
     fake = _AllowingEntitlements()
-    original = server_main.account_entitlement_client
-    server_main.account_entitlement_client = fake
+    original = account_entitlements.account_entitlement_client
+    account_entitlements.account_entitlement_client = fake
     operation_id = str(uuid.uuid4())
     try:
         response = _post_analyze(
@@ -163,7 +164,7 @@ def test_signed_in_usage_is_authorized_by_account_service(client, png_bytes):
             },
         )
     finally:
-        server_main.account_entitlement_client = original
+        account_entitlements.account_entitlement_client = original
 
     assert response.status_code == 200
     assert len(fake.calls) == 1
@@ -245,13 +246,15 @@ def test_identify_budget_denial_releases_exact_signed_in_allowance(
     png_bytes,
     monkeypatch,
 ):
+    import account_entitlements
+    import ai_services
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
-    monkeypatch.setattr(server_main, "account_entitlement_client", fake)
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        server_main,
+        ai_services,
         "identify_species",
         lambda *_a, **_kw: {
             "available": False,
@@ -283,11 +286,12 @@ def test_guest_budget_denial_returns_unit_without_enabling_uuid_reuse(
     png_bytes,
     monkeypatch,
 ):
+    import ai_services
     operation_id = str(uuid.uuid4())
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        server_main,
+        ai_services,
         "identify_species",
         lambda *_a, **_kw: {
             "available": False,
@@ -322,12 +326,14 @@ def test_identify_provider_attempt_retains_signed_in_allowance(
     png_bytes,
     monkeypatch,
 ):
+    import account_entitlements
+    import ai_services
     fake = _ReleasingEntitlements()
-    monkeypatch.setattr(server_main, "account_entitlement_client", fake)
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        server_main,
+        ai_services,
         "identify_species",
         lambda *_a, **_kw: {
             "available": False,
@@ -356,13 +362,15 @@ def test_analyze_budget_denial_releases_only_optional_identification_allowance(
     png_bytes,
     monkeypatch,
 ):
+    import account_entitlements
+    import ai_services
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
-    monkeypatch.setattr(server_main, "account_entitlement_client", fake)
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        server_main,
+        ai_services,
         "identify_species",
         lambda *_a, **_kw: {
             "available": False,
@@ -398,6 +406,7 @@ def test_identify_concurrent_inner_cache_fill_releases_allowance(
     png_bytes,
     monkeypatch,
 ):
+    import account_entitlements
     import ai_services as ai
 
     fake = _ReleasingEntitlements()
@@ -414,12 +423,18 @@ def test_identify_concurrent_inner_cache_fill_releases_allowance(
         ],
         "cached": True,
     }
-    monkeypatch.setattr(server_main, "account_entitlement_client", fake)
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
+    monkeypatch.setattr(ai, "plantnet_configured", lambda: True)
     # The endpoint misses, consumes an allowance, then another request fills
-    # the shared AI-service cache before identify_species performs its probe.
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
-    monkeypatch.setattr(ai, "plantnet_cache_lookup", lambda *_a, **_kw: cached)
+    # the shared AI-service cache before identify_species performs its probe:
+    # one lookup, the endpoint's, misses; every later one hits.
+    lookups = []
+
+    def cache_lookup(*_a, **_kw):
+        lookups.append(1)
+        return None if len(lookups) == 1 else cached
+
+    monkeypatch.setattr(ai, "plantnet_cache_lookup", cache_lookup)
     monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-only-key")
 
     response = client.post(
@@ -443,6 +458,7 @@ def test_analyze_concurrent_inner_cache_fill_releases_optional_allowance(
     png_bytes,
     monkeypatch,
 ):
+    import account_entitlements
     import ai_services as ai
 
     fake = _ReleasingEntitlements()
@@ -459,10 +475,15 @@ def test_analyze_concurrent_inner_cache_fill_releases_optional_allowance(
         ],
         "cached": True,
     }
-    monkeypatch.setattr(server_main, "account_entitlement_client", fake)
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(server_main, "plantnet_cache_lookup", lambda *_a, **_kw: None)
-    monkeypatch.setattr(ai, "plantnet_cache_lookup", lambda *_a, **_kw: cached)
+    monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
+    monkeypatch.setattr(ai, "plantnet_configured", lambda: True)
+    lookups = []
+
+    def cache_lookup(*_a, **_kw):
+        lookups.append(1)
+        return None if len(lookups) == 1 else cached
+
+    monkeypatch.setattr(ai, "plantnet_cache_lookup", cache_lookup)
     monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-only-key")
 
     response = _post_analyze(
@@ -520,9 +541,10 @@ def test_rules_based_care_plan_costs_no_allowance(client):
 
 
 def test_only_uncached_care_plan_polish_spends_allowance(client, monkeypatch):
+    import ai_services
     fake = _PolishCache()
-    monkeypatch.setattr(server_main, "generate_care_plan", fake)
-    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
     first = client.post("/api/care-plan", json={"disease": "unknown", "species": "Ficus elastica"})
@@ -540,9 +562,10 @@ def test_only_uncached_care_plan_polish_spends_allowance(client, monkeypatch):
 
 
 def test_species_page_plan_is_never_metered(client, monkeypatch):
+    import ai_services
     fake = _PolishCache()
-    monkeypatch.setattr(server_main, "generate_care_plan", fake)
-    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
     for species in ("Ficus elastica", "Monstera deliciosa"):
@@ -561,9 +584,10 @@ def test_species_page_plan_is_never_metered(client, monkeypatch):
 
 
 def test_garden_checklist_plan_is_never_polished_or_metered(client, monkeypatch):
+    import ai_services
     fake = _PolishCache()
-    monkeypatch.setattr(server_main, "generate_care_plan", fake)
-    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
     for _ in range(2):
@@ -587,9 +611,10 @@ def test_unknown_care_plan_purpose_is_rejected(client):
 
 
 def test_chat_refused_before_the_model_costs_no_allowance(client, monkeypatch):
-    monkeypatch.setattr(server_main, "openrouter_configured", lambda: True)
+    import ai_services
+    monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setattr(
-        server_main,
+        ai_services,
         "chat_reply",
         lambda **_: {"available": False, "reply": "", "reason": "session_turn_cap"},
     )
@@ -610,15 +635,16 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
     """Keep the quota boundary runnable on Python/AnyIO combinations whose
     synchronous Starlette TestClient portal cannot enter app lifespan."""
 
+    import ai_services
     original_pipeline = server_main.pipeline
     original_limit = server_main._GUEST_FEATURE_LIMITS["care_plan"]
-    original_plan = server_main.generate_care_plan
-    original_configured = server_main.openrouter_configured
+    original_plan = ai_services.generate_care_plan
+    original_configured = ai_services.openrouter_configured
     server_main.pipeline = FakePipeline()
     server_main._GUEST_FEATURE_LIMITS["care_plan"] = 1
     # A paid (uncached) polish, so the care plan reaches the allowance.
-    server_main.generate_care_plan = lambda **_: {"summary_md": "rules"}
-    server_main.openrouter_configured = lambda: True
+    ai_services.generate_care_plan = lambda **_: {"summary_md": "rules"}
+    ai_services.openrouter_configured = lambda: True
     operation_id = str(uuid.uuid4())
     transport = httpx.ASGITransport(app=server_main.app, client=("127.0.0.1", 43123))
     try:
@@ -643,8 +669,8 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
     finally:
         server_main.pipeline = original_pipeline
         server_main._GUEST_FEATURE_LIMITS["care_plan"] = original_limit
-        server_main.generate_care_plan = original_plan
-        server_main.openrouter_configured = original_configured
+        ai_services.generate_care_plan = original_plan
+        ai_services.openrouter_configured = original_configured
 
     assert invalid.status_code == 400
     assert first.status_code == 200
@@ -655,12 +681,13 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
 
 @pytest.mark.anyio
 async def test_analyze_plantnet_fanout_reserves_shared_identification_unit(monkeypatch):
+    import ai_services
     calls = []
 
     async def allow(_request, *, feature):
         calls.append(feature)
 
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
     monkeypatch.setattr(server_main, "_authorize_metered_feature", allow)
 
     unavailable = await server_main._authorize_optional_species_lookup(object())
@@ -671,11 +698,12 @@ async def test_analyze_plantnet_fanout_reserves_shared_identification_unit(monke
 
 @pytest.mark.anyio
 async def test_analyze_survives_exhausted_optional_identification_quota(monkeypatch):
+    import ai_services
     async def deny(_request, *, feature):
         assert feature == "plant_identification"
         raise server_main.HTTPException(status_code=429, detail="quota_exhausted")
 
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
     monkeypatch.setattr(server_main, "_authorize_metered_feature", deny)
 
     unavailable = await server_main._authorize_optional_species_lookup(object())

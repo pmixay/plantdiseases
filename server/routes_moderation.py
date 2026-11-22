@@ -15,6 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+# A collaborator module (never a name patched on ``main``) is imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import community_moderation
+except ImportError:
+    import community_moderation
+
 _NO_STORE = {"Cache-Control": "no-store"}
 _MODERATORS = {"moderator"}
 _EXPERTS = {"expert"}
@@ -100,7 +107,7 @@ class MemberAppeal(BaseModel):
 
 
 def register(router: APIRouter, m) -> None:
-    account = m.deps.account_required(m)
+    account = m.account_dependency
 
     async def run(fn, /, *args, **kwargs):
         try:
@@ -177,7 +184,7 @@ def register(router: APIRouter, m) -> None:
             return JSONResponse(content=result, headers=_NO_STORE)
         _principal, roles = await staff(request, _MODERATORS)
         scopes = m.account_roles.scopes_for(roles, _MODERATORS)
-        result = await run(m.community_moderation.queue, kind=kind, scopes=scopes, limit=limit)
+        result = await run(community_moderation.queue, kind=kind, scopes=scopes, limit=limit)
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.get(
@@ -185,9 +192,9 @@ def register(router: APIRouter, m) -> None:
     )
     async def moderation_post_view(post_id: str, request: Request):
         """A post with hidden and removed text, for moderators and experts."""
-        space = await run(m.community_moderation.space_of, "post", post_id)
+        space = await run(community_moderation.space_of, "post", post_id)
         await staff(request, _MODERATORS | _EXPERTS, space=space)
-        result = await run(m.community_moderation.moderator_post_view, post_id)
+        result = await run(community_moderation.moderator_post_view, post_id)
         return JSONResponse(content=result, headers=_NO_STORE)
 
     # ── staff: content actions ───────────────────────────────────────────
@@ -196,14 +203,14 @@ def register(router: APIRouter, m) -> None:
         "/community/admin/posts/{post_id}/action", dependencies=[Depends(m.community_bearer)]
     )
     async def moderation_post_action(post_id: str, payload: ModPostAction, request: Request):
-        space = await run(m.community_moderation.space_of, "post", post_id)
+        space = await run(community_moderation.space_of, "post", post_id)
         principal, roles = await staff(request, _MODERATORS, space=space)
         if payload.action == "move" and not m.account_roles.can_act(
             roles, _MODERATORS, payload.space
         ):
             raise HTTPException(status_code=403, detail="forbidden")
         result = await run(
-            m.community_moderation.moderate_post,
+            community_moderation.moderate_post,
             moderator_actor_id=principal.actor_id,
             post_id=post_id,
             action=payload.action,
@@ -220,10 +227,10 @@ def register(router: APIRouter, m) -> None:
     async def moderation_answer_action(
         answer_id: str, payload: ModAnswerAction, request: Request
     ):
-        space = await run(m.community_moderation.space_of, "answer", answer_id)
+        space = await run(community_moderation.space_of, "answer", answer_id)
         principal, _roles = await staff(request, _MODERATORS, space=space)
         result = await run(
-            m.community_moderation.moderate_answer,
+            community_moderation.moderate_answer,
             moderator_actor_id=principal.actor_id,
             answer_id=answer_id,
             action=payload.action,
@@ -238,10 +245,10 @@ def register(router: APIRouter, m) -> None:
     )
     async def moderation_answer_verify(answer_id: str, payload: ModVerify, request: Request):
         """An expert marks a diagnosis as verified."""
-        space = await run(m.community_moderation.space_of, "answer", answer_id)
+        space = await run(community_moderation.space_of, "answer", answer_id)
         principal, _roles = await staff(request, _EXPERTS, space=space)
         result = await run(
-            m.community_moderation.verify_answer,
+            community_moderation.verify_answer,
             expert_actor_id=principal.actor_id,
             answer_id=answer_id,
             verified=payload.verified,
@@ -252,10 +259,10 @@ def register(router: APIRouter, m) -> None:
         "/community/admin/reports/dismiss", dependencies=[Depends(m.community_bearer)]
     )
     async def moderation_dismiss_reports(payload: ModDismiss, request: Request):
-        space = await run(m.community_moderation.space_of, payload.target_type, payload.target_id)
+        space = await run(community_moderation.space_of, payload.target_type, payload.target_id)
         principal, _roles = await staff(request, _MODERATORS, space=space)
         result = await run(
-            m.community_moderation.dismiss_reports,
+            community_moderation.dismiss_reports,
             moderator_actor_id=principal.actor_id,
             target_type=payload.target_type,
             target_id=payload.target_id,
@@ -269,8 +276,8 @@ def register(router: APIRouter, m) -> None:
     )
     async def moderation_actor(author_token: str, request: Request):
         await staff(request, _MODERATORS)
-        actor = await run(m.community_moderation.actor_for_token, author_token)
-        result = await run(m.community_moderation.actor_summary, actor)
+        actor = await run(community_moderation.actor_for_token, author_token)
+        result = await run(community_moderation.actor_summary, actor)
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.post(
@@ -283,9 +290,9 @@ def register(router: APIRouter, m) -> None:
             principal = await admin(request)
         else:
             principal, _roles = await global_moderator(request)
-        actor = await run(m.community_moderation.actor_for_token, author_token)
+        actor = await run(community_moderation.actor_for_token, author_token)
         result = await run(
-            m.community_moderation.sanction,
+            community_moderation.sanction,
             moderator_actor_id=principal.actor_id,
             actor_id=actor,
             kind=payload.kind,
@@ -306,7 +313,7 @@ def register(router: APIRouter, m) -> None:
         same picture is refused as a future upload."""
         principal, _roles = await global_moderator(request)
         result = await run(
-            m.community_moderation.remove_avatar,
+            community_moderation.remove_avatar,
             moderator_actor_id=principal.actor_id,
             author_token=author_token,
             ban_image=payload.ban_image,
@@ -322,7 +329,7 @@ def register(router: APIRouter, m) -> None:
     ):
         principal, _roles = await global_moderator(request)
         result = await run(
-            m.community_moderation.resolve_appeal,
+            community_moderation.resolve_appeal,
             reviewer_actor_id=principal.actor_id,
             appeal_id=appeal_id,
             decision=payload.decision,
@@ -338,7 +345,7 @@ def register(router: APIRouter, m) -> None:
         limit: int = Query(100, ge=1, le=200),
     ):
         await admin(request)
-        result = await run(m.community_moderation.audit, limit=limit, before=before)
+        result = await run(community_moderation.audit, limit=limit, before=before)
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.get("/community/admin/roles", dependencies=[Depends(m.community_bearer)])
@@ -352,7 +359,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=503, detail="roles_unavailable") from None
         items = [
             {
-                "author_token": m.community_moderation.author_token_for(item["actor_id"]),
+                "author_token": community_moderation.author_token_for(item["actor_id"]),
                 "nickname": item["nickname"],
                 "role": item["role"],
                 "scope": item["scope"],
@@ -366,7 +373,7 @@ def register(router: APIRouter, m) -> None:
     async def moderation_change_role(payload: ModRoleChange, request: Request):
         """Admins grant or revoke expert and moderator roles. Admin is CLI-only."""
         principal = await admin(request)
-        actor = await run(m.community_moderation.actor_for_token, payload.author_token)
+        actor = await run(community_moderation.actor_for_token, payload.author_token)
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 m._get_net_executor(),
@@ -383,7 +390,7 @@ def register(router: APIRouter, m) -> None:
         except m.account_roles.RolesUnavailable:
             raise HTTPException(status_code=503, detail="roles_unavailable") from None
         await run(
-            m.community_moderation.record_role_change,
+            community_moderation.record_role_change,
             admin_actor_id=principal.actor_id,
             actor_id=actor,
             role=payload.role,
@@ -400,7 +407,7 @@ def register(router: APIRouter, m) -> None:
     async def moderation_reward_freeze(author_token: str, payload: ModRewardFreeze, request: Request):
         """Admins freeze or clear a member's achievement discount."""
         principal = await admin(request)
-        actor = await run(m.community_moderation.actor_for_token, author_token)
+        actor = await run(community_moderation.actor_for_token, author_token)
         result = await run(
             m.community_achievements.set_frozen,
             admin_actor_id=principal.actor_id,
@@ -416,7 +423,7 @@ def register(router: APIRouter, m) -> None:
     async def moderation_exclude_training(post_id: str, request: Request):
         principal = await admin(request)
         result = await run(
-            m.community_moderation.exclude_from_training,
+            community_moderation.exclude_from_training,
             admin_actor_id=principal.actor_id,
             post_id=post_id,
         )
@@ -426,7 +433,7 @@ def register(router: APIRouter, m) -> None:
     async def moderation_ban_image(payload: ModImageBan, request: Request):
         principal = await admin(request)
         result = await run(
-            m.community_moderation.ban_image,
+            community_moderation.ban_image,
             admin_actor_id=principal.actor_id,
             media_id=payload.media_id,
         )
@@ -439,7 +446,7 @@ def register(router: APIRouter, m) -> None:
     )
     async def moderation_notices(principal=Depends(account)):
         """Moderation decisions about my content or account, and whether I can appeal."""
-        result = await run(m.community_moderation.notices_for, principal.actor_id)
+        result = await run(community_moderation.notices_for, principal.actor_id)
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.post(
@@ -448,7 +455,7 @@ def register(router: APIRouter, m) -> None:
     async def moderation_appeal(payload: MemberAppeal, request: Request):
         principal = await m._require_account(request)
         result = await run(
-            m.community_moderation.appeal,
+            community_moderation.appeal,
             actor_id=principal.actor_id,
             action_id=payload.action_id,
             text=payload.text,

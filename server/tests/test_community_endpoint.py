@@ -23,6 +23,12 @@ def isolated_community(community_http_store, tmp_path):
     yield community_http_store.COMMUNITY_DB_PATH, community_http_store.COMMUNITY_THUMB_DIR
 
 
+@pytest.fixture
+def strict_community(community_strict_http_store):
+    """``isolated_community`` with the real analysis-token and scan-write checks."""
+    yield community_strict_http_store.COMMUNITY_DB_PATH, community_strict_http_store.COMMUNITY_THUMB_DIR
+
+
 def _form(**fields):
     """Compact form-data builder; pytest-fastapi accepts a dict."""
     return {k: str(v) for k, v in fields.items() if v is not None}
@@ -172,7 +178,7 @@ def test_internal_deletion_hook_is_secret_guarded_and_idempotent(
 ):
     import uuid
 
-    import main as server_main
+    import account_internal
 
     client.post(
         "/api/community/scan",
@@ -187,7 +193,7 @@ def test_internal_deletion_hook_is_secret_guarded_and_idempotent(
     actor = str(uuid.uuid5(uuid.NAMESPACE_URL, "test-account:delete-hook-owner"))
 
     monkeypatch.setattr(
-        server_main,
+        account_internal,
         "internal_service_authorized",
         lambda supplied: supplied == "synthetic-internal-secret",
     )
@@ -218,7 +224,7 @@ def test_internal_nickname_hook_replaces_historical_actor_rows(
 ):
     import uuid
 
-    import main as server_main
+    import account_internal
 
     owner_headers = _account_headers("nickname-owner", "Old Fern")
     responder_headers = _account_headers("nickname-responder", "Old Moss")
@@ -243,7 +249,7 @@ def test_internal_nickname_hook_replaces_historical_actor_rows(
         uuid.uuid5(uuid.NAMESPACE_URL, "test-account:nickname-responder")
     )
     monkeypatch.setattr(
-        server_main,
+        account_internal,
         "internal_service_authorized",
         lambda supplied: supplied == "synthetic-internal-secret",
     )
@@ -341,10 +347,10 @@ def test_community_scan_upload_rejects_unissued_scan_id(
     # Integrity gate: a scan_id the server never issued at /api/analyze is
     # refused (422) so a client can't post a fabricated diagnosis into the
     # public feed under a made-up or copied publication capability.
+    import community
     db_path, _ = isolated_community
-    import main as server_main
     monkeypatch.setattr(
-        server_main, "community_analysis_token_issued", lambda *a, **k: False
+        community, "is_analysis_token_issued", lambda *a, **k: False
     )
     r = client.post(
         "/api/community/scan",
@@ -367,17 +373,11 @@ def test_community_scan_upload_rejects_unissued_scan_id(
 
 
 def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
-    client, isolated_community, monkeypatch,
+    client, strict_community, monkeypatch,
 ):
-    db_path, _ = isolated_community
+    db_path, _ = strict_community
     import community as comm
-    import main as server_main
 
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
-    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
-    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
-    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
     image_bytes = _png_bytes()
     comm.record_analysis_token(
         "bound-analysis-1",
@@ -432,17 +432,11 @@ def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
 
 
 def test_analysis_publication_rejects_missing_or_substituted_image(
-    client, isolated_community, monkeypatch,
+    client, strict_community, monkeypatch,
 ):
-    db_path, thumb_dir = isolated_community
+    db_path, thumb_dir = strict_community
     import community as comm
-    import main as server_main
 
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
-    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
-    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
-    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
     analyzed_bytes = _png_bytes()
     different = io.BytesIO()
     from PIL import Image
@@ -504,17 +498,11 @@ def test_analysis_publication_rejects_missing_or_substituted_image(
 
 
 def test_failed_analysis_insert_does_not_burn_publication_token(
-    client, isolated_community, monkeypatch,
+    client, strict_community, monkeypatch,
 ):
-    db_path, _ = isolated_community
+    db_path, _ = strict_community
     import community as comm
-    import main as server_main
 
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
-    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
-    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
-    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
     image_bytes = _png_bytes()
     comm.record_analysis_token(
         "retry-analysis-1",
@@ -555,16 +543,10 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
 
 
 def test_unclaimed_analysis_token_scan_id_collision_is_conflict(
-    client, isolated_community, monkeypatch,
+    client, strict_community, monkeypatch,
 ):
     import community as comm
-    import main as server_main
 
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", comm.is_analysis_token_issued)
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", comm.record_analysis_scan)
-    monkeypatch.setattr(server_main, "AnalysisImageMismatchError", comm.AnalysisImageMismatchError)
-    monkeypatch.setattr(server_main, "AnalysisTokenUnknownError", comm.AnalysisTokenUnknownError)
-    monkeypatch.setattr(server_main, "AnalysisTokenConflictError", comm.AnalysisTokenConflictError)
     image_bytes = _png_bytes()
     comm.record_analysis_token(
         "collision-analysis-1",
@@ -1606,7 +1588,6 @@ def test_opinion_rechecks_target_after_cleanup_between_http_checks_and_write(
 ):
     """Deletion after the last HTTP precheck cannot recreate an orphan row."""
     import community as comm
-    import main as server_main
 
     db_path, _ = isolated_community
     owner_identity = "raced-delete-owner"
@@ -1624,17 +1605,20 @@ def test_opinion_rechecks_target_after_cleanup_between_http_checks_and_write(
     assert uploaded.status_code == 200, uploaded.text
     owner_actor = str(uuid.uuid5(uuid.NAMESPACE_URL, f"test-account:{owner_identity}"))
 
+    # The patched name below is the module attribute itself, so keep the real one.
+    real_opinion_open = comm.opinion_open
+
     def cleanup_after_precheck(candidate: str) -> bool:
         assert candidate == scan_id
-        assert comm.opinion_open(candidate)
+        assert real_opinion_open(candidate)
         assert comm.request_actor_deletion(owner_actor)
         assert comm.process_cleanup_jobs() == {"completed": 1, "retried": 0}
         # Reproduce the stale result already returned by the HTTP precheck.
         return True
 
     monkeypatch.setattr(
-        server_main,
-        "community_opinion_open",
+        comm,
+        "opinion_open",
         cleanup_after_precheck,
     )
     response = client.post(
@@ -1667,7 +1651,6 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
     import time as _time
 
     import community as comm
-    import main as server_main
 
     db_path, _ = isolated_community
     scan_id = "racedprune001"
@@ -1689,16 +1672,19 @@ def test_opinion_rechecks_target_after_prune_between_http_checks_and_write(
             (two_days_old, scan_id),
         )
 
+    # The patched name below is the module attribute itself, so keep the real one.
+    real_opinion_open = comm.opinion_open
+
     def prune_after_precheck(candidate: str) -> bool:
         assert candidate == scan_id
-        assert comm.opinion_open(candidate)
+        assert real_opinion_open(candidate)
         assert comm.prune_older_than(1) == 1
         # Reproduce the stale result already returned by the HTTP precheck.
         return True
 
     monkeypatch.setattr(
-        server_main,
-        "community_opinion_open",
+        comm,
+        "opinion_open",
         prune_after_precheck,
     )
     response = client.post(

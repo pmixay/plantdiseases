@@ -12,9 +12,16 @@ import asyncio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+# A collaborator module (never a name patched on ``main``) is imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import account_internal
+except ImportError:
+    import account_internal
+
 
 def register(router: APIRouter, m) -> None:
-    account = m.deps.account_required(m)
+    account = m.account_dependency
 
     @router.post("/community/scan", dependencies=[Depends(m.community_bearer)])
     async def community_scan_upload(
@@ -69,7 +76,7 @@ def register(router: APIRouter, m) -> None:
         # us ingesting its payload.
         issued = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_analysis_token_issued(payload.scan_id),
+            lambda: m.community.is_analysis_token_issued(payload.scan_id),
         )
         if not issued:
             m.logger.warning("Community publication capability rejected")
@@ -113,7 +120,7 @@ def register(router: APIRouter, m) -> None:
         try:
             row_id = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community_record_analysis_scan(
+                lambda: m.community.record_analysis_scan(
                     scan_id=payload.scan_id,
                     account_actor_id=principal.actor_id,
                     country=geo["country"] or "",
@@ -130,17 +137,17 @@ def register(router: APIRouter, m) -> None:
                     locale=payload.locale,
                 ),
             )
-        except m.AnalysisTokenUnknownError as exc:
+        except m.community.AnalysisTokenUnknownError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Unknown scan_id - re-scan before sharing to the community.",
             ) from exc
-        except m.AnalysisImageMismatchError as exc:
+        except m.community.AnalysisImageMismatchError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Community image does not match the analyzed image.",
             ) from exc
-        except m.AnalysisTokenConflictError as exc:
+        except m.community.AnalysisTokenConflictError as exc:
             raise HTTPException(
                 status_code=409,
                 detail="This scan_id has already been published.",
@@ -173,7 +180,7 @@ def register(router: APIRouter, m) -> None:
         try:
             created = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community_record_content_report(
+                lambda: m.community.record_content_report(
                     reporter_actor_id=principal.actor_id,
                     target_type=kind,
                     target_id=payload.target_id.strip(),
@@ -203,7 +210,7 @@ def register(router: APIRouter, m) -> None:
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community_block_content_author(
+                lambda: m.community.block_content_author(
                     blocker_actor_id=principal.actor_id,
                     target_type=kind,
                     target_id=payload.target_id.strip(),
@@ -224,7 +231,7 @@ def register(router: APIRouter, m) -> None:
     async def community_list_blocks(principal=Depends(account)):
         """List only the caller's blocks using unlinkable opaque block ids."""
         items = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_actor_blocks(principal.actor_id)
+            None, lambda: m.community.actor_blocks(principal.actor_id)
         )
         return JSONResponse(
             content={"items": items}, headers={"Cache-Control": "no-store"}
@@ -240,7 +247,7 @@ def register(router: APIRouter, m) -> None:
         if len(block_id) != 32 or not block_id.startswith("cb"):
             raise HTTPException(status_code=422, detail="invalid_block_id")
         removed = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_unblock_actor(principal.actor_id, block_id)
+            None, lambda: m.community.unblock_actor(principal.actor_id, block_id)
         )
         if not removed:
             raise HTTPException(status_code=404, detail="block_not_found")
@@ -258,7 +265,7 @@ def register(router: APIRouter, m) -> None:
         """
         principal = await m._require_account(request)
         disease = payload.suggested_disease.strip()
-        if disease not in m.DISEASES_DATABASE:
+        if disease not in m.diseases_data.DISEASES_DATABASE:
             raise HTTPException(status_code=422, detail="Unknown suggested disease")
 
         client_ip = m._client_ip(request)
@@ -273,25 +280,25 @@ def register(router: APIRouter, m) -> None:
         # and require the shared scan to exist — opinions against ids that
         # were never shared are write-only noise in the consensus tally.
         sid = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
+            None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
         )
-        known = await loop.run_in_executor(None, lambda: m.community_scan_exists(sid))
+        known = await loop.run_in_executor(None, lambda: m.community.scan_exists(sid))
         if not known:
             raise HTTPException(status_code=422, detail="Unknown scan")
         owner_actor = await loop.run_in_executor(
-            None, lambda: m.community_account_owner_of(sid)
+            None, lambda: m.community.account_owner_of(sid)
         )
         if owner_actor is None:
             raise HTTPException(status_code=409, detail="legacy_scan_read_only")
         # A scan older than 30 days goes read-only so stale photos cannot keep
         # collecting opinions. Its per-scan public read handle remains stable.
-        fresh = await loop.run_in_executor(None, lambda: m.community_opinion_open(sid))
+        fresh = await loop.run_in_executor(None, lambda: m.community.opinion_open(sid))
         if not fresh:
             raise HTTPException(status_code=410, detail="Scan too old for new opinions")
         try:
             _opinion_id, created = await loop.run_in_executor(
                 None,
-                lambda: m.community_record_opinion(
+                lambda: m.community.record_opinion_with_status(
                     scan_id=sid,
                     account_actor_id=principal.actor_id,
                     suggested_disease=disease,
@@ -299,7 +306,7 @@ def register(router: APIRouter, m) -> None:
                     nickname=principal.nickname,
                 ),
             )
-        except m.OpinionTargetUnavailableError as exc:
+        except m.community.OpinionTargetUnavailableError as exc:
             raise HTTPException(
                 status_code=410,
                 detail="Scan no longer accepts opinions",
@@ -323,14 +330,14 @@ def register(router: APIRouter, m) -> None:
             try:
                 if not created:
                     return
-                if not m.community_wants_opinion(sid):
+                if not m.community.wants_opinion(sid):
                     return
                 owner = owner_actor
                 if owner and owner != author:
                     # Delivery is delegated to the account service, which resolves
                     # encrypted device registrations privately. Wired below via
                     # the internal notification client.
-                    m._send_account_opinion_notification(
+                    account_internal.send_account_opinion_notification(
                         owner, sid, disease, payload.note, principal.nickname
                     )
             except Exception:  # noqa: BLE001
@@ -341,7 +348,7 @@ def register(router: APIRouter, m) -> None:
 
         result = await loop.run_in_executor(
             None,
-            lambda: m.community_opinions_for(
+            lambda: m.community.opinions_for(
                 sid, viewer_account_actor_id=principal.actor_id
             ),
         )
@@ -380,7 +387,7 @@ def register(router: APIRouter, m) -> None:
         try:
             flagged = await loop.run_in_executor(
                 None,
-                lambda: m.community_set_wants_opinion(
+                lambda: m.community.set_wants_opinion(
                     sid, account_actor_id=principal.actor_id
                 ),
             )
@@ -416,7 +423,7 @@ def register(router: APIRouter, m) -> None:
         try:
             cleared = await loop.run_in_executor(
                 None,
-                lambda: m.community_clear_wants_opinion(
+                lambda: m.community.clear_wants_opinion(
                     sid, account_actor_id=principal.actor_id
                 ),
             )
@@ -444,11 +451,11 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         principal = await m._optional_account(request)
         resolved = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(sid),
+            None, lambda: m.community.resolve_scan_token(sid),
         )
         result = await loop.run_in_executor(
             None,
-            lambda: m.community_opinions_for(
+            lambda: m.community.opinions_for(
                 resolved,
                 viewer_account_actor_id=principal.actor_id if principal else None,
             ),
@@ -464,7 +471,7 @@ def register(router: APIRouter, m) -> None:
         principal = await m._optional_account(request)
         profile = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_public_account_profile(
+            lambda: m.community.public_account_profile(
                 author_token,
                 viewer_account_actor_id=principal.actor_id if principal else None,
             ),
@@ -484,7 +491,7 @@ def register(router: APIRouter, m) -> None:
         on a schedule to notify the user when someone leaves a second opinion on a
         scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
         result = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_opinion_counts_for_actor(principal.actor_id),
+            None, lambda: m.community.opinion_counts_for_actor(principal.actor_id),
         )
         return JSONResponse(content=result)
 
@@ -513,16 +520,16 @@ def register(router: APIRouter, m) -> None:
         # feed-scroll batch stays lenient and just skips any such id.
         if payload.scan_id and payload.scan_id.strip() and not payload.scan_ids:
             sid = await loop.run_in_executor(
-                None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
+                None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
             )
             owner_actor = await loop.run_in_executor(
-                None, lambda: m.community_account_owner_of(sid)
+                None, lambda: m.community.account_owner_of(sid)
             )
             if owner_actor is None:
                 raise HTTPException(status_code=409, detail="legacy_scan_read_only")
         counted = await loop.run_in_executor(
             None,
-            lambda: m.community_record_views(ids, account_actor_id=principal.actor_id),
+            lambda: m.community.record_views(ids, account_actor_id=principal.actor_id),
         )
         return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
 
@@ -539,18 +546,18 @@ def register(router: APIRouter, m) -> None:
         ):
             raise HTTPException(status_code=429, detail="Daily like quota reached.")
         sid = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
+            None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
         )
         liked = await loop.run_in_executor(
             None,
-            lambda: m.community_set_like(
+            lambda: m.community.set_like(
                 sid,
                 liked=payload.liked,
                 account_actor_id=principal.actor_id,
             ),
         )
         count = await loop.run_in_executor(
-            None, lambda: m.community_like_counts([sid]).get(sid, 0),
+            None, lambda: m.community.like_counts([sid]).get(sid, 0),
         )
         return JSONResponse(content={"ok": True, "liked": liked, "count": count})
 
@@ -565,7 +572,7 @@ def register(router: APIRouter, m) -> None:
         ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
         counts = (
             await asyncio.get_running_loop().run_in_executor(
-                None, lambda: m.community_scan_counts_for_actor(principal.actor_id, ids),
+                None, lambda: m.community.scan_counts_for_actor(principal.actor_id, ids),
             )
             if ids else {}
         )
@@ -619,7 +626,7 @@ def register(router: APIRouter, m) -> None:
             )
         principal = await m._optional_account(request)
         try:
-            recommendation_cursor = m.community_decode_recommendation_cursor(cursor)
+            recommendation_cursor = m.community.decode_recommendation_cursor(cursor)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
         if ranking_norm == "recent" and recommendation_cursor is not None \
@@ -650,7 +657,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recommended":
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community_recommended_scans(
+                lambda: m.community.recommended_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -664,7 +671,7 @@ def register(router: APIRouter, m) -> None:
         else:
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community_nearby_scans(
+                lambda: m.community.nearby_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -684,7 +691,7 @@ def register(router: APIRouter, m) -> None:
         next_cursor = None
         if rows and len(rows) >= effective_limit:
             last = rows[-1]
-            next_cursor = m.community_encode_recommendation_cursor(
+            next_cursor = m.community.encode_recommendation_cursor(
                 int(last.get("_cursor_score", 0)),
                 int(last["created_at"]),
                 int(last["_cursor_row_id"]),
@@ -695,7 +702,7 @@ def register(router: APIRouter, m) -> None:
         # surface the scan they just uploaded.
         summary = await loop.run_in_executor(
             None,
-            lambda: m.community_region_summary(
+            lambda: m.community.region_summary(
                 country_norm or "",
                 None,
                 exclude_account_actor_id=principal.actor_id if principal else None,
@@ -712,12 +719,12 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recent":
             counts = await loop.run_in_executor(
                 None,
-                lambda: m.community_opinion_counts(
+                lambda: m.community.opinion_counts(
                     scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
                 ),
             )
             views = await loop.run_in_executor(
-                None, lambda: m.community_view_counts(scan_ids),
+                None, lambda: m.community.view_counts(scan_ids),
             )
         for r in rows:
             sid = str(r.get("scan_id"))
@@ -780,7 +787,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None,
-            lambda: m.community_map_scans(
+            lambda: m.community.map_scans(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -795,7 +802,7 @@ def register(router: APIRouter, m) -> None:
         map_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
         counts = await loop.run_in_executor(
             None,
-            lambda: m.community_opinion_counts(
+            lambda: m.community.opinion_counts(
                 map_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
             ),
         )
@@ -822,7 +829,7 @@ def register(router: APIRouter, m) -> None:
         lo_lat, lo_lon, hi_lat, hi_lon = box
         data = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_density_grid(
+            lambda: m.community.density_grid(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -854,7 +861,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
-            lambda: m.community_scans_by_species(
+            lambda: m.community.scans_by_species(
                 sci,
                 limit=max(1, min(int(limit), 50)),
                 exclude_account_actor_id=principal.actor_id if principal else None,
@@ -867,7 +874,7 @@ def register(router: APIRouter, m) -> None:
         species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
         counts = await loop.run_in_executor(
             None,
-            lambda: m.community_opinion_counts(
+            lambda: m.community.opinion_counts(
                 species_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
             ),
         )
@@ -892,11 +899,11 @@ def register(router: APIRouter, m) -> None:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise HTTPException(status_code=400, detail="Invalid thumbnail name")
         visible = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_thumbnail_is_visible(filename)
+            None, lambda: m.community.thumbnail_is_visible(filename)
         )
         if not visible:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
-        path = m.COMMUNITY_THUMB_DIR / filename
+        path = m.community.COMMUNITY_THUMB_DIR / filename
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Thumbnail not found")
         # Streams off the event loop; supports 304 revalidation. Thumbnails

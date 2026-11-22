@@ -34,13 +34,13 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         url = (u or "").strip()
         if url:
-            if not m.plant_photo_allowed(url):
+            if not m.plant_photos.is_allowed_url(url):
                 raise HTTPException(status_code=400, detail="Invalid photo URL")
         elif name:
             nm = name.strip()[:128]
             lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
             info = await loop.run_in_executor(
-                m._get_net_executor(), lambda: m.fetch_species_info(nm, lang),
+                m._get_net_executor(), lambda: m.species_info.fetch_species_info(nm, lang),
             )
             url = ((info or {}).get("image_url") or "").strip()
             if not url:
@@ -48,7 +48,7 @@ def register(router: APIRouter, m) -> None:
         else:
             raise HTTPException(status_code=400, detail="Missing photo source")
         path = await loop.run_in_executor(
-            m._get_net_executor(), lambda: m.plant_photo_get_or_fetch(url),
+            m._get_net_executor(), lambda: m.plant_photos.get_or_fetch(url),
         )
         if path is None:
             raise HTTPException(status_code=404, detail="Photo unavailable")
@@ -63,7 +63,7 @@ def register(router: APIRouter, m) -> None:
                 path,
                 m._PLANT_PHOTO_MAX_SIDE,
                 m._PLANT_PHOTO_QUALITY,
-                m.plant_photo_prune_cache,
+                m.plant_photos.prune_cache,
             ),
         )
         if webp is None:
@@ -79,7 +79,7 @@ def register(router: APIRouter, m) -> None:
                 raise HTTPException(status_code=404, detail="Photo unavailable")
         serve, media = (
             (webp, "image/webp") if webp is not None
-            else (path, m.plant_photo_media_type(path))
+            else (path, m.plant_photos.media_type_for(path))
         )
         return m._cached_image_response(
             request, serve,
