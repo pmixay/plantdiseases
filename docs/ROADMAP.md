@@ -15,7 +15,7 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182), PRO hidden (`ProUi.ENABLED = false`); the signed release APK is built and taken from CI; not on RuStore yet. The 2026-11-22 batch (below) is not on `main` yet. |
+| **App** | 1.9 / versionCode 19, released on RuStore. Accounts (Yandex sign-in) are live; PRO is hidden (`ProUi.ENABLED = false`); the signed release APK is built and taken from CI. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. `/id/` is public on the host; the privacy policy is served at `/privacy.html`; a Telegram alert watches for stuck account deletions (`deploy/production-vds/alerts/`). No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
@@ -25,8 +25,6 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 ## Next up — in this order
 
-- [ ] ★ **Land the 2026-11-22 batch** (section below): merge, device checks, deploy.
-- [ ] ★ **Ship accounts to RuStore** (section below).
 - [ ] ★ **Carve T_v1** (adjudicate the 80 export rows). Nothing done to the scorch
       class — real or synthetic — can be judged without it.
 - [ ] ★ **Scorch data**: real v9 collection (early, dull scorch, 400 families with
@@ -39,34 +37,6 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
 the README status section and `docs/assets/per-class.svg`.
-
----
-
-## 2026-11-22 batch — before it ships
-
-On `claude/tender-albattani-9cygz2`, CI green (run 1094): design-system pass (no
-grey/small text, plain headers, plain punctuation), onboarding and sign-in rework,
-native privacy policy, faster capture-to-cropper, community membership (join =
-location + sharing, no Profile switch), anonymous worldwide popular tally, new daily
-limits that count only uncached work, per-feature limit dialogs, scan-only care-plan
-metering, nearby scans on species pages, guest read-only community with in-place
-Yandex sign-in.
-
-- [ ] ★ **Merge to `main`**, then build the release APK from `main`.
-- [ ] ★ **Check on a phone** what the local renders cannot show: Yandex ID sign-in
-      from the quick sign-in sheet (a returning account, and a new one that picks its
-      nickname in the sheet); the blurred nearby-scans previews on a result and a
-      species page (`RenderEffect` does not draw under Robolectric); the join prompt
-      on the community map.
-- [ ] ★ **Deploy the server side.** Redeploy the app API (popular tally, uncached-only
-      metering, care-plan purpose, nearby species scans) and the account service, so
-      the new signed-in limits and quota policy `launch-2026-11-v2` apply (the
-      production compose file already carries them); check production `server/config.json` for
-      explicit `guest_*_daily_quota` keys, which would override the new guest
-      defaults; publish the updated `privacy.html` (community joining, anonymous
-      popular tally, no zero-data-retention claim).
-- [ ] ★ **Set `species_info_contact`** in production config: Wikimedia throttles
-      contact-less clients first (`DEPLOYMENT.md`).
 
 ---
 
@@ -94,32 +64,15 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
 
 ---
 
-## Ship accounts to RuStore
+## Accounts — later
 
-1.9 ships accounts only: Yandex sign-in. PRO is not part of it and is hidden in the app (see Decisions). In order.
-
-The host work before the release is done (public `/id/`, privacy policy served,
-backup job off, deletion alert) and PRO is hidden in the app. Known and left as
-is: pre-1.9 apps still call the removed pseudo-id
-`GET /api/community/my-scan-opinions/{id}`, so they get no "new opinion"
-notifications until they update.
-
-**Release** (★ owner)
-
-- [ ] ★ **One Yandex sign-in on the signed APK.** The flows themselves are already
-      verified against production; only the certificate fingerprint registered
-      with Yandex is new.
-- [ ] ★ **RuStore upload** with release notes, then cut the 1.9 tag.
-
-**Not a 1.9 gate**
-
-- [ ] **PRO subscriptions (distant future, not scheduled).** Not planned for
-      any upcoming release. The purchase validation, callback inbox and Android
-      payment client stay in the code, switched off and invisible
-      (`ProUi.ENABLED = false` in the app, `RUSTORE_LIFECYCLE_ENABLED` /
-      `RUSTORE_CHECKOUT_ENABLED` off on the server). Reviving it would need
-      RuStore keys and products, a sandbox purchase test and the app switch.
-- [ ] **VK ID sign-in (after 1.9).** Merged, switched off until VK registration.
+- [ ] **PRO subscriptions (distant future, not scheduled).** The purchase
+      validation, callback inbox and Android payment client stay in the code,
+      switched off and invisible (`ProUi.ENABLED = false` in the app,
+      `RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED` off on the server).
+      Reviving it would need RuStore keys and products, a sandbox purchase test
+      and the app switch.
+- [ ] **VK ID sign-in.** Merged, switched off until VK registration.
 
 ---
 
@@ -369,7 +322,7 @@ None blocks a release.
   ceiling and no dependency lockfile are planned.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
-- **1.9 is accounts only.** VK ID stays switched off until a later release.
+- **VK ID stays switched off** until VK registration.
 - **PRO is a distant-future idea, not a plan** (owner's decision, 2026-11-16).
   The app and server show no PRO wording and lock nothing behind it; only
   documents may mention it, and only as something far off. Signed-in accounts
