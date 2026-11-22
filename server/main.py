@@ -996,15 +996,6 @@ async def _authorize_optional_species_lookup(request: Request) -> dict | None:
     return None
 
 
-# Daily write quotas use the live connection address only in process memory.
-# Addresses and hashes never enter feedback, training, or account-era
-# community rows.
-FEEDBACK_DAILY_QUOTA = config.get_int("FEEDBACK_DAILY_QUOTA", 200)
-COMMUNITY_DAILY_QUOTA = config.get_int("COMMUNITY_DAILY_QUOTA", 50)
-COMMUNITY_OPINION_DAILY_QUOTA = config.get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
-# Likes are cheap and low-stakes compared to an opinion, so they get their
-# own (looser) daily cap rather than sharing the opinion quota.
-COMMUNITY_LIKE_DAILY_QUOTA = config.get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 # Community roles (expert / moderator / admin) live in the account service.
 # ``None`` when unconfigured: staff routes then fail closed with 503.
 community_roles = account_roles.community_roles_client

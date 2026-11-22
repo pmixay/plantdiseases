@@ -16,10 +16,11 @@ from pydantic import BaseModel, Field, field_validator
 # Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import analysis, analysis_payload, symptoms
+    from . import analysis, analysis_payload, config, symptoms
 except ImportError:
     import analysis
     import analysis_payload
+    import config
     import symptoms
 
 
@@ -50,6 +51,12 @@ class ProgressionRequest(BaseModel):
     progression sparkline + trend the plant-detail screen renders."""
 
     history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
+
+
+# Daily write quotas use the live connection address only in process memory.
+# Addresses and hashes never enter feedback, training, or account-era
+# community rows.
+FEEDBACK_DAILY_QUOTA = config.get_int("FEEDBACK_DAILY_QUOTA", 200)
 
 
 def register(router: APIRouter, m) -> None:
@@ -191,7 +198,7 @@ def register(router: APIRouter, m) -> None:
         connection address is used for an in-process quota and is never written.
         """
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("feedback", client_ip, m.FEEDBACK_DAILY_QUOTA):
+        if not m._consume_daily_write("feedback", client_ip, FEEDBACK_DAILY_QUOTA):
             m.logger.warning("Feedback daily quota reached")
             raise HTTPException(
                 status_code=429,
@@ -250,7 +257,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=422, detail="invalid_feedback") from exc
 
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("feedback_image", client_ip, m.FEEDBACK_DAILY_QUOTA):
+        if not m._consume_daily_write("feedback_image", client_ip, FEEDBACK_DAILY_QUOTA):
             m.logger.warning("Feedback image daily quota reached")
             raise HTTPException(
                 status_code=429,

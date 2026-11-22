@@ -16,10 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import account_internal, community_geo, diseases_data, feedback_labels
+    from . import account_internal, community_geo, config, diseases_data, feedback_labels
 except ImportError:
     import account_internal
     import community_geo
+    import config
     import diseases_data
     import feedback_labels
 
@@ -214,6 +215,13 @@ def _valid_bbox(
     return (lo_lat, lo_lon, hi_lat, hi_lon)
 
 
+COMMUNITY_DAILY_QUOTA = config.get_int("COMMUNITY_DAILY_QUOTA", 50)
+COMMUNITY_OPINION_DAILY_QUOTA = config.get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
+# Likes are cheap and low-stakes compared to an opinion, so they get their
+# own (looser) daily cap rather than sharing the opinion quota.
+COMMUNITY_LIKE_DAILY_QUOTA = config.get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
+
+
 def register(router: APIRouter, m) -> None:
     account = m.account_dependency
 
@@ -285,7 +293,7 @@ def register(router: APIRouter, m) -> None:
         # image body — an over-quota client should be rejected without us
         # ingesting its payload first.
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("community_scan", client_ip, m.COMMUNITY_DAILY_QUOTA):
+        if not m._consume_daily_write("community_scan", client_ip, COMMUNITY_DAILY_QUOTA):
             m.logger.warning("Community daily upload quota reached")
             raise HTTPException(
                 status_code=429,
@@ -465,7 +473,7 @@ def register(router: APIRouter, m) -> None:
         client_ip = m._client_ip(request)
         loop = asyncio.get_running_loop()
         if not m._consume_daily_write(
-            "community_opinion", client_ip, m.COMMUNITY_OPINION_DAILY_QUOTA
+            "community_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
         ):
             raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
 
@@ -575,7 +583,7 @@ def register(router: APIRouter, m) -> None:
         client_ip = m._client_ip(request)
         loop = asyncio.get_running_loop()
         if not m._consume_daily_write(
-            "community_request_opinion", client_ip, m.COMMUNITY_OPINION_DAILY_QUOTA
+            "community_request_opinion", client_ip, COMMUNITY_OPINION_DAILY_QUOTA
         ):
             raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
         try:
@@ -736,7 +744,7 @@ def register(router: APIRouter, m) -> None:
         client_ip = m._client_ip(request)
         loop = asyncio.get_running_loop()
         if payload.liked and not m._consume_daily_write(
-            "community_like", client_ip, m.COMMUNITY_LIKE_DAILY_QUOTA
+            "community_like", client_ip, COMMUNITY_LIKE_DAILY_QUOTA
         ):
             raise HTTPException(status_code=429, detail="Daily like quota reached.")
         sid = await loop.run_in_executor(
