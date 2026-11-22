@@ -161,22 +161,28 @@ class ScanRepository(
     }
 
     /** Only quota denials carry the complete quota-header tuple. An ordinary
-     * anti-abuse 429 deliberately stays a [RateLimitException]. */
-    private fun HttpResponse.meteredDenialOrNull(): Exception? {
+     * anti-abuse 429 deliberately stays a [RateLimitException]. [feature] names
+     * the allowance so the limit dialog can say which one ran out; a request
+     * sent without a Bearer token was a guest's. */
+    private fun HttpResponse.meteredDenialOrNull(feature: MeteredFeature): Exception? {
         val plan = headers[HEADER_PLAN]?.trim()?.takeIf { it.isNotEmpty() }
         val limit = headers[HEADER_QUOTA_LIMIT]?.toIntOrNull()
         val remaining = headers[HEADER_QUOTA_REMAINING]?.toIntOrNull()
         val resetAt = headers[HEADER_QUOTA_RESET_AT]?.trim()?.takeIf { it.isNotEmpty() }
+        val guest = call.request.headers[HttpHeaders.Authorization] == null
         return when {
-            status.value == 402 -> ProRequiredException(plan, limit, remaining, resetAt)
+            status.value == 402 -> ProRequiredException(plan, limit, remaining, resetAt, feature, guest)
             status.value == 429 &&
                 plan != null &&
                 limit != null &&
                 remaining != null &&
-                resetAt != null -> QuotaExhaustedException(plan, limit, remaining, resetAt)
+                resetAt != null -> QuotaExhaustedException(plan, limit, remaining, resetAt, feature, guest)
             else -> null
         }
     }
+
+    private fun analysisFeature(family: String): MeteredFeature =
+        if (family.equals("frontier", ignoreCase = true)) MeteredFeature.FRONTIER_ANALYSIS else MeteredFeature.ANALYSIS
 
     private suspend inline fun <reified T> HttpResponse.protectedBody(): T {
         if (status.value == 401) throw AccountApiException(401, "auth_required")
@@ -275,7 +281,7 @@ class ScanRepository(
                         )
                     }
                 }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull()?.let {
+                response.meteredDenialOrNull(analysisFeature(family))?.let {
                     return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
@@ -481,7 +487,7 @@ class ScanRepository(
                         )
                     }
                 }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull()?.let {
+                response.meteredDenialOrNull(MeteredFeature.IDENTIFICATION)?.let {
                     return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
@@ -532,7 +538,7 @@ class ScanRepository(
                         setBody(request)
                     }
                 }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull()?.let {
+                response.meteredDenialOrNull(MeteredFeature.CARE_PLAN)?.let {
                     return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
@@ -741,7 +747,7 @@ class ScanRepository(
                         setBody(request)
                     }
                 }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull()?.let {
+                response.meteredDenialOrNull(MeteredFeature.CHAT)?.let {
                     return@withContext Result.failure(it)
                 }
                 when (response.status.value) {
@@ -903,11 +909,17 @@ class ScanRepository(
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
     class RateLimitException : Exception("Server is busy, please wait")
+
+    /** Which daily allowance a metered request spends. */
+    enum class MeteredFeature { ANALYSIS, FRONTIER_ANALYSIS, IDENTIFICATION, CHAT, CARE_PLAN, OTHER }
+
     class ProRequiredException(
         val plan: String?,
         val limit: Int?,
         val remaining: Int?,
         val resetAt: String?,
+        val feature: MeteredFeature = MeteredFeature.OTHER,
+        val guest: Boolean = false,
     ) : Exception("PlantDiseases PRO is required")
 
     class QuotaExhaustedException(
@@ -915,6 +927,8 @@ class ScanRepository(
         val limit: Int,
         val remaining: Int,
         val resetAt: String,
+        val feature: MeteredFeature = MeteredFeature.OTHER,
+        val guest: Boolean = false,
     ) : Exception("Daily $plan quota exhausted")
 
     class ServerStartingException : Exception("Server is starting / pipeline unavailable")

@@ -628,6 +628,24 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface" />
 
+                    <!-- Scans from the user's own area are a community-member
+                         feature (location + sharing, CommunityJoin). Shown to
+                         non-members only, above a blurred preview of the strip;
+                         joining re-fetches with location. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_similar_join"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:minHeight="48dp"
+                        android:text="@string/similar_scans_join_cta"
+                        android:visibility="gone"
+                        app:cornerRadius="@dimen/radius_md"
+                        app:icon="@drawable/ic_map"
+                        app:iconGravity="textStart"
+                        app:iconSize="20dp" />
+
                     <!-- Empty state shown when the region has no recent
                          scans yet. Keeps the card on screen so the user
                          understands the feature exists. -->
@@ -642,13 +660,31 @@
                         android:textColor="@color/on_surface"
                         android:visibility="gone" />
 
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rv_similar_scans"
+                    <FrameLayout
+                        android:id="@+id/similar_strip"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
-                        android:clipToPadding="false"
-                        android:paddingEnd="@dimen/space_md" />
+                        android:visibility="gone">
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rv_similar_scans"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:clipToPadding="false"
+                            android:paddingEnd="@dimen/space_md" />
+
+                        <!-- Non-members: the strip is blurred and a tap on it
+                             asks to join, like the button above. -->
+                        <View
+                            android:id="@+id/similar_lock_overlay"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="?attr/selectableItemBackground"
+                            android:contentDescription="@string/similar_scans_join_cta"
+                            android:visibility="gone" />
+
+                    </FrameLayout>
 
                 </LinearLayout>
 

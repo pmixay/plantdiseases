@@ -74,6 +74,17 @@ COMMUNITY_THUMB_DIR = Path(get_str("COMMUNITY_THUMB_DIR", str(_DEFAULT_THUMB_DIR
 COMMUNITY_MAX_THUMB_BYTES = 350 * 1024  # 350 KB — generous for a 512px JPEG
 
 _SCHEMA = """
+-- Anonymous popularity tally behind the worldwide "popular" lists: one row
+-- per UTC day, identified species ('' when none) and diagnosis, holding only
+-- a count. No photo, account, actor, device or location is ever stored here.
+CREATE TABLE IF NOT EXISTS popular_scan_counts (
+    day           INTEGER NOT NULL,
+    species_lower TEXT    NOT NULL,
+    species       TEXT    NOT NULL,
+    disease       TEXT    NOT NULL,
+    n             INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, species_lower, disease)
+);
 CREATE TABLE IF NOT EXISTS community_scans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id         TEXT    NOT NULL,
@@ -3627,6 +3638,76 @@ def region_summary(
         "last_7d": int(last_week),
         "top_diseases": top_diseases,
         "top_regions": top_regions,
+    }
+
+
+_ANON_SPECIES_MAX = 128
+ANON_POPULAR_WINDOW_DAYS = 30
+
+
+def record_anonymous_scan(species: str | None, disease: str, *, day: int | None = None) -> None:
+    """Add one accepted diagnosis to the anonymous popularity tally.
+
+    Only the identified species (if any) and the diagnosis class are counted,
+    per UTC day: nothing that identifies the user, the device, the photo or
+    where it was taken. Hidden classes (``not_a_plant``) are not counted.
+    """
+    disease = (disease or "").strip()
+    if not disease or disease in _HIDDEN_COMMUNITY_DISEASES:
+        return
+    name = " ".join((species or "").split())[:_ANON_SPECIES_MAX]
+    day = int(time.time()) // 86_400 if day is None else day
+    init_db()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO popular_scan_counts (day, species_lower, species, disease, n) "
+            "VALUES (?, ?, ?, ?, 1) "
+            "ON CONFLICT (day, species_lower, disease) DO UPDATE SET n = n + 1",
+            (day, name.lower(), name, disease),
+        )
+
+
+def anonymous_popular_snapshot(
+    *,
+    limit: int = 10,
+    days: int = ANON_POPULAR_WINDOW_DAYS,
+    today: int | None = None,
+) -> dict:
+    """Worldwide popular species + diagnoses from the anonymous tally over the
+    last ``days`` UTC days, in :func:`popular_snapshot`'s shape."""
+    init_db()
+    limit = max(1, min(int(limit), 20))
+    today = int(time.time()) // 86_400 if today is None else today
+    since = today - max(1, int(days)) + 1
+    with _connect() as conn:
+        total = int(conn.execute(
+            "SELECT COALESCE(SUM(n), 0) FROM popular_scan_counts WHERE day >= ?", (since,),
+        ).fetchone()[0])
+        species_rows = conn.execute(
+            "SELECT MIN(species), SUM(n) AS c FROM popular_scan_counts "
+            "WHERE day >= ? AND species_lower != '' "
+            "GROUP BY species_lower ORDER BY c DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+        disease_rows = conn.execute(
+            "SELECT disease, SUM(n) AS c FROM popular_scan_counts WHERE day >= ? "
+            "GROUP BY disease ORDER BY c DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+
+    def pct(n: int) -> int:
+        return int(round((n / total) * 100)) if total > 0 else 0
+
+    return {
+        "total": total,
+        "top_species": [
+            {"species": str(r[0]), "count": int(r[1]), "percent": pct(int(r[1]))}
+            for r in species_rows
+        ],
+        "top_diseases": [
+            {"disease": str(r[0]), "count": int(r[1]), "percent": pct(int(r[1]))}
+            for r in disease_rows
+        ],
     }
 
 

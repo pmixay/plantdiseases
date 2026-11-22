@@ -93,6 +93,10 @@ class CommunityMapActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) centerOnUser(animateZoom = true) }
 
+    // The map shows scans by area, so it is members-only: location access and
+    // sharing come with it (CommunityJoin). Declining closes the map.
+    private val communityJoin = CommunityJoin(this)
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -122,6 +126,18 @@ class CommunityMapActivity : AppCompatActivity() {
         // pans made while offline deliberately fetched nothing.
         onReconnected(connectivity.isOnline) { reload() }
         applyWindowInsets()
+        // A member already opens on their area (first-layout listener below);
+        // someone who joins here is centred once they have said yes.
+        val wasMember = CommunityJoin.isMember(this)
+        communityJoin.ensureMember { joined ->
+            when {
+                !joined -> finish()
+                !wasMember -> {
+                    updateLeaveItem()
+                    centerOnUser(animateZoom = true)
+                }
+            }
+        }
 
         binding.map.apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -151,11 +167,10 @@ class CommunityMapActivity : AppCompatActivity() {
             // boundingBox is only valid after layout — first real load fires here.
             addOnFirstLayoutListener { _, _, _, _, _ ->
                 reload()
-                // When the user is in the community, open straight to their area
-                // (coarse location) instead of the world view; otherwise stay on
-                // the world map. Zooming to the user re-triggers reload() via the
-                // debounced map listener, so the markers near them load too.
-                if (CommunityPrefs.uploadsEnabled(this@CommunityMapActivity)) {
+                // Members open straight on their area (coarse location) instead
+                // of the world view. Zooming to the user re-triggers reload() via
+                // the debounced map listener, so the markers near them load too.
+                if (CommunityJoin.isMember(this@CommunityMapActivity)) {
                     centerOnUser(animateZoom = true)
                 }
             }
@@ -168,12 +183,16 @@ class CommunityMapActivity : AppCompatActivity() {
         updateLeaveItem()
     }
 
-    /** Rules and blocked authors are always there; "stop sharing" only while
-     *  the user shares scans. */
+    /** Rules and blocked authors are always there; "leave" while a member. */
     private fun setupToolbarMenu() {
+        // Leaving the community also leaves the map, which is members-only.
         val safety = ScanCommunitySafety(this, scanRepository, authRepository) {
-            updateLeaveItem()
-            reload()
+            if (CommunityPrefs.uploadsEnabled(this)) {
+                updateLeaveItem()
+                reload()
+            } else {
+                finish()
+            }
         }
         binding.toolbar.inflateMenu(R.menu.community_map_menu)
         binding.toolbar.setOnMenuItemClickListener { item ->

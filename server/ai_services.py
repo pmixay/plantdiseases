@@ -3088,7 +3088,7 @@ def care_plan_metrics_snapshot() -> dict:
         }
 
 
-def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
+def _polish_plan_with_llm(plan: dict, locale: str, *, cached_only: bool = False) -> dict:
     """Optional LLM polish step. Returns the plan with a friendly
     Markdown summary attached, or the input plan unchanged on failure.
 
@@ -3114,6 +3114,10 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
             _CARE_PLAN_CACHE.put(cache_key, polished)
     if polished is not None:
         return {**plan, "summary_md": polished, "cached": True}
+    if cached_only:
+        # The caller wants only what costs nothing; it charges the user's
+        # allowance before asking again without this flag.
+        return plan
     locale_hint = (
         "Write the summary in Russian." if locale.lower().startswith("ru")
         else "Write the summary in English."
@@ -3238,12 +3242,16 @@ def generate_care_plan(
     season: str | None = None,
     today: _dt.date | None = None,
     polish: bool = True,
+    cached_polish_only: bool = False,
 ) -> dict:
     """Build a full plant care plan for the (disease, light) tuple.
 
     ``polish=False`` skips the LLM summary and returns the rules-based
     ``summary_md`` — the server passes it once a caller has used up its daily
     allowance of paid calls, so the plan itself is never refused.
+    ``cached_polish_only=True`` attaches a previously polished summary when one
+    is cached (``cached: True``) and otherwise stops before the LLM, so the
+    server can serve free results without spending a daily allowance.
 
     Returns a richer, production-grade payload than the v1 endpoint:
 
@@ -3407,7 +3415,7 @@ def generate_care_plan(
     plan["summary_md"] = _build_markdown_summary(plan, locale=locale)
     if not polish:
         return plan
-    return _polish_plan_with_llm(plan, locale=locale)
+    return _polish_plan_with_llm(plan, locale=locale, cached_only=cached_polish_only)
 
 
 # ── Disease progression analysis ────────────────────────────────────

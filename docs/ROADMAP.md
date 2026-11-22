@@ -352,7 +352,9 @@ None blocks a release.
 - **PRO is a distant-future idea, not a plan** (owner's decision, 2026-11-16).
   The app and server show no PRO wording and lock nothing behind it; only
   documents may mention it, and only as something far off. Signed-in accounts
-  share one set of daily limits, including one frontier analysis a day.
+  share one set of daily limits (2026-11-22: 15 standard and 5 larger-model
+  analyses, 30 identifications, 15 Plant Doctor messages, 30 care plans; guests
+  5, 1, 10, 5, 10). Only uncached work counts against them.
 - **Account data stays on the German VDS** (owner's decision, 2026-11-13).
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.

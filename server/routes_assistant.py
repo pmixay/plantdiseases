@@ -13,6 +13,15 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+# chat_reply outcomes decided before any model call.
+_CHAT_NO_COST_REASONS = frozenset({
+    "empty_message",
+    "message_too_long",
+    "no_api_key",
+    "session_turn_cap",
+    "session_token_cap",
+})
+
 
 def register(router: APIRouter, m) -> None:
     @router.post("/chat")
@@ -40,7 +49,8 @@ def register(router: APIRouter, m) -> None:
         diagnosis = payload.diagnosis
         if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
             raise HTTPException(status_code=400, detail="diagnosis context too large")
-        if m.openrouter_configured():
+        metered = m.openrouter_configured()
+        if metered:
             await m._authorize_metered_feature(request, feature="ai_doctor")
         result = await asyncio.get_running_loop().run_in_executor(
             m._get_net_executor(),
@@ -51,6 +61,14 @@ def register(router: APIRouter, m) -> None:
                 diagnosis_context=diagnosis,
             ),
         )
+        if metered and result.get("reason") in _CHAT_NO_COST_REASONS:
+            # Refused before any model call: the message costs nothing, so it
+            # does not count against the daily allowance.
+            await m._release_metered_feature_if_no_upstream_attempt(
+                request,
+                feature="ai_doctor",
+                upstream_attempted=False,
+            )
         if (
             not result.get("available")
             and result.get("reason") in ("session_turn_cap", "session_token_cap")
@@ -69,27 +87,51 @@ def register(router: APIRouter, m) -> None:
         classes (``unknown`` is normalised to a generic monitoring plan).
         Past ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served
         without the LLM polish.
+
+        Only a fresh LLM polish spends the caller's daily care-plan allowance:
+        a cached polished summary and the rules-based plan cost nothing, so
+        they are served without touching it.
         """
         if m.pipeline is None:
             raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
-        polish = m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
         disease = payload.disease.strip()
         if disease not in m.DISEASES_DATABASE and disease != "unknown":
             # Don't reject — just normalise unknown to ``unknown``. Keeps the
             # endpoint forgiving while still producing a useful plan.
             disease = "unknown"
-        await m._authorize_metered_feature(request, feature="care_plan")
-        plan = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(),
-            lambda: m.generate_care_plan(
+        loop = asyncio.get_running_loop()
+
+        def build(*, polish: bool, cached_polish_only: bool = False) -> dict:
+            return m.generate_care_plan(
                 disease=disease,
                 species=payload.species,
                 light=payload.light,
                 locale=payload.locale,
                 season=payload.season,
                 polish=polish,
-            ),
+                cached_polish_only=cached_polish_only,
+            )
+
+        plan = await loop.run_in_executor(
+            m._get_net_executor(),
+            lambda: build(polish=True, cached_polish_only=True),
         )
+        if (
+            not plan.get("cached")
+            and m.openrouter_configured()
+            and m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
+        ):
+            await m._authorize_metered_feature(request, feature="care_plan")
+            plan = await loop.run_in_executor(
+                m._get_net_executor(),
+                lambda: build(polish=True),
+            )
+            # Another request may have cached the same summary meanwhile.
+            await m._release_metered_feature_if_no_upstream_attempt(
+                request,
+                feature="care_plan",
+                upstream_attempted=not plan.get("cached"),
+            )
         toxicity = m.lookup_pet_toxicity(payload.species) if payload.species else {
             "toxic_to_pets": False, "species_list": [], "source": "unknown",
         }

@@ -201,7 +201,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 }.onFailure { error ->
                     statusText.text = if (MeteredAccessUi.handles(error)) {
                         MeteredAccessUi.showDialog(requireContext(), error)
-                        getString(MeteredAccessUi.message(error))
+                        getString(MeteredAccessUi.title(error))
                     } else {
                         getString(R.string.species_suggest_unavailable_body)
                     }

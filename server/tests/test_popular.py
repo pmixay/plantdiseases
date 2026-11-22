@@ -247,3 +247,43 @@ def test_thin_community_data_is_topped_up_with_curated_picks(client, monkeypatch
     names = [it["scientific"].lower() for it in items]
     assert len(names) == len(set(names))
     assert all(it["image_url"].startswith("api/plant-photo?name=") for it in items)
+
+
+def test_anonymous_tally_counts_species_and_diagnoses_without_identifiers():
+    import community
+
+    community.record_anonymous_scan("Monstera deliciosa", "healthy", day=100)
+    community.record_anonymous_scan("monstera  deliciosa", "leaf_spot", day=100)
+    community.record_anonymous_scan(None, "leaf_spot", day=101)
+    community.record_anonymous_scan("Ficus lyrata", "not_a_plant", day=101)  # hidden class
+    snap = community.anonymous_popular_snapshot(limit=10, today=101)
+    assert snap["total"] == 3
+    assert snap["top_species"] == [{"species": "Monstera deliciosa", "count": 2, "percent": 67}]
+    assert snap["top_diseases"][0] == {"disease": "leaf_spot", "count": 2, "percent": 67}
+    # Outside the window nothing counts.
+    assert community.anonymous_popular_snapshot(today=101 + community.ANON_POPULAR_WINDOW_DAYS + 1)["total"] == 0
+    with community._connect() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(popular_scan_counts)")]
+    assert cols == ["day", "species_lower", "species", "disease", "n"]
+
+
+def test_worldwide_popular_comes_from_the_anonymous_tally(client, monkeypatch):
+    """Users without location (not in the community) still shape the worldwide
+    list: it is built from the anonymous tally of every accepted diagnosis."""
+    import community
+    import main as server_main
+
+    def _no_community(country=None, *, lat=None, lon=None, radius_km=25.0, limit=10):
+        return {"total": 0, "top_species": [], "top_diseases": []}
+
+    monkeypatch.setattr(server_main, "community_popular_snapshot", _no_community)
+    for _ in range(3):
+        community.record_anonymous_scan("Ficus elastica", "healthy")
+    community.record_anonymous_scan("Aloe vera", "leaf_spot")
+    with server_main._popular_lock:
+        server_main._popular_cache.clear()
+    body = client.get("/api/popular?locale=en").json()
+    assert body["source"] == "worldwide"
+    assert [it["scientific"] for it in body["items"][:2]] == ["Ficus elastica", "Aloe vera"]
+    assert body["items"][0]["count"] == 3
+    assert body["total"] == 4

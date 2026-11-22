@@ -442,10 +442,10 @@
     <!-- Community scans map -->
     <string name="community_map_title">Community map</string>
     <string name="community_map_near_me">Near me</string>
-    <string name="nearby_action_disable">Stop sharing my scans</string>
-    <string name="community_disable_title">Stop sharing scans?</string>
-    <string name="community_disable_body">Your new scans won\'t be shared and you won\'t receive opinions on them. Scans you\'ve already shared stay in the community.</string>
-    <string name="community_disable_confirm">Stop sharing</string>
+    <string name="nearby_action_disable">Leave the community</string>
+    <string name="community_disable_title">Leave the community?</string>
+    <string name="community_disable_body">Your new scans won\'t be shared, you won\'t receive opinions on them and the map closes. Scans you\'ve already shared stay in the community. You can join again from the map.</string>
+    <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans - zoom in to see all</string>
     <string name="community_map_empty">No community scans in this area yet</string>
@@ -869,10 +869,11 @@
 
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="profile_guest_name">Guest</string>
-    <string name="community_share_title">Share scans with the community</string>
-    <string name="community_share_subtitle">Adds your scans (photo, diagnosis and approximate area) to the community map and popular plants.</string>
-    <string name="community_share_needs_account">Sign in to share scans with the community</string>
-    <string name="community_share_needs_location">Location access groups your scans by area; sharing stays off without it</string>
+    <string name="community_join_title">Join the community</string>
+    <string name="community_join_body">See scans near you on the map and under your results. Members share their approximate location, and their scans (photo, diagnosis and area) are published while they are signed in. You can leave from the map menu.</string>
+    <string name="community_join_cta">Join</string>
+    <string name="community_join_needs_location">Location access is needed to join the community</string>
+    <string name="similar_scans_join_cta">Show scans near you</string>
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
     <string name="autosave_album" translatable="false">PlantDiseases</string>
@@ -1425,14 +1426,26 @@
 <string name="pro_profile_body">Full lunar planning and more room for cloud-powered plant care.</string>
 <string name="pro_profile_manage">Explore PRO</string>
 <string name="metered_pro_required_title">This cloud feature needs PRO</string>
-<string name="metered_pro_required_body">Your current photo or text stays on this screen. See PRO to unlock this option, or keep using the free tools.</string>
+<string name="metered_pro_required_body">See PRO to unlock this option, or keep using the free tools.</string>
 <string name="metered_pro_active_unavailable_title">Cloud feature unavailable right now</string>
-<string name="metered_pro_required_active_body">PRO is already active, so no further upgrade is needed. Your current work is still here; try again later.</string>
+<string name="metered_pro_required_active_body">PRO is already active, so no further upgrade is needed. Try again later.</string>
 <string name="metered_quota_title">Daily limit reached</string>
-<string name="metered_quota_free_body">You have used today\'s free cloud allowance. Your current work is still here; try again after the daily reset or see PRO for higher limits.</string>
-<string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Your current work is still here; try again after the daily reset.</string>
-<string name="metered_quota_body">You\'ve used today\'s allowance for this feature. Your current work is still here.</string>
-<string name="metered_unavailable_body">Sign in to a PlantDiseases account to get a daily allowance for this option. Your current work is still here.</string>
+<string name="metered_quota_free_body">You have used today\'s free cloud allowance. Try again after the daily reset or see PRO for higher limits.</string>
+<string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Try again after the daily reset.</string>
+<string name="metered_quota_body">You\'ve used today\'s allowance for this feature.</string>
+<string name="metered_unavailable_body">Sign in to a PlantDiseases account to get a daily allowance for this option.</string>
+    <string name="metered_quota_title_analysis">Gamma scans used up for today</string>
+    <string name="metered_quota_body_analysis">Aqua runs on your phone and has no daily limit.</string>
+    <string name="metered_quota_title_frontier">Frontier scans used up for today</string>
+    <string name="metered_quota_body_frontier">You can keep scanning with Gamma or with Aqua on your phone.</string>
+    <string name="metered_quota_title_identify">Plant identifications used up for today</string>
+    <string name="metered_quota_body_identify">Disease scans still work. Species identification comes back after the reset.</string>
+    <string name="metered_quota_title_chat">AI Plant Doctor questions used up for today</string>
+    <string name="metered_quota_body_chat">The treatment steps from your diagnosis are still there to follow.</string>
+    <string name="metered_quota_title_care_plan">New care plans used up for today</string>
+    <string name="metered_quota_body_care_plan">Plans you already opened and your reminders keep working.</string>
+    <string name="metered_quota_guest_hint">Signed-in accounts get a bigger daily allowance.</string>
+    <string name="metered_unavailable_title_frontier">Frontier needs an account</string>
     <string name="metered_reset_in_at">Resets in %1$s, at %2$s</string>
     <string name="metered_duration_hours_minutes">%1$d h %2$d min</string>
     <string name="metered_duration_hours">%1$d h</string>

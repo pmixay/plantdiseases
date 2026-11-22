@@ -22,10 +22,13 @@ import java.time.format.FormatStyle
 import java.util.Locale
 
 /**
- * Shared, bilingual dialog for server-enforced feature budgets: an icon, the
- * title, one short line and when the allowance comes back ("Resets in
- * 5 h 12 min, at 03:00"). It never shows a "0 left" count. It offers PRO only
- * while [ProUi.ENABLED]; otherwise the wording is plan-neutral.
+ * Shared, bilingual dialog for server-enforced feature budgets: the feature's
+ * icon, a title naming the allowance that ran out (Gamma or Frontier scans,
+ * identifications, AI Plant Doctor questions, care plans), one line on what
+ * still works and when the allowance comes back ("Resets in 5 h 12 min, at
+ * 03:00"). It never shows a "0 left" count. Guests are told that signing in
+ * gives more. It offers PRO only while [ProUi.ENABLED]; otherwise the wording
+ * is plan-neutral.
  */
 object MeteredAccessUi {
     fun handles(error: Throwable): Boolean = meteredDialogPolicy(error) != null
@@ -38,13 +41,20 @@ object MeteredAccessUi {
     fun message(error: Throwable): Int =
         meteredDialogPolicy(error)?.message ?: R.string.unknown_error
 
+    /** The dialog body: the feature line, plus the sign-in hint for guests. */
+    fun body(context: Context, error: Throwable): String {
+        val policy = meteredDialogPolicy(error) ?: return context.getString(R.string.unknown_error)
+        val main = context.getString(policy.message)
+        return policy.hint?.let { "$main ${context.getString(it)}" } ?: main
+    }
+
     /** Returns false for unrelated failures so callers can keep existing UX. */
     fun showDialog(context: Context, error: Throwable): Boolean {
         val policy = meteredDialogPolicy(error) ?: return false
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_metered_limit, null)
         view.findViewById<ImageView>(R.id.iv_metered_icon).setImageResource(policy.icon)
         view.findViewById<TextView>(R.id.tv_metered_title).setText(policy.title)
-        view.findViewById<TextView>(R.id.tv_metered_body).setText(policy.message)
+        view.findViewById<TextView>(R.id.tv_metered_body).text = body(context, error)
         val reset = policy.resetAt?.let {
             formatMeteredResetLine(context, it, Instant.now(), ZoneId.systemDefault())
         }
@@ -81,7 +91,49 @@ internal data class MeteredDialogPolicy(
     @DrawableRes val icon: Int = R.drawable.ic_clock,
     // The option has no allowance without an account: offer signing in.
     val offerSignIn: Boolean = false,
+    // A second line after [message] (guests: signing in gives more).
+    @StringRes val hint: Int? = null,
 )
+
+/** Title, body and icon naming the allowance that ran out. */
+private data class FeatureLimitCopy(
+    @StringRes val title: Int,
+    @StringRes val body: Int,
+    @DrawableRes val icon: Int,
+)
+
+private fun ScanRepository.MeteredFeature.limitCopy(): FeatureLimitCopy = when (this) {
+    ScanRepository.MeteredFeature.ANALYSIS -> FeatureLimitCopy(
+        R.string.metered_quota_title_analysis,
+        R.string.metered_quota_body_analysis,
+        R.drawable.ic_scan,
+    )
+    ScanRepository.MeteredFeature.FRONTIER_ANALYSIS -> FeatureLimitCopy(
+        R.string.metered_quota_title_frontier,
+        R.string.metered_quota_body_frontier,
+        R.drawable.ic_sparkle,
+    )
+    ScanRepository.MeteredFeature.IDENTIFICATION -> FeatureLimitCopy(
+        R.string.metered_quota_title_identify,
+        R.string.metered_quota_body_identify,
+        R.drawable.ic_search,
+    )
+    ScanRepository.MeteredFeature.CHAT -> FeatureLimitCopy(
+        R.string.metered_quota_title_chat,
+        R.string.metered_quota_body_chat,
+        R.drawable.ic_doctor_chat,
+    )
+    ScanRepository.MeteredFeature.CARE_PLAN -> FeatureLimitCopy(
+        R.string.metered_quota_title_care_plan,
+        R.string.metered_quota_body_care_plan,
+        R.drawable.ic_care,
+    )
+    ScanRepository.MeteredFeature.OTHER -> FeatureLimitCopy(
+        R.string.metered_quota_title,
+        R.string.metered_quota_body,
+        R.drawable.ic_clock,
+    )
+}
 
 internal fun meteredDialogPolicy(
     error: Throwable,
@@ -91,7 +143,11 @@ internal fun meteredDialogPolicy(
     error is ScanRepository.ProRequiredException ->
         // A zero allowance: today that is a guest asking for an account-only option.
         MeteredDialogPolicy(
-            title = R.string.metered_pro_active_unavailable_title,
+            title = if (error.feature == ScanRepository.MeteredFeature.FRONTIER_ANALYSIS) {
+                R.string.metered_unavailable_title_frontier
+            } else {
+                R.string.metered_pro_active_unavailable_title
+            },
             message = R.string.metered_unavailable_body,
             offerPro = false,
             remaining = error.remaining?.takeIf { it >= 0 },
@@ -100,14 +156,19 @@ internal fun meteredDialogPolicy(
             icon = R.drawable.ic_lock,
             offerSignIn = true,
         )
-    error is ScanRepository.QuotaExhaustedException ->
+    error is ScanRepository.QuotaExhaustedException -> {
+        val copy = error.feature.limitCopy()
         MeteredDialogPolicy(
-            title = R.string.metered_quota_title,
-            message = R.string.metered_quota_body,
+            title = copy.title,
+            message = copy.body,
             offerPro = false,
             remaining = error.remaining.takeIf { it >= 0 },
             resetAt = error.resetAt.trim().takeIf(String::isNotEmpty),
+            icon = copy.icon,
+            offerSignIn = error.guest,
+            hint = R.string.metered_quota_guest_hint.takeIf { error.guest },
         )
+    }
     else -> null
 }
 

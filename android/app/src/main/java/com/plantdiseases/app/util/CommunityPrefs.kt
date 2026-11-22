@@ -3,14 +3,15 @@ package com.plantdiseases.app.util
 import android.content.Context
 
 /**
- * Opt-in state for the community scan corpus.
+ * Community membership flag (sharing on).
  *
- * Default is OFF: a fresh install neither contributes nor pulls community data
- * until the user opts in with Profile's "Share scans with the community"
- * switch. Turning it on needs an account and ``ACCESS_COARSE_LOCATION`` (so
- * scans can be grouped by area); nothing is shared before that. Turning it off
- * (there, or "leave" on the community map) stops new uploads;
- * delete-my-contributions still clears any rows already shared.
+ * Default is OFF: a fresh install neither contributes nor reads area-scoped
+ * community data. There is no separate sharing switch: joining the community
+ * (`ui/community/CommunityJoin`, offered by the map and by nearby scans on a
+ * result) grants coarse location and turns this on, so the user's accepted
+ * scans are shared while signed in. "Leave" on the community map turns it off
+ * and stops new uploads; delete-my-contributions still clears any rows already
+ * shared.
  */
 object CommunityPrefs {
     private const val PREFS_NAME = "plantdiseases_community"
@@ -32,7 +33,7 @@ object CommunityPrefs {
         OpinionPrefs.setNotificationsEnabled(context, enabled)
     }
 
-    /** Opt the user into community features from an in-context "Enable" tap. */
+    /** Turns membership on; [com.plantdiseases.app.ui.community.CommunityJoin] is the caller. */
     fun enable(context: Context) = setUploadsEnabled(context, true)
 
     private fun prefs(context: Context) = context.applicationContext

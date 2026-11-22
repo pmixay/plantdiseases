@@ -260,7 +260,7 @@ class AnalysisActivity : AppCompatActivity() {
                         TelemetryReporter.report("analyze", "quota_denied", family = family.id)
                         showError(
                             getString(MeteredAccessUi.title(error)),
-                            getString(MeteredAccessUi.message(error)),
+                            MeteredAccessUi.body(this@AnalysisActivity, error),
                         )
                         MeteredAccessUi.showDialog(this@AnalysisActivity, error)
                     }

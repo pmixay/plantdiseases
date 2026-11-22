@@ -380,54 +380,6 @@
                     android:layout_marginVertical="@dimen/space_md"
                     android:background="@color/divider" />
 
-                <!-- Community sharing opt-in: adds the user's server-checked
-                     scans to the community map and popular plants. Turning it
-                     on needs an account and coarse location (ProfileFragment). -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/community_share_title"
-                            android:textAppearance="@style/TextAppearance.App.Title"
-                            android:accessibilityHeading="true" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/community_share_subtitle"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface"
-                            android:lineSpacingExtra="1dp" />
-
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_community_share"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:contentDescription="@string/community_share_title" />
-
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_md"
-                    android:background="@color/divider" />
-
 
                 <LinearLayout
                     android:layout_width="match_parent"

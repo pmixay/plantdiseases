@@ -435,7 +435,7 @@ class CarePlanCardView @JvmOverloads constructor(
         detailsContainer.visibility = View.GONE
     }
 
-    fun showError(onRetry: () -> Unit) {
+    fun showError(onRetry: () -> Unit, message: CharSequence? = null) {
         onRetryClick = onRetry
         resetDetailsExpansion()
         loadingView.visibility = View.GONE
@@ -447,7 +447,7 @@ class CarePlanCardView @JvmOverloads constructor(
         detailsContainer.visibility = View.GONE
         // Reset error-state text in case a previous showAwaitingScan() call
         // overrode it on this same instance.
-        errorBody.text = context.getString(R.string.care_plan_unavailable)
+        errorBody.text = message ?: context.getString(R.string.care_plan_unavailable)
         retryButton.text = context.getString(R.string.care_plan_retry)
         errorView.visibility = View.VISIBLE
     }

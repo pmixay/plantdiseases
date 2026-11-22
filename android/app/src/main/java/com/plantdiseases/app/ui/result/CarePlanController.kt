@@ -104,7 +104,13 @@ class CarePlanController(
                     onApplyToReminders = { applied -> applyToReminders(scan, applied) },
                 )
             }.onFailure { error ->
-                view.showError(onRetry = { bind(scan, repository, isRu) })
+                // A used-up daily allowance names itself on the card too.
+                val limit = if (MeteredAccessUi.handles(error)) {
+                    activity.getString(MeteredAccessUi.title(error))
+                } else {
+                    null
+                }
+                view.showError(onRetry = { bind(scan, repository, isRu) }, message = limit)
                 MeteredAccessUi.showDialog(activity, error)
             }
         }

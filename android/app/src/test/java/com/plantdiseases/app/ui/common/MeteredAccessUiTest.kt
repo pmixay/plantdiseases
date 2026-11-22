@@ -149,6 +149,51 @@ class MeteredAccessUiTest {
     }
 
     @Test
+    fun `each feature names the allowance that ran out`() {
+        val expected = mapOf(
+            ScanRepository.MeteredFeature.ANALYSIS to
+                Triple(R.string.metered_quota_title_analysis, R.string.metered_quota_body_analysis, R.drawable.ic_scan),
+            ScanRepository.MeteredFeature.FRONTIER_ANALYSIS to
+                Triple(R.string.metered_quota_title_frontier, R.string.metered_quota_body_frontier, R.drawable.ic_sparkle),
+            ScanRepository.MeteredFeature.IDENTIFICATION to
+                Triple(R.string.metered_quota_title_identify, R.string.metered_quota_body_identify, R.drawable.ic_search),
+            ScanRepository.MeteredFeature.CHAT to
+                Triple(R.string.metered_quota_title_chat, R.string.metered_quota_body_chat, R.drawable.ic_doctor_chat),
+            ScanRepository.MeteredFeature.CARE_PLAN to
+                Triple(R.string.metered_quota_title_care_plan, R.string.metered_quota_body_care_plan, R.drawable.ic_care),
+        )
+        expected.forEach { (feature, copy) ->
+            val policy = requireNotNull(
+                meteredDialogPolicy(
+                    ScanRepository.QuotaExhaustedException("free", 5, 0, "2026-09-01T00:00:00Z", feature),
+                ),
+            )
+            assertEquals(feature.name, copy.first, policy.title)
+            assertEquals(feature.name, copy.second, policy.message)
+            assertEquals(feature.name, copy.third, policy.icon)
+        }
+    }
+
+    @Test
+    fun `a guest who runs out is told signing in gives more`() {
+        val policy = requireNotNull(
+            meteredDialogPolicy(
+                ScanRepository.QuotaExhaustedException(
+                    plan = "free",
+                    limit = 5,
+                    remaining = 0,
+                    resetAt = "2026-09-01T00:00:00Z",
+                    feature = ScanRepository.MeteredFeature.CHAT,
+                    guest = true,
+                ),
+            ),
+        )
+
+        assertTrue(policy.offerSignIn)
+        assertEquals(R.string.metered_quota_guest_hint, policy.hint)
+    }
+
+    @Test
     fun `reset timestamp is localized in the device zone`() {
         val raw = "2026-09-01T00:30:00Z"
         val zone = ZoneId.of("Europe/Moscow")

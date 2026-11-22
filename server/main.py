@@ -127,6 +127,9 @@ try:
         actor_blocks as community_actor_blocks,
     )
     from .community import (
+        anonymous_popular_snapshot as community_anonymous_popular_snapshot,
+    )
+    from .community import (
         block_content_author as community_block_content_author,
     )
     from .community import (
@@ -188,6 +191,9 @@ try:
     )
     from .community import (
         record_analysis_token as community_record_analysis_token,
+    )
+    from .community import (
+        record_anonymous_scan as community_record_anonymous_scan,
     )
     from .community import (
         record_content_report as community_record_content_report,
@@ -367,6 +373,9 @@ except ImportError:
         actor_blocks as community_actor_blocks,
     )
     from community import (
+        anonymous_popular_snapshot as community_anonymous_popular_snapshot,
+    )
+    from community import (
         block_content_author as community_block_content_author,
     )
     from community import (
@@ -428,6 +437,9 @@ except ImportError:
     )
     from community import (
         record_analysis_token as community_record_analysis_token,
+    )
+    from community import (
+        record_anonymous_scan as community_record_anonymous_scan,
     )
     from community import (
         record_content_report as community_record_content_report,
@@ -1103,10 +1115,10 @@ async def _optional_account(request: Request) -> AccountPrincipal | None:
 # deliberately use the app without an account. They are never persisted.
 _GUEST_FEATURE_LIMITS = {
     "gamma_analysis": max(0, get_int("GUEST_GAMMA_ANALYSIS_DAILY_QUOTA", 5)),
-    "frontier_analysis": 0,
+    "frontier_analysis": max(0, get_int("GUEST_FRONTIER_ANALYSIS_DAILY_QUOTA", 1)),
     "plant_identification": max(0, get_int("GUEST_IDENTIFY_DAILY_QUOTA", 10)),
-    "ai_doctor": max(0, get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 3)),
-    "care_plan": max(0, get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 5)),
+    "ai_doctor": max(0, get_int("GUEST_AI_DOCTOR_DAILY_QUOTA", 5)),
+    "care_plan": max(0, get_int("GUEST_CARE_PLAN_DAILY_QUOTA", 10)),
 }
 _guest_feature_lock = threading.Lock()
 _guest_feature_counts: dict[tuple[int, str, str], int] = {}
@@ -2782,6 +2794,16 @@ def _sha256_hex(data: bytes) -> str:
 # ── Consent-gated, de-identified model-improvement capture ───────────
 
 
+def _record_popular_contribution(species: str | None, disease: str) -> None:
+    """Count one accepted diagnosis in the anonymous worldwide popularity
+    tally (species + class only; see community.record_anonymous_scan).
+    Fail-soft: never affects the response."""
+    try:
+        community_record_anonymous_scan(species, disease)
+    except Exception:  # noqa: BLE001 - background bookkeeping only
+        logger.warning("Popular tally update failed")
+
+
 def _record_training_candidate(
     image: Image.Image,
     feedback_receipt: str,
@@ -3354,13 +3376,6 @@ async def _analyze_image_admitted(
                    f"Minimum dimension: {MIN_IMAGE_DIMENSION}px - please retake the photo.",
         )
 
-    # Reject malformed/unsupported photos before spending a user's allowance,
-    # then reserve exactly one metered operation before cache or inference.
-    await _authorize_metered_feature(
-        request,
-        feature=("frontier_analysis" if family == "frontier" else "gamma_analysis"),
-    )
-
     # Same-photo short-circuit. The hash is over the raw upload bytes,
     # not the decoded pixels, so even a re-encode produces a fresh
     # entry (which is the right call: re-encoded photos can differ
@@ -3443,6 +3458,15 @@ async def _analyze_image_admitted(
                 consent_version=consent_version,
             )
         return JSONResponse(content=cached_payload)
+
+    # Only uncached work spends a daily allowance: a repeated photo is served
+    # from the cache above for free. Malformed or unsupported photos were
+    # rejected earlier, so exactly one metered operation is reserved here,
+    # before inference.
+    await _authorize_metered_feature(
+        request,
+        feature=("frontier_analysis" if family == "frontier" else "gamma_analysis"),
+    )
 
     # A first-time diagnosis also offers a best-effort PlantNet species block.
     # That is a real vendor identification call, so it shares the *same*
@@ -3612,6 +3636,14 @@ async def _analyze_image_admitted(
             model_version=model_version,
             result=copy.deepcopy(result),
             consent_version=consent_version,
+        )
+    # Every user with the onboarding consent counts towards the worldwide
+    # popular lists, with or without location: one anonymous species+class
+    # tally per fresh, accepted diagnosis (repeats of a photo are served from
+    # the cache above and are not counted again).
+    if training_consent and not abstained:
+        background_tasks.add_task(
+            _record_popular_contribution, auto_best.get("scientific_name"), class_name,
         )
     return JSONResponse(content=response_payload)
 
@@ -4696,6 +4728,16 @@ async def _warm_placeholder_images() -> None:
                 _popular_cache.move_to_end(key)
 
 
+def _worldwide_snapshot() -> dict:
+    """Worldwide popularity: the anonymous tally of every consented, accepted
+    diagnosis (community members included, location or not); the community
+    corpus only while the tally is still empty (e.g. right after deploy)."""
+    anonymous = community_anonymous_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+    if anonymous.get("top_species") or anonymous.get("top_diseases"):
+        return anonymous
+    return community_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+
+
 def _build_popular_bundle(
     country: str | None,
     city: str | None,
@@ -4727,7 +4769,7 @@ def _build_popular_bundle(
         if _has(s):
             snap, source = s, "country"
     if snap is None:
-        s = community_popular_snapshot(limit=_POPULAR_MAX_CARDS)  # all regions
+        s = _worldwide_snapshot()
         if _has(s):
             snap, source = s, "worldwide"
 
@@ -4738,7 +4780,7 @@ def _build_popular_bundle(
     # aggregate instead so the label matches the data. (Worldwide always has
     # ≥ the local rows, so this never empties a populated feed.)
     if source == "nearby" and not country and not region_label:
-        s = community_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+        s = _worldwide_snapshot()
         if _has(s):
             snap, source, region_label = s, "worldwide", None
 

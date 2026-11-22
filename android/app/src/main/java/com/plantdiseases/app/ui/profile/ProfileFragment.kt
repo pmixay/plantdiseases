@@ -1,7 +1,5 @@
 package com.plantdiseases.app.ui.profile
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
@@ -49,7 +47,6 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ProfileAvatarStore
@@ -108,18 +105,6 @@ class ProfileFragment : Fragment() {
 
     private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
         completeAvatarEdit(result)
-    }
-
-    // Community sharing needs coarse location (scans are grouped by area).
-    private val communityLocationPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            enableCommunitySharing()
-        } else {
-            _binding?.switchCommunityShare?.isChecked = false
-            Toast.makeText(requireContext(), R.string.community_share_needs_location, Toast.LENGTH_LONG).show()
-        }
     }
 
     // Count-up animators, cancelled in onDestroyView so they don't keep
@@ -201,7 +186,6 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
-        setupCommunityShareToggle()
         setupPrivacyConsentToggles()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
@@ -581,40 +565,6 @@ class ProfileFragment : Fragment() {
         sw.setOnCheckedChangeListener { _, isChecked ->
             AutosavePrefs.setEnabled(requireContext(), isChecked)
         }
-    }
-
-    /** Community sharing opt-in. Off by default; turning it on needs an
-     *  account (uploads are signed) and coarse location (scans are grouped by
-     *  area), the same consent the old in-context prompt asked for. */
-    private fun setupCommunityShareToggle() {
-        val sw = binding.switchCommunityShare
-        sw.isChecked = CommunityPrefs.uploadsEnabled(requireContext())
-        sw.setOnCheckedChangeListener { _, isChecked ->
-            when {
-                !isChecked -> CommunityPrefs.setUploadsEnabled(requireContext(), false)
-                CommunityPrefs.uploadsEnabled(requireContext()) -> Unit
-                authRepository.state.value !is AuthState.Authenticated -> {
-                    sw.isChecked = false
-                    Toast.makeText(requireContext(), R.string.community_share_needs_account, Toast.LENGTH_LONG).show()
-                    if (BuildConfig.ACCOUNT_UI_ENABLED) {
-                        startActivity(AccountActivity.intent(requireContext()))
-                    }
-                }
-                hasCoarseLocation() -> enableCommunitySharing()
-                else -> communityLocationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-            }
-        }
-    }
-
-    private fun hasCoarseLocation(): Boolean =
-        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
-
-    private fun enableCommunitySharing() {
-        val ctx = context ?: return
-        CommunityPrefs.enable(ctx)
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(ctx)
-        _binding?.switchCommunityShare?.isChecked = true
     }
 
     private fun setupPrivacyConsentToggles() {

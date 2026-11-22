@@ -1,11 +1,14 @@
 package com.plantdiseases.app.ui.result
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
@@ -21,9 +24,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Owns every community-facing surface on the result screen: the similar-scans
- * carousel (country/global scope resolved by the server), the second-opinion
- * ask/wait/view control, and the activity readout on the user's own shared
- * scan.
+ * carousel (country/global scope resolved by the server; scans from the user's
+ * own area once they join the community), the second-opinion ask/wait/view
+ * control, and the activity readout on the user's own shared scan.
  */
 class CommunityController(
     private val activity: AppCompatActivity,
@@ -31,6 +34,7 @@ class CommunityController(
     private val repository: ScanRepository,
     private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
+    private val communityJoin: CommunityJoin,
 ) {
 
     // Remembered so onResume() can re-probe the request/reply state after
@@ -185,11 +189,10 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        // Default state: hidden until we know what to show. When community is
-        // OFF we render only the in-context opt-in (below) and fetch NO scans;
-        // when ON we fetch and show the read-only similar-scans strip.
+        // Default state: hidden until we know what to show. Members get the
+        // nearby strip; everyone else a blurred preview under the join button.
         card.visibility = View.GONE
-        rv.visibility = View.GONE
+        binding.similarStrip.visibility = View.GONE
         empty.visibility = View.GONE
         if (repository.isAbstainedScan(scan)) return
 
@@ -242,9 +245,16 @@ class CommunityController(
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
 
-        // Public community reads remain available to guests. Sharing and
-        // opinions are gated separately at their explicit mutation buttons.
-        fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+        // Public community reads remain available to guests and non-members
+        // (country/global scope). Scans from the user's own area need location,
+        // which comes with joining the community, so that is an explicit tap.
+        val render = { fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu) }
+        val join = View.OnClickListener {
+            communityJoin.ensureMember { joined -> if (joined) render() }
+        }
+        binding.btnSimilarJoin.setOnClickListener(join)
+        binding.similarLockOverlay.setOnClickListener(join)
+        render()
     }
 
     /**
@@ -260,13 +270,19 @@ class CommunityController(
         isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
-        val rv = binding.rvSimilarScans
+        val strip = binding.similarStrip
         val empty = binding.tvSimilarEmpty
+        val member = CommunityJoin.isMember(activity)
+        setPreviewLocked(!member)
         activity.lifecycleScope.launch {
-            // Best-effort coarse location for the nearby scope; if it's
-            // unavailable (e.g. the user never granted location), the server
-            // widens to country/global scope, so the carousel still fills.
-            val region = runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
+            // Members send their coarse location for the nearby scope. Without
+            // it the server widens to country/global scope, so the carousel
+            // still fills.
+            val region = if (member) {
+                runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
+            } else {
+                null
+            }
             repository.communityNearby(
                 country = region?.country,
                 region = region?.locality,
@@ -296,7 +312,7 @@ class CommunityController(
                         activity.getString(R.string.similar_scans_subtitle_region, label)
                     empty.text = activity.getString(R.string.similar_scans_empty)
                     empty.visibility = View.VISIBLE
-                    rv.visibility = View.GONE
+                    strip.visibility = View.GONE
                 } else {
                     // Count what the strip actually SHOWS, not the regional
                     // all-disease total.
@@ -306,7 +322,7 @@ class CommunityController(
                         items.size,
                         label,
                     )
-                    rv.visibility = View.VISIBLE
+                    strip.visibility = View.VISIBLE
                     empty.visibility = View.GONE
                     adapter.submit(items)
                 }
@@ -315,5 +331,29 @@ class CommunityController(
                 card.visibility = View.GONE
             }
         }
+    }
+
+    /**
+     * Non-members see the strip as a blurred preview under the join button:
+     * no taps, scrolling or screen-reader focus on the cells; a tap anywhere
+     * on it asks to join, like the button. Members see it plain.
+     */
+    private fun setPreviewLocked(locked: Boolean) {
+        val rv = binding.rvSimilarScans
+        val radius = PREVIEW_BLUR_DP * activity.resources.displayMetrics.density
+        rv.setRenderEffect(
+            if (locked) RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP) else null,
+        )
+        rv.importantForAccessibility = if (locked) {
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        } else {
+            View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        }
+        binding.similarLockOverlay.visibility = if (locked) View.VISIBLE else View.GONE
+        binding.btnSimilarJoin.visibility = if (locked) View.VISIBLE else View.GONE
+    }
+
+    private companion object {
+        const val PREVIEW_BLUR_DP = 12f
     }
 }

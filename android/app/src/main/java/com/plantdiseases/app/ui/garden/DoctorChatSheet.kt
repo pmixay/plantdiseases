@@ -373,7 +373,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     },
                     onFailure = { err ->
                         if (MeteredAccessUi.showDialog(requireContext(), err)) {
-                            getString(MeteredAccessUi.message(err))
+                            getString(MeteredAccessUi.title(err))
                         } else {
                             formatChatNetworkError(err)
                         }

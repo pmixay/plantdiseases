@@ -32,6 +32,7 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
@@ -129,6 +130,9 @@ class ResultActivity : AppCompatActivity() {
         )
     }
     private val share by lazy { ShareController(this, scanRepository) }
+
+    // Registers a permission launcher, so it is built with the activity.
+    private val communityJoin = CommunityJoin(this)
     private val community by lazy {
         CommunityController(
             this,
@@ -136,6 +140,7 @@ class ResultActivity : AppCompatActivity() {
             scanRepository,
             authRepository,
             connectivity,
+            communityJoin,
         )
     }
 

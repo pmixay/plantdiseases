@@ -155,13 +155,13 @@ def test_free_entitlements_create_only_an_opaque_billing_identity(db_engine):
     assert isinstance(result["billing_external_id"], uuid.UUID)
     limits = {item["feature"]: item["daily_limit"] for item in result["quotas"]}
     assert limits == {
-        "gamma_analysis": 5,
-        "frontier_analysis": 1,
-        "plant_identification": 1,
-        "ai_doctor": 3,
-        "care_plan": 5,
+        "gamma_analysis": 15,
+        "frontier_analysis": 5,
+        "plant_identification": 30,
+        "ai_doctor": 15,
+        "care_plan": 30,
     }
-    assert result["quota_policy_version"] == "launch-2026-11-v1"
+    assert result["quota_policy_version"] == "launch-2026-11-v2"
 
 
 def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
@@ -180,7 +180,7 @@ def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
         feature="gamma_analysis",
         request_id=request_id,
     )
-    for _ in range(4):
+    for _ in range(14):
         service.consume(
             actor_id=current.community_actor_id,
             feature="gamma_analysis",
@@ -191,11 +191,14 @@ def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
         feature="gamma_analysis",
         request_id=uuid.uuid4(),
     )
-    frontier = service.consume(
-        actor_id=current.community_actor_id,
-        feature="frontier_analysis",
-        request_id=uuid.uuid4(),
-    )
+    frontier = [
+        service.consume(
+            actor_id=current.community_actor_id,
+            feature="frontier_analysis",
+            request_id=uuid.uuid4(),
+        )
+        for _ in range(5)
+    ]
     frontier_denied = service.consume(
         actor_id=current.community_actor_id,
         feature="frontier_analysis",
@@ -205,16 +208,16 @@ def test_free_quota_is_atomic_in_shape_and_idempotent_for_retries(db_engine):
     assert first["replayed"] is False
     assert retry["replayed"] is True
     assert {**first, "replayed": True} == retry
-    assert first["remaining"] == 4
+    assert first["remaining"] == 14
     assert denied["allowed"] is False
     assert denied["reason"] == "quota_exhausted"
-    # Free accounts get one frontier analysis a day, then the ordinary limit.
-    assert frontier["allowed"] is True
+    # Signed-in accounts get five frontier analyses a day, then the limit.
+    assert all(item["allowed"] for item in frontier)
     assert frontier_denied["allowed"] is False
     assert frontier_denied["reason"] == "quota_exhausted"
     with repository.transaction() as transaction:
-        assert transaction.scalar(select(func.sum(FeatureUsage.used))) == 6
-        assert transaction.scalar(select(func.count(FeatureUsageReceipt.id))) == 8
+        assert transaction.scalar(select(func.sum(FeatureUsage.used))) == 20
+        assert transaction.scalar(select(func.count(FeatureUsageReceipt.id))) == 22
 
 
 def test_purchase_requires_exact_server_issued_external_account_id(db_engine):

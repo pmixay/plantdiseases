@@ -173,7 +173,7 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     )
     assert account["RUSTORE_ALLOW_SANDBOX"] == "${RUSTORE_ALLOW_SANDBOX:-false}"
     assert account["ENTITLEMENT_QUOTA_POLICY_VERSION"] == (
-        "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v1}"
+        "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v2}"
     )
     assert "beta_account_runtime" in account["ACCOUNT_DATABASE_URL"]
     assert "beta_account_migrator" in services["beta-account-migrate"]["environment"][

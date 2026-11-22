@@ -43,9 +43,9 @@ _ENTITLEMENT_FEATURES = (
     "ai_doctor",
     "care_plan",
 )
-_DEFAULT_FREE_DAILY_LIMITS = (5, 1, 1, 3, 5)
+_DEFAULT_FREE_DAILY_LIMITS = (15, 5, 30, 15, 30)
 _DEFAULT_PRO_DAILY_LIMITS = (30, 3, 3, 15, 20)
-_DEFAULT_QUOTA_POLICY_VERSION = "launch-2026-11-v1"
+_DEFAULT_QUOTA_POLICY_VERSION = "launch-2026-11-v2"
 
 
 def _is_internal_service_host(hostname: str) -> bool:

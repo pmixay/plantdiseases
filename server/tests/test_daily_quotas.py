@@ -104,18 +104,21 @@ def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
 
 
 def test_care_plan_past_quota_drops_only_the_llm_polish(client, m, monkeypatch):
-    seen: list[bool] = []
+    seen: list[tuple[bool, bool]] = []
 
     def fake_plan(**kwargs):
-        seen.append(kwargs["polish"])
+        seen.append((kwargs["polish"], kwargs.get("cached_polish_only", False)))
         return {"summary_md": "rules"}
 
     monkeypatch.setattr(m, "generate_care_plan", fake_plan)
+    monkeypatch.setattr(m, "openrouter_configured", lambda: True)
     monkeypatch.setattr(m._care_plan_quota, "limit", 1)
     for _ in range(2):
         r = client.post("/api/care-plan", json={"disease": "leaf_spot"})
         assert r.status_code == 200, r.text
-    assert seen == [True, False]
+    # Each request first looks for a free (cached) summary; only the first
+    # one, still inside the per-IP allowance, goes on to a paid polish.
+    assert seen == [(True, True), (True, False), (True, True)]
 
 
 def test_species_ai_quota_is_shared_and_graceful(client, m, monkeypatch):

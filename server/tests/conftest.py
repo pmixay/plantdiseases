@@ -123,6 +123,13 @@ def _reset_abuse_counters():
 
     # Background photo warming would make real Wikimedia requests from tests.
     server_main.plant_photo_warm = lambda urls: None
+    # The anonymous popularity tally is written by every accepted analysis;
+    # start each test from an empty one so popular-feed tests stay isolated.
+    import community as community_module
+
+    community_module.init_db()
+    with community_module._connect() as conn:
+        conn.execute("DELETE FROM popular_scan_counts")
     for quota in server_main._DAILY_QUOTAS:
         quota.reset()
     with server_main._admission_lock:

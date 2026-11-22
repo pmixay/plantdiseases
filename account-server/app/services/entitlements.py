@@ -47,11 +47,11 @@ FEATURE_ORDER = (
     "care_plan",
 )
 DEFAULT_FREE_LIMITS: Mapping[str, int] = {
-    "gamma_analysis": 5,
-    "frontier_analysis": 1,
-    "plant_identification": 1,
-    "ai_doctor": 3,
-    "care_plan": 5,
+    "gamma_analysis": 15,
+    "frontier_analysis": 5,
+    "plant_identification": 30,
+    "ai_doctor": 15,
+    "care_plan": 30,
 }
 DEFAULT_PRO_LIMITS: Mapping[str, int] = {
     "gamma_analysis": 30,
@@ -93,7 +93,7 @@ class QuotaPolicy:
     @classmethod
     def default(cls) -> QuotaPolicy:
         return cls(
-            version="launch-2026-11-v1",
+            version="launch-2026-11-v2",
             free=dict(DEFAULT_FREE_LIMITS),
             pro=dict(DEFAULT_PRO_LIMITS),
         )

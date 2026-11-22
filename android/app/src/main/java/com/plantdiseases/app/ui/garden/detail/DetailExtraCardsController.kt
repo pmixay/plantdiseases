@@ -156,14 +156,22 @@ class DetailExtraCardsController(
                     )
                     maybeStartTreatmentPlan(plant, latestScan, classKey, fallback)
                 } else {
-                    card.showError(onRetry = {
-                        val replacement = buildCarePlanSlot(plant, acceptedScans)
-                        val idx = content.indexOfChild(card)
-                        if (idx >= 0) {
-                            content.removeViewAt(idx)
-                            content.addView(replacement, idx)
-                        }
-                    })
+                    val limit = if (MeteredAccessUi.handles(error)) {
+                        activity.getString(MeteredAccessUi.title(error))
+                    } else {
+                        null
+                    }
+                    card.showError(
+                        onRetry = {
+                            val replacement = buildCarePlanSlot(plant, acceptedScans)
+                            val idx = content.indexOfChild(card)
+                            if (idx >= 0) {
+                                content.removeViewAt(idx)
+                                content.addView(replacement, idx)
+                            }
+                        },
+                        message = limit,
+                    )
                 }
             }
         }

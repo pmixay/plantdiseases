@@ -435,10 +435,10 @@
     <!-- Community scans map -->
     <string name="community_map_title">Карта сообщества</string>
     <string name="community_map_near_me">Рядом со мной</string>
-    <string name="nearby_action_disable">Не делиться сканами</string>
-    <string name="community_disable_title">Перестать делиться сканами?</string>
-    <string name="community_disable_body">Новые сканы не будут публиковаться, и мнения по ним приходить не будут. Уже опубликованные сканы останутся в сообществе.</string>
-    <string name="community_disable_confirm">Перестать</string>
+    <string name="nearby_action_disable">Выйти из сообщества</string>
+    <string name="community_disable_title">Выйти из сообщества?</string>
+    <string name="community_disable_body">Новые сканы не будут публиковаться, мнения по ним приходить не будут, а карта закроется. Уже опубликованные сканы останутся в сообществе. Вступить снова можно с карты.</string>
+    <string name="community_disable_confirm">Выйти</string>
     <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
     <string name="community_map_truncated">Показаны последние сканы - приблизьте, чтобы увидеть все</string>
     <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
@@ -870,10 +870,11 @@
 
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="profile_guest_name">Гость</string>
-    <string name="community_share_title">Делиться сканами с сообществом</string>
-    <string name="community_share_subtitle">Ваши сканы (фото, диагноз и примерный район) появятся на карте сообщества и в популярных растениях.</string>
-    <string name="community_share_needs_account">Войдите, чтобы делиться сканами с сообществом</string>
-    <string name="community_share_needs_location">Местоположение нужно, чтобы группировать сканы по району; без него обмен выключен</string>
+    <string name="community_join_title">Вступите в сообщество</string>
+    <string name="community_join_body">Смотрите сканы рядом с вами на карте и под результатами. Участники делятся примерным местоположением, а их сканы (фото, диагноз и район) публикуются, пока они вошли в аккаунт. Выйти можно в меню карты.</string>
+    <string name="community_join_cta">Вступить</string>
+    <string name="community_join_needs_location">Чтобы вступить в сообщество, нужен доступ к местоположению</string>
+    <string name="similar_scans_join_cta">Показать сканы рядом</string>
     <string name="autosave_title">Автосохранение фото в галерею</string>
     <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>
 
@@ -1418,14 +1419,26 @@
 <string name="pro_profile_body">Полное лунное планирование и больше возможностей облачного ухода.</string>
 <string name="pro_profile_manage">Посмотреть PRO</string>
 <string name="metered_pro_required_title">Для этой облачной функции нужен PRO</string>
-<string name="metered_pro_required_body">Текущее фото или текст останутся на этом экране. Откройте PRO для доступа к функции или продолжайте пользоваться бесплатными инструментами.</string>
+<string name="metered_pro_required_body">Откройте PRO для доступа к функции или продолжайте пользоваться бесплатными инструментами.</string>
 <string name="metered_pro_active_unavailable_title">Облачная функция сейчас недоступна</string>
-<string name="metered_pro_required_active_body">PRO уже активен, дополнительное повышение тарифа не требуется. Текущие данные сохранены; попробуйте позже.</string>
+<string name="metered_pro_required_active_body">PRO уже активен, дополнительное повышение тарифа не требуется. Попробуйте позже.</string>
 <string name="metered_quota_title">Дневной лимит исчерпан</string>
-<string name="metered_quota_free_body">Бесплатный лимит на сегодня исчерпан. Текущие данные сохранены: попробуйте после обновления дневного лимита или откройте PRO с повышенными лимитами.</string>
-<string name="metered_quota_pro_body">Лимит добросовестного использования PRO на сегодня исчерпан. Текущие данные сохранены; попробуйте после обновления дневного лимита.</string>
-<string name="metered_quota_body">Лимит этой функции на сегодня исчерпан. Текущие данные сохранены.</string>
-<string name="metered_unavailable_body">Войдите в аккаунт PlantDiseases, чтобы получить дневной лимит для этой функции. Текущие данные сохранены.</string>
+<string name="metered_quota_free_body">Бесплатный лимит на сегодня исчерпан. Попробуйте после обновления дневного лимита или откройте PRO с повышенными лимитами.</string>
+<string name="metered_quota_pro_body">Лимит добросовестного использования PRO на сегодня исчерпан. Попробуйте после обновления дневного лимита.</string>
+<string name="metered_quota_body">Лимит этой функции на сегодня исчерпан.</string>
+<string name="metered_unavailable_body">Войдите в аккаунт PlantDiseases, чтобы получить дневной лимит для этой функции.</string>
+    <string name="metered_quota_title_analysis">Сканы Gamma на сегодня закончились</string>
+    <string name="metered_quota_body_analysis">Aqua работает на телефоне без дневного лимита.</string>
+    <string name="metered_quota_title_frontier">Сканы Frontier на сегодня закончились</string>
+    <string name="metered_quota_body_frontier">Можно продолжать сканировать с Gamma или с Aqua на телефоне.</string>
+    <string name="metered_quota_title_identify">Определения растений на сегодня закончились</string>
+    <string name="metered_quota_body_identify">Сканы болезней работают. Определение вида вернётся после обновления лимита.</string>
+    <string name="metered_quota_title_chat">Вопросы ИИ-врачу на сегодня закончились</string>
+    <string name="metered_quota_body_chat">Шаги лечения из вашего диагноза по-прежнему доступны.</string>
+    <string name="metered_quota_title_care_plan">Новые планы ухода на сегодня закончились</string>
+    <string name="metered_quota_body_care_plan">Уже открытые планы и напоминания продолжают работать.</string>
+    <string name="metered_quota_guest_hint">После входа в аккаунт дневной лимит больше.</string>
+    <string name="metered_unavailable_title_frontier">Для Frontier нужен аккаунт</string>
     <string name="metered_reset_in_at">Обновится через %1$s, в %2$s</string>
     <string name="metered_duration_hours_minutes">%1$d ч %2$d мин</string>
     <string name="metered_duration_hours">%1$d ч</string>

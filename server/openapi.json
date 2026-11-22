@@ -463,7 +463,7 @@
     "/api/care-plan": {
       "post": {
         "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.",
+        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.\n\nOnly a fresh LLM polish spends the caller's daily care-plan allowance:\na cached polished summary and the rules-based plan cost nothing, so\nthey are served without touching it.",
         "operationId": "care_plan_endpoint_api_care_plan_post",
         "requestBody": {
           "content": {
