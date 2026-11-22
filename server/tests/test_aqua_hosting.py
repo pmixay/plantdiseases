@@ -43,21 +43,22 @@ def test_aqua_model_404_when_not_provisioned(client, monkeypatch, tmp_path):
 
 
 def test_aqua_manifest_and_model_when_provisioned(client, monkeypatch, tmp_path):
+    import routes_content
     blob = b"FAKE_TFLITE_BYTES_FOR_TEST" * 16
     (tmp_path / "aqua_classifier.tflite").write_bytes(blob)
     classes = _valid_classes()
     (tmp_path / "classes.json").write_text(json.dumps(classes))
     monkeypatch.setattr(server_main, "AQUA_STATIC_DIR", tmp_path)
-    server_main._aqua_model_sha256.cache_clear()
+    routes_content._aqua_model_sha256.cache_clear()
 
     m = client.get("/api/aqua/manifest").json()
     assert m["available"] is True
     assert m["version"] == "2.5.0"
     assert m["size_bytes"] == len(blob)
     assert m["sha256"] == hashlib.sha256(blob).hexdigest()
-    classes_sha = server_main._aqua_classes_sha256(classes)
+    classes_sha = routes_content._aqua_classes_sha256(classes)
     assert m["classes_sha256"] == classes_sha
-    assert m["bundle_sha256"] == server_main._aqua_bundle_sha256(m["sha256"], classes_sha)
+    assert m["bundle_sha256"] == routes_content._aqua_bundle_sha256(m["sha256"], classes_sha)
     assert m["bundle_schema_version"] == 1
     # The sidecar metadata the app needs to run the model rides along.
     assert m["classes"]["class_names"] == ["healthy", "leaf_spot"]
@@ -79,9 +80,10 @@ def test_aqua_manifest_unavailable_when_sidecar_missing(client, monkeypatch, tmp
 def test_aqua_manifest_rejects_sidecar_the_client_cannot_install(
     client, monkeypatch, tmp_path,
 ):
+    import routes_content
     (tmp_path / "aqua_classifier.tflite").write_bytes(b"model")
     monkeypatch.setattr(server_main, "AQUA_STATIC_DIR", tmp_path)
-    server_main._aqua_model_sha256.cache_clear()
+    routes_content._aqua_model_sha256.cache_clear()
 
     for mutation in ("resize", "semantics", "normalization", "family", "reserved"):
         classes = _valid_classes()

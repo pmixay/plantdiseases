@@ -79,6 +79,7 @@ try:
         deps,
         diseases_data,
         plant_photos,
+        popular_bundle,
         popular_plants,
         routes_assistant,
         routes_community,
@@ -113,6 +114,7 @@ except ImportError:
     import diseases_data
     import pipeline as pipeline_module
     import plant_photos
+    import popular_bundle
     import popular_plants
     import routes_assistant
     import routes_community
@@ -3758,264 +3760,11 @@ def _cached_image_response(
     return FileResponse(path, media_type=media_type, headers=headers)
 
 
-# Large source images (guide PNGs, full-res Wikimedia plant photos) are
-# downscaled + re-encoded to WebP once, lazily, into a sibling cache dir and
-# served instead: far fewer bytes for a visually identical phone-sized image.
-# The variant is keyed by the source file's SIZE (not mtime: a cache hit
-# touches the original's mtime for the LRU, which would otherwise force a
-# re-transcode on every request); a replaced source of a different size
-# regenerates it. WebP is decoded transparently by Glide on any app vintage
-# (it sniffs magic bytes, not the URL/extension), so this is backward
-# compatible with already-shipped clients.
-_WEBP_DIR_NAME = ".webp"
-_webp_lock = threading.Lock()
-_WEBP_MAX_SOURCE_SIDE = 16_384
-_WEBP_MAX_SOURCE_PIXELS = 20_000_000
-
-
-def _webp_source_dimensions_allowed(src: Path) -> bool | None:
-    """Return False only for a source that violates the decode-size policy.
-
-    ``None`` preserves the historical raw-file fallback for unrelated Pillow
-    failures. Oversized sources, including Pillow's decompression-bomb error,
-    must never be served as that fallback.
-    """
-    try:
-        with Image.open(src) as opened:
-            width, height = opened.size
-    except Image.DecompressionBombError:
-        return False
-    except Exception:  # noqa: BLE001 - caller may safely use the old fallback
-        return None
-    return (
-        width > 0
-        and height > 0
-        and max(width, height) <= _WEBP_MAX_SOURCE_SIDE
-        and width * height <= _WEBP_MAX_SOURCE_PIXELS
-    )
-
-
-def _webp_variant(
-    src: Path,
-    max_side: int,
-    quality: int,
-    after_write=None,
-) -> Path | None:
-    """Return a cached downscaled-WebP variant of ``src`` (``max_side`` px on
-    the longest edge, ``quality`` 0–100), generating it if stale.
-
-    Any failure (PIL hiccup, unwritable dir) returns ``None``. Callers may fall
-    back to the original after enforcing their own source-safety policy.
-    """
-    try:
-        out_dir = src.parent / _WEBP_DIR_NAME
-        # Key the variant on the source SIZE, not its mtime. plant_photos
-        # touches a cached original's mtime on every hit (its LRU signal), so an
-        # mtime-based freshness check would re-transcode on EVERY request and
-        # churn the served file's ETag. Size is stable across access-touch; a
-        # genuinely replaced source (different bytes ⇒ different size) still gets
-        # a fresh variant under a new name.
-        out = out_dir / f"{src.stem}.{src.stat().st_size}.webp"
-        if out.is_file():
-            return out
-        # One transcode at a time — two concurrent first requests for the
-        # same key must not interleave writes into the same target file.
-        with _webp_lock:
-            if out.is_file():
-                return out
-            out_dir.mkdir(parents=True, exist_ok=True)
-            with Image.open(src) as opened:
-                w, h = opened.size
-                if (
-                    w <= 0
-                    or h <= 0
-                    or max(w, h) > _WEBP_MAX_SOURCE_SIDE
-                    or w * h > _WEBP_MAX_SOURCE_PIXELS
-                ):
-                    raise ValueError("image dimensions exceed WebP source limit")
-                opened.load()
-                img = opened.convert("RGB")
-            scale = max_side / float(max(w, h))
-            if scale < 1.0:
-                img = img.resize(
-                    (max(1, int(w * scale)), max(1, int(h * scale))),
-                    Image.LANCZOS,
-                )
-            tmp = out.with_suffix(".webp.tmp")
-            img.save(tmp, format="WEBP", quality=quality, method=4)
-            tmp.replace(out)
-            if after_write is not None:
-                after_write()
-        return out
-    except Exception:  # noqa: BLE001 — fall back to the original
-        logger.warning("WebP transcode failed")
-        return None
-
-
-# Guide photos ship as large PNGs (80–565 KB of photographic content — the
-# worst case for PNG); 800 px is plenty for the in-app example strips.
-_GUIDE_WEBP_MAX_SIDE = 800
-_GUIDE_WEBP_QUALITY = 80
-
-
-def _guide_webp_variant(src: Path) -> Path | None:
-    return _webp_variant(src, _GUIDE_WEBP_MAX_SIDE, _GUIDE_WEBP_QUALITY)
-
-
-# Plant-photo proxy: this one URL feeds both the small home carousel and the
-# species-detail hero, so 1000 px keeps the hero crisp while still cutting a
-# multi-MB Wikimedia original to tens of KB. Config-driven so a deploy can tune
-# the bandwidth/quality trade-off without a code change.
-_PLANT_PHOTO_MAX_SIDE = config.get_int("PLANT_PHOTO_MAX_SIDE", 1000)
-_PLANT_PHOTO_QUALITY = config.get_int("PLANT_PHOTO_QUALITY", 80)
-
-
-# Cache the model digest by (path, mtime, size) so we hash the (multi-MB)
-# tflite once per provisioned file instead of on every manifest poll.
-# lru_cache is thread-safe and bounded (the previous hand-rolled dict had no
-# lock — concurrent manifest polls could interleave on it).
-@functools.lru_cache(maxsize=4)
-def _aqua_model_sha256(path: Path, mtime: float, size: int) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _valid_aqua_classes(meta: object) -> bool:
-    """Return whether an Aqua sidecar is installable by the Android runtime.
-
-    Keep this contract intentionally narrow and mirrored in
-    ``AquaModelManager.validClasses``.  Reporting a model as available with a
-    merely parseable sidecar causes a guaranteed client-side install failure,
-    so missing preprocessing or output semantics fail closed here.
-    """
-    if not isinstance(meta, dict):
-        return False
-    if any(
-        key in meta
-        for key in (
-            "_model_sha256",
-            "_classes_sha256",
-            "_bundle_sha256",
-            "_model_version",
-        )
-    ):
-        return False
-    names = meta.get("class_names")
-    if (
-        not isinstance(names, list)
-        or not names
-        or any(not isinstance(name, str) or not name or name.strip() != name for name in names)
-        or len(set(names)) != len(names)
-    ):
-        return False
-    if meta.get("model_family") != "aqua":
-        return False
-    version = meta.get("model_version")
-    if not isinstance(version, str) or not version.strip():
-        return False
-
-    training = meta.get("training")
-    if not isinstance(training, dict):
-        return False
-    img_size = training.get("img_size")
-    resize_ratio = training.get("eval_resize_ratio")
-    if isinstance(img_size, bool) or not isinstance(img_size, int) or not 1 <= img_size <= 4096:
-        return False
-    if (
-        isinstance(resize_ratio, bool)
-        or not isinstance(resize_ratio, (int, float))
-        or not math.isfinite(float(resize_ratio))
-        or not 1.0 <= float(resize_ratio) <= 4.0
-    ):
-        return False
-
-    inference = meta.get("inference")
-    if not isinstance(inference, dict):
-        return False
-    if (
-        inference.get("layout") != "NHWC"
-        or inference.get("tta") != "none"
-        or inference.get("output_semantics") != "logits"
-    ):
-        return False
-
-    def _valid_triple(key: str, *, positive: bool) -> bool:
-        values = inference.get(key)
-        if not isinstance(values, list) or len(values) != 3:
-            return False
-        for value in values:
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                return False
-            number = float(value)
-            if not math.isfinite(number) or (positive and number <= 0.0):
-                return False
-        return True
-
-    return _valid_triple("normalize_mean", positive=False) and _valid_triple(
-        "normalize_std", positive=True,
-    )
-
-
-def _aqua_classes_sha256(meta: dict) -> str:
-    """Hash the sidecar's JSON meaning, independent of whitespace/key order."""
-    canonical = json.dumps(
-        meta,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
-
-
-def _aqua_bundle_sha256(model_sha256: str, classes_sha256: str) -> str:
-    """Bind the model and semantic sidecar into one freshness identity."""
-    digest = hashlib.sha256()
-    digest.update(b"plantvision-aqua-bundle-v1\0")
-    digest.update(bytes.fromhex(model_sha256))
-    digest.update(bytes.fromhex(classes_sha256))
-    return digest.hexdigest()
-
-
-# --- /api/popular: personalized, short-cached popular-plants bundle ----
-# ``_popular_cache_key(...)`` -> (expiry_epoch, payload). The list is a
-# live community-scan aggregate, so the bundle is cached only briefly (and
-# served stale-while-revalidate) — new scans surface within the TTL instead of
-# being pinned for hours. The (static) per-species photos are NOT re-resolved
-# on a rebuild: they're served by the by-name /api/plant-photo proxy, which has
-# its own long-lived disk cache. So a short bundle TTL is cheap.
-_POPULAR_TTL_S = config.get_int("POPULAR_BUNDLE_TTL_SECONDS", 1800)
+# ``popular_bundle.popular_cache_key(...)`` -> (expiry_epoch, payload); see
+# popular_bundle.py for why the TTL is short.
 _popular_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _popular_lock = threading.Lock()
 _POPULAR_CACHE_MAX = 64
-
-
-# Both home carousels (popular plants + popular diseases) cap at 10 cards.
-_POPULAR_MAX_CARDS = 10
-
-# A placeholder (scan-less country) is cached only briefly so it flips to real
-# data within minutes of the first scan in that scope; real data keeps the
-# full TTL since aggregates move slowly.
-_POPULAR_PLACEHOLDER_TTL_S = config.get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
-
-
-def _popular_cache_key(
-    country: str | None, lat, lon, locale: str,
-) -> str:
-    """Cache key for one popular bundle scope.
-
-    Shared by the reader (:func:`popular_endpoint`) and the boot-time
-    pre-warm, which used to build the key by hand in a different shape and so
-    filed its warmed bundles under slots nothing could ever read."""
-    return f"{country or ''}|{lat or ''},{lon or ''}|{locale}"
-
-
-def _popular_ttl(bundle: dict) -> int:
-    return (_POPULAR_PLACEHOLDER_TTL_S
-            if bundle.get("source") == "placeholder" else _POPULAR_TTL_S)
 
 
 def _invalidate_popular_cache() -> None:
@@ -4058,158 +3807,12 @@ async def _warm_placeholder_images() -> None:
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
             bundle = await loop.run_in_executor(
-                _get_net_executor(), lambda n=locale: _build_popular_bundle(None, None, None, None, n),
+                _get_net_executor(), lambda n=locale: popular_bundle.build_popular_bundle(None, None, None, None, n),
             )
-            key = _popular_cache_key(None, None, None, locale)
+            key = popular_bundle.popular_cache_key(None, None, None, locale)
             with _popular_lock:
-                _popular_cache[key] = (time.time() + _popular_ttl(bundle), bundle)
+                _popular_cache[key] = (time.time() + popular_bundle.popular_ttl(bundle), bundle)
                 _popular_cache.move_to_end(key)
-
-
-def _worldwide_snapshot() -> dict:
-    """Worldwide popularity: the anonymous tally of every consented, accepted
-    diagnosis (community members included, location or not); the community
-    corpus only while the tally is still empty (e.g. right after deploy)."""
-    anonymous = community.anonymous_popular_snapshot(limit=_POPULAR_MAX_CARDS)
-    if anonymous.get("top_species") or anonymous.get("top_diseases"):
-        return anonymous
-    return community.popular_snapshot(limit=_POPULAR_MAX_CARDS)
-
-
-def _build_popular_bundle(
-    country: str | None,
-    city: str | None,
-    lat: float | None,
-    lon: float | None,
-    locale: str,
-) -> dict:
-    """Popular species + diseases for the home carousels, with the ladder
-    nearby(≤30 km) → country → worldwide → curated placeholder.
-
-    Real-scan scopes carry per-item ``count``/``percent`` (the client shows
-    "P% of scans"); the placeholder carries zeros + ``source="placeholder"``
-    so the client suppresses the percentage. Both lists are capped at 10.
-    """
-    lang = "ru" if locale == "ru" else "en"
-
-    def _has(snap: dict) -> bool:
-        return bool(snap.get("top_species") or snap.get("top_diseases"))
-
-    snap: dict | None = None
-    source = "worldwide"
-    region_label: str | None = None
-    if lat is not None and lon is not None:
-        s = community.popular_snapshot(lat=lat, lon=lon, limit=_POPULAR_MAX_CARDS)
-        if _has(s):
-            snap, source, region_label = s, "nearby", city
-    if snap is None and country:
-        s = community.popular_snapshot(country=country, limit=_POPULAR_MAX_CARDS)
-        if _has(s):
-            snap, source = s, "country"
-    if snap is None:
-        s = _worldwide_snapshot()
-        if _has(s):
-            snap, source = s, "worldwide"
-
-    # A local (nearby) snapshot we can't attach a real place to — no
-    # resolvable country AND no city — would be labeled "Worldwide" by
-    # ``_country_display(None)`` below and rendered as "Popular in Worldwide"
-    # over what is actually a single local scan. Show the true worldwide
-    # aggregate instead so the label matches the data. (Worldwide always has
-    # ≥ the local rows, so this never empties a populated feed.)
-    if source == "nearby" and not country and not region_label:
-        s = _worldwide_snapshot()
-        if _has(s):
-            snap, source, region_label = s, "worldwide", None
-
-    # No community data in any scope → curated placeholder. Titled for the
-    # known country when we have one, else worldwide. The first real scan in
-    # range flips this to live data on the next (short-lived) cache miss.
-    if snap is None:
-        # Curated names are bundled, so the placeholder build does NO network:
-        # the photo is resolved lazily + cached by the by-name proxy.
-        items = [
-            {
-                "scientific": p.scientific,
-                "common_en": p.common_en,
-                "common_ru": p.common_ru,
-                # Always resolve the ENGLISH Wikipedia lead image regardless of
-                # UI locale: the localized (e.g. RU) article often has a
-                # different or missing lead photo, which made two distinct
-                # species look identical in one locale but not another. Titles
-                # stay localized; only the picture is pinned to EN.
-                "image_url": plant_photos.name_proxy_path(p.scientific, "en"),
-                "count": 0,
-                "percent": 0,
-            }
-            for p in popular_plants.popular_for(country)[:_POPULAR_MAX_CARDS]
-        ]
-        return {
-            **community_geo.country_display(country),
-            "locale": locale,
-            "region": None,
-            "items": items,
-            "top_diseases": [],
-            "total": 0,
-            "source": "placeholder",
-        }
-
-    display = community_geo.country_display(country) if source != "worldwide" else community_geo.country_display(None)
-    items = []
-    used_titles: set[str] = set()
-    for row in (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]:
-        scientific = row["species"]
-        # Only the localized title needs resolving here (cached); the photo is
-        # resolved + cached on demand by the by-name proxy, so a species that
-        # only just trended (a fresh scan) still gets an image.
-        info = species_info.fetch_species_info(scientific, lang)
-        title = (info or {}).get("title") or scientific
-        # A localized title can collapse two distinct species to one name (e.g.
-        # RU Wikipedia titles both "Spathiphyllum" and "Spathiphyllum
-        # floribundum" as "Спатифиллюм"), which shows two identical-looking
-        # cards. On a collision fall back to the scientific name so each card
-        # stays distinguishable.
-        if title in used_titles:
-            title = scientific
-        used_titles.add(title)
-        items.append({
-            "scientific": scientific,
-            "common_en": title,
-            "common_ru": title,
-            # English lead image for every locale — see the placeholder branch.
-            "image_url": plant_photos.name_proxy_path(scientific, "en"),
-            "count": row.get("count", 0),
-            "percent": row.get("percent", 0),
-        })
-    # A thin community corpus (a new region, or one with a handful of scans)
-    # would otherwise leave a one- or two-card carousel that never seems to
-    # change. Top it up from the curated list for the same scope: the real
-    # scans stay first with their percentages, the curated picks follow with
-    # zero counts (the client shows those without a percentage).
-    seen = {it["scientific"].lower() for it in items}
-    for p in popular_plants.popular_for(country if source != "worldwide" else None):
-        if len(items) >= _POPULAR_MAX_CARDS:
-            break
-        if p.scientific.lower() in seen:
-            continue
-        seen.add(p.scientific.lower())
-        items.append({
-            "scientific": p.scientific,
-            "common_en": p.common_en,
-            "common_ru": p.common_ru,
-            "image_url": plant_photos.name_proxy_path(p.scientific, "en"),
-            "count": 0,
-            "percent": 0,
-        })
-    return {
-        **display,
-        "locale": locale,
-        "region": region_label if source == "nearby" else None,
-        "items": items,
-        "top_diseases": (snap.get("top_diseases") or [])[:_POPULAR_MAX_CARDS],
-        "total": snap.get("total", 0),
-        "source": source,
-    }
 
 
 # Keys currently being refreshed in the background, so concurrent stale hits
@@ -4229,10 +3832,10 @@ def _refresh_popular_bg(
     async def _run() -> None:
         try:
             bundle = await asyncio.get_running_loop().run_in_executor(
-                _get_net_executor(), lambda: _build_popular_bundle(country, city, lat, lon, locale),
+                _get_net_executor(), lambda: popular_bundle.build_popular_bundle(country, city, lat, lon, locale),
             )
             with _popular_lock:
-                _popular_cache[key] = (time.time() + _popular_ttl(bundle), bundle)
+                _popular_cache[key] = (time.time() + popular_bundle.popular_ttl(bundle), bundle)
                 _popular_cache.move_to_end(key)
                 while len(_popular_cache) > _POPULAR_CACHE_MAX:
                     _popular_cache.popitem(last=False)
