@@ -116,6 +116,8 @@ FORUM_REACTION_DAILY_QUOTA = config.get_int("FORUM_REACTION_DAILY_QUOTA", 500)
 
 
 def register(router: APIRouter, m) -> None:
+    account = m.account_dependency
+
     async def run(fn, /, *args, **kwargs):
         """Run a store call off the event loop and map rule refusals to HTTP."""
         try:
@@ -268,9 +270,8 @@ def register(router: APIRouter, m) -> None:
         )
 
     @router.get("/community/me/achievements", dependencies=[Depends(m.community_bearer)])
-    async def forum_my_achievements(request: Request):
+    async def forum_my_achievements(principal=Depends(account)):
         """My level and achievements, plus the PRO discount they have earned."""
-        principal = await m._require_account(request)
         result = await run(
             m.community_achievements.progress, principal.actor_id, include_private=True
         )
@@ -316,9 +317,8 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/me/avatar", dependencies=[Depends(m.community_bearer)])
-    async def forum_avatar_delete(request: Request):
+    async def forum_avatar_delete(principal=Depends(account)):
         """Withdraw my profile photo from Community."""
-        principal = await m._require_account(request)
         removed = await run(m.community_forum.delete_avatar, actor_id=principal.actor_id)
         return JSONResponse(content={"ok": True, "removed": removed}, headers=_NO_STORE)
 
@@ -359,8 +359,7 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/posts/{post_id}", dependencies=[Depends(m.community_bearer)])
-    async def forum_post_delete(post_id: str, request: Request):
-        principal = await m._require_account(request)
+    async def forum_post_delete(post_id: str, principal=Depends(account)):
         await run(m.community_forum.delete_post, actor_id=principal.actor_id, post_id=post_id)
         return JSONResponse(content={"ok": True}, headers=_NO_STORE)
 
@@ -424,8 +423,7 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/answers/{answer_id}", dependencies=[Depends(m.community_bearer)])
-    async def forum_answer_delete(answer_id: str, request: Request):
-        principal = await m._require_account(request)
+    async def forum_answer_delete(answer_id: str, principal=Depends(account)):
         await run(
             m.community_forum.delete_answer, actor_id=principal.actor_id, answer_id=answer_id
         )
