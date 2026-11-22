@@ -181,7 +181,7 @@ def register(router: APIRouter, m) -> None:
         worldwide bundle. Cached per (country, coords, locale); a stale entry is
         served immediately and refreshed in the background so a user never waits on
         the per-species Wikipedia calls."""
-        geo = m._client_location(country, region, lat, lon)
+        geo = m.community_geo.client_location(country, region, lat, lon)
         country_norm = geo["country"]
         lat_n, lon_n = geo["lat"], geo["lon"]
         city_n = geo["city"]

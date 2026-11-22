@@ -85,7 +85,7 @@ def register(router: APIRouter, m) -> None:
                 detail="Unknown scan_id - re-scan before sharing to the community.",
             )
 
-        geo = m._client_location(payload.country, payload.region, lat, lon)
+        geo = m.community_geo.client_location(payload.country, payload.region, lat, lon)
 
         # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
         # image body — an over-quota client should be rejected without us
@@ -479,7 +479,7 @@ def register(router: APIRouter, m) -> None:
         if profile is None:
             raise HTTPException(status_code=404, detail="profile_not_found")
         for item in profile.get("items", []):
-            m._localize_item_country(item)
+            m.community_geo.localize_item_country(item)
         return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
 
 
@@ -632,7 +632,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recent" and recommendation_cursor is not None \
                 and recommendation_cursor[0] != 0:
             raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
-        geo = m._client_location(country, region, lat, lon)
+        geo = m.community_geo.client_location(country, region, lat, lon)
         country_norm = geo["country"]
         scope_norm = (scope or "nearby").strip().lower()
         if scope_norm not in ("nearby", "country", "worldwide"):
@@ -734,8 +734,8 @@ def register(router: APIRouter, m) -> None:
             r.pop("_cursor_score", None)
             r.pop("_cursor_row_id", None)
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m._localize_item_country(r)
-        meta = m._country_display(country_norm)
+            m.community_geo.localize_item_country(r)
+        meta = m.community_geo.country_display(country_norm)
         # Tell the client which filter was actually served + the nearby label.
         if worldwide:
             meta["scope"] = "worldwide"
@@ -809,7 +809,7 @@ def register(router: APIRouter, m) -> None:
         for r in rows:
             r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-            m._localize_item_country(r)
+            m.community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows, "truncated": data["truncated"]})
 
 
@@ -857,7 +857,7 @@ def register(router: APIRouter, m) -> None:
         sci = (species or "").strip()
         if not sci:
             raise HTTPException(status_code=422, detail="Invalid species")
-        geo = m._client_location(country, region, lat, lon)
+        geo = m.community_geo.client_location(country, region, lat, lon)
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
@@ -883,7 +883,7 @@ def register(router: APIRouter, m) -> None:
             # Public token only — never the community publication capability.
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m._localize_item_country(r)
+            m.community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows})
 
 

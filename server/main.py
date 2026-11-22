@@ -73,9 +73,9 @@ try:
         community,
         community_achievements,
         community_forum,
+        community_geo,
         community_labels,
         config,
-        countries,
         deps,
         diseases_data,
         plant_photos,
@@ -106,9 +106,9 @@ except ImportError:
     import community
     import community_achievements
     import community_forum
+    import community_geo
     import community_labels
     import config
-    import countries
     import deps
     import diseases_data
     import pipeline as pipeline_module
@@ -3232,109 +3232,6 @@ class SymptomDiagnoseRequest(BaseModel):
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-# Region-string alphabet (country name / code + city / admin area).
-# A region char is any Unicode letter (str.isalpha() is Unicode-aware, so
-# Cyrillic / accented Latin / CJK localities like "Москва", "Köln", "東京" all
-# pass) or digit, plus apostrophe + period + hyphen + space, which cover the
-# bulk of place names ("Saint-John's", "Plymouth, U.K." trims to "Plymouth").
-# Commas are deliberately excluded — country and locality are separate fields,
-# so callers never embed a comma — and control chars / injection punctuation
-# (";", "\n", …) still get filtered out.
-def _region_char_ok(ch: str) -> bool:
-    return ch.isalpha() or ch.isdigit() or ch in " .'-"
-
-
-def _normalise_country(raw: str | None) -> str:
-    """Sanitise the top-level country bucket.
-
-    Accepts the new explicit country form ("GB", "Germany") and the
-    legacy "City, Country" composite that older clients still send —
-    in the latter case we keep the segment after the last comma. The
-    result is trimmed, charset-checked and capped at 80 chars; an
-    empty string means "rejected".
-    """
-    if not raw:
-        return ""
-    if "," in raw:
-        raw = raw.rsplit(",", 1)[-1]
-    cleaned = raw.strip()[:80]
-    if not cleaned or any(not _region_char_ok(ch) for ch in cleaned):
-        return ""
-    # Canonicalize to an ISO-3166 alpha-2 code so "RU" / "ru" / "Russia" /
-    # "Россия" all collapse into one bucket — otherwise the same country
-    # splits across locale-specific representations and the popular / nearby
-    # aggregation (and the curated ``popular_for`` map, which only matches
-    # 2-letter codes) disagree per locale.
-    return countries.to_iso_alpha2(cleaned)
-
-
-def _normalise_locality(raw: str | None) -> str:
-    """Sanitise the sub-country city / admin-area string.
-
-    Returns the cleaned value or "" when the caller didn't send a
-    locality (country-only writes are legal — the corpus simply
-    skips the second hierarchy level).
-    """
-    if not raw:
-        return ""
-    cleaned = raw.strip()[:80]
-    if not cleaned or any(not _region_char_ok(ch) for ch in cleaned):
-        return ""
-    return cleaned
-
-
-# There is no "worldwide" bucket any more — every scope is a real country.
-# When an IP can't be located at all (private/VPN/no .mmdb) we fall back to
-# this primary-market country so the feed + carousels still have a scope.
-# Legacy sentinel still present in old DB rows; only used to scrub them on read.
-_GLOBAL_COUNTRY = "GLOBAL"
-
-# EN/RU display names keyed by ISO-3166 alpha-2 now live in ``countries.py``
-# (shared with ``community.py``), alongside ``to_iso_alpha2`` which collapses a
-# code / English name / localized name to one canonical bucket. Imported above
-# as ``COUNTRY_NAMES``.
-
-
-def _country_display(country: str | None) -> dict:
-    code = (country or "").strip().upper()
-    if not code or code == _GLOBAL_COUNTRY:
-        # No location (community off / permission denied) → worldwide.
-        return {
-            "country": None,
-            "country_name_en": "Worldwide",
-            "country_name_ru": "по всему миру",
-            "scope": "global",
-        }
-    en, ru = countries.COUNTRY_NAMES.get(code, (country or code, country or code))
-    return {
-        "country": code if len(code) == 2 else country,
-        "country_name_en": en,
-        "country_name_ru": ru,
-        "scope": "country",
-    }
-
-
-def _localize_item_country(row: dict) -> None:
-    """Annotate one community-feed row with localized country *names* and
-    scrub the internal ``GLOBAL`` bucket sentinel.
-
-    Each row stores ``country`` as an ISO alpha-2 code (e.g. ``"PL"``) — the
-    raw code is useless to a reader, so the feed cards used to print "PL".
-    We attach ``country_name_en`` / ``country_name_ru`` (so the client can
-    show "Poland" / "Польша" per locale) and blank the ``GLOBAL`` sentinel
-    that detection-failed uploads carry, since it isn't a real place.
-    """
-    code = str(row.get("country") or "").strip().upper()
-    if not code or code == _GLOBAL_COUNTRY:
-        row["country"] = ""
-        row["country_name_en"] = None
-        row["country_name_ru"] = None
-        return
-    en, ru = countries.COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
-    row["country_name_en"] = en
-    row["country_name_ru"] = ru
-
-
 def _to_public_feed_item(
     row: dict, *, opinions: dict, views: dict | None = None,
 ) -> dict:
@@ -3363,42 +3260,8 @@ def _to_public_feed_item(
     row["scan_id"] = row.pop("public_id", None) or row["scan_id"]
     row.pop("_cursor_score", None)
     row.pop("_cursor_row_id", None)
-    _localize_item_country(row)
+    community_geo.localize_item_country(row)
     return row
-
-
-def _valid_coord(value, limit: float) -> float | None:
-    """Parse a client-sent coordinate, range-check it, and round to ~1 km so a
-    precise position never lands in the corpus (coarse-location privacy)."""
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return None
-    if f != f or abs(f) > limit:  # NaN or out of range
-        return None
-    return round(f, 2)
-
-
-def _client_location(
-    country: str | None = None,
-    region: str | None = None,
-    lat=None,
-    lon=None,
-) -> dict:
-    """Normalize the client-supplied coarse location. There is no server-side
-    IP geolocation any more — the app sends what it resolved from
-    ``ACCESS_COARSE_LOCATION`` (+ an on-device reverse-geocode). Any field may
-    be empty (community off / permission denied) → the caller falls back to the
-    worldwide scope.
-    """
-    # ``_normalise_country`` already canonicalizes to an ISO alpha-2 code.
-    c = (_normalise_country(country) if country else "")
-    city = _normalise_locality(region) if region else ""
-    la = _valid_coord(lat, 90.0)
-    lo = _valid_coord(lon, 180.0)
-    if la is None or lo is None:  # coords only count as a pair
-        la = lo = None
-    return {"country": c or None, "city": city or None, "lat": la, "lon": lo}
 
 
 def _normalise_nickname(raw: str | None) -> str | None:
@@ -3442,7 +3305,7 @@ class CommunityScanRequest(BaseModel):
     def _safe_country(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        cleaned = _normalise_country(v)
+        cleaned = community_geo.normalise_country(v)
         if not cleaned:
             raise ValueError(
                 "country must be a country name or ISO code (no control chars)"
@@ -3453,7 +3316,7 @@ class CommunityScanRequest(BaseModel):
     @classmethod
     def _safe_region(cls, v: str) -> str:
         # Empty is legal — country-only writes are supported.
-        cleaned = _normalise_locality(v)
+        cleaned = community_geo.normalise_locality(v)
         if v and not cleaned:
             raise ValueError("region contains invalid characters")
         return cleaned
@@ -4282,7 +4145,7 @@ def _build_popular_bundle(
             for p in popular_plants.popular_for(country)[:_POPULAR_MAX_CARDS]
         ]
         return {
-            **_country_display(country),
+            **community_geo.country_display(country),
             "locale": locale,
             "region": None,
             "items": items,
@@ -4291,7 +4154,7 @@ def _build_popular_bundle(
             "source": "placeholder",
         }
 
-    display = _country_display(country) if source != "worldwide" else _country_display(None)
+    display = community_geo.country_display(country) if source != "worldwide" else community_geo.country_display(None)
     items = []
     used_titles: set[str] = set()
     for row in (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]:
