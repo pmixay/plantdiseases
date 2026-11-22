@@ -3811,15 +3811,6 @@ async def _identify_admitted(
 _COMMUNITY_ALLOWED_TYPES = set(ALLOWED_CONTENT_TYPES)
 
 
-class InternalActorDeletionRequest(BaseModel):
-    actor_id: str = Field(..., min_length=36, max_length=36)
-
-
-class InternalActorNicknameRequest(BaseModel):
-    actor_id: str = Field(..., min_length=36, max_length=36)
-    nickname: str = Field(..., min_length=1, max_length=48)
-
-
 class TelemetryErrorRequest(BaseModel):
     """One consented report containing only allowlisted technical enums."""
 

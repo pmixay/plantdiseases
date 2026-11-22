@@ -12,6 +12,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 # A collaborator module (never a name patched on ``main``) is imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
@@ -21,6 +22,15 @@ except ImportError:
     import account_internal
 
 
+class InternalActorDeletionRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+
+
+class InternalActorNicknameRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+    nickname: str = Field(..., min_length=1, max_length=48)
+
+
 def register(router: APIRouter, m) -> None:
     @router.post(
         "/internal/account-deletions",
@@ -28,7 +38,7 @@ def register(router: APIRouter, m) -> None:
         include_in_schema=False,
     )
     async def internal_account_deletion(
-        payload: m.InternalActorDeletionRequest,
+        payload: InternalActorDeletionRequest,
         request: Request,
         background_tasks: BackgroundTasks,
     ):
@@ -56,7 +66,7 @@ def register(router: APIRouter, m) -> None:
         include_in_schema=False,
     )
     async def internal_account_nickname(
-        payload: m.InternalActorNicknameRequest,
+        payload: InternalActorNicknameRequest,
         request: Request,
     ):
         """Idempotently replace an actor's denormalized historical nickname."""
