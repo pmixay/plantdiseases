@@ -100,6 +100,8 @@ class MemberAppeal(BaseModel):
 
 
 def register(router: APIRouter, m) -> None:
+    account = m.deps.account_required(m)
+
     async def run(fn, /, *args, **kwargs):
         try:
             return await asyncio.get_running_loop().run_in_executor(
@@ -142,9 +144,8 @@ def register(router: APIRouter, m) -> None:
     # ── staff: who am I, queue, review ───────────────────────────────────
 
     @router.get("/community/admin/me", dependencies=[Depends(m.community_bearer)])
-    async def moderation_me(request: Request):
+    async def moderation_me(principal=Depends(account)):
         """The caller's community roles; the app shows staff tools from this."""
-        principal = await m._require_account(request)
         if m.community_roles is None:
             return JSONResponse(
                 content={"available": False, "roles": []}, headers=_NO_STORE
@@ -436,9 +437,8 @@ def register(router: APIRouter, m) -> None:
     @router.get(
         "/community/moderation/notices", dependencies=[Depends(m.community_bearer)]
     )
-    async def moderation_notices(request: Request):
+    async def moderation_notices(principal=Depends(account)):
         """Moderation decisions about my content or account, and whether I can appeal."""
-        principal = await m._require_account(request)
         result = await run(m.community_moderation.notices_for, principal.actor_id)
         return JSONResponse(content=result, headers=_NO_STORE)
 

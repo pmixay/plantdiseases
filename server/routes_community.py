@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 
 
 def register(router: APIRouter, m) -> None:
+    account = m.deps.account_required(m)
+
     @router.post("/community/scan", dependencies=[Depends(m.community_bearer)])
     async def community_scan_upload(
         request: Request,
@@ -219,9 +221,8 @@ def register(router: APIRouter, m) -> None:
     @router.get(
         "/community/safety/blocks", dependencies=[Depends(m.community_bearer)]
     )
-    async def community_list_blocks(request: Request):
+    async def community_list_blocks(principal=Depends(account)):
         """List only the caller's blocks using unlinkable opaque block ids."""
-        principal = await m._require_account(request)
         items = await asyncio.get_running_loop().run_in_executor(
             None, lambda: m.community_actor_blocks(principal.actor_id)
         )
@@ -234,9 +235,8 @@ def register(router: APIRouter, m) -> None:
         "/community/safety/blocks/{block_id}",
         dependencies=[Depends(m.community_bearer)],
     )
-    async def community_remove_block(block_id: str, request: Request):
+    async def community_remove_block(block_id: str, principal=Depends(account)):
         """Delete only a block owned by the signed caller."""
-        principal = await m._require_account(request)
         if len(block_id) != 32 or not block_id.startswith("cb"):
             raise HTTPException(status_code=422, detail="invalid_block_id")
         removed = await asyncio.get_running_loop().run_in_executor(
@@ -479,11 +479,10 @@ def register(router: APIRouter, m) -> None:
     @router.get(
         "/community/my-scan-opinions", dependencies=[Depends(m.community_bearer)]
     )
-    async def community_my_scan_opinions(request: Request):
+    async def community_my_scan_opinions(principal=Depends(account)):
         """Opinion counts on the caller's OWN shared scans. The client polls this
         on a schedule to notify the user when someone leaves a second opinion on a
         scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
-        principal = await m._require_account(request)
         result = await asyncio.get_running_loop().run_in_executor(
             None, lambda: m.community_opinion_counts_for_actor(principal.actor_id),
         )

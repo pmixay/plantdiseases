@@ -71,6 +71,7 @@ try:
         community_forum,
         community_labels,
         community_moderation,
+        deps,
         routes_assistant,
         routes_community,
         routes_content,
@@ -318,6 +319,7 @@ except ImportError:
     import community_forum
     import community_labels
     import community_moderation
+    import deps
     import routes_assistant
     import routes_community
     import routes_content
