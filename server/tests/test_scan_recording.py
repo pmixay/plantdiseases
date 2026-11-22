@@ -60,8 +60,10 @@ def _result(
 
 
 def _capture(store, result: dict, *, colour="green") -> str:
+    import analysis
     receipt = store.issue_feedback_receipt(capture_pending=True)
-    server_main._record_training_candidate(
+    analysis.record_training_candidate(
+        server_main,
         Image.new("RGB", (120, 100), colour),
         receipt,
         family="gamma",

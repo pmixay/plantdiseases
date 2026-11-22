@@ -12,11 +12,13 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-# A collaborator module (never a name patched on ``main``) is imported here;
+# Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import symptoms
+    from . import analysis, analysis_payload, symptoms
 except ImportError:
+    import analysis
+    import analysis_payload
     import symptoms
 
 
@@ -54,8 +56,8 @@ def register(router: APIRouter, m) -> None:
             # Taken once admitted, so a busy 503 (and the app's retry of it)
             # does not spend the caller's allowance.
             m._require_daily_quota(m._analyze_quota, request)
-            return await m._analyze_image_admitted(
-                request, background_tasks, image, slot,
+            return await analysis.analyze_image_admitted(
+                m, request, background_tasks, image, slot,
                 client_ip=m._client_key(m._client_ip(request)),
                 species=species, locale=locale, family=family,
                 training_consent=training_consent,
@@ -94,8 +96,8 @@ def register(router: APIRouter, m) -> None:
         """
         async with m._inference_slot(request) as slot:
             m._require_daily_quota(m._identify_quota, request)
-            return await m._identify_admitted(
-                request, image, slot,
+            return await analysis.identify_admitted(
+                m, request, image, slot,
                 client_ip=m._client_key(m._client_ip(request)), organ=organ, locale=locale,
             )
 
@@ -116,7 +118,7 @@ def register(router: APIRouter, m) -> None:
         triage = symptoms.diagnose(payload.answers)
         results = []
         for item in triage["results"]:
-            card = m.analysis_payload.compact_care_card(item["class"])
+            card = analysis_payload.compact_care_card(item["class"])
             card["score"] = item["score"]
             card["confidence"] = item["confidence"]
             card["rank"] = item["rank"]
@@ -124,7 +126,7 @@ def register(router: APIRouter, m) -> None:
         # When nothing scored, hand back the generic "unknown" guidance card so
         # the screen is never blank — and flag low confidence.
         if not results:
-            fallback = m.analysis_payload.compact_care_card("unknown")
+            fallback = analysis_payload.compact_care_card("unknown")
             fallback["score"] = 0.0
             fallback["confidence"] = 0.0
             fallback["rank"] = 1

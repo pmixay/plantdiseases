@@ -16,6 +16,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 # chat_reply outcomes decided before any model call.
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import diseases_data
+except ImportError:
+    import diseases_data
+
+
 _CHAT_NO_COST_REASONS = frozenset({
     "empty_message",
     "message_too_long",
@@ -138,7 +145,7 @@ def register(router: APIRouter, m) -> None:
             # A species' general care, never a diagnosis: keeps this unmetered
             # path from serving disease-specific plans.
             disease = "healthy"
-        if disease not in m.diseases_data.DISEASES_DATABASE and disease != "unknown":
+        if disease not in diseases_data.DISEASES_DATABASE and disease != "unknown":
             # Don't reject — just normalise unknown to ``unknown``. Keeps the
             # endpoint forgiving while still producing a useful plan.
             disease = "unknown"
@@ -180,7 +187,7 @@ def register(router: APIRouter, m) -> None:
                     feature="care_plan",
                     upstream_attempted=not plan.get("cached"),
                 )
-        toxicity = m.diseases_data.lookup_pet_toxicity(payload.species) if payload.species else {
+        toxicity = diseases_data.lookup_pet_toxicity(payload.species) if payload.species else {
             "toxic_to_pets": False, "species_list": [], "source": "unknown",
         }
         plan = {

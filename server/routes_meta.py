@@ -21,6 +21,10 @@ try:
     from . import telemetry
 except ImportError:
     import telemetry
+try:
+    from . import diseases_data
+except ImportError:
+    import diseases_data
 
 
 _PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
@@ -183,7 +187,7 @@ def register(router: APIRouter, m) -> None:
                 "int8_artifact": int8_artifact,
             }
             for name in clf.CLASS_NAMES:
-                info = m.diseases_data.DISEASES_DATABASE.get(name, {})
+                info = diseases_data.DISEASES_DATABASE.get(name, {})
                 classes_list.append({
                     "class": name,
                     "name_en": info.get("name_en", name.replace("_", " ").title()),

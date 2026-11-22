@@ -18,6 +18,10 @@ try:
     from . import account_internal
 except ImportError:
     import account_internal
+try:
+    from . import diseases_data
+except ImportError:
+    import diseases_data
 
 
 def register(router: APIRouter, m) -> None:
@@ -265,7 +269,7 @@ def register(router: APIRouter, m) -> None:
         """
         principal = await m._require_account(request)
         disease = payload.suggested_disease.strip()
-        if disease not in m.diseases_data.DISEASES_DATABASE:
+        if disease not in diseases_data.DISEASES_DATABASE:
             raise HTTPException(status_code=422, detail="Unknown suggested disease")
 
         client_ip = m._client_ip(request)
