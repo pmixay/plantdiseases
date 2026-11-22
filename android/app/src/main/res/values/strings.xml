@@ -428,6 +428,8 @@
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
     <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_lang_ru" translatable="false">RU</string>
+    <string name="privacy_lang_en" translatable="false">EN</string>
     <string name="privacy_policy_subtitle">See how scan photos and other app data are handled.</string>
     <string name="notifications_empty">Nothing yet - replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_section_new">New</string>
