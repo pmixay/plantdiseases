@@ -60,8 +60,10 @@ def _result(
 
 
 def _capture(store, result: dict, *, colour="green") -> str:
+    import analysis
     receipt = store.issue_feedback_receipt(capture_pending=True)
-    server_main._record_training_candidate(
+    analysis.record_training_candidate(
+        server_main,
         Image.new("RGB", (120, 100), colour),
         receipt,
         family="gamma",
@@ -134,12 +136,13 @@ def test_ood_abstained_argmax_is_not_ingested_as_training_label(capture_store):
 def test_analyze_ood_abstention_skips_capture_and_binds_hidden_community_claim(
     client, capture_store, png_bytes, monkeypatch
 ):
+    import community
     claims: list[str] = []
 
     def _record_token(_token, **kwargs):
         claims.append(kwargs["disease"])
 
-    monkeypatch.setattr(server_main, "community_record_analysis_token", _record_token)
+    monkeypatch.setattr(community, "record_analysis_token", _record_token)
     monkeypatch.setattr(
         server_main.pipeline, "analyze", lambda _image: _ood_rejected_result()
     )

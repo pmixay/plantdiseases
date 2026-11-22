@@ -11,6 +11,52 @@ import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
+
+# Collaborator modules (never names patched on ``main``) are imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import analysis, analysis_payload, config, symptoms
+except ImportError:
+    import analysis
+    import analysis_payload
+    import config
+    import symptoms
+
+
+class SymptomDiagnoseRequest(BaseModel):
+    # question_id -> option_id (see symptoms.SYMPTOM_WEIGHTS). Kept small and
+    # length-capped — this is an untrusted client payload.
+    answers: dict[str, str] = Field(default_factory=dict)
+    locale: str = Field(default="en", max_length=8)
+
+    @field_validator("answers")
+    @classmethod
+    def _validate_answers(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 20:
+            raise ValueError("too many answers")
+        for k, v in value.items():
+            if len(k) > 32 or len(v) > 32:
+                raise ValueError("answer id too long")
+        return value
+
+
+# The app sends its 12 newest scans; the cap leaves room for that to grow
+# while bounding the work a single request can hand the event loop.
+PROGRESSION_MAX_HISTORY = 50
+
+
+class ProgressionRequest(BaseModel):
+    """Time-ordered list of scans (oldest first) for the disease-
+    progression sparkline + trend the plant-detail screen renders."""
+
+    history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
+
+
+# Daily write quotas use the live connection address only in process memory.
+# Addresses and hashes never enter feedback, training, or account-era
+# community rows.
+FEEDBACK_DAILY_QUOTA = config.get_int("FEEDBACK_DAILY_QUOTA", 200)
 
 
 def register(router: APIRouter, m) -> None:
@@ -47,8 +93,8 @@ def register(router: APIRouter, m) -> None:
             # Taken once admitted, so a busy 503 (and the app's retry of it)
             # does not spend the caller's allowance.
             m._require_daily_quota(m._analyze_quota, request)
-            return await m._analyze_image_admitted(
-                request, background_tasks, image, slot,
+            return await analysis.analyze_image_admitted(
+                m, request, background_tasks, image, slot,
                 client_ip=m._client_key(m._client_ip(request)),
                 species=species, locale=locale, family=family,
                 training_consent=training_consent,
@@ -87,14 +133,14 @@ def register(router: APIRouter, m) -> None:
         """
         async with m._inference_slot(request) as slot:
             m._require_daily_quota(m._identify_quota, request)
-            return await m._identify_admitted(
-                request, image, slot,
+            return await analysis.identify_admitted(
+                m, request, image, slot,
                 client_ip=m._client_key(m._client_ip(request)), organ=organ, locale=locale,
             )
 
 
     @router.post("/symptom-diagnose")
-    async def symptom_diagnose_endpoint(payload: m.SymptomDiagnoseRequest):
+    async def symptom_diagnose_endpoint(payload: SymptomDiagnoseRequest):
         """No-photo symptom triage — the fallback when the camera/ML pipeline
         can't get a confident read.
 
@@ -106,10 +152,10 @@ def register(router: APIRouter, m) -> None:
         returns 200 with a usable payload — an empty questionnaire just yields
         an empty shortlist + the ``unknown`` guidance card.
         """
-        triage = m.symptom_diagnose(payload.answers)
+        triage = symptoms.diagnose(payload.answers)
         results = []
         for item in triage["results"]:
-            card = m._compact_care_card(item["class"])
+            card = analysis_payload.compact_care_card(item["class"])
             card["score"] = item["score"]
             card["confidence"] = item["confidence"]
             card["rank"] = item["rank"]
@@ -117,7 +163,7 @@ def register(router: APIRouter, m) -> None:
         # When nothing scored, hand back the generic "unknown" guidance card so
         # the screen is never blank — and flag low confidence.
         if not results:
-            fallback = m._compact_care_card("unknown")
+            fallback = analysis_payload.compact_care_card("unknown")
             fallback["score"] = 0.0
             fallback["confidence"] = 0.0
             fallback["rank"] = 1
@@ -132,7 +178,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/progression")
-    async def progression_endpoint(payload: m.ProgressionRequest):
+    async def progression_endpoint(payload: ProgressionRequest):
         """Disease-progression analysis. Returns a 5-point severity
         sparkline + a trend slope across the supplied history (oldest
         first). An empty list is allowed and yields a zero-padded
@@ -140,7 +186,7 @@ def register(router: APIRouter, m) -> None:
         without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
         (422 past it), so the computation stays a few microseconds of event-loop
         time."""
-        return JSONResponse(content=m.compare_progression_history(payload.history))
+        return JSONResponse(content=m.ai_services.compare_progression_history(payload.history))
 
 
     @router.post("/feedback")
@@ -152,7 +198,7 @@ def register(router: APIRouter, m) -> None:
         connection address is used for an in-process quota and is never written.
         """
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("feedback", client_ip, m.FEEDBACK_DAILY_QUOTA):
+        if not m._consume_daily_write("feedback", client_ip, FEEDBACK_DAILY_QUOTA):
             m.logger.warning("Feedback daily quota reached")
             raise HTTPException(
                 status_code=429,
@@ -160,7 +206,7 @@ def register(router: APIRouter, m) -> None:
             )
         out_of_head: bool | None = None
         if payload.corrected_class:
-            out_of_head = payload.corrected_class not in m._FEEDBACK_IN_HEAD_CLASSES
+            out_of_head = payload.corrected_class not in m.feedback_labels.FEEDBACK_IN_HEAD_CLASSES
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
@@ -211,7 +257,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=422, detail="invalid_feedback") from exc
 
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("feedback_image", client_ip, m.FEEDBACK_DAILY_QUOTA):
+        if not m._consume_daily_write("feedback_image", client_ip, FEEDBACK_DAILY_QUOTA):
             m.logger.warning("Feedback image daily quota reached")
             raise HTTPException(
                 status_code=429,
@@ -247,7 +293,7 @@ def register(router: APIRouter, m) -> None:
                 None, m.training_store.sanitize_training_image, crop
             )
             out_of_head = (
-                payload.corrected_class not in m._FEEDBACK_IN_HEAD_CLASSES
+                payload.corrected_class not in m.feedback_labels.FEEDBACK_IN_HEAD_CLASSES
                 if payload.corrected_class
                 else None
             )

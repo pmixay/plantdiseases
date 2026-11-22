@@ -12,6 +12,23 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+# A collaborator module (never a name patched on ``main``) is imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import account_internal
+except ImportError:
+    import account_internal
+
+
+class InternalActorDeletionRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+
+
+class InternalActorNicknameRequest(BaseModel):
+    actor_id: str = Field(..., min_length=36, max_length=36)
+    nickname: str = Field(..., min_length=1, max_length=48)
 
 
 def register(router: APIRouter, m) -> None:
@@ -21,12 +38,12 @@ def register(router: APIRouter, m) -> None:
         include_in_schema=False,
     )
     async def internal_account_deletion(
-        payload: m.InternalActorDeletionRequest,
+        payload: InternalActorDeletionRequest,
         request: Request,
         background_tasks: BackgroundTasks,
     ):
         """Immediately tombstone an actor; physical removal is retryable."""
-        if not m.internal_service_authorized(
+        if not account_internal.internal_service_authorized(
             request.headers.get("x-internal-service-token", "")
         ):
             raise HTTPException(status_code=401, detail="auth_required")
@@ -35,11 +52,11 @@ def register(router: APIRouter, m) -> None:
         except ValueError:
             raise HTTPException(status_code=422, detail="invalid_request") from None
         accepted = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_request_actor_deletion(actor_id)
+            None, lambda: m.community.request_actor_deletion(actor_id)
         )
         if not accepted:
             raise HTTPException(status_code=422, detail="invalid_request")
-        background_tasks.add_task(m.community_process_cleanup_jobs)
+        background_tasks.add_task(m.community.process_cleanup_jobs)
         return JSONResponse(status_code=202, content={"status": "accepted"})
 
 
@@ -49,11 +66,11 @@ def register(router: APIRouter, m) -> None:
         include_in_schema=False,
     )
     async def internal_account_nickname(
-        payload: m.InternalActorNicknameRequest,
+        payload: InternalActorNicknameRequest,
         request: Request,
     ):
         """Idempotently replace an actor's denormalized historical nickname."""
-        if not m.internal_service_authorized(
+        if not account_internal.internal_service_authorized(
             request.headers.get("x-internal-service-token", "")
         ):
             raise HTTPException(status_code=401, detail="auth_required")
@@ -63,7 +80,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=422, detail="invalid_request") from None
         updated = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_update_actor_nickname(actor_id, payload.nickname),
+            lambda: m.community.update_actor_nickname(actor_id, payload.nickname),
         )
         return JSONResponse(
             status_code=202,

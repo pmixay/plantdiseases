@@ -24,9 +24,9 @@ RESPONSE_KEYS = {
 
 @pytest.fixture
 def build():
-    import main as server_main
 
     def _build(result, **overrides):
+        import analysis_payload
         kwargs = {
             "scan_id": "scan-abc",
             "species_payload": None,
@@ -36,7 +36,7 @@ def build():
             "family_fallback_reason": None,
         }
         kwargs.update(overrides)
-        return server_main.build_analyze_payload(result, **kwargs)
+        return analysis_payload.build_analyze_payload(result, **kwargs)
 
     return _build
 
@@ -70,7 +70,8 @@ def _species(scientific="Ficus elastica"):
 
 
 def test_accepted_payload_has_the_full_contract(build):
-    import main as server_main
+    import app_version
+    import diseases_data
 
     payload = build(_result(), species_payload=_species())
 
@@ -83,8 +84,8 @@ def test_accepted_payload_has_the_full_contract(build):
     assert payload["is_healthy"] is False
     assert payload["scan_id"] == "scan-abc"
     assert payload["is_repeat"] is False
-    assert payload["server_version"] == server_main.APP_VERSION
-    info = server_main.DISEASES_DATABASE["leaf_spot"]
+    assert payload["server_version"] == app_version.APP_VERSION
+    info = diseases_data.DISEASES_DATABASE["leaf_spot"]
     assert payload["disease_name"] == info["name_en"]
     assert payload["treatment_ru"] == info["treatment_ru"]
     top = payload["top_k"][0]
@@ -97,11 +98,11 @@ def test_healthy_flag_follows_the_displayed_class(build):
 
 
 def test_toxicity_prefers_the_species_hint_over_plantnet(build, monkeypatch):
-    import main as server_main
+    import diseases_data
 
     seen: list[str] = []
     monkeypatch.setattr(
-        server_main, "lookup_pet_toxicity",
+        diseases_data, "lookup_pet_toxicity",
         lambda sp: seen.append(sp) or {"toxic_to_pets": True, "species_list": ["cat"], "source": "db"},
     )
     hinted = build(_result(), species_payload=_species(), species_override="Monstera deliciosa")

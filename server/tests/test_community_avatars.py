@@ -234,9 +234,9 @@ def test_http_avatar_requires_an_account_and_a_real_image(client, community_stor
 
 
 def test_http_avatar_quota(client, community_store, monkeypatch):
-    import main
+    import routes_forum
 
-    monkeypatch.setattr(main, "FORUM_AVATAR_DAILY_QUOTA", 1)
+    monkeypatch.setattr(routes_forum, "FORUM_AVATAR_DAILY_QUOTA", 1)
     assert _put_avatar(client, "busy").status_code == 200
     assert _put_avatar(client, "busy").status_code == 429
 

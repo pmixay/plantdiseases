@@ -120,9 +120,10 @@ def _reset_abuse_counters():
     per-IP daily quotas would otherwise trip partway through the run.
     """
     import main as server_main
+    import plant_photos
 
     # Background photo warming would make real Wikimedia requests from tests.
-    server_main.plant_photo_warm = lambda urls: None
+    plant_photos.warm = lambda urls: None
     # The anonymous popularity tally is written by every accepted analysis;
     # start each test from an empty one so popular-feed tests stay isolated.
     import community as community_module
@@ -249,7 +250,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     # layer) has nothing to instantiate. Tests use
     # ``pipeline._RealPipelineForTests``; nothing in production reads it.
     pipeline_module._RealPipelineForTests = pipeline_module.PlantDiseasePipeline
-    server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     server_main.account_authenticator = _TestAccountAuthenticator()
 
@@ -262,8 +262,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     community.COMMUNITY_DB_PATH = state_dir / "community.db"
     community.COMMUNITY_THUMB_DIR = state_dir / "community-thumbs"
     community._initialised = False
-    # main imports this path by value for the thumbnail response endpoint.
-    server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
 
     # Same story for the proxied-photo cache: a route that fetches one would
     # otherwise create ``server/plant_photo_cache/`` in the working tree. The
@@ -304,19 +302,26 @@ def community_store(tmp_path, monkeypatch):
     to re-bind on ``main`` by hand (some thirty names) and nothing restored.
     """
     import community
-    import main as server_main
 
     monkeypatch.setattr(community, "COMMUNITY_DB_PATH", tmp_path / "community.db")
     monkeypatch.setattr(community, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
     monkeypatch.setattr(community, "_initialised", False)
     monkeypatch.setattr(community, "_last_expiry_sweep", 0.0)
-    # main imports this path by value for the thumbnail response endpoint.
-    monkeypatch.setattr(server_main, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
     return community
 
 
 @pytest.fixture
-def community_http_store(community_store, monkeypatch):
+def community_strict_http_store(community_store):
+    """``community_store`` for HTTP tests that run the real analysis-token and
+    scan-write checks: nothing is patched on ``community``."""
+    import main as server_main
+
+    server_main._daily_write_counts.clear()
+    return community_store
+
+
+@pytest.fixture
+def community_http_store(community_strict_http_store, monkeypatch):
     """``community_store`` for HTTP tests that post synthetic scan ids.
 
     ``/api/community/scan`` publishes a scan the server itself analysed: it
@@ -325,9 +330,9 @@ def community_http_store(community_store, monkeypatch):
     every id counts as issued and the write goes through ``record_scan`` with
     the client's values. The rejection paths are tested explicitly elsewhere.
     """
-    import main as server_main
+    import community
 
-    comm = community_store
+    comm = community_strict_http_store
 
     def legacy_analysis_write(**kwargs):
         return comm.record_scan(
@@ -347,9 +352,8 @@ def community_http_store(community_store, monkeypatch):
             nickname=kwargs.get("nickname"),
         )
 
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", legacy_analysis_write)
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", lambda *a, **k: True)
-    server_main._daily_write_counts.clear()
+    monkeypatch.setattr(community, "record_analysis_scan", legacy_analysis_write)
+    monkeypatch.setattr(community, "is_analysis_token_issued", lambda *a, **k: True)
     return comm
 
 

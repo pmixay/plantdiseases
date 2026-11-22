@@ -9,11 +9,20 @@ it) is seen by the routes exactly as before.
 
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 # chat_reply outcomes decided before any model call.
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import diseases_data
+except ImportError:
+    import diseases_data
+
+
 _CHAT_NO_COST_REASONS = frozenset({
     "empty_message",
     "message_too_long",
@@ -23,9 +32,40 @@ _CHAT_NO_COST_REASONS = frozenset({
 })
 
 
+_QUOTA_UNAVAILABLE_TEXT = {
+    "en": "You've reached today's limit for this feature. It resets at midnight UTC.",
+    "ru": "Дневной лимит для этой функции исчерпан. Он обновится в полночь по UTC.",
+}
+
+
+class ChatRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=2000)
+    locale: str = Field(default="en", max_length=8)
+    diagnosis: dict | None = None
+
+
+class CarePlanRequest(BaseModel):
+    disease: str = Field(..., min_length=1, max_length=64)
+    species: str | None = Field(default=None, max_length=128)
+    light: str = Field(default="bright_indirect", max_length=32)
+    locale: str = Field(default="en", max_length=8)
+    # Optional season override; ``None`` auto-detects from today's date
+    # (northern-hemisphere default). Accepted values: ``"growing"``
+    # or ``"dormant"``.
+    season: str | None = Field(default=None, max_length=16)
+    # What the plan is for. ``scan``: adapted to a diagnosis (the scan result
+    # and the plant it was saved to); a fresh AI summary spends the daily
+    # care-plan allowance. ``species``: a species' general care (species
+    # page), always the healthy-plant plan and never metered. ``checklist``:
+    # the structured plan behind a garden treatment checklist, no AI summary,
+    # never metered.
+    purpose: Literal["scan", "species", "checklist"] = "scan"
+
+
 def register(router: APIRouter, m) -> None:
     @router.post("/chat")
-    async def chat_endpoint(request: Request, payload: m.ChatRequest):
+    async def chat_endpoint(request: Request, payload: ChatRequest):
         """AI Plant Doctor — OpenRouter chat completion (default model
         ``openai/gpt-5.6-luna``).
 
@@ -41,7 +81,7 @@ def register(router: APIRouter, m) -> None:
                 "reason": "daily_quota",
                 # The app shows ``fallback`` verbatim, so builds that predate
                 # this reason still tell the user what happened.
-                "fallback": m._QUOTA_UNAVAILABLE_TEXT[lang],
+                "fallback": _QUOTA_UNAVAILABLE_TEXT[lang],
             })
         # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
         # before they hit chat_reply so a malicious client can't push a
@@ -49,12 +89,12 @@ def register(router: APIRouter, m) -> None:
         diagnosis = payload.diagnosis
         if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
             raise HTTPException(status_code=400, detail="diagnosis context too large")
-        metered = m.openrouter_configured()
+        metered = m.ai_services.openrouter_configured()
         if metered:
             await m._authorize_metered_feature(request, feature="ai_doctor")
         result = await asyncio.get_running_loop().run_in_executor(
             m._get_net_executor(),
-            lambda: m.chat_reply(
+            lambda: m.ai_services.chat_reply(
                 session_id=payload.session_id,
                 user_message=payload.message,
                 locale=payload.locale,
@@ -78,7 +118,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/care-plan")
-    async def care_plan_endpoint(request: Request, payload: m.CarePlanRequest):
+    async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
         """Build a watering / fertilising / humidity schedule for a plant.
 
         Always returns a usable rules-based plan; when an OpenRouter key
@@ -105,7 +145,7 @@ def register(router: APIRouter, m) -> None:
             # A species' general care, never a diagnosis: keeps this unmetered
             # path from serving disease-specific plans.
             disease = "healthy"
-        if disease not in m.DISEASES_DATABASE and disease != "unknown":
+        if disease not in diseases_data.DISEASES_DATABASE and disease != "unknown":
             # Don't reject — just normalise unknown to ``unknown``. Keeps the
             # endpoint forgiving while still producing a useful plan.
             disease = "unknown"
@@ -114,7 +154,7 @@ def register(router: APIRouter, m) -> None:
         metered = purpose == "scan"
 
         def build(*, polish: bool, cached_polish_only: bool = False) -> dict:
-            return m.generate_care_plan(
+            return m.ai_services.generate_care_plan(
                 disease=disease,
                 species=payload.species,
                 light=payload.light,
@@ -131,7 +171,7 @@ def register(router: APIRouter, m) -> None:
         if (
             polish
             and not plan.get("cached")
-            and m.openrouter_configured()
+            and m.ai_services.openrouter_configured()
             and m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
         ):
             if metered:
@@ -147,7 +187,7 @@ def register(router: APIRouter, m) -> None:
                     feature="care_plan",
                     upstream_attempted=not plan.get("cached"),
                 )
-        toxicity = m.lookup_pet_toxicity(payload.species) if payload.species else {
+        toxicity = diseases_data.lookup_pet_toxicity(payload.species) if payload.species else {
             "toxic_to_pets": False, "species_list": [], "source": "unknown",
         }
         plan = {
@@ -168,7 +208,7 @@ def register(router: APIRouter, m) -> None:
         lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
         loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(
-            m._get_net_executor(), lambda: m.fetch_species_info(n, lang),
+            m._get_net_executor(), lambda: m.species_info.fetch_species_info(n, lang),
         )
         if info is None:
             # Don't let an intermediary cache a transient Wikipedia miss.
@@ -185,7 +225,7 @@ def register(router: APIRouter, m) -> None:
         credit, licence = info.get("image_credit"), info.get("image_license")
         if lang != "en":
             en_info = await loop.run_in_executor(
-                m._get_net_executor(), lambda: m.fetch_species_info(n, "en"),
+                m._get_net_executor(), lambda: m.species_info.fetch_species_info(n, "en"),
             )
             if en_info and (en_info.get("images") or en_info.get("image_url")):
                 image_url = en_info.get("image_url")
@@ -197,11 +237,11 @@ def register(router: APIRouter, m) -> None:
         # Fetch the gallery into the photo cache now, politely and one at a
         # time, so the card's burst of image requests finds them cached rather
         # than tripping Wikimedia's throttle (see plant_photos.warm).
-        m.plant_photo_warm([image_url, *images])
+        m.plant_photos.warm([image_url, *images])
         proxied = {
             **info,
-            "image_url": m.plant_photo_proxy(image_url),
-            "images": [p for p in (m.plant_photo_proxy(i) for i in images) if p],
+            "image_url": m.plant_photos.proxy_path(image_url),
+            "images": [p for p in (m.plant_photos.proxy_path(i) for i in images) if p],
             # Author + licence of the photo (set for Commons / iNaturalist
             # fallbacks; null for a Wikipedia lead image).
             "image_credit": credit,
@@ -250,7 +290,7 @@ def register(router: APIRouter, m) -> None:
         # part of the shared cache key, so it must not shape the cached answer.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.species_common_diseases(n, lang=lang),
+            m._get_net_executor(), lambda: m.ai_services.species_common_diseases(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}
@@ -292,7 +332,7 @@ def register(router: APIRouter, m) -> None:
         # ``common`` is accepted for client compatibility and ignored, as above.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.species_profile(n, lang=lang),
+            m._get_net_executor(), lambda: m.ai_services.species_profile(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}

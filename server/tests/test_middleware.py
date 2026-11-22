@@ -70,12 +70,13 @@ def test_health_capabilities_not_rate_limited(rate_limited_client):
 def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
     client, monkeypatch,
 ):
+    import community
     import main as server_main
 
     monkeypatch.setattr(server_main, "REQUIRE_API_KEY", True)
     monkeypatch.setattr(server_main, "API_KEYS", {})
     monkeypatch.setattr(
-        server_main, "community_density_grid", lambda *_args, **_kwargs: {"cells": []}
+        community, "density_grid", lambda *_args, **_kwargs: {"cells": []}
     )
     assert server_main._is_public_community_read(
         "GET", "/api/community/thumb/example.webp"
@@ -211,6 +212,7 @@ def test_metrics_store_aggregates_are_shared_within_the_ttl(client, monkeypatch)
     """Each /api/metrics used to re-run the full-table scans behind its
     ``training`` and ``community`` blocks. Inside the TTL they are computed
     once; the in-process counters beside them stay live."""
+    import community
     import main as server_main
 
     scans = {"community": 0}
@@ -219,7 +221,7 @@ def test_metrics_store_aggregates_are_shared_within_the_ttl(client, monkeypatch)
         scans["community"] += 1
         return {"scans": scans["community"]}
 
-    monkeypatch.setattr(server_main, "community_stats_snapshot", _counting_snapshot)
+    monkeypatch.setattr(community, "stats_snapshot", _counting_snapshot)
     monkeypatch.setattr(server_main, "_metrics_store_snapshot", None)
     monkeypatch.setattr(server_main, "METRICS_SNAPSHOT_TTL_SECONDS", 60.0)
 
@@ -283,13 +285,14 @@ def test_unhandled_exception_is_a_logged_counted_json_500_with_a_server_trace_id
     leaked exception text, an error-counter increment and an access-log line."""
     import logging
 
+    import community
     import main as server_main
 
     def _boom():
         raise RuntimeError("store exploded")
 
     before = server_main._snapshot_metrics()["total_errors"]
-    monkeypatch.setattr(server_main, "community_stats_snapshot", _boom)
+    monkeypatch.setattr(community, "stats_snapshot", _boom)
 
     with caplog.at_level(logging.INFO, logger="plantdiseases"):
         with _client_swallowing_server_errors() as c:

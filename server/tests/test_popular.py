@@ -8,20 +8,22 @@ import pytest
 def _no_wikipedia(monkeypatch):
     """Stub species image resolution so tests never hit the network, and clear
     the daily bundle cache between tests."""
+    import community
     import main as server_main
+    import species_info
 
     # Use a Wikimedia host so the bundle's image proxy (plant_photos.proxy_path,
     # which only rewrites allowed hosts) produces a real proxy path.
     monkeypatch.setattr(
-        server_main, "fetch_species_info",
+        species_info, "fetch_species_info",
         lambda name, lang="en": {
             "title": name,
             "image_url": f"https://upload.wikimedia.org/{name}.jpg",
         },
     )
     monkeypatch.setattr(
-        server_main,
-        "community_popular_snapshot",
+        community,
+        "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 0, "top_species": [], "top_diseases": [],
         },
@@ -66,10 +68,10 @@ def test_popular_known_country_placeholder_is_curated(client):
 
 
 def test_popular_caps_at_ten_cards(client, monkeypatch):
-    import main as server_main
+    import community
 
     monkeypatch.setattr(
-        server_main, "community_popular_snapshot",
+        community, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 100,
             "top_species": [
@@ -88,11 +90,11 @@ def test_popular_caps_at_ten_cards(client, monkeypatch):
 
 
 def test_popular_uses_live_country_data(client, monkeypatch):
-    import main as server_main
+    import community
 
     monkeypatch.setattr(
-        server_main,
-        "community_popular_snapshot",
+        community,
+        "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 5,
             "top_species": [{"species": "Ficus elastica", "count": 3, "percent": 60}],
@@ -112,11 +114,11 @@ def test_popular_uses_live_country_data(client, monkeypatch):
 
 
 def test_popular_nearby_scope_when_coords(client, monkeypatch):
-    import main as server_main
+    import community
 
     # Data only for the coords (nearby) scope; country/worldwide stay empty.
     monkeypatch.setattr(
-        server_main, "community_popular_snapshot",
+        community, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: (
             {
                 "total": 4,
@@ -141,10 +143,10 @@ def test_popular_nearby_without_place_falls_back_to_worldwide(client, monkeypatc
     resolvable country and no city) must NOT be labeled "Worldwide" over a
     single local scan — it flips to the true worldwide aggregate so the label
     matches the data."""
-    import main as server_main
+    import community
 
     monkeypatch.setattr(
-        server_main, "community_popular_snapshot",
+        community, "popular_snapshot",
         # Same data whether called for the nearby (lat set) or worldwide
         # (lat None) scope, so the fallback recompute finds real rows.
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
@@ -166,10 +168,11 @@ def test_popular_images_are_english_and_titles_disambiguate(client, monkeypatch)
     """Lead images resolve through the EN proxy regardless of UI locale, and a
     localized title shared by two species falls back to the scientific name so
     the cards stay distinct (the RU 'two identical Spathiphyllum' bug)."""
-    import main as server_main
+    import community
+    import species_info
 
     monkeypatch.setattr(
-        server_main, "community_popular_snapshot",
+        community, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 2,
             "top_species": [
@@ -181,7 +184,7 @@ def test_popular_images_are_english_and_titles_disambiguate(client, monkeypatch)
     )
     # Both species collapse to the same localized title in RU.
     monkeypatch.setattr(
-        server_main, "fetch_species_info",
+        species_info, "fetch_species_info",
         lambda name, lang="en": {"title": "Спатифиллюм",
                                  "image_url": f"https://upload.wikimedia.org/{name}.jpg"},
     )
@@ -225,12 +228,12 @@ def test_popular_curated_countries_have_real_names(client):
 def test_thin_community_data_is_topped_up_with_curated_picks(client, monkeypatch):
     """One real scan worldwide must not leave a one-card carousel: real data
     first (with its percentage), then curated picks without counts."""
-    import main as server_main
+    import community
     from popular_plants import GLOBAL_DEFAULT
 
     monkeypatch.setattr(
-        server_main,
-        "community_popular_snapshot",
+        community,
+        "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 1,
             "top_species": [{"species": "Rosa abietina", "count": 1, "percent": 100}],
@@ -276,7 +279,7 @@ def test_worldwide_popular_comes_from_the_anonymous_tally(client, monkeypatch):
     def _no_community(country=None, *, lat=None, lon=None, radius_km=25.0, limit=10):
         return {"total": 0, "top_species": [], "top_diseases": []}
 
-    monkeypatch.setattr(server_main, "community_popular_snapshot", _no_community)
+    monkeypatch.setattr(community, "popular_snapshot", _no_community)
     for _ in range(3):
         community.record_anonymous_scan("Ficus elastica", "healthy")
     community.record_anonymous_scan("Aloe vera", "leaf_spot")

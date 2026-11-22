@@ -275,10 +275,10 @@ def test_download_bounds_redirect_chain(photos, monkeypatch):
 
 
 def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
-    import main as server_main
+    import plant_photos
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/x.png"},
     )
@@ -292,14 +292,15 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     Glide client decodes WebP by magic bytes."""
     from PIL import Image
 
-    import main as server_main
+    import plant_photos
+    import routes_content
     src = tmp_path / "big.png"
     Image.new("RGB", (2400, 1600), (10, 120, 30)).save(src, format="PNG")
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: src)
     prune_calls = []
     monkeypatch.setattr(
-        server_main,
-        "plant_photo_prune_cache",
+        plant_photos,
+        "prune_cache",
         lambda: prune_calls.append(True),
     )
     r = client.get(
@@ -310,7 +311,7 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     # RIFF....WEBP magic — a real WebP, and downscaled to the 1000px bound.
     assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WEBP"
     w, h = Image.open(io.BytesIO(r.content)).size
-    assert max(w, h) <= server_main._PLANT_PHOTO_MAX_SIDE
+    assert max(w, h) <= routes_content._PLANT_PHOTO_MAX_SIDE
     assert len(r.content) < src.stat().st_size  # smaller than the PNG original
     assert prune_calls == [True]
 
@@ -321,13 +322,15 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
     monkeypatch,
 ):
     import main as server_main
+    import plant_photos
+    import routes_content
 
     src = tmp_path / "oversized.png"
     src.write_bytes(_PNG)
     loaded = False
 
     class _OversizedImage:
-        size = (server_main._WEBP_MAX_SOURCE_PIXELS + 1, 1)
+        size = (routes_content._WEBP_MAX_SOURCE_PIXELS + 1, 1)
 
         def __enter__(self):
             return self
@@ -340,7 +343,7 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
             loaded = True
             raise AssertionError("oversized image must be rejected before decode")
 
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda _url: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda _url: src)
     monkeypatch.setattr(server_main.Image, "open", lambda _path: _OversizedImage())
 
     response = client.get(
@@ -363,11 +366,11 @@ def test_webp_variant_not_regenerated_on_mtime_touch(client, tmp_path):
 
     from PIL import Image
 
-    import main as server_main
+    import routes_content
     src = tmp_path / "p.png"
     Image.new("RGB", (1200, 800), (10, 120, 30)).save(src, format="PNG")
 
-    v1 = server_main._webp_variant(src, 1000, 80)
+    v1 = routes_content._webp_variant(src, 1000, 80)
     assert v1 is not None and v1.is_file()
     first_mtime = v1.stat().st_mtime
 
@@ -375,7 +378,7 @@ def test_webp_variant_not_regenerated_on_mtime_touch(client, tmp_path):
     future = time.time() + 100
     os.utime(src, (future, future))
 
-    v2 = server_main._webp_variant(src, 1000, 80)
+    v2 = routes_content._webp_variant(src, 1000, 80)
     assert v2 == v1  # same variant reused, not a new file
     assert v2.stat().st_mtime == first_mtime  # NOT regenerated → stable ETag
 
@@ -393,14 +396,15 @@ def test_endpoint_missing_source_is_400(client):
 def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
     """The by-name form fully resolves the photo server-side (Wikipedia lookup
     → byte cache), so the popular carousel needs only the species name."""
-    import main as server_main
+    import plant_photos
+    import species_info
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
     monkeypatch.setattr(
-        server_main, "fetch_species_info",
+        species_info, "fetch_species_info",
         lambda n, lang="en": {"image_url": "https://upload.wikimedia.org/x.png"},
     )
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"name": "Ficus elastica", "locale": "en"},
     )
@@ -409,15 +413,15 @@ def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
 
 
 def test_endpoint_by_name_404_when_unresolvable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "fetch_species_info", lambda n, lang="en": None)
+    import species_info
+    monkeypatch.setattr(species_info, "fetch_species_info", lambda n, lang="en": None)
     r = client.get("/api/plant-photo", params={"name": "Nope nope"})
     assert r.status_code == 404
 
 
 def test_endpoint_404_when_uncacheable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: None)
+    import plant_photos
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: None)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/missing.png"},
     )
