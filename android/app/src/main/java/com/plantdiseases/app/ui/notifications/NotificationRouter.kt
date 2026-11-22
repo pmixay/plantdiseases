@@ -3,7 +3,6 @@ package com.plantdiseases.app.ui.notifications
 import android.content.Context
 import android.content.Intent
 import com.plantdiseases.app.data.repository.ForumNotificationSync
-import com.plantdiseases.app.ui.community.MyScanRepliesActivity
 import com.plantdiseases.app.ui.community.forum.ModerationNoticesActivity
 import com.plantdiseases.app.ui.community.forum.PostDetailActivity
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
@@ -20,7 +19,6 @@ object NotificationRouter {
             if (it.size == 2) it[0] to it[1] else return null
         }
         return when (prefix) {
-            "community" -> MyScanRepliesActivity.intentFor(context, id)
             ForumNotificationSync.LINK_POST -> id.split(":", limit = 2).let { parts ->
                 PostDetailActivity.intent(context, parts[0], answerId = parts.getOrNull(1))
             }

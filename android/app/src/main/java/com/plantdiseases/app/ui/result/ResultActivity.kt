@@ -215,8 +215,7 @@ class ResultActivity : AppCompatActivity() {
         // the server are held back: the AI doctor and re-running an offline
         // scan online. (Whether they are shown at all is decided per-verdict in
         // displayResult; this only decides whether a shown one can be used
-        // right now.) The second-opinion control is deliberately absent — it
-        // also has to stay disabled while an ask is in flight, so
+        // right now.) The "Ask the community" button is deliberately absent:
         // CommunityController owns its enabled state outright.
         enableWhileOnline(
             connectivity.isOnline,
@@ -581,21 +580,20 @@ class ResultActivity : AppCompatActivity() {
                 )
             }
 
-            // Community second opinion on the user's OWN scan — offered on
-            // every server-diagnosed plant verdict (not just low-confidence
-            // ones; the owner may doubt any result). Hidden for NAP (the
-            // feed hides NAP scans, so nobody could answer) and for offline
-            // scans (no server scan_id to share).
+            // "Ask the community" posts the user's OWN scan to the forum,
+            // offered on every server-diagnosed plant verdict (the owner may
+            // doubt any result). Hidden for NAP and for offline scans (no
+            // server scan to attach).
             if (!isAbstained && !isOfflineAqua) {
-                btnSecondOpinion.visibility = View.VISIBLE
-                community.setupSecondOpinion(scan)
+                btnAskCommunity.visibility = View.VISIBLE
+                community.setupAskCommunity(scan)
             } else {
-                btnSecondOpinion.visibility = View.GONE
+                btnAskCommunity.visibility = View.GONE
             }
             // The row only exists to pair the two follow-up actions; it goes
             // with them so no empty gap is left above the care plan.
             resultActionRow.visibility = if (
-                btnSecondOpinion.visibility == View.VISIBLE ||
+                btnAskCommunity.visibility == View.VISIBLE ||
                 btnAskDoctor.visibility == View.VISIBLE
             ) {
                 View.VISIBLE
@@ -724,15 +722,6 @@ class ResultActivity : AppCompatActivity() {
                 .setInterpolator(DecelerateInterpolator())
                 .start()
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Catches a request/reply state change made on MyScanRepliesActivity
-        // (e.g. Stop) — that screen is separate now, so this is how the
-        // second-opinion control finds out, same as every other on-resume
-        // refresh in this app (no Flow/LiveData plumbing over Room here).
-        community.onResume()
     }
 
     override fun onDestroy() {

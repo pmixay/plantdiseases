@@ -128,7 +128,7 @@ class ResultActivityTest {
                     R.id.card_alternatives,
                     R.id.card_similar_scans,
                     R.id.btn_ask_doctor,
-                    R.id.btn_second_opinion,
+                    R.id.btn_ask_community,
                     R.id.btn_add_to_garden,
                     R.id.btn_share,
                 ).forEach { viewId ->

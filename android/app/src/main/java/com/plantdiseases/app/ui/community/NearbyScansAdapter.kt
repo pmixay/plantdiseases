@@ -21,11 +21,10 @@ import com.plantdiseases.app.util.ThumbLoader
  * Single-column, scrolling-forum adapter for the community feed (Community
  * v2 — replaced the staggered photo grid). Each post renders the scan photo
  * full-width under the author's nickname/place/time header, then a like +
- * comments + views action row. The model's diagnosis is intentionally NOT on
- * the card — it would anchor voters before they look at the photo; it
- * appears inside the opinion sheet, which the photo and the comments/views
- * rows all open. Liking is handled here directly, optimistically, via
- * [onLike] + [updateLike] rather than round-tripping through the sheet.
+ * views action row. The model's diagnosis is not on the card; it appears in
+ * the scan sheet the photo opens. Liking is handled here directly,
+ * optimistically, via [onLike] + [updateLike] rather than round-tripping
+ * through the sheet.
  *
  * Thumbnails load via Glide from /api/community/thumb/<filename>; posts
  * without a thumb_path fall back to a tinted leaf icon so the card stays
@@ -35,11 +34,10 @@ class NearbyScansAdapter(
     private val onOpen: (CommunityScanItem) -> Unit,
     private val onAuthor: (CommunityScanItem) -> Unit,
     private val onLike: (CommunityScanItem) -> Unit,
-    private val onComments: (CommunityScanItem) -> Unit = onOpen,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
 
-    /** A guest's like and comment actions are drawn locked (gray); their taps
-     *  still reach [onLike] and [onComments], which offer sign-in. */
+    /** A guest's like is drawn locked (gray); the tap still reaches [onLike],
+     *  which offers sign-in. */
     var guest: Boolean = false
         set(value) {
             if (field == value) return
@@ -111,11 +109,7 @@ class NearbyScansAdapter(
         private val likeRow: View = itemView.findViewById(R.id.ll_nearby_like)
         private val likeIcon: ImageView = itemView.findViewById(R.id.iv_nearby_like)
         private val likes: TextView = itemView.findViewById(R.id.tv_nearby_likes)
-        private val commentsRow: View = itemView.findViewById(R.id.ll_nearby_comments)
-        private val commentsIcon: ImageView = itemView.findViewById(R.id.iv_nearby_comments)
         private val views: TextView = itemView.findViewById(R.id.tv_nearby_views)
-        private val comments: TextView = itemView.findViewById(R.id.tv_nearby_comments)
-        private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
@@ -139,41 +133,13 @@ class NearbyScansAdapter(
             val openAuthor = View.OnClickListener { onAuthor(item) }
             avatar.setOnClickListener(openAuthor)
             label.setOnClickListener(openAuthor)
-            wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
-            // Always show all three counts, zero included — hiding a count at
-            // zero was why the same action row looked different from post to
-            // post ("chaotic"): a like/comment landing on a post made a pill
-            // pop into existence that wasn't there a moment before.
+            // Always show both counts, zero included, so the action row looks
+            // the same on every post.
             views.text = item.viewCount.toString()
-            if (item.wantsOpinion) {
-                comments.text = item.opinionCount.toString()
-                commentsIcon.setImageResource(R.drawable.ic_comment)
-                commentsRow.alpha = 1f
-                commentsRow.contentDescription = itemView.context.getString(
-                    R.string.community_open_replies,
-                    item.opinionCount,
-                )
-            } else {
-                comments.text = itemView.context.getString(R.string.community_replies_locked_short)
-                commentsIcon.setImageResource(R.drawable.ic_lock)
-                commentsRow.alpha = 0.55f
-                commentsRow.contentDescription = itemView.context.getString(
-                    R.string.community_replies_locked_readable,
-                )
-            }
             bindLike(item)
 
-            val open = View.OnClickListener { onOpen(item) }
-            photo.setOnClickListener(open)
-            commentsRow.setOnClickListener { onComments(item) }
-            val context = itemView.context
-            commentsIcon.imageTintList = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface_secondary),
-            )
-            comments.setTextColor(
-                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface),
-            )
+            photo.setOnClickListener { onOpen(item) }
 
             // ServerConfig.appBaseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath

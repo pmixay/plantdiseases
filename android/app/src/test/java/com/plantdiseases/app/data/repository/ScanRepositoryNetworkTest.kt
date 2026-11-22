@@ -8,7 +8,6 @@ import com.plantdiseases.app.auth.RefreshTokenVault
 import com.plantdiseases.app.data.account.AuthProvider
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ChatRequest
-import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.ErrorReport
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -869,7 +868,7 @@ class ScanRepositoryNetworkTest {
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """{"items":[{"scan_id":"s1","disease":"leaf_spot","opinion_count":2}],""" +
+                    """{"items":[{"scan_id":"s1","disease":"leaf_spot","view_count":2}],""" +
                         """"summary":{"country":"US","total":5}}""",
                 ),
         )
@@ -910,89 +909,6 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun getCommunityOpinions_success_pathAndParse() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scan_id":"sc-9","opinions":[""" +
-                        """{"suggested_disease":"rust","note":"looks like rust"}],"views":4}""",
-                ),
-        )
-        val result = runBlocking { repo.getCommunityOpinions("sc-9") }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.views).isEqualTo(4)
-        assertThat(result.getOrNull()?.opinions?.get(0)?.suggestedDisease).isEqualTo("rust")
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/opinions/sc-9")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun fetchMyScanOpinions_success_pathAndParse() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scans":[{"scan_id":"a","disease":"leaf_spot","opinion_count":3}],""" +
-                        """"total_opinions":3,"total_views":10}""",
-                ),
-        )
-        val result = runBlocking { repo.fetchMyScanOpinions() }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
-        assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/my-scan-opinions")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    // --- Community write POSTs / DELETE / push (Ktor) ---
-
-    @Test
-    fun submitCommunityOpinion_423_mapsToLockedException() {
-        server.enqueue(MockResponse().setResponseCode(423))
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                CommunityOpinionRequest(
-                    scanId = "sc-locked",
-                    suggestedDisease = "healthy",
-                ),
-            )
-        }
-        assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
-    }
-
-    @Test
-    fun submitCommunityOpinion_success_postsBodyAndParses() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"scan_id":"sc-2","ok":true,"count":1,"opinions":[]}"""),
-        )
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                CommunityOpinionRequest(
-                    scanId = "sc-2",
-                    suggestedDisease = "rust",
-                ),
-            )
-        }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.ok).isTrue()
-        val req = server.takeRequest()
-        assertThat(req.method).isEqualTo("POST")
-        assertThat(req.path).isEqualTo("/api/community/opinion")
-        val body = req.body.readUtf8()
-        assertThat(body).contains("\"scan_id\":\"sc-2\"")
-        assertThat(body).contains("\"suggested_disease\":\"rust\"")
-        assertThat(body).doesNotContain("user_pseudo_id")
-        assertThat(body).doesNotContain("nickname")
-        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
     fun communitySafety_reportAndBlockNeverSendActorIds() {
         server.enqueue(
             MockResponse().setResponseCode(200)
@@ -1008,7 +924,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val reported = runBlocking {
-            repo.reportCommunityContent("opinion", "co-public", "hate_or_harassment")
+            repo.reportCommunityContent("scan", "cs-reported", "hate_or_harassment")
         }
         val blocked = runBlocking { repo.blockCommunityAuthor("scan", "cs-public") }
 
@@ -1018,8 +934,8 @@ class ScanRepositoryNetworkTest {
         assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
         assertThat(reportRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
         val reportBody = reportRequest.body.readUtf8()
-        assertThat(reportBody).contains("\"target_type\":\"opinion\"")
-        assertThat(reportBody).contains("\"target_id\":\"co-public\"")
+        assertThat(reportBody).contains("\"target_type\":\"scan\"")
+        assertThat(reportBody).contains("\"target_id\":\"cs-reported\"")
         assertThat(reportBody).contains("\"reason\":\"hate_or_harassment\"")
         assertThat(reportBody).doesNotContain("actor_id")
 
@@ -1141,9 +1057,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            guestRepository.submitCommunityOpinion(
-                CommunityOpinionRequest("scan-public", "leaf_spot"),
-            )
+            guestRepository.setCommunityLike("scan-public", liked = true)
         }
 
         assertThat(result.exceptionOrNull())
@@ -1158,11 +1072,11 @@ class ScanRepositoryNetworkTest {
         server.enqueue(
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"scan_id":"s","ok":true,"opinions":[]}"""),
+                .setBody("""{"ok":true,"liked":true,"count":1}"""),
         )
 
         val result = runBlocking {
-            repo.submitCommunityOpinion(CommunityOpinionRequest("s", "leaf_spot"))
+            repo.setCommunityLike("s", liked = true)
         }
 
         assertThat(result.isSuccess).isTrue()

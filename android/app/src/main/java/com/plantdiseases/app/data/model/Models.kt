@@ -357,26 +357,6 @@ data class FamilyCapability(
     @SerializedName("model_family") @SerialName("model_family") val modelFamily: String? = null,
 )
 
-/** Opinion counts on the user's OWN shared scans (GET /api/community/
- *  my-scan-opinions/{id}). Polled by OpinionCheckWorker to notify the user
- *  when someone leaves a second opinion. */
-@Serializable
-data class MyScanOpinionsResponse(
-    @SerializedName("scans") @SerialName("scans") val scans: List<ScanOpinionItem> = emptyList(),
-    @SerializedName("total_opinions") @SerialName("total_opinions") val totalOpinions: Int = 0,
-    @SerializedName("total_views") @SerialName("total_views") val totalViews: Int = 0,
-)
-
-@Serializable
-data class ScanOpinionItem(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
-    @SerializedName("disease") @SerialName("disease") val disease: String = "",
-    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
-    @SerializedName("latest_at") @SerialName("latest_at") val latestAt: Long = 0,
-    @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
-    @SerializedName("latest_nickname") @SerialName("latest_nickname") val latestNickname: String? = null,
-)
-
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
  *  so the app can download it once and re-download only when it changes. */
 @Serializable
@@ -474,13 +454,9 @@ data class CommunityScanItem(
     @SerializedName("thumb_path") @SerialName("thumb_path") val thumbPath: String? = null,
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
-    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
     // How many people opened this shared scan (server-attached on the feed);
     // shown as a small overlay count on the card thumbnail.
     @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
-    // The scanner flagged this scan as wanting a community second opinion
-    // (they were unsure and are waiting for others to weigh in).
-    @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
     // Server-derived public avatar seed. It is unrelated to provider subjects
     // and internal account UUIDs; the client never supplies it on writes.
     @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
@@ -510,7 +486,6 @@ data class CommunityPublicProfile(
     @SerializedName("joined_at") @SerialName("joined_at") val joinedAt: Long = 0L,
     @SerializedName("last_active_at") @SerialName("last_active_at") val lastActiveAt: Long = 0L,
     @SerializedName("scan_count") @SerialName("scan_count") val scanCount: Int = 0,
-    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
     @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
     @SerializedName("is_me") @SerialName("is_me") val isMe: Boolean = false,
     @SerializedName("items") @SerialName("items") val items: List<CommunityScanItem> = emptyList(),
@@ -571,21 +546,6 @@ data class CommunityScanUploadResponse(
     @SerializedName("id") @SerialName("id") val id: Long = 0,
 )
 
-/** /api/community/opinion request body. */
-@Serializable
-data class CommunityOpinionRequest(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
-    @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String,
-    @SerializedName("note") @SerialName("note") val note: String? = null,
-)
-
-/** /api/community/request-opinion request body. The scanner flags their
- *  OWN scan as wanting a second opinion — they don't suggest a diagnosis. */
-@Serializable
-data class CommunityRequestOpinionRequest(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
-)
-
 /** /api/telemetry/errors request body. One client-side problem report:
  *  errors-only diagnostic context (no images, no location, no PII). */
 @Serializable
@@ -604,41 +564,6 @@ data class ErrorReport(
     @SerializedName("app_version") @SerialName("app_version") val appVersion: String? = null,
     @SerializedName("android_api") @SerialName("android_api") val androidApi: Int? = null,
     @SerializedName("breadcrumbs") @SerialName("breadcrumbs") val breadcrumbs: List<String>? = null,
-)
-
-/** /api/community/request-opinion response. `flagged` is false when no
- *  owned community row exists yet (upload pending / sharing opted out). */
-@Serializable
-data class CommunityRequestOpinionResponse(
-    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
-    @SerializedName("flagged") @SerialName("flagged") val flagged: Boolean = false,
-)
-
-/** /api/community/request-opinion/cancel response. `cleared` is false when
- *  there was no open request to withdraw (already cancelled / expired). */
-@Serializable
-data class CommunityCancelOpinionResponse(
-    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
-    @SerializedName("cleared") @SerialName("cleared") val cleared: Boolean = false,
-)
-
-/** One community 'second opinion' on a shared scan. */
-@Serializable
-data class CommunityOpinion(
-    @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String = "",
-    @SerializedName("note") @SerialName("note") val note: String = "",
-    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
-    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
-    // Opaque public account handle used only to open the author's community
-    // profile. Null for unlinked legacy comments.
-    @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
-    // Opaque public token for reporting/blocking this reply. It cannot be used
-    // to recover the database row id or account actor id.
-    @SerializedName("content_id") @SerialName("content_id") val contentId: String? = null,
-    // Viewer-relative server flag; lets the UI avoid offering safety actions
-    // against the caller's own reply without exposing any account identifier.
-    @SerializedName("is_mine") @SerialName("is_mine") val isMine: Boolean = false,
 )
 
 @Serializable
@@ -675,31 +600,6 @@ data class CommunityBlocksResponse(
     @SerializedName("items") @SerialName("items") val items: List<CommunityBlockItem> = emptyList(),
 )
 
-/** /api/community/opinions/{scan_id} response. POST /opinion returns the
- *  same shape plus `ok` + `count`. */
-@Serializable
-data class CommunityOpinionsResponse(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
-    @SerializedName("opinions") @SerialName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
-    @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
-    // The signed-in account's most recent pick on this scan, resolved from
-    // the bearer principal. Null for anonymous reads or no prior opinion.
-    @SerializedName("my_opinion") @SerialName("my_opinion") val myOpinion: String? = null,
-    // Distinct-viewer count on this scan (per-user deduped server-side).
-    @SerializedName("views") @SerialName("views") val views: Int = 0,
-    // Whether the owner has a LIVE second-opinion request on this scan
-    // (requests auto-expire server-side after 72 h). Lets the owner's app
-    // restore its "waiting" state across restarts.
-    @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
-    // Epoch seconds of that live request (null when none) — drives the
-    // "N h left" countdown toward the 72 h expiry.
-    @SerializedName("opinion_requested_at") @SerialName("opinion_requested_at") val opinionRequestedAt: Long? = null,
-    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
-    @SerializedName("count") @SerialName("count") val count: Int = 0,
-    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
-    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
-)
-
 /** /api/community/like request body. */
 @Serializable
 data class CommunityLikeRequest(
@@ -723,24 +623,6 @@ data class CommunityViewRequest(
     // alternative — the server requires exactly one of the two to be set.
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String? = null,
     @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>? = null,
-)
-
-/** /api/community/scan-counts request + response: batched {opinions, views}
- *  per scan so the Gallery can badge the caller's own rows in one call. */
-@Serializable
-data class CommunityScanCountsRequest(
-    @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>,
-)
-
-@Serializable
-data class CommunityScanCount(
-    @SerializedName("opinions") @SerialName("opinions") val opinions: Int = 0,
-    @SerializedName("views") @SerialName("views") val views: Int = 0,
-)
-
-@Serializable
-data class CommunityScanCountsResponse(
-    @SerializedName("counts") @SerialName("counts") val counts: Map<String, CommunityScanCount> = emptyMap(),
 )
 
 /** Guide article about plant care */

@@ -17,10 +17,10 @@ import dagger.hilt.components.SingletonComponent
 /**
  * Manual DI escape hatch for classes Hilt can't (or shouldn't) field-inject
  * via `@AndroidEntryPoint`:
- *   * `CoroutineWorker` subclasses (`OpinionCheckWorker`, `PlantReminderWorker`)
+ *   * `CoroutineWorker` subclasses (`ForumAnswerCheckWorker`, `PlantReminderWorker`)
  *     — see the note on `androidx.hilt:hilt-work` below.
  *   * the plain Kotlin `object` singletons in `push/`/`util/` that aren't
- *     Android framework components at all (`OpinionNotifier`, `PushManager`,
+ *     Android framework components at all (`ForumAnswerNotifier`, `PushManager`,
  *     `NotificationCenter`).
  *   * [com.plantdiseases.app.ui.common.SpeciesInfoCardView] — a custom View
  *     that IS eligible for `@AndroidEntryPoint`, but `SpeciesInfoCardViewTest`

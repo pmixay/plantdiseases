@@ -30,7 +30,7 @@ import com.google.android.material.R as MaterialR
 
 /**
  * The one species card used everywhere a specific species is referenced —
- * scan result, species identify, community opinion sheet.
+ * scan result, species identify, community scan sheet.
  *
  * It shows only what identifies the plant: the Wikipedia lead photo, the
  * species name, the Wikipedia description, and a "more about this species"

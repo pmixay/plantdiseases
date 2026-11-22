@@ -153,7 +153,7 @@ class PlantDiseasesApp : Application() {
         // second init throws "WorkManager is already initialized" and crashes
         // every launch on a real device. Robolectric doesn't run the startup
         // provider, so the double-init never fired in unit tests — it only
-        // crashed on-device. Today's workers (OpinionCheckWorker,
+        // crashed on-device. Today's workers (ForumAnswerCheckWorker,
         // PlantReminderWorker) use the default WorkerFactory and resolve
         // their deps via EntryPointAccessors (see di/AppEntryPoint.kt), not
         // Hilt constructor injection, so HiltWorkerFactory isn't needed. If a
@@ -255,13 +255,9 @@ class PlantDiseasesApp : Application() {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { description = getString(R.string.channel_plant_reminders_desc) },
         )
-        nm.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_COMMUNITY,
-                getString(R.string.channel_community_name),
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply { description = getString(R.string.channel_community_desc) },
-        )
+        // The second-opinion channel is retired with the opinions it carried;
+        // answers on the user's posts have their own channel below.
+        nm.deleteNotificationChannel(LEGACY_CHANNEL_OPINIONS)
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_FORUM_ANSWERS,
@@ -271,44 +267,11 @@ class PlantDiseasesApp : Application() {
         )
     }
 
-    /** Poll for new second opinions on shared scans roughly hourly. Called
-     *  from MainActivity (not Application.onCreate — see note there).
-     *  Without server push (FCM) this poll is the only way a reply reaches a
-     *  closed app, so the interval is kept short with a flex window. UPDATE (not
-     *  KEEP) so installs created under the old 6h schedule adopt the new one.
-     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker.
-     *  Scheduled regardless of the opinion-notifications preference: a user
-     *  who opted out of the popup still gets the reply recorded in the
-     *  notification centre, and this poll is the only way it's discovered on
-     *  a device without FCM configured. */
-    fun scheduleOpinionChecks() {
-        if (!BuildConfig.ACCOUNT_UI_ENABLED) return
-        val request = androidx.work.PeriodicWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker
-            >(
-            1,
-            java.util.concurrent.TimeUnit.HOURS,
-            15,
-            java.util.concurrent.TimeUnit.MINUTES,
-        )
-            .setConstraints(
-                androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                    .build(),
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "opinion_check",
-            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
-            request,
-        )
-    }
-
     /** Poll Community for answers on the user's posts every half hour and
      *  notify ([com.plantdiseases.app.worker.ForumAnswerCheckWorker]), or stop
      *  when the user turned answer notifications off in Profile. Called from
-     *  MainActivity and the Profile switch (not Application.onCreate, for the
-     *  same WorkManager-timing reason as the opinion poll). */
+     *  MainActivity and the Profile switch (not Application.onCreate, which
+     *  would touch WorkManager before androidx.startup initialised it). */
     fun scheduleForumAnswerChecks() {
         val work = androidx.work.WorkManager.getInstance(this)
         val name = com.plantdiseases.app.worker.ForumAnswerCheckWorker.PERIODIC
@@ -338,8 +301,8 @@ class PlantDiseasesApp : Application() {
     /** Warm Glide's disk cache with the guide/disease example photos so they
      *  render offline after first launch online. One-time + CONNECTED
      *  constraint; KEEP so a launch during an in-flight prefetch doesn't stack
-     *  duplicates. Called from MainActivity (not Application.onCreate — same
-     *  WorkManager-timing note as the opinion poll). */
+     *  duplicates. Called from MainActivity (not Application.onCreate, which
+     *  would touch WorkManager too early). */
     fun prefetchGuidePhotos() {
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.GuidePhotoPrefetchWorker
@@ -357,33 +320,6 @@ class PlantDiseasesApp : Application() {
         )
     }
 
-    /** Fire an immediate, one-off opinion check — called when the app comes to
-     *  the foreground (and right after the user asks for a second opinion) so a
-     *  reply that landed while the app was closed surfaces promptly instead of
-     *  waiting for the next periodic tick. Expedited, degrading to a normal job
-     *  if the expedited quota is spent. Runs regardless of the
-     *  opinion-notifications preference — see scheduleOpinionChecks. */
-    fun checkOpinionsNow() {
-        if (!BuildConfig.ACCOUNT_UI_ENABLED) return
-        val request = androidx.work.OneTimeWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker
-            >()
-            .setConstraints(
-                androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                    .build(),
-            )
-            .setExpedited(
-                androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST,
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
-            "opinion_check_now",
-            androidx.work.ExistingWorkPolicy.REPLACE,
-            request,
-        )
-    }
-
     /** Retry encrypted remote-logout proofs whenever the app returns to use. */
     fun retryPendingAccountLogouts() {
         appScope.launch { authRepository.retryPendingLogoutRevocations() }
@@ -391,7 +327,7 @@ class PlantDiseasesApp : Application() {
 
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
-        const val CHANNEL_COMMUNITY = "community"
+        private const val LEGACY_CHANNEL_OPINIONS = "community"
         const val CHANNEL_FORUM_ANSWERS = "forum_answers"
 
         // Only minimized crash state is stashed for reporting on next launch.

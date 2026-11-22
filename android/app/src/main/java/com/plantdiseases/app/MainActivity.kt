@@ -184,37 +184,15 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(true)
 
-        // Kick off the periodic second-opinion poll from a UI context (not
-        // Application.onCreate, which would touch WorkManager too early), plus
-        // an immediate catch-up check so a reply that arrived while the app was
-        // closed records now instead of at the next periodic tick. The poll
-        // runs even when popup notifications are off because it also drives
-        // Community V2's in-app notification centre.
-        // Answers on the user's community posts: the same poll-instead-of-push
-        // arrangement, off when the user turned the notifications off.
+        // Answers on the user's community posts: polled instead of pushed
+        // (no FCM in production), scheduled from a UI context rather than
+        // Application.onCreate, and off when the user turned them off.
         (application as PlantDiseasesApp).scheduleForumAnswerChecks()
-        val opinionAction = opinionWorkAction(
-            BuildConfig.ACCOUNT_UI_ENABLED,
-            com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this),
-        )
-        when (opinionAction) {
-            OpinionWorkAction.CANCEL -> {
-                // Recovery/account-disabled builds must remove work inherited
-                // from v19 before it can touch private account endpoints.
-                androidx.work.WorkManager.getInstance(this).apply {
-                    cancelUniqueWork("opinion_check")
-                    cancelUniqueWork("opinion_check_now")
-                }
-            }
-
-            OpinionWorkAction.SCHEDULE -> {
-                (application as PlantDiseasesApp).apply {
-                    scheduleOpinionChecks()
-                    checkOpinionsNow()
-                }
-            }
-
-            OpinionWorkAction.NONE -> Unit
+        // The retired second-opinion poll: remove its work from installs that
+        // still have it queued, or WorkManager keeps a job for a deleted class.
+        androidx.work.WorkManager.getInstance(this).apply {
+            cancelUniqueWork("opinion_check")
+            cancelUniqueWork("opinion_check_now")
         }
         com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         // Warm the guide/disease example photos into Glide's disk cache so they

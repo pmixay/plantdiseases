@@ -492,7 +492,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- Follow-up "get help with this verdict" pair: the AI Plant
-                 Doctor and the community second opinion. Both live outside
+                 Doctor and asking the community. Both live outside
                  the verdict card so it ends on its own advisory, and they
                  share one style so they read as alternatives to each other.
                  Either can be GONE — the weights let the survivor span the
@@ -525,7 +525,7 @@
                     app:iconSize="20dp" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_second_opinion"
+                    android:id="@+id/btn_ask_community"
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -534,7 +534,7 @@
                     android:ellipsize="end"
                     android:maxLines="2"
                     android:minHeight="48dp"
-                    android:text="@string/result_get_second_opinion"
+                    android:text="@string/result_ask_community"
                     android:visibility="gone"
                     app:autoSizeMaxTextSize="14sp"
                     app:autoSizeMinTextSize="10sp"

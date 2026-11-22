@@ -28,8 +28,8 @@ class SimilarScansAdapter(
     private val onClick: (CommunityScanItem) -> Unit = {},
     private val onAuthorClick: (CommunityScanItem) -> Unit = {},
     // Preview mode: render each cell as a compact "mini scan result" — diagnosis
-    // + detected species — instead of the publisher nickname / distance / opinion
-    // affordances. Used by the species card's "others' scans" strip.
+    // + detected species — instead of the publisher nickname / distance.
+    // Used by the species page's "scans of this species near you" strip.
     private val preview: Boolean = false,
 ) : RecyclerView.Adapter<SimilarScansAdapter.VH>() {
 
@@ -58,21 +58,17 @@ class SimilarScansAdapter(
         private val label: TextView = itemView.findViewById(R.id.tv_similar_label)
         private val distance: TextView = itemView.findViewById(R.id.tv_similar_distance)
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
-        private val opinions: TextView = itemView.findViewById(R.id.tv_similar_opinions)
-        private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_similar_wants_opinion)
 
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
             if (preview) {
                 // Compact mini scan result: diagnosis on top, detected species
-                // below. No nickname / distance / time / opinion affordances.
+                // below. No nickname / distance / time.
                 label.text = displayName(item.disease)
                 val species = item.species?.takeIf { it.isNotBlank() }
                 distance.text = species.orEmpty()
                 distance.visibility = if (species == null) View.GONE else View.VISIBLE
                 time.visibility = View.GONE
-                opinions.visibility = View.GONE
-                wantsOpinion.visibility = View.GONE
             } else {
                 // Publisher nick; fall back to the disease label for old rows that
                 // predate nicknames so the line is never empty.
@@ -98,16 +94,6 @@ class SimilarScansAdapter(
                 distance.visibility = if (distanceText.isEmpty()) View.GONE else View.VISIBLE
                 time.text = formatTimeAgo(item.createdAt)
                 time.visibility = View.VISIBLE
-                wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
-                if (item.opinionCount > 0) {
-                    opinions.text = itemView.context.getString(
-                        R.string.community_opinions_badge,
-                        item.opinionCount,
-                    )
-                    opinions.visibility = View.VISIBLE
-                } else {
-                    opinions.visibility = View.GONE
-                }
             }
 
             // ServerConfig.appBaseUrl ends with `/`; relative path appended.

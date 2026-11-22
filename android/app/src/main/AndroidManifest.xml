@@ -190,11 +190,6 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name=".ui.community.MyScanRepliesActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
             android:name=".ui.community.forum.PostDetailActivity"
             android:exported="false"
             android:screenOrientation="portrait"

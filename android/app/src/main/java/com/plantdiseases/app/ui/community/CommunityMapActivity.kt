@@ -32,12 +32,11 @@ import com.bumptech.glide.request.transition.Transition
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.account.QuickSignIn
-import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
-import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.result.CommunityScanSheet
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
@@ -66,7 +65,7 @@ import javax.inject.Inject
  * Full-screen community scans map (osmdroid). Zoomed out it paints a
  * k-anonymized density heat (/api/community/heatmap); zoomed in it drops a
  * marker per scan (/api/community/map). Tapping a scan opens the existing
- * [CommunityOpinionSheet]; a cluster of scans at the same ~1 km point opens a
+ * [CommunityScanSheet]; a cluster of scans at the same ~1 km point opens a
  * list of them. Viewing the (anonymized, aggregate) map needs no opt-in; the
  * "near me" FAB uses coarse location and never flips upload sharing on.
  */
@@ -77,9 +76,6 @@ class CommunityMapActivity : AppCompatActivity() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
-
-    @Inject
-    lateinit var authRepository: AuthRepository
 
     private val likeWritesInFlight = mutableSetOf<String>()
 
@@ -121,7 +117,7 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
         supportFragmentManager.setFragmentResultListener(
-            CommunityOpinionSheet.CONTENT_BLOCKED,
+            CommunityScanSheet.CONTENT_BLOCKED,
             this,
         ) { _, _ -> reload() }
         // Pick the markers back up as soon as the server is reachable — the
@@ -188,7 +184,7 @@ class CommunityMapActivity : AppCompatActivity() {
     /** Rules and blocked authors are always there; "leave" while a member. */
     private fun setupToolbarMenu() {
         // Leaving the community also leaves the map, which is members-only.
-        val safety = ScanCommunitySafety(this, scanRepository, authRepository, quickSignIn) {
+        val safety = ScanCommunitySafety(this, scanRepository, quickSignIn) {
             if (CommunityPrefs.uploadsEnabled(this)) {
                 updateLeaveItem()
                 reload()
@@ -452,7 +448,7 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun openScan(item: CommunityScanItem) {
-        CommunityOpinionSheet.show(
+        CommunityScanSheet.show(
             supportFragmentManager,
             item,
             DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
@@ -475,7 +471,7 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     /** Bottom sheet listing the scans grouped at one point — reuses the feed
-     *  adapter so each row opens the same opinion sheet. */
+     *  adapter so each row opens the same scan sheet. */
     private fun openGroup(group: List<CommunityScanItem>) {
         val dialog = BottomSheetDialog(this)
         val pad = (12 * resources.displayMetrics.density).toInt()
@@ -503,12 +499,6 @@ class CommunityMapActivity : AppCompatActivity() {
                     }
             },
             onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
-            onComments = { item ->
-                if (quickSignIn.require()) {
-                    dialog.dismiss()
-                    openScan(item)
-                }
-            },
         )
         adapter.guest = !quickSignIn.isSignedIn
         list.adapter = adapter
