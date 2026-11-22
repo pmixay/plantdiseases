@@ -32,9 +32,9 @@ a care plan you can follow.
 | 🪴 **Personal garden** | Plants grouped into rooms, scan history per plant, a month-grid care calendar, treatment plans, watering and feeding reminders, a lunar calendar, side-by-side photo comparison and a health trend. |
 | 🤖 **AI plant doctor** | Opt-in chat scoped to your scan's diagnosis (OpenRouter). |
 | 🔎 **Species ID** | PlantNet identification fills in what the plant *is*, because that changes what you'd call the problem. |
-| 👥 **Community** | Opt-in shared scans on a map and nearby feed, plus second opinions from other growers. Anonymous: no account, no login. |
+| 👥 **Community** | Opt-in shared scans on a map and nearby feed, plus a forum where growers answer each other. Anonymous: no account, no login. |
 
-Every optional integration (PlantNet, OpenRouter, FCM push) degrades to a clear
+Every optional integration (PlantNet, OpenRouter) degrades to a clear
 "not configured" state instead of failing.
 
 ---
@@ -215,9 +215,7 @@ authoritative list.
 | `GET`  | `/api/community/nearby`    | Shared-scans feed (`scope=nearby` ~30 km / `country` / `worldwide`; coords stripped, distance only) |
 | `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
 | `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
-| `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
-| `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
-| `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
+| `POST` | `/api/community/view` | Record a view of a shared scan |
 | `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
 | `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
@@ -229,7 +227,6 @@ authoritative list.
 | `GET`  | `/api/community/avatars/{author_token}` | A member's public profile photo (404 when none); authors in the feed and threads carry `avatar_version`, sent back as `?v=` to cache-bust |
 | `GET`  | `/api/community/helpers/{author_token}` · `/api/community/me/achievements` | Level, achievements and helper stats (own view adds the achievement discount) |
 | `*`    | `/api/community/admin/…` · `/api/community/moderation/…` | Staff tools (queue, remove/restore, lock, sanctions, appeals, roles, audit) and members' notices and appeals |
-| `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).

@@ -358,7 +358,7 @@ def _is_webp(head: bytes, contents: bytes) -> bool:
 RATE_LIMIT_RPS = config.get_float("RATE_LIMIT_RPS", 2.0)
 # Burst capacity on top of the steady-state rate. One user SCAN fans out into
 # many requests — analyze + identify + capabilities + aqua/manifest + care-plan
-# + species-info + community/nearby + community/by-species + opinions — so a
+# + species-info + community/nearby + community/by-species — so a
 # burst of 5 was far too small: a single scan overflowed the bucket, each
 # overflow was a 429, and 5 of those tripped the abuse auto-ban below (the
 # "Server error: 403 for no reason" users saw). 20 absorbs a couple of scans'
@@ -575,7 +575,6 @@ def _is_public_community_read(method: str, path: str) -> bool:
     return method in {"GET", "HEAD"} and (
         path in _PUBLIC_COMMUNITY_READ_PATHS
         or path in _PUBLIC_FORUM_READ_PATHS
-        or path.startswith("/api/community/opinions/")
         or path.startswith("/api/community/thumb/")
         or path.startswith("/api/community/posts/")
         or path.startswith("/api/community/media/")

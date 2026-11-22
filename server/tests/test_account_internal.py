@@ -1,45 +1,8 @@
 from __future__ import annotations
 
-import io
-import uuid
-
 import pytest
 
 import account_internal
-
-
-class _Response(io.BytesIO):
-    def __init__(self, body: bytes, *, status: int = 202):
-        super().__init__(body)
-        self.status = status
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        self.close()
-
-
-class _Opener:
-    def __init__(self, response: _Response):
-        self.response = response
-
-    def open(self, _request, *, timeout):  # noqa: ANN001
-        assert timeout == 2.0
-        return self.response
-
-
-def test_internal_notification_delivery_rejects_oversized_response(monkeypatch):
-    opener = _Opener(
-        _Response(b"x" * (account_internal._MAX_RESPONSE_BYTES + 1)),
-    )
-    monkeypatch.setattr(account_internal, "_open_no_redirect", opener.open)
-    client = account_internal.AccountInternalClient(
-        notification_url="https://account.invalid/v1/internal/notifications/opinion",
-        service_token="s" * 64,
-    )
-
-    assert client.send_opinion(str(uuid.uuid4()), "scan", "healthy", "", "tester") is False
 
 
 @pytest.mark.parametrize(

@@ -460,34 +460,6 @@ def test_reports_are_bounded_and_not_self(forum):
         )
 
 
-def test_legacy_second_opinion_scans_sync_into_the_forum(forum, community_store):
-    community_store.record_scan(
-        scan_id="legacy-1", account_actor_id=_actor("old-owner"), country="GB",
-        region="London", disease="leaf_spot", species="Monstera", nickname="Old Owner",
-        image_bytes=_png(),
-    )
-    community_store.set_wants_opinion("legacy-1", account_actor_id=_actor("old-owner"))
-    community_store.record_scan(
-        scan_id="legacy-2", account_actor_id=_actor("quiet"), country="GB",
-        region="London", disease="healthy",
-    )
-    community_store.record_opinion(
-        scan_id="legacy-1", account_actor_id=_actor("old-helper"),
-        suggested_disease="pests", note="Look under the leaves", nickname="Old Helper",
-    )
-    first = forum.sync_legacy()
-    assert first == {"posts": 1, "answers": 1}
-    assert forum.sync_legacy() == {"posts": 0, "answers": 0}
-    posts = forum.feed()["items"]
-    assert len(posts) == 1
-    detail = forum.get_post(posts[0]["id"])
-    assert detail["kind"] == "scan" and detail["ai"]["disease"] == "leaf_spot"
-    assert detail["media_count"] == 1
-    assert [a["is_ai"] for a in detail["answers"]] == [True, False]
-    assert detail["answers"][1]["diagnosis"] == "pests"
-    assert detail["answers"][1]["body"] == "Look under the leaves"
-
-
 def test_prune_drops_abandoned_uploads_and_old_tombstones(forum):
     media = forum.store_media(actor_id=_actor("asker"), image_bytes=_png(), now=1_000)
     path = forum.media_dir() / f"{media['media_id']}.jpg"

@@ -10,7 +10,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from cryptography.exceptions import InvalidTag
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -1790,60 +1789,6 @@ class AccountService:
                 .values(disabled_at=now, updated_at=now)
             )
 
-    def dispatch_opinion_notification(
-        self,
-        *,
-        community_actor_id: uuid.UUID,
-        scan_id: str,
-        disease: str,
-        note: str,
-        nickname: str,
-    ) -> dict[str, int | str]:
-        """Resolve an actor to live encrypted registrations and deliver privately."""
-        if self.notification_sink is None:
-            raise AccountAPIError("push_unavailable", status_code=503)
-        now = self.clock()
-        with self.repository.transaction() as transaction:
-            account = transaction.scalar(
-                select(Account).where(
-                    Account.community_actor_id == community_actor_id,
-                    Account.state == "active",
-                )
-            )
-            if account is None:
-                return {"status": "accepted", "target_count": 0}
-            devices = transaction.scalars(
-                select(PushDevice)
-                .join(AccountSession, AccountSession.id == PushDevice.session_id)
-                .where(
-                    PushDevice.account_id == account.id,
-                    PushDevice.disabled_at.is_(None),
-                    AccountSession.revoked_at.is_(None),
-                    AccountSession.idle_expires_at > now,
-                    AccountSession.absolute_expires_at > now,
-                )
-            ).all()
-            tokens: list[str] = []
-            for device in devices:
-                try:
-                    tokens.append(self.push_protector.decrypt(device.token_ciphertext))
-                except (InvalidTag, UnicodeDecodeError, ValueError):
-                    device.disabled_at = now
-                    device.updated_at = now
-        payload = {
-            "type": "opinion",
-            "community_actor_id": str(community_actor_id),
-            "scan_id": scan_id[:128],
-            "disease": disease[:64],
-            "note": note[:240],
-            "nickname": nickname[:64],
-        }
-        if tokens:
-            try:
-                self.notification_sink(tokens, payload)
-            except Exception:  # noqa: BLE001 - best effort; never log plaintext tokens
-                pass
-        return {"status": "accepted", "target_count": len(tokens)}
 
     def prune_expired_private_state(self) -> dict[str, int]:
         """Apply expiry policy without deleting a still-valid token family."""

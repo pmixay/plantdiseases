@@ -60,9 +60,7 @@ The versioned schema is [`openapi.json`](openapi.json). Main flows are:
 
 The application API validates JWT signatures locally and then calls the hidden
 `/v1/internal/auth/verify` route with a separate service credential to confirm
-the current session and authorization version. Actor-keyed opinion events use
-another hidden route; device tokens are decrypted and resolved only inside this
-service and are never returned to community code.
+the current session and authorization version.
 
 Errors have one non-reflective shape:
 

@@ -41,12 +41,7 @@ def test_community_contract_declares_account_auth_and_no_caller_identity_fields(
     schema = app.openapi()
     protected = (
         ("/api/community/scan", "post"),
-        ("/api/community/opinion", "post"),
-        ("/api/community/request-opinion", "post"),
-        ("/api/community/request-opinion/cancel", "post"),
-        ("/api/community/my-scan-opinions", "get"),
         ("/api/community/view", "post"),
-        ("/api/community/scan-counts", "post"),
         ("/api/community/media", "post"),
         ("/api/community/posts", "post"),
         ("/api/community/posts/{post_id}", "patch"),

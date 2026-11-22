@@ -181,14 +181,6 @@ class CommunityRewardResponse(BaseModel):
     discount_per_achievement: int
 
 
-class InternalOpinionNotificationRequest(StrictRequest):
-    actor_id: uuid.UUID
-    scan_id: str = Field(min_length=1, max_length=128)
-    disease: str = Field(min_length=1, max_length=64)
-    note: str = Field(default="", max_length=240)
-    nickname: str = Field(min_length=1, max_length=64)
-
-
 def _service(request: Request) -> AccountService:
     service = getattr(request.app.state, "account_service", None)
     if service is None:
@@ -804,22 +796,6 @@ def reserve_internal_plantnet_budget(
         return service.reserve_plantnet_attempt(request_id=body.request_id)
     except VendorBudgetUnavailable:
         raise AccountAPIError("vendor_budget_unavailable", status_code=503) from None
-
-
-@router.post(
-    "/v1/internal/notifications/opinion",
-    status_code=status.HTTP_202_ACCEPTED,
-    include_in_schema=False,
-)
-def notify_opinion(body: InternalOpinionNotificationRequest, request: Request) -> dict:
-    _require_internal_service(request)
-    return _service(request).dispatch_opinion_notification(
-        community_actor_id=body.actor_id,
-        scan_id=body.scan_id,
-        disease=body.disease,
-        note=body.note,
-        nickname=body.nickname,
-    )
 
 
 @router.post("/v1/internal/community/roles/lookup", include_in_schema=False)

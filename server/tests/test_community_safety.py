@@ -32,21 +32,6 @@ def _headers(label: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {_test_access_token(label, label.title())}"}
 
 
-def _opinion_token(community, opinion_id: int) -> str:
-    """The stored moderation token for one reply.
-
-    ``public_opinion_token`` mints an unpredictable value (hashing the
-    sequential row id would only disguise an enumerable one), so a test cannot
-    recompute it — it reads back what the write persisted.
-    """
-    with community._connect() as conn:
-        row = conn.execute(
-            "SELECT public_id FROM community_opinions WHERE id = ?", (int(opinion_id),)
-        ).fetchone()
-    assert row is not None and row[0]
-    return str(row[0])
-
-
 def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
     community.record_scan(
         scan_id=scan_id,
@@ -63,53 +48,12 @@ def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
     return community.public_scan_token(scan_id)
 
 
-def test_opinions_expose_only_opaque_safety_token_and_viewer_flag(safety_store):
-    community = safety_store
-    owner = _actor("owner")
-    responder = _actor("responder")
-    _scan(community, "opaque-opinion", owner)
-    opinion_id = community.record_opinion(
-        scan_id="opaque-opinion",
-        account_actor_id=responder,
-        suggested_disease="leaf_spot",
-        nickname="Responder",
-    )
-
-    owner_view = community.opinions_for(
-        "opaque-opinion", viewer_account_actor_id=owner
-    )["opinions"][0]
-    responder_view = community.opinions_for(
-        "opaque-opinion", viewer_account_actor_id=responder
-    )["opinions"][0]
-
-    assert owner_view["content_id"] == _opinion_token(community, opinion_id)
-    assert owner_view["content_id"].startswith("co")
-    assert len(owner_view["content_id"]) == 32
-    # The token is random, not derived from the row id, so a substring check on
-    # the id would pass or fail by chance. Assert unpredictability instead: a
-    # second reply on the same scan gets an unrelated token.
-    other_id = community.record_opinion(
-        scan_id="opaque-opinion",
-        account_actor_id=_actor("third-party"),
-        suggested_disease="leaf_spot",
-    )
-    assert _opinion_token(community, other_id) != owner_view["content_id"]
-    assert owner_view["is_mine"] is False
-    assert responder_view["is_mine"] is True
-    assert "account_actor_id" not in owner_view
-
-
 def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkeypatch):
     community = safety_store
     owner = _actor("reported-owner")
     reporter = _actor("reporter")
     scan_token = _scan(community, "reported-scan", owner)
-    opinion_id = community.record_opinion(
-        scan_id="reported-scan",
-        account_actor_id=owner,
-        suggested_disease="healthy",
-    )
-    opinion_token = _opinion_token(community, opinion_id)
+    other_scan_token = _scan(community, "reported-scan-2", owner)
 
     assert community.record_content_report(
         reporter_actor_id=reporter,
@@ -127,7 +71,7 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
     ) is False
 
     # Safety mutations never accept the internal publication identifier even
-    # though legacy opinion/view reads still do for installed app versions.
+    # though legacy view writes still do for installed app versions.
     with pytest.raises(ValueError, match="target_not_found"):
         community.record_content_report(
             reporter_actor_id=reporter,
@@ -146,8 +90,8 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
     with pytest.raises(ValueError, match="invalid_reason"):
         community.record_content_report(
             reporter_actor_id=reporter,
-            target_type="opinion",
-            target_id=opinion_token,
+            target_type="scan",
+            target_id=other_scan_token,
             reason="free form accusation",
         )
 
@@ -155,8 +99,8 @@ def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkey
     with pytest.raises(ValueError, match="report_limit"):
         community.record_content_report(
             reporter_actor_id=reporter,
-            target_type="opinion",
-            target_id=opinion_token,
+            target_type="scan",
+            target_id=other_scan_token,
             reason="hate_or_harassment",
             now=1_000_002,
         )
@@ -243,39 +187,6 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     }
 
 
-def test_blocked_reply_disappears_and_cannot_interact_again(safety_store):
-    community = safety_store
-    owner = _actor("thread-owner")
-    responder = _actor("thread-responder")
-    _scan(community, "thread-scan", owner)
-    opinion_id = community.record_opinion(
-        scan_id="thread-scan",
-        account_actor_id=responder,
-        suggested_disease="leaf_spot",
-        note="unsafe reply",
-        nickname="Responder",
-    )
-    opinion_token = _opinion_token(community, opinion_id)
-    community.block_content_author(
-        blocker_actor_id=owner,
-        target_type="opinion",
-        target_id=opinion_token,
-    )
-
-    assert community.opinions_for(
-        "thread-scan", viewer_account_actor_id=owner
-    )["opinions"] == []
-    assert community.record_view(
-        "thread-scan", account_actor_id=responder
-    ) is False
-    with pytest.raises(ValueError, match="blocked_interaction"):
-        community.record_opinion(
-            scan_id="thread-scan",
-            account_actor_id=responder,
-            suggested_disease="healthy",
-        )
-
-
 def test_legacy_content_can_be_reported_but_not_used_to_spoof_a_block(safety_store):
     community = safety_store
     reporter = _actor("legacy-reporter")
@@ -305,26 +216,18 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
 ):
     community = safety_store
     owner = _actor("moderated-owner")
-    responder = _actor("moderated-responder")
     reporter = _actor("moderation-reporter")
-    scan_token = _scan(community, "moderated-scan", owner)
-    opinion_id = community.record_opinion(
-        scan_id="moderated-scan",
-        account_actor_id=responder,
-        suggested_disease="leaf_spot",
-        note="remove only this reply",
-    )
-    opinion_token = _opinion_token(community, opinion_id)
+    removed_token = _scan(community, "moderated-scan", owner)
     community.record_content_report(
         reporter_actor_id=reporter,
-        target_type="opinion",
-        target_id=opinion_token,
+        target_type="scan",
+        target_id=removed_token,
         reason="hate_or_harassment",
     )
     report_id = community.pending_content_reports()[0]["report_id"]
     assert community.moderate_content_report(report_id, "remove_content") is True
-    assert community.opinions_for("moderated-scan")["opinions"] == []
-    assert community.scan_exists("moderated-scan") is True
+    assert community.scan_exists("moderated-scan") is False
+    scan_token = _scan(community, "moderated-scan-2", owner)
 
     community.record_content_report(
         reporter_actor_id=reporter,

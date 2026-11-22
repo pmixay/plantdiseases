@@ -862,170 +862,6 @@
         }
       }
     },
-    "/api/community/opinion": {
-      "post": {
-        "summary": "Community Opinion Submit",
-        "description": "Record one community 'second opinion' on a shared scan.\n\nThe suggested disease must be a known classifier class so the consensus\ntally stays clean; any free text lives only in the optional note.",
-        "operationId": "community_opinion_submit_api_community_opinion_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityOpinionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/request-opinion": {
-      "post": {
-        "summary": "Community Request Opinion",
-        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches the signed account actor) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
-        "operationId": "community_request_opinion_api_community_request_opinion_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityRequestOpinionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/request-opinion/cancel": {
-      "post": {
-        "summary": "Community Request Opinion Cancel",
-        "description": "Withdraw an open second-opinion request on the caller's own scan.\n\nThe inverse of ``/community/request-opinion``: drops the durable\nrequest row + the feed badge, so the community stops seeing the ask\nand the owner stops being notified about new opinions. Opinions\nalready left stay visible. Owner-scoped and idempotent — cancelling\na request that doesn't exist (or isn't yours) returns\n``cleared: false`` with 200.\n\n(Requests also lapse on their own after\n``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)",
-        "operationId": "community_request_opinion_cancel_api_community_request_opinion_cancel_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityRequestOpinionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/opinions/{scan_id}": {
-      "get": {
-        "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.\nAuthentication is optional for this public read. When present it adds\ncaller-specific fields such as ``liked_by_me`` and ``is_mine`` and applies\nthe caller's block list.",
-        "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
-        "parameters": [
-          {
-            "name": "scan_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Scan Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/community/profile/{author_token}": {
       "get": {
         "summary": "Community Author Profile",
@@ -1062,28 +898,6 @@
             }
           }
         }
-      }
-    },
-    "/api/community/my-scan-opinions": {
-      "get": {
-        "summary": "Community My Scan Opinions",
-        "description": "Opinion counts on the caller's OWN shared scans. The client polls this\non a schedule to notify the user when someone leaves a second opinion on a\nscan they shared (the per-scan view already exists via /opinions/{scan_id}).",
-        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
       }
     },
     "/api/community/view": {
@@ -1138,48 +952,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityLikeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/scan-counts": {
-      "post": {
-        "summary": "Community Scan Counts Endpoint",
-        "description": "Batched ``{opinions, views}`` per scan_id so the Gallery can badge the\ncaller's own rows in one round-trip. Unknown/zero scans are omitted.",
-        "operationId": "community_scan_counts_endpoint_api_community_scan_counts_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityScanCountsRequest"
               }
             }
           },
@@ -1398,7 +1170,7 @@
     "/api/community/map": {
       "get": {
         "summary": "Community Map",
-        "description": "Individual community scans inside a bbox — the zoomed-in map markers.\n\nEach scan carries its ~1 km-rounded coords + the PUBLIC token (never the\nreal scan_id), so the app can pin a marker and open the existing opinion\nsheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``\nsignals an over-full bbox.",
+        "description": "Individual community scans inside a bbox — the zoomed-in map markers.\n\nEach scan carries its ~1 km-rounded coords + the PUBLIC token (never the\nreal scan_id), so the app can pin a marker and open it. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``\nsignals an over-full bbox.",
         "operationId": "community_map_api_community_map_get",
         "parameters": [
           {
@@ -4350,40 +4122,6 @@
         ],
         "title": "CommunityLikeRequest"
       },
-      "CommunityOpinionRequest": {
-        "properties": {
-          "scan_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Scan Id"
-          },
-          "suggested_disease": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Suggested Disease"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_id",
-          "suggested_disease"
-        ],
-        "title": "CommunityOpinionRequest"
-      },
       "CommunityReportRequest": {
         "properties": {
           "target_type": {
@@ -4413,38 +4151,6 @@
           "reason"
         ],
         "title": "CommunityReportRequest"
-      },
-      "CommunityRequestOpinionRequest": {
-        "properties": {
-          "scan_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Scan Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_id"
-        ],
-        "title": "CommunityRequestOpinionRequest"
-      },
-      "CommunityScanCountsRequest": {
-        "properties": {
-          "scan_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 500,
-            "title": "Scan Ids"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_ids"
-        ],
-        "title": "CommunityScanCountsRequest"
       },
       "CommunityViewRequest": {
         "properties": {

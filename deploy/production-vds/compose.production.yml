@@ -242,7 +242,6 @@ services:
       ACCOUNT_INTERNAL_BASE_URL: http://prod-account-api:8000
       ACCOUNT_JWKS_URL: http://prod-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://prod-account-api:8000/v1/internal/auth/verify
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       AQUA_STATIC_DIR: /app/models/aqua

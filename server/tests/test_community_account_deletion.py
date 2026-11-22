@@ -61,18 +61,6 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         region="London",
         disease="healthy",
     )
-    community.record_opinion(
-        scan_id="delete-account-scan",
-        account_actor_id=responder,
-        nickname="Responder",
-        suggested_disease="rust",
-    )
-    community.record_opinion(
-        scan_id="keep-legacy-scan",
-        account_actor_id=owner,
-        nickname="Private Fern",
-        suggested_disease="healthy",
-    )
     community.record_view("keep-legacy-scan", account_actor_id=owner)
     assert community.view_count_for("keep-legacy-scan") == 1
     community.record_view(
@@ -88,7 +76,6 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
 
     visible = community.nearby_scans(country="GB", scope="country")
     assert [row["scan_id"] for row in visible] == ["keep-legacy-scan"]
-    assert community.opinions_for("delete-account-scan")["opinions"] == []
     assert not community.thumbnail_is_visible(thumbnail)
     assert community.view_count_for("keep-legacy-scan") == 0
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
@@ -111,9 +98,6 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
-        ).fetchone()[0] == 0
-        assert connection.execute(
-            "SELECT COUNT(*) FROM community_opinions WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM community_cleanup_jobs WHERE actor_id = ?", (owner,)
@@ -239,40 +223,26 @@ def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
             "SELECT user_pseudo_id, account_actor_id FROM community_scans "
             "WHERE scan_id = 'new-account-row'"
         ).fetchone()
-        migrated_identities = {
-            table: connection.execute(
-                f"SELECT {legacy_column}, account_actor_id FROM {table} LIMIT 1"
-            ).fetchone()
-            for table, legacy_column in {
-                "community_opinions": "author_pseudo_id",
-                "community_opinion_requests": "user_pseudo_id",
-                "community_scan_views": "viewer_pseudo_id",
-            }.items()
+        migrated_view = connection.execute(
+            "SELECT viewer_pseudo_id, account_actor_id FROM community_scan_views LIMIT 1"
+        ).fetchone()
+        views_columns = {
+            row[1]: row[3]
+            for row in connection.execute("PRAGMA table_info(community_scan_views)")
         }
-        nullable_identities = {
-            table: {
-                row[1]: row[3]
-                for row in connection.execute(f"PRAGMA table_info({table})")
-            }[legacy_column]
-            for table, legacy_column in {
-                "community_opinions": "author_pseudo_id",
-                "community_opinion_requests": "user_pseudo_id",
-                "community_scan_views": "viewer_pseudo_id",
-            }.items()
+        remaining_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
         }
     assert columns["user_pseudo_id"] == 0
+    assert "wants_opinion" not in columns
+    assert {"community_opinions", "community_opinion_requests"}.isdisjoint(remaining_tables)
     assert legacy_row == ("legacy-only", None)
     assert account_row == (None, actor)
-    assert migrated_identities == {
-        "community_opinions": ("legacy-viewer", None),
-        "community_opinion_requests": ("legacy-only", None),
-        "community_scan_views": ("legacy-viewer", None),
-    }
-    assert nullable_identities == {
-        "community_opinions": 0,
-        "community_opinion_requests": 0,
-        "community_scan_views": 0,
-    }
+    assert migrated_view == ("legacy-viewer", None)
+    assert views_columns["viewer_pseudo_id"] == 0
 
 
 def _marker_ids(community) -> set[str]:
