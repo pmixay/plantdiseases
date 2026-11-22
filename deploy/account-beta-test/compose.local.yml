@@ -158,7 +158,6 @@ services:
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
       # No durable notification sink exists yet; clients poll for owner updates.
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       LOG_DIR: /data/logs

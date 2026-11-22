@@ -82,7 +82,7 @@ $EDITOR server/config.json
   A **blank environment variable does not** — `get_str` returns `""`, not the
   default.
 - JSON section names (`server`, `models`, `limits`, `ai`, `plantnet`,
-  `security`, `push`) are decorative: nesting is flattened to flat UPPERCASE
+  `security`) are decorative: nesting is flattened to flat UPPERCASE
   leaf keys. The one exception is `api_keys`, which survives as a dict.
 - Config is read **once at import**. There is no hot reload — restart to apply.
 - `PLANTDISEASES_CONFIG=/path/to/config.json` relocates the file. It is
@@ -120,7 +120,7 @@ Defaults below are the **code** defaults.
 | `analyze_cache_ttl_seconds` / `analyze_cache_max_entries` | `86400` / `512` | In-memory exact-bytes response dedup. |
 | `infer_workers` | `1` | Inference thread pool. With `onnx_intra_op_threads=0` one scan already uses every core; raise only if you also pin intra-op low. |
 | `infer_max_inflight` / `infer_max_inflight_per_ip` | `4 × infer_workers` / `2` | Admission control on `/api/analyze` + `/api/identify`: a request claims a slot before its upload is copied into memory or decoded (FastAPI has already spooled the multipart body to disk by then), holds it through inference only — never while waiting on PlantNet — and one that finds the server (or its own IP, an IPv6 /64) full gets 503 + `Retry-After: infer_busy_retry_after_seconds` (`3`). Bounds RAM to roughly that many in-memory uploads + decoded images. `0` disables a cap. If you set it in `config.json`, scale it with `infer_workers` yourself. |
-| `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia / FCM waits, so 20 s LLM calls don't queue DB writes behind them. |
+| `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia waits, so 20 s LLM calls don't queue DB writes behind them. |
 | `onnx_intra_op_threads` | `0` | `0` = all physical cores — the biggest CPU-latency lever. Pin lower on a shared host. |
 | `plant_photo_max_side` / `plant_photo_quality` / `popular_bundle_ttl_seconds` / `popular_placeholder_ttl_seconds` | `1000` / `80` / `1800` / `300` | Photo proxy re-encode and popular-plants bundle cache. |
 
@@ -135,14 +135,13 @@ Defaults below are the **code** defaults.
 | `violation_threshold` / `violation_window` / `ban_duration` | `40` / `60.0` / `300.0` | Sustained over-limit requests earn a temporary 403 ban. |
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
 | `community_author_key_pepper` / `community_cursor_secret` | `community-author-storage-v2` / falls back to `feedback_ip_pepper` then `community-cursor-v1` | Set both explicitly in production. |
-| `feedback_daily_quota`, `community_daily_quota`, `community_opinion_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `60`, `300`, `100` | Per hashed IP, per day. |
+| `feedback_daily_quota`, `community_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `300`, `100` | Per hashed IP, per day. |
 | `analyze_daily_quota`, `identify_daily_quota` | `300`, `150` | Per IP (IPv6 by /64), per UTC day, in memory (a restart forgets them), taken only once a request is admitted. Past it: 429. Every per-IP allowance below counts the same way; carrier NAT puts many users behind one IPv4, which is why the defaults sit far above one user's day. |
 | `plantnet_daily_quota_per_ip` | `100` | PlantNet calls per IP per UTC day, shared by the analyze fan-out and `/api/identify`, so one client cannot drain the 500-a-day free tier. Past it a scan still gets its diagnosis, with `species.source: "quota"`. |
 | `chat_daily_quota` | `100` | AI Plant Doctor turns per IP per UTC day, across sessions (the per-session caps reset with each client-chosen `session_id`). Past it: `available:false`, `reason: "daily_quota"`, with a bilingual `fallback`. |
 | `care_plan_daily_quota` | `200` | LLM-polished care plans per IP per UTC day; past it the rules-based plan is served. |
 | `species_ai_daily_quota` | `400` | `/api/species-diseases` + `/api/species-profile` together, per IP per UTC day; past it `available:false`, `reason: "daily_quota"`. |
 | `community_author_daily_quota` | `10` | New Community identities (`/api/community/authors/adopt` with an unseen key) per IP per UTC day. Re-adopting a known key is free. |
-| `community_require_author_key` | `true` | Second opinions need an adopted `X-Community-Author-Key` (401 `community_identity_required` otherwise), so a client cannot vote again by changing its body pseudo-id. App builds before 1.9 never send the key; set `false` only as a bridge while they are still in use. |
 | `telemetry_enabled` / `telemetry_daily_cap_per_ip` | `true` / `200` | Anonymous client error reports (stores a hashed IP). |
 | `scan_recording_enabled` | `true` | **On by default** — persists downscaled user scan images for the labeling loop. Disclosed by the app's consent screen and bundled privacy policy; turn it off if your deployment does not make that disclosure. |
 | `scan_retention_days` / `scan_max_images` / `scan_common_keep_rate` / `scan_daily_cap_per_class` | `90` / `20000` / `0.1` / `50` | Bounds on that corpus. |
@@ -159,7 +158,6 @@ the hardened unit in §5. Point every one of these at the state directory.
 | `community_db_path` / `community_thumb_dir` | `server/community.db` / `server/community_thumbs` |
 | `labeling_db_path` / `labeling_img_dir` | `server/labeling.db` / `server/labeling_images` |
 | `telemetry_db_path` | `server/telemetry.db` |
-| `push_db_path` | `server/push.db` |
 | `plant_photo_cache_dir` | `server/plant_photo_cache` |
 | `ai_cache_dir` | `server/ai_cache` |
 
@@ -197,7 +195,6 @@ the hardened unit in §5. Point every one of these at the state directory.
 
 | Key | Default | Notes |
 |---|---|---|
-| `fcm_credentials_file` | *(empty)* | Path to a Firebase **service-account JSON**. Empty → push is a no-op. The four Android `FCM_*` values are build inputs, not server config (§8.2). |
 
 ## 4. Optional integrations
 
@@ -254,9 +251,6 @@ restart. Without it
   generation in `ai_services.py` to reach users sooner; orphaned generation
   dirs under the cache dir are safe to `rm -rf`.
 
-**FCM push.** Point `fcm_credentials_file` at the service-account JSON (§8.2).
-Blank, or an init failure, disables push rather than crashing.
-
 ## 5. Running in production
 
 `server/start.sh` is a **first-run convenience only**: it always binds
@@ -291,9 +285,7 @@ Environment=COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs
 Environment=LABELING_DB_PATH=/var/lib/plantdiseases/labeling.db
 Environment=LABELING_IMG_DIR=/var/lib/plantdiseases/labeling_images
 Environment=TELEMETRY_DB_PATH=/var/lib/plantdiseases/telemetry.db
-Environment=PUSH_DB_PATH=/var/lib/plantdiseases/push.db
 Environment=PLANT_PHOTO_CACHE_DIR=/var/lib/plantdiseases/plant_photo_cache
-Environment=FCM_CREDENTIALS_FILE=/var/lib/plantdiseases/fcm-service-account.json
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
           --forwarded-allow-ips 127.0.0.1 --proxy-headers \
@@ -350,14 +342,9 @@ server {
 }
 
 # Access log without the install's pseudo-id (a bearer value). App builds that
-# predate the X-User-Pseudo-Id header send it as `?user_pseudo_id=` — $uri
-# drops the query — and in the path of /api/community/my-scan-opinions/<id>,
-# which the map masks.
-map $uri $plantdiseases_log_uri {
-    ~^/api/community/my-scan-opinions/.  /api/community/my-scan-opinions/<redacted>;
-    default                              $uri;
-}
-log_format plantdiseases '$remote_addr [$time_local] "$request_method $plantdiseases_log_uri" '
+# predate the X-User-Pseudo-Id header send it as `?user_pseudo_id=`; $uri
+# drops the query.
+log_format plantdiseases '$remote_addr [$time_local] "$request_method $uri" '
                          '$status $body_bytes_sent $request_time';
 
 server {
@@ -515,7 +502,7 @@ values above in `~/.gradle/gradle.properties`, outside the repository.
 PlantDiseases 1.9 is deliberately built with all `FCM_*` values empty and uses
 the bounded WorkManager polling path. Do not enable FCM until the account system
 has a durable, observable notification sink/worker with invalid-token cleanup.
-When that work is accepted, two distinct credential sets will be required:
+When that work is accepted, these will be required:
 
 - **Android client config** — `FCM_APP_ID`, `FCM_API_KEY`, `FCM_PROJECT_ID`,
   `FCM_SENDER_ID` (from `google-services.json`: `mobilesdk_app_id`,
@@ -526,10 +513,9 @@ When that work is accepted, two distinct credential sets will be required:
   restrictions: Android apps + your package/SHA-1; API restrictions: Firebase/FCM).
   Unset → the app builds fine and push stays dormant (`PushManager.isConfigured()` is
   false; the client falls back to its WorkManager poll).
-- **Server send-credential** — the Firebase **service-account JSON** that can actually
-  send pushes. It is loaded from a path on the server via `push.fcm_credentials_file`
-  (config.json) / `FCM_CREDENTIALS_FILE` (env), read in `server/push.py`. **Not** in
-  this repo; empty → `/api/push/register` and sends are graceful no-ops.
+- **Server send-credential** — none. The app API no longer sends pushes (the
+  second-opinion notification was its only use), so there is no service-account
+  JSON, `fcm_credentials_file` key or `/api/push/register` route.
 
 ### 8.3 The signed CI build
 
@@ -623,6 +609,5 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 | A prompt/model change has no visible effect | Server-side (7–30 d) and on-device (7 d) answer caches | Bump the cache generation in `ai_services.py`; `rm -rf` the stale dir under `ai_cache_dir` |
 | `prompt_cache.hit_ratio` flat at 0.0 | Shared prefix changed or fell under `prompt_cache_min_prefix_tokens` | Check `shared_prefix_tokens_est`; build system prompts through `ai_services._system_prompt()` |
 | Release APK installs but Play/RuStore rejects it | Built without `RELEASE_STORE_FILE` → debug key fallback | Supply the four `RELEASE_*` props; CI fails this case when `RELEASE_KEYSTORE_BASE64` is set |
-| Push silently does nothing | Server: `fcm_credentials_file` blank or init failed (logged, then disabled). Client: any `FCM_*` build value blank | Set the service-account path server-side; rebuild with all four `FCM_*` values |
 | The on-device model never downloads and `aqua` scans fall back to the server, yet `/api/capabilities` reports `aqua: available:true` | `capabilities` describes the on-device tier, not provisioning | Check `/api/aqua/manifest` — `available:false` means `aqua_static_dir` is unprovisioned |
 | Restart loop after a memory kill | `MemoryMax` too tight; each cycle re-pays the cold model load | Raise `MemoryMax`, especially with `frontier_enabled=true` or `infer_workers > 1` |

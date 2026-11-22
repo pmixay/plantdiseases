@@ -57,9 +57,7 @@ account readiness, then application readiness.
 
 Community writes verify the account JWT locally from account-api's JWKS and
 then confirm the live session/authorization version through a private internal
-route. Opinion notifications travel in the opposite direction keyed only by
-the signed community actor; account-api resolves encrypted device tokens
-without returning them. Account deletion uses the same private credential to
+route. Account deletion uses the same private credential to
 tombstone community content before private account rows are erased.
 
 ## Build PlantDiseases 1.9 for staging

@@ -111,22 +111,13 @@ def run(*, account_url: str, app_url: str, image_path: Path) -> None:
         raise RuntimeError("community authorship did not come from signed claims")
 
     guest_write = requests.post(
-        f"{app_url}/api/community/opinion",
-        json={"scan_id": public_id, "suggested_disease": "leaf_spot"},
+        f"{app_url}/api/community/view",
+        json={"scan_id": public_id},
         timeout=5,
     )
     if guest_write.status_code != 401:
         raise RuntimeError("guest community mutation did not fail closed")
 
-    _require(
-        requests.post(
-            f"{app_url}/api/community/request-opinion",
-            headers=owner_headers,
-            json={"scan_id": scan_id},
-            timeout=5,
-        ),
-        200,
-    )
     _require(
         requests.put(
             f"{account_url}/v1/push/device",
@@ -139,31 +130,17 @@ def run(*, account_url: str, app_url: str, image_path: Path) -> None:
         ),
         200,
     )
-    _require(
+    viewed = _require(
         requests.post(
-            f"{app_url}/api/community/opinion",
+            f"{app_url}/api/community/view",
             headers=viewer_headers,
-            json={
-                "scan_id": public_id,
-                "user_pseudo_id": "spoofed-owner",
-                "nickname": "Spoofed Responder",
-                "suggested_disease": "leaf_spot",
-                "note": "synthetic integration opinion",
-            },
+            json={"scan_id": public_id, "user_pseudo_id": "spoofed-owner"},
             timeout=5,
         ),
         200,
     )
-    private_counts = _require(
-        requests.get(
-            f"{app_url}/api/community/my-scan-opinions",
-            headers=owner_headers,
-            timeout=5,
-        ),
-        200,
-    )
-    if private_counts["total_opinions"] != 1:
-        raise RuntimeError("private owner counts were not actor-scoped")
+    if viewed.get("counted") is not True:
+        raise RuntimeError("signed viewer was not counted")
 
     reauth = _require(
         requests.post(
