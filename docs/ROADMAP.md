@@ -6,7 +6,7 @@ protocol), `../DEPLOYMENT.md` (deploy, Android signing/FCM),
 `../server/models/MODEL_CARD.md` (version-agnostic pipeline overview).
 
 ★ = needs a human decision or a human-only task. Code-checkable items were
-re-verified against the tree on 2026-11-14; data and human-task items are as last
+re-verified against the tree on 2026-11-22; data and human-task items are as last
 recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
@@ -15,7 +15,7 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182); the signed release APK is built and taken from CI; not on RuStore yet. |
+| **App** | 1.9 / versionCode 19. Accounts merged to `main` (#182), PRO hidden (`ProUi.ENABLED = false`); the signed release APK is built and taken from CI; not on RuStore yet. The 2026-11-22 batch (below) is not on `main` yet. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified. `/id/` is public on the host; the privacy policy is served at `/privacy.html`; a Telegram alert watches for stuck account deletions (`deploy/production-vds/alerts/`). No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
@@ -25,6 +25,7 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 ## Next up — in this order
 
+- [ ] ★ **Land the 2026-11-22 batch** (section below): merge, device checks, deploy.
 - [ ] ★ **Ship accounts to RuStore** (section below).
 - [ ] ★ **Carve T_v1** (adjudicate the 80 export rows). Nothing done to the scorch
       class — real or synthetic — can be judged without it.
@@ -38,6 +39,34 @@ recorded. Line counts are approximate; re-measure before acting on one.
 
 When 2.7.5's successor ships, refresh `site/index.html` (list in `site/README.md`),
 the README status section and `docs/assets/per-class.svg`.
+
+---
+
+## 2026-11-22 batch — before it ships
+
+On `claude/tender-albattani-9cygz2`, CI green (run 1094): design-system pass (no
+grey/small text, plain headers, plain punctuation), onboarding and sign-in rework,
+native privacy policy, faster capture-to-cropper, community membership (join =
+location + sharing, no Profile switch), anonymous worldwide popular tally, new daily
+limits that count only uncached work, per-feature limit dialogs, scan-only care-plan
+metering, nearby scans on species pages, guest read-only community with in-place
+Yandex sign-in.
+
+- [ ] ★ **Merge to `main`**, then build the release APK from `main`.
+- [ ] ★ **Check on a phone** what the local renders cannot show: Yandex ID sign-in
+      from the quick sign-in sheet (a returning account, and a new one that picks its
+      nickname in the sheet); the blurred nearby-scans previews on a result and a
+      species page (`RenderEffect` does not draw under Robolectric); the join prompt
+      on the community map.
+- [ ] ★ **Deploy the server side.** Redeploy the app API (popular tally, uncached-only
+      metering, care-plan purpose, nearby species scans) and the account service, so
+      the new signed-in limits and quota policy `launch-2026-11-v2` apply (the
+      production compose file already carries them); check production `server/config.json` for
+      explicit `guest_*_daily_quota` keys, which would override the new guest
+      defaults; publish the updated `privacy.html` (community joining, anonymous
+      popular tally, no zero-data-retention claim).
+- [ ] ★ **Set `species_info_contact`** in production config: Wikimedia throttles
+      contact-less clients first (`DEPLOYMENT.md`).
 
 ---
 
@@ -60,6 +89,8 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
       badge only), following spaces, and a desktop web admin panel.
 - [ ] Retire the legacy second-opinion endpoints once older app versions age out;
       until then the maintenance pass copies their requests into the forum.
+- [ ] Home's "Popular near you" shows only to community members; it could offer
+      joining (`ui/community/CommunityJoin`) like the map, result and species page.
 
 ---
 
@@ -67,22 +98,11 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
 
 1.9 ships accounts only: Yandex sign-in. PRO is not part of it and is hidden in the app (see Decisions). In order.
 
-**Before the release** (code and host)
-
-- [x] **Old clients: production logs read (2026-11-16).** No 5xx. Fixed: plant
-      photos 404'd for every client because Wikipedia moved lead images to
-      `thumb.wikimedia.org` (`server/plant_photos.py`). Left as is: pre-1.9 apps
-      still call the pseudo-id `GET /api/community/my-scan-opinions/{id}`, removed
-      on purpose in #182, so they get no "new opinion" notifications until they
-      update.
-- [x] **`/id/` is public on the VDS** (the live snippet already had no allowlist).
-- [x] **Privacy policy served** at `/privacy.html` (`nginx/pd-privacy.conf`).
-- [x] **Backup job is off on the VDS** (no timer installed, no dumps left).
-- [x] **Alert** on stuck account deletions: `deploy/production-vds/alerts/`,
-      every 15 minutes, to the owner's Telegram group.
-- [ ] **Hide PRO in the app.** `ProUi.ENABLED = false`: no PRO card, screen,
-      lock badge or dialog text; the lunar calendar is open to everyone. Needs
-      the release APK rebuilt from `main` after this merges.
+The host work before the release is done (public `/id/`, privacy policy served,
+backup job off, deletion alert) and PRO is hidden in the app. Known and left as
+is: pre-1.9 apps still call the removed pseudo-id
+`GET /api/community/my-scan-opinions/{id}`, so they get no "new opinion"
+notifications until they update.
 
 **Release** (★ owner)
 
@@ -234,8 +254,8 @@ Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Finish the `main.py` split (~4,790 lines left).** The 42 route handlers
-      now live in six `routes_*.py` modules that reach `main` as `m.name` at call
+- [ ] **Finish the `main.py` split (~4,960 lines left).** The ~84 route handlers
+      now live in eight `routes_*.py` modules that reach `main` as `m.name` at call
       time, which is what keeps the tests' in-place patches working. Still in `main.py`: 6 middlewares, 16 Pydantic
       models, 2 thread pools, limiter/ban/quota/admission state, metrics, lifespan
       and every helper. Next, one PR each: (1) `deps.py` — `Depends` appears only
@@ -251,9 +271,9 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Add `response_model` to routes.** `openapi.json` describes request bodies
       only. `/api/analyze` is pinned by `tests/test_analyze_payload.py`; every other
       response a frozen APK parses can change without failing CI.
-- [ ] **Break up `ai_services.py` (~3,600 lines)** — transport, five features, ~700
+- [ ] **Break up `ai_services.py` (~3,630 lines)** — transport, five features, ~700
       lines of bilingual content for `diseases_data.py` — and turn `community.py`
-      (~4,400 lines) into a package.
+      (~4,370 lines) into a package.
 - [ ] **Consolidate the four SQLite stores** (`community`, `training_store`,
       `push`, `telemetry`): shared WAL `_connect`/`init_db`, one
       `_add_column_if_missing` / `prune_older_than`, and `PRAGMA user_version` so a
@@ -263,16 +283,16 @@ Each item is its own PR; don't fold one into another.
 
 **Android**
 
-- [ ] **Split `ScanRepository` (~1,740 lines)** by context (species already moved to
-      `SpeciesRepository`); ~29 dependents.
+- [ ] **Split `ScanRepository` (~1,700 lines)** by context (species already moved to
+      `SpeciesRepository`); ~34 dependents.
 - [ ] **Replace programmatic view construction.** `DetailExtraCardsController`
-      (~1,300) and `CarePlanCardView` (~1,190) build hierarchies in code with
+      (~1,330) and `CarePlanCardView` (~1,180) build hierarchies in code with
       hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
 - [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
       payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
       bridge and the Gson ProGuard rules alive. M/L effort.
 - [ ] **Fold `GuideDataProvider.kt` (~1,640 lines) into the resource framework.** 78
-      EN/RU pairs as Kotlin strings drive ~40 `LocaleHelper.isRussian(` branches; no
+      EN/RU pairs as Kotlin strings; the app has ~41 `isRussian(` branches; no
       RU-parity enforcement.
 - [ ] **Drop Navigation Component** — a two-destination graph while 30+ Activities
       navigate by Intent.
@@ -301,7 +321,8 @@ made the server suite parallel and passed CI. What it left open:
       `monkeypatch.setattr` redirection the community and `ai_services` tests now
       use would retire `importlib.reload` from the suite.
 - [ ] **Untested pipeline branches**: the confidence-threshold arm of
-      `_is_diseased`, and the served-threshold adoption in
+      `_is_diseased` (`test_is_diseased_uses_disease_min_confidence` only checks the
+      constants), and the served-threshold adoption in
       `PlantDiseasePipeline.__init__` (its resolvers are tested, the adoption is not).
 
 ---
@@ -317,8 +338,8 @@ None blocks a release.
 - [ ] **`android/app/build.gradle.kts`** (TFLite dependency comment) still says Aqua
       is provisioned at `assets/models/aqua_classifier.tflite`; it is downloaded to
       `filesDir/aqua/`. Its test-fork comment also still counts "~58 Robolectric classes".
-- [ ] **README route count.** The status line says 39 API routes; `main.py` registers
-      42 on `api_router`.
+- [ ] **README route count.** The status line says 39 API routes; `openapi.json` has
+      82 operations (the forum and moderation routes added most of them).
 - [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
       maximising gamma".
 
@@ -356,6 +377,9 @@ None blocks a release.
   analyses, 30 identifications, 15 Plant Doctor messages, 30 care plans; guests
   5, 1, 10, 5, 10). Only uncached work counts against them.
 - **Account data stays on the German VDS** (owner's decision, 2026-11-13).
+- **Scans by area are for community members** (owner's decision, 2026-11-22).
+  Joining means location access plus sharing; there is no separate sharing switch.
+  Worldwide popular counts everyone with consent, anonymously, location or not.
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
