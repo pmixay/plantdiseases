@@ -143,4 +143,7 @@
     <color name="forum_solution_box">#F0F9F3</color>
     <color name="forum_photo_scrim">#99000000</color>
     <color name="forum_on_photo">#FFFFFF</color>
+    <!-- Guest-locked community actions (like, answer, reply, inputs): the one
+         disabled ink, icons and their counts only. Owner's request, 2026-11-22. -->
+    <color name="guest_locked">#A3ABA7</color>
 </resources>

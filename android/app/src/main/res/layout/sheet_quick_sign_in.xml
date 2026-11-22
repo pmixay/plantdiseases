@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Quick sign-in (QuickSignIn): a guest who tries to take part in the
+     community signs in here, without leaving the screen. A profile icon in a
+     circle, the title, what an account adds (one icon per line) and the
+     Yandex ID button; a new account picks its nickname in the same sheet. -->
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_2xl"
+        android:paddingTop="@dimen/space_2xl"
+        android:paddingBottom="@dimen/space_lg">
+
+        <FrameLayout
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:background="@drawable/bg_icon_circle">
+
+            <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_profile"
+                app:tint="@color/primary" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tv_quick_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
+            android:accessibilityHeading="true"
+            android:gravity="center"
+            android:text="@string/quick_sign_in_title"
+            android:textColor="@color/on_surface"
+            android:textSize="@dimen/text_title"
+            android:textStyle="bold" />
+
+        <!-- What an account adds: one row per item, built in code. -->
+        <LinearLayout
+            android:id="@+id/ll_quick_benefits"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
+            android:orientation="vertical" />
+
+        <!-- A new account's nickname, asked in the same sheet. -->
+        <LinearLayout
+            android:id="@+id/quick_nickname_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/account_finish_profile_body"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_body" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_quick_nickname"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:hint="@string/account_nickname">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_quick_nickname"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:importantForAutofill="no"
+                    android:inputType="textPersonName"
+                    android:maxLength="24" />
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_quick_error"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:gravity="center"
+            android:textColor="@color/disease_red"
+            android:textSize="@dimen/text_body"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/quick_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_quick_yandex"
+            style="@style/App.Button.Yandex"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xl"
+            android:text="@string/account_continue_yandex"
+            app:icon="@drawable/ic_yandex_id" />
+
+        <!-- Builds without Yandex ID sign in on the account screen. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_quick_other"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/space_xl"
+            android:text="@string/metered_sign_in"
+            android:visibility="gone"
+            app:cornerRadius="28dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_quick_create"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/space_lg"
+            android:text="@string/account_create"
+            android:visibility="gone"
+            app:cornerRadius="28dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_quick_later"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="@dimen/space_xs"
+            android:text="@string/metered_not_now" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

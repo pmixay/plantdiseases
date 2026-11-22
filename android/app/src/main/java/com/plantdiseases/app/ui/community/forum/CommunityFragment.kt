@@ -24,7 +24,7 @@ import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.community.CommunityMapActivity
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
@@ -54,6 +54,9 @@ class CommunityFragment : Fragment() {
     private var _binding: FragmentCommunityBinding? = null
     private val binding get() = _binding!!
 
+    // Guests sign in from a sheet over the feed, then carry on here.
+    private val quickSignIn = QuickSignIn.of(this) { onSignedIn() }
+
     private lateinit var adapter: ForumPostAdapter
     private var tab = TAB_ALL
     private var sort = SORT_HOT
@@ -75,9 +78,12 @@ class CommunityFragment : Fragment() {
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
             avatarUrl = forum::avatarUrl,
-            onOpen = { post -> startActivity(PostDetailActivity.intent(requireContext(), post.id)) },
+            onOpen = ::openPost,
             onLike = ::toggleLike,
+            // Answering is taking part: a guest is offered sign-in first.
+            onAnswers = { post -> if (requireSignIn()) openPost(post) },
         )
+        adapter.guest = !forum.isSignedIn
         val layoutManager = LinearLayoutManager(requireContext())
         binding.rvPosts.layoutManager = layoutManager
         binding.rvPosts.adapter = adapter
@@ -101,6 +107,7 @@ class CommunityFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        if (_binding != null) adapter.guest = !forum.isSignedIn
         refreshActivity()
         refreshStaff()
         offerProfilePhoto()
@@ -390,11 +397,18 @@ class CommunityFragment : Fragment() {
         ForumMenu(binding.btnMore).show(items)
     }
 
-    private fun requireSignIn(): Boolean {
-        if (forum.isSignedIn) return true
-        toast(getString(R.string.community_sign_in_required))
-        startActivity(AccountActivity.intent(requireContext()))
-        return false
+    private fun requireSignIn(): Boolean = quickSignIn.require()
+
+    private fun openPost(post: ForumPost) {
+        startActivity(PostDetailActivity.intent(requireContext(), post.id))
+    }
+
+    /** Signed in from the sheet: likes and answers unlock, personal data loads. */
+    private fun onSignedIn() {
+        if (_binding == null) return
+        adapter.guest = false
+        refreshStaff()
+        reload()
     }
 
     private fun toast(message: String) {

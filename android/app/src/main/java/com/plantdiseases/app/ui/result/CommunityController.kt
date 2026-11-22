@@ -1,11 +1,11 @@
 package com.plantdiseases.app.ui.result
 
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.community.lockNearbyPreview
 import com.plantdiseases.app.ui.community.forum.ComposePostActivity
@@ -34,6 +34,7 @@ class CommunityController(
     private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
     private val communityJoin: CommunityJoin,
+    private val quickSignIn: QuickSignIn,
 ) {
 
     // Remembered so onResume() can re-probe the request/reply state after
@@ -63,13 +64,8 @@ class CommunityController(
         activity.lifecycleScope.launch { repository.recordCommunityView(scanId) }
     }
 
-    /** Opens login and deliberately drops the initiating mutation. */
-    private fun requireAuthenticatedAction(): Boolean {
-        if (authRepository.state.value is AuthState.Authenticated) return true
-        Toast.makeText(activity, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        activity.startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(activity))
-        return false
-    }
+    /** Offers sign-in in place and deliberately drops the initiating mutation. */
+    private fun requireAuthenticatedAction(): Boolean = quickSignIn.require()
 
     /**
      * Wire the ONE second-opinion control (the separate "view opinions"
@@ -218,21 +214,15 @@ class CommunityController(
                             com.plantdiseases.app.ui.community.MyScanRepliesActivity
                                 .intentFor(activity, item.scanId),
                         )
-                    } else if (authRepository.state.value is AuthState.Authenticated) {
+                    } else {
                         // localClientScanIds() suspends on Dispatchers.IO, so we
                         // always resume a main-loop turn later. lifecycleScope
                         // only cancels at DESTROYED, so a Home press mid-read
                         // would land here after onSaveInstanceState and blow up
-                        // inside show()'s commit().
+                        // inside show()'s commit(). Guests get the same sheet
+                        // with its like and vote controls locked.
                         if (activity.supportFragmentManager.isStateSaved) return@launch
                         CommunityOpinionSheet.show(
-                            activity.supportFragmentManager,
-                            item,
-                            displayName(item.disease, isRu),
-                        )
-                    } else {
-                        if (activity.supportFragmentManager.isStateSaved) return@launch
-                        CommunityOpinionSheet.showReadOnly(
                             activity.supportFragmentManager,
                             item,
                             displayName(item.disease, isRu),

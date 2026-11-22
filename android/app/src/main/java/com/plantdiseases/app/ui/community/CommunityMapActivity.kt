@@ -15,7 +15,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -32,8 +31,8 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -96,6 +95,9 @@ class CommunityMapActivity : AppCompatActivity() {
     // The map shows scans by area, so it is members-only: location access and
     // sharing come with it (CommunityJoin). Declining closes the map.
     private val communityJoin = CommunityJoin(this)
+
+    // Guests sign in in place (likes, blocked authors); also registers a launcher.
+    private val quickSignIn = QuickSignIn.of(this)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -186,7 +188,7 @@ class CommunityMapActivity : AppCompatActivity() {
     /** Rules and blocked authors are always there; "leave" while a member. */
     private fun setupToolbarMenu() {
         // Leaving the community also leaves the map, which is members-only.
-        val safety = ScanCommunitySafety(this, scanRepository, authRepository) {
+        val safety = ScanCommunitySafety(this, scanRepository, authRepository, quickSignIn) {
             if (CommunityPrefs.uploadsEnabled(this)) {
                 updateLeaveItem()
                 reload()
@@ -460,11 +462,7 @@ class CommunityMapActivity : AppCompatActivity() {
     /** Optimistic like toggle for a row in the grouped-scans bottom sheet,
      *  parameterised by which adapter instance owns the tapped row. */
     private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-            startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(this))
-            return
-        }
+        if (!quickSignIn.require()) return
         if (!likeWritesInFlight.add(item.scanId)) return
         val next = !item.likedByMe
         val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
@@ -505,7 +503,14 @@ class CommunityMapActivity : AppCompatActivity() {
                     }
             },
             onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
+            onComments = { item ->
+                if (quickSignIn.require()) {
+                    dialog.dismiss()
+                    openScan(item)
+                }
+            },
         )
+        adapter.guest = !quickSignIn.isSignedIn
         list.adapter = adapter
         adapter.submit(group)
         val container = LinearLayout(this).apply {

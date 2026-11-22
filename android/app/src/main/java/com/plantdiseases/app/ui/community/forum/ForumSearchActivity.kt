@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
@@ -16,7 +15,7 @@ import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityForumSearchBinding
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -40,6 +39,7 @@ class ForumSearchActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityForumSearchBinding
     private lateinit var adapter: ForumPostAdapter
+    private val quickSignIn = QuickSignIn.of(this) { adapter.guest = false }
     private var condition: String? = null
     private var species: String? = null
     private var lastScan: Pair<String, String?>? = null
@@ -57,9 +57,11 @@ class ForumSearchActivity : AppCompatActivity() {
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
             avatarUrl = forum::avatarUrl,
-            onOpen = { post -> startActivity(PostDetailActivity.intent(this, post.id)) },
+            onOpen = ::openPost,
             onLike = ::toggleLike,
+            onAnswers = { post -> if (quickSignIn.require()) openPost(post) },
         )
+        adapter.guest = !forum.isSignedIn
         binding.rvResults.layoutManager = LinearLayoutManager(this)
         binding.rvResults.adapter = adapter
         binding.btnBack.setOnClickListener { finish() }
@@ -176,13 +178,18 @@ class ForumSearchActivity : AppCompatActivity() {
         binding.tvEmpty.setText(if (prompt) R.string.forum_search_prompt else R.string.forum_search_empty)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Signed in or out elsewhere (a post opened from here) meanwhile.
+        adapter.guest = !forum.isSignedIn
+    }
+
+    private fun openPost(post: ForumPost) {
+        startActivity(PostDetailActivity.intent(this, post.id))
+    }
+
     private fun toggleLike(post: ForumPost) {
-        if (!forum.isSignedIn) {
-            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-            startActivity(AccountActivity.intent(this))
-            return
-        }
-        if (post.author.isMe) return
+        if (!quickSignIn.require() || post.author.isMe) return
         val next = !post.likedByMe
         adapter.updateLike(post.id, next, (post.likeCount + if (next) 1 else -1).coerceAtLeast(0))
         lifecycleScope.launch {

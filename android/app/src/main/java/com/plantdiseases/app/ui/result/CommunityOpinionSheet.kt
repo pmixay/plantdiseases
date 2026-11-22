@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.result
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -23,6 +24,7 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityOpinion
@@ -83,6 +85,21 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var likeRow: View? = null
     private var likeIcon: ImageView? = null
     private var likeCountView: TextView? = null
+    private var safetyRow: View? = null
+
+    // A guest signs in from a sheet over this one; the controls unlock in place.
+    private val quickSignIn = QuickSignIn.of(this) { applyGuestState() }
+    private val isGuest: Boolean get() = authRepository.state.value !is AuthState.Authenticated
+    private var voteDefaults: VoteButtonDefaults? = null
+
+    /** The vote buttons' own colours, restored once a guest signs in. */
+    private class VoteButtonDefaults(
+        val agreeBackground: ColorStateList?,
+        val agreeText: ColorStateList,
+        val agreeIcon: ColorStateList?,
+        val disagreeText: ColorStateList,
+        val disagreeStroke: ColorStateList?,
+    )
 
     // Local mirror of the server's liked_by_me — updated optimistically on
     // tap and by every server response that actually carries it (loadOpinions
@@ -140,8 +157,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         renderMeta()
         renderPhoto(view)
 
-        val safetyRow = view.findViewById<View>(R.id.ll_community_scan_safety)
-        safetyRow?.visibility = View.VISIBLE
+        // Report and block are for members; a guest has neither.
+        safetyRow = view.findViewById(R.id.ll_community_scan_safety)
+        safetyRow?.visibility = if (isGuest) View.GONE else View.VISIBLE
         view.findViewById<MaterialButton>(R.id.btn_community_report_scan)
             ?.setOnClickListener { showReportDialog(TARGET_SCAN, scanId) }
         view.findViewById<MaterialButton>(R.id.btn_community_block_scan_author)
@@ -200,15 +218,18 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_agree).setOnClickListener {
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             voteRow?.visibility = View.GONE
             showPicker(view, visible = true)
             if (diseaseKey.isNotBlank()) preselectChip(diseaseKey)
         }
         view.findViewById<MaterialButton>(R.id.btn_opinion_disagree).setOnClickListener {
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             voteRow?.visibility = View.GONE
             showPicker(view, visible = true)
         }
         changeVoteBtn?.setOnClickListener {
+            if (!requireAuthenticatedAction()) return@setOnClickListener
             currentVoteRow?.visibility = View.GONE
             showPicker(view, visible = true)
             myOpinion?.takeIf { it.isNotBlank() }?.let { preselectChip(it) }
@@ -217,8 +238,44 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         cancelBtn.setOnClickListener { dismiss() }
         sendBtn?.setOnClickListener { submitFromPicker() }
 
+        applyGuestState()
         expandSheet(view)
         loadOpinions()
+    }
+
+    /**
+     * A guest sees the like and vote controls drawn locked (gray) and no
+     * report or block; tapping one offers sign-in. Signing in restores them.
+     */
+    private fun applyGuestState() {
+        val v = view ?: return
+        val guest = isGuest
+        safetyRow?.visibility = if (guest) View.GONE else View.VISIBLE
+        val agree = v.findViewById<MaterialButton>(R.id.btn_opinion_agree)
+        val disagree = v.findViewById<MaterialButton>(R.id.btn_opinion_disagree)
+        val defaults = voteDefaults ?: VoteButtonDefaults(
+            agreeBackground = agree.backgroundTintList,
+            agreeText = agree.textColors,
+            agreeIcon = agree.iconTint,
+            disagreeText = disagree.textColors,
+            disagreeStroke = disagree.strokeColor,
+        ).also { voteDefaults = it }
+        val locked = ColorStateList.valueOf(ContextCompat.getColor(v.context, R.color.guest_locked))
+        if (guest) {
+            agree.backgroundTintList =
+                ColorStateList.valueOf(ContextCompat.getColor(v.context, R.color.surface_container))
+            agree.setTextColor(locked)
+            agree.iconTint = locked
+            disagree.setTextColor(locked)
+            disagree.strokeColor = locked
+        } else {
+            agree.backgroundTintList = defaults.agreeBackground
+            agree.setTextColor(defaults.agreeText)
+            agree.iconTint = defaults.agreeIcon
+            disagree.setTextColor(defaults.disagreeText)
+            disagree.strokeColor = defaults.disagreeStroke
+        }
+        renderLike(likeCountView?.text?.toString()?.toIntOrNull() ?: 0, liked)
     }
 
     /**
@@ -354,11 +411,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         likeCountView?.text = count.toString()
         likeCountView?.visibility = if (count > 0) View.VISIBLE else View.GONE
         likeIcon?.setImageResource(if (likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart)
-        likeIcon?.imageTintList = android.content.res.ColorStateList.valueOf(
-            ContextCompat.getColor(
-                requireContext(),
-                if (likedByMe) R.color.primary else R.color.on_surface,
-            ),
+        val color = ContextCompat.getColor(
+            requireContext(),
+            when {
+                isGuest -> R.color.guest_locked
+                likedByMe -> R.color.primary
+                else -> R.color.on_surface
+            },
+        )
+        likeIcon?.imageTintList = ColorStateList.valueOf(color)
+        likeCountView?.setTextColor(
+            if (isGuest) color else ContextCompat.getColor(requireContext(), R.color.on_surface),
         )
     }
 
@@ -439,14 +502,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         renderVoteState(justSubmittedKey)
     }
 
-    /** Opens account setup and deliberately does not replay a mutation. */
-    private fun requireAuthenticatedAction(): Boolean {
-        if (authRepository.state.value is AuthState.Authenticated) return true
-        val ctx = requireContext()
-        Toast.makeText(ctx, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(ctx))
-        return false
-    }
+    /** Offers sign-in in place and deliberately does not replay a mutation. */
+    private fun requireAuthenticatedAction(): Boolean = quickSignIn.require()
 
     private fun showReportDialog(targetType: String, targetId: String) {
         if (!requireAuthenticatedAction()) return

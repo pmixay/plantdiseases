@@ -197,7 +197,14 @@
     <string name="telemetry_prompt_no">No</string>
     <string name="telemetry_consent_title">Send minimal error reports</string>
     <string name="telemetry_consent_subtitle">Errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
-    <string name="community_sign_in_required">Sign in to publish or change community content. Tap the action again after sign-in.</string>
+    <string name="community_sign_in_required">Sign in to take part in the community.</string>
+    <string name="quick_sign_in_title">Sign in to take part in the community</string>
+    <string name="quick_sign_in_benefit_like">Like posts and helpful answers</string>
+    <string name="quick_sign_in_benefit_answer">Answer questions and reply to others</string>
+    <string name="quick_sign_in_benefit_ask">Ask your own questions and share scans</string>
+    <string name="quick_sign_in_benefit_opinions">Get second opinions on your scans</string>
+    <string name="quick_sign_in_done">Signed in as %1$s</string>
+    <string name="community_opinion_note_hint_guest">Sign in to leave a note</string>
     <string name="onboarding_title">Welcome to PlantDiseases</string>
     <string name="onboarding_secure_title">Your data is secure</string>
     <string name="onboarding_secure_body">Photos are re-encoded without EXIF or GPS before upload.</string>

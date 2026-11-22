@@ -203,7 +203,14 @@
     <string name="telemetry_prompt_no">Нет</string>
     <string name="telemetry_consent_title">Отправлять минимальные отчёты об ошибках</string>
     <string name="telemetry_consent_subtitle">Отчёты только с допустимыми техническими категориями, версией приложения, укрупнённой версией Android и безопасными этапами действий. Без текста ошибок, изображений, путей, аккаунта, установки, модели телефона и геолокации.</string>
-    <string name="community_sign_in_required">Войдите, чтобы публиковать или изменять материалы сообщества. После входа нажмите действие ещё раз.</string>
+    <string name="community_sign_in_required">Войдите, чтобы участвовать в сообществе.</string>
+    <string name="quick_sign_in_title">Войдите, чтобы участвовать в сообществе</string>
+    <string name="quick_sign_in_benefit_like">Ставить лайки постам и полезным ответам</string>
+    <string name="quick_sign_in_benefit_answer">Отвечать на вопросы и комментировать</string>
+    <string name="quick_sign_in_benefit_ask">Задавать свои вопросы и делиться сканами</string>
+    <string name="quick_sign_in_benefit_opinions">Получать второе мнение по своим сканам</string>
+    <string name="quick_sign_in_done">Вы вошли как %1$s</string>
+    <string name="community_opinion_note_hint_guest">Войдите, чтобы оставить заметку</string>
     <string name="onboarding_title">Добро пожаловать в PlantDiseases</string>
     <string name="onboarding_secure_title">Ваши данные защищены</string>
     <string name="onboarding_secure_body">Перед отправкой фото перекодируются без EXIF и GPS.</string>

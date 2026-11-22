@@ -2,10 +2,12 @@ package com.plantdiseases.app.di
 
 import android.content.Context
 import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.InstallationIdProvider
 import com.plantdiseases.app.auth.LogoutRetryScheduler
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.util.AccountDisclosurePrefs
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -53,6 +55,10 @@ interface AppEntryPoint {
     fun plantRepository(): PlantRepository
 
     fun notificationRepository(): NotificationRepository
+
+    fun accountDisclosurePrefs(): AccountDisclosurePrefs
+
+    fun installationIdProvider(): InstallationIdProvider
 }
 
 /** `EntryPointAccessors.fromApplication` against the given context's

@@ -31,8 +31,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.auth.InstallationIdProvider
-import com.plantdiseases.app.auth.LogoutNotDurableException
-import com.plantdiseases.app.auth.SignupAlreadyConfirmedException
 import com.plantdiseases.app.auth.SyntheticProviderToken
 import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.account.AccountApiException
@@ -442,35 +440,8 @@ class AccountActivity : AppCompatActivity() {
         withAccountDisclosure { submitEmailAuthentication(action) }
     }
 
-    private fun withAccountDisclosure(continueSignIn: () -> Unit) {
-        if (accountDisclosurePrefs.acknowledged) {
-            continueSignIn()
-            return
-        }
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.account_disclosure_title)
-            .setMessage(R.string.account_disclosure_body)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton(R.string.account_disclosure_privacy, null)
-            .setPositiveButton(R.string.account_disclosure_acknowledge) { _, _ ->
-                val acknowledgementSaved = try {
-                    accountDisclosurePrefs.acknowledge()
-                    true
-                } catch (_: Exception) {
-                    false
-                }
-                if (acknowledgementSaved) {
-                    continueSignIn()
-                } else {
-                    Toast.makeText(this, R.string.account_disclosure_save_failed, Toast.LENGTH_LONG).show()
-                }
-            }
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener { openPrivacyPolicy() }
-        }
-        dialog.show()
-    }
+    private fun withAccountDisclosure(continueSignIn: () -> Unit) =
+        withAccountDisclosure(this, accountDisclosurePrefs, continueSignIn)
 
     private fun submitEmailAuthentication(action: EmailAuthenticationAction) {
         val email = binding.etEmail.text?.toString()?.trim().orEmpty()
@@ -510,14 +481,6 @@ class AccountActivity : AppCompatActivity() {
             } finally {
                 setLoading(false)
             }
-        }
-    }
-
-    private fun openPrivacyPolicy() {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.consent_privacy_url))))
-        }.onFailure {
-            Toast.makeText(this, R.string.account_privacy_open_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1087,20 +1050,7 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun showError(failure: Throwable?) {
-        val message = when (failure) {
-            is LogoutNotDurableException -> R.string.account_error_logout_not_durable
-            is SignupAlreadyConfirmedException -> R.string.account_signup_already_confirmed
-            is IOException -> R.string.account_error_retry_online
-            else -> when ((failure as? AccountApiException)?.errorCode) {
-                "nickname_invalid" -> R.string.account_error_nickname_invalid
-                "nickname_taken" -> R.string.account_error_nickname_taken
-                "nickname_cooldown" -> R.string.account_error_nickname_cooldown
-                "provider_unavailable" -> R.string.account_error_provider_unavailable
-                "identity_already_linked" -> R.string.account_error_identity_linked
-                else -> R.string.account_error_generic
-            }
-        }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        Toast.makeText(this, accountErrorMessage(failure), Toast.LENGTH_LONG).show()
     }
 
     private fun showEmailAuthenticationError(

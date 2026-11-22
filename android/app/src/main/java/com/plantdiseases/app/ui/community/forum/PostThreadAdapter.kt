@@ -54,6 +54,15 @@ class PostThreadAdapter(
     private var post: ForumPost? = null
     private var spaces: List<ForumSpace> = emptyList()
 
+    /** A guest's like, not-helpful and reply actions are drawn locked (gray);
+     *  their taps still reach [actions], which offer sign-in. */
+    var guest: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
+
     fun submit(post: ForumPost, spaces: List<ForumSpace>) {
         this.post = post
         this.spaces = spaces
@@ -178,7 +187,11 @@ class PostThreadAdapter(
             )
             val color = ContextCompat.getColor(
                 context,
-                if (post.likedByMe) R.color.disease_red else R.color.on_surface,
+                when {
+                    guest -> R.color.guest_locked
+                    post.likedByMe -> R.color.disease_red
+                    else -> R.color.on_surface
+                },
             )
             binding.tvLike.compoundDrawableTintList = ColorStateList.valueOf(color)
             binding.tvLike.setTextColor(color)
@@ -392,6 +405,12 @@ class PostThreadAdapter(
                 actions.onReact(answer, if (notHelpful) null else "not_helpful")
             }
             binding.tvReply.visibility = if (post.locked) View.GONE else View.VISIBLE
+            binding.tvReply.compoundDrawableTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface_secondary),
+            )
+            binding.tvReply.setTextColor(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface),
+            )
             binding.tvReply.setOnClickListener { actions.onReply(answer) }
             val canAccept = post.author.isMe && !mine && answer.depth == 0
             binding.btnAccept.visibility = if (canAccept) View.VISIBLE else View.GONE
@@ -401,7 +420,14 @@ class PostThreadAdapter(
 
         private fun styleReaction(context: Context, view: TextView, count: Int, active: Boolean, activeColor: Int) {
             view.text = if (count > 0) count.toString() else ""
-            val color = ContextCompat.getColor(context, if (active) activeColor else R.color.on_surface)
+            val color = ContextCompat.getColor(
+                context,
+                when {
+                    guest -> R.color.guest_locked
+                    active -> activeColor
+                    else -> R.color.on_surface
+                },
+            )
             view.compoundDrawableTintList = ColorStateList.valueOf(color)
             view.setTextColor(color)
         }

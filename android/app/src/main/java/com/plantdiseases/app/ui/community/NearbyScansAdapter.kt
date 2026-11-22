@@ -35,7 +35,17 @@ class NearbyScansAdapter(
     private val onOpen: (CommunityScanItem) -> Unit,
     private val onAuthor: (CommunityScanItem) -> Unit,
     private val onLike: (CommunityScanItem) -> Unit,
+    private val onComments: (CommunityScanItem) -> Unit = onOpen,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
+
+    /** A guest's like and comment actions are drawn locked (gray); their taps
+     *  still reach [onLike] and [onComments], which offer sign-in. */
+    var guest: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
 
     private var items: MutableList<CommunityScanItem> = mutableListOf()
 
@@ -156,7 +166,14 @@ class NearbyScansAdapter(
 
             val open = View.OnClickListener { onOpen(item) }
             photo.setOnClickListener(open)
-            commentsRow.setOnClickListener(open)
+            commentsRow.setOnClickListener { onComments(item) }
+            val context = itemView.context
+            commentsIcon.imageTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface_secondary),
+            )
+            comments.setTextColor(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface),
+            )
 
             // ServerConfig.appBaseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
@@ -177,11 +194,17 @@ class NearbyScansAdapter(
             likeIcon.setImageResource(
                 if (item.likedByMe) R.drawable.ic_heart_filled else R.drawable.ic_heart,
             )
-            likeIcon.imageTintList = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(
-                    itemView.context,
-                    if (item.likedByMe) R.color.primary else R.color.on_surface,
-                ),
+            val color = ContextCompat.getColor(
+                itemView.context,
+                when {
+                    guest -> R.color.guest_locked
+                    item.likedByMe -> R.color.primary
+                    else -> R.color.on_surface
+                },
+            )
+            likeIcon.imageTintList = android.content.res.ColorStateList.valueOf(color)
+            likes.setTextColor(
+                if (guest) color else ContextCompat.getColor(itemView.context, R.color.on_surface),
             )
             likeRow.setOnClickListener { onLike(item) }
         }

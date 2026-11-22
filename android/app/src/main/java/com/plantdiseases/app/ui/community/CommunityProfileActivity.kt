@@ -6,18 +6,16 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.model.CommunityPublicProfile
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityProfileBinding
-import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.community.forum.ForumInsets
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.Avatars
@@ -37,6 +35,9 @@ class CommunityProfileActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCommunityProfileBinding
     private lateinit var adapter: NearbyScansAdapter
+
+    // Guests sign in in place; their likes and comments unlock on return.
+    private val quickSignIn = QuickSignIn.of(this) { adapter.guest = false }
 
     @Inject
     lateinit var scanRepository: ScanRepository
@@ -72,7 +73,9 @@ class CommunityProfileActivity : AppCompatActivity() {
                     ?.let { startActivity(intent(this, it)) }
             },
             onLike = { item -> toggleLike(item) },
+            onComments = { item -> if (quickSignIn.require()) openPost(item) },
         )
+        adapter.guest = !quickSignIn.isSignedIn
         binding.rvPosts.layoutManager = LinearLayoutManager(this)
         binding.rvPosts.adapter = adapter
         supportFragmentManager.setFragmentResultListener(
@@ -143,11 +146,7 @@ class CommunityProfileActivity : AppCompatActivity() {
     }
 
     private fun toggleLike(item: CommunityScanItem) {
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-            startActivity(AccountActivity.intent(this))
-            return
-        }
+        if (!quickSignIn.require()) return
         val next = !item.likedByMe
         val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
         adapter.updateLike(item.scanId, optimisticCount, next)

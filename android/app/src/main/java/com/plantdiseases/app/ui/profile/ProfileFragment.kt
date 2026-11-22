@@ -37,6 +37,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
 import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
 import com.plantdiseases.app.ui.community.forum.ModerationActivity
@@ -102,6 +103,9 @@ class ProfileFragment : Fragment() {
     ) { uri ->
         if (uri != null) openAvatarEditor(uri)
     }
+
+    // Community-only rows (achievements) offer sign-in in place.
+    private val quickSignIn = QuickSignIn.of(this)
 
     private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
         completeAvatarEdit(result)
@@ -782,12 +786,7 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun requireCommunitySignIn(): Boolean {
-        if (forumRepository.isSignedIn) return true
-        Toast.makeText(requireContext(), R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        startActivity(AccountActivity.intent(requireContext()))
-        return false
-    }
+    private fun requireCommunitySignIn(): Boolean = quickSignIn.require()
 
     override fun onSaveInstanceState(outState: Bundle) {
         pendingAvatarAccountId?.let { outState.putString(STATE_AVATAR_ACCOUNT_ID, it) }

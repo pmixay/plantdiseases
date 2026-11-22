@@ -10,9 +10,8 @@ import androidx.work.WorkManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.repository.ScanRepository
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.OpinionPrefs
 import kotlinx.coroutines.launch
@@ -27,6 +26,7 @@ class ScanCommunitySafety(
     private val activity: AppCompatActivity,
     private val scanRepository: ScanRepository,
     private val authRepository: AuthRepository,
+    private val quickSignIn: QuickSignIn,
     private val onChanged: () -> Unit,
 ) {
 
@@ -67,11 +67,7 @@ class ScanCommunitySafety(
     }
 
     private fun showBlockedAuthors() {
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            toast(R.string.community_sign_in_required)
-            activity.startActivity(AccountActivity.intent(activity))
-            return
-        }
+        if (!quickSignIn.require()) return
         activity.lifecycleScope.launch {
             scanRepository.communityBlocks()
                 .onSuccess { blocks ->

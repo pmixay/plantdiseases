@@ -82,6 +82,7 @@
     <string name="forum_recovery_link">Обновление: %1$s, %2$s</string>
     <string name="forum_locked_banner">Ответы на эту публикацию закрыты.</string>
     <string name="forum_answer_hint">Объясните, что делать…</string>
+    <string name="forum_answer_hint_guest">Войдите, чтобы ответить</string>
     <string name="forum_steps_hint">Шаги, по одному на строку</string>
     <string name="forum_add_photo">Добавить фото</string>
     <string name="forum_add_steps">Добавить шаги</string>

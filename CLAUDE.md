@@ -183,7 +183,9 @@ the app or server may mention it. The app
 API and Community only see an Ed25519 access token (random community actor + nickname),
 verify it locally against the service's JWKS, then confirm the session is still current
 with the account service. Diagnosis and Community reading need no account; Community
-writes and metered features do. Entitlements/quotas are server-authoritative: the app never
+writes and metered features do. A guest's tap on a community action opens
+`ui/account/QuickSignIn` (a sheet that signs in with Yandex ID in place), never a toast
+plus the account screen; report and block are hidden from guests. Entitlements/quotas are server-authoritative: the app never
 trusts a billing result, and the inference service asks the account service to consume a
 unit before cost-bearing work. Deletion tombstones public content via an outbox before the private account rows are erased.
 
@@ -216,7 +218,9 @@ detail screen only.
   specific "not configured" UX. Preserve this.
 - **Typography: no grey text, plain punctuation.** Text uses `@color/on_surface`; the muted
   ink `on_surface_secondary` (also `colorOnSurfaceVariant`) is for icon tints only, never
-  text; don't fade text with alpha to make it secondary. Captions are 12sp minimum and bold. UI text
+  text; don't fade text with alpha to make it secondary. The one gray is `guest_locked`,
+  the disabled ink of a guest's locked community actions (like/answer icons and counts,
+  locked inputs). Captions are 12sp minimum and bold. UI text
   (strings, layouts, Kotlin literals, server content) has no middle dot, em dash or en
   dash: use `-`, `,` or `:`. `DesignSystemRulesTest` (app) and `tests/test_text_style.py`
   (server) enforce this; LLM and Wikipedia text is normalised by `server/text_style.py`.

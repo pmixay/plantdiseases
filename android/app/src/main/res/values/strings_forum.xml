@@ -80,6 +80,7 @@
     <string name="forum_recovery_link">Update: %1$s, %2$s</string>
     <string name="forum_locked_banner">Answers are closed on this post.</string>
     <string name="forum_answer_hint">Explain what to do…</string>
+    <string name="forum_answer_hint_guest">Sign in to answer</string>
     <string name="forum_steps_hint">Steps, one per line</string>
     <string name="forum_add_photo">Add a photo</string>
     <string name="forum_add_steps">Add steps</string>

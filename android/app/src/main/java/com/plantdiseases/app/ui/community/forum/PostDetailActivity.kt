@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.community.forum
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -25,7 +26,7 @@ import com.plantdiseases.app.data.model.StaffMe
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.ui.garden.PhotoViewerActivity
 import com.plantdiseases.app.databinding.ActivityForumPostBinding
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -56,6 +57,10 @@ class PostDetailActivity :
     private var diagnosis: String? = null
     private val answerPhotos = mutableListOf<Pair<Uri, String>>()
     private var sending = false
+    private var composerHintColors: ColorStateList? = null
+
+    // Guests sign in from a sheet over the thread and carry on here.
+    private val quickSignIn = QuickSignIn.of(this) { onSignedIn() }
 
     private val pickPhotos = registerForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_ANSWER_PHOTOS),
@@ -84,16 +89,60 @@ class PostDetailActivity :
         binding.rvThread.layoutManager = LinearLayoutManager(this)
         binding.rvThread.adapter = adapter
         bindComposer()
+        applyGuestState()
         lifecycleScope.launch { forum.spaces().onSuccess { spaces = it } }
-        if (forum.isSignedIn) {
-            lifecycleScope.launch {
-                forum.staffMe().onSuccess {
-                    staff = it
-                    post?.let(::buildPostMenu)
-                }
+        loadStaff()
+        load()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Signed in or out elsewhere meanwhile.
+        if (::adapter.isInitialized) applyGuestState()
+    }
+
+    private fun loadStaff() {
+        if (!forum.isSignedIn) return
+        lifecycleScope.launch {
+            forum.staffMe().onSuccess {
+                staff = it
+                post?.let(::buildPostMenu)
             }
         }
+    }
+
+    /** Signed in from the sheet: actions and the composer unlock in place. */
+    private fun onSignedIn() {
+        applyGuestState()
+        loadStaff()
         load()
+    }
+
+    /**
+     * Read-only for a guest: likes, reactions and replies drawn locked, the
+     * composer locked (lock icon, "Sign in to answer"), and no report or block
+     * actions. Every locked control offers sign-in when tapped.
+     */
+    private fun applyGuestState() {
+        val guest = !forum.isSignedIn
+        adapter.guest = guest
+        val locked = ColorStateList.valueOf(getColor(R.color.guest_locked))
+        val tools = if (guest) locked else ColorStateList.valueOf(getColor(R.color.on_surface_secondary))
+        listOf(binding.btnPhoto, binding.btnSteps, binding.btnDiagnosis).forEach { it.imageTintList = tools }
+        binding.btnSend.backgroundTintList = if (guest) locked else null
+        val defaultHint = composerHintColors ?: binding.etAnswer.hintTextColors.also { composerHintColors = it }
+        binding.etAnswer.apply {
+            isFocusable = !guest
+            isFocusableInTouchMode = !guest
+            isCursorVisible = !guest
+            setHint(if (guest) R.string.forum_answer_hint_guest else R.string.forum_answer_hint)
+            setHintTextColor(if (guest) locked else defaultHint)
+            setCompoundDrawablesRelativeWithIntrinsicBounds(if (guest) R.drawable.ic_lock else 0, 0, 0, 0)
+            compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.space_sm)
+            compoundDrawableTintList = locked
+            setOnClickListener { if (guest) quickSignIn.show() }
+        }
+        post?.let(::buildPostMenu)
     }
 
     private var reloadOnReturn = false
@@ -139,7 +188,8 @@ class PostDetailActivity :
         if (loaded.author.isMe) {
             if (loaded.kind != "tip") menu.add(0, MENU_UPDATE, 0, R.string.forum_post_update)
             menu.add(0, MENU_DELETE, 1, R.string.forum_delete_post)
-        } else {
+        } else if (forum.isSignedIn) {
+            // Report and block are for members; a guest has neither.
             menu.add(0, MENU_REPORT, 0, R.string.forum_report)
             menu.add(0, MENU_BLOCK, 1, R.string.forum_block_author)
         }
@@ -189,7 +239,7 @@ class PostDetailActivity :
     }
 
     override fun hasAnswerMenu(answer: ForumAnswer): Boolean =
-        answer.author?.isMe == true || !answer.isAi || staff?.isStaff == true
+        forum.isSignedIn && (answer.author?.isMe == true || !answer.isAi || staff?.isStaff == true)
 
     override fun onOpenPost(postId: String) {
         startActivity(intent(this, postId))
@@ -230,7 +280,7 @@ class PostDetailActivity :
         val mine = answer.author?.isMe == true
         if (mine) {
             popup.menu.add(0, MENU_DELETE, 0, R.string.forum_delete_answer)
-        } else if (!answer.isAi) {
+        } else if (!answer.isAi && forum.isSignedIn) {
             popup.menu.add(0, MENU_REPORT, 0, R.string.forum_report)
             popup.menu.add(0, MENU_BLOCK, 1, R.string.forum_block_author)
         }
@@ -257,9 +307,10 @@ class PostDetailActivity :
     private fun bindComposer() {
         binding.btnCancelReply.setOnClickListener { clearReply() }
         binding.btnSteps.setOnClickListener {
+            if (!requireSignIn()) return@setOnClickListener
             binding.etSteps.visibility = if (binding.etSteps.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
-        binding.btnDiagnosis.setOnClickListener { pickDiagnosis() }
+        binding.btnDiagnosis.setOnClickListener { if (requireSignIn()) pickDiagnosis() }
         binding.tvDiagnosisSelected.setOnClickListener {
             diagnosis = null
             renderDiagnosis()
@@ -412,12 +463,7 @@ class PostDetailActivity :
             .show()
     }
 
-    private fun requireSignIn(): Boolean {
-        if (forum.isSignedIn) return true
-        Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        startActivity(AccountActivity.intent(this))
-        return false
-    }
+    private fun requireSignIn(): Boolean = quickSignIn.require()
 
     private fun showError(error: Throwable) {
         Toast.makeText(this, ForumUi.errorMessage(this, error), Toast.LENGTH_LONG).show()
