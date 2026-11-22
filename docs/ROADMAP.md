@@ -55,8 +55,7 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
 - [ ] ★ **Notebook §2 cell for `tools/export_community_labels.py`**: load the export as
       a `train_only` supplement grouped by `capture_family_id`; run
       `tools/filter_supplement.py` against the OOD benchmark first.
-- [ ] Push notifications for answers and accepted answers (today: in-app activity
-      badge only), following spaces, and a desktop web admin panel.
+- [ ] Following spaces, and a desktop web admin panel.
 - [ ] Retire the legacy second-opinion endpoints once older app versions age out;
       until then the maintenance pass copies their requests into the forum.
 - [ ] Home's "Popular near you" shows only to community members; it could offer
@@ -84,19 +83,6 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
 
 ---
 
-## Security
-
-Config keys behind every limit: `DEPLOYMENT.md` §3.2.
-
-- [ ] **The privacy policy still describes backups.** Both copies
-      (`privacy.html`, the in-app `privacy_policy.html`) and
-      `release-policy-gates.json` say "Encrypted operational backups may remain
-      for up to four weeks". That stays true while the old dumps exist on the
-      VDS; once they are deleted, drop the sentence from all three together. The
-      in-app copy ships inside the APK, so it follows the next app release.
-
----
-
 ## Model track
 
 `MODEL_VERSION = '2.7.5'` (notebook §1, matches the deployed bundle). Default mode
@@ -118,9 +104,9 @@ comparison rules: `MODEL_HISTORY.md`.
       layout, a two-entry `CONDITION_MAP` with no `not_a_plant`, and it writes
       `manifest.csv` where §6 reads `manifest_arms.csv`. Full list in
       `DATASET_LABELING_PLAN.md`.
-- [ ] **Aqua has no classifier-side OOD signal.** `AquaClassifier.classify()` is a
-      plain softmax argmax; it abstains only on blur or `not_a_plant`. A MaxLogit
-      floor fitted in §5 is the cheap fix.
+- [ ] ★ **Ship Aqua's OOD floor**: the next notebook run writes it into the Aqua
+      sidecar (`ood`); copy that `classes.json` with the model into
+      `server/static/aqua/`. Until then Aqua serves without the gate.
 
 ### Data — the critical path
 
