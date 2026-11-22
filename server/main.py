@@ -2209,23 +2209,6 @@ api_router = APIRouter(prefix="/api")
 # ── Smart APIs ──────────────────────────────────────────────────────
 
 
-class SymptomDiagnoseRequest(BaseModel):
-    # question_id -> option_id (see symptoms.SYMPTOM_WEIGHTS). Kept small and
-    # length-capped — this is an untrusted client payload.
-    answers: dict[str, str] = Field(default_factory=dict)
-    locale: str = Field(default="en", max_length=8)
-
-    @field_validator("answers")
-    @classmethod
-    def _validate_answers(cls, value: dict[str, str]) -> dict[str, str]:
-        if len(value) > 20:
-            raise ValueError("too many answers")
-        for k, v in value.items():
-            if len(k) > 32 or len(v) > 32:
-                raise ValueError("answer id too long")
-        return value
-
-
 # ── Community scan corpus ───────────────────────────────────────────
 
 
@@ -2338,18 +2321,6 @@ class CommunityScanRequest(BaseModel):
             return None
         cleaned = v.strip().lower()[:8]
         return cleaned or None
-
-
-# The app sends its 12 newest scans; the cap leaves room for that to grow
-# while bounding the work a single request can hand the event loop.
-PROGRESSION_MAX_HISTORY = 50
-
-
-class ProgressionRequest(BaseModel):
-    """Time-ordered list of scans (oldest first) for the disease-
-    progression sparkline + trend the plant-detail screen renders."""
-
-    history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
 
 
 # Classes the production head can actually predict. Tracks the

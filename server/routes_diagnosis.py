@@ -11,6 +11,7 @@ import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 
 # Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
@@ -20,6 +21,35 @@ except ImportError:
     import analysis
     import analysis_payload
     import symptoms
+
+
+class SymptomDiagnoseRequest(BaseModel):
+    # question_id -> option_id (see symptoms.SYMPTOM_WEIGHTS). Kept small and
+    # length-capped — this is an untrusted client payload.
+    answers: dict[str, str] = Field(default_factory=dict)
+    locale: str = Field(default="en", max_length=8)
+
+    @field_validator("answers")
+    @classmethod
+    def _validate_answers(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 20:
+            raise ValueError("too many answers")
+        for k, v in value.items():
+            if len(k) > 32 or len(v) > 32:
+                raise ValueError("answer id too long")
+        return value
+
+
+# The app sends its 12 newest scans; the cap leaves room for that to grow
+# while bounding the work a single request can hand the event loop.
+PROGRESSION_MAX_HISTORY = 50
+
+
+class ProgressionRequest(BaseModel):
+    """Time-ordered list of scans (oldest first) for the disease-
+    progression sparkline + trend the plant-detail screen renders."""
+
+    history: list[dict] = Field(..., max_length=PROGRESSION_MAX_HISTORY)
 
 
 def register(router: APIRouter, m) -> None:
@@ -103,7 +133,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/symptom-diagnose")
-    async def symptom_diagnose_endpoint(payload: m.SymptomDiagnoseRequest):
+    async def symptom_diagnose_endpoint(payload: SymptomDiagnoseRequest):
         """No-photo symptom triage — the fallback when the camera/ML pipeline
         can't get a confident read.
 
@@ -141,7 +171,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/progression")
-    async def progression_endpoint(payload: m.ProgressionRequest):
+    async def progression_endpoint(payload: ProgressionRequest):
         """Disease-progression analysis. Returns a 5-point severity
         sparkline + a trend slope across the supplied history (oldest
         first). An empty list is allowed and yields a zero-padded
