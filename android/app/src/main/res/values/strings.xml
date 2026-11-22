@@ -204,7 +204,6 @@
     <string name="quick_sign_in_benefit_ask">Ask your own questions and share scans</string>
     <string name="quick_sign_in_benefit_opinions">Get second opinions on your scans</string>
     <string name="quick_sign_in_done">Signed in as %1$s</string>
-    <string name="community_opinion_note_hint_guest">Sign in to leave a note</string>
     <string name="onboarding_title">Welcome to PlantDiseases</string>
     <string name="onboarding_secure_title">Your data is secure</string>
     <string name="onboarding_secure_body">Photos are re-encoded without EXIF or GPS before upload.</string>
@@ -253,7 +252,7 @@
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
     <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
-    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a post to read its answers and add your own. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -352,26 +351,12 @@
     </plurals>
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_empty">No community scans yet - your scan will be the first.</string>
-    <!-- Community second opinion -->
-    <string name="replies_title">Replies to your scan</string>
-    <string name="community_opinion_title">Get a second opinion</string>
-    <string name="community_opinion_subtitle">Ask the community what they think - and weigh in on others\' scans.</string>
-    <string name="community_opinion_diagnosis_label">Diagnosis</string>
-    <string name="community_opinion_pick_label">What do you think it is?</string>
-    <string name="community_opinion_note_hint">Add a note (optional)</string>
-    <string name="community_opinion_send">Post opinion</string>
-    <string name="community_opinion_agree">Agree</string>
-    <string name="community_opinion_disagree">Disagree</string>
-    <string name="community_opinion_my_vote">Your opinion: %1$s</string>
-    <string name="community_opinion_change">Change opinion</string>
-    <string name="community_opinion_confidence">Confidence %1$d%%</string>
-    <string name="community_opinion_empty">No opinions yet - be the first to weigh in.</string>
-    <string name="community_opinion_thanks">Thanks for your opinion!</string>
-    <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
-    <string name="community_opinions_badge">%1$d opinions</string>
+    <!-- Community scans -->
+    <string name="community_scan_diagnosis_label">Diagnosis</string>
+    <string name="community_scan_confidence">Confidence %1$d%%</string>
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
-    <string name="community_opinion_photo_desc">Shared plant scan</string>
+    <string name="community_scan_photo_desc">Shared plant scan</string>
     <string name="community_report_content">Report</string>
     <string name="community_block_author">Block author</string>
     <string name="community_report_title">Report community content</string>
@@ -393,7 +378,7 @@
     <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
     <string name="community_rules_action">Rules &amp; safety</string>
     <string name="community_rules_title">Community Rules &amp; safety</string>
-    <string name="community_rules_body">Share only plant-related scans and helpful second opinions. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
+    <string name="community_rules_body">Share only plant-related scans and helpful answers. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
     <string name="community_contact_moderation">Contact moderation</string>
     <string name="community_manage_blocks">Blocked authors</string>
     <string name="community_blocks_empty">You haven\'t blocked any authors.</string>
@@ -402,33 +387,13 @@
     <string name="community_author_unblocked">Author unblocked.</string>
     <string name="community_unknown_author">Unknown author</string>
     <string name="community_moderation_url" translatable="false">mailto:gavel8980@gmail.com</string>
-    <string name="result_get_second_opinion">Get a second opinion</string>
-    <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
-    <string name="result_second_opinion_view">View second opinions (%1$d)</string>
-    <string name="second_opinion_waiting_hours">Waiting for opinions, %1$d h left</string>
-    <string name="second_opinion_open_replies">Opinions (%1$d), %2$d h left</string>
-    <string name="second_opinion_sheet_status">Request open, %1$d h left. You\'ll be notified about new replies.</string>
-    <string name="second_opinion_stop">Stop request</string>
-    <string name="second_opinion_stopped">Request stopped - no more notifications for this scan.</string>
-    <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
-    <string name="community_opinion_replies_title">Community second opinions</string>
-    <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
-    <string name="community_opinion_list_header">Replies (%1$d)</string>
-    <string name="community_wants_opinion_badge">Needs an opinion</string>
     <string name="community_like_action">Like</string>
-    <string name="community_open_replies">Open %1$d replies</string>
-    <string name="community_replies_locked_short">Replies locked</string>
-    <string name="community_replies_locked_readable">Replies are read-only because the owner is not asking for opinions</string>
-    <string name="community_report_action">Report</string>
-    <string name="community_block_action">Block author</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="community_profile_title">Profile</string>
     <string name="community_profile_avatar">Community profile avatar</string>
-    <string name="community_open_profile">Open %1$s’s profile</string>
     <string name="community_profile_joined">Joined %1$s</string>
     <string name="community_profile_scans">%1$d\nScans</string>
-    <string name="community_profile_opinions">%1$d\nReplies</string>
     <string name="community_profile_likes">%1$d\nLikes</string>
     <string name="community_profile_posts">Posts</string>
     <string name="community_profile_no_posts">No public scans yet</string>
@@ -452,7 +417,7 @@
     <string name="community_map_near_me">Near me</string>
     <string name="nearby_action_disable">Leave the community</string>
     <string name="community_disable_title">Leave the community?</string>
-    <string name="community_disable_body">Your new scans won\'t be shared, you won\'t receive opinions on them and the map closes. Scans you\'ve already shared stay in the community. You can join again from the map.</string>
+    <string name="community_disable_body">Your new scans won\'t be shared and the map closes. Scans you\'ve already shared stay in the community. You can join again from the map.</string>
     <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans - zoom in to see all</string>
@@ -460,19 +425,11 @@
     <string name="community_map_group_title">%1$d scans here</string>
     <!-- In-context community opt-in -->
     <!-- Community feed ordering -->
-    <string name="community_votes_header">Community votes</string>
-    <string name="community_vote_percent">%1$d%%</string>
 
     <!-- Community consent + Profile toggle -->
     <string name="community_scope_global">worldwide</string>
-    <string name="opinion_notif_title">New second opinion</string>
-    <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
-    <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
-    <string name="opinion_notif_with_note">Suggested diagnosis: %1$s\n\n“%2$s”</string>
     <string name="channel_plant_reminders_name">Plant Reminders</string>
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
-    <string name="channel_community_name">Community</string>
-    <string name="channel_community_desc">Second opinions on scans you shared</string>
     <string name="channel_forum_answers_name">Community answers</string>
     <string name="channel_forum_answers_desc">Answers on your posts, replies to your answers and accepted answers</string>
     <string name="forum_answer_notifs_title">Answers to my posts</string>
@@ -629,7 +586,6 @@
     <string name="empty_garden_cta_add">Add your first plant</string>
     <string name="plant_detail_title">Plant detail</string>
     <!-- Destination screens reached from a stale notification-centre row -->
-    <string name="scan_no_longer_available">This scan is no longer on this device.</string>
     <string name="plant_no_longer_available">This plant is no longer in your garden.</string>
     <string name="scans">Scans</string>
     <string name="journal">Journal</string>

@@ -23,14 +23,6 @@ object CommunityPrefs {
 
     fun setUploadsEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
-        // Receiving community opinions is part of participating: it's the replies
-        // on YOUR shared scans. They move in lockstep so there's a single
-        // "community" switch (the standalone opinions toggle was removed). The
-        // POST_NOTIFICATIONS permission + delivery scheduling are handled where
-        // the user requests a second opinion (not at opt-in — joining the
-        // community must not fire a notification prompt); this just keeps the
-        // preference coherent.
-        OpinionPrefs.setNotificationsEnabled(context, enabled)
     }
 
     /** Turns membership on; [com.plantdiseases.app.ui.community.CommunityJoin] is the caller. */

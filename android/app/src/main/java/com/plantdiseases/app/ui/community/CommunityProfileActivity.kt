@@ -17,7 +17,7 @@ import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityProfileBinding
 import com.plantdiseases.app.ui.community.forum.ForumInsets
-import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.result.CommunityScanSheet
 import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
@@ -35,6 +35,7 @@ class CommunityProfileActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCommunityProfileBinding
     private lateinit var adapter: NearbyScansAdapter
+    private var ownProfile = false
 
     // Guests sign in in place; their likes and comments unlock on return.
     private val quickSignIn = QuickSignIn.of(this) { adapter.guest = false }
@@ -73,13 +74,12 @@ class CommunityProfileActivity : AppCompatActivity() {
                     ?.let { startActivity(intent(this, it)) }
             },
             onLike = { item -> toggleLike(item) },
-            onComments = { item -> if (quickSignIn.require()) openPost(item) },
         )
         adapter.guest = !quickSignIn.isSignedIn
         binding.rvPosts.layoutManager = LinearLayoutManager(this)
         binding.rvPosts.adapter = adapter
         supportFragmentManager.setFragmentResultListener(
-            CommunityOpinionSheet.CONTENT_BLOCKED,
+            CommunityScanSheet.CONTENT_BLOCKED,
             this,
         ) { _, _ -> load() }
         load()
@@ -121,10 +121,6 @@ class CommunityProfileActivity : AppCompatActivity() {
             ""
         }
         binding.tvScans.text = getString(R.string.community_profile_scans, profile.scanCount)
-        binding.tvOpinions.text = getString(
-            R.string.community_profile_opinions,
-            profile.opinionCount,
-        )
         binding.tvLikes.text = getString(R.string.community_profile_likes, profile.likeCount)
         binding.progress.visibility = View.GONE
         binding.tvPostsTitle.visibility = if (profile.items.isEmpty()) View.GONE else View.VISIBLE
@@ -133,15 +129,17 @@ class CommunityProfileActivity : AppCompatActivity() {
         if (profile.items.isEmpty()) {
             binding.tvEmpty.setText(R.string.community_profile_no_posts)
         }
+        ownProfile = profile.isMe
         adapter.submit(profile.items)
     }
 
     private fun openPost(item: CommunityScanItem) {
         lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId) }
-        CommunityOpinionSheet.show(
+        CommunityScanSheet.show(
             supportFragmentManager,
             item,
             DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
+            mine = ownProfile,
         )
     }
 

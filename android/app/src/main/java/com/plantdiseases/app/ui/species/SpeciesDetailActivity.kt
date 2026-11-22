@@ -52,7 +52,7 @@ import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
-import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.result.CommunityScanSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.WorldMapView
@@ -546,9 +546,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun loadCommunityScans() {
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
-            // Compact preview cells; tapping opens the sheet — commenting is
-            // unlocked here too (Community v2), guarded below for scans that
-            // turn out to be this install's own.
+            // Compact preview cells; tapping opens the scan sheet (the
+            // user's own scans open it without like, report or block).
             preview = true,
             onClick = { item ->
                 if (item.scanId.isNotBlank()) {
@@ -556,21 +555,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
                 val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
                 lifecycleScope.launch {
-                    val mine = scanRepository.localClientScanIds()
-                    if (item.scanId in mine) {
-                        startActivity(
-                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
-                                .intentFor(this@SpeciesDetailActivity, item.scanId),
-                        )
-                    } else {
-                        // localClientScanIds() suspends on Dispatchers.IO, so we
-                        // always resume a main-loop turn later. lifecycleScope
-                        // only cancels at DESTROYED, so a Home press mid-read
-                        // would land here after onSaveInstanceState and blow up
-                        // inside show()'s commit().
-                        if (supportFragmentManager.isStateSaved) return@launch
-                        CommunityOpinionSheet.show(supportFragmentManager, item, label)
-                    }
+                    val mine = item.scanId in scanRepository.localClientScanIds()
+                    // localClientScanIds() suspends on Dispatchers.IO, so we
+                    // always resume a main-loop turn later. lifecycleScope only
+                    // cancels at DESTROYED, so a Home press mid-read would land
+                    // here after onSaveInstanceState and blow up inside show().
+                    if (supportFragmentManager.isStateSaved) return@launch
+                    CommunityScanSheet.show(supportFragmentManager, item, label, mine = mine)
                 }
             },
         )

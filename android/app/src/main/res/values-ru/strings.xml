@@ -210,7 +210,6 @@
     <string name="quick_sign_in_benefit_ask">Задавать свои вопросы и делиться сканами</string>
     <string name="quick_sign_in_benefit_opinions">Получать второе мнение по своим сканам</string>
     <string name="quick_sign_in_done">Вы вошли как %1$s</string>
-    <string name="community_opinion_note_hint_guest">Войдите, чтобы оставить заметку</string>
     <string name="onboarding_title">Добро пожаловать в PlantDiseases</string>
     <string name="onboarding_secure_title">Ваши данные защищены</string>
     <string name="onboarding_secure_body">Перед отправкой фото перекодируются без EXIF и GPS.</string>
@@ -259,7 +258,7 @@
     <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
     <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
     <string name="guidance_community_scope">Показывать сканы рядом, по стране или со всего мира.</string>
-    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации; через «Сортировать по» можно включить строгий порядок от новых к старым. Откройте фото, чтобы читать ответы; ответить можно, только пока владелец активно просит второе мнение. Сердечком ставится лайк.</string>
+    <string name="guidance_community_feed">Сначала в ленте идут рекомендованные публикации; через «Сортировать по» можно включить строгий порядок от новых к старым. Откройте публикацию, чтобы читать ответы и ответить самому. Сердце ставит лайк.</string>
     <string name="guidance_previous">Предыдущий шаг</string>
     <string name="guidance_next">Следующий шаг</string>
     <string name="guidance_activate_target">Нажать выделенный элемент</string>
@@ -349,28 +348,12 @@
     </plurals>
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет - ваш будет первым.</string>
-    <!-- Community second opinion -->
-    <string name="replies_title">Ответы на ваш скан</string>
-    <string name="community_opinion_title">Второе мнение</string>
-    <string name="community_opinion_subtitle">Спросите сообщество - и оцените чужие сканы.</string>
-    <string name="community_opinion_diagnosis_label">Диагноз</string>
-    <string name="community_opinion_pick_label">Что это, по-вашему?</string>
-    <string name="community_opinion_note_hint">Комментарий (необязательно)</string>
-    <string name="community_opinion_send">Отправить мнение</string>
-    <string name="community_opinion_agree">Согласен</string>
-    <string name="community_opinion_disagree">Не согласен</string>
-    <string name="community_opinion_my_vote">Ваше мнение: %1$s</string>
-    <string name="community_opinion_change">Изменить мнение</string>
-    <string name="community_opinion_confidence">Точность %1$d%%</string>
-    <string name="community_opinion_empty">Пока нет мнений - будьте первым.</string>
-    <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
-    <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
-    <string name="community_opinions_badge">Мнений: %1$d</string>
+    <!-- Community scans -->
+    <string name="community_scan_diagnosis_label">Диагноз</string>
+    <string name="community_scan_confidence">Точность %1$d%%</string>
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
-    <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
-    <string name="community_opinion_replies_title">Второе мнение сообщества</string>
-    <string name="community_opinion_replies_subtitle">Что сообщество думает об этом скане.</string>
+    <string name="community_scan_photo_desc">Снимок растения сообщества</string>
     <string name="community_report_content">Пожаловаться</string>
     <string name="community_block_author">Заблокировать автора</string>
     <string name="community_report_title">Жалоба на материал сообщества</string>
@@ -392,7 +375,7 @@
     <string name="community_safety_error">Не удалось изменить настройки безопасности сообщества. Повторите.</string>
     <string name="community_rules_action">Правила и безопасность</string>
     <string name="community_rules_title">Правила и безопасность сообщества</string>
-    <string name="community_rules_body">Публикуйте только сканы растений и полезные вторые мнения. Запрещены изображения людей, личные и контактные данные, материалы сексуального характера, насилие, ненависть, травля, угрозы, незаконные или опасные инструкции, выдача себя за другого, спам и вводящие в заблуждение материалы.\n\nИспользуйте «Пожаловаться» на скане или ответе для обращения к модерации. «Заблокировать автора» немедленно разъединяет пользователей. По жалобе материал или учётная запись могут быть удалены.</string>
+    <string name="community_rules_body">Публикуйте только сканы растений и полезные ответы. Запрещены изображения людей, личные и контактные данные, материалы сексуального характера, насилие, ненависть, травля, угрозы, незаконные или опасные инструкции, выдача себя за другого, спам и вводящие в заблуждение материалы.\n\nИспользуйте «Пожаловаться» на скане или ответе для обращения к модерации. «Заблокировать автора» немедленно разъединяет пользователей. По жалобе материал или учётная запись могут быть удалены.</string>
     <string name="community_contact_moderation">Связаться с модерацией</string>
     <string name="community_manage_blocks">Заблокированные авторы</string>
     <string name="community_blocks_empty">Вы не блокировали авторов.</string>
@@ -400,30 +383,12 @@
     <string name="community_unblock_confirm">Разблокировать</string>
     <string name="community_author_unblocked">Автор разблокирован.</string>
     <string name="community_unknown_author">Неизвестный автор</string>
-    <string name="result_get_second_opinion">Получить второе мнение</string>
-    <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
-    <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
-    <string name="second_opinion_waiting_hours">Ждём мнения, осталось %1$d ч</string>
-    <string name="second_opinion_open_replies">Мнения: %1$d, осталось %2$d ч</string>
-    <string name="second_opinion_sheet_status">Запрос активен, осталось %1$d ч. О новых ответах придёт уведомление.</string>
-    <string name="second_opinion_stop">Отменить запрос</string>
-    <string name="second_opinion_stopped">Запрос отменён - уведомлений по этому скану больше не будет.</string>
-    <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
-    <string name="community_opinion_list_header">Ответы (%1$d)</string>
-    <string name="community_wants_opinion_badge">Ждёт мнения</string>
     <string name="community_like_action">Нравится</string>
-    <string name="community_open_replies">Открыть ответы: %1$d</string>
-    <string name="community_replies_locked_short">Ответы закрыты</string>
-    <string name="community_replies_locked_readable">Ответы доступны только для чтения: владелец не запрашивает мнения</string>
-    <string name="community_report_action">Пожаловаться</string>
-    <string name="community_block_action">Заблокировать автора</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="community_profile_title">Профиль</string>
     <string name="community_profile_avatar">Аватар профиля сообщества</string>
-    <string name="community_open_profile">Открыть профиль %1$s</string>
     <string name="community_profile_joined">В сообществе с %1$s</string>
     <string name="community_profile_scans">%1$d\nСканов</string>
-    <string name="community_profile_opinions">%1$d\nОтветов</string>
     <string name="community_profile_likes">%1$d\nЛайков</string>
     <string name="community_profile_posts">Публикации</string>
     <string name="community_profile_no_posts">Публичных сканов пока нет</string>
@@ -445,7 +410,7 @@
     <string name="community_map_near_me">Рядом со мной</string>
     <string name="nearby_action_disable">Выйти из сообщества</string>
     <string name="community_disable_title">Выйти из сообщества?</string>
-    <string name="community_disable_body">Новые сканы не будут публиковаться, мнения по ним приходить не будут, а карта закроется. Уже опубликованные сканы останутся в сообществе. Вступить снова можно с карты.</string>
+    <string name="community_disable_body">Новые сканы не будут публиковаться, а карта закроется. Уже опубликованные сканы останутся в сообществе. Вступить снова можно с карты.</string>
     <string name="community_disable_confirm">Выйти</string>
     <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
     <string name="community_map_truncated">Показаны последние сканы - приблизьте, чтобы увидеть все</string>
@@ -453,17 +418,9 @@
     <string name="community_map_group_title">Сканов здесь: %1$d</string>
     <!-- In-context community opt-in -->
     <!-- Сортировка ленты сообщества -->
-    <string name="community_votes_header">Голоса сообщества</string>
-    <string name="community_vote_percent">%1$d%%</string>
     <string name="community_scope_global">по всему миру</string>
-    <string name="opinion_notif_title">Новое второе мнение</string>
-    <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
-    <string name="opinion_notif_body_named">%1$s оставил(а) мнение о вашем скане: %2$s</string>
-    <string name="opinion_notif_with_note">Предложенный диагноз: %1$s\n\n«%2$s»</string>
     <string name="channel_plant_reminders_name">Напоминания о растениях</string>
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
-    <string name="channel_community_name">Сообщество</string>
-    <string name="channel_community_desc">Вторые мнения о сканах, которыми вы поделились</string>
     <string name="channel_forum_answers_name">Ответы в сообществе</string>
     <string name="channel_forum_answers_desc">Ответы на ваши посты, ответы на ваши ответы и принятые ответы</string>
     <string name="forum_answer_notifs_title">Ответы на мои посты</string>
@@ -629,7 +586,6 @@
     <string name="empty_garden_cta_add">Добавить первое растение</string>
     <string name="plant_detail_title">Растение</string>
     <!-- Экраны, открытые по устаревшей записи из центра уведомлений -->
-    <string name="scan_no_longer_available">Этот скан больше не хранится на устройстве.</string>
     <string name="plant_no_longer_available">Этого растения больше нет в вашем саду.</string>
     <string name="scans">Сканы</string>
     <string name="journal">Журнал</string>

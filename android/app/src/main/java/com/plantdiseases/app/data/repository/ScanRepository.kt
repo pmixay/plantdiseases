@@ -17,13 +17,10 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
-import com.plantdiseases.app.data.model.CommunityOpinionRequest
-import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityPublicProfile
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
-import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
@@ -606,16 +603,6 @@ class ScanRepository(
             }
         }
 
-    /** List community opinions with viewer-relative state when signed in. */
-    suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            optionalAccountGet { token ->
-                apiClient.httpClient.get("api/community/opinions/$scanId") {
-                    token?.let { bearer(it) }
-                }
-            }
-        }
-
     /** Public account activity behind an opaque community author token. */
     suspend fun getCommunityProfile(authorToken: String): Result<CommunityPublicProfile> =
         withContext(Dispatchers.IO) {
@@ -623,22 +610,6 @@ class ScanRepository(
                 apiClient.httpClient.get("api/community/profile/$authorToken") {
                     token?.let { bearer(it) }
                 }
-            }
-        }
-
-    /** Submit one community "second opinion". Returns the refreshed list. */
-    suspend fun submitCommunityOpinion(
-        request: CommunityOpinionRequest,
-    ): Result<CommunityOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/opinion") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
-                }
-                if (response.status.value == 423) throw CommunityOpinionsLockedException()
-                response.protectedBody<CommunityOpinionsResponse>()
             }
         }
 
@@ -709,33 +680,6 @@ class ScanRepository(
                     bearer(token)
                 }
                 response.requireProtectedSuccess()
-            }
-        }
-
-    /**
-     * Withdraw an open second-opinion request on the user's OWN scan —
-     * the community stops seeing the ask and no further opinion
-     * notifications arrive for it. Opinions already left stay visible.
-     * Returns `true` when an open request was actually cleared (requests
-     * also lapse server-side on their own after 72 h).
-     */
-    suspend fun cancelSecondOpinion(
-        scanId: String,
-    ): Result<Boolean> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/request-opinion/cancel") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
-                            scanId = scanId,
-                        ),
-                    )
-                }
-                response
-                    .protectedBody<com.plantdiseases.app.data.model.CommunityCancelOpinionResponse>()
-                    .cleared
             }
         }
 
@@ -954,7 +898,6 @@ class ScanRepository(
         val violation: String,
     ) : Exception("Analysis response violated the diagnostic contract: $violation")
     class UnsupportedImageException : Exception("Unsupported image format")
-    class CommunityOpinionsLockedException : Exception("Second opinions are locked")
     class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
     class CommunityRequestException(val statusCode: Int) : Exception("Community request failed: $statusCode")
 
@@ -1098,21 +1041,10 @@ class ScanRepository(
         }
 
     /** Find the local scan a community scan_id maps to (community scan_id ==
-     *  the local scan's clientScanId), so a notification can open it. */
+     *  the local scan's clientScanId). */
     suspend fun getScanByClientScanId(clientScanId: String): ScanEntity? =
         withContext(Dispatchers.IO) {
             scanDao.getScanByClientScanId(clientScanId)
-        }
-
-    /** Opinion counts on the signed account's own shared scans. */
-    suspend fun fetchMyScanOpinions(): Result<MyScanOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                apiClient.httpClient.get("api/community/my-scan-opinions") {
-                    bearer(token)
-                }
-                    .protectedBody<MyScanOpinionsResponse>()
-            }
         }
 
     /** Record an authenticated view. Guests browse without creating a row. */

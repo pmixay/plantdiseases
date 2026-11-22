@@ -50,7 +50,7 @@ class ReleaseAccountPresentationTest {
 
     @Test
     fun releaseCommunityDetailExposesReportAndBlockActions() {
-        val root = LayoutInflater.from(context).inflate(R.layout.sheet_community_opinion, null)
+        val root = LayoutInflater.from(context).inflate(R.layout.sheet_community_scan, null)
 
         assertThat(root.findViewById<MaterialButton>(R.id.btn_community_report_scan).visibility)
             .isEqualTo(View.VISIBLE)

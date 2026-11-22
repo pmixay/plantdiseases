@@ -715,7 +715,6 @@ class AccountActivity : AppCompatActivity() {
         authRepository.deleteAccount(reauthToken)
             .onSuccess {
                 resetOAuthFlow()
-                stopAccountNotifications()
                 if (deletedAccountId != null) {
                     profileAvatarStore.clear(deletedAccountId)
                 }
@@ -927,7 +926,6 @@ class AccountActivity : AppCompatActivity() {
             } catch (failure: Exception) {
                 showError(failure)
             } finally {
-                stopAccountNotifications()
                 setLoading(false)
             }
         }
@@ -941,14 +939,6 @@ class AccountActivity : AppCompatActivity() {
             } finally {
                 setLoading(false)
             }
-        }
-    }
-
-    private fun stopAccountNotifications() {
-        com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, false)
-        androidx.work.WorkManager.getInstance(this).apply {
-            cancelUniqueWork("opinion_check")
-            cancelUniqueWork("opinion_check_now")
         }
     }
 
