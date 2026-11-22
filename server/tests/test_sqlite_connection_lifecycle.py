@@ -12,7 +12,6 @@ import sqlite3
 import pytest
 
 import community
-import push
 import telemetry
 import training_store
 
@@ -21,7 +20,6 @@ import training_store
     ("module", "path_attr"),
     [
         (community, "COMMUNITY_DB_PATH"),
-        (push, "PUSH_DB_PATH"),
         (telemetry, "TELEMETRY_DB_PATH"),
         (training_store, "TRAINING_DB_PATH"),
     ],

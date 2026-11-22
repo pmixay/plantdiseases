@@ -240,7 +240,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     import community
     import main as server_main
     import pipeline as pipeline_module
-    import push
     import telemetry
     import training_store
 
@@ -273,9 +272,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
 
-    push.PUSH_DB_PATH = state_dir / "push.db"
-    push._initialised = False
-
     async def _skip_external_warmup() -> None:
         return None
 
@@ -306,7 +302,6 @@ def community_store(tmp_path, monkeypatch):
     monkeypatch.setattr(community, "COMMUNITY_DB_PATH", tmp_path / "community.db")
     monkeypatch.setattr(community, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
     monkeypatch.setattr(community, "_initialised", False)
-    monkeypatch.setattr(community, "_last_expiry_sweep", 0.0)
     return community
 
 

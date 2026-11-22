@@ -94,12 +94,12 @@ def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
         params={"min_lat": 1, "min_lon": 1, "max_lat": 2, "max_lon": 2},
     )
     protected = client.post(
-        "/api/community/opinion",
+        "/api/community/view",
         headers={
             "Authorization": "Bearer a.b.c",
             "X-API-Key": "deliberately-invalid",
         },
-        json={"scan_id": "unknownscan01", "suggested_disease": "rust"},
+        json={"scan_id": "unknownscan01"},
     )
     legacy = client.get(
         "/api/version", headers={"Authorization": "Bearer a.b.c"}

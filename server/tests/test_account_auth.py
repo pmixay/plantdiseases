@@ -23,7 +23,6 @@ from account_auth import (
     _open_no_redirect,
     build_account_authenticator,
 )
-from account_internal import AccountInternalClient
 
 ISSUER = "https://accounts.synthetic.invalid"
 AUDIENCE = "plantdiseases-app"
@@ -387,9 +386,6 @@ def test_group_readable_internal_token_supports_separate_service_volume(
         "ACCOUNT_INTROSPECTION_URL": (
             "http://account-api:8000/v1/internal/auth/verify"
         ),
-        "ACCOUNT_NOTIFICATION_URL": (
-            "http://account-api:8000/v1/internal/notifications/opinion"
-        ),
         "INTERNAL_SERVICE_TOKEN_FILE": str(token_file),
     }
     for name, value in values.items():
@@ -398,7 +394,6 @@ def test_group_readable_internal_token_supports_separate_service_volume(
     assert isinstance(
         RemoteAccountAuthenticator.from_env(), RemoteAccountAuthenticator
     )
-    assert AccountInternalClient.from_env() is not None
 
 
 @pytest.mark.parametrize("mode", [0o620, 0o604])
@@ -417,15 +412,11 @@ def test_internal_token_rejects_group_write_or_world_access(
     monkeypatch.setenv(
         "ACCOUNT_INTROSPECTION_URL", f"{ISSUER}/v1/internal/auth/verify"
     )
-    monkeypatch.setenv(
-        "ACCOUNT_NOTIFICATION_URL", f"{ISSUER}/v1/internal/notifications/opinion"
-    )
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
 
     assert isinstance(
         RemoteAccountAuthenticator.from_env(), UnconfiguredAccountAuthenticator
     )
-    assert AccountInternalClient.from_env() is None
 
 
 @pytest.mark.parametrize(
@@ -464,96 +455,6 @@ def test_unsafe_explicit_internal_account_origin_fails_closed(
     assert isinstance(
         RemoteAccountAuthenticator.from_env(), UnconfiguredAccountAuthenticator
     )
-
-
-@pytest.mark.parametrize(
-    "notification_url",
-    [
-        "https://accounts.synthetic.invalid/v1/internal/notifications/opinion?leak=1",
-        "https://elsewhere.synthetic.invalid/v1/internal/notifications/opinion",
-    ],
-)
-def test_notification_client_rejects_non_account_origins_and_queries(
-    monkeypatch, tmp_path, notification_url,
-):
-    token_file = tmp_path / "internal.token"
-    token_file.write_text("s" * 43, encoding="ascii")
-    token_file.chmod(0o600)
-    monkeypatch.setenv("ENVIRONMENT", "test")
-    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
-    monkeypatch.setenv("ACCOUNT_NOTIFICATION_URL", notification_url)
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
-    assert AccountInternalClient.from_env() is None
-
-
-def test_notification_client_accepts_the_configured_account_origin(
-    monkeypatch, tmp_path,
-):
-    token_file = tmp_path / "internal.token"
-    token_file.write_text("s" * 43, encoding="ascii")
-    token_file.chmod(0o600)
-    notification_url = (
-        "https://accounts.synthetic.invalid/v1/internal/notifications/opinion"
-    )
-    monkeypatch.setenv("ENVIRONMENT", "test")
-    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
-    monkeypatch.setenv("ACCOUNT_NOTIFICATION_URL", notification_url)
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
-    client = AccountInternalClient.from_env()
-    assert client is not None
-    assert client.notification_url == notification_url
-
-
-def test_notification_client_accepts_explicit_private_account_origin(
-    monkeypatch,
-    tmp_path,
-):
-    token_file = tmp_path / "internal.token"
-    token_file.write_text("s" * 43, encoding="ascii")
-    token_file.chmod(0o600)
-    notification_url = "http://account-api:8000/v1/internal/notifications/opinion"
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
-    monkeypatch.setenv("ACCOUNT_INTERNAL_BASE_URL", "http://account-api:8000")
-    monkeypatch.setenv("ACCOUNT_NOTIFICATION_URL", notification_url)
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
-
-    client = AccountInternalClient.from_env()
-
-    assert client is not None
-    assert client.notification_url == notification_url
-
-
-@pytest.mark.parametrize(
-    "internal_base",
-    [
-        "http://2130706433:8000",
-        "http://-account-api:8000",
-        "http://account_api:8000",
-    ],
-)
-def test_notification_client_rejects_unsafe_single_label_internal_origin(
-    monkeypatch,
-    tmp_path,
-    internal_base,
-):
-    token_file = tmp_path / "internal.token"
-    token_file.write_text("s" * 43, encoding="ascii")
-    token_file.chmod(0o600)
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("ACCOUNT_ISSUER", ISSUER)
-    monkeypatch.setenv("ACCOUNT_INTERNAL_BASE_URL", internal_base)
-    monkeypatch.setenv(
-        "ACCOUNT_NOTIFICATION_URL",
-        f"{internal_base}/v1/internal/notifications/opinion",
-    )
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_FILE", str(token_file))
-    monkeypatch.setattr(
-        "account_internal._load_internal_token",
-        lambda _path: "s" * 43,
-    )
-
-    assert AccountInternalClient.from_env() is None
 
 
 def test_access_token_at_exactly_the_policy_lifetime_is_still_accepted(monkeypatch):

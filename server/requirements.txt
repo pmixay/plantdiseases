@@ -32,10 +32,6 @@ onnxruntime>=1.31.1
 # a graceful ``available: false`` when no API key is configured. Only
 # ``requests`` is required since OpenRouter speaks plain HTTPS JSON.
 requests>=2.34.2
-# Firebase Cloud Messaging push (server/push.py). Imported lazily and only
-# used when FCM_CREDENTIALS_FILE points at a service-account JSON — without it
-# every send is a no-op, so the dependency is harmless on push-less deploys.
-firebase-admin>=7.7.0
 # Account-bound community writes verify Ed25519 JWTs locally before the
 # account service confirms the live session/authorization version.
 PyJWT[crypto]==2.15.1

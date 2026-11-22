@@ -42,7 +42,6 @@ import logging
 import os
 import re
 import secrets
-import shutil
 import sqlite3
 import threading
 import time
@@ -92,7 +91,6 @@ EXCERPT_CHARS = 280
 UNATTACHED_MEDIA_TTL_S = 24 * 3_600
 REMOVED_CONTENT_PURGE_DAYS = 30
 REPORTS_PER_DAY = 30
-LEGACY_SYNC_WINDOW_DAYS = 90
 
 MEDIA_LONG_EDGE = 1_600
 MEDIA_MIN_EDGE = 32
@@ -177,7 +175,6 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     answer_count       INTEGER NOT NULL DEFAULT 0,
     accepted_answer_id INTEGER,
     accepted_at        INTEGER,
-    legacy_scan_id     TEXT    UNIQUE,
     locale             TEXT,
     created_at         INTEGER NOT NULL,
     edited_at          INTEGER,
@@ -209,7 +206,6 @@ CREATE TABLE IF NOT EXISTS forum_answers (
                       CHECK(state IN ('visible', 'hidden', 'removed', 'deleted')),
     like_count        INTEGER NOT NULL DEFAULT 0,
     not_helpful_count INTEGER NOT NULL DEFAULT 0,
-    legacy_opinion_id INTEGER UNIQUE,
     verified_by_actor_id TEXT,
     verified_at       INTEGER,
     created_at        INTEGER NOT NULL,
@@ -369,6 +365,20 @@ def init_db() -> None:
                 ("forum_answers", "verified_at", "INTEGER"),
             ):
                 community._add_column_if_missing(conn, table, column, decl)
+            # The retired scan second-opinion sync linked forum rows to its
+            # source rows through these UNIQUE columns. SQLite cannot drop a
+            # UNIQUE column, so older databases keep them unused; clear the
+            # links, which now point at tables that no longer exist.
+            for table, column in (
+                ("forum_posts", "legacy_scan_id"),
+                ("forum_answers", "legacy_opinion_id"),
+            ):
+                present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+                if column in present:
+                    conn.execute(
+                        f"UPDATE {table} SET {column} = NULL "  # nosec B608
+                        f"WHERE {column} IS NOT NULL"
+                    )
             try:
                 conn.execute(_FTS_SCHEMA)
                 _fts_enabled[key] = True
@@ -2429,170 +2439,9 @@ def prune(*, now: int | None = None) -> dict[str, int]:
     }
 
 
-def sync_legacy(*, limit: int = 200, now: int | None = None) -> dict[str, int]:
-    """Carry second-opinion scans and opinions from older app versions into the forum.
-
-    Only account-era scans that asked for, or received, an opinion become scan
-    posts; plain shared scans stay on the Nearby map. Idempotent: legacy ids
-    are unique on the forum rows.
-    """
-    init_db()
-    timestamp = _now(now)
-    bounded = max(1, min(int(limit), 1_000))
-    window = timestamp - LEGACY_SYNC_WINDOW_DAYS * 86_400
-    posts_created = 0
-    answers_created = 0
-    with community._connect() as conn:
-        scans = conn.execute(
-            "SELECT s.scan_id, s.account_actor_id, s.nickname, s.disease, s.confidence, "
-            "s.species, s.thumb_path, s.locale, s.created_at FROM community_scans s "
-            "WHERE s.account_actor_id IS NOT NULL "
-            "AND s.account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors) "
-            "AND s.created_at >= ? "
-            "AND (s.wants_opinion = 1 OR EXISTS (SELECT 1 FROM community_opinions o "
-            "WHERE o.scan_id = s.scan_id AND o.account_actor_id IS NOT NULL)) "
-            "AND NOT EXISTS (SELECT 1 FROM forum_posts f WHERE f.legacy_scan_id = s.scan_id) "
-            "ORDER BY s.created_at LIMIT ?",
-            (window, bounded),
-        ).fetchall()
-    for scan_id, actor, nickname, disease, confidence, species, thumb, locale, created_at in scans:
-        copied: tuple[str, str, int, int] | None = None
-        if thumb:
-            source = Path(community.COMMUNITY_THUMB_DIR) / str(thumb)
-            if source.is_file():
-                media_public = _new_public_id(_MEDIA_PREFIX)
-                filename = f"{media_public}.jpg"
-                try:
-                    media_dir().mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(source, media_dir() / filename)
-                    with Image.open(media_dir() / filename) as opened:
-                        width, height = opened.size
-                    copied = (media_public, filename, int(width), int(height))
-                except (OSError, UnidentifiedImageError):
-                    (media_dir() / filename).unlink(missing_ok=True)
-                    copied = None
-        try:
-            with community._write_lock, community._connect() as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                if conn.execute(
-                    "SELECT 1 FROM forum_posts WHERE legacy_scan_id = ?", (scan_id,)
-                ).fetchone() or community._actor_is_deleted(conn, actor):
-                    conn.execute("ROLLBACK")
-                    if copied:
-                        _unlink_media([copied[1]])
-                    continue
-                cur = conn.execute(
-                    "INSERT INTO forum_posts (public_id, author_actor_id, author_token, nickname, "
-                    "kind, space, title, body, species, species_key, ai_disease, ai_confidence, "
-                    "ai_species, plant_group, legacy_scan_id, locale, created_at, last_activity_at) "
-                    "VALUES (?, ?, ?, ?, 'scan', 'general', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        _new_public_id(_POST_PREFIX),
-                        actor,
-                        _author_token(actor),
-                        nickname,
-                        species,
-                        species.lower() if species else None,
-                        disease,
-                        confidence,
-                        species,
-                        secrets.token_hex(16),
-                        scan_id,
-                        _clean_locale(locale),
-                        int(created_at),
-                        int(created_at),
-                    ),
-                )
-                post_internal = int(cur.lastrowid or 0)
-                if copied:
-                    conn.execute(
-                        "INSERT INTO forum_media (public_id, owner_actor_id, post_id, position, "
-                        "filename, width, height, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
-                        (copied[0], actor, post_internal, copied[1], copied[2], copied[3], int(created_at)),
-                    )
-                _insert_ai_answer(conn, post_internal, str(disease), int(created_at))
-                _reindex(conn, post_internal)
-                conn.execute("COMMIT")
-                posts_created += 1
-        except Exception:  # noqa: BLE001 — one bad legacy row must not stop the pass
-            if copied:
-                _unlink_media([copied[1]])
-            logger.warning("Legacy scan sync failed for one row")
-    with community._write_lock, community._connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            opinions = conn.execute(
-                "SELECT o.id, o.account_actor_id, o.nickname, o.suggested_disease, o.note, "
-                "o.created_at, f.id FROM community_opinions o "
-                "JOIN forum_posts f ON f.legacy_scan_id = o.scan_id "
-                "WHERE o.account_actor_id IS NOT NULL "
-                "AND o.account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors) "
-                "AND NOT EXISTS (SELECT 1 FROM forum_answers a WHERE a.legacy_opinion_id = o.id) "
-                "ORDER BY o.id LIMIT ?",
-                (bounded,),
-            ).fetchall()
-            touched: set[int] = set()
-            for opinion_id, actor, nickname, disease, note, created_at, post_internal in opinions:
-                conn.execute(
-                    "INSERT INTO forum_answers (public_id, post_id, depth, author_actor_id, "
-                    "author_token, nickname, body, diagnosis, legacy_opinion_id, created_at) "
-                    "VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        _new_public_id(_ANSWER_PREFIX),
-                        int(post_internal),
-                        actor,
-                        _author_token(actor),
-                        nickname,
-                        clean_text(note, limit=ANSWER_BODY_MAX),
-                        disease,
-                        int(opinion_id),
-                        int(created_at),
-                    ),
-                )
-                touched.add(int(post_internal))
-                answers_created += 1
-            legacy_likes = conn.execute(
-                "SELECT f.id, l.account_actor_id, l.created_at FROM community_account_likes l "
-                "JOIN forum_posts f ON f.legacy_scan_id = l.scan_id "
-                "WHERE l.liked = 1 AND l.account_actor_id != f.author_actor_id "
-                "AND l.account_actor_id NOT IN (SELECT actor_id FROM community_deleted_actors) "
-                "AND NOT EXISTS (SELECT 1 FROM forum_post_likes fl "
-                "WHERE fl.post_id = f.id AND fl.actor_id = l.account_actor_id) LIMIT ?",
-                (bounded,),
-            ).fetchall()
-            for post_internal, actor, created_at in legacy_likes:
-                conn.execute(
-                    "INSERT OR IGNORE INTO forum_post_likes (post_id, actor_id, created_at) "
-                    "VALUES (?, ?, ?)",
-                    (int(post_internal), actor, int(created_at)),
-                )
-                touched.add(int(post_internal))
-            for post_internal in touched:
-                _recount_answers(conn, post_internal)
-                _recount_post_likes(conn, post_internal)
-                last = conn.execute(
-                    "SELECT MAX(created_at) FROM forum_answers WHERE post_id = ?", (post_internal,)
-                ).fetchone()[0]
-                if last is not None:
-                    conn.execute(
-                        "UPDATE forum_posts SET last_activity_at = MAX(last_activity_at, ?) "
-                        "WHERE id = ?",
-                        (int(last), post_internal),
-                    )
-                _reindex(conn, post_internal)
-            conn.execute("COMMIT")
-        except Exception:
-            with contextlib.suppress(sqlite3.Error):
-                conn.execute("ROLLBACK")
-            raise
-    return {"posts": posts_created, "answers": answers_created}
-
-
 def maintenance(*, now: int | None = None) -> dict[str, int]:
-    """One background pass: legacy sync, then pruning."""
-    synced = sync_legacy(now=now)
-    pruned = prune(now=now)
-    return {**{f"synced_{k}": v for k, v in synced.items()}, **pruned}
+    """One background pass: pruning."""
+    return prune(now=now)
 
 
 def stats() -> dict[str, int]:
