@@ -34,11 +34,11 @@ import urllib.parse
 from collections import OrderedDict
 
 try:
-    from .config import get_str
     from .text_style import plain_punctuation
+    from .wikimedia_http import user_agent
 except ImportError:  # flat layout (uvicorn run from server/)
-    from config import get_str
     from text_style import plain_punctuation
+    from wikimedia_http import user_agent
 
 logger = logging.getLogger("plantdiseases.species_info")
 
@@ -54,12 +54,9 @@ _CACHE_MAX = 512
 
 def _build_user_agent() -> str:
     """Wikimedia's policy asks for a descriptive agent *with a way to reach the
-    operator*; anonymous generic agents are throttled first. The contact is
-    deployment config (``SPECIES_INFO_CONTACT``: a URL or e-mail), never
-    hard-coded in the repository."""
-    contact = (get_str("SPECIES_INFO_CONTACT", "") or "").strip()
-    base = "PlantDiseases/1.2 (plant care app; species-info lookup"
-    return f"{base}; {contact})" if contact else f"{base})"
+    operator*; see :func:`wikimedia_http.user_agent` (shared with the photo
+    proxy, so both present one identity)."""
+    return user_agent("species-info lookup")
 
 
 _USER_AGENT = _build_user_agent()

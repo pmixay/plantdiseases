@@ -272,6 +272,7 @@ try:
         proxy_path as plant_photo_proxy,
     )
     from .plant_photos import prune_cache as plant_photo_prune_cache
+    from .plant_photos import warm as plant_photo_warm
     from .popular_plants import popular_for
     from .runtime_paths import normalize_root_path
     from .species_info import fetch_species_info
@@ -511,6 +512,7 @@ except ImportError:
         proxy_path as plant_photo_proxy,
     )
     from plant_photos import prune_cache as plant_photo_prune_cache
+    from plant_photos import warm as plant_photo_warm
     from popular_plants import popular_for
     from runtime_paths import normalize_root_path
     from species_info import fetch_species_info
@@ -4798,6 +4800,26 @@ def _build_popular_bundle(
             "image_url": plant_photo_name_proxy(scientific, "en"),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
+        })
+    # A thin community corpus (a new region, or one with a handful of scans)
+    # would otherwise leave a one- or two-card carousel that never seems to
+    # change. Top it up from the curated list for the same scope: the real
+    # scans stay first with their percentages, the curated picks follow with
+    # zero counts (the client shows those without a percentage).
+    seen = {it["scientific"].lower() for it in items}
+    for p in popular_for(country if source != "worldwide" else None):
+        if len(items) >= _POPULAR_MAX_CARDS:
+            break
+        if p.scientific.lower() in seen:
+            continue
+        seen.add(p.scientific.lower())
+        items.append({
+            "scientific": p.scientific,
+            "common_en": p.common_en,
+            "common_ru": p.common_ru,
+            "image_url": plant_photo_name_proxy(p.scientific, "en"),
+            "count": 0,
+            "percent": 0,
         })
     return {
         **display,

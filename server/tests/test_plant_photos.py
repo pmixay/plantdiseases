@@ -449,3 +449,126 @@ def test_original_from_thumb_host_points_back_to_upload(photos):
     assert photos._original_from_thumb(thumb) == (
         "https://upload.wikimedia.org/wikipedia/commons/a/ab/F.jpg"
     )
+
+
+# --- Wikimedia robot-policy etiquette (https://w.wiki/4wJS) -----------------
+
+
+def test_short_retry_after_is_waited_out_once(photos, monkeypatch):
+    calls = []
+
+    def _once(url):
+        calls.append(url)
+        return photos._Throttled(0.01) if len(calls) == 1 else _PNG
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    assert photos._download("https://upload.wikimedia.org/a.png") == _PNG
+    assert len(calls) == 2
+    assert photos._backoff_remaining() == 0
+
+
+def test_long_retry_after_backs_off_and_skips_the_original(photos, monkeypatch):
+    calls = []
+
+    def _once(url):
+        calls.append(url)
+        return photos._Throttled(120.0)
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    thumb = (
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Rose.jpg/"
+        "1280px-Rose.jpg"
+    )
+    assert photos.get_or_fetch(thumb) is None
+    # One request for the thumbnail, no follow-up for the multi-MB original.
+    assert len(calls) == 1
+    assert photos._backoff_remaining() > 100
+    # During the back-off nothing is sent upstream at all.
+    assert photos._download("https://upload.wikimedia.org/b.png") is None
+    assert len(calls) == 1
+
+
+def test_at_most_two_downloads_in_flight(photos, monkeypatch):
+    import threading
+    import time
+
+    lock = threading.Lock()
+    state = {"now": 0, "peak": 0}
+
+    def _once(url):
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        return _PNG
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    threads = [
+        threading.Thread(target=photos._download, args=(f"https://upload.wikimedia.org/{i}.png",))
+        for i in range(6)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert state["peak"] == 2
+
+
+def test_retry_after_parsing():
+    import email.utils
+
+    import wikimedia_http
+
+    assert wikimedia_http.retry_after_seconds("7") == 7.0
+    assert wikimedia_http.retry_after_seconds(None) is None
+    assert wikimedia_http.retry_after_seconds("soon") is None
+    date = email.utils.formatdate(1_000_060, usegmt=True)
+    assert wikimedia_http.retry_after_seconds(date, now=1_000_000) == 60.0
+
+
+def test_photo_proxy_and_species_info_share_one_identity(photos, monkeypatch):
+    import wikimedia_http
+
+    monkeypatch.setenv("SPECIES_INFO_CONTACT", "https://ops.example.org/")
+    agent = wikimedia_http.user_agent("photo proxy")
+    assert agent.startswith("PlantDiseases/1.2 (plant care app; photo proxy")
+    assert "https://ops.example.org/" in agent
+    assert photos._USER_AGENT.startswith("PlantDiseases/1.2 (plant care app; photo proxy")
+
+
+def test_warm_fetches_in_the_background_and_skips_cached_and_queued(photos, monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setattr(photos, "_WARM_SPACING_S", 0.0)
+    fetched = []
+    gate = threading.Event()
+
+    def _fake_get_or_fetch(url):
+        gate.wait(2)
+        fetched.append(url)
+
+    monkeypatch.setattr(photos, "get_or_fetch", _fake_get_or_fetch)
+    a = "https://upload.wikimedia.org/wikipedia/commons/a/ab/A.jpg"
+    b = "https://upload.wikimedia.org/wikipedia/commons/b/bc/B.jpg"
+    photos.warm([a, a, None, "https://evil.example.com/x.jpg", b])
+    photos.warm([a])  # still queued: not added twice
+    gate.set()
+    deadline = time.time() + 3
+    while len(fetched) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    assert sorted(fetched) == sorted([a, b])
+
+
+def test_warm_skips_photos_already_cached(photos, monkeypatch):
+    monkeypatch.setattr(photos, "_download", lambda url: _PNG)
+    url = "https://upload.wikimedia.org/wikipedia/commons/c/cd/C.png"
+    assert photos.get_or_fetch(url) is not None
+    calls = []
+    monkeypatch.setattr(photos, "get_or_fetch", lambda u: calls.append(u))
+    photos.warm([url])
+    assert photos._warm_queue.qsize() == 0
+    assert calls == []

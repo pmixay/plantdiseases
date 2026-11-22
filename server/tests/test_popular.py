@@ -220,3 +220,30 @@ def test_popular_curated_countries_have_real_names(client):
         assert body["scope"] == "country", code
         assert body["country_name_en"] == en
         assert body["country_name_ru"] == ru
+
+
+def test_thin_community_data_is_topped_up_with_curated_picks(client, monkeypatch):
+    """One real scan worldwide must not leave a one-card carousel: real data
+    first (with its percentage), then curated picks without counts."""
+    import main as server_main
+    from popular_plants import GLOBAL_DEFAULT
+
+    monkeypatch.setattr(
+        server_main,
+        "community_popular_snapshot",
+        lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
+            "total": 1,
+            "top_species": [{"species": "Rosa abietina", "count": 1, "percent": 100}],
+            "top_diseases": [{"disease": "leaf_spot", "count": 1, "percent": 100}],
+        },
+    )
+    body = client.get("/api/popular?locale=en").json()
+    assert body["source"] == "worldwide"
+    items = body["items"]
+    assert len(items) == min(10, 1 + len(GLOBAL_DEFAULT))
+    assert items[0]["scientific"] == "Rosa abietina"
+    assert items[0]["percent"] == 100
+    assert all(it["count"] == 0 and it["percent"] == 0 for it in items[1:])
+    names = [it["scientific"].lower() for it in items]
+    assert len(names) == len(set(names))
+    assert all(it["image_url"].startswith("api/plant-photo?name=") for it in items)

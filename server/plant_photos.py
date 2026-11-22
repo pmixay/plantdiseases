@@ -13,7 +13,11 @@ Guards:
 - only raster images Glide can render (JPEG/PNG/WebP/GIF) are cached — Wikipedia
   mixes in SVGs, which the app can't decode;
 - thumbnail widths are snapped to the ladder Wikimedia will actually render
-  (see ``normalize_thumb_url``), with the full-size original as a fallback.
+  (see ``normalize_thumb_url``), with the full-size original as a fallback;
+- Wikimedia's robot policy: an identifying User-Agent (``wikimedia_http``), at
+  most two downloads in flight, and ``Retry-After`` honoured on HTTP 429 (a
+  throttled request backs the whole proxy off instead of retrying the
+  multi-MB original straight away).
 
 Best-effort throughout: any miss returns ``None`` so the card falls back to its
 placeholder, exactly as it did before this proxy existed.
@@ -23,15 +27,21 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import queue
 import re
 import threading
+import time
 import urllib.parse
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
     from .config import get_str
+    from .wikimedia_http import retry_after_seconds, user_agent
 except ImportError:  # flat layout (uvicorn run from server/)
     from config import get_str
+    from wikimedia_http import retry_after_seconds, user_agent
 
 logger = logging.getLogger("plantdiseases.plant_photos")
 
@@ -44,9 +54,36 @@ _CACHE_MAX_FILES = 1500
 # The public proxy lets callers choose which allowlisted assets enter the
 # cache, so count and source+variant bytes are independently bounded.
 _CACHE_MAX_BYTES = 512 * 1024 * 1024
-_USER_AGENT = (
-    "PlantDiseases/1.1 (plant care app)"
-)
+_USER_AGENT = user_agent("photo proxy")
+
+# Wikimedia's media rules: at most two downloads in flight. A request that
+# can't get a slot within the wait gives up (the card shows its placeholder)
+# rather than queueing unboundedly behind a slow upstream.
+_MAX_CONCURRENT_DOWNLOADS = 2
+_SLOT_WAIT_S = 15.0
+_download_slots = threading.BoundedSemaphore(_MAX_CONCURRENT_DOWNLOADS)
+# HTTP 429: the whole proxy backs off for the Retry-After (capped). A request
+# meeting a back-off of up to _INLINE_RETRY_MAX_S waits it out and goes ahead
+# (Wikimedia's own throttle answers ``Retry-After: 10``); a longer one, or a
+# second 429, fails fast and the card shows its placeholder. The app gives
+# proxied photos a matching timeout (ServerConfig.PHOTO_TIMEOUT_MS).
+_INLINE_RETRY_MAX_S = 10.0
+_DEFAULT_BACKOFF_S = 10.0
+_BACKOFF_CAP_S = 300.0
+_backoff_lock = threading.Lock()
+_backoff_until = 0.0
+# Per-thread: was the download just attempted refused with 429 (or skipped
+# during a back-off)? get_or_fetch then skips the original-file fallback.
+_fetch_state = threading.local()
+# Background warming: photos a species card is about to show are fetched into
+# the cache one at a time, spaced out, so the card's burst of requests finds
+# them cached instead of meeting Wikimedia's throttle.
+_WARM_QUEUE_MAX = 64
+_WARM_SPACING_S = 1.0
+_warm_queue: queue.Queue[str] = queue.Queue(maxsize=_WARM_QUEUE_MAX)
+_warm_pending: set[str] = set()
+_warm_lock = threading.Lock()
+_warm_thread: threading.Thread | None = None
 
 # Only these exact hosts are fetched. The endpoint is public, so a suffix-wide
 # allowlist would unnecessarily trust every present and future Wikimedia
@@ -307,11 +344,14 @@ def get_or_fetch(url: str) -> Path | None:
         with contextlib.suppress(OSError):
             hit.touch()  # bump mtime for the LRU prune
         return hit
+    _fetch_state.throttled = False
     data = _download(url)
-    if data is None:
+    if data is None and not getattr(_fetch_state, "throttled", False):
         # The render was refused (or has gone away) but the file behind it
         # hasn't. Cached under the thumbnail's digest either way, so this
-        # costs one extra fetch on a miss and nothing on a hit.
+        # costs one extra fetch on a miss and nothing on a hit. Not after a
+        # 429: Wikimedia asked us to slow down, and the original is the
+        # heaviest request we could make.
         original = _original_from_thumb(url)
         data = _download(original) if original else None
     if data is None:
@@ -333,7 +373,104 @@ def get_or_fetch(url: str) -> Path | None:
     return out
 
 
+@dataclass(frozen=True)
+class _Throttled:
+    """An HTTP 429 from upstream, with its Retry-After in seconds (if any)."""
+
+    retry_after_s: float | None
+
+
+def _backoff_remaining() -> float:
+    with _backoff_lock:
+        return max(0.0, _backoff_until - time.monotonic())
+
+
+def _note_backoff(seconds: float | None) -> None:
+    global _backoff_until
+    wait = min(_BACKOFF_CAP_S, seconds if seconds and seconds > 0 else _DEFAULT_BACKOFF_S)
+    with _backoff_lock:
+        _backoff_until = max(_backoff_until, time.monotonic() + wait)
+
+
+def warm(urls: Iterable[str | None]) -> None:
+    """Fetch these photos into the cache in the background, one at a time.
+
+    Never blocks the caller: URLs already cached, already queued or outside
+    the allowlist are skipped, and a full queue drops the rest (the photo is
+    then fetched on demand as before).
+    """
+    for url in urls:
+        if not url or not is_allowed_url(url):
+            continue
+        key = normalize_thumb_url(canonical_media_url(url))
+        if _existing(key) is not None:
+            continue
+        with _warm_lock:
+            if key in _warm_pending:
+                continue
+            try:
+                _warm_queue.put_nowait(key)
+            except queue.Full:
+                return
+            _warm_pending.add(key)
+            _ensure_warm_worker()
+
+
+def _ensure_warm_worker() -> None:
+    global _warm_thread
+    if _warm_thread is None or not _warm_thread.is_alive():
+        _warm_thread = threading.Thread(target=_warm_worker, name="plant-photo-warm", daemon=True)
+        _warm_thread.start()
+
+
+def _warm_worker() -> None:
+    while True:
+        key = _warm_queue.get()
+        try:
+            wait = _backoff_remaining()
+            if wait > 0:
+                time.sleep(wait)
+            get_or_fetch(key)
+        except Exception:  # never let one photo stop the worker
+            logger.info("Plant photo warm-up failed")
+        finally:
+            with _warm_lock:
+                _warm_pending.discard(key)
+        time.sleep(_WARM_SPACING_S)
+
+
 def _download(url: str) -> bytes | None:
+    """Fetch ``url`` within Wikimedia's etiquette. Any 429 sets a proxy-wide
+    back-off for its Retry-After; a request arriving during a short back-off
+    waits it out (no slot held while sleeping) and is retried once, a long one
+    fails fast. At most two downloads are in flight. ``None`` on any miss."""
+    _fetch_state.throttled = False
+    for attempt in range(2):
+        remaining = _backoff_remaining()
+        if remaining > _INLINE_RETRY_MAX_S:
+            _fetch_state.throttled = True
+            return None
+        if remaining > 0:
+            time.sleep(remaining)
+        if not _download_slots.acquire(timeout=_SLOT_WAIT_S):
+            logger.info("Plant photo fetch skipped: download slots busy")
+            return None
+        try:
+            result = _download_once(url)
+        finally:
+            _download_slots.release()
+        if not isinstance(result, _Throttled):
+            return result
+        _note_backoff(result.retry_after_s)
+        logger.info("Plant photo fetch throttled upstream; backing off")
+        if attempt == 0 and _backoff_remaining() <= _INLINE_RETRY_MAX_S:
+            continue
+        break
+    _fetch_state.throttled = True
+    return None
+
+
+def _download_once(url: str) -> bytes | _Throttled | None:
     try:
         import requests  # lazy — only this path needs it
     except Exception:  # pragma: no cover
@@ -354,6 +491,8 @@ def _download(url: str) -> bytes | None:
                 stream=True,
                 allow_redirects=False,
             ) as resp:
+                if resp.status_code == 429:
+                    return _Throttled(retry_after_seconds(resp.headers.get("Retry-After")))
                 if resp.status_code in _REDIRECT_STATUSES:
                     location = resp.headers.get("Location")
                     if not isinstance(location, str) or not location.strip():

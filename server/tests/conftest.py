@@ -121,6 +121,8 @@ def _reset_abuse_counters():
     """
     import main as server_main
 
+    # Background photo warming would make real Wikimedia requests from tests.
+    server_main.plant_photo_warm = lambda urls: None
     for quota in server_main._DAILY_QUOTAS:
         quota.reset()
     with server_main._admission_lock:

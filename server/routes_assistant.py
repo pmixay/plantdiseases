@@ -137,6 +137,10 @@ def register(router: APIRouter, m) -> None:
         # Route the Wikipedia photos through the server's cache so the app loads
         # them from our domain (reliable where Wikimedia is blocked). Unproxyable
         # entries drop to None/out so the card just omits them.
+        # Fetch the gallery into the photo cache now, politely and one at a
+        # time, so the card's burst of image requests finds them cached rather
+        # than tripping Wikimedia's throttle (see plant_photos.warm).
+        m.plant_photo_warm([image_url, *images])
         proxied = {
             **info,
             "image_url": m.plant_photo_proxy(image_url),

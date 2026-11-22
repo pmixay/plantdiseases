@@ -217,7 +217,10 @@ path.
 **Species info and photos.** `/api/species-info` reads Wikipedia, then
 Wikidata, Commons and iNaturalist; no key is needed. Set `species_info_contact`
 (a URL or e-mail) so Wikimedia sees a contactable User-Agent and throttles the
-server less. Blank still works.
+server less: it goes into the species-info lookups and the photo proxy
+(`/api/plant-photo`). Wikimedia's robot policy throttles contact-less clients
+first, which shows up as species photos that don't load (the proxy answers 404
+while Wikimedia answers 429). Blank still works, but expect that.
 
 **PlantNet — species identification.** Key from
 <https://my.plantnet.org/account/doc> (free tier 500 IDs/day) → `plantnet_api_key`
