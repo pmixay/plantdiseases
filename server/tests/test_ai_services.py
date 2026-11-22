@@ -505,7 +505,6 @@ def test_call_openrouter_pins_the_openai_provider(monkeypatch):
     assert captured["payload"]["provider"] == {
         "require_parameters": True,
         "data_collection": "deny",
-        "zdr": True,
         "only": ["openai"],
     }
 
@@ -523,23 +522,7 @@ def test_call_openrouter_requires_parameter_support_even_unpinned(monkeypatch):
     assert captured["payload"]["provider"] == {
         "require_parameters": True,
         "data_collection": "deny",
-        "zdr": True,
     }
-
-
-def test_call_openrouter_zdr_requirement_is_configurable(monkeypatch):
-    """An account with no zero-data-retention endpoints can switch ZDR off; the
-    no-collection policy and parameter guarantee must stay on regardless."""
-    import ai_services as ai
-
-    monkeypatch.setattr(ai, "OPENROUTER_REQUIRE_ZDR", False)
-    captured = {}
-    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    provider = captured["payload"]["provider"]
-    assert "zdr" not in provider
-    assert provider["data_collection"] == "deny"
-    assert provider["require_parameters"] is True
 
 
 def test_call_openrouter_provider_pin_is_configurable(monkeypatch):
