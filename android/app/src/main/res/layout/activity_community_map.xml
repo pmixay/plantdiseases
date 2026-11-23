@@ -2,7 +2,7 @@
 <!--
     Community scans map. Zoomed out it draws a k-anonymized density heat (one
     translucent cell per /api/community/heatmap cell); zoomed in it drops a
-    marker per scan (/api/community/map), tappable into the scan sheet.
+    marker per scan (/api/community/map), tappable to expand its photo.
     Full-screen with a back arrow — the map wants the room.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout

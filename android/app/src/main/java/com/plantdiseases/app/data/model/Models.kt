@@ -454,15 +454,8 @@ data class CommunityScanItem(
     @SerializedName("thumb_path") @SerialName("thumb_path") val thumbPath: String? = null,
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
-    // How many people opened this shared scan (server-attached on the feed);
-    // shown as a small overlay count on the card thumbnail.
+    // How many people opened this shared scan (server-attached on the feed).
     @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
-    // Server-derived public avatar seed. It is unrelated to provider subjects
-    // and internal account UUIDs; the client never supplies it on writes.
-    @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
-    // Public account nickname derived from the verified author token; provider
-    // display names and avatars never enter community responses.
-    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
     // Approximate great-circle distance from the requester, in km, computed
     // server-side (the raw coords never leave the server). Null when the feed
     // had no requester anchor (country/worldwide scope). Shown as "≈ N km near
@@ -472,23 +465,6 @@ data class CommunityScanItem(
     // strips them), so the map can pin a marker. Null elsewhere.
     @SerializedName("lat") @SerialName("lat") val lat: Double? = null,
     @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
-    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
-    @SerializedName("liked_by_me") @SerialName("liked_by_me") val likedByMe: Boolean = false,
-)
-
-/** Public, privacy-safe account surface reached from a community author.
- *  The opaque token is community-only; provider ids and internal account ids
- *  are never returned. `joinedAt` is first public community activity. */
-@Serializable
-data class CommunityPublicProfile(
-    @SerializedName("author_token") @SerialName("author_token") val authorToken: String = "",
-    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
-    @SerializedName("joined_at") @SerialName("joined_at") val joinedAt: Long = 0L,
-    @SerializedName("last_active_at") @SerialName("last_active_at") val lastActiveAt: Long = 0L,
-    @SerializedName("scan_count") @SerialName("scan_count") val scanCount: Int = 0,
-    @SerializedName("like_count") @SerialName("like_count") val likeCount: Int = 0,
-    @SerializedName("is_me") @SerialName("is_me") val isMe: Boolean = false,
-    @SerializedName("items") @SerialName("items") val items: List<CommunityScanItem> = emptyList(),
 )
 
 /** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
@@ -567,28 +543,6 @@ data class ErrorReport(
 )
 
 @Serializable
-data class CommunityReportRequest(
-    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
-    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
-    @SerializedName("reason") @SerialName("reason") val reason: String,
-)
-
-@Serializable
-data class CommunityBlockRequest(
-    @SerializedName("target_type") @SerialName("target_type") val targetType: String,
-    @SerializedName("target_id") @SerialName("target_id") val targetId: String,
-)
-
-@Serializable
-data class CommunitySafetyMutationResponse(
-    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
-    @SerializedName("created") @SerialName("created") val created: Boolean = false,
-    @SerializedName("block_id") @SerialName("block_id") val blockId: String? = null,
-    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
-    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
-)
-
-@Serializable
 data class CommunityBlockItem(
     @SerializedName("block_id") @SerialName("block_id") val blockId: String = "",
     @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
@@ -598,21 +552,6 @@ data class CommunityBlockItem(
 @Serializable
 data class CommunityBlocksResponse(
     @SerializedName("items") @SerialName("items") val items: List<CommunityBlockItem> = emptyList(),
-)
-
-/** /api/community/like request body. */
-@Serializable
-data class CommunityLikeRequest(
-    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
-    @SerializedName("liked") @SerialName("liked") val liked: Boolean = true,
-)
-
-/** /api/community/like response. */
-@Serializable
-data class CommunityLikeResponse(
-    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
-    @SerializedName("liked") @SerialName("liked") val liked: Boolean = false,
-    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** /api/community/view request body — records that the caller opened

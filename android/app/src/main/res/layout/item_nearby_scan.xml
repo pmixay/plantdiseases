@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One post in the community feed — full sheet width, single column
-    (Community v2 replaced the staggered photo grid with a scrolling forum).
-    Header (avatar + nickname + place/time), full-width photo, then an
-    action row: like (tappable) and views. The model's verdict appears in
-    the scan sheet the photo opens.
+    One shared scan in the list the community map opens for a cluster:
+    the diagnosis with place and distance/time, a views count, then the
+    full-width photo. No author: scans are shown without identity.
+    Tapping the photo expands it full screen.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -16,31 +15,17 @@
     android:paddingHorizontal="@dimen/space_md"
     android:paddingVertical="@dimen/space_md">
 
-    <!-- Header: avatar + nickname/meta stacked. -->
+    <!-- Header: diagnosis/place/time stacked, views at the end. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/tv_nearby_avatar"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:gravity="center"
-            android:background="@drawable/bg_circle_surface_variant"
-            android:backgroundTint="@color/primary"
-            android:textColor="@android:color/white"
-            android:textSize="13sp"
-            android:fontFamily="sans-serif-medium"
-            android:importantForAccessibility="no"
-            tools:text="KX" />
-
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="@dimen/space_sm"
             android:orientation="vertical">
 
             <TextView
@@ -52,11 +37,10 @@
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="Leafy Sage 7" />
+                tools:text="Powdery mildew" />
 
-            <!-- Place - distance - time, on one line — long place names still
-                 leave room for the always-relevant distance/time tail because
-                 they share a single ellipsized TextView via buildWhen(). -->
+            <!-- Place on its own line, so a long place name can't ellipsize
+                 the distance and time below it. -->
             <TextView
                 android:id="@+id/tv_nearby_meta"
                 android:layout_width="match_parent"
@@ -78,9 +62,34 @@
                 tools:text="≈ 3 km, 2 hr. ago" />
         </LinearLayout>
 
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_eye"
+                app:tint="@color/on_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tv_nearby_views"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:textSize="@dimen/text_body_sm"
+                android:textColor="@color/on_surface"
+                tools:text="48" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
-    <!-- Scan photo, full row width. Tapping it opens the sheet. -->
+    <!-- Scan photo, full row width. Tapping it expands the photo. -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -108,81 +117,6 @@
 
         </com.facebook.shimmer.ShimmerFrameLayout>
     </com.google.android.material.card.MaterialCardView>
-
-    <!-- Action row: like (tappable, toggles), comments + views (both open
-         the sheet). Each pair is its own touch target rather than one
-         giant row, so a tap on "comments" can't be misread as a like. -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_xs"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <LinearLayout
-            android:id="@+id/ll_nearby_like"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:paddingVertical="@dimen/space_xs"
-            android:paddingEnd="@dimen/space_md"
-            android:clickable="true"
-            android:focusable="true">
-
-            <ImageView
-                android:id="@+id/iv_nearby_like"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:contentDescription="@string/community_like_action"
-                android:src="@drawable/ic_heart"
-                app:tint="@color/on_surface_secondary" />
-
-            <TextView
-                android:id="@+id/tv_nearby_likes"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_xs"
-                android:textSize="@dimen/text_body_sm"
-                android:fontFamily="sans-serif-medium"
-                android:textColor="@color/on_surface"
-                tools:text="14" />
-
-        </LinearLayout>
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
-
-        <LinearLayout
-            android:id="@+id/ll_nearby_views"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="@dimen/space_xs">
-
-            <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:contentDescription="@null"
-                android:src="@drawable/ic_eye"
-                app:tint="@color/on_surface_secondary" />
-
-            <TextView
-                android:id="@+id/tv_nearby_views"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_xs"
-                android:textSize="@dimen/text_body_sm"
-                android:textColor="@color/on_surface"
-                tools:text="48" />
-
-        </LinearLayout>
-
-    </LinearLayout>
 
     <View
         android:layout_width="match_parent"

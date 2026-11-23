@@ -202,7 +202,7 @@
     <string name="quick_sign_in_benefit_like">Like posts and helpful answers</string>
     <string name="quick_sign_in_benefit_answer">Answer questions and reply to others</string>
     <string name="quick_sign_in_benefit_ask">Ask your own questions and share scans</string>
-    <string name="quick_sign_in_benefit_opinions">Get second opinions on your scans</string>
+    <string name="quick_sign_in_benefit_scan_answers">Get the community\'s answers on your scans</string>
     <string name="quick_sign_in_done">Signed in as %1$s</string>
     <string name="onboarding_title">Welcome to PlantDiseases</string>
     <string name="onboarding_secure_title">Your data is secure</string>
@@ -352,33 +352,12 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_empty">No community scans yet - your scan will be the first.</string>
     <!-- Community scans -->
-    <string name="community_scan_diagnosis_label">Diagnosis</string>
-    <string name="community_scan_confidence">Confidence %1$d%%</string>
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
-    <string name="community_scan_photo_desc">Shared plant scan</string>
-    <string name="community_report_content">Report</string>
-    <string name="community_block_author">Block author</string>
-    <string name="community_report_title">Report community content</string>
-    <string name="community_report_prompt">Why does this break the Community Rules?</string>
-    <string-array name="community_report_reasons">
-        <item>Sexual content</item>
-        <item>Violence or threats</item>
-        <item>Hate or harassment</item>
-        <item>Illegal or dangerous content</item>
-        <item>Spam or misleading content</item>
-        <item>Privacy violation or impersonation</item>
-        <item>Another rules violation</item>
-    </string-array>
-    <string name="community_report_sent">Report sent to moderation.</string>
-    <string name="community_block_title">Block this author?</string>
-    <string name="community_block_body">While using the community signed in, their scans and replies will be hidden from you, yours will be hidden from them, and the two accounts cannot interact. This applies on every device signed into your account.</string>
-    <string name="community_block_confirm">Block</string>
-    <string name="community_author_blocked">Author blocked.</string>
     <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
     <string name="community_rules_action">Rules &amp; safety</string>
     <string name="community_rules_title">Community Rules &amp; safety</string>
-    <string name="community_rules_body">Share only plant-related scans and helpful answers. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
+    <string name="community_rules_body">Share only plant-related scans and helpful answers. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nTo flag a shared scan, use Contact moderation below. On a forum post or answer, use Report for moderation and Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
     <string name="community_contact_moderation">Contact moderation</string>
     <string name="community_manage_blocks">Blocked authors</string>
     <string name="community_blocks_empty">You haven\'t blocked any authors.</string>
@@ -387,17 +366,8 @@
     <string name="community_author_unblocked">Author unblocked.</string>
     <string name="community_unknown_author">Unknown author</string>
     <string name="community_moderation_url" translatable="false">mailto:gavel8980@gmail.com</string>
-    <string name="community_like_action">Like</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="community_profile_title">Profile</string>
-    <string name="community_profile_avatar">Community profile avatar</string>
-    <string name="community_profile_joined">Joined %1$s</string>
-    <string name="community_profile_scans">%1$d\nScans</string>
-    <string name="community_profile_likes">%1$d\nLikes</string>
-    <string name="community_profile_posts">Posts</string>
-    <string name="community_profile_no_posts">No public scans yet</string>
-    <string name="community_profile_unavailable">This profile is unavailable</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
     <string name="privacy_policy_title">Privacy Policy</string>

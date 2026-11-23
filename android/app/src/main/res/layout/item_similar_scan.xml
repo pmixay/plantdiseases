@@ -2,9 +2,9 @@
 <!--
     Single cell in the "Similar scans near you" carousel.
 
-    Each cell is a 160dp-wide card: thumbnail on top, publisher nickname +
-    approximate distance ("≈ N km near you") + relative time below — no
-    place name (geo stays server-side). Tapping opens the scan sheet.
+    Each cell is a 160dp-wide card: thumbnail on top, then the diagnosis,
+    the approximate distance ("≈ N km") and relative time below. No author
+    and no place name (geo stays server-side). Tapping expands the photo.
     Width is fixed so the horizontal RecyclerView snaps evenly regardless of
     label length.
 -->

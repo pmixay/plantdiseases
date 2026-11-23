@@ -180,11 +180,6 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name=".ui.community.CommunityProfileActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
             android:name=".ui.community.CommunityMapActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

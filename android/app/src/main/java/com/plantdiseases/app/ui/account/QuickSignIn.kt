@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Sign-in in place, for a guest who tries to take part in the community
- * (like, answer, post, ask for an opinion). Instead of a toast and the account
+ * (like, answer, post, ask the community). Instead of a toast and the account
  * screen, a sheet explains what an account adds and signs in with Yandex ID
  * right there; a new account picks its nickname in the same sheet. The
  * account disclosure is still acknowledged once before the first exchange.
@@ -298,7 +298,7 @@ class QuickSignIn private constructor(
             benefit(R.drawable.ic_heart, R.string.quick_sign_in_benefit_like),
             benefit(R.drawable.ic_reply, R.string.quick_sign_in_benefit_answer),
             benefit(R.drawable.ic_add, R.string.quick_sign_in_benefit_ask),
-            benefit(R.drawable.ic_comment, R.string.quick_sign_in_benefit_opinions),
+            benefit(R.drawable.ic_comment, R.string.quick_sign_in_benefit_scan_answers),
         )
 
         private fun benefit(@DrawableRes icon: Int, @StringRes text: Int) = icon to text

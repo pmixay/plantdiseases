@@ -36,7 +36,6 @@ import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
-import com.plantdiseases.app.ui.result.CommunityScanSheet
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
@@ -64,9 +63,9 @@ import javax.inject.Inject
 /**
  * Full-screen community scans map (osmdroid). Zoomed out it paints a
  * k-anonymized density heat (/api/community/heatmap); zoomed in it drops a
- * marker per scan (/api/community/map). Tapping a scan opens the existing
- * [CommunityScanSheet]; a cluster of scans at the same ~1 km point opens a
- * list of them. Viewing the (anonymized, aggregate) map needs no opt-in; the
+ * marker per scan (/api/community/map). Tapping a scan expands its photo
+ * full screen; a cluster of scans at the same ~1 km point opens a list of
+ * them. Viewing the (anonymized, aggregate) map needs no opt-in; the
  * "near me" FAB uses coarse location and never flips upload sharing on.
  */
 @AndroidEntryPoint
@@ -76,8 +75,6 @@ class CommunityMapActivity : AppCompatActivity() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
-
-    private val likeWritesInFlight = mutableSetOf<String>()
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -92,7 +89,7 @@ class CommunityMapActivity : AppCompatActivity() {
     // sharing come with it (CommunityJoin). Declining closes the map.
     private val communityJoin = CommunityJoin(this)
 
-    // Guests sign in in place (likes, blocked authors); also registers a launcher.
+    // Guests sign in in place (blocked authors); also registers a launcher.
     private val quickSignIn = QuickSignIn.of(this)
 
     override fun attachBaseContext(newBase: Context) {
@@ -116,10 +113,6 @@ class CommunityMapActivity : AppCompatActivity() {
         setupToolbarMenu()
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
-        supportFragmentManager.setFragmentResultListener(
-            CommunityScanSheet.CONTENT_BLOCKED,
-            this,
-        ) { _, _ -> reload() }
         // Pick the markers back up as soon as the server is reachable — the
         // pans made while offline deliberately fetched nothing.
         onReconnected(connectivity.isOnline) { reload() }
@@ -447,31 +440,13 @@ class CommunityMapActivity : AppCompatActivity() {
         return BitmapDrawable(resources, out)
     }
 
-    private fun openScan(item: CommunityScanItem) {
-        CommunityScanSheet.show(
-            supportFragmentManager,
-            item,
-            DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
-        )
+    /** A shared scan has no detail screen: the tap expands its photo. */
+    private fun openScan(item: CommunityScanItem, from: View? = null) {
+        openScanPhoto(this, item, from)
     }
 
-    /** Optimistic like toggle for a row in the grouped-scans bottom sheet,
-     *  parameterised by which adapter instance owns the tapped row. */
-    private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
-        if (!quickSignIn.require()) return
-        if (!likeWritesInFlight.add(item.scanId)) return
-        val next = !item.likedByMe
-        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
-        adapter.updateLike(item.scanId, optimisticCount, next)
-        lifecycleScope.launch {
-            scanRepository.setCommunityLike(item.scanId, next)
-                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
-                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
-        }
-    }
-
-    /** Bottom sheet listing the scans grouped at one point — reuses the feed
-     *  adapter so each row opens the same scan sheet. */
+    /** Bottom sheet listing the scans grouped at one point; a row's photo
+     *  expands like a lone marker's. */
     private fun openGroup(group: List<CommunityScanItem>) {
         val dialog = BottomSheetDialog(this)
         val pad = (12 * resources.displayMetrics.density).toInt()
@@ -486,21 +461,9 @@ class CommunityMapActivity : AppCompatActivity() {
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
-            onOpen = { item ->
-                dialog.dismiss()
-                openScan(item)
-            },
-            onAuthor = { item ->
-                dialog.dismiss()
-                item.authorToken
-                    ?.takeIf { it.startsWith("ca") && it.length == 32 }
-                    ?.let { token ->
-                        startActivity(CommunityProfileActivity.intent(this, token))
-                    }
-            },
-            onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
+            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
+            onOpen = { item, photo -> openScan(item, photo) },
         )
-        adapter.guest = !quickSignIn.isSignedIn
         list.adapter = adapter
         adapter.submit(group)
         val container = LinearLayout(this).apply {

@@ -8,6 +8,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.community.lockNearbyPreview
+import com.plantdiseases.app.ui.community.openScanPhoto
 import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
@@ -46,7 +47,7 @@ class CommunityController(
         DiseaseLabels.displayName(key, isRu) ?: key
 
     /** Fire-and-forget: record that the signed account opened someone else's
-     *  shared scan. Guests return before the repository is called; the server
+     *  shared scan photo. Guests return before the repository is called; the server
      *  deduplicates per actor and ignores owner self-views. */
     private fun recordView(scanId: String) {
         if (scanId.isBlank() || authRepository.state.value !is AuthState.Authenticated) return
@@ -92,31 +93,9 @@ class CommunityController(
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
-            onAuthorClick = { item ->
-                item.authorToken?.let { token ->
-                    activity.startActivity(
-                        com.plantdiseases.app.ui.community.CommunityProfileActivity
-                            .intent(activity, token),
-                    )
-                }
-            },
-            onClick = { item ->
-                recordView(item.scanId)
-                activity.lifecycleScope.launch {
-                    val mine = item.scanId in repository.localClientScanIds()
-                    // localClientScanIds() suspends on Dispatchers.IO, so we
-                    // always resume a main-loop turn later. lifecycleScope only
-                    // cancels at DESTROYED, so a Home press mid-read would land
-                    // here after onSaveInstanceState and blow up inside show().
-                    // Guests get the same sheet with its like locked.
-                    if (activity.supportFragmentManager.isStateSaved) return@launch
-                    CommunityScanSheet.show(
-                        activity.supportFragmentManager,
-                        item,
-                        displayName(item.disease, isRu),
-                        mine = mine,
-                    )
-                }
+            // A shared scan has no detail screen: the tap expands its photo.
+            onClick = { item, thumb ->
+                if (openScanPhoto(activity, item, thumb)) recordView(item.scanId)
             },
         )
         rv.adapter = adapter

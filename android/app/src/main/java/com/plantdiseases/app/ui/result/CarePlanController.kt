@@ -42,7 +42,7 @@ class CarePlanController(
             ?: scan.diseaseName.lowercase().replace(' ', '_')
 
         // Reuse a single card across re-binds, inserted just after the
-        // doctor / second-opinion action row so identity and the follow-up
+        // doctor / ask-the-community action row so identity and the follow-up
         // entry points remain above the longer care details.
         val view = card ?: CarePlanCardView(activity).also { fresh ->
             // Keyed to the diagnosis, not the species baseline.

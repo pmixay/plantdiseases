@@ -17,7 +17,6 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
-import com.plantdiseases.app.data.model.CommunityPublicProfile
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
@@ -603,62 +602,6 @@ class ScanRepository(
             }
         }
 
-    /** Public account activity behind an opaque community author token. */
-    suspend fun getCommunityProfile(authorToken: String): Result<CommunityPublicProfile> =
-        withContext(Dispatchers.IO) {
-            optionalAccountGet { token ->
-                apiClient.httpClient.get("api/community/profile/$authorToken") {
-                    token?.let { bearer(it) }
-                }
-            }
-        }
-
-    /** Report a shared scan or one reply using only its opaque public token. */
-    suspend fun reportCommunityContent(
-        targetType: String,
-        targetId: String,
-        reason: String,
-    ): Result<Boolean> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/safety/report") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityReportRequest(
-                            targetType = targetType,
-                            targetId = targetId,
-                            reason = reason,
-                        ),
-                    )
-                }
-                response
-                    .protectedBody<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse>()
-                    .ok
-            }
-        }
-
-    /** Block the server-resolved author of a scan or reply. */
-    suspend fun blockCommunityAuthor(
-        targetType: String,
-        targetId: String,
-    ): Result<com.plantdiseases.app.data.model.CommunitySafetyMutationResponse> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/safety/block") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityBlockRequest(
-                            targetType = targetType,
-                            targetId = targetId,
-                        ),
-                    )
-                }
-                response.protectedBody()
-            }
-        }
-
     suspend fun communityBlocks(): Result<List<com.plantdiseases.app.data.model.CommunityBlockItem>> =
         withContext(Dispatchers.IO) {
             authenticatedAppCall { token ->
@@ -1028,12 +971,6 @@ class ScanRepository(
                 .map { it.toHistoryItem() }
         }
 
-    /** Local scan ids used to hide the current user's own posts from discovery. */
-    suspend fun localClientScanIds(): Set<String> =
-        withContext(Dispatchers.IO) {
-            scanDao.allClientScanIds().filterTo(mutableSetOf()) { it.isNotBlank() }
-        }
-
     /** Get full scan details */
     suspend fun getScanById(id: Long): ScanEntity? =
         withContext(Dispatchers.IO) {
@@ -1061,29 +998,6 @@ class ScanRepository(
                     )
                 }
                 response.requireProtectedSuccess()
-            }
-        }
-
-    /** Like or unlike a shared scan. Returns the resulting liked state on
-     *  success — the caller should already have applied it optimistically
-     *  and only needs to roll back on failure. */
-    suspend fun setCommunityLike(
-        scanId: String,
-        liked: Boolean,
-    ): Result<com.plantdiseases.app.data.model.CommunityLikeResponse> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/like") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityLikeRequest(
-                            scanId = scanId,
-                            liked = liked,
-                        ),
-                    )
-                }
-                response.protectedBody<com.plantdiseases.app.data.model.CommunityLikeResponse>()
             }
         }
 

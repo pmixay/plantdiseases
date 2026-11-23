@@ -243,18 +243,12 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switch_consent"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:checked="true"
-                android:text="@string/forum_training_consent" />
-
+            <!-- No switch: a post's photos are always offered for training. -->
             <TextView
                 style="@style/Forum.Meta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
                 android:maxLines="4"
                 android:text="@string/forum_training_consent_hint" />
 

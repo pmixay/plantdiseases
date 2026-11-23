@@ -909,42 +909,6 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun communitySafety_reportAndBlockNeverSendActorIds() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"created":true}"""),
-        )
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"ok":true,"created":true,"block_id":"cb123456789012345678901234567890"}""",
-                ),
-        )
-
-        val reported = runBlocking {
-            repo.reportCommunityContent("scan", "cs-reported", "hate_or_harassment")
-        }
-        val blocked = runBlocking { repo.blockCommunityAuthor("scan", "cs-public") }
-
-        assertThat(reported.getOrNull()).isTrue()
-        assertThat(blocked.getOrNull()?.blockId).startsWith("cb")
-        val reportRequest = server.takeRequest()
-        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
-        assertThat(reportRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
-        val reportBody = reportRequest.body.readUtf8()
-        assertThat(reportBody).contains("\"target_type\":\"scan\"")
-        assertThat(reportBody).contains("\"target_id\":\"cs-reported\"")
-        assertThat(reportBody).contains("\"reason\":\"hate_or_harassment\"")
-        assertThat(reportBody).doesNotContain("actor_id")
-
-        val blockRequest = server.takeRequest()
-        assertThat(blockRequest.path).isEqualTo("/api/community/safety/block")
-        assertThat(blockRequest.body.readUtf8()).doesNotContain("actor_id")
-    }
-
-    @Test
     fun communitySafety_listsAndRemovesOnlyOpaqueBlockId() {
         val blockId = "cb123456789012345678901234567890"
         server.enqueue(
@@ -1056,9 +1020,7 @@ class ScanRepositoryNetworkTest {
             authRepository = guestAuth,
         )
 
-        val result = runBlocking {
-            guestRepository.setCommunityLike("scan-public", liked = true)
-        }
+        val result = runBlocking { guestRepository.recordCommunityView("scan-public") }
 
         assertThat(result.exceptionOrNull())
             .isInstanceOf(AuthenticationRequiredException::class.java)
@@ -1069,15 +1031,9 @@ class ScanRepositoryNetworkTest {
     fun protectedCommunityCallRefreshesOnceAndRetriesWithNewBearer() {
         accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"liked":true,"count":1}"""),
-        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
-        val result = runBlocking {
-            repo.setCommunityLike("s", liked = true)
-        }
+        val result = runBlocking { repo.recordCommunityView("s") }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(accountApi.refreshCalls).isEqualTo(1)

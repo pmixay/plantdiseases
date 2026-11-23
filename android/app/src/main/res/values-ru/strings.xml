@@ -208,7 +208,7 @@
     <string name="quick_sign_in_benefit_like">Ставить лайки постам и полезным ответам</string>
     <string name="quick_sign_in_benefit_answer">Отвечать на вопросы и комментировать</string>
     <string name="quick_sign_in_benefit_ask">Задавать свои вопросы и делиться сканами</string>
-    <string name="quick_sign_in_benefit_opinions">Получать второе мнение по своим сканам</string>
+    <string name="quick_sign_in_benefit_scan_answers">Получать ответы сообщества по своим сканам</string>
     <string name="quick_sign_in_done">Вы вошли как %1$s</string>
     <string name="onboarding_title">Добро пожаловать в PlantDiseases</string>
     <string name="onboarding_secure_title">Ваши данные защищены</string>
@@ -349,33 +349,12 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет - ваш будет первым.</string>
     <!-- Community scans -->
-    <string name="community_scan_diagnosis_label">Диагноз</string>
-    <string name="community_scan_confidence">Точность %1$d%%</string>
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
-    <string name="community_scan_photo_desc">Снимок растения сообщества</string>
-    <string name="community_report_content">Пожаловаться</string>
-    <string name="community_block_author">Заблокировать автора</string>
-    <string name="community_report_title">Жалоба на материал сообщества</string>
-    <string name="community_report_prompt">Почему этот материал нарушает Правила сообщества?</string>
-    <string-array name="community_report_reasons">
-        <item>Материалы сексуального характера</item>
-        <item>Насилие или угрозы</item>
-        <item>Ненависть или травля</item>
-        <item>Незаконный или опасный материал</item>
-        <item>Спам или вводящий в заблуждение материал</item>
-        <item>Нарушение приватности или выдача себя за другого</item>
-        <item>Другое нарушение правил</item>
-    </string-array>
-    <string name="community_report_sent">Жалоба отправлена модерации.</string>
-    <string name="community_block_title">Заблокировать этого автора?</string>
-    <string name="community_block_body">При использовании сообщества с выполненным входом его сканы и ответы будут скрыты от вас, ваши - от него, а учётные записи не смогут взаимодействовать. Настройка действует на всех устройствах с вашей учётной записью.</string>
-    <string name="community_block_confirm">Заблокировать</string>
-    <string name="community_author_blocked">Автор заблокирован.</string>
     <string name="community_safety_error">Не удалось изменить настройки безопасности сообщества. Повторите.</string>
     <string name="community_rules_action">Правила и безопасность</string>
     <string name="community_rules_title">Правила и безопасность сообщества</string>
-    <string name="community_rules_body">Публикуйте только сканы растений и полезные ответы. Запрещены изображения людей, личные и контактные данные, материалы сексуального характера, насилие, ненависть, травля, угрозы, незаконные или опасные инструкции, выдача себя за другого, спам и вводящие в заблуждение материалы.\n\nИспользуйте «Пожаловаться» на скане или ответе для обращения к модерации. «Заблокировать автора» немедленно разъединяет пользователей. По жалобе материал или учётная запись могут быть удалены.</string>
+    <string name="community_rules_body">Публикуйте только сканы растений и полезные ответы. Запрещены изображения людей, личные и контактные данные, материалы сексуального характера, насилие, ненависть, травля, угрозы, незаконные или опасные инструкции, выдача себя за другого, спам и вводящие в заблуждение материалы.\n\nЧтобы пожаловаться на скан, нажмите «Связаться с модерацией» ниже. На публикации или ответе форума используйте «Пожаловаться» для обращения к модерации, а «Заблокировать автора» немедленно разъединяет пользователей. По жалобе материал или учётная запись могут быть удалены.</string>
     <string name="community_contact_moderation">Связаться с модерацией</string>
     <string name="community_manage_blocks">Заблокированные авторы</string>
     <string name="community_blocks_empty">Вы не блокировали авторов.</string>
@@ -383,16 +362,7 @@
     <string name="community_unblock_confirm">Разблокировать</string>
     <string name="community_author_unblocked">Автор разблокирован.</string>
     <string name="community_unknown_author">Неизвестный автор</string>
-    <string name="community_like_action">Нравится</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="community_profile_title">Профиль</string>
-    <string name="community_profile_avatar">Аватар профиля сообщества</string>
-    <string name="community_profile_joined">В сообществе с %1$s</string>
-    <string name="community_profile_scans">%1$d\nСканов</string>
-    <string name="community_profile_likes">%1$d\nЛайков</string>
-    <string name="community_profile_posts">Публикации</string>
-    <string name="community_profile_no_posts">Публичных сканов пока нет</string>
-    <string name="community_profile_unavailable">Этот профиль недоступен</string>
     <string name="notifications_cd">Уведомления</string>
     <string name="notifications_title">Уведомления</string>
     <string name="privacy_policy_title">Политика конфиденциальности</string>

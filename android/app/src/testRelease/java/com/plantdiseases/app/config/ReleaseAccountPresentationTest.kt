@@ -49,17 +49,6 @@ class ReleaseAccountPresentationTest {
     }
 
     @Test
-    fun releaseCommunityDetailExposesReportAndBlockActions() {
-        val root = LayoutInflater.from(context).inflate(R.layout.sheet_community_scan, null)
-
-        assertThat(root.findViewById<MaterialButton>(R.id.btn_community_report_scan).visibility)
-            .isEqualTo(View.VISIBLE)
-        assertThat(root.findViewById<MaterialButton>(R.id.btn_community_block_scan_author).visibility)
-            .isEqualTo(View.VISIBLE)
-        assertThat(context.resources.getStringArray(R.array.community_report_reasons)).hasLength(7)
-    }
-
-    @Test
     fun releaseCommunityMenuExposesRulesModerationContactAndBlockManagement() {
         val anchor = View(context)
         val menu = PopupMenu(context, anchor)
