@@ -19,6 +19,7 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.MeteredAccessUi
@@ -50,6 +51,7 @@ class DetailExtraCardsController(
     private val activity: AppCompatActivity,
     private val plantRepository: PlantRepository,
     private val scanRepository: ScanRepository,
+    private val assistant: AssistantRepository,
     private val careRepository: CareRepository,
     private val content: LinearLayout,
     private val onReload: () -> Unit,
@@ -121,7 +123,7 @@ class DetailExtraCardsController(
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
             )
-            val result = scanRepository.fetchCarePlan(request)
+            val result = assistant.fetchCarePlan(request)
             result.onSuccess { plan ->
                 val materializablePlan = plan.withStoredTreatmentFallback(latestScan, isRu)
                 card.bind(
@@ -910,7 +912,7 @@ class DetailExtraCardsController(
         val newest = ordered.last()
         val plantName = currentPlant?.name
         activity.lifecycleScope.launch {
-            val res = scanRepository.fetchProgression(
+            val res = assistant.fetchProgression(
                 ProgressionRequest(history = historyPayload),
             )
             res.onSuccess { resp ->

@@ -13,6 +13,7 @@ import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CommunityScanRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -32,6 +33,7 @@ class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
+    private val communityScans: CommunityScanRepository,
     private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
     private val communityJoin: CommunityJoin,
@@ -51,7 +53,7 @@ class CommunityController(
      *  deduplicates per actor and ignores owner self-views. */
     private fun recordView(scanId: String) {
         if (scanId.isBlank() || authRepository.state.value !is AuthState.Authenticated) return
-        activity.lifecycleScope.launch { repository.recordCommunityView(scanId) }
+        activity.lifecycleScope.launch { communityScans.recordCommunityView(scanId) }
     }
 
     /** Offers sign-in in place and deliberately drops the initiating mutation. */
@@ -139,7 +141,7 @@ class CommunityController(
             } else {
                 null
             }
-            repository.communityNearby(
+            communityScans.communityNearby(
                 country = region?.country,
                 region = region?.locality,
                 lat = region?.lat,

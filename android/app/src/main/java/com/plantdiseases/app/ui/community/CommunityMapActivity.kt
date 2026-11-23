@@ -34,7 +34,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -73,7 +73,7 @@ class CommunityMapActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCommunityMapBinding
 
     @Inject
-    lateinit var scanRepository: ScanRepository
+    lateinit var communityScans: CommunityScanRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -176,7 +176,7 @@ class CommunityMapActivity : AppCompatActivity() {
     /** Rules and blocked authors are always there; "leave" while a member. */
     private fun setupToolbarMenu() {
         // Leaving the community also leaves the map, which is members-only.
-        val safety = ScanCommunitySafety(this, scanRepository, quickSignIn) {
+        val safety = ScanCommunitySafety(this, communityScans, quickSignIn) {
             if (CommunityPrefs.uploadsEnabled(this)) {
                 updateLeaveItem()
                 reload()
@@ -227,7 +227,7 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.mapProgress.visibility = View.VISIBLE
         loadJob = lifecycleScope.launch {
             if (zoom >= MARKER_ZOOM) {
-                val res = scanRepository.communityMap(
+                val res = communityScans.communityMap(
                     minLat = box.latSouth,
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
@@ -244,7 +244,7 @@ class CommunityMapActivity : AppCompatActivity() {
                     },
                 )
             } else {
-                val res = scanRepository.communityHeatmap(
+                val res = communityScans.communityHeatmap(
                     minLat = box.latSouth,
                     minLon = box.lonWest,
                     maxLat = box.latNorth,

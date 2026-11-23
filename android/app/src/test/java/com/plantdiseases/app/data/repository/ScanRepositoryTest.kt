@@ -214,10 +214,12 @@ class ScanRepositoryTest {
 
         assertThat(receiptStore.values.keys).containsExactly(scan.id.toString())
         assertThat(receiptStore.values.keys).doesNotContain("community-capability")
-        assertThat(repo.feedbackReceipt(scan)).isEqualTo("r".repeat(43))
+        // The feedback repository spends the receipt the scan repository stored.
+        val feedback = FeedbackRepository(PlantApiClient("http://localhost/"), feedbackReceiptStore = receiptStore)
+        assertThat(feedback.feedbackReceipt(scan)).isEqualTo("r".repeat(43))
 
-        repo.consumeFeedbackReceipt(scan)
-        assertThat(repo.feedbackReceipt(scan)).isNull()
+        feedback.consumeFeedbackReceipt(scan)
+        assertThat(feedback.feedbackReceipt(scan)).isNull()
     }
 
     @Test

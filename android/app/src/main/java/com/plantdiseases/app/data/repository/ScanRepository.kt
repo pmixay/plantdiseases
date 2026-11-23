@@ -3,25 +3,12 @@ package com.plantdiseases.app.data.repository
 import android.util.AtomicFile
 import com.google.gson.Gson
 import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
-import com.plantdiseases.app.auth.AuthenticationRequiredException
-import com.plantdiseases.app.data.account.AccountApiException
-import com.plantdiseases.app.data.local.ScanChatMessageDao
-import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
-import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
+import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.CapabilitiesResponse
-import com.plantdiseases.app.data.model.CarePlanRequest
-import com.plantdiseases.app.data.model.CarePlanResponse
-import com.plantdiseases.app.data.model.ChatRequest
-import com.plantdiseases.app.data.model.ChatResponse
-import com.plantdiseases.app.data.model.FeedbackRequest
-import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
-import com.plantdiseases.app.data.model.ProgressionRequest
-import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.model.diagnosticContractViolation
 import com.plantdiseases.app.data.model.effectiveAbstentionReason
@@ -30,60 +17,53 @@ import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.FeedbackReceiptStore
 import com.plantdiseases.app.util.NoOpFeedbackReceiptStore
-import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.SanitizedImage
 import com.plantdiseases.app.util.UploadImageSanitizer
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
-import io.ktor.client.request.delete
 import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
-import io.ktor.http.isSuccess
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
+/**
+ * Scans: analysis on the server, the local history and its stats, the
+ * retained analysis images that community publishing needs, the Aqua
+ * on-device model, capabilities, species identification and error reports.
+ * Community scans, the assistant features and feedback have their own
+ * repositories.
+ */
 class ScanRepository(
     private val scanDao: ScanDao,
     private val apiClient: PlantApiClient,
-    // Nullable so unit tests that exercise only the network / scan-history
-    // surface don't need a Room database. Chat persistence quietly no-ops
-    // when absent.
-    private val scanChatMessageDao: ScanChatMessageDao? = null,
     private val imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
     private val feedbackReceiptStore: FeedbackReceiptStore = NoOpFeedbackReceiptStore,
-    private val authRepository: AuthRepository? = null,
+    authRepository: AuthRepository? = null,
 ) {
     companion object {
         internal const val RETAINED_ANALYSIS_IMAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
         internal const val MAX_PENDING_ANALYSIS_IMAGES = 2
-        private const val HEADER_IDEMPOTENCY_KEY = "X-Idempotency-Key"
-        private const val HEADER_PLAN = "X-PlantDiseases-Plan"
-        private const val HEADER_QUOTA_LIMIT = "X-Quota-Limit"
-        private const val HEADER_QUOTA_REMAINING = "X-Quota-Remaining"
-        private const val HEADER_QUOTA_RESET_AT = "X-Quota-Reset-At"
     }
 
+    private val calls = AppApiCalls(authRepository)
     private val gson = Gson()
-    private val speciesRepository = SpeciesRepository(apiClient)
     private val retainedAnalysisImageLock = Any()
     private val pendingAnalysisImages = LinkedHashMap<PendingAnalysisImageKey, SanitizedImage>()
     private val scanArtifactMutex = Mutex()
@@ -93,131 +73,8 @@ class ScanRepository(
     // shared temp/model file and corrupt it.
     private val aquaSyncMutex = Mutex()
 
-    private suspend fun <T> authenticatedAppCall(
-        block: suspend (accessToken: String) -> T,
-    ): Result<T> {
-        val result = authRepository?.authenticatedCall(block)
-            ?: return Result.failure(AuthenticationRequiredException())
-        return result.fold(
-            onSuccess = { Result.success(it) },
-            onFailure = { error ->
-                Result.failure(
-                    when (error) {
-                        is SocketTimeoutException -> ServerTimeoutException()
-                        is UnknownHostException -> NoNetworkException()
-                        is java.net.ConnectException -> ServerTimeoutException()
-                        else -> error
-                    },
-                )
-            },
-        )
-    }
-
-    private fun io.ktor.client.request.HttpRequestBuilder.bearer(token: String) {
-        header(HttpHeaders.Authorization, "Bearer $token")
-    }
-
-    private fun io.ktor.client.request.HttpRequestBuilder.metered(
-        token: String?,
-        requestId: String,
-    ) {
-        token?.let { bearer(it) }
-        header(HEADER_IDEMPOTENCY_KEY, requestId)
-    }
-
-    /**
-     * Run one metered app request as the signed-in account when possible, or as
-     * a guest otherwise. A signed-in 401 is converted to the account client's
-     * refresh signal, so [AuthRepository] retries the block exactly once with a
-     * fresh Bearer token. Callers create their idempotency UUID outside this
-     * block; the refresh retry therefore reuses the same logical operation id.
-     */
-    private suspend fun optionalMeteredCall(
-        request: suspend (accessToken: String?) -> HttpResponse,
-    ): Result<HttpResponse> {
-        if (authRepository?.state?.value is AuthState.Authenticated) {
-            return authenticatedAppCall { token ->
-                val response = request(token)
-                if (response.status.value == 401) {
-                    throw AccountApiException(401, "auth_required")
-                }
-                response
-            }
-        }
-        return try {
-            Result.success(request(null))
-        } catch (_: SocketTimeoutException) {
-            Result.failure(ServerTimeoutException())
-        } catch (_: UnknownHostException) {
-            Result.failure(NoNetworkException())
-        } catch (_: java.net.ConnectException) {
-            Result.failure(ServerTimeoutException())
-        } catch (failure: Exception) {
-            Result.failure(failure)
-        }
-    }
-
-    /** Only quota denials carry the complete quota-header tuple. An ordinary
-     * anti-abuse 429 deliberately stays a [RateLimitException]. [feature] names
-     * the allowance so the limit dialog can say which one ran out; a request
-     * sent without a Bearer token was a guest's. */
-    private fun HttpResponse.meteredDenialOrNull(feature: MeteredFeature): Exception? {
-        val plan = headers[HEADER_PLAN]?.trim()?.takeIf { it.isNotEmpty() }
-        val limit = headers[HEADER_QUOTA_LIMIT]?.toIntOrNull()
-        val remaining = headers[HEADER_QUOTA_REMAINING]?.toIntOrNull()
-        val resetAt = headers[HEADER_QUOTA_RESET_AT]?.trim()?.takeIf { it.isNotEmpty() }
-        val guest = call.request.headers[HttpHeaders.Authorization] == null
-        return when {
-            status.value == 402 -> ProRequiredException(plan, limit, remaining, resetAt, feature, guest)
-            status.value == 429 &&
-                plan != null &&
-                limit != null &&
-                remaining != null &&
-                resetAt != null -> QuotaExhaustedException(plan, limit, remaining, resetAt, feature, guest)
-            else -> null
-        }
-    }
-
     private fun analysisFeature(family: String): MeteredFeature =
         if (family.equals("frontier", ignoreCase = true)) MeteredFeature.FRONTIER_ANALYSIS else MeteredFeature.ANALYSIS
-
-    private suspend inline fun <reified T> HttpResponse.protectedBody(): T {
-        if (status.value == 401) throw AccountApiException(401, "auth_required")
-        if (!status.isSuccess()) throw CommunityRequestException(status.value)
-        return body()
-    }
-
-    private suspend fun HttpResponse.requireProtectedSuccess() {
-        if (status.value == 401) throw AccountApiException(401, "auth_required")
-        if (!status.isSuccess()) throw CommunityRequestException(status.value)
-    }
-
-    /** Public community reads carry an account token when one is available so
-     * server-side block filtering follows the user across devices. Guests keep
-     * the same public read path. A signed-in 401 gets the standard one-time
-     * refresh/retry semantics through [authenticatedAppCall]. */
-    private suspend inline fun <reified T> optionalAccountGet(
-        crossinline request: suspend (accessToken: String?) -> HttpResponse,
-    ): Result<T> {
-        if (authRepository?.state?.value is AuthState.Authenticated) {
-            return authenticatedAppCall { token ->
-                request(token).protectedBody<T>()
-            }
-        }
-        return try {
-            val response = request(null)
-            if (!response.status.isSuccess()) {
-                throw CommunityRequestException(response.status.value)
-            }
-            Result.success(response.body<T>())
-        } catch (_: SocketTimeoutException) {
-            Result.failure(ServerTimeoutException())
-        } catch (_: UnknownHostException) {
-            Result.failure(NoNetworkException())
-        } catch (failure: Exception) {
-            Result.failure(failure)
-        }
-    }
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -242,7 +99,7 @@ class ScanRepository(
                 // 429/503 responses after quota may have been consumed.
                 val image = imageSanitizer.sanitize(imageFile)
                 val requestId = UUID.randomUUID().toString()
-                val response = optionalMeteredCall { token ->
+                val response = calls.optionalMeteredCall { token ->
                     apiClient.httpClient.post("api/analyze") {
                         metered(token, requestId)
                         url {
@@ -458,7 +315,7 @@ class ScanRepository(
             try {
                 val image = imageSanitizer.sanitize(imageFile)
                 val requestId = UUID.randomUUID().toString()
-                val response = optionalMeteredCall { token ->
+                val response = calls.optionalMeteredCall { token ->
                     apiClient.httpClient.post("api/identify") {
                         metered(token, requestId)
                         url {
@@ -506,285 +363,6 @@ class ScanRepository(
         }
 
     /**
-     * Fetch a watering / fertilising / humidity plan for a given disease +
-     * species + light tier. Always returns a usable plan when the server is
-     * reachable; LLM polish (`summaryMd`) is best-effort.
-     */
-    suspend fun fetchCarePlan(request: CarePlanRequest): Result<CarePlanResponse> =
-        withContext(Dispatchers.IO) {
-            // Care plans are deterministic per (disease, species, light, locale,
-            // season) and expensive to generate, so serve from the persistent
-            // cache once fetched — reopening a result no longer re-hits the LLM.
-            // `season` is part of the key: the server's plan differs by season
-            // (dormant stretches watering / pauses feeding), so an explicit
-            // season must not collide with another on the same cache entry.
-            // v3: the server's LLM summary now covers the follow-up checkpoint
-            // and red flags, so v2 entries hold a materially poorer plan for
-            // the rest of their week — re-fetch instead of serving it.
-            //
-            // A species-page plan is the same plan as a healthy scan's, so the
-            // two share an entry. A checklist plan has no AI summary: it reuses
-            // a cached full plan but is stored apart, so it never stands in for
-            // the full plan on the result or plant screens.
-            val planKey = "careplan:v3:${request.disease}|${request.species}" +
-                "|${request.light}|${request.locale}|${request.season ?: ""}"
-            val checklist = request.purpose == CarePlanRequest.PURPOSE_CHECKLIST
-            val cacheKey = if (checklist) "$planKey|checklist" else planKey
-            com.plantdiseases.app.util.ResponseCache
-                .get(planKey, CarePlanResponse::class.java)
-                ?.let { return@withContext Result.success(it) }
-            if (checklist) {
-                com.plantdiseases.app.util.ResponseCache
-                    .get(cacheKey, CarePlanResponse::class.java)
-                    ?.let { return@withContext Result.success(it) }
-            }
-            try {
-                val requestId = UUID.randomUUID().toString()
-                val response = optionalMeteredCall { token ->
-                    apiClient.httpClient.post("api/care-plan") {
-                        metered(token, requestId)
-                        contentType(ContentType.Application.Json)
-                        setBody(request)
-                    }
-                }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull(MeteredFeature.CARE_PLAN)?.let {
-                    return@withContext Result.failure(it)
-                }
-                when (response.status.value) {
-                    in 200..299 -> {
-                        val body = response.body<CarePlanResponse>()
-                        com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey,
-                            body,
-                            com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
-                        )
-                        Result.success(body)
-                    }
-                    503 -> Result.failure(ServerStartingException())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * No-photo symptom triage. Returns a ranked shortlist of likely
-     * conditions for the symptom questionnaire. Not cached — the input space
-     * is large and the call is cheap (rules-based, no LLM).
-     */
-    suspend fun diagnoseSymptoms(
-        request: com.plantdiseases.app.data.model.SymptomDiagnoseRequest,
-    ): Result<com.plantdiseases.app.data.model.SymptomDiagnoseResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.post("api/symptom-diagnose") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.SymptomDiagnoseResponse>(),
-                    )
-                    503 -> Result.failure(ServerStartingException())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    suspend fun communityBlocks(): Result<List<com.plantdiseases.app.data.model.CommunityBlockItem>> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.get("api/community/safety/blocks") {
-                    bearer(token)
-                }
-                response
-                    .protectedBody<com.plantdiseases.app.data.model.CommunityBlocksResponse>()
-                    .items
-            }
-        }
-
-    suspend fun unblockCommunityAuthor(blockId: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.delete(
-                    "api/community/safety/blocks/$blockId",
-                ) {
-                    bearer(token)
-                }
-                response.requireProtectedSuccess()
-            }
-        }
-
-    /**
-     * Send a single AI Plant Doctor turn. The server returns 200 OK
-     * even when no API key is configured or the per-session budget is
-     * exhausted; in that case the response carries `available=false`
-     * and a `reason` / `fallback` string for the UI to display.
-     *
-     * Network-level failures (no connectivity, timeout, unexpected
-     * status) come back as `Result.failure` so the caller can show a
-     * retry CTA.
-     */
-    suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val requestId = UUID.randomUUID().toString()
-                val response = optionalMeteredCall { token ->
-                    apiClient.httpClient.post("api/chat") {
-                        metered(token, requestId)
-                        contentType(ContentType.Application.Json)
-                        setBody(request)
-                    }
-                }.getOrElse { return@withContext Result.failure(it) }
-                response.meteredDenialOrNull(MeteredFeature.CHAT)?.let {
-                    return@withContext Result.failure(it)
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<ChatResponse>())
-                    429 -> Result.failure(RateLimitException())
-                    503 -> Result.failure(ServerStartingException())
-                    // Server rejected our payload (oversize diagnosis,
-                    // empty message, etc.). Surface as a generic
-                    // failure — the UI keeps a chat-level error toast.
-                    400 -> Result.failure(Exception("Bad request"))
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: java.net.ConnectException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * Compare the current scan to a previous one and ask the server
-     * for a worsening / improving / stable verdict. Both arguments
-     * should be the analyse-shaped dicts the client already has
-     * (typically built via `scanToProgressionPayload(scan)`).
-     */
-    /**
-     * Submit a thumbs-up / thumbs-down on a diagnosis.
-     *
-     * The server consumes a one-use receipt and updates the matching anonymous
-     * training sample. The endpoint is rate-limited — if the client posts
-     * faster than 1/sec the
-     * request lands as a 429 and we surface a RateLimitException so
-     * the UI can show a brief "try again in a moment" toast.
-     */
-    suspend fun submitFeedback(request: FeedbackRequest): Result<FeedbackResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.post("api/feedback") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<FeedbackResponse>())
-                    429 -> Result.failure(RateLimitException())
-                    503 -> Result.failure(ServerStartingException())
-                    409 -> Result.failure(FeedbackReceiptException())
-                    422 -> Result.failure(Exception("Invalid feedback payload"))
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: java.net.ConnectException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * Submit negative feedback and its sanitized image atomically. The receipt
-     * is one-use, so this replaces (rather than follows) the JSON-only route.
-     */
-    suspend fun uploadFeedbackImage(
-        request: FeedbackRequest,
-        imageFile: java.io.File,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            if (!imageFile.exists()) {
-                return@withContext Result.failure(Exception("Image file missing"))
-            }
-            val image = imageSanitizer.sanitize(imageFile)
-            val response = apiClient.httpClient.post("api/feedback/image") {
-                setBody(
-                    MultiPartFormDataContent(
-                        formData {
-                            append("feedback_receipt", request.feedbackReceipt)
-                            append("correct", request.correct.toString())
-                            request.correctedClass?.let { append("corrected_class", it) }
-                            request.reason?.let { append("reason", it) }
-                            append(
-                                "image",
-                                image.bytes,
-                                Headers.build {
-                                    append(HttpHeaders.ContentType, image.contentType)
-                                    append(
-                                        HttpHeaders.ContentDisposition,
-                                        "filename=\"${image.filename}\"",
-                                    )
-                                },
-                            )
-                        },
-                    ),
-                )
-            }
-            if (response.status.value in 200..299) {
-                Result.success(Unit)
-            } else {
-                when (response.status.value) {
-                    429 -> Result.failure(RateLimitException())
-                    503 -> Result.failure(ServerStartingException())
-                    409 -> Result.failure(FeedbackReceiptException())
-                    422 -> Result.failure(Exception("Invalid feedback payload"))
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.post("api/progression") {
-                    contentType(ContentType.Application.Json)
-                    setBody(request)
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<ProgressionResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /**
      * Build a server-shaped scan dict from a stored ScanEntity. Used
      * when constructing chat `diagnosis` context and progression
      * payloads — both endpoints accept the analyse response shape so
@@ -805,44 +383,6 @@ class ScanRepository(
             "abstention_reason" to effectiveAbstentionReason,
         )
     }
-
-    class ServerTimeoutException : Exception("Server is not responding")
-    class NoNetworkException : Exception("No network connection")
-    class RateLimitException : Exception("Server is busy, please wait")
-
-    /** Which daily allowance a metered request spends. */
-    enum class MeteredFeature { ANALYSIS, FRONTIER_ANALYSIS, IDENTIFICATION, CHAT, CARE_PLAN, OTHER }
-
-    class ProRequiredException(
-        val plan: String?,
-        val limit: Int?,
-        val remaining: Int?,
-        val resetAt: String?,
-        val feature: MeteredFeature = MeteredFeature.OTHER,
-        val guest: Boolean = false,
-    ) : Exception("PlantDiseases PRO is required")
-
-    class QuotaExhaustedException(
-        val plan: String,
-        val limit: Int,
-        val remaining: Int,
-        val resetAt: String,
-        val feature: MeteredFeature = MeteredFeature.OTHER,
-        val guest: Boolean = false,
-    ) : Exception("Daily $plan quota exhausted")
-
-    class ServerStartingException : Exception("Server is starting / pipeline unavailable")
-    class ModelUnavailableException(
-        val family: String,
-        val reason: String?,
-        val serverMessage: String?,
-    ) : Exception("Model family $family is unavailable${reason?.let { ": $it" }.orEmpty()}")
-    class InvalidAnalysisResponseException(
-        val violation: String,
-    ) : Exception("Analysis response violated the diagnostic contract: $violation")
-    class UnsupportedImageException : Exception("Unsupported image format")
-    class FeedbackReceiptException : Exception("Feedback receipt is unavailable")
-    class CommunityRequestException(val statusCode: Int) : Exception("Community request failed: $statusCode")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
@@ -941,12 +481,6 @@ class ScanRepository(
             rowId
         }
 
-    fun feedbackReceipt(scan: ScanEntity): String? = feedbackReceiptStore.get(scan.id.toString())
-
-    fun consumeFeedbackReceipt(scan: ScanEntity) {
-        feedbackReceiptStore.remove(scan.id.toString())
-    }
-
     /** Parse stored regions JSON back into a list of DetectionRegion. */
     fun parseRegions(json: String?): List<com.plantdiseases.app.data.model.DetectionRegion> {
         if (json.isNullOrEmpty()) return emptyList()
@@ -984,23 +518,6 @@ class ScanRepository(
             scanDao.getScanByClientScanId(clientScanId)
         }
 
-    /** Record an authenticated view. Guests browse without creating a row. */
-    suspend fun recordCommunityView(scanId: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/view") {
-                    bearer(token)
-                    contentType(ContentType.Application.Json)
-                    setBody(
-                        com.plantdiseases.app.data.model.CommunityViewRequest(
-                            scanId = scanId,
-                        ),
-                    )
-                }
-                response.requireProtectedSuccess()
-            }
-        }
-
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
         scanArtifactMutex.withLock {
@@ -1012,28 +529,6 @@ class ScanRepository(
             }
             feedbackReceiptStore.remove(id.toString())
             scanDao.deleteById(id)
-        }
-    }
-
-    // ─── AI Plant Doctor chat persistence (scan-keyed sessions) ──────
-
-    /** Persisted transcript for a scan-keyed AI Plant Doctor session. */
-    suspend fun getChatMessages(scanId: Long): List<ScanChatMessageEntity> =
-        withContext(Dispatchers.IO) {
-            scanChatMessageDao?.getForScan(scanId) ?: emptyList()
-        }
-
-    /** Append one message to a scan-keyed chat transcript. */
-    suspend fun saveChatMessage(entity: ScanChatMessageEntity) {
-        withContext(Dispatchers.IO) {
-            scanChatMessageDao?.insert(entity)
-        }
-    }
-
-    /** Drop the persisted transcript for a scan-keyed chat. */
-    suspend fun clearChat(scanId: Long) {
-        withContext(Dispatchers.IO) {
-            scanChatMessageDao?.deleteForScan(scanId)
         }
     }
 
@@ -1326,216 +821,4 @@ class ScanRepository(
             emptyList()
         }
     }
-
-    // ─── Community (similar scans in your region) ────────────────────
-
-    /**
-     * Upload one community-shared scan. Best-effort: any failure
-     * (network, server, validation) is logged but never thrown — a
-     * failed upload must not block the user's normal scan flow.
-     *
-     * The caller must send the retained /api/analyze image bytes; see
-     * [CommunityUploader.uploadIfEnabled]. The publication capability is
-     * SHA-bound, so a separately encoded thumbnail is never valid here.
-     */
-    suspend fun uploadCommunityScan(
-        scanId: String,
-        country: String? = null,
-        region: String = "",
-        lat: Double? = null,
-        lon: Double? = null,
-        disease: String,
-        confidence: Float? = null,
-        species: String? = null,
-        speciesScore: Float? = null,
-        locale: String? = null,
-        analysisImage: SanitizedImage,
-    ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
-        withContext(Dispatchers.IO) {
-            authenticatedAppCall { token ->
-                val response = apiClient.httpClient.post("api/community/scan") {
-                    bearer(token)
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                // Required fields (callers always supply these).
-                                append("scan_id", scanId)
-                                country?.takeIf { it.isNotBlank() }?.let { append("country", it) }
-                                append("disease", disease)
-                                // Optional fields — only sent when present/non-blank,
-                                // matching the old `text()` helper exactly.
-                                region.takeIf { it.isNotBlank() }?.let { append("region", it) }
-                                lat?.let { append("lat", it.toString()) }
-                                lon?.let { append("lon", it.toString()) }
-                                confidence?.let { append("confidence", it.toString()) }
-                                species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
-                                speciesScore?.let { append("species_score", it.toString()) }
-                                locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
-                                append(
-                                    "image",
-                                    analysisImage.bytes,
-                                    Headers.build {
-                                        append(HttpHeaders.ContentType, "image/jpeg")
-                                        append(
-                                            HttpHeaders.ContentDisposition,
-                                            "filename=\"${analysisImage.filename}\"",
-                                        )
-                                    },
-                                )
-                            },
-                        ),
-                    )
-                }
-                response.protectedBody<com.plantdiseases.app.data.model.CommunityScanUploadResponse>()
-            }
-        }
-
-    /** Fetch the most recent community scans in a country (optionally
-     *  narrowed to one sub-country region, one disease, and one
-     *  scientific-name species). The species filter is the key
-     *  reason this carousel feels relevant — without it the user sees
-     *  "leaf spot on Monstera" next to "leaf spot on Ficus" and the
-     *  care advice is wildly different. */
-    suspend fun communityNearby(
-        country: String? = null,
-        region: String? = null,
-        lat: Double? = null,
-        lon: Double? = null,
-        disease: String?,
-        species: String? = null,
-        limit: Int = 12,
-        scope: String? = null,
-        // `recent` (default) or `recommended`. The server rejects anything
-        // else with 422, and pairs both orders with the opaque `cursor`
-        // below — there is no `before` timestamp cursor any more, because
-        // recommendation order is score + time + id, not time alone.
-        ranking: String? = null,
-        cursor: String? = null,
-    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
-        withContext(Dispatchers.IO) {
-            optionalAccountGet { token ->
-                apiClient.httpClient.get("api/community/nearby") {
-                    token?.let { bearer(it) }
-                    country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
-                    region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
-                    lat?.let { parameter("lat", it) }
-                    lon?.let { parameter("lon", it) }
-                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
-                    species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
-                    scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
-                    ranking?.takeIf { it.isNotBlank() }?.let { parameter("ranking", it) }
-                    cursor?.takeIf { it.isNotBlank() }?.let { parameter("cursor", it) }
-                    parameter("limit", limit)
-                }
-            }
-        }
-
-    /** Individual community scans inside a map bbox (zoomed-in markers). */
-    suspend fun communityMap(
-        minLat: Double,
-        minLon: Double,
-        maxLat: Double,
-        maxLon: Double,
-        disease: String? = null,
-        days: Int = 30,
-        limit: Int = 300,
-    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
-        withContext(Dispatchers.IO) {
-            optionalAccountGet { token ->
-                apiClient.httpClient.get("api/community/map") {
-                    token?.let { bearer(it) }
-                    parameter("min_lat", minLat)
-                    parameter("min_lon", minLon)
-                    parameter("max_lat", maxLat)
-                    parameter("max_lon", maxLon)
-                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
-                    parameter("days", days)
-                    parameter("limit", limit)
-                }
-            }
-        }
-
-    /** K-anonymized scan density for the zoomed-out map heat layer. */
-    suspend fun communityHeatmap(
-        minLat: Double,
-        minLon: Double,
-        maxLat: Double,
-        maxLon: Double,
-        disease: String? = null,
-        days: Int = 30,
-    ): Result<com.plantdiseases.app.data.model.CommunityHeatmapResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/heatmap") {
-                    parameter("min_lat", minLat)
-                    parameter("min_lon", minLon)
-                    parameter("max_lat", maxLat)
-                    parameter("max_lon", maxLon)
-                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
-                    parameter("days", days)
-                }
-                when (response.status.value) {
-                    in 200..299 -> Result.success(
-                        response.body<com.plantdiseases.app.data.model.CommunityHeatmapResponse>(),
-                    )
-                    else -> Result.failure(
-                        Exception("Community heatmap failed: ${response.status.value}"),
-                    )
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /** Localized Wikipedia blurb + lead image for a scientific name. */
-    suspend fun getSpeciesInfo(
-        name: String,
-        locale: String,
-    ): Result<com.plantdiseases.app.data.model.SpeciesInfoResponse> =
-        speciesRepository.getSpeciesInfo(name, locale)
-
-    /** Read a cached species-diseases list without hitting the network. */
-    suspend fun cachedSpeciesDiseases(
-        name: String,
-        locale: String,
-    ): com.plantdiseases.app.data.model.SpeciesDiseasesResponse? =
-        speciesRepository.cachedSpeciesDiseases(name, locale)
-
-    /** Conditions a species is commonly affected by (AI, best-effort). */
-    suspend fun fetchSpeciesDiseases(
-        name: String,
-        common: String?,
-        locale: String,
-    ): Result<com.plantdiseases.app.data.model.SpeciesDiseasesResponse> =
-        speciesRepository.fetchSpeciesDiseases(name, common, locale)
-
-    /** Flowering and native-range profile (AI, best-effort). */
-    suspend fun fetchSpeciesProfile(
-        name: String,
-        common: String?,
-        locale: String,
-    ): Result<com.plantdiseases.app.data.model.SpeciesProfileResponse> =
-        speciesRepository.fetchSpeciesProfile(name, common, locale)
-
-    /** Community scans of one species (scientific name), across regions. */
-    /** Community scans of one species. A member's coarse location orders them
-     *  nearest first (server-side); without it they span all regions. */
-    suspend fun communityScansBySpecies(
-        species: String,
-        limit: Int = 12,
-        region: ResolvedRegion? = null,
-    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
-        withContext(Dispatchers.IO) {
-            optionalAccountGet { token ->
-                apiClient.httpClient.get("api/community/by-species") {
-                    token?.let { bearer(it) }
-                    parameter("species", species)
-                    parameter("limit", limit)
-                    region?.country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
-                    region?.locality?.let { parameter("region", it) }
-                    region?.lat?.let { parameter("lat", it) }
-                    region?.lon?.let { parameter("lon", it) }
-                }
-            }
-        }
 }

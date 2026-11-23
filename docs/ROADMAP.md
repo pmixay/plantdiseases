@@ -206,8 +206,6 @@ Each item is its own PR; don't fold one into another.
 
 **Android**
 
-- [ ] **Split `ScanRepository` (~1,700 lines)** by context (species already moved to
-      `SpeciesRepository`); ~34 dependents.
 - [ ] **Replace programmatic view construction.** `DetailExtraCardsController`
       (~1,330) and `CarePlanCardView` (~1,180) build hierarchies in code with
       hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
@@ -222,7 +220,7 @@ Each item is its own PR; don't fold one into another.
 - [ ] **DAOs returning `Flow`.** Today screens re-read on resume, which is the root
       of the 17 `launch(start = UNDISPATCHED)` sites. `GardenAttachController.
       attachScanToPlant` can lose the attach if the activity finishes mid-write.
-      One screen per PR, after the `ScanRepository` split.
+      One screen per PR.
 - [ ] **Ratchet detekt down** as splits land (LongMethod 210, LargeClass 1300 in
       `android/config/detekt/detekt.yml`; its "worst today" comment is stale).
       `GuideDataProvider.kt` stays excluded until it stops being a content blob.

@@ -56,8 +56,8 @@ class SpeciesInfoCardView @JvmOverloads constructor(
     defStyle: Int = 0,
 ) : MaterialCardView(context, attrs, defStyle) {
 
-    private val scanRepository by lazy(LazyThreadSafetyMode.NONE) {
-        appEntryPoint(context).scanRepository()
+    private val speciesRepository by lazy(LazyThreadSafetyMode.NONE) {
+        appEntryPoint(context).speciesRepository()
     }
 
     private val photo: ImageView
@@ -182,7 +182,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
         token: Int,
     ) {
         scope.launch {
-            val info = scanRepository
+            val info = speciesRepository
                 .getSpeciesInfo(scientific, if (isRu) "ru" else "en")
                 .getOrNull()
                 ?.takeIf { it.available }

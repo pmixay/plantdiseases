@@ -11,7 +11,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.billing.ProUi
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.MeteredFeature
+import com.plantdiseases.app.data.repository.ProRequiredException
+import com.plantdiseases.app.data.repository.QuotaExhaustedException
 import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.pro.ProActivity
 import java.time.Duration
@@ -102,33 +104,33 @@ private data class FeatureLimitCopy(
     @DrawableRes val icon: Int,
 )
 
-private fun ScanRepository.MeteredFeature.limitCopy(): FeatureLimitCopy = when (this) {
-    ScanRepository.MeteredFeature.ANALYSIS -> FeatureLimitCopy(
+private fun MeteredFeature.limitCopy(): FeatureLimitCopy = when (this) {
+    MeteredFeature.ANALYSIS -> FeatureLimitCopy(
         R.string.metered_quota_title_analysis,
         R.string.metered_quota_body_analysis,
         R.drawable.ic_scan,
     )
-    ScanRepository.MeteredFeature.FRONTIER_ANALYSIS -> FeatureLimitCopy(
+    MeteredFeature.FRONTIER_ANALYSIS -> FeatureLimitCopy(
         R.string.metered_quota_title_frontier,
         R.string.metered_quota_body_frontier,
         R.drawable.ic_sparkle,
     )
-    ScanRepository.MeteredFeature.IDENTIFICATION -> FeatureLimitCopy(
+    MeteredFeature.IDENTIFICATION -> FeatureLimitCopy(
         R.string.metered_quota_title_identify,
         R.string.metered_quota_body_identify,
         R.drawable.ic_search,
     )
-    ScanRepository.MeteredFeature.CHAT -> FeatureLimitCopy(
+    MeteredFeature.CHAT -> FeatureLimitCopy(
         R.string.metered_quota_title_chat,
         R.string.metered_quota_body_chat,
         R.drawable.ic_doctor_chat,
     )
-    ScanRepository.MeteredFeature.CARE_PLAN -> FeatureLimitCopy(
+    MeteredFeature.CARE_PLAN -> FeatureLimitCopy(
         R.string.metered_quota_title_care_plan,
         R.string.metered_quota_body_care_plan,
         R.drawable.ic_care,
     )
-    ScanRepository.MeteredFeature.OTHER -> FeatureLimitCopy(
+    MeteredFeature.OTHER -> FeatureLimitCopy(
         R.string.metered_quota_title,
         R.string.metered_quota_body,
         R.drawable.ic_clock,
@@ -140,10 +142,10 @@ internal fun meteredDialogPolicy(
     proOffered: Boolean = ProUi.ENABLED,
 ): MeteredDialogPolicy? = when {
     proOffered -> proMeteredDialogPolicy(error)
-    error is ScanRepository.ProRequiredException ->
+    error is ProRequiredException ->
         // A zero allowance: today that is a guest asking for an account-only option.
         MeteredDialogPolicy(
-            title = if (error.feature == ScanRepository.MeteredFeature.FRONTIER_ANALYSIS) {
+            title = if (error.feature == MeteredFeature.FRONTIER_ANALYSIS) {
                 R.string.metered_unavailable_title_frontier
             } else {
                 R.string.metered_pro_active_unavailable_title
@@ -156,7 +158,7 @@ internal fun meteredDialogPolicy(
             icon = R.drawable.ic_lock,
             offerSignIn = true,
         )
-    error is ScanRepository.QuotaExhaustedException -> {
+    error is QuotaExhaustedException -> {
         val copy = error.feature.limitCopy()
         MeteredDialogPolicy(
             title = copy.title,
@@ -173,7 +175,7 @@ internal fun meteredDialogPolicy(
 }
 
 private fun proMeteredDialogPolicy(error: Throwable): MeteredDialogPolicy? = when (error) {
-    is ScanRepository.ProRequiredException -> {
+    is ProRequiredException -> {
         val proPlan = error.plan.isProPlan()
         MeteredDialogPolicy(
             title = if (proPlan) {
@@ -191,7 +193,7 @@ private fun proMeteredDialogPolicy(error: Throwable): MeteredDialogPolicy? = whe
             resetAt = error.resetAt?.trim()?.takeIf(String::isNotEmpty),
         )
     }
-    is ScanRepository.QuotaExhaustedException -> {
+    is QuotaExhaustedException -> {
         val proPlan = error.plan.isProPlan()
         MeteredDialogPolicy(
             title = R.string.metered_quota_title,

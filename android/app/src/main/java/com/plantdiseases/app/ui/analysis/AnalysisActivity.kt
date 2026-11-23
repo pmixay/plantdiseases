@@ -22,7 +22,16 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.diagnosticContractViolation
 import com.plantdiseases.app.data.model.isEffectivelyAbstained
 import com.plantdiseases.app.data.repository.CareRepository
+import com.plantdiseases.app.data.repository.InvalidAnalysisResponseException
+import com.plantdiseases.app.data.repository.ModelUnavailableException
+import com.plantdiseases.app.data.repository.NoNetworkException
+import com.plantdiseases.app.data.repository.ProRequiredException
+import com.plantdiseases.app.data.repository.QuotaExhaustedException
+import com.plantdiseases.app.data.repository.RateLimitException
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.ServerStartingException
+import com.plantdiseases.app.data.repository.ServerTimeoutException
+import com.plantdiseases.app.data.repository.UnsupportedImageException
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.common.MeteredAccessUi
 import com.plantdiseases.app.ui.result.ResultActivity
@@ -211,14 +220,14 @@ class AnalysisActivity : AppCompatActivity() {
                             getString(R.string.image_decode_error_detail),
                         )
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
+                    is com.plantdiseases.app.data.repository.ServerTimeoutException -> {
                         TelemetryReporter.report("analyze", "timeout", family = family.id)
                         showError(
                             getString(R.string.server_not_responding),
                             getString(R.string.server_not_responding_detail),
                         )
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
+                    is com.plantdiseases.app.data.repository.NoNetworkException -> {
                         // Offline — but if the on-device Aqua model is
                         // installed, answer with it instead of failing.
                         // (Had Aqua been the selected family we'd have run
@@ -251,12 +260,12 @@ class AnalysisActivity : AppCompatActivity() {
                             )
                         }
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
+                    is com.plantdiseases.app.data.repository.RateLimitException -> {
                         TelemetryReporter.report("analyze", "rate_limited", family = family.id)
                         showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.ProRequiredException,
-                    is com.plantdiseases.app.data.repository.ScanRepository.QuotaExhaustedException -> {
+                    is com.plantdiseases.app.data.repository.ProRequiredException,
+                    is com.plantdiseases.app.data.repository.QuotaExhaustedException -> {
                         TelemetryReporter.report("analyze", "quota_denied", family = family.id)
                         showError(
                             getString(MeteredAccessUi.title(error)),
@@ -264,28 +273,28 @@ class AnalysisActivity : AppCompatActivity() {
                         )
                         MeteredAccessUi.showDialog(this@AnalysisActivity, error)
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException -> {
+                    is com.plantdiseases.app.data.repository.ServerStartingException -> {
                         TelemetryReporter.report("analyze", "server_starting", family = family.id)
                         showError(
                             getString(R.string.server_starting),
                             getString(R.string.server_starting_detail),
                         )
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.ModelUnavailableException -> {
+                    is com.plantdiseases.app.data.repository.ModelUnavailableException -> {
                         TelemetryReporter.report("analyze", "model_unavailable", family = error.family)
                         showError(
                             getString(R.string.model_unavailable_title),
                             getString(R.string.model_unavailable_detail),
                         )
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException -> {
+                    is com.plantdiseases.app.data.repository.UnsupportedImageException -> {
                         TelemetryReporter.report("analyze", "unsupported_image", family = family.id)
                         showError(
                             getString(R.string.unsupported_image_title),
                             getString(R.string.unsupported_image_detail),
                         )
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.InvalidAnalysisResponseException -> {
+                    is com.plantdiseases.app.data.repository.InvalidAnalysisResponseException -> {
                         TelemetryReporter.report("analyze", "invalid_envelope", family = family.id)
                         showError(
                             getString(R.string.analysis_contract_error_title),

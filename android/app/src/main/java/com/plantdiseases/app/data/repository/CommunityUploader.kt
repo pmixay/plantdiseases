@@ -9,10 +9,8 @@ import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
 import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.UploadImageSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,7 +23,7 @@ import kotlinx.coroutines.withContext
  *      enables community in-context; see [CommunityPrefs]).
  *   2. Load the exact metadata-free JPEG bytes submitted to /api/analyze.
  *      Publication is SHA-bound, so a second JPEG encode is invalid.
- *   3. POST the row + retained image via [ScanRepository.uploadCommunityScan].
+ *   3. POST the row + retained image via [CommunityScanRepository.uploadCommunityScan].
  *      Location is client-supplied (coarse country/city + rounded coords);
  *      there is no server-side IP geolocation. Only scans with a
  *      server-issued scan_id are shared — on-device Aqua scans stay private.
@@ -36,12 +34,8 @@ import kotlinx.coroutines.withContext
 class CommunityUploader(
     private val context: Context,
     private val scanRepository: ScanRepository,
+    private val communityScans: CommunityScanRepository,
     private val authRepository: AuthRepository,
-    // Source-compatible until the independently owned DI module is updated.
-    // Never call this here: a second encode cannot satisfy the server's
-    // byte-for-byte /api/analyze publication binding.
-    @Suppress("UNUSED_PARAMETER")
-    imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
 ) {
     suspend fun uploadIfEnabled(
         scan: ScanEntity,
@@ -92,7 +86,7 @@ class CommunityUploader(
         // was taken so it can be grouped by the 30 km nearby radius.
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
-        val result = scanRepository.uploadCommunityScan(
+        val result = communityScans.uploadCommunityScan(
             scanId = scanId,
             country = region?.country,
             region = region?.locality.orEmpty(),

@@ -35,7 +35,9 @@ import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.data.repository.SpeciesRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
@@ -88,7 +90,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySpeciesDetailBinding
 
     @Inject
-    lateinit var scanRepository: ScanRepository
+    lateinit var speciesRepository: SpeciesRepository
+
+    @Inject
+    lateinit var communityScans: CommunityScanRepository
+
+    @Inject
+    lateinit var assistantRepository: AssistantRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -550,7 +558,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             preview = true,
             onClick = { item, thumb ->
                 if (openScanPhoto(this, item, thumb) && item.scanId.isNotBlank()) {
-                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId) }
+                    lifecycleScope.launch { communityScans.recordCommunityView(item.scanId) }
                 }
             },
         )
@@ -579,7 +587,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             } else {
                 null
             }
-            scanRepository.communityScansBySpecies(scientificName, region = region)
+            communityScans.communityScansBySpecies(scientificName, region = region)
                 .onSuccess { resp ->
                     adapter.submit(resp.items)
                     binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
@@ -603,7 +611,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             // Cached per (name, locale) — reopening the same species serves
             // the stored Wikipedia blurb/photo instead of re-fetching.
-            val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
+            val info = speciesRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
             hasSpeciesContent = info?.available == true
             applySavedDataNote()
@@ -711,7 +719,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val speciesDisplay = commonName ?: scientificName
         careCard.showLoading(speciesDisplay)
         lifecycleScope.launch {
-            val plan = scanRepository.fetchCarePlan(
+            val plan = assistantRepository.fetchCarePlan(
                 CarePlanRequest(
                     disease = "healthy",
                     species = scientificName,
@@ -852,7 +860,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Peek the client cache first: a previously-opened species renders
             // instantly with NO loading flash, so reopening clearly feels cached
             // rather than re-fetched. Only a genuine miss shows the loading state.
-            val cached = scanRepository.cachedSpeciesDiseases(scientificName, locale)
+            val cached = speciesRepository.cachedSpeciesDiseases(scientificName, locale)
             if (cached != null) {
                 // Render straight from the client cache — either a real AI list
                 // or a cached "unavailable" marker that renders the bundled
@@ -871,7 +879,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // time) AI lookup reads as "finding problems…", not an empty gap.
             binding.tvDiseasesTitle.visibility = View.VISIBLE
             binding.pbDiseases.visibility = View.VISIBLE
-            val resp = scanRepository
+            val resp = speciesRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
             val aiItems = if (resp?.available == true) {
@@ -894,7 +902,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun loadSpeciesProfile() {
         showSpeciesProfileLoading()
         lifecycleScope.launch {
-            val profile = scanRepository
+            val profile = speciesRepository
                 .fetchSpeciesProfile(scientificName, commonName, locale)
                 .getOrNull()
             if (profile?.available != true) {

@@ -14,7 +14,8 @@ import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.model.ModNotice
 import com.plantdiseases.app.data.repository.ForumRepository
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.NoNetworkException
+import com.plantdiseases.app.data.repository.ServerTimeoutException
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 
@@ -137,8 +138,8 @@ object ForumUi {
         val res = when (error) {
             is AuthenticationRequiredException -> R.string.community_sign_in_required
             is AccountApiException -> R.string.community_sign_in_required
-            is ScanRepository.NoNetworkException -> R.string.forum_error_offline
-            is ScanRepository.ServerTimeoutException -> R.string.forum_error_offline
+            is NoNetworkException -> R.string.forum_error_offline
+            is ServerTimeoutException -> R.string.forum_error_offline
             is ForumRepository.ForumException -> errorRes(error.code)
             else -> R.string.forum_error_generic
         }

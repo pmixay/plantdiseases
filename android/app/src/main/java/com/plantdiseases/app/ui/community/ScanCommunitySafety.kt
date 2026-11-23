@@ -8,7 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
 import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.util.CommunityPrefs
 import kotlinx.coroutines.launch
@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  */
 class ScanCommunitySafety(
     private val activity: AppCompatActivity,
-    private val scanRepository: ScanRepository,
+    private val communityScans: CommunityScanRepository,
     private val quickSignIn: QuickSignIn,
     private val onChanged: () -> Unit,
 ) {
@@ -58,7 +58,7 @@ class ScanCommunitySafety(
     private fun showBlockedAuthors() {
         if (!quickSignIn.require()) return
         activity.lifecycleScope.launch {
-            scanRepository.communityBlocks()
+            communityScans.communityBlocks()
                 .onSuccess { blocks ->
                     if (blocks.isEmpty()) {
                         toast(R.string.community_blocks_empty)
@@ -84,7 +84,7 @@ class ScanCommunitySafety(
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_unblock_confirm) { _, _ ->
                 activity.lifecycleScope.launch {
-                    scanRepository.unblockCommunityAuthor(blockId)
+                    communityScans.unblockCommunityAuthor(blockId)
                         .onSuccess {
                             toast(R.string.community_author_unblocked)
                             onChanged()

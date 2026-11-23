@@ -32,6 +32,10 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
+import com.plantdiseases.app.data.repository.FeedbackRepository
+import com.plantdiseases.app.data.repository.SpeciesRepository
 import com.plantdiseases.app.util.AccountDisclosurePrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStateStore
@@ -242,11 +246,37 @@ object AppModule {
     ): ScanRepository = ScanRepository(
         database.scanDao(),
         apiClient,
-        database.scanChatMessageDao(),
         imageSanitizer,
         feedbackReceiptStore,
         authRepository,
     )
+
+    @Provides
+    @Singleton
+    fun provideCommunityScanRepository(
+        apiClient: PlantApiClient,
+        authRepository: AuthRepository,
+    ): CommunityScanRepository = CommunityScanRepository(apiClient, authRepository)
+
+    @Provides
+    @Singleton
+    fun provideAssistantRepository(
+        database: AppDatabase,
+        apiClient: PlantApiClient,
+        authRepository: AuthRepository,
+    ): AssistantRepository = AssistantRepository(apiClient, authRepository, database.scanChatMessageDao())
+
+    @Provides
+    @Singleton
+    fun provideFeedbackRepository(
+        apiClient: PlantApiClient,
+        imageSanitizer: UploadImageSanitizer,
+        feedbackReceiptStore: FeedbackReceiptStore,
+    ): FeedbackRepository = FeedbackRepository(apiClient, imageSanitizer, feedbackReceiptStore)
+
+    @Provides
+    @Singleton
+    fun provideSpeciesRepository(apiClient: PlantApiClient): SpeciesRepository = SpeciesRepository(apiClient)
 
     @Provides
     @Singleton
@@ -295,13 +325,13 @@ object AppModule {
     fun provideCommunityUploader(
         @ApplicationContext context: Context,
         scanRepository: ScanRepository,
+        communityScans: CommunityScanRepository,
         authRepository: AuthRepository,
-        imageSanitizer: UploadImageSanitizer,
     ): CommunityUploader = CommunityUploader(
         context,
         scanRepository,
+        communityScans,
         authRepository,
-        imageSanitizer,
     )
 
     @Provides

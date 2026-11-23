@@ -9,7 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Species metadata lookups and their persistent cache policy. */
-internal class SpeciesRepository(private val apiClient: PlantApiClient) {
+class SpeciesRepository(private val apiClient: PlantApiClient) {
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     suspend fun getSpeciesInfo(
         name: String,

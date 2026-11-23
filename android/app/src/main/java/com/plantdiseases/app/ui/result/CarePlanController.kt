@@ -10,6 +10,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
@@ -26,7 +27,7 @@ import kotlinx.coroutines.launch
 class CarePlanController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val scanRepository: ScanRepository,
+    private val assistant: AssistantRepository,
     private val plantRepository: PlantRepository,
     private val reviewManager: InAppReviewManager,
 ) {
@@ -96,7 +97,7 @@ class CarePlanController(
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
             )
-            scanRepository.fetchCarePlan(request).onSuccess { plan ->
+            assistant.fetchCarePlan(request).onSuccess { plan ->
                 view.bind(
                     plan = plan,
                     speciesDisplay = speciesDisplay,

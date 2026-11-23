@@ -8,7 +8,6 @@ import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.SpeciesProfileResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
-import com.plantdiseases.app.testutil.FakeScanDao
 import com.plantdiseases.app.util.ResponseCache
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -21,13 +20,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 
-/** Regression coverage through ScanRepository's public species API. */
+/** Regression coverage of SpeciesRepository and its disk cache. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class SpeciesRepositoryNetworkTest {
     private lateinit var server: MockWebServer
     private lateinit var client: PlantApiClient
-    private lateinit var repository: ScanRepository
+    private lateinit var repository: SpeciesRepository
     private lateinit var cacheDirectory: File
 
     @Before
@@ -38,7 +37,7 @@ class SpeciesRepositoryNetworkTest {
         ResponseCache.init(context)
         server = MockWebServer().apply { start() }
         client = PlantApiClient(server.url("/").toString())
-        repository = ScanRepository(FakeScanDao(), client)
+        repository = SpeciesRepository(client)
     }
 
     @After
@@ -53,7 +52,7 @@ class SpeciesRepositoryNetworkTest {
         val cached = SpeciesInfoResponse(available = true, title = "Cached ficus")
         ResponseCache.put("species:v4:ficus elastica|en", cached, ResponseCache.TTL_SPECIES_MS)
 
-        val result = ScanRepository(FakeScanDao(), client).getSpeciesInfo(" Ficus elastica ", "en")
+        val result = SpeciesRepository(client).getSpeciesInfo(" Ficus elastica ", "en")
 
         assertThat(result.getOrThrow()).isEqualTo(cached)
         assertThat(server.requestCount).isEqualTo(0)
@@ -108,7 +107,7 @@ class SpeciesRepositoryNetworkTest {
         enqueueJson("""{"available":false,"species":"Ficus elastica"}""")
         val response = repository.fetchSpeciesDiseases("Ficus elastica", "Rubber plant", "en").getOrThrow()
 
-        assertThat(ScanRepository(FakeScanDao(), client).cachedSpeciesDiseases("Ficus elastica", "en"))
+        assertThat(SpeciesRepository(client).cachedSpeciesDiseases("Ficus elastica", "en"))
             .isEqualTo(response)
         assertThat(cacheDirectory.listFiles()!!.single().readText())
             .contains("\"ttlMs\":${ResponseCache.TTL_SPECIES_MISS_MS}")

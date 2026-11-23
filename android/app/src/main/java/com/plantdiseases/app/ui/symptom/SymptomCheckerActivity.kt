@@ -20,7 +20,7 @@ import com.google.android.material.chip.ChipGroup
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.model.SymptomResult
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.databinding.ActivitySymptomCheckerBinding
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
@@ -46,7 +46,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySymptomCheckerBinding
 
     @Inject
-    lateinit var scanRepository: ScanRepository
+    lateinit var assistantRepository: AssistantRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -244,7 +244,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
         binding.symptomProgress.visibility = View.VISIBLE
         val locale = LocaleHelper.getSavedLanguage(this)
         lifecycleScope.launch {
-            val result = scanRepository.diagnoseSymptoms(
+            val result = assistantRepository.diagnoseSymptoms(
                 SymptomDiagnoseRequest(answers = LinkedHashMap(answers), locale = locale),
             )
             if (isFinishing || isDestroyed) return@launch

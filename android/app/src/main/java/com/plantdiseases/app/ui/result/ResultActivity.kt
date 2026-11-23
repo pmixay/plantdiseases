@@ -29,6 +29,9 @@ import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.data.repository.FeedbackRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -74,6 +77,15 @@ class ResultActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var assistantRepository: AssistantRepository
+
+    @Inject
+    lateinit var feedbackRepository: FeedbackRepository
+
+    @Inject
+    lateinit var communityScanRepository: CommunityScanRepository
+
+    @Inject
     lateinit var onboardingState: OnboardingStateStore
 
     @Inject
@@ -109,13 +121,14 @@ class ResultActivity : AppCompatActivity() {
 
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
     private val carePlan by lazy {
-        CarePlanController(this, binding, scanRepository, plantRepository, reviewManager)
+        CarePlanController(this, binding, assistantRepository, plantRepository, reviewManager)
     }
     private val feedback by lazy {
         FeedbackController(
             this,
             binding,
             scanRepository,
+            feedbackRepository,
             privacyConsentPrefs,
             reviewManager,
         )
@@ -126,6 +139,7 @@ class ResultActivity : AppCompatActivity() {
             binding,
             plantRepository,
             scanRepository,
+            assistantRepository,
             careRepository,
             reviewManager,
         )
@@ -140,6 +154,7 @@ class ResultActivity : AppCompatActivity() {
             this,
             binding,
             scanRepository,
+            communityScanRepository,
             authRepository,
             connectivity,
             communityJoin,

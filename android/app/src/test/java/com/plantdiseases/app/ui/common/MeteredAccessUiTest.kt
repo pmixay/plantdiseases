@@ -1,7 +1,9 @@
 package com.plantdiseases.app.ui.common
 
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.MeteredFeature
+import com.plantdiseases.app.data.repository.ProRequiredException
+import com.plantdiseases.app.data.repository.QuotaExhaustedException
 import java.time.ZoneId
 import java.util.Locale
 import org.junit.Assert.assertEquals
@@ -17,7 +19,7 @@ class MeteredAccessUiTest {
     fun `free quota exhaustion keeps authoritative details and offers pro`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.QuotaExhaustedException(
+                QuotaExhaustedException(
                     plan = "free",
                     limit = 5,
                     remaining = 0,
@@ -37,7 +39,7 @@ class MeteredAccessUiTest {
     fun `pro quota exhaustion never offers another upgrade`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.QuotaExhaustedException(
+                QuotaExhaustedException(
                     plan = " PRO ",
                     limit = 30,
                     remaining = 0,
@@ -55,7 +57,7 @@ class MeteredAccessUiTest {
     fun `pro-required response also avoids upgrade when server says pro is active`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.ProRequiredException(
+                ProRequiredException(
                     plan = "pro",
                     limit = null,
                     remaining = null,
@@ -74,7 +76,7 @@ class MeteredAccessUiTest {
     fun `negative remaining values are not rendered`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.ProRequiredException(
+                ProRequiredException(
                     plan = "free",
                     limit = 0,
                     remaining = -1,
@@ -93,7 +95,7 @@ class MeteredAccessUiTest {
     fun `quota exhaustion never mentions pro while pro is not offered`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.QuotaExhaustedException(
+                QuotaExhaustedException(
                     plan = "free",
                     limit = 1,
                     remaining = 0,
@@ -112,7 +114,7 @@ class MeteredAccessUiTest {
     fun `a zero allowance reads as unavailable while pro is not offered`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.ProRequiredException(
+                ProRequiredException(
                     plan = "free",
                     limit = 0,
                     remaining = 0,
@@ -134,7 +136,7 @@ class MeteredAccessUiTest {
     fun `quota exhaustion shows a clock and no sign-in offer`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.QuotaExhaustedException(
+                QuotaExhaustedException(
                     plan = "free",
                     limit = 10,
                     remaining = 0,
@@ -151,21 +153,21 @@ class MeteredAccessUiTest {
     @Test
     fun `each feature names the allowance that ran out`() {
         val expected = mapOf(
-            ScanRepository.MeteredFeature.ANALYSIS to
+            MeteredFeature.ANALYSIS to
                 Triple(R.string.metered_quota_title_analysis, R.string.metered_quota_body_analysis, R.drawable.ic_scan),
-            ScanRepository.MeteredFeature.FRONTIER_ANALYSIS to
+            MeteredFeature.FRONTIER_ANALYSIS to
                 Triple(R.string.metered_quota_title_frontier, R.string.metered_quota_body_frontier, R.drawable.ic_sparkle),
-            ScanRepository.MeteredFeature.IDENTIFICATION to
+            MeteredFeature.IDENTIFICATION to
                 Triple(R.string.metered_quota_title_identify, R.string.metered_quota_body_identify, R.drawable.ic_search),
-            ScanRepository.MeteredFeature.CHAT to
+            MeteredFeature.CHAT to
                 Triple(R.string.metered_quota_title_chat, R.string.metered_quota_body_chat, R.drawable.ic_doctor_chat),
-            ScanRepository.MeteredFeature.CARE_PLAN to
+            MeteredFeature.CARE_PLAN to
                 Triple(R.string.metered_quota_title_care_plan, R.string.metered_quota_body_care_plan, R.drawable.ic_care),
         )
         expected.forEach { (feature, copy) ->
             val policy = requireNotNull(
                 meteredDialogPolicy(
-                    ScanRepository.QuotaExhaustedException("free", 5, 0, "2026-09-01T00:00:00Z", feature),
+                    QuotaExhaustedException("free", 5, 0, "2026-09-01T00:00:00Z", feature),
                 ),
             )
             assertEquals(feature.name, copy.first, policy.title)
@@ -178,12 +180,12 @@ class MeteredAccessUiTest {
     fun `a guest who runs out is told signing in gives more`() {
         val policy = requireNotNull(
             meteredDialogPolicy(
-                ScanRepository.QuotaExhaustedException(
+                QuotaExhaustedException(
                     plan = "free",
                     limit = 5,
                     remaining = 0,
                     resetAt = "2026-09-01T00:00:00Z",
-                    feature = ScanRepository.MeteredFeature.CHAT,
+                    feature = MeteredFeature.CHAT,
                     guest = true,
                 ),
             ),

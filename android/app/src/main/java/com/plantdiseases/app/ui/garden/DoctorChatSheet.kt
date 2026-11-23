@@ -32,6 +32,7 @@ import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.common.MeteredAccessUi
@@ -61,6 +62,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var assistantRepository: AssistantRepository
 
     // The chat runs in one of two modes:
     //   * plant mode — launched from the Garden plant detail; chat history
@@ -231,7 +235,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             val msgs: List<Triple<String, String, Long>> = when {
                 pid != null -> plantRepository.getChatMessages(pid)
                     .map { Triple(it.role, it.content, it.timestamp) }
-                sid != null -> scanRepository.getChatMessages(sid)
+                sid != null -> assistantRepository.getChatMessages(sid)
                     .map { Triple(it.role, it.content, it.timestamp) }
                 else -> emptyList()
             }
@@ -264,6 +268,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
         val plantRepo = plantRepository
         val scanRepo = scanRepository
+        val assistant = assistantRepository
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
@@ -298,7 +303,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     pid != null -> plantRepo.saveChatMessage(
                         ChatMessageEntity(plantId = pid, role = "user", content = text, timestamp = now),
                     )
-                    sid != null -> scanRepo.saveChatMessage(
+                    sid != null -> assistant.saveChatMessage(
                         ScanChatMessageEntity(scanId = sid, role = "user", content = text, timestamp = now),
                     )
                 }
@@ -355,7 +360,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     locale = if (isRu) "ru" else "en",
                     diagnosis = diagnosis,
                 )
-                val result = scanRepo.sendChat(request)
+                val result = assistant.sendChat(request)
 
                 removeThinkingBubble()
 
@@ -393,7 +398,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                             timestamp = replyTime,
                         ),
                     )
-                    sid != null -> scanRepo.saveChatMessage(
+                    sid != null -> assistant.saveChatMessage(
                         ScanChatMessageEntity(
                             scanId = sid,
                             role = "bot",
@@ -592,7 +597,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     inFlight?.cancelAndJoin()
                     when {
                         pid != null -> plantRepository.clearChat(pid)
-                        sid != null -> scanRepository.clearChat(sid)
+                        sid != null -> assistantRepository.clearChat(sid)
                     }
                 }
                 if (_binding != null) {

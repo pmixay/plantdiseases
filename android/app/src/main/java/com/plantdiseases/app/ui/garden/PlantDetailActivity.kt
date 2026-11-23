@@ -35,6 +35,7 @@ import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
 import com.plantdiseases.app.ui.garden.detail.DetailExtraCardsController
@@ -109,6 +110,9 @@ class PlantDetailActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var assistantRepository: AssistantRepository
+
+    @Inject
     lateinit var careRepository: CareRepository
 
     @Inject
@@ -133,6 +137,7 @@ class PlantDetailActivity : AppCompatActivity() {
             activity = this,
             plantRepository = plantRepository,
             scanRepository = scanRepository,
+            assistant = assistantRepository,
             careRepository = careRepository,
             content = content,
             onReload = ::loadPlant,
