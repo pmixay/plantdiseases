@@ -42,7 +42,6 @@ import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -365,9 +364,7 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun loadThumbInto(marker: Marker, item: CommunityScanItem) {
-        val thumb = item.thumbPath
-        if (thumb.isNullOrBlank()) return
-        val url = "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
+        val url = item.photoUrl() ?: return
         val sizePx = (MARKER_SIZE_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
         Glide.with(this).asBitmap().load(url).circleCrop().override(sizePx, sizePx)
             .into(object : CustomTarget<Bitmap>() {

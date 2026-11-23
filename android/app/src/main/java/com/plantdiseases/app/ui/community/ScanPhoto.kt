@@ -6,11 +6,12 @@ import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.ui.garden.PhotoViewerActivity
 import com.plantdiseases.app.util.ServerConfig
 
-/** The shared scan's photo on the server, or null when it was stored without one. */
+/**
+ * The shared scan's photo on the server, or null when it was stored without
+ * one. ServerConfig.appBaseUrl ends with `/`, so the relative path is appended.
+ */
 fun CommunityScanItem.photoUrl(): String? =
-    thumbPath?.takeIf { it.isNotBlank() }
-        // ServerConfig.appBaseUrl ends with `/`; relative path appended.
-        ?.let { "${ServerConfig.appBaseUrl}api/community/thumb/$it" }
+    thumbPath?.takeIf { it.isNotBlank() }?.let { "${ServerConfig.appBaseUrl}api/community/thumb/$it" }
 
 /**
  * A shared scan has no detail screen: a tap expands its photo full screen,
