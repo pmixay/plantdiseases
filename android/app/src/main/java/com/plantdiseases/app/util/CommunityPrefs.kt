@@ -7,8 +7,8 @@ import android.content.Context
  *
  * Default is OFF: a fresh install neither contributes nor reads area-scoped
  * community data. There is no separate sharing switch: joining the community
- * (`ui/community/CommunityJoin`, offered by the map and by nearby scans on a
- * result or a species page) grants coarse location and turns this on, so the user's accepted
+ * (`ui/community/CommunityJoin`, offered by the map, by nearby scans on a
+ * result or a species page, and by Home's popular section) grants coarse location and turns this on, so the user's accepted
  * scans are shared while signed in. "Leave" on the community map turns it off
  * and stops new uploads; delete-my-contributions still clears any rows already
  * shared.

@@ -1005,6 +1005,7 @@
     <string name="home_popular_in_country">Популярно: %1$s</string>
     <string name="home_popular_near">Популярно рядом: %1$s</string>
     <string name="home_popular_worldwide">Популярно во всем мире</string>
+    <string name="home_popular_join_cta">Посмотреть, что популярно рядом</string>
     <string name="home_popular_percent">%1$d%% сканов сообщества</string>
     <string name="home_disease_guide">Справочник</string>
     <string name="home_see_all">Все</string>

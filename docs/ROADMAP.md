@@ -54,8 +54,6 @@ landed on `ccr-333aa3d6-u20r4l`. Open items:
       a `train_only` supplement grouped by `capture_family_id`; run
       `tools/filter_supplement.py` against the OOD benchmark first.
 - [ ] Following spaces, and a desktop web admin panel.
-- [ ] Home's "Popular near you" shows only to community members; it could offer
-      joining (`ui/community/CommunityJoin`) like the map, result and species page.
 
 ---
 

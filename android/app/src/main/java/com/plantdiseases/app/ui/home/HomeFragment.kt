@@ -24,12 +24,12 @@ import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
+import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.notifications.NotificationsActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
@@ -134,6 +134,10 @@ class HomeFragment : Fragment() {
         binding.btnNotifications.setOnClickListener {
             Haptics.tick(requireContext())
             startActivity(Intent(requireContext(), NotificationsActivity::class.java))
+        }
+        binding.btnPopularJoin.setOnClickListener {
+            val join = (activity as? MainActivity)?.communityJoin ?: return@setOnClickListener
+            join.ensureMember { joined -> if (joined && _binding != null) loadPopular() }
         }
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
@@ -330,12 +334,14 @@ class HomeFragment : Fragment() {
     // ── Popular carousels (plants + diseases) ───────────────────────
     // Both carousels are driven by /api/popular, which runs one ladder
     // (nearby → country → worldwide → curated placeholder) and returns
-    // per-item scan shares. Location is sent only when the user opted into
-    // community; otherwise the server returns the worldwide bundle.
+    // per-item scan shares. Location is sent only to community members;
+    // everyone else gets the worldwide bundle and a button to join.
     private fun loadPopular() {
         val appContext = requireContext().applicationContext
+        val member = CommunityJoin.isMember(appContext)
+        binding.btnPopularJoin.visibility = if (member) View.GONE else View.VISIBLE
         viewLifecycleOwner.lifecycleScope.launch {
-            val region = if (CommunityPrefs.uploadsEnabled(appContext)) {
+            val region = if (member) {
                 runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
             } else {
                 null

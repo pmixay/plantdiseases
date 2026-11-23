@@ -301,6 +301,24 @@
                     android:textSize="@dimen/text_caption" />
             </LinearLayout>
 
+            <!-- Non-members see the worldwide (or country) list; joining the
+                 community shares location and switches it to nearby. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_popular_join"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/content_gutter"
+                android:minHeight="40dp"
+                android:paddingHorizontal="0dp"
+                android:text="@string/home_popular_join_cta"
+                android:textColor="@color/primary"
+                android:visibility="gone"
+                app:icon="@drawable/ic_map"
+                app:iconGravity="textStart"
+                app:iconSize="18dp"
+                app:iconTint="@color/primary" />
+
             <com.plantdiseases.app.util.NestedScrollableHost
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

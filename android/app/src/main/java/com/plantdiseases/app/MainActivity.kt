@@ -21,6 +21,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.ActivityMainBinding
+import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
@@ -75,6 +76,11 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationRepository: NotificationRepository
 
     private lateinit var onboardingCoordinator: OnboardingCoordinator
+
+    /** Joining the community from a tab (Home's popular section). Built here
+     *  because it registers a permission launcher, which only an activity
+     *  being created may do. */
+    val communityJoin = CommunityJoin(this)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))

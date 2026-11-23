@@ -23,7 +23,7 @@ import com.plantdiseases.app.util.CommunityPrefs
  * member's accepted server scans are published to the community (photo,
  * diagnosis, approximate area) while they are signed in. Features that show
  * scans by area (the community map, nearby scans on a result and on a species
- * page) require it, so they call [ensureMember], which explains what joining shares, asks for
+ * page, Home's popular-near-you list) require it, so they call [ensureMember], which explains what joining shares, asks for
  * coarse location and turns sharing on. There is no separate sharing switch;
  * leaving (the map's menu) turns it off.
  *

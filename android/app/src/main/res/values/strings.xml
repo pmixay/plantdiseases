@@ -1009,6 +1009,7 @@
     <string name="home_popular_in_country">Popular in %1$s</string>
     <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
+    <string name="home_popular_join_cta">See what\'s popular near you</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
     <string name="home_disease_guide">Guide</string>
     <string name="home_see_all">See all</string>
