@@ -29,18 +29,15 @@ import com.plantdiseases.app.ui.profile.ProfileFragment
  * sliding in. The axis is finite — the first and last pages overscroll rather
  * than wrap.
  *
- * This fragment is the nav graph's start destination, so anything pushed *on
- * top* of the tabs (the disease guide, opened from Home's tools grid) still goes
- * through the NavController and keeps its own transition, up arrow and back
- * stack. That push destroys this fragment's view but not the fragment, and
- * [ViewPager2] saves/restores both the current page and its adapter's fragment
- * state through the normal view-state save, so a pop back lands on the page the
- * user left.
+ * [MainActivity] hosts this fragment directly; everything opened over the tabs
+ * (the guide included) is an activity of its own. [ViewPager2] saves and
+ * restores the current page and its adapter's fragment state through the
+ * normal view-state save, so a recreation lands on the page the user left.
  *
- * The bottom bar is deliberately *not* here — [MainActivity] owns it (insets,
- * badge, splash animation) and it has to outlive this fragment's view for the
- * guide push. MainActivity calls [showTab] on a tap; this fragment calls back
- * into [MainActivity.applyTabChrome] as soon as the pager commits to a page.
+ * The bottom bar is deliberately *not* here: [MainActivity] owns it (insets,
+ * badge, splash animation). MainActivity calls [showTab] on a tap; this
+ * fragment calls back into [MainActivity.applyTabChrome] as soon as the pager
+ * commits to a page.
  */
 class ShellFragment : Fragment() {
 
@@ -56,9 +53,8 @@ class ShellFragment : Fragment() {
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
-        // Set here rather than in onViewCreated: the guide push tears down this
-        // fragment's view but keeps the instance on the back stack, and the bar
-        // (which outlives the view) still needs a handle to page back to.
+        // Set here rather than in onViewCreated so a tap that arrives before
+        // the view exists can still be parked on the activity (pendingTabId).
         (context as? MainActivity)?.shell = this
     }
 
@@ -92,24 +88,20 @@ class ShellFragment : Fragment() {
         binding.shellPager.offscreenPageLimit = 1
         binding.shellPager.registerOnPageChangeCallback(pageChangeCallback)
 
-        // Back from any tab returns to Home; back from Home exits. That used to
-        // fall out of the nav back stack for free, but the tabs aren't
-        // destinations any more, so there is nothing left to pop between them.
-        // Scoped to viewLifecycleOwner so it steps aside while the guide is on
-        // top — there, back has to pop the guide, which is the NavController's
-        // callback's job.
+        // Back from any tab returns to Home; back from Home exits. The tabs
+        // are pager pages, so there is no back stack to pop between them.
         requireActivity().onBackPressedDispatcher
             .addCallback(viewLifecycleOwner, backToHomeCallback)
 
-        // A tab tap that arrived before this view existed — a cold start via
-        // EXTRA_OPEN_SCANNER, or a tap made while the guide was on top.
+        // A tab tap that arrived before this view existed (a cold start via
+        // EXTRA_OPEN_SCANNER).
         host?.consumePendingTabId()?.let { tabId ->
             binding.shellPager.setCurrentItem(pageOf(tabId), false)
         }
 
         // Re-assert the bar + toolbar for whatever page we're on. Covers first
-        // layout, a config-change restore, and the pop back from the guide —
-        // onPageSelected only fires once the pager has laid out.
+        // layout and a config-change restore; onPageSelected only fires once
+        // the pager has laid out.
         syncBar()
         host?.applyTabChrome(currentTabId)
         backToHomeCallback.isEnabled = currentTabId != R.id.homeFragment

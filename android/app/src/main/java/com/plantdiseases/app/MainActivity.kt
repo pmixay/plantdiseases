@@ -12,11 +12,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.NavController
-import androidx.navigation.fragment.NavHostFragment
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.data.repository.NotificationRepository
@@ -41,17 +36,13 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var appBarConfiguration: AppBarConfiguration
-    private lateinit var navController: NavController
 
-    /** The tab pager, once the nav host has created it. Set from
-     *  [ShellFragment.onAttach], so it stays valid while the guide is pushed
-     *  over the shell (that destroys the shell's view, not the fragment). */
+    /** The tab pager, once the layout has created it. Set from
+     *  [ShellFragment.onAttach]; its view can still be absent (cold start). */
     var shell: ShellFragment? = null
 
-    /** A tab to land on as soon as the shell's pager exists — a tap that
-     *  arrived before it did (cold start via [EXTRA_OPEN_SCANNER]) or while the
-     *  guide was on top and the shell's view was torn down. */
+    /** A tab to land on as soon as the shell's pager exists: a tap that
+     *  arrived before it did (cold start via [EXTRA_OPEN_SCANNER]). */
     @IdRes
     var pendingTabId: Int? = null
 
@@ -205,24 +196,9 @@ class MainActivity : AppCompatActivity() {
         // render offline (they're server-hosted, not bundled). Independent of
         // notifications — always worth doing on a connected launch.
         (application as PlantDiseasesApp).prefetchGuidePhotos()
-        val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        navController = navHostFragment.navController
-
-        // The tabs are no longer destinations — they're pages of the shell's
-        // pager — so the graph is down to two entries and the shell is the only
-        // top-level one (no Up arrow). Anything pushed over it, i.e. the disease
-        // guide from Home's tools grid, is non-top-level, so this shows a back
-        // arrow on the shared toolbar and onSupportNavigateUp pops it.
-        appBarConfiguration = AppBarConfiguration(setOf(R.id.shellFragment))
-        setupActionBarWithNavController(navController, appBarConfiguration)
-
-        // setupWithNavController is gone with the tab destinations: it existed
-        // to turn a tap into a navigate() and to check the tab on arrival, and
-        // both of those are now the pager's job. The bar stays here (rather than
-        // moving into the shell) because it has to outlive the shell's view when
-        // the guide is pushed, and because the insets/badge/splash animation
-        // above are all activity-scoped.
+        // A tab tap pages the shell's pager. The bar stays here (rather than
+        // moving into the shell) because the insets, badge and splash
+        // animation above are all activity-scoped.
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (syncingBar) true else selectTab(item.itemId)
         }
@@ -232,17 +208,6 @@ class MainActivity : AppCompatActivity() {
                 view = scanItem,
                 pauseAfterTarget = true,
             )
-        }
-
-        navController.addOnDestinationChangedListener { _, destination, _ ->
-            // Pushed destinations always keep the toolbar — that's where their
-            // back arrow lives — and their title comes from android:label via
-            // setupActionBarWithNavController. The shell's chrome is not set
-            // here: ShellFragment applies it per page as swipes settle, and
-            // re-applies it in onViewCreated, which covers the pop back to here.
-            if (destination.id != R.id.shellFragment) {
-                binding.appBar.visibility = View.VISIBLE
-            }
         }
 
         // A cold-started "New scan" (MainActivity wasn't already in memory)
@@ -268,16 +233,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // Up arrow on non-top-level destinations (e.g. the disease guide opened
-    // from Home) pops the nav back stack via the shared toolbar.
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = (
-            supportFragmentManager
-                .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-            ).navController
-        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
-    }
-
     /** Splash → app hand-off. Runs once per cold start, when the first frame
      *  is ready behind the splash window: the logo scales up and fades (a
      *  "zoom through" exit), the green splash veil dissolves, and the app
@@ -301,9 +256,9 @@ class MainActivity : AppCompatActivity() {
             .start()
 
         val decelerate = android.view.animation.DecelerateInterpolator(2f)
-        binding.navHostFragment.alpha = 0f
-        binding.navHostFragment.translationY = 24f * density
-        binding.navHostFragment.animate()
+        binding.shellHost.alpha = 0f
+        binding.shellHost.translationY = 24f * density
+        binding.shellHost.animate()
             .alpha(1f).translationY(0f)
             .setDuration(360L).setStartDelay(120L)
             .setInterpolator(decelerate)
@@ -334,16 +289,13 @@ class MainActivity : AppCompatActivity() {
      */
     private fun selectTab(@IdRes tabId: Int, animate: Boolean = true): Boolean {
         if (ShellFragment.pageOf(tabId) < 0) return false
-        val onShell = navController.currentDestination?.id == R.id.shellFragment
-        val pager = shell?.takeIf { it.view != null && onShell }
+        val pager = shell?.takeIf { it.view != null }
         if (pager != null) {
             pager.showTab(tabId, animate = animate)
         } else {
-            // Either the shell hasn't been created yet (cold start), or the
-            // guide is on top of it. Park the request; the shell picks it up
-            // when its view is (re)created.
+            // The shell hasn't been created yet (cold start). Park the
+            // request; the shell picks it up when its view is created.
             pendingTabId = tabId
-            if (!onShell) navController.popBackStack(R.id.shellFragment, false)
         }
         return true
     }
@@ -369,8 +321,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Toolbar state for the shell's pager. Driven by the shell, not by the
-     *  NavController, since the tabs aren't destinations any more.
+    /** Toolbar state for the shell's pager, driven by the shell.
      *
      *  The shared toolbar stays hidden on every tab: it used to carry each
      *  page's name, but that title lived outside the pager and only updated
@@ -378,9 +329,7 @@ class MainActivity : AppCompatActivity() {
      *  disconnected from the page sliding underneath it. Every tab
      *  now renders its own title as part of its own page (Garden/Profile
      *  already did this with their hero card), so it slides with the swipe
-     *  like the rest of the page content. The bar itself only reappears for a
-     *  pushed destination (the guide), which needs it for the title + back
-     *  arrow — see the [NavController] destination listener in [onCreate]. */
+     *  like the rest of the page content. */
     fun applyTabChrome(@IdRes tabId: Int) {
         binding.appBar.visibility = View.GONE
         // Pages are plain light surfaces with dark bar icons; the camera tab

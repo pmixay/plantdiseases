@@ -215,8 +215,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **The remaining bilingual Kotlin content.** The guide is in string
       resources now and `StringParityTest` guards EN/RU parity, but ~32
       `isRussian(` branches remain (e.g. `OfflineScanContent`'s offline cards).
-- [ ] **Drop Navigation Component** — a two-destination graph while 30+ Activities
-      navigate by Intent.
 - [ ] **DAOs returning `Flow`.** Today screens re-read on resume, which is the root
       of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR.
 - [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`,

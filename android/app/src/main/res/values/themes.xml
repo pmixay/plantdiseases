@@ -17,8 +17,8 @@
              background instead of defaulting to black. -->
         <item name="android:windowBackground">@color/background</item>
         <!-- A single activity push/pop motion for every in-app screen. This
-             covers detail, tool, community, legal and onboarding activities;
-             fragment navigation uses the same four resources in nav_graph. -->
+             covers every pushed screen: detail, tool, guide, community, legal
+             and onboarding activities. -->
         <item name="android:windowAnimationStyle">@style/App.Animation.Navigation</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorSurfaceVariant">@color/surface_variant</item>

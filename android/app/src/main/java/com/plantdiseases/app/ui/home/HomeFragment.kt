@@ -10,7 +10,6 @@ import android.widget.ImageView
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -25,6 +24,7 @@ import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.CommunityJoin
+import com.plantdiseases.app.ui.guide.GuideActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.notifications.NotificationsActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
@@ -188,14 +188,9 @@ class HomeFragment : Fragment() {
         }
     }
 
-    /** Push the guide above the tab shell through the graph action that owns
-     *  its forward/back motion. Both Guide entry points deliberately share
-     *  this path so their animation and back-stack behaviour cannot drift. */
+    /** Both Guide entry points open the guide screen the same way. */
     private fun openGuide() {
-        val controller = findNavController()
-        if (controller.currentDestination?.id == R.id.shellFragment) {
-            controller.navigate(R.id.action_shellFragment_to_guideFragment)
-        }
+        startActivity(Intent(requireContext(), GuideActivity::class.java))
     }
 
     /**

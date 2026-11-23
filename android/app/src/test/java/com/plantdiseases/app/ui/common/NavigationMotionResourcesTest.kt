@@ -11,9 +11,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.xmlpull.v1.XmlPullParser
 
-/** Guards the shared push/pop motion used by activities and the Guide route. */
+/** Guards the shared push/pop motion every pushed screen (activity) uses. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class NavigationMotionResourcesTest {
@@ -38,35 +37,6 @@ class NavigationMotionResourcesTest {
         assertThemeMotion(ContextThemeWrapper(nightContext, R.style.Theme_PlantDiseases))
     }
 
-    @Test
-    fun guideGraphActionUsesTheSharedPushPopPair() {
-        val parser = baseContext.resources.getXml(R.navigation.nav_graph)
-        var found = false
-        while (parser.eventType != XmlPullParser.END_DOCUMENT) {
-            if (
-                parser.eventType == XmlPullParser.START_TAG &&
-                parser.name == "action" &&
-                parser.getAttributeResourceValue(ANDROID_NAMESPACE, "id", 0) ==
-                R.id.action_shellFragment_to_guideFragment
-            ) {
-                found = true
-                assertThat(parser.getAttributeResourceValue(APP_NAMESPACE, "enterAnim", 0))
-                    .isEqualTo(R.anim.navigation_forward_enter)
-                assertThat(parser.getAttributeResourceValue(APP_NAMESPACE, "exitAnim", 0))
-                    .isEqualTo(R.anim.navigation_forward_exit)
-                assertThat(parser.getAttributeResourceValue(APP_NAMESPACE, "popEnterAnim", 0))
-                    .isEqualTo(R.anim.navigation_back_enter)
-                assertThat(parser.getAttributeResourceValue(APP_NAMESPACE, "popExitAnim", 0))
-                    .isEqualTo(R.anim.navigation_back_exit)
-                break
-            }
-            parser.next()
-        }
-        parser.close()
-
-        assertThat(found).isTrue()
-    }
-
     private fun assertThemeMotion(context: Context) {
         val themeAttributes = context.obtainStyledAttributes(
             intArrayOf(android.R.attr.windowAnimationStyle),
@@ -88,9 +58,6 @@ class NavigationMotionResourcesTest {
     }
 
     companion object {
-        private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
-        private const val APP_NAMESPACE = "http://schemas.android.com/apk/res-auto"
-
         private val ACTIVITY_ANIMATION_ATTRIBUTES = intArrayOf(
             android.R.attr.activityOpenEnterAnimation,
             android.R.attr.activityOpenExitAnimation,

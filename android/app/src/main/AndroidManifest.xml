@@ -252,6 +252,13 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The plant-care guide list (Home's tools grid). -->
+        <activity
+            android:name=".ui.guide.GuideActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Custom crop screen (our own CropActivity + CropImageView). Uses
              the standard app theme; the seamless background and floating
              control panel are done in the layout, not the theme. -->

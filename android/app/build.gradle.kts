@@ -545,10 +545,6 @@ dependencies {
     // Material Design 3
     implementation("com.google.android.material:material:1.14.0")
 
-    // Navigation
-    implementation("androidx.navigation:navigation-fragment-ktx:2.9.8")
-    implementation("androidx.navigation:navigation-ui-ktx:2.9.8")
-
     // CameraX
     val cameraxVersion = "1.6.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")

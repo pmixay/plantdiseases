@@ -50,10 +50,10 @@ class ShellFragmentTest {
     }
 
     @Test
-    fun nonTabDestinationHasNoPage() {
-        // The guide is pushed over the shell, never paged to. selectTab has to
-        // be able to tell, or a tap would try to page to index -1.
-        assertThat(ShellFragment.pageOf(R.id.guideFragment)).isEqualTo(-1)
+    fun nonTabIdHasNoPage() {
+        // selectTab has to be able to tell an id that isn't a tab, or a tap
+        // would try to page to index -1.
+        assertThat(ShellFragment.pageOf(R.id.shell_host)).isEqualTo(-1)
     }
 
     @Test
