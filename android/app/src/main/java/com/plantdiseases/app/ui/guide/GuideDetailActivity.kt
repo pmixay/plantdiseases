@@ -54,14 +54,13 @@ class GuideDetailActivity : AppCompatActivity() {
             finish()
             return
         }
-        val isRu = LocaleHelper.isRussian(this)
 
-        val title = if (isRu) item.titleRu else item.titleEn
+        val title = getString(item.title)
         binding.guideDetailToolbar.title = title
         binding.tvGuideTitle.text = title
         binding.ivGuideIcon.setImageResource(item.iconRes)
 
-        val desc = if (isRu) item.descriptionRu else item.descriptionEn
+        val desc = getString(item.description)
         if (desc.isBlank()) {
             binding.tvGuideDesc.visibility = View.GONE
         } else {
@@ -70,7 +69,7 @@ class GuideDetailActivity : AppCompatActivity() {
 
         GuideContentRenderer.render(
             binding.llGuideSections,
-            if (isRu) item.contentRu else item.contentEn,
+            getString(item.content),
         )
         GuideDataProvider.exampleImageUrl(item.id)?.let { url ->
             binding.llGuideSections.addView(

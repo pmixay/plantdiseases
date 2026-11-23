@@ -324,7 +324,7 @@ class HomeFragment : Fragment() {
             DiseaseCarouselAdapter.Item(
                 guideId = gi.id,
                 iconRes = gi.iconRes,
-                title = if (isRu) gi.titleRu else gi.titleEn,
+                title = getString(gi.title),
                 subtitle = getString(R.string.home_guide_tag),
             )
         }
@@ -473,7 +473,7 @@ class HomeFragment : Fragment() {
                 guideId = gi.id,
                 iconRes = gi.iconRes,
                 title = DiseaseLabels.displayName(d.disease, isRu)
-                    ?: (if (isRu) gi.titleRu else gi.titleEn),
+                    ?: getString(gi.title),
                 subtitle = percentSubtitle(popular?.source, d.percent),
             )
         }

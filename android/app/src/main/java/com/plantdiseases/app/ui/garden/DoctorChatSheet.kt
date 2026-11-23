@@ -521,7 +521,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         val pattern = Regex("""\*\*(.+?)\*\*|\[\[?doc:([a-z0-9_]+)]]?""")
         if (!pattern.containsMatchIn(text)) return text
 
-        val isRu = LocaleHelper.isRussian(requireContext())
         val linkColor = requireContext().getColor(R.color.primary)
         val sb = SpannableStringBuilder()
         var last = 0
@@ -544,7 +543,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     val guideId = GuideDataProvider.guideIdForDisease(docKey)
                     val title = guideId?.let { id ->
                         GuideDataProvider.getGuideItems().firstOrNull { it.id == id }
-                            ?.let { if (isRu) it.titleRu else it.titleEn }
+                            ?.let { getString(it.title) }
                     }
                     if (guideId != null && title != null) {
                         val start = sb.length

@@ -565,14 +565,13 @@ data class CommunityViewRequest(
 )
 
 /** Guide article about plant care */
+/** One guide article. The text is string resources, so it follows the app's
+ *  language like any other UI text. */
 data class GuideItem(
     val id: String,
-    val titleEn: String,
-    val titleRu: String,
-    val descriptionEn: String,
-    val descriptionRu: String,
-    val contentEn: String,
-    val contentRu: String,
+    @androidx.annotation.StringRes val title: Int,
+    @androidx.annotation.StringRes val description: Int,
+    @androidx.annotation.StringRes val content: Int,
     val iconRes: Int,
     val category: GuideCategory
 )

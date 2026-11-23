@@ -1024,7 +1024,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 // exact guide-title match is the same words, so it cannot be
                 // a near miss; the key stays as the fallback for names the
                 // guide words differently, and for other languages.
-                val guide = DiseaseCatalog.guideItemForName(item.name)
+                val guide = DiseaseCatalog.guideItemForName(this, item.name)
                     ?: item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                 addDiseaseRow(
                     name = item.name.orEmpty(),
@@ -1036,8 +1036,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
         } else {
             DiseaseCatalog.diseaseGuideItems().forEach { g ->
                 addDiseaseRow(
-                    name = if (isRu) g.titleRu else g.titleEn,
-                    note = if (isRu) g.descriptionRu else g.descriptionEn,
+                    name = getString(g.title),
+                    note = getString(g.description),
                     iconRes = g.iconRes,
                     guideId = g.id,
                 )

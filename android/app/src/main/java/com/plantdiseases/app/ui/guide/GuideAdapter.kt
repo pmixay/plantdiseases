@@ -11,7 +11,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.GuideCategory
 import com.plantdiseases.app.data.model.GuideItem
 import com.plantdiseases.app.databinding.ItemGuideBinding
-import com.plantdiseases.app.util.LocaleHelper
 
 /**
  * RecyclerView adapter for the guide list. Shows each [GuideItem]'s localised
@@ -38,11 +37,10 @@ class GuideAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = getItem(position)
         val ctx = holder.binding.root.context
-        val isRu = LocaleHelper.isRussian(ctx)
 
         holder.binding.apply {
-            val title = if (isRu) item.titleRu else item.titleEn
-            val desc = if (isRu) item.descriptionRu else item.descriptionEn
+            val title = ctx.getString(item.title)
+            val desc = ctx.getString(item.description)
 
             // Highlight search matches
             if (searchQuery.length >= 2) {

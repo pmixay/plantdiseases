@@ -7,1148 +7,191 @@ import com.plantdiseases.app.util.ServerConfig
 
 object GuideDataProvider {
 
-    private val items: List<GuideItem> by lazy { buildItems() }
     private val byCategory: Map<GuideCategory, List<GuideItem>> by lazy { items.groupBy { it.category } }
 
     fun getGuideItems(): List<GuideItem> = items
 
-    private fun buildItems(): List<GuideItem> = listOf(
+    // The articles' text lives in res/values*/strings_guide.xml.
+    private val items: List<GuideItem> = listOf(
         // Common diseases — plant-care guide articles
 
         GuideItem(
             id = "powdery_mildew",
-            titleEn = "Powdery Mildew",
-            titleRu = "Мучнистая роса",
-            descriptionEn = "White powdery spots on leaves and stems",
-            descriptionRu = "Белые порошкообразные пятна на листьях и стеблях",
-            contentEn = """
-Powdery mildew is one of the most common fungal diseases in plants. It appears as white or gray powdery patches on leaf surfaces.
-
-SYMPTOMS:
-• White/gray powder-like coating on leaves
-• Yellowing and curling of affected leaves
-• Stunted growth
-• Leaf drop in severe cases
-
-CAUSES:
-• High humidity with poor air circulation
-• Overcrowding of plants
-• Low light conditions
-
-TREATMENT:
-1. Isolate the affected plant immediately
-2. Remove severely infected leaves
-3. Spray with a baking soda solution (1 tsp per liter of water + a drop of dish soap)
-4. Apply neem oil solution weekly
-5. Improve air circulation around the plant
-
-PREVENTION:
-• Ensure good air circulation
-• Avoid overhead watering
-• Don't crowd plants together
-• Keep leaves dry
-            """.trimIndent(),
-            contentRu = """
-Мучнистая роса - одно из самых распространённых грибковых заболеваний растений. Проявляется в виде белого или серого порошкообразного налёта на поверхности листьев.
-
-СИМПТОМЫ:
-• Белый/серый порошкообразный налёт на листьях
-• Пожелтение и скручивание поражённых листьев
-• Замедление роста
-• Опадение листьев в тяжёлых случаях
-
-ПРИЧИНЫ:
-• Высокая влажность при плохой циркуляции воздуха
-• Скученность растений
-• Недостаток света
-
-ЛЕЧЕНИЕ:
-1. Немедленно изолируйте поражённое растение
-2. Удалите сильно заражённые листья
-3. Опрыскайте раствором соды (1 ч.л. на литр воды + капля моющего средства)
-4. Применяйте раствор масла нима еженедельно
-5. Улучшите циркуляцию воздуха вокруг растения
-
-ПРОФИЛАКТИКА:
-• Обеспечьте хорошую циркуляцию воздуха
-• Избегайте полива сверху
-• Не ставьте растения слишком близко друг к другу
-• Держите листья сухими
-            """.trimIndent(),
+            title = R.string.guide_powdery_mildew_title,
+            description = R.string.guide_powdery_mildew_description,
+            content = R.string.guide_powdery_mildew_content,
             iconRes = R.drawable.ic_disease_powdery_mildew,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "leaf_spot",
-            titleEn = "Leaf Spot (Bacterial / Fungal)",
-            titleRu = "Пятнистость листьев (бактериальная / грибковая)",
-            descriptionEn = "Dark round or irregular spots, often with a yellow halo",
-            descriptionRu = "Тёмные округлые или неправильные пятна, часто с жёлтым ореолом",
-            contentEn = """
-Leaf spot is a broad category covering bacterial and fungal infections that show up as dark, clearly bordered spots on the leaf. Common on ficus, dracaena, calathea, and many other plants whose leaves stay wet for too long.
-
-SYMPTOMS:
-• Dark brown / black spots with yellow halos
-• Spots may merge into larger dead patches
-• Affected leaves yellow and drop
-• Progresses during high humidity or after misting
-
-TREATMENT:
-1. Cut off affected leaves with sterile scissors
-2. Apply a copper-based fungicide / bactericide weekly for 2-3 weeks
-3. Switch to bottom watering - keep foliage dry
-4. Improve airflow and let the top of the substrate dry between waterings
-5. Disinfect tools with 70% alcohol between plants
-
-PREVENTION:
-• Water the substrate, not the leaves
-• Remove fallen leaves from the pot surface
-• Quarantine new plants for two weeks
-• Sterilise pots and saucers before reuse
-            """.trimIndent(),
-            contentRu = """
-Пятнистость листьев - общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других растениях, когда листья слишком долго остаются влажными.
-
-СИМПТОМЫ:
-• Тёмно-коричневые / чёрные пятна с жёлтым ореолом
-• Пятна сливаются в крупные отмирающие участки
-• Поражённые листья желтеют и опадают
-• Болезнь прогрессирует при высокой влажности или после опрыскивания
-
-ЛЕЧЕНИЕ:
-1. Обрежьте поражённые листья стерильными ножницами
-2. Обрабатывайте фунгицидом на основе меди раз в неделю 2-3 недели
-3. Перейдите на полив снизу - листья держите сухими
-4. Улучшите воздухообмен, давайте верхнему слою субстрата просыхать
-5. Дезинфицируйте инструмент 70% спиртом между растениями
-
-ПРОФИЛАКТИКА:
-• Поливайте субстрат, а не листья
-• Убирайте опавшие листья с поверхности горшка
-• Новые растения держите 2 недели на карантине
-• Перед повторным использованием стерилизуйте горшки и поддоны
-            """.trimIndent(),
+            title = R.string.guide_leaf_spot_title,
+            description = R.string.guide_leaf_spot_description,
+            content = R.string.guide_leaf_spot_content,
             iconRes = R.drawable.ic_disease_leaf_spot,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "blight",
-            titleEn = "Blight",
-            titleRu = "Фитофтороз",
-            descriptionEn = "Rapidly spreading water-soaked lesions on leaves and stems",
-            descriptionRu = "Быстро растущие водянистые поражения на листьях и стеблях",
-            contentEn = """
-Blight is a fast-moving fungal disease that causes large, dark, water-soaked lesions on leaves and stems. It is most often triggered by overwatering combined with cool temperatures.
-
-SYMPTOMS:
-• Large dark, water-soaked patches on leaves
-• Stems develop soft black lesions near the soil line
-• Infected parts wilt and collapse within days
-• White fuzzy mold may appear on the underside in humid rooms
-
-TREATMENT:
-1. Remove and destroy every affected part - do not compost
-2. Apply a systemic or copper-based fungicide
-3. Reduce watering and let the substrate dry deeply
-4. Raise the room temperature above 20 °C and lower humidity
-5. If more than half the plant is lost, discard it to protect the rest
-
-PREVENTION:
-• Never let pots stand in water
-• Keep plants spaced for good airflow
-• Keep the room above 18 °C in winter
-• Inspect the collection weekly during cool, damp weather
-            """.trimIndent(),
-            contentRu = """
-Фитофтороз - быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. Чаще всего возникает при переувлажнении в сочетании с прохладой.
-
-СИМПТОМЫ:
-• Крупные тёмные водянистые пятна на листьях
-• Мягкие чёрные поражения у основания стебля
-• Поражённые части увядают и сморщиваются за несколько дней
-• Во влажных помещениях на нижней стороне появляется белая пушистая плесень
-
-ЛЕЧЕНИЕ:
-1. Удалите и уничтожьте все поражённые части - не в компост
-2. Обработайте системным фунгицидом или препаратом на основе меди
-3. Сократите полив, дайте субстрату глубоко просохнуть
-4. Поднимите температуру выше 20 °C и снизьте влажность
-5. Если поражено больше половины растения - утилизируйте его
-
-ПРОФИЛАКТИКА:
-• Никогда не оставляйте горшки в воде
-• Расставляйте растения свободно для вентиляции
-• Зимой поддерживайте температуру выше 18 °C
-• В сырую прохладную погоду осматривайте коллекцию еженедельно
-            """.trimIndent(),
+            title = R.string.guide_blight_title,
+            description = R.string.guide_blight_description,
+            content = R.string.guide_blight_content,
             iconRes = R.drawable.ic_disease_blight,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "root_rot",
-            titleEn = "Root Rot",
-            titleRu = "Корневая гниль",
-            descriptionEn = "Mushy, brown roots caused by overwatering",
-            descriptionRu = "Мягкие, коричневые корни из-за переувлажнения",
-            contentEn = """
-Root rot is a deadly disease caused by overwatering or poor drainage. The roots become waterlogged, lose oxygen, and begin to decay.
-
-SYMPTOMS:
-• Wilting despite wet soil
-• Yellowing lower leaves
-• Mushy, brown/black roots
-• Foul smell from soil
-• Stunted or no new growth
-
-TREATMENT:
-1. Remove plant from pot
-2. Wash away all old soil
-3. Cut away all brown/mushy roots with sterile scissors
-4. Let roots dry for a few hours
-5. Repot in fresh, well-draining soil mix
-6. Water sparingly for the first 2 weeks
-
-PREVENTION:
-• Use pots with drainage holes
-• Water only when topsoil is dry
-• Use well-draining soil mix
-• Don't let pots sit in water
-            """.trimIndent(),
-            contentRu = """
-Корневая гниль - опасное заболевание, вызванное переувлажнением или плохим дренажом. Корни заливаются водой, теряют кислород и начинают разлагаться.
-
-СИМПТОМЫ:
-• Увядание при влажной почве
-• Пожелтение нижних листьев
-• Мягкие, коричневые/чёрные корни
-• Неприятный запах от почвы
-• Замедление или отсутствие нового роста
-
-ЛЕЧЕНИЕ:
-1. Извлеките растение из горшка
-2. Смойте всю старую почву
-3. Обрежьте все коричневые/мягкие корни стерильными ножницами
-4. Дайте корням подсохнуть несколько часов
-5. Пересадите в свежую, хорошо дренированную почву
-6. Поливайте умеренно в течение первых 2 недель
-
-ПРОФИЛАКТИКА:
-• Используйте горшки с дренажными отверстиями
-• Поливайте только когда верхний слой почвы сухой
-• Используйте хорошо дренированную почвенную смесь
-• Не оставляйте горшки стоять в воде
-            """.trimIndent(),
+            title = R.string.guide_root_rot_title,
+            description = R.string.guide_root_rot_description,
+            content = R.string.guide_root_rot_content,
             iconRes = R.drawable.ic_disease_root_rot,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "leaf_mold",
-            titleEn = "Leaf Mold",
-            titleRu = "Листовая плесень",
-            descriptionEn = "Olive-green fuzzy mold on leaf undersides",
-            descriptionRu = "Оливково-зелёная пушистая плесень на нижней стороне листьев",
-            contentEn = """
-Leaf mold causes pale green or yellowish spots on upper leaf surfaces with olive-green to brown fuzzy mold on the undersides. Thrives in high humidity.
-
-SYMPTOMS:
-• Pale green/yellow spots on upper leaf surface
-• Olive-green to brown mold on undersides
-• Leaves may curl and wilt
-• Severely affected leaves turn brown and die
-
-TREATMENT:
-1. Remove affected leaves carefully
-2. Improve ventilation dramatically
-3. Reduce humidity below 70%
-4. Apply fungicide spray (sulfur or copper-based)
-5. Space out plants to improve airflow
-
-PREVENTION:
-• Maintain humidity between 40-65%
-• Ensure excellent air circulation
-• Avoid crowding plants
-• Water in the morning so leaves dry quickly
-            """.trimIndent(),
-            contentRu = """
-Листовая плесень вызывает бледно-зелёные или желтоватые пятна на верхней стороне листьев с оливково-зелёной или коричневой пушистой плесенью снизу.
-
-СИМПТОМЫ:
-• Бледно-зелёные/жёлтые пятна на верхней стороне
-• Оливково-зелёная или коричневая плесень снизу
-• Листья могут скручиваться и вянуть
-• Сильно поражённые листья буреют и отмирают
-
-ЛЕЧЕНИЕ:
-1. Аккуратно удалите поражённые листья
-2. Существенно улучшите вентиляцию
-3. Снизьте влажность ниже 70%
-4. Примените фунгицидный спрей (на основе серы или меди)
-5. Расставьте растения для улучшения воздушного потока
-
-ПРОФИЛАКТИКА:
-• Поддерживайте влажность 40-65%
-• Обеспечьте отличную циркуляцию воздуха
-• Не ставьте растения слишком близко
-• Поливайте утром, чтобы листья быстро высохли
-            """.trimIndent(),
+            title = R.string.guide_leaf_mold_title,
+            description = R.string.guide_leaf_mold_description,
+            content = R.string.guide_leaf_mold_content,
             iconRes = R.drawable.ic_disease_leaf_mold,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "viral_disease",
-            titleEn = "Viral Disease (Mosaic / Curl / Ringspot)",
-            titleRu = "Вирусные заболевания (мозаика / курчавость / кольцевая пятнистость)",
-            descriptionEn = "Mottled light/dark pattern, leaf curl or chlorotic rings - no cure exists",
-            descriptionRu = "Пёстрый узор, скрученность листьев или хлоротичные кольца - лечения нет",
-            contentEn = """
-Mosaic virus causes a distinctive mottled pattern of light and dark green on leaves. Leaves may be distorted or curled. There is no cure.
-
-SYMPTOMS:
-• Mottled yellow/light green and dark green areas
-• Distorted, curled, or blistered leaves
-• Stunted growth
-• Reduced flowering
-
-TREATMENT:
-1. There is no cure for viral infections in plants
-2. Remove and destroy severely infected plants
-3. Mildly affected plants can be kept but won't recover
-4. Control aphids and other vectors that spread the virus
-5. Sterilize all tools that contact infected plants
-
-PREVENTION:
-• Buy certified disease-free plants
-• Control insect vectors (especially aphids)
-• Wash hands before handling plants
-• Don't use tobacco products near plants
-            """.trimIndent(),
-            contentRu = """
-Мозаичный вирус вызывает характерный пёстрый узор из светло- и тёмно-зелёных участков на листьях. Листья могут быть деформированы или скручены. Лечения нет.
-
-СИМПТОМЫ:
-• Пёстрые жёлто-зелёные и тёмно-зелёные участки
-• Деформированные, скрученные или вздутые листья
-• Замедление роста
-• Уменьшение цветения
-
-ЛЕЧЕНИЕ:
-1. Вирусные инфекции растений не лечатся
-2. Удалите и уничтожьте сильно поражённые растения
-3. Слабо поражённые можно оставить, но они не выздоровеют
-4. Контролируйте тлю и других переносчиков вируса
-5. Стерилизуйте все инструменты
-
-ПРОФИЛАКТИКА:
-• Покупайте сертифицированные здоровые растения
-• Контролируйте насекомых-переносчиков (особенно тлю)
-• Мойте руки перед работой с растениями
-• Не используйте табачные изделия рядом с растениями
-            """.trimIndent(),
+            title = R.string.guide_viral_disease_title,
+            description = R.string.guide_viral_disease_description,
+            content = R.string.guide_viral_disease_content,
             iconRes = R.drawable.ic_disease_viral,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "rust",
-            titleEn = "Rust Disease",
-            titleRu = "Ржавчина",
-            descriptionEn = "Orange/brown pustules on leaf undersides",
-            descriptionRu = "Оранжевые/коричневые пустулы на нижней стороне листьев",
-            contentEn = """
-Rust fungus produces orange, yellow, or brown pustules on the undersides of leaves. Upper surfaces show yellow spots corresponding to pustule locations.
-
-SYMPTOMS:
-• Orange/brown powdery pustules on leaf undersides
-• Yellow spots on upper leaf surface
-• Premature leaf drop
-• Weakened plant growth
-
-TREATMENT:
-1. Remove and destroy all infected leaves
-2. Apply sulfur-based or copper fungicide
-3. Do not compost infected material
-4. Improve air circulation
-5. Treat every 7-14 days until symptoms stop
-
-PREVENTION:
-• Water in the morning at soil level
-• Keep foliage dry
-• Remove fallen leaves promptly
-• Provide adequate spacing between plants
-            """.trimIndent(),
-            contentRu = """
-Грибок ржавчины образует оранжевые, жёлтые или коричневые пустулы на нижней стороне листьев. На верхней поверхности видны жёлтые пятна.
-
-СИМПТОМЫ:
-• Оранжевые/коричневые порошковые пустулы снизу листьев
-• Жёлтые пятна на верхней стороне
-• Преждевременное опадение листьев
-• Ослабление роста
-
-ЛЕЧЕНИЕ:
-1. Удалите и уничтожьте все заражённые листья
-2. Примените фунгицид на основе серы или меди
-3. Не компостируйте заражённый материал
-4. Улучшите циркуляцию воздуха
-5. Обрабатывайте каждые 7-14 дней
-
-ПРОФИЛАКТИКА:
-• Поливайте утром на уровне почвы
-• Содержите листву сухой
-• Своевременно убирайте опавшие листья
-• Обеспечьте расстояние между растениями
-            """.trimIndent(),
+            title = R.string.guide_rust_title,
+            description = R.string.guide_rust_description,
+            content = R.string.guide_rust_content,
             iconRes = R.drawable.ic_disease_rust,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "botrytis",
-            titleEn = "Gray Mold (Botrytis)",
-            titleRu = "Серая гниль (Ботритис)",
-            descriptionEn = "Fuzzy gray-brown mold on flowers and leaves",
-            descriptionRu = "Пушистая серо-коричневая плесень на цветах и листьях",
-            contentEn = """
-Botrytis, or gray mold, produces fuzzy gray-brown mold on flowers, buds, leaves, and stems. It thrives in cool, damp conditions.
-
-SYMPTOMS:
-• Fuzzy gray mold on decaying plant parts
-• Brown/tan spots on flowers and buds
-• Soft, water-soaked areas on stems
-• Dead flowers may be covered in gray fuzz
-
-TREATMENT:
-1. Remove all infected parts immediately
-2. Improve ventilation and reduce humidity
-3. Avoid misting or overhead watering
-4. Apply fungicide if infection is widespread
-5. Remove dead or dying flowers promptly
-
-PREVENTION:
-• Keep humidity below 70%
-• Provide excellent air circulation
-• Remove dead plant material promptly
-• Water plants in the morning
-            """.trimIndent(),
-            contentRu = """
-Ботритис, или серая гниль, образует пушистую серо-коричневую плесень на цветах, бутонах, листьях и стеблях. Развивается в прохладных, влажных условиях.
-
-СИМПТОМЫ:
-• Пушистая серая плесень на отмирающих частях
-• Коричневые/бежевые пятна на цветах и бутонах
-• Мягкие водянистые участки на стеблях
-• Мёртвые цветы покрыты серым налётом
-
-ЛЕЧЕНИЕ:
-1. Немедленно удалите все заражённые части
-2. Улучшите вентиляцию и снизьте влажность
-3. Избегайте опрыскивания и верхнего полива
-4. Примените фунгицид при обширном поражении
-5. Своевременно удаляйте увядшие цветы
-
-ПРОФИЛАКТИКА:
-• Поддерживайте влажность ниже 70%
-• Обеспечьте отличную циркуляцию воздуха
-• Своевременно удаляйте мёртвые части растений
-• Поливайте растения утром
-            """.trimIndent(),
+            title = R.string.guide_botrytis_title,
+            description = R.string.guide_botrytis_description,
+            content = R.string.guide_botrytis_content,
             iconRes = R.drawable.ic_disease_botrytis,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         // Pests
 
         GuideItem(
             id = "spider_mites",
-            titleEn = "Spider Mites",
-            titleRu = "Паутинный клещ",
-            descriptionEn = "Tiny pests creating fine webs on plant leaves",
-            descriptionRu = "Мелкие вредители, создающие тонкую паутину на листьях",
-            contentEn = """
-Spider mites are tiny arachnids that suck sap from plant cells, causing speckled, discolored leaves with fine webbing.
-
-SYMPTOMS:
-• Fine webs between leaves and stems
-• Tiny yellow/white speckles on leaf surfaces
-• Leaves become pale, dry and brittle
-• Visible tiny dots (mites) on leaf undersides
-
-TREATMENT:
-1. Spray plant thoroughly with water to dislodge mites
-2. Apply insecticidal soap or neem oil
-3. Repeat treatment every 5-7 days for 3 weeks
-4. Increase humidity around the plant
-5. Isolate the affected plant
-
-PREVENTION:
-• Mist plants regularly
-• Keep humidity above 50%
-• Inspect new plants before bringing them home
-• Clean leaves regularly with a damp cloth
-            """.trimIndent(),
-            contentRu = """
-Паутинный клещ - мелкие паукообразные, которые высасывают сок из клеток растений, вызывая пятнистость и обесцвечивание листьев с тонкой паутиной.
-
-СИМПТОМЫ:
-• Тонкая паутина между листьями и стеблями
-• Мелкие жёлтые/белые крапинки на поверхности листьев
-• Листья становятся бледными, сухими и ломкими
-• Видны мелкие точки (клещи) на нижней стороне листьев
-
-ЛЕЧЕНИЕ:
-1. Тщательно опрыскайте растение водой
-2. Нанесите инсектицидное мыло или масло нима
-3. Повторяйте обработку каждые 5-7 дней в течение 3 недель
-4. Увеличьте влажность вокруг растения
-5. Изолируйте поражённое растение
-
-ПРОФИЛАКТИКА:
-• Регулярно опрыскивайте растения
-• Поддерживайте влажность выше 50%
-• Осматривайте новые растения перед покупкой
-• Регулярно протирайте листья влажной тканью
-            """.trimIndent(),
+            title = R.string.guide_spider_mites_title,
+            description = R.string.guide_spider_mites_description,
+            content = R.string.guide_spider_mites_content,
             iconRes = R.drawable.ic_pest,
-            category = GuideCategory.PESTS
+            category = GuideCategory.PESTS,
         ),
 
         GuideItem(
             id = "aphids",
-            titleEn = "Aphids",
-            titleRu = "Тля",
-            descriptionEn = "Small green or black insects clustering on new growth",
-            descriptionRu = "Мелкие зелёные или чёрные насекомые на молодых побегах",
-            contentEn = """
-Aphids are small soft-bodied insects that feed on plant sap. They cluster on new growth and undersides of leaves.
-
-SYMPTOMS:
-• Clusters of tiny insects on stems and buds
-• Sticky residue (honeydew) on leaves
-• Curled or distorted new growth
-• Black sooty mold on honeydew
-
-TREATMENT:
-1. Blast with strong water spray
-2. Apply insecticidal soap
-3. Use neem oil solution
-4. Introduce ladybugs (natural predators)
-5. For severe infestations, use systemic insecticide
-
-PREVENTION:
-• Inspect plants regularly, especially new growth
-• Quarantine new plants for 2 weeks
-• Avoid over-fertilizing with nitrogen
-• Encourage beneficial insects
-            """.trimIndent(),
-            contentRu = """
-Тля - мелкие мягкотелые насекомые, питающиеся соком растений. Скапливаются на молодых побегах и нижней стороне листьев.
-
-СИМПТОМЫ:
-• Скопления мелких насекомых на стеблях и бутонах
-• Липкий налёт (медвяная роса) на листьях
-• Скрученные или деформированные молодые побеги
-• Чёрная сажистая плесень на медвяной росе
-
-ЛЕЧЕНИЕ:
-1. Смойте сильной струёй воды
-2. Нанесите инсектицидное мыло
-3. Используйте раствор масла нима
-4. Подселите божьих коровок (естественные враги)
-5. При сильном поражении используйте системный инсектицид
-
-ПРОФИЛАКТИКА:
-• Регулярно осматривайте растения
-• Карантинируйте новые растения на 2 недели
-• Избегайте чрезмерного удобрения азотом
-• Привлекайте полезных насекомых
-            """.trimIndent(),
+            title = R.string.guide_aphids_title,
+            description = R.string.guide_aphids_description,
+            content = R.string.guide_aphids_content,
             iconRes = R.drawable.ic_pest,
-            category = GuideCategory.PESTS
+            category = GuideCategory.PESTS,
         ),
 
         GuideItem(
             id = "mealybugs",
-            titleEn = "Mealybugs",
-            titleRu = "Мучнистые червецы",
-            descriptionEn = "White cottony masses on stems and leaf joints",
-            descriptionRu = "Белые ватообразные скопления на стеблях и пазухах листьев",
-            contentEn = """
-Mealybugs are soft-bodied insects covered in white, waxy coating. They cluster in leaf axils, on stems, and underneath leaves.
-
-SYMPTOMS:
-• White cottony or waxy masses on plant
-• Sticky honeydew on leaves and surfaces below
-• Yellowing and wilting of leaves
-• Stunted growth and leaf drop
-
-TREATMENT:
-1. Dab individual mealybugs with rubbing alcohol on a cotton swab
-2. Spray with insecticidal soap or neem oil
-3. For severe infestations, use systemic insecticide
-4. Repeat weekly for at least 3-4 weeks
-5. Isolate infected plants immediately
-
-PREVENTION:
-• Inspect plants regularly, especially leaf axils
-• Quarantine new plants for 2-3 weeks
-• Keep plants healthy with proper care
-• Avoid overwatering and excessive nitrogen fertilizer
-            """.trimIndent(),
-            contentRu = """
-Мучнистые червецы - мягкотелые насекомые, покрытые белым восковым налётом. Скапливаются в пазухах листьев, на стеблях и нижней стороне листьев.
-
-СИМПТОМЫ:
-• Белые ватообразные или восковые скопления
-• Липкая медвяная роса на листьях
-• Пожелтение и увядание листьев
-• Замедление роста и опадение листьев
-
-ЛЕЧЕНИЕ:
-1. Обработайте отдельных вредителей спиртом на ватной палочке
-2. Опрыскайте инсектицидным мылом или маслом нима
-3. При сильном поражении используйте системный инсектицид
-4. Повторяйте еженедельно минимум 3-4 недели
-5. Немедленно изолируйте заражённые растения
-
-ПРОФИЛАКТИКА:
-• Регулярно осматривайте пазухи листьев
-• Карантинируйте новые растения 2-3 недели
-• Поддерживайте здоровье растений
-• Избегайте переувлажнения и избытка азота
-            """.trimIndent(),
+            title = R.string.guide_mealybugs_title,
+            description = R.string.guide_mealybugs_description,
+            content = R.string.guide_mealybugs_content,
             iconRes = R.drawable.ic_pest,
-            category = GuideCategory.PESTS
+            category = GuideCategory.PESTS,
         ),
 
         GuideItem(
             id = "scale_insects",
-            titleEn = "Scale Insects",
-            titleRu = "Щитовки",
-            descriptionEn = "Brown or white bumps firmly attached to stems and leaves",
-            descriptionRu = "Коричневые или белые бугорки на стеблях и листьях",
-            contentEn = """
-Scale insects are small, immobile pests that attach to stems and leaves under a protective shell. They suck plant sap and weaken the plant over time.
-
-SYMPTOMS:
-• Small brown or white bumps on stems and leaves
-• Sticky honeydew residue
-• Yellowing leaves and reduced vigor
-• Sooty mold growing on honeydew
-
-TREATMENT:
-1. Scrape off individual scales with a soft brush
-2. Apply rubbing alcohol with a cotton swab
-3. Spray with horticultural oil to suffocate them
-4. Use systemic insecticide for heavy infestations
-5. Repeat treatment every 2 weeks
-
-PREVENTION:
-• Inspect new plants before purchase
-• Keep plants well-ventilated
-• Avoid overcrowding
-• Monitor regularly - early detection is key
-            """.trimIndent(),
-            contentRu = """
-Щитовки - мелкие неподвижные вредители, прикрепляющиеся к стеблям и листьям под защитным щитком. Высасывают сок и ослабляют растение.
-
-СИМПТОМЫ:
-• Мелкие коричневые или белые бугорки на стеблях
-• Липкая медвяная роса
-• Пожелтение листьев и снижение тонуса
-• Сажистый грибок на медвяной росе
-
-ЛЕЧЕНИЕ:
-1. Соскребите отдельных щитовок мягкой щёткой
-2. Обработайте спиртом на ватной палочке
-3. Опрыскайте садовым маслом для удушения
-4. При сильном поражении - системный инсектицид
-5. Повторяйте обработку каждые 2 недели
-
-ПРОФИЛАКТИКА:
-• Осматривайте новые растения перед покупкой
-• Обеспечьте хорошую вентиляцию
-• Избегайте скученности
-• Регулярно осматривайте - ранее обнаружение ключевое
-            """.trimIndent(),
+            title = R.string.guide_scale_insects_title,
+            description = R.string.guide_scale_insects_description,
+            content = R.string.guide_scale_insects_content,
             iconRes = R.drawable.ic_pest,
-            category = GuideCategory.PESTS
+            category = GuideCategory.PESTS,
         ),
 
         // Watering
 
         GuideItem(
             id = "watering_basics",
-            titleEn = "Watering Basics",
-            titleRu = "Основы полива",
-            descriptionEn = "How to water your plants correctly",
-            descriptionRu = "Как правильно поливать растения",
-            contentEn = """
-Proper watering is the single most important factor in plant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
-
-GOLDEN RULES:
-1. Check before watering - stick your finger 2-3 cm into soil
-2. Water thoroughly until it drains from the bottom
-3. Empty saucers after 30 minutes
-4. Use room-temperature water
-5. Water less in winter, more in summer
-
-SIGNS OF OVERWATERING:
-• Yellowing lower leaves
-• Soft, mushy stems
-• Mold on soil surface
-• Root rot
-
-SIGNS OF UNDERWATERING:
-• Dry, crispy leaf edges
-• Wilting that recovers after watering
-• Soil pulling away from pot edges
-• Slow growth
-
-TIPS:
-• Morning watering is best
-• Group plants by water needs
-• Consider self-watering pots for consistent moisture
-• Rainwater or filtered water is ideal
-
-SEE ALSO:
-• [Light Requirements](guide:light_guide)
-• [Humidity Control](guide:humidity_guide)
-            """.trimIndent(),
-            contentRu = """
-Правильный полив - самый важный фактор здоровья растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
-
-ЗОЛОТЫЕ ПРАВИЛА:
-1. Проверяйте перед поливом - воткните палец на 2-3 см в почву
-2. Поливайте обильно, пока вода не потечёт из дренажного отверстия
-3. Сливайте воду из поддонов через 30 минут
-4. Используйте воду комнатной температуры
-5. Зимой поливайте реже, летом - чаще
-
-ПРИЗНАКИ ПЕРЕУВЛАЖНЕНИЯ:
-• Пожелтение нижних листьев
-• Мягкие, рыхлые стебли
-• Плесень на поверхности почвы
-• Корневая гниль
-
-ПРИЗНАКИ НЕДОСТАТОЧНОГО ПОЛИВА:
-• Сухие, хрустящие края листьев
-• Увядание, которое проходит после полива
-• Почва отходит от стенок горшка
-• Замедление роста
-
-СОВЕТЫ:
-• Лучше поливать утром
-• Группируйте растения по потребности в воде
-• Рассмотрите горшки с автополивом
-• Дождевая или фильтрованная вода - идеальный вариант
-
-СМ. ТАКЖЕ:
-• [Требования к освещению](guide:light_guide)
-• [Контроль влажности](guide:humidity_guide)
-            """.trimIndent(),
+            title = R.string.guide_watering_basics_title,
+            description = R.string.guide_watering_basics_description,
+            content = R.string.guide_watering_basics_content,
             iconRes = R.drawable.ic_watering,
-            category = GuideCategory.WATERING
+            category = GuideCategory.WATERING,
         ),
 
         GuideItem(
             id = "humidity_guide",
-            titleEn = "Humidity Control",
-            titleRu = "Контроль влажности",
-            descriptionEn = "Managing humidity for tropical indoor plants",
-            descriptionRu = "Управление влажностью для тропических растений",
-            contentEn = """
-Many popular indoor plants are tropical and need higher humidity than typical indoor environments provide (30-40%). Target 50-70% for most tropicals.
-
-WAYS TO INCREASE HUMIDITY:
-1. Group plants together (they create a microclimate)
-2. Place pots on pebble trays with water
-3. Use a humidifier near plants
-4. Mist leaves in the morning (not evening)
-5. Place plants in naturally humid rooms (bathroom, kitchen)
-
-SIGNS OF LOW HUMIDITY:
-• Brown, crispy leaf tips and edges
-• Curling leaves
-• Flower buds dropping before opening
-• Spider mite infestations (thrive in dry air)
-
-TIPS:
-• Measure humidity with a hygrometer
-• Don't mist plants prone to fungal issues
-• Keep plants away from heating vents
-• Terrariums create perfect humidity for small plants
-            """.trimIndent(),
-            contentRu = """
-Многие популярные комнатные растения тропические и нуждаются в более высокой влажности, чем обычный воздух в помещении (30-40%). Оптимально 50-70% для большинства тропических.
-
-СПОСОБЫ ПОВЫШЕНИЯ ВЛАЖНОСТИ:
-1. Группируйте растения вместе (создают микроклимат)
-2. Ставьте горшки на поддоны с галькой и водой
-3. Используйте увлажнитель воздуха
-4. Опрыскивайте листья утром (не вечером)
-5. Размещайте в влажных комнатах (ванная, кухня)
-
-ПРИЗНАКИ НИЗКОЙ ВЛАЖНОСТИ:
-• Коричневые, хрустящие кончики и края листьев
-• Скручивание листьев
-• Опадение бутонов до раскрытия
-• Паутинный клещ (процветает в сухом воздухе)
-
-СОВЕТЫ:
-• Измеряйте влажность гигрометром
-• Не опрыскивайте растения, склонные к грибковым болезням
-• Держите растения подальше от батарей
-• Террариумы создают идеальную влажность для мелких растений
-            """.trimIndent(),
+            title = R.string.guide_humidity_guide_title,
+            description = R.string.guide_humidity_guide_description,
+            content = R.string.guide_humidity_guide_content,
             iconRes = R.drawable.ic_watering,
-            category = GuideCategory.WATERING
+            category = GuideCategory.WATERING,
         ),
 
         // Lighting
 
         GuideItem(
             id = "light_guide",
-            titleEn = "Light Requirements",
-            titleRu = "Требования к освещению",
-            descriptionEn = "Understanding your plants' light needs",
-            descriptionRu = "Потребности растений в освещении",
-            contentEn = """
-Light is essential for photosynthesis. Understanding your plant's light needs prevents many common problems.
-
-LIGHT LEVELS:
-• Direct bright: South-facing window, 6+ hours of sun
-• Bright indirect: Near a sunny window but not in direct rays
-• Medium: A few feet from a window, or north-facing
-• Low: Far from windows, hallways
-
-SIGNS OF TOO MUCH LIGHT:
-• Scorched/bleached patches on leaves
-• Crispy brown edges
-• Faded leaf color
-• Wilting in midday heat
-
-SIGNS OF TOO LITTLE LIGHT:
-• Leggy, stretched growth toward light
-• Small, pale new leaves
-• No flowering
-• Dropping lower leaves
-
-TIPS:
-• Rotate plants quarterly for even growth
-• Clean windows to maximize light
-• Use grow lights in dark rooms (12-16 hrs/day)
-• Sheer curtains diffuse harsh direct sun
-            """.trimIndent(),
-            contentRu = """
-Свет необходим для фотосинтеза. Понимание потребностей растения в свете предотвращает многие проблемы.
-
-УРОВНИ ОСВЕЩЕНИЯ:
-• Прямой яркий: южное окно, 6+ часов солнца
-• Яркий рассеянный: рядом с солнечным окном, но не под прямыми лучами
-• Средний: в нескольких шагах от окна или северное окно
-• Низкий: далеко от окон, коридоры
-
-ПРИЗНАКИ ИЗБЫТКА СВЕТА:
-• Ожоги/обесцвеченные участки на листьях
-• Хрустящие коричневые края
-• Блёклый цвет листьев
-• Увядание в полуденную жару
-
-ПРИЗНАКИ НЕДОСТАТКА СВЕТА:
-• Вытянутый рост в сторону света
-• Мелкие, бледные новые листья
-• Отсутствие цветения
-• Опадение нижних листьев
-
-СОВЕТЫ:
-• Поворачивайте растения каждый сезон
-• Мойте окна для максимального света
-• Используйте фитолампы в тёмных комнатах (12-16 ч/день)
-• Тюлевые шторы рассеивают жёсткий прямой свет
-            """.trimIndent(),
+            title = R.string.guide_light_guide_title,
+            description = R.string.guide_light_guide_description,
+            content = R.string.guide_light_guide_content,
             iconRes = R.drawable.ic_light,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         // Care tips
 
         GuideItem(
             id = "repotting",
-            titleEn = "Repotting Guide",
-            titleRu = "Руководство по пересадке",
-            descriptionEn = "When and how to repot your plants",
-            descriptionRu = "Когда и как пересаживать растения",
-            contentEn = """
-Repotting gives your plant fresh soil and room to grow. Most potted plants need repotting every 1-2 years.
-
-SIGNS IT'S TIME TO REPOT:
-• Roots growing out of drainage holes
-• Water runs straight through without absorbing
-• Plant is top-heavy and tips over
-• Growth has stalled
-• Soil dries out very quickly
-
-HOW TO REPOT:
-1. Water plant the day before
-2. Choose a pot 2-3 cm larger in diameter
-3. Add fresh potting mix to the bottom
-4. Gently remove plant and loosen root ball
-5. Place in new pot and fill around with soil
-6. Water thoroughly
-7. Skip fertilizing for 4-6 weeks
-
-BEST TIME: Spring (start of growing season)
-
-TIPS:
-• Always use pots with drainage holes
-• Don't go too big - oversized pots hold excess moisture
-• Use appropriate soil mix for your plant type
-            """.trimIndent(),
-            contentRu = """
-Пересадка даёт растению свежую почву и место для роста. Большинство растений в горшках нужно пересаживать каждые 1-2 года.
-
-ПРИЗНАКИ ТОГО, ЧТО ПОРА ПЕРЕСАЖИВАТЬ:
-• Корни растут из дренажных отверстий
-• Вода проходит насквозь, не впитываясь
-• Растение перевешивается и падает
-• Рост остановился
-• Почва высыхает очень быстро
-
-КАК ПЕРЕСАЖИВАТЬ:
-1. Полейте растение за день до пересадки
-2. Выберите горшок на 2-3 см больше в диаметре
-3. Насыпьте свежую почву на дно
-4. Аккуратно извлеките растение и расправьте корни
-5. Поместите в новый горшок и засыпьте почвой
-6. Тщательно полейте
-7. Не удобряйте 4-6 недель
-
-ЛУЧШЕЕ ВРЕМЯ: весна (начало вегетации)
-
-СОВЕТЫ:
-• Всегда используйте горшки с дренажными отверстиями
-• Не выбирайте слишком большой горшок
-• Используйте подходящую почву для вашего растения
-            """.trimIndent(),
+            title = R.string.guide_repotting_title,
+            description = R.string.guide_repotting_description,
+            content = R.string.guide_repotting_content,
             iconRes = R.drawable.ic_care,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         GuideItem(
             id = "fertilizing",
-            titleEn = "Fertilizing Guide",
-            titleRu = "Руководство по подкормке",
-            descriptionEn = "How and when to feed your plants",
-            descriptionRu = "Как и когда подкармливать растения",
-            contentEn = """
-Fertilizing provides essential nutrients that potting soil eventually depletes. Feed during the growing season (spring-summer).
-
-NPK BASICS:
-• N (Nitrogen) - leaf and stem growth
-• P (Phosphorus) - root and flower development
-• K (Potassium) - overall plant health and disease resistance
-
-WHEN TO FERTILIZE:
-• Active growing season: every 2-4 weeks
-• Winter: reduce to once a month or stop entirely
-• Never fertilize a dry plant - water first
-• Skip for 4-6 weeks after repotting
-
-HOW TO FERTILIZE:
-1. Dilute liquid fertilizer to half recommended strength
-2. Water the plant lightly first
-3. Apply fertilizer solution to moist soil
-4. Water again lightly to distribute
-
-SIGNS OF OVER-FERTILIZING:
-• White crust on soil surface (salt buildup)
-• Burned/brown leaf tips and edges
-• Wilting despite adequate water
-• Slow growth (paradoxically)
-
-TIPS:
-• Less is more - it's easier to fix under-feeding than over-feeding
-• Use balanced fertilizer (10-10-10) for most plants
-• Flowering plants need higher phosphorus (e.g., 10-30-20)
-• Organic options: worm castings, compost tea, fish emulsion
-            """.trimIndent(),
-            contentRu = """
-Подкормка обеспечивает необходимые питательные вещества, которые со временем истощаются в почве. Подкармливайте в период вегетации (весна-лето).
-
-ОСНОВЫ NPK:
-• N (Азот) - рост листьев и стеблей
-• P (Фосфор) - развитие корней и цветов
-• K (Калий) - общее здоровье и устойчивость к болезням
-
-КОГДА ПОДКАРМЛИВАТЬ:
-• Период роста: каждые 2-4 недели
-• Зимой: раз в месяц или прекратить полностью
-• Никогда не удобряйте сухое растение - сначала полейте
-• Пропустите 4-6 недель после пересадки
-
-КАК ПОДКАРМЛИВАТЬ:
-1. Разведите жидкое удобрение до половины рекомендуемой дозы
-2. Слегка полейте растение
-3. Нанесите раствор удобрения на влажную почву
-4. Слегка полейте снова для распределения
-
-ПРИЗНАКИ ПЕРЕКОРМКИ:
-• Белый налёт на поверхности почвы (скопление солей)
-• Ожоги/коричневые кончики и края листьев
-• Увядание при достаточном поливе
-• Замедление роста (парадоксально)
-
-СОВЕТЫ:
-• Меньше - лучше, перекормку исправить сложнее
-• Используйте сбалансированное удобрение (10-10-10) для большинства
-• Цветущим нужен повышенный фосфор (10-30-20)
-• Органика: биогумус, компостный чай, рыбная эмульсия
-            """.trimIndent(),
+            title = R.string.guide_fertilizing_title,
+            description = R.string.guide_fertilizing_description,
+            content = R.string.guide_fertilizing_content,
             iconRes = R.drawable.ic_care,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         GuideItem(
             id = "soil_guide",
-            titleEn = "Soil & Substrates",
-            titleRu = "Почва и субстраты",
-            descriptionEn = "Choosing the right growing medium",
-            descriptionRu = "Выбор правильного грунта для растений",
-            contentEn = """
-The right soil mix ensures proper drainage, aeration, and nutrient availability for your plants.
-
-SOIL COMPONENTS:
-• Peat moss/coco coir - retains moisture
-• Perlite - improves drainage and aeration
-• Vermiculite - retains moisture and nutrients
-• Bark chips - drainage and aeration for orchids/epiphytes
-• Sand - improves drainage for succulents
-
-COMMON MIXES:
-• Standard mix: 2 parts peat + 1 part perlite + 1 part compost
-• Succulents/cacti: 1 part soil + 1 part sand + 1 part perlite
-• Orchids: bark chips + sphagnum moss + perlite
-• Aroids (Monstera, Philodendron): 1 part soil + 1 part perlite + 1 part bark
-
-SIGNS OF BAD SOIL:
-• Water pools on surface and doesn't absorb
-• Soil is compacted and hard
-• Moldy surface layer
-• Roots circling the pot without spreading
-
-TIPS:
-• Replace soil every 1-2 years
-• Never use garden soil for indoor plants - it compacts
-• Sterilize homemade mixes to prevent pests
-• pH of 6.0-7.0 suits most plants
-            """.trimIndent(),
-            contentRu = """
-Правильная почвенная смесь обеспечивает дренаж, аэрацию и доступность питательных веществ.
-
-КОМПОНЕНТЫ ПОЧВЫ:
-• Торф/кокосовое волокно - удерживает влагу
-• Перлит - улучшает дренаж и аэрацию
-• Вермикулит - удерживает влагу и питательные вещества
-• Кора - дренаж для орхидей/эпифитов
-• Песок - улучшает дренаж для суккулентов
-
-РАСПРОСТРАНЁННЫЕ СМЕСИ:
-• Стандартная: 2 части торфа + 1 часть перлита + 1 часть компоста
-• Суккуленты/кактусы: 1 часть почвы + 1 часть песка + 1 часть перлита
-• Орхидеи: кора + мох сфагнум + перлит
-• Ароидные (Монстера, Филодендрон): 1 часть почвы + 1 часть перлита + 1 часть коры
-
-ПРИЗНАКИ ПЛОХОЙ ПОЧВЫ:
-• Вода скапливается на поверхности
-• Почва уплотнённая и твёрдая
-• Заплесневевший верхний слой
-• Корни закручиваются без разрастания
-
-СОВЕТЫ:
-• Обновляйте почву каждые 1-2 года
-• Не используйте садовую землю - она уплотняется
-• Стерилизуйте самодельные смеси
-• pH 6.0-7.0 подходит для большинства растений
-            """.trimIndent(),
+            title = R.string.guide_soil_guide_title,
+            description = R.string.guide_soil_guide_description,
+            content = R.string.guide_soil_guide_content,
             iconRes = R.drawable.ic_care,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         GuideItem(
             id = "seasonal_care",
-            titleEn = "Seasonal Plant Care",
-            titleRu = "Сезонный уход за растениями",
-            descriptionEn = "Adjusting care with changing seasons",
-            descriptionRu = "Изменение ухода в зависимости от сезона",
-            contentEn = """
-Plants respond to seasonal changes even indoors. Adjust your care routine throughout the year.
-
-SPRING (March-May):
-• Increase watering as growth accelerates
-• Start fertilizing again (every 2-4 weeks)
-• Repot if needed - best time of year
-• Prune leggy growth from winter
-• Check for pests waking up
-
-SUMMER (June-August):
-• Water more frequently (may need daily checks)
-• Continue regular fertilizing
-• Provide shade from intense afternoon sun
-• Monitor for pests - they're most active now
-• Increase humidity if using AC
-
-FALL (September-November):
-• Gradually reduce watering and fertilizing
-• Bring outdoor plants inside before frost
-• Move plants to brighter spots as days shorten
-• Stop repotting - plants are slowing down
-• Check for hitchhiker pests on returning plants
-
-WINTER (December-February):
-• Reduce watering significantly
-• Stop or reduce fertilizing
-• Keep away from cold drafts and heating vents
-• Provide supplemental light if needed
-• Increase humidity (heating dries indoor air)
-            """.trimIndent(),
-            contentRu = """
-Растения реагируют на сезонные изменения даже в помещении. Корректируйте уход в течение года.
-
-ВЕСНА (Март-Май):
-• Увеличьте полив по мере ускорения роста
-• Начните подкормки (каждые 2-4 недели)
-• Пересадите при необходимости - лучшее время
-• Обрежьте вытянувшийся зимний рост
-• Проверьте на пробуждающихся вредителей
-
-ЛЕТО (Июнь-Август):
-• Поливайте чаще (проверяйте ежедневно)
-• Продолжайте регулярные подкормки
-• Защитите от интенсивного полуденного солнца
-• Следите за вредителями - они наиболее активны
-• Увеличьте влажность при работающем кондиционере
-
-ОСЕНЬ (Сентябрь-Ноябрь):
-• Постепенно сокращайте полив и подкормки
-• Занесите уличные растения до морозов
-• Переместите к более светлым местам
-• Прекратите пересадки - рост замедляется
-• Проверьте вернувшиеся растения на вредителей
-
-ЗИМА (Декабрь-Февраль):
-• Существенно сократите полив
-• Прекратите или сократите подкормки
-• Держите подальше от сквозняков и батарей
-• Обеспечьте дополнительное освещение
-• Увеличьте влажность (отопление сушит воздух)
-            """.trimIndent(),
+            title = R.string.guide_seasonal_care_title,
+            description = R.string.guide_seasonal_care_description,
+            content = R.string.guide_seasonal_care_content,
             iconRes = R.drawable.ic_care,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         // --- Articles for the remaining diagnosis classes, so every scan
@@ -1156,368 +199,56 @@ WINTER (December-February):
 
         GuideItem(
             id = "healthy",
-            titleEn = "Healthy Plant",
-            titleRu = "Здоровое растение",
-            descriptionEn = "What a thriving plant looks like - and how to keep it that way",
-            descriptionRu = "Как выглядит здоровое растение и как его таким сохранить",
-            contentEn = """
-A healthy plant is your baseline - knowing what "good" looks like makes problems easy to catch early.
-
-SIGNS OF A HEALTHY PLANT:
-• Firm, evenly coloured leaves with no spots or yellowing
-• Steady new growth during the growing season
-• Roots that are white or light tan, not mushy or brown
-• No pests on leaf undersides or stems
-
-KEEP IT THRIVING:
-• Water only when the top 2-3 cm of soil is dry
-• Give bright, indirect light (most foliage plants)
-• Feed lightly during spring and summer
-• Wipe dust off leaves so they can breathe
-• Re-pot every 1-2 years into fresh mix
-
-EARLY WARNING SIGNS:
-• New leaves smaller or paler than old ones
-• Sudden leaf drop or wilting
-• Sticky residue or fine webbing (pests)
-Catching these early is far easier than treating a full-blown problem.
-            """.trimIndent(),
-            contentRu = """
-Здоровое растение - это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
-
-ПРИЗНАКИ ЗДОРОВОГО РАСТЕНИЯ:
-• Плотные, равномерно окрашенные листья без пятен и пожелтения
-• Стабильный новый рост в период вегетации
-• Корни белые или светло-коричневые, не мягкие и не бурые
-• Нет вредителей на изнанке листьев и стеблях
-
-КАК ПОДДЕРЖАТЬ:
-• Поливайте, только когда верхние 2-3 см почвы просохли
-• Давайте яркий рассеянный свет (большинству лиственных)
-• Слегка подкармливайте весной и летом
-• Протирайте пыль с листьев, чтобы они «дышали»
-• Пересаживайте раз в 1-2 года в свежий грунт
-
-РАННИЕ ТРЕВОЖНЫЕ СИГНАЛЫ:
-• Новые листья мельче или бледнее старых
-• Внезапное опадение листьев или увядание
-• Липкий налёт или тонкая паутинка (вредители)
-Заметить это рано намного проще, чем лечить запущенную проблему.
-            """.trimIndent(),
+            title = R.string.guide_healthy_title,
+            description = R.string.guide_healthy_description,
+            content = R.string.guide_healthy_content,
             iconRes = R.drawable.ic_healthy,
-            category = GuideCategory.CARE_TIPS
+            category = GuideCategory.CARE_TIPS,
         ),
 
         GuideItem(
             id = "leaf_scorch_underwatering",
-            titleEn = "Leaf Scorch (Under-watering)",
-            titleRu = "Краевой ожог (недолив)",
-            descriptionEn = "Crispy brown leaf edges from too little water",
-            descriptionRu = "Сухие коричневые края листьев от нехватки воды",
-            contentEn = """
-Leaf scorch from under-watering shows up as crispy, brown leaf edges and tips. It is a physiological stress, not an infection.
-
-SYMPTOMS:
-• Crispy brown or tan leaf margins and tips
-• Leaves feel dry and papery
-• Lower / older leaves affected first
-• Wilting that recovers after watering
-
-CAUSES:
-• Soil drying out completely between waterings
-• Low humidity and dry, warm air
-• Root-bound plants that can't hold enough water
-• Missed waterings during hot spells
-
-TREATMENT:
-1. Water thoroughly until it drains from the bottom
-2. For a bone-dry rootball, soak the pot in water for 20-30 minutes
-3. Trim badly scorched edges if you like (cosmetic only)
-4. Move away from heat sources and harsh direct sun
-
-PREVENTION:
-• Check soil moisture before it fully dries
-• Raise humidity for thirsty tropicals
-• Re-pot root-bound plants
-• Water more often in summer
-            """.trimIndent(),
-            contentRu = """
-Краевой ожог от недолива проявляется как сухие, коричневые края и кончики листьев. Это физиологический стресс, а не инфекция.
-
-СИМПТОМЫ:
-• Сухие коричневые края и кончики листьев
-• Листья сухие и «бумажные» на ощупь
-• Сначала страдают нижние / старые листья
-• Увядание, которое проходит после полива
-
-ПРИЧИНЫ:
-• Почва полностью пересыхает между поливами
-• Низкая влажность и сухой тёплый воздух
-• Тесный горшок - корни не удерживают воду
-• Пропущенные поливы в жару
-
-ЛЕЧЕНИЕ:
-1. Полейте обильно, пока вода не выйдет снизу
-2. Сухой земляной ком замочите в воде на 20-30 минут
-3. При желании обрежьте сильно засохшие края (косметика)
-4. Уберите от источников тепла и резкого прямого солнца
-
-ПРОФИЛАКТИКА:
-• Проверяйте влажность до полного пересыхания
-• Повышайте влажность для влаголюбивых тропиков
-• Пересаживайте растения из тесных горшков
-• Летом поливайте чаще
-            """.trimIndent(),
+            title = R.string.guide_leaf_scorch_underwatering_title,
+            description = R.string.guide_leaf_scorch_underwatering_description,
+            content = R.string.guide_leaf_scorch_underwatering_content,
             iconRes = R.drawable.ic_watering,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "nutrient_deficiency",
-            titleEn = "Nutrient Deficiency",
-            titleRu = "Дефицит питания",
-            descriptionEn = "Yellowing leaves from a lack of nutrients",
-            descriptionRu = "Пожелтение листьев из-за нехватки питания",
-            contentEn = """
-Nutrient deficiency appears as yellowing leaves (chlorosis), often in a tell-tale pattern, when the plant can't get enough of a key element.
-
-SYMPTOMS:
-• Yellowing between leaf veins while veins stay green
-• Pale or uniformly yellow new growth
-• Slow, weak growth
-• Older or younger leaves affected depending on the nutrient
-
-CAUSES:
-• Old, depleted potting soil
-• No feeding during active growth
-• Wrong soil pH locking out nutrients
-• Over-watering damaging the roots' ability to absorb
-
-TREATMENT:
-1. Feed with a balanced liquid fertiliser at half strength
-2. Re-pot into fresh, quality potting mix
-3. Correct watering so roots can absorb again
-4. For stubborn cases use a feed with micronutrients (iron, magnesium)
-
-PREVENTION:
-• Feed lightly through spring and summer
-• Refresh the topsoil or re-pot yearly
-• Don't over-water
-            """.trimIndent(),
-            contentRu = """
-Дефицит питания проявляется пожелтением листьев (хлороз), часто по характерному рисунку, когда растению не хватает ключевого элемента.
-
-СИМПТОМЫ:
-• Пожелтение между жилками, при этом жилки остаются зелёными
-• Бледный или равномерно жёлтый новый рост
-• Медленный, слабый рост
-• Страдают старые или молодые листья в зависимости от элемента
-
-ПРИЧИНЫ:
-• Старый, истощённый грунт
-• Отсутствие подкормок в период роста
-• Неподходящий pH почвы блокирует питание
-• Перелив повреждает способность корней усваивать
-
-ЛЕЧЕНИЕ:
-1. Подкормите сбалансированным жидким удобрением в половинной дозе
-2. Пересадите в свежий качественный грунт
-3. Наладьте полив, чтобы корни снова усваивали питание
-4. В упорных случаях используйте удобрение с микроэлементами (железо, магний)
-
-ПРОФИЛАКТИКА:
-• Слегка подкармливайте весной и летом
-• Обновляйте верхний слой почвы или пересаживайте ежегодно
-• Не переливайте
-            """.trimIndent(),
+            title = R.string.guide_nutrient_deficiency_title,
+            description = R.string.guide_nutrient_deficiency_description,
+            content = R.string.guide_nutrient_deficiency_content,
             iconRes = R.drawable.ic_care,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "edema",
-            titleEn = "Edema",
-            titleRu = "Отёк (эдема)",
-            descriptionEn = "Corky bumps from a water imbalance - not an infection",
-            descriptionRu = "Пробковые бугорки от дисбаланса влаги - не инфекция",
-            contentEn = """
-Edema is a harmless physiological disorder - not a pest or infection. It happens when roots take up water faster than the leaves can release it, so cells burst and form bumps.
-
-SYMPTOMS:
-• Small water-blister bumps on leaf undersides
-• Bumps later turn corky, tan or rust-coloured
-• Common on peperomia, succulents, ivy and pelargonium
-• Affected leaves stay marked, but new growth is normal
-
-CAUSES:
-• Over-watering, especially in cool, dim, humid weather
-• Warm soil paired with cool, humid air
-• Poor air circulation
-
-TREATMENT:
-1. Water less, and only when the topsoil is dry
-2. Improve air flow and light
-3. Avoid watering on cool, cloudy days
-4. Don't remove healthy leaves - the damage is cosmetic
-
-PREVENTION:
-• Let soil dry slightly between waterings
-• Give brighter light and steady airflow
-• Avoid big swings between soil and air temperature
-            """.trimIndent(),
-            contentRu = """
-Отёк (эдема) - безвредное физиологическое нарушение, а не вредитель или инфекция. Возникает, когда корни поглощают воду быстрее, чем листья её испаряют, и клетки лопаются, образуя бугорки.
-
-СИМПТОМЫ:
-• Мелкие водянистые бугорки на изнанке листьев
-• Позже бугорки становятся пробковыми, бежевыми или ржавыми
-• Часто у пеперомии, суккулентов, плюща и пеларгонии
-• Поражённые листья остаются с отметинами, но новый рост нормальный
-
-ПРИЧИНЫ:
-• Перелив, особенно в прохладную, тёмную, влажную погоду
-• Тёплая почва при прохладном влажном воздухе
-• Плохая циркуляция воздуха
-
-ЛЕЧЕНИЕ:
-1. Поливайте реже и только когда верхний слой сухой
-2. Улучшите циркуляцию воздуха и освещение
-3. Не поливайте в прохладные пасмурные дни
-4. Не удаляйте здоровые листья - повреждение косметическое
-
-ПРОФИЛАКТИКА:
-• Давайте почве слегка просыхать между поливами
-• Обеспечьте более яркий свет и движение воздуха
-• Избегайте больших перепадов температуры почвы и воздуха
-            """.trimIndent(),
+            title = R.string.guide_edema_title,
+            description = R.string.guide_edema_description,
+            content = R.string.guide_edema_content,
             iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "sunburn_or_scorch",
-            titleEn = "Sunburn / Leaf Scorch",
-            titleRu = "Солнечный ожог",
-            descriptionEn = "Bleached or brown patches from too much direct light",
-            descriptionRu = "Выгоревшие или коричневые пятна от избытка прямого света",
-            contentEn = """
-Sunburn (leaf scorch from light) appears as bleached, brown or crispy patches where strong direct sun hits the leaves - most common after a plant is moved into brighter light too quickly.
-
-SYMPTOMS:
-• Bleached white, yellow or brown patches
-• Damage on the side facing the sun
-• Dry, crispy texture on affected spots
-• Sharp edges to the damaged area (unlike disease blotches)
-
-CAUSES:
-• Sudden move from low to direct light
-• Hot sun magnified through a window
-• Water droplets on leaves acting as lenses
-
-TREATMENT:
-1. Move the plant to bright, indirect light
-2. Trim badly damaged leaves if unsightly (cosmetic)
-3. Keep watering normal - don't overcompensate
-4. Let new growth come in adapted to the spot
-
-PREVENTION:
-• Acclimatise plants to brighter spots over 1-2 weeks
-• Diffuse harsh midday sun with a sheer curtain
-• Avoid watering leaves in strong sun
-            """.trimIndent(),
-            contentRu = """
-Солнечный ожог (от света) выглядит как выгоревшие, коричневые или сухие пятна там, где сильное прямое солнце попало на листья - чаще всего после слишком быстрого переноса на яркий свет.
-
-СИМПТОМЫ:
-• Выгоревшие белые, жёлтые или коричневые пятна
-• Повреждения со стороны, обращённой к солнцу
-• Сухая, хрустящая текстура на пятнах
-• Чёткие границы повреждения (в отличие от пятен болезней)
-
-ПРИЧИНЫ:
-• Резкий перенос из тени на прямой свет
-• Горячее солнце, усиленное стеклом окна
-• Капли воды на листьях работают как линзы
-
-ЛЕЧЕНИЕ:
-1. Переставьте растение на яркий рассеянный свет
-2. Обрежьте сильно повреждённые листья, если некрасиво (косметика)
-3. Поливайте как обычно - не переусердствуйте
-4. Дайте новому росту адаптироваться к месту
-
-ПРОФИЛАКТИКА:
-• Приучайте растения к яркому месту в течение 1-2 недель
-• Рассеивайте резкое полуденное солнце лёгкой занавеской
-• Не поливайте листья под сильным солнцем
-            """.trimIndent(),
+            title = R.string.guide_sunburn_or_scorch_title,
+            description = R.string.guide_sunburn_or_scorch_description,
+            content = R.string.guide_sunburn_or_scorch_content,
             iconRes = R.drawable.ic_light,
-            category = GuideCategory.COMMON_DISEASES
+            category = GuideCategory.COMMON_DISEASES,
         ),
 
         GuideItem(
             id = "pests",
-            titleEn = "Common Pests",
-            titleRu = "Распространённые вредители",
-            descriptionEn = "Spotting and treating sap-sucking pests",
-            descriptionRu = "Как распознать и вывести сосущих вредителей",
-            contentEn = """
-Most plant pests are tiny sap-suckers that weaken the plant and leave tell-tale signs. The combined "Pests" diagnosis covers the most common culprits.
-
-COMMON CULPRITS:
-• Mealybugs - white cottony fluff in leaf joints
-• Scale - small brown bumps on stems and leaf veins
-• Spider mites - fine webbing and pale stippling
-• Aphids - clusters of tiny green / black insects on new growth
-
-SYMPTOMS:
-• Sticky "honeydew" residue on leaves or nearby surfaces
-• Yellow stippling, curling or distorted new growth
-• Visible insects, webbing or cottony masses
-• Slowed growth and leaf drop
-
-TREATMENT:
-1. Isolate the plant from your others right away
-2. Wipe pests off with a cotton swab dipped in diluted alcohol
-3. Spray thoroughly with neem oil or insecticidal soap
-4. Repeat every 5-7 days for 3-4 weeks to catch hatchlings
-5. Rinse sturdy plants under the shower to dislodge mites
-
-PREVENTION:
-• Inspect new plants before bringing them home
-• Check leaf undersides during watering
-• Keep plants healthy - stressed plants attract pests
-• Wipe leaves and keep humidity up (mites love dry air)
-            """.trimIndent(),
-            contentRu = """
-Большинство вредителей растений - крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает самых распространённых виновников.
-
-ЧАСТЫЕ ВИНОВНИКИ:
-• Мучнистые червецы - белый ватный пушок в пазухах листьев
-• Щитовка - мелкие коричневые бугорки на стеблях и жилках
-• Паутинный клещ - тонкая паутинка и бледные точки
-• Тля - скопления мелких зелёных / чёрных насекомых на молодом росте
-
-СИМПТОМЫ:
-• Липкий налёт («медвяная роса») на листьях и рядом
-• Жёлтые точки, скручивание или искажение нового роста
-• Видимые насекомые, паутинка или ватные комочки
-• Замедление роста и опадение листьев
-
-ЛЕЧЕНИЕ:
-1. Сразу изолируйте растение от остальных
-2. Снимите вредителей ватной палочкой со спиртовым раствором
-3. Тщательно опрыскайте маслом нима или инсектицидным мылом
-4. Повторяйте каждые 5-7 дней в течение 3-4 недель
-5. Крепкие растения ополосните под душем, чтобы сбить клещей
-
-ПРОФИЛАКТИКА:
-• Осматривайте новые растения перед покупкой
-• Проверяйте изнанку листьев при поливе
-• Держите растения здоровыми - стресс привлекает вредителей
-• Протирайте листья и поддерживайте влажность (клещи любят сухой воздух)
-            """.trimIndent(),
+            title = R.string.guide_pests_title,
+            description = R.string.guide_pests_description,
+            content = R.string.guide_pests_content,
             iconRes = R.drawable.ic_pest,
-            category = GuideCategory.PESTS
+            category = GuideCategory.PESTS,
         ),
 
         // ── App help — how to read what the scanner tells you. Moved here
@@ -1525,52 +256,11 @@ PREVENTION:
         // handbook. ─────────────────────────────────────────────────────
         GuideItem(
             id = "understanding_results",
-            titleEn = "Understanding your results",
-            titleRu = "Как читать результаты",
-            descriptionEn = "Confidence, alternatives, and what \"I'm not sure\" means",
-            descriptionRu = "Уверенность, альтернативы и что значит «не уверен»",
-            contentEn = """
-The scanner is built to be honest about uncertainty: it would rather admit it isn't sure than guess. Here's how to read what it shows you.
-
-THE CONFIDENCE SCORE:
-• The percentage is calibrated - 80% means "right about 8 times out of 10", not marketing
-• High confidence on a sharp, close-up leaf photo is usually trustworthy
-• Low confidence is a signal to gather more evidence, not a verdict
-
-WHEN THE APP ISN'T SURE:
-• Instead of guessing, it shows several candidate conditions - treat them all as plausible
-• "Not a plant / blurry photo" means the photo couldn't be read: retake it closer, steadier and in better light; nothing is saved to your history
-• A healthy-looking verdict with low confidence still deserves a second look a few days later
-
-WHAT TO DO NEXT:
-1. Check the alternatives card and compare with the example photos
-2. Retake the photo - one sharp leaf filling the frame changes a lot
-3. Run the [symptom checker](tool:symptom) to triage by what you see
-4. Ask the community for a second opinion right from the result screen
-5. If a result was wrong, use the feedback button - corrections retrain the model
-            """.trimIndent(),
-            contentRu = """
-Сканер честен в своей неуверенности: он скорее признает сомнение, чем станет угадывать. Вот как читать то, что он показывает.
-
-ОЦЕНКА УВЕРЕННОСТИ:
-• Процент откалиброван - 80% значит «прав примерно в 8 случаях из 10», а не маркетинг
-• Высокая уверенность на чётком крупном фото листа обычно надёжна
-• Низкая уверенность - повод собрать больше данных, а не приговор
-
-КОГДА ПРИЛОЖЕНИЕ СОМНЕВАЕТСЯ:
-• Вместо угадывания оно показывает несколько кандидатов - считайте каждый возможным
-• «Не растение / размытое фото» значит, что снимок не удалось прочитать: переснимите ближе, ровнее и при лучшем свете; в историю такое не сохраняется
-• Вердикту «здоровое» с низкой уверенностью стоит устроить повторную проверку через пару дней
-
-ЧТО ДЕЛАТЬ ДАЛЬШЕ:
-1. Посмотрите карточку альтернатив и сравните с примерами фото
-2. Переснимите фото - один чёткий лист на весь кадр многое меняет
-3. Пройдите [проверку симптомов](tool:symptom), чтобы уточнить по признакам
-4. Запросите второе мнение сообщества прямо с экрана результата
-5. Если результат был неверным - нажмите кнопку обратной связи: исправления дообучают модель
-            """.trimIndent(),
+            title = R.string.guide_understanding_results_title,
+            description = R.string.guide_understanding_results_description,
+            content = R.string.guide_understanding_results_content,
             iconRes = R.drawable.ic_scan,
-            category = GuideCategory.HELP
+            category = GuideCategory.HELP,
         )
     )
 

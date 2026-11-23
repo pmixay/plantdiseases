@@ -212,9 +212,9 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
       payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
       bridge and the Gson ProGuard rules alive. M/L effort.
-- [ ] **Fold `GuideDataProvider.kt` (~1,640 lines) into the resource framework.** 78
-      EN/RU pairs as Kotlin strings; the app has ~41 `isRussian(` branches; no
-      RU-parity enforcement.
+- [ ] **The remaining bilingual Kotlin content.** The guide is in string
+      resources now and `StringParityTest` guards EN/RU parity, but ~32
+      `isRussian(` branches remain (e.g. `OfflineScanContent`'s offline cards).
 - [ ] **Drop Navigation Component** — a two-destination graph while 30+ Activities
       navigate by Intent.
 - [ ] **DAOs returning `Flow`.** Today screens re-read on resume, which is the root
@@ -222,7 +222,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`,
       re-measured 2026-11-23: LargeClass 1200 over `DetailExtraCardsController`'s
       1103, LongMethod 210 over `ResultActivity.displayResult`'s 197).
-      `GuideDataProvider.kt` stays excluded until it stops being a content blob.
 
 ---
 
