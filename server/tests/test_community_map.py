@@ -82,34 +82,6 @@ def test_map_scans_time_window(mapenv):
     assert ids == {"freshrow0001"}
 
 
-def test_map_scans_attaches_like_count_and_liked_by_me(mapenv):
-    """map_scans used to return bare rows with no like fields at all, unlike
-    nearby_scans — every marker on the map read as 0 likes regardless of the
-    real count. exclude_user_pseudo_id doubles as the viewer's own id here,
-    same as it already does for the "did I visit my own scan" exclusion."""
-    comm = mapenv
-    _scan(comm, "likedrow0001", 52.23, 21.01, user="pseudo-map-owner")
-    comm.set_like("likedrow0001", "pseudo-map-liker", True)
-
-    as_liker = comm.map_scans(
-        52.0, 52.5, 20.5, 21.5, exclude_user_pseudo_id="pseudo-map-liker",
-    )["items"][0]
-    assert as_liker["like_count"] == 1
-    assert as_liker["liked_by_me"] is True
-
-    as_stranger = comm.map_scans(
-        52.0, 52.5, 20.5, 21.5, exclude_user_pseudo_id="pseudo-someone-else",
-    )["items"][0]
-    assert as_stranger["like_count"] == 1
-    assert as_stranger["liked_by_me"] is False
-
-    # No viewer id at all — count still real, liked_by_me can't be anything
-    # but False since there's no identity to check it against.
-    anonymous = comm.map_scans(52.0, 52.5, 20.5, 21.5)["items"][0]
-    assert anonymous["like_count"] == 1
-    assert anonymous["liked_by_me"] is False
-
-
 def test_endpoint_map_uses_public_token_and_keeps_coords(client, mapenv):
     client.post("/api/community/scan", data={
         "scan_id": "mapscanid001", "user_pseudo_id": "pseudo-map-a",

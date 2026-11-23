@@ -713,90 +713,6 @@
         ]
       }
     },
-    "/api/community/safety/report": {
-      "post": {
-        "summary": "Community Report Content",
-        "description": "Queue a report bound to the signed actor and stored content author.\n\nThe request contains only an opaque public content token plus a fixed\nreason.  It never accepts an actor id or free-form moderation text.",
-        "operationId": "community_report_content_api_community_safety_report_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityReportRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/safety/block": {
-      "post": {
-        "summary": "Community Block Author",
-        "description": "Block the verified author resolved from an opaque content token.",
-        "operationId": "community_block_author_api_community_safety_block_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityBlockRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
     "/api/community/safety/blocks": {
       "get": {
         "summary": "Community List Blocks",
@@ -862,44 +778,6 @@
         }
       }
     },
-    "/api/community/profile/{author_token}": {
-      "get": {
-        "summary": "Community Author Profile",
-        "description": "Public community activity for one opaque account-author handle.",
-        "operationId": "community_author_profile_api_community_profile__author_token__get",
-        "parameters": [
-          {
-            "name": "author_token",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Author Token"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/community/view": {
       "post": {
         "summary": "Community Record Scan View",
@@ -910,48 +788,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommunityViewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/community/like": {
-      "post": {
-        "summary": "Community Like Scan",
-        "description": "Like or unlike a shared scan. A self-like is refused (0 either way);\nliking your own scan makes no more sense than viewing it does.",
-        "operationId": "community_like_scan_api_community_like_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommunityLikeRequest"
               }
             }
           },
@@ -4078,79 +3914,6 @@
           "message"
         ],
         "title": "ChatRequest"
-      },
-      "CommunityBlockRequest": {
-        "properties": {
-          "target_type": {
-            "type": "string",
-            "maxLength": 7,
-            "minLength": 4,
-            "title": "Target Type"
-          },
-          "target_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Target Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "target_type",
-          "target_id"
-        ],
-        "title": "CommunityBlockRequest"
-      },
-      "CommunityLikeRequest": {
-        "properties": {
-          "scan_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Scan Id"
-          },
-          "liked": {
-            "type": "boolean",
-            "title": "Liked",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_id"
-        ],
-        "title": "CommunityLikeRequest"
-      },
-      "CommunityReportRequest": {
-        "properties": {
-          "target_type": {
-            "type": "string",
-            "maxLength": 7,
-            "minLength": 4,
-            "title": "Target Type"
-          },
-          "target_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Target Id"
-          },
-          "reason": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "target_type",
-          "target_id",
-          "reason"
-        ],
-        "title": "CommunityReportRequest"
       },
       "CommunityViewRequest": {
         "properties": {

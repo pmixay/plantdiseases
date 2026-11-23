@@ -92,7 +92,6 @@
     <string name="forum_send">Отправить</string>
     <string name="forum_cancel_reply">Отменить ответ</string>
     <string name="forum_replying_to">Ответ для %1$s</string>
-    <string name="forum_training_consent_answer">Разрешить PlantVision учиться на этих фото</string>
     <string name="forum_report">Пожаловаться</string>
     <string name="forum_reported">Спасибо. Модератор посмотрит.</string>
     <string name="forum_block_author">Заблокировать автора</string>

@@ -193,13 +193,6 @@ Each item is its own PR; don't fold one into another.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
       (the Android client mints these ids).
-- [ ] **Retire the scan routes the app no longer calls.** Shared scans are shown
-      without an author and a tap only expands the photo, so the app dropped
-      `/api/community/like`, `/api/community/profile/{author_token}` and the scan
-      targets of `/api/community/safety/report` and `/safety/block`. Older app
-      versions still call them. Removing them also means dropping `nickname`,
-      `author_token`, `like_count` and `liked_by_me` from scan feed items, the like
-      table and the like term in ranking.
 - [ ] **Add `response_model` to routes.** `openapi.json` describes request bodies
       only. `/api/analyze` is pinned by `tests/test_analyze_payload.py`; every other
       response a frozen APK parses can change without failing CI.

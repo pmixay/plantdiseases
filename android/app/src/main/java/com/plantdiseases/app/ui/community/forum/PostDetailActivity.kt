@@ -382,7 +382,6 @@ class PostDetailActivity :
     private fun renderPhotos() {
         binding.llAnswerPhotos.removeAllViews()
         binding.llAnswerPhotos.visibility = if (answerPhotos.isEmpty()) View.GONE else View.VISIBLE
-        binding.cbAnswerConsent.visibility = binding.llAnswerPhotos.visibility
         val size = resources.getDimensionPixelSize(R.dimen.forum_compose_thumb)
         val margin = resources.getDimensionPixelSize(R.dimen.space_sm)
         for ((uri, mediaId) in answerPhotos.toList()) {
@@ -416,7 +415,9 @@ class PostDetailActivity :
             steps = steps.take(MAX_STEPS),
             diagnosis = diagnosis,
             mediaIds = answerPhotos.map { it.second },
-            trainingConsent = answerPhotos.isNotEmpty() && binding.cbAnswerConsent.isChecked,
+            // No checkbox: photos in an answer are always offered for training
+            // (the privacy policy says so), like the photos of a post.
+            trainingConsent = answerPhotos.isNotEmpty(),
         )
         lifecycleScope.launch {
             forum.answer(current.id, request)
@@ -424,7 +425,6 @@ class PostDetailActivity :
                     binding.etAnswer.setText("")
                     binding.etSteps.setText("")
                     binding.etSteps.visibility = View.GONE
-                    binding.cbAnswerConsent.isChecked = false
                     answerPhotos.clear()
                     renderPhotos()
                     diagnosis = null

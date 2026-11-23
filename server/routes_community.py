@@ -11,7 +11,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
@@ -97,21 +97,6 @@ class CommunityScanRequest(BaseModel):
         return cleaned or None
 
 
-class CommunityReportRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_type: str = Field(..., min_length=4, max_length=7)
-    target_id: str = Field(..., min_length=1, max_length=128)
-    reason: str = Field(..., min_length=1, max_length=32)
-
-
-class CommunityBlockRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_type: str = Field(..., min_length=4, max_length=7)
-    target_id: str = Field(..., min_length=1, max_length=128)
-
-
 class CommunityViewRequest(BaseModel):
     # ``scan_id`` (singular) is the original single-open shape, kept required
     # in name only — older installs still send it alone. ``scan_ids`` is the
@@ -127,22 +112,6 @@ class CommunityViewRequest(BaseModel):
         ):
             raise ValueError("scan_id or scan_ids is required")
         return self
-
-
-class CommunityLikeRequest(BaseModel):
-    scan_id: str = Field(..., min_length=1, max_length=128)
-    liked: bool = True
-
-
-_COMMUNITY_REPORT_REASONS = {
-    "sexual_content",
-    "violence_or_threats",
-    "hate_or_harassment",
-    "illegal_or_dangerous",
-    "spam_or_misleading",
-    "privacy_or_impersonation",
-    "other_rules_violation",
-}
 
 
 def _valid_bbox(
@@ -163,8 +132,6 @@ def _valid_bbox(
 
 
 COMMUNITY_DAILY_QUOTA = config.get_int("COMMUNITY_DAILY_QUOTA", 50)
-# Likes are cheap and low-stakes, so they get their own (looser) daily cap.
-COMMUNITY_LIKE_DAILY_QUOTA = config.get_int("COMMUNITY_LIKE_DAILY_QUOTA", 300)
 
 
 def register(router: APIRouter, m) -> None:
@@ -309,69 +276,6 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content={"ok": True, "id": row_id})
 
 
-    @router.post(
-        "/community/safety/report", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_report_content(
-        payload: CommunityReportRequest, request: Request,
-    ):
-        """Queue a report bound to the signed actor and stored content author.
-
-        The request contains only an opaque public content token plus a fixed
-        reason.  It never accepts an actor id or free-form moderation text.
-        """
-        principal = await m._require_account(request)
-        kind = payload.target_type.strip().lower()
-        if kind != "scan":
-            raise HTTPException(status_code=422, detail="invalid_target_type")
-        try:
-            created = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: m.community.record_content_report(
-                    reporter_actor_id=principal.actor_id,
-                    target_type=kind,
-                    target_id=payload.target_id.strip(),
-                    reason=payload.reason,
-                ),
-            )
-        except ValueError as exc:
-            community_http.raise_community_safety_error(exc)
-            raise AssertionError("unreachable") from exc
-        return JSONResponse(
-            content={"ok": True, "created": bool(created)},
-            headers={"Cache-Control": "no-store"},
-        )
-
-
-    @router.post(
-        "/community/safety/block", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_block_author(
-        payload: CommunityBlockRequest, request: Request,
-    ):
-        """Block the verified author resolved from an opaque content token."""
-        principal = await m._require_account(request)
-        kind = payload.target_type.strip().lower()
-        if kind != "scan":
-            raise HTTPException(status_code=422, detail="invalid_target_type")
-        try:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: m.community.block_content_author(
-                    blocker_actor_id=principal.actor_id,
-                    target_type=kind,
-                    target_id=payload.target_id.strip(),
-                ),
-            )
-        except ValueError as exc:
-            community_http.raise_community_safety_error(exc)
-            raise AssertionError("unreachable") from exc
-        return JSONResponse(
-            content={"ok": True, **result},
-            headers={"Cache-Control": "no-store"},
-        )
-
-
     @router.get(
         "/community/safety/blocks", dependencies=[Depends(m.community_bearer)]
     )
@@ -401,26 +305,6 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(
             content={"ok": True}, headers={"Cache-Control": "no-store"}
         )
-
-
-    @router.get("/community/profile/{author_token}")
-    async def community_author_profile(author_token: str, request: Request):
-        """Public community activity for one opaque account-author handle."""
-        if len(author_token) != 32 or not author_token.startswith("ca"):
-            raise HTTPException(status_code=404, detail="profile_not_found")
-        principal = await m._optional_account(request)
-        profile = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: m.community.public_account_profile(
-                author_token,
-                viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
-        if profile is None:
-            raise HTTPException(status_code=404, detail="profile_not_found")
-        for item in profile.get("items", []):
-            community_geo.localize_item_country(item)
-        return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
 
 
     @router.post("/community/view", dependencies=[Depends(m.community_bearer)])
@@ -458,34 +342,6 @@ def register(router: APIRouter, m) -> None:
             lambda: m.community.record_views(ids, account_actor_id=principal.actor_id),
         )
         return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
-
-
-    @router.post("/community/like", dependencies=[Depends(m.community_bearer)])
-    async def community_like_scan(payload: CommunityLikeRequest, request: Request):
-        """Like or unlike a shared scan. A self-like is refused (0 either way);
-        liking your own scan makes no more sense than viewing it does."""
-        principal = await m._require_account(request)
-        client_ip = m._client_ip(request)
-        loop = asyncio.get_running_loop()
-        if payload.liked and not m._consume_daily_write(
-            "community_like", client_ip, COMMUNITY_LIKE_DAILY_QUOTA
-        ):
-            raise HTTPException(status_code=429, detail="Daily like quota reached.")
-        sid = await loop.run_in_executor(
-            None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
-        )
-        liked = await loop.run_in_executor(
-            None,
-            lambda: m.community.set_like(
-                sid,
-                liked=payload.liked,
-                account_actor_id=principal.actor_id,
-            ),
-        )
-        count = await loop.run_in_executor(
-            None, lambda: m.community.like_counts([sid]).get(sid, 0),
-        )
-        return JSONResponse(content={"ok": True, "liked": liked, "count": count})
 
 
     @router.get("/community/nearby")
@@ -618,9 +474,8 @@ def register(router: APIRouter, m) -> None:
                 viewer_account_actor_id=principal.actor_id if principal else None,
             ),
         )
-        # Swap the publication capability for its stable, per-scan public token.
-        # The author pseudonym rotates independently; feedback uses a separate
-        # receipt.
+        # Swap the publication capability for its stable, per-scan public token;
+        # feedback uses a separate receipt.
         scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
         views: dict = {}
         if ranking_norm == "recent":

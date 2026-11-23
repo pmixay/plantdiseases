@@ -135,7 +135,7 @@ Defaults below are the **code** defaults.
 | `violation_threshold` / `violation_window` / `ban_duration` | `40` / `60.0` / `300.0` | Sustained over-limit requests earn a temporary 403 ban. |
 | `feedback_ip_pepper` | *(empty → generated)* | Peppers the SHA-256 of a client IP before storage. Blank mints a random one persisted as `.ip_hash_pepper` beside the feedback DB — **set it explicitly** to control rotation, share one across replicas, or if the state dir is read-only. Changing it resets the 24 h per-IP write quotas once. |
 | `community_author_key_pepper` / `community_cursor_secret` | `community-author-storage-v2` / falls back to `feedback_ip_pepper` then `community-cursor-v1` | Set both explicitly in production. |
-| `feedback_daily_quota`, `community_daily_quota`, `community_like_daily_quota`, `community_safety_daily_quota` | `200`, `50`, `300`, `100` | Per hashed IP, per day. |
+| `feedback_daily_quota`, `community_daily_quota` | `200`, `50` | Per hashed IP, per day. |
 | `analyze_daily_quota`, `identify_daily_quota` | `300`, `150` | Per IP (IPv6 by /64), per UTC day, in memory (a restart forgets them), taken only once a request is admitted. Past it: 429. Every per-IP allowance below counts the same way; carrier NAT puts many users behind one IPv4, which is why the defaults sit far above one user's day. |
 | `plantnet_daily_quota_per_ip` | `100` | PlantNet calls per IP per UTC day, shared by the analyze fan-out and `/api/identify`, so one client cannot drain the 500-a-day free tier. Past it a scan still gets its diagnosis, with `species.source: "quota"`. |
 | `chat_daily_quota` | `100` | AI Plant Doctor turns per IP per UTC day, across sessions (the per-session caps reset with each client-chosen `session_id`). Past it: `available:false`, `reason: "daily_quota"`, with a bilingual `fallback`. |
@@ -357,9 +357,20 @@ server {
 
 ### 5.1 Community moderation
 
-Community reports are intentionally not exposed through an HTTP admin route.
-Review the local queue as the service user, with the same state path as the
-running API:
+Shared scans are moderated locally, not through an HTTP admin route. The app
+has no Report control on a scan: a scan flagged to the moderation contact is
+taken down by its public id (`cs…`, the start of its thumbnail filename), as
+the service user and with the same state path as the running API:
+
+```bash
+sudo -u plantd env COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db \
+  COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs \
+  /opt/plantdiseases/.venv/bin/python \
+  /opt/plantdiseases/server/tools/community_moderation.py \
+  remove-scan PUBLIC_ID --confirm-remove
+```
+
+Reports that older app versions filed stay in a local queue until resolved:
 
 ```bash
 sudo -u plantd env COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db \

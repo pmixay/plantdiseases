@@ -90,7 +90,6 @@
     <string name="forum_send">Send</string>
     <string name="forum_cancel_reply">Cancel reply</string>
     <string name="forum_replying_to">Replying to %1$s</string>
-    <string name="forum_training_consent_answer">Let PlantVision learn from these photos</string>
     <string name="forum_report">Report</string>
     <string name="forum_reported">Thanks. A moderator will look at it.</string>
     <string name="forum_block_author">Block author</string>

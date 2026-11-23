@@ -1,4 +1,8 @@
-"""Account-bound community reporting, blocking, and moderation controls."""
+"""Account-bound community blocking and the operator's scan moderation.
+
+Shared scans are shown without an author, so they have no report or block
+route. A block comes from the forum and still hides that author's scans.
+"""
 
 from __future__ import annotations
 
@@ -32,6 +36,29 @@ def _headers(label: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {_test_access_token(label, label.title())}"}
 
 
+def _forum_post(actor: str, nickname: str) -> str:
+    """A forum post by ``actor``: the only content an author is blocked from."""
+    import community_forum
+
+    community_forum.init_db()
+    return community_forum.create_post(
+        actor_id=actor, nickname=nickname, kind="tip", title="Mist daily", body="b"
+    )["id"]
+
+
+def _queue_legacy_report(community, reporter: str, owner: str, scan_id: str) -> int:
+    """A scan report as an older app version filed it (no route writes one now)."""
+    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
+        return int(
+            connection.execute(
+                "INSERT INTO community_content_reports (reporter_actor_id, target_type, "
+                "target_scan_id, target_opinion_id, target_actor_id, reason, created_at) "
+                "VALUES (?, 'scan', ?, 0, ?, 'hate_or_harassment', ?)",
+                (reporter, scan_id, owner, 1_000_000),
+            ).lastrowid
+        )
+
+
 def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
     community.record_scan(
         scan_id=scan_id,
@@ -48,69 +75,16 @@ def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
     return community.public_scan_token(scan_id)
 
 
-def test_reports_are_bound_idempotent_and_use_fixed_reasons(safety_store, monkeypatch):
+def test_a_scan_is_not_a_block_target(safety_store):
     community = safety_store
-    owner = _actor("reported-owner")
-    reporter = _actor("reporter")
-    scan_token = _scan(community, "reported-scan", owner)
-    other_scan_token = _scan(community, "reported-scan-2", owner)
-
-    assert community.record_content_report(
-        reporter_actor_id=reporter,
-        target_type="scan",
-        target_id=scan_token,
-        reason="spam_or_misleading",
-        now=1_000_000,
-    ) is True
-    assert community.record_content_report(
-        reporter_actor_id=reporter,
-        target_type="SCAN",
-        target_id=scan_token,
-        reason="spam_or_misleading",
-        now=1_000_001,
-    ) is False
-
-    # Safety mutations never accept the internal publication identifier even
-    # though legacy view writes still do for installed app versions.
+    token = _scan(community, "unblockable-scan", _actor("scan-owner"))
     with pytest.raises(ValueError, match="target_not_found"):
-        community.record_content_report(
-            reporter_actor_id=reporter,
+        community.block_content_author(
+            blocker_actor_id=_actor("scan-reader"),
             target_type="scan",
-            target_id="reported-scan",
-            reason="spam_or_misleading",
+            target_id=token,
         )
-
-    with pytest.raises(ValueError, match="self_target"):
-        community.record_content_report(
-            reporter_actor_id=owner,
-            target_type="scan",
-            target_id=scan_token,
-            reason="other_rules_violation",
-        )
-    with pytest.raises(ValueError, match="invalid_reason"):
-        community.record_content_report(
-            reporter_actor_id=reporter,
-            target_type="scan",
-            target_id=other_scan_token,
-            reason="free form accusation",
-        )
-
-    monkeypatch.setattr(community, "COMMUNITY_REPORT_DAILY_LIMIT", 1)
-    with pytest.raises(ValueError, match="report_limit"):
-        community.record_content_report(
-            reporter_actor_id=reporter,
-            target_type="scan",
-            target_id=other_scan_token,
-            reason="hate_or_harassment",
-            now=1_000_002,
-        )
-
-    with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
-        row = connection.execute(
-            "SELECT reporter_actor_id, target_actor_id, target_scan_id, "
-            "target_opinion_id, reason FROM community_content_reports"
-        ).fetchone()
-    assert row == (reporter, owner, "reported-scan", 0, "spam_or_misleading")
+    assert community.actor_blocks(_actor("scan-reader")) == []
 
 
 def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
@@ -120,22 +94,23 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     blocker = _actor("blocker")
     blocked = _actor("blocked")
     other = _actor("other")
-    blocked_token = _scan(community, "blocked-scan", blocked, "Blocked Fern")
+    _scan(community, "blocked-scan", blocked, "Blocked Fern")
     _scan(community, "blocker-scan", blocker, "Blocker Fern")
     _scan(community, "other-scan", other, "Other Fern")
+    blocked_post = _forum_post(blocked, "Blocked Fern")
 
     result = community.block_content_author(
         blocker_actor_id=blocker,
-        target_type="scan",
-        target_id=blocked_token,
+        target_type="post",
+        target_id=blocked_post,
         now=2_000_000,
     )
     assert result["created"] is True
     assert result["block_id"].startswith("cb")
     assert community.block_content_author(
         blocker_actor_id=blocker,
-        target_type="scan",
-        target_id=blocked_token,
+        target_type="post",
+        target_id=blocked_post,
     )["created"] is False
 
     blocker_feed = community.nearby_scans(
@@ -187,58 +162,41 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     }
 
 
-def test_legacy_content_can_be_reported_but_not_used_to_spoof_a_block(safety_store):
-    community = safety_store
-    reporter = _actor("legacy-reporter")
-    community.record_scan(
-        scan_id="legacy-safety",
-        user_pseudo_id="old-install",
-        country="RU",
-        disease="healthy",
-    )
-    token = community.public_scan_token("legacy-safety")
-    assert community.record_content_report(
-        reporter_actor_id=reporter,
-        target_type="scan",
-        target_id=token,
-        reason="privacy_or_impersonation",
-    ) is True
-    with pytest.raises(ValueError, match="target_not_blockable"):
-        community.block_content_author(
-            blocker_actor_id=reporter,
-            target_type="scan",
-            target_id=token,
-        )
-
-
-def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety_data(
-    safety_store,
-):
+def test_operator_removes_a_scan_and_drains_the_legacy_report_queue(safety_store):
     community = safety_store
     owner = _actor("moderated-owner")
     reporter = _actor("moderation-reporter")
-    removed_token = _scan(community, "moderated-scan", owner)
-    community.record_content_report(
-        reporter_actor_id=reporter,
-        target_type="scan",
-        target_id=removed_token,
-        reason="hate_or_harassment",
-    )
-    report_id = community.pending_content_reports()[0]["report_id"]
+
+    # A scan flagged to the moderation contact is removed by its public id.
+    flagged = _scan(community, "flagged-scan", owner)
+    flagged_report = _queue_legacy_report(community, reporter, owner, "flagged-scan")
+    assert community.remove_scan("flagged-scan") is False  # never the internal id
+    assert community.remove_scan(flagged) is True
+    assert community.scan_exists("flagged-scan") is False
+    assert community.remove_scan(flagged) is False
+    assert flagged_report not in {
+        report["report_id"] for report in community.pending_content_reports()
+    }
+
+    # Reports filed by older app versions can still be resolved.
+    _scan(community, "moderated-scan", owner)
+    report_id = _queue_legacy_report(community, reporter, owner, "moderated-scan")
+    assert [r["report_id"] for r in community.pending_content_reports()] == [report_id]
     assert community.moderate_content_report(report_id, "remove_content") is True
     assert community.scan_exists("moderated-scan") is False
-    scan_token = _scan(community, "moderated-scan-2", owner)
+    assert community.pending_content_reports() == []
 
-    community.record_content_report(
-        reporter_actor_id=reporter,
-        target_type="scan",
-        target_id=scan_token,
-        reason="illegal_or_dangerous",
-    )
+
+def test_account_cleanup_erases_safety_data(safety_store):
+    community = safety_store
+    owner = _actor("cleanup-owner")
+    reporter = _actor("cleanup-reporter")
+    _scan(community, "cleanup-scan", owner)
+    _queue_legacy_report(community, reporter, owner, "cleanup-scan")
     community.block_content_author(
         blocker_actor_id=reporter,
-        target_type="scan",
-        target_id=scan_token,
+        target_type="post",
+        target_id=_forum_post(owner, "Owner Fern"),
     )
     assert community.request_actor_deletion(reporter, now=3_000_000) is True
     assert community.process_cleanup_jobs(now=3_000_000) == {
@@ -258,6 +216,33 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
         ).fetchone()[0] == 0
 
 
+def test_moderation_tool_requires_confirmation_to_remove_a_scan(safety_store, capsys):
+    from tools import community_moderation
+
+    community = safety_store
+    token = _scan(community, "tool-scan", _actor("tool-owner"))
+    with pytest.raises(SystemExit):
+        community_moderation.main(["remove-scan", token])
+    assert community.scan_exists("tool-scan") is True
+    assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 0
+    assert community.scan_exists("tool-scan") is False
+    assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 2
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/community/safety/blocks"),
+        ("delete", "/api/community/safety/blocks/" + "cb" + "0" * 30),
+    ],
+)
+def test_safety_routes_require_account(safety_store, client, method, path):
+    response = client.request(method, path, headers={"Authorization": ""})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "auth_required"
+
+
 @pytest.mark.parametrize(
     ("method", "path", "body"),
     [
@@ -271,74 +256,39 @@ def test_local_moderation_removes_exact_target_and_account_cleanup_erases_safety
             "/api/community/safety/block",
             {"target_type": "scan", "target_id": "cs" + "0" * 30},
         ),
-        ("get", "/api/community/safety/blocks", None),
-        ("delete", "/api/community/safety/blocks/" + "cb" + "0" * 30, None),
+        ("post", "/api/community/like", {"scan_id": "cs" + "0" * 30, "liked": True}),
+        ("get", "/api/community/profile/" + "ca" + "0" * 30, None),
     ],
 )
-def test_safety_routes_require_account(safety_store, client, method, path, body):
+def test_scan_report_block_like_and_profile_routes_are_retired(
+    safety_store, client, method, path, body,
+):
     response = client.request(
         method,
         path,
-        headers={"Authorization": ""},
+        headers=_headers("retired-caller"),
         **({"json": body} if body is not None else {}),
     )
-    assert response.status_code == 401
-    assert response.json()["detail"] == "auth_required"
+    assert response.status_code in {404, 405}
 
 
-def test_http_safety_contract_never_accepts_actor_id_and_filters_signed_reads(
+def test_http_forum_block_filters_signed_scan_reads_and_can_be_undone(
     safety_store, client,
 ):
     community = safety_store
     owner_label = "http-owner"
     reporter_label = "http-reporter"
-    owner = _http_actor(owner_label)
-    reporter = _http_actor(reporter_label)
-    token = _scan(community, "http-safety-scan", owner, "HTTP Fern")
-
-    spoof = client.post(
-        "/api/community/safety/report",
-        headers=_headers(reporter_label),
-        json={
-            "target_type": "scan",
-            "target_id": token,
-            "reason": "spam_or_misleading",
-            "target_actor_id": reporter,
-        },
-    )
-    assert spoof.status_code == 422
-
-    report = client.post(
-        "/api/community/safety/report",
-        headers=_headers(reporter_label),
-        json={
-            "target_type": "scan",
-            "target_id": token,
-            "reason": "spam_or_misleading",
-        },
-    )
-    assert report.status_code == 200 and report.json()["created"] is True
-    raw_target = client.post(
-        "/api/community/safety/block",
-        headers=_headers(reporter_label),
-        json={"target_type": "scan", "target_id": "http-safety-scan"},
-    )
-    assert raw_target.status_code == 422
-    duplicate = client.post(
-        "/api/community/safety/report",
-        headers=_headers(reporter_label),
-        json={
-            "target_type": "scan",
-            "target_id": token,
-            "reason": "other_rules_violation",
-        },
-    )
-    assert duplicate.status_code == 200 and duplicate.json()["created"] is False
+    _scan(community, "http-safety-scan", _http_actor(owner_label), "HTTP Fern")
+    post = client.post(
+        "/api/community/posts",
+        json={"kind": "tip", "title": "Mist daily", "body": "b"},
+        headers=_headers(owner_label),
+    ).json()
 
     block = client.post(
-        "/api/community/safety/block",
+        "/api/community/forum/block",
         headers=_headers(reporter_label),
-        json={"target_type": "scan", "target_id": token},
+        json={"target_type": "post", "target_id": post["id"]},
     )
     assert block.status_code == 200
     block_id = block.json()["block_id"]
@@ -369,6 +319,35 @@ def test_http_safety_contract_never_accepts_actor_id_and_filters_signed_reads(
         headers=_headers(reporter_label),
     )
     assert removed.status_code == 200
+    feed = client.get(
+        "/api/community/nearby",
+        headers=_headers(reporter_label),
+        params={"country": "RU", "scope": "country"},
+    )
+    assert [item["disease"] for item in feed.json()["items"]] == ["healthy"]
+
+
+def test_scan_items_carry_no_author_or_like_fields(safety_store, client):
+    community = safety_store
+    _scan(community, "anonymous-scan", _http_actor("anon-owner"), "Named Fern")
+    items = []
+    for path, params in (
+        ("/api/community/nearby", {"country": "RU", "scope": "country"}),
+        ("/api/community/nearby", {"scope": "worldwide", "ranking": "recommended"}),
+        ("/api/community/by-species", {"species": "Ficus elastica"}),
+        (
+            "/api/community/map",
+            {"min_lat": 55, "min_lon": 37, "max_lat": 56, "max_lon": 38},
+        ),
+    ):
+        response = client.get(path, headers=_headers("anon-reader"), params=params)
+        assert response.status_code == 200
+        assert "Named Fern" not in response.text
+        items.extend(response.json()["items"])
+    assert len(items) == 4
+    for item in items:
+        assert item["scan_id"].startswith("cs")
+        assert not {"nickname", "author_token", "like_count", "liked_by_me"} & item.keys()
 
 
 def test_species_scans_come_nearest_first_with_distance(safety_store):

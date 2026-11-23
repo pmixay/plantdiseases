@@ -107,7 +107,7 @@ load, verify and run models. Pipeline contract: [`MODEL_CARD.md`](server/models/
 
 ## Project status
 
-**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 76 API operations.
+**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 72 API operations.
 Per-run numbers live in [`docs/MODEL_HISTORY.md`](docs/MODEL_HISTORY.md); the roadmap
 below is a summary of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -216,8 +216,7 @@ authoritative list.
 | `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
 | `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
 | `POST` | `/api/community/view` | Record a view of a shared scan |
-| `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
-| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
+| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID (blocks are made on forum posts and answers) |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `GET`  | `/api/community/feed` · `/api/community/search` · `/api/community/spaces` | Forum feed (`all` / `needs_help` / `solved` / `mine`, hot/new/top), RU+EN search with "search with my scan" filters, curated spaces |
 | `GET` · `POST` · `PATCH` · `DELETE` | `/api/community/posts[/{post_id}]` | Forum posts (question, scan with the server's verdict, recovery update, tip) with threaded answers |

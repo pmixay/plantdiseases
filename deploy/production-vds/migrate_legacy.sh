@@ -28,7 +28,7 @@ def rows(path, tables):
 def copy(src, dst):
     s = sqlite3.connect(f"file:{src}?mode=ro&immutable=1", uri=True); d = sqlite3.connect(dst)
     s.backup(d); d.close(); s.close()
-community_tables = ["community_scans", "community_authors", "community_likes",
+community_tables = ["community_scans", "community_authors",
                     "community_blocks", "community_reports", "community_scan_views"]
 target = "/data/community/community.db"
 if rows(target, community_tables) == 0:

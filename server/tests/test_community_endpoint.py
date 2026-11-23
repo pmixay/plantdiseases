@@ -228,12 +228,13 @@ def test_internal_nickname_hook_replaces_historical_actor_rows(
     )
     assert response.status_code == 202
 
-    feed = client.get(
-        "/api/community/nearby",
-        headers={"Authorization": ""},
-        params={"country": "GB", "scope": "country"},
-    ).json()
-    assert feed["items"][0]["nickname"] == "New Fern"
+    db_path, _ = isolated_community
+    with closing(sqlite3.connect(str(db_path))) as conn, conn:
+        stored = conn.execute(
+            "SELECT nickname FROM community_scans WHERE account_actor_id = ?",
+            (owner_actor,),
+        ).fetchall()
+    assert stored == [("New Fern",)]
 
 
 def test_community_scan_upload_minimal(client, isolated_community):
@@ -1055,20 +1056,6 @@ def test_community_nearby_localizes_item_country(client, isolated_community):
     assert item["country_name_ru"] == "Польша"
 
 
-def test_community_scan_nickname_round_trips(client, isolated_community):
-    """The author's generated plant-vibe handle rides along on the upload and
-    comes back on the feed row (incl. a Cyrillic handle)."""
-    client.post("/api/community/scan", data=_form(
-        scan_id="nicktest0001", user_pseudo_id="pseudo-nick-a",
-        country="PL", region="Warsaw", lat=52.23, lon=21.01,
-        disease="leaf_spot", nickname="Томатный Король 42"))
-    item = client.get(
-        "/api/community/nearby",
-        params={"country": "PL", "scope": "country", "user_pseudo_id": "pseudo-viewer"},
-    ).json()["items"][0]
-    assert item["nickname"] == "Томатный Король 42"
-
-
 def test_community_thumb_rejects_path_traversal(client, isolated_community):
     # Starlette decodes `%2F` to `/` before matching, so a traversal
     # attempt either hits the explicit-guard 400 (if URL-decode keeps
@@ -1373,29 +1360,28 @@ def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
     """Freshness is the ranking's baseline, not a tiebreak.
 
     Under the pre-``_RANK_*`` weights freshness ticked once per six hours
-    while a like was worth 120 points — about a month of recency — and the
-    row-id jitter alone was worth ~25 days, so a quiet week-old post
-    routinely outranked everything posted today and the feed read as
-    shuffled rather than dated. Every term is now denominated in hours of
-    freshness, so five days of age outweighs a single like.
+    while engagement and the row-id jitter kept their own, much larger scale
+    (the jitter alone was worth ~25 days), so a quiet week-old post routinely
+    outranked everything posted today and the feed read as shuffled rather
+    than dated. Every term is now denominated in hours of freshness, so five
+    days of age outweighs two days' worth of views.
     """
     db_path, _ = isolated_community
     _share(client, "freshpost0001", "Fresh nothing")
-    _share(client, "staleliked001", "Stale liked")
+    _share(client, "staleviewed01", "Stale viewed")
     _share(client, "stalequiet001", "Stale quiet")
-    liked = client.post(
-        "/api/community/like",
-        json={"scan_id": "staleliked001", "user_pseudo_id": "pseudo-liker", "liked": True},
-    )
-    assert liked.status_code == 200, liked.text
-    assert liked.json()["count"] == 1
 
     now = 1_800_000_000
     day = 86_400
     with closing(sqlite3.connect(str(db_path))) as conn, conn:
+        conn.executemany(
+            "INSERT INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            [("staleviewed01", f"view-{i}", now) for i in range(48)],
+        )
         for scan_id, created_at in (
             ("freshpost0001", now),
-            ("staleliked001", now - 5 * day),
+            ("staleviewed01", now - 5 * day),
             ("stalequiet001", now - 10 * day),
         ):
             changed = conn.execute(
@@ -1404,18 +1390,18 @@ def test_recommended_feed_ranks_recency_above_a_stale_post_s_engagement(
             ).rowcount
             assert changed == 1, scan_id
 
-    assert _recommended_species(client) == ["Fresh nothing", "Stale liked", "Stale quiet"]
+    assert _recommended_species(client) == ["Fresh nothing", "Stale viewed", "Stale quiet"]
 
 
 def test_recommended_feed_caps_total_engagement_below_material_freshness(
     client, isolated_community,
 ):
-    """No combination of ordinary engagement can bury a materially fresh post.
+    """No amount of ordinary engagement can bury a materially fresh post.
 
-    The individual metric caps are not sufficient on their own: at the current
-    weights, 100 likes + 500 views are worth almost 46 days of freshness when
-    summed. Pin the aggregate promotion cap by saturating every input; even
-    then, a brand-new post must rank ahead of one from 30 days ago.
+    The view cap is not sufficient on its own: at the current weight, 500
+    views are worth almost 21 days of freshness. Pin the aggregate promotion
+    cap by saturating the input; even then, a brand-new post must rank ahead
+    of one from 30 days ago.
     """
     db_path, _ = isolated_community
     _share(client, "freshmax0001", "Fresh post")
@@ -1430,11 +1416,6 @@ def test_recommended_feed_caps_total_engagement_below_material_freshness(
         conn.execute(
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (now - 30 * 86_400, "staleengaged1"),
-        )
-        conn.executemany(
-            "INSERT INTO community_likes "
-            "(scan_id, user_pseudo_id, liked, created_at) VALUES (?, ?, 1, ?)",
-            [("staleengaged1", f"like-{i}", now) for i in range(100)],
         )
         conn.executemany(
             "INSERT INTO community_scan_views "
@@ -1477,7 +1458,6 @@ def test_recommended_feed_is_deterministic_and_composite_cursor_has_no_overlap(
     page1 = first.json()
     assert page1["ranking"] == "recommended"
     assert page1["next_cursor"].startswith("r1.")
-    assert page1["items"][0]["recommendation_reason"] == "fresh"
 
     # Same snapshot + request produces the same order.
     repeat = client.get("/api/community/nearby", params=params).json()
@@ -1551,34 +1531,6 @@ def test_recent_composite_cursor_keeps_same_second_rows(client, isolated_communi
         page = response.json()
     assert len(seen) == 5
     assert len(set(seen)) == 5
-
-
-def test_like_toggle_and_self_like_rejected(client, isolated_community):
-    client.post(
-        "/api/community/scan",
-        data=_form(
-            scan_id="likescan00001", user_pseudo_id="pseudo-owner-l",
-            region="Turin", country="IT", disease="leaf_spot",
-        ),
-    )
-    liked = client.post(
-        "/api/community/like",
-        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": True},
-    )
-    assert liked.status_code == 200, liked.text
-    assert liked.json() == {"ok": True, "liked": True, "count": 1}
-
-    unliked = client.post(
-        "/api/community/like",
-        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-liker-1", "liked": False},
-    )
-    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
-
-    self_like = client.post(
-        "/api/community/like",
-        json={"scan_id": "likescan00001", "user_pseudo_id": "pseudo-owner-l", "liked": True},
-    )
-    assert self_like.json() == {"ok": True, "liked": False, "count": 0}
 
 
 def test_batch_impression_views_counted_once(client, isolated_community):
@@ -1679,7 +1631,7 @@ def test_nearby_cursor_rejected_with_disease_or_species(client, isolated_communi
 
 def test_scan_id_index_exists_and_is_not_unique(isolated_community):
     """``community_scans.scan_id`` is the hot lookup key (token resolution,
-    views, likes, ownership) and must be indexed — but NOT uniquely: legacy
+    views, ownership) and must be indexed — but NOT uniquely: legacy
     rows may repeat a scan_id, and a UNIQUE index would fail to build and
     take boot down with it."""
     db_path, _ = isolated_community
@@ -1704,13 +1656,7 @@ def test_legacy_backfill_pseudo_columns_are_indexed(isolated_community):
                 "PRAGMA index_list(community_scan_views)",
             ).fetchall()
         }
-        like_indexes = {
-            row[1] for row in conn.execute(
-                "PRAGMA index_list(community_likes)",
-            ).fetchall()
-        }
     assert "ix_views_viewer_pseudo" in view_indexes
-    assert "ix_likes_user_pseudo" in like_indexes
 
 
 def test_batch_view_mixes_token_forms_and_drops_self_views(client, isolated_community):
@@ -1746,46 +1692,6 @@ def test_batch_view_mixes_token_forms_and_drops_self_views(client, isolated_comm
         },
     )
     assert own.json()["counted_n"] == 0
-
-
-def test_unlike_soft_deletes_so_the_daily_like_quota_holds(client, isolated_community):
-    """Unliking must not hand the daily quota slot back: the row survives as
-    ``liked = 0``, and re-liking keeps its ORIGINAL ``created_at`` instead of
-    sliding out of the 24h window. A signed like is keyed on the account actor,
-    so the row lives in ``community_account_likes``."""
-    db_path, _ = isolated_community
-    client.post(
-        "/api/community/scan",
-        data=_form(
-            scan_id="likesoft00001", user_pseudo_id="pseudo-owner-s",
-            region="Turin", country="IT", disease="leaf_spot",
-        ),
-    )
-    body = {
-        "scan_id": "likesoft00001",
-        "user_pseudo_id": "pseudo-liker-s",
-        "liked": True,
-    }
-    assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with closing(sqlite3.connect(str(db_path))) as conn, conn:
-        (created_at,) = conn.execute(
-            "SELECT created_at FROM community_account_likes",
-        ).fetchone()
-
-    unliked = client.post("/api/community/like", json={**body, "liked": False})
-    assert unliked.json() == {"ok": True, "liked": False, "count": 0}
-    with closing(sqlite3.connect(str(db_path))) as conn, conn:
-        rows = conn.execute(
-            "SELECT liked, created_at FROM community_account_likes",
-        ).fetchall()
-    assert rows == [(0, created_at)]
-
-    assert client.post("/api/community/like", json=body).json()["count"] == 1
-    with closing(sqlite3.connect(str(db_path))) as conn, conn:
-        rows = conn.execute(
-            "SELECT liked, created_at FROM community_account_likes",
-        ).fetchall()
-    assert rows == [(1, created_at)]
 
 
 def test_feed_token_round_trip_for_views(client, isolated_community):
