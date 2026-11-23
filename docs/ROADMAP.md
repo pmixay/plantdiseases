@@ -221,8 +221,9 @@ Each item is its own PR; don't fold one into another.
       of the 17 `launch(start = UNDISPATCHED)` sites. `GardenAttachController.
       attachScanToPlant` can lose the attach if the activity finishes mid-write.
       One screen per PR.
-- [ ] **Ratchet detekt down** as splits land (LongMethod 210, LargeClass 1300 in
-      `android/config/detekt/detekt.yml`; its "worst today" comment is stale).
+- [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`,
+      re-measured 2026-11-23: LargeClass 1200 over `DetailExtraCardsController`'s
+      1103, LongMethod 210 over `ResultActivity.displayResult`'s 197).
       `GuideDataProvider.kt` stays excluded until it stops being a content blob.
 
 ---
@@ -232,10 +233,6 @@ Each item is its own PR; don't fold one into another.
 The 2026-11 rework removed tests that guarded nothing, merged same-state tests,
 made the server suite parallel and passed CI. What it left open:
 
-- [ ] **Move pure functions out of Activity companions.**
-      `LightMeterActivity.pickSpeciesBucket` and
-      `WaterCalculatorActivity.computeWatering` are pure, but their tests need
-      Robolectric only to load the Activity class.
 - [ ] **Last two module reloads in tests**: `test_plant_photos.py` and
       `test_push.py` still `importlib.reload` their own module to redirect a path.
       Harmless today (nothing holds their classes), but the same
@@ -256,9 +253,6 @@ None blocks a release.
       map) → `docs/assets/screenshots/` + a row in "What it does". Needs a device.
 - [ ] **`docs/assets/per-class.svg`** holds hand-copied numbers; regenerate with
       `generate_assets.py` when a model ships.
-- [ ] **`android/app/build.gradle.kts`** (TFLite dependency comment) still says Aqua
-      is provisioned at `assets/models/aqua_classifier.tflite`; it is downloaded to
-      `filesDir/aqua/`. Its test-fork comment also still counts "~58 Robolectric classes".
 - [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
       maximising gamma".
 

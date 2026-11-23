@@ -439,8 +439,8 @@ android {
             // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
             // report it points at lives on the runner, not in the log.
             all {
-                // Fan the test classes out over the machine's cores: ~58
-                // Robolectric classes, each CPU-bound instrumenting
+                // Fan the test classes out over the machine's cores: most
+                // test classes run under Robolectric, each CPU-bound instrumenting
                 // android-all into its own sandbox classloader, and one fork
                 // means one core. Forks are separate JVMs, so this makes the
                 // tests MORE isolated than the shared-JVM default, not less.
@@ -685,9 +685,9 @@ dependencies {
     // prebuilt .so libs aren't 16 KB page-aligned (Google Play's Nov 2025
     // requirement). LiteRT keeps the org.tensorflow.lite Interpreter API, so
     // AquaClassifier's code is unchanged; only the artefact coordinate moves.
-    // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
-    // out of band like the server weights, never committed; AquaClassifier
-    // gates on its presence and the app degrades to the server when absent.
+    // The model is never bundled in the APK: the app downloads it from the
+    // server (/api/aqua/model) into filesDir/aqua/ (AquaModelManager), and
+    // AquaClassifier falls back to the server while none is installed.
     // Was held at 2.1.3 — the newest release the old Kotlin 2.1.21 compiler
     // could read, since 2.1.4+ moved its bundled Kotlin metadata to 2.3.0 and
     // failed with "Module was compiled with an incompatible version of

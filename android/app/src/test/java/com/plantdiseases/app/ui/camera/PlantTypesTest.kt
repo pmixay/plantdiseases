@@ -1,23 +1,15 @@
 package com.plantdiseases.app.ui.camera
 
-import android.app.Application
 import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
- * Verifies the genus → light-bucket heuristic that drives the Light Meter
- * gauge. Run under Robolectric so the host AppCompatActivity class loads
- * cleanly even though only the static mapping is exercised.
+ * Verifies the genus → plant-type heuristic ([PlantTypes.fromName]) that
+ * drives the Light Meter gauge and the Water Calculator's default type.
  *
- * Bucket indices (see LightMeterActivity): 0 general, 1 succulent,
- * 2 tropical, 3 fern, 4 vegetable.
+ * Types: 0 general, 1 succulent, 2 tropical, 3 fern, 4 vegetable.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33], application = Application::class)
-class LightMeterBucketTest {
+class PlantTypesTest {
 
     @Test
     fun mapsAGenusToItsLightBucket() {
@@ -36,7 +28,7 @@ class LightMeterBucketTest {
         )
         for ((species, bucket) in expected) {
             assertWithMessage(species)
-                .that(LightMeterActivity.pickSpeciesBucket(species))
+                .that(PlantTypes.fromName(species))
                 .isEqualTo(bucket)
         }
     }

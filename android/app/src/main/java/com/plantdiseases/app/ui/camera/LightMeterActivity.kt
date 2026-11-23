@@ -105,12 +105,6 @@ class LightMeterActivity :
          *  persistence. */
         const val EXTRA_PLANT_ID = "extra_plant_id"
 
-        private const val IDX_GENERAL = 0
-        private const val IDX_SUCCULENT = 1
-        private const val IDX_TROPICAL = 2
-        private const val IDX_FERN = 3
-        private const val IDX_VEGETABLE = 4
-
         private val SPECIES = listOf(
             SpeciesInfo(R.string.light_species_general, 1000, 5000),
             SpeciesInfo(R.string.light_species_succulent, 5000, 15000),
@@ -118,35 +112,6 @@ class LightMeterActivity :
             SpeciesInfo(R.string.light_species_fern, 200, 1000),
             SpeciesInfo(R.string.light_species_vegetable, 5000, 10000),
         )
-
-        /** Heuristic genus→bucket mapping. Lower-cases the genus
-         *  (first whitespace-separated token of the binomial) and
-         *  routes the popular indoor genera into the right bucket;
-         *  anything else falls through to "general". Adding more
-         *  genera here is the right place to grow coverage. */
-        @JvmStatic
-        fun pickSpeciesBucket(scientificName: String): Int {
-            val genus = scientificName.trim().substringBefore(' ').lowercase()
-            return when (genus) {
-                // Common indoor succulents.
-                "echeveria", "sedum", "crassula", "aloe", "haworthia",
-                "kalanchoe", "sansevieria", "agave", "lithops",
-                "euphorbia" -> IDX_SUCCULENT
-                // Tropical aroids + foliage favourites.
-                "monstera", "philodendron", "epipremnum", "pothos",
-                "calathea", "maranta", "spathiphyllum", "anthurium",
-                "ficus", "syngonium", "alocasia", "dieffenbachia",
-                "dracaena", "schefflera", "begonia", "peperomia",
-                "saintpaulia" -> IDX_TROPICAL
-                // Ferns.
-                "nephrolepis", "adiantum", "asplenium", "platycerium",
-                "pteris", "davallia", "polystichum" -> IDX_FERN
-                // Edible / vegetable seedlings often started indoors.
-                "solanum", "capsicum", "lactuca", "ocimum", "mentha",
-                "petroselinum" -> IDX_VEGETABLE
-                else -> IDX_GENERAL
-            }
-        }
 
         // Houseplant-relevant range. Above 30k lux you're outdoors in
         // direct sun and the species bands stop being useful — capping
@@ -179,10 +144,10 @@ class LightMeterActivity :
         // manual picker. Prefer the scientific (Latin) name's genus; fall
         // back to the common / free-text name, then to the General band.
         val sci = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
-        var pick = pickSpeciesBucket(sci)
-        if (pick == IDX_GENERAL) {
+        var pick = PlantTypes.fromName(sci)
+        if (pick == PlantTypes.GENERAL) {
             val common = intent.getStringExtra(EXTRA_COMMON_NAME).orEmpty()
-            if (common.isNotBlank()) pick = pickSpeciesBucket(common)
+            if (common.isNotBlank()) pick = PlantTypes.fromName(common)
         }
         selectedSpecies = SPECIES[pick]
         contextPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)

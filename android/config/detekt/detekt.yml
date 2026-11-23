@@ -29,7 +29,7 @@ complexity:
   # measured maximum, quoted per rule below). The numbers are a high-water
   # mark, not a target: ratchet each one down as the oversized files split.
   LongMethod:
-    # Worst today: ui/result/ResultActivity.displayResult, 195 lines.
+    # Worst today: ui/result/ResultActivity.displayResult, 197 lines.
     active: true
     threshold: 210
     # data/GuideDataProvider.buildItems is 1520 lines of bilingual content
@@ -38,16 +38,18 @@ complexity:
     # resources.
     excludes: ['**/GuideDataProvider.kt']
   LongParameterList:
-    # Worst today: ScanRepository.uploadCommunityScan 14 params;
-    # CareRepository's constructor 10.
+    # Worst today: CommunityScanRepository.uploadCommunityScan and
+    # OnboardingCatalog.step 11 params; the PlantRepository and CareRepository
+    # constructors 10.
     active: true
-    functionThreshold: 16
-    constructorThreshold: 12
+    functionThreshold: 12
+    constructorThreshold: 11
   LargeClass:
-    # Worst today: data/repository/ScanRepository, 1165 lines of class body
-    # (GuideDataProvider's 1558 is excluded for the reason given above).
+    # Worst today: ui/garden/detail/DetailExtraCardsController, 1103 lines of
+    # class body; auth/AuthRepository 1098 (GuideDataProvider's 1558 is
+    # excluded for the reason given above).
     active: true
-    threshold: 1300
+    threshold: 1200
     # auth/AuthRepositoryTest is ~2160 lines of one-scenario-per-test cases
     # against a single class. Excluded by name rather than raising the bar to
     # 2400, which would stop this rule guarding production classes at all.
@@ -55,13 +57,13 @@ complexity:
     # logout / signup).
     excludes: ['**/GuideDataProvider.kt', '**/AuthRepositoryTest.kt']
   TooManyFunctions:
-    # Worst today: ScanRepository with 78 functions (58 before the account
-    # merge united both sides' methods on it); 9 top-level functions in
+    # Worst today: ui/account/AccountActivity with 53 functions and
+    # AuthRepository 52; the object di/AppModule 31; 9 top-level functions in
     # ui/common/SectionUiKit.kt.
     active: true
     thresholdInFiles: 12
-    thresholdInClasses: 86
-    thresholdInObjects: 65
+    thresholdInClasses: 58
+    thresholdInObjects: 35
     thresholdInInterfaces: 65
     thresholdInEnums: 65
   CyclomaticComplexMethod:
