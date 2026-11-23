@@ -215,8 +215,9 @@ Each item is its own PR; don't fold one into another.
 - [ ] **The remaining bilingual Kotlin content.** The guide is in string
       resources now and `StringParityTest` guards EN/RU parity, but ~32
       `isRussian(` branches remain (e.g. `OfflineScanContent`'s offline cards).
-- [ ] **DAOs returning `Flow`.** Today screens re-read on resume, which is the root
-      of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR.
+- [ ] **DAOs returning `Flow`.** Screens re-read on resume, which is the root
+      of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR. Done:
+      the unread-notification count (Home's bell and the Home tab's dot).
 - [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`,
       re-measured 2026-11-23: LargeClass 1200 over `DetailExtraCardsController`'s
       1103, LongMethod 210 over `ResultActivity.displayResult`'s 197).

@@ -11,7 +11,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.data.repository.NotificationRepository
@@ -199,6 +201,11 @@ class MainActivity : AppCompatActivity() {
         // A tab tap pages the shell's pager. The bar stays here (rather than
         // moving into the shell) because the insets, badge and splash
         // animation above are all activity-scoped.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                notificationRepository.unreadCount.collect(::showHomeBadge)
+            }
+        }
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (syncingBar) true else selectTab(item.itemId)
         }
@@ -421,24 +428,19 @@ class MainActivity : AppCompatActivity() {
      * A red dot on the Главная tab, Android notification-dot style, while the
      * notification centre has unread rows. The count itself is on Home's bell.
      */
-    fun refreshHomeBadge() {
-        lifecycleScope.launch {
-            val unread = notificationRepository.getUnreadCount()
-            if (!::binding.isInitialized) return@launch
-            if (unread <= 0) {
-                binding.bottomNavigation.removeBadge(R.id.homeFragment)
-            } else {
-                binding.bottomNavigation.getOrCreateBadge(R.id.homeFragment).apply {
-                    clearNumber()
-                    isVisible = true
-                }
+    private fun showHomeBadge(unread: Int) {
+        if (unread <= 0) {
+            binding.bottomNavigation.removeBadge(R.id.homeFragment)
+        } else {
+            binding.bottomNavigation.getOrCreateBadge(R.id.homeFragment).apply {
+                clearNumber()
+                isVisible = true
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        refreshHomeBadge()
         (application as PlantDiseasesApp).retryPendingAccountLogouts()
         // RuStore callbacks, renewals, cancellations and grace/hold changes
         // can happen while this process stays alive. Refresh from the account

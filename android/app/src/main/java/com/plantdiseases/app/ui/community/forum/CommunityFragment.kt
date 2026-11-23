@@ -14,7 +14,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
@@ -324,13 +323,12 @@ class CommunityFragment : Fragment() {
 
     // ── activity, staff, menu ───────────────────────────────────────────
 
-    /** Pulls Community events into the notification centre (Home's bell) and
-     *  updates the Главная tab's dot; a new moderator decision pops up here. */
+    /** Pulls Community events into the notification centre (Home's bell and
+     *  the Главная tab's dot follow it); a new moderator decision pops up here. */
     private fun refreshActivity() {
         if (!forum.isSignedIn) return
         viewLifecycleOwner.lifecycleScope.launch {
             forumSync.sync()
-            (activity as? MainActivity)?.refreshHomeBadge()
             showNewDecision()
         }
     }

@@ -3,6 +3,8 @@ package com.plantdiseases.app.data.repository
 import com.plantdiseases.app.data.local.NotificationDao
 import com.plantdiseases.app.data.local.NotificationEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 /** Thin wrapper over [NotificationDao] for the notification centre — see
@@ -15,6 +17,11 @@ class NotificationRepository(
 
     suspend fun getUnreadCount(): Int =
         withContext(Dispatchers.IO) { notificationDao.getUnreadCount() }
+
+    /** Live unread count for the bell and the Home tab's dot: a row recorded,
+     *  read or deleted anywhere updates them while they are on screen. */
+    val unreadCount: Flow<Int>
+        get() = notificationDao.observeUnreadCount().distinctUntilChanged()
 
     suspend fun record(type: String, title: String, body: String, deeplink: String?): Long =
         withContext(Dispatchers.IO) {

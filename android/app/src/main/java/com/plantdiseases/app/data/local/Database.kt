@@ -831,6 +831,10 @@ interface NotificationDao {
     @Query("SELECT COUNT(*) FROM notifications WHERE read_at IS NULL")
     suspend fun getUnreadCount(): Int
 
+    /** The unread count, re-emitted whenever the table changes. */
+    @Query("SELECT COUNT(*) FROM notifications WHERE read_at IS NULL")
+    fun observeUnreadCount(): kotlinx.coroutines.flow.Flow<Int>
+
     @Insert
     suspend fun insert(entity: NotificationEntity): Long
 

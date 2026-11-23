@@ -9,7 +9,9 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -131,6 +133,11 @@ class HomeFragment : Fragment() {
         )
         binding.tvGreeting.text = greeting()
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                notificationRepository.unreadCount.collect(::showNotificationCount)
+            }
+        }
         binding.btnNotifications.setOnClickListener {
             Haptics.tick(requireContext())
             startActivity(Intent(requireContext(), NotificationsActivity::class.java))
@@ -237,27 +244,18 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadPopular()
-        refreshNotificationBadge()
-        viewLifecycleOwner.lifecycleScope.launch {
-            forumSync.sync()
-            refreshNotificationBadge()
-        }
+        viewLifecycleOwner.lifecycleScope.launch { forumSync.sync() }
     }
 
-    /** No live observer (this app has no Flow/LiveData plumbing over Room —
-     *  every screen re-reads on resume) so the badge is only as fresh as the
-     *  last time Home came to the foreground; good enough for a count. */
-    private fun refreshNotificationBadge() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val count = notificationRepository.getUnreadCount()
-            (activity as? MainActivity)?.refreshHomeBadge()
-            val badge = _binding?.tvNotificationsBadge ?: return@launch
-            if (count <= 0) {
-                badge.visibility = View.GONE
-            } else {
-                badge.visibility = View.VISIBLE
-                badge.text = if (count > 99) "99+" else count.toString()
-            }
+    /** The bell's count, live: [NotificationRepository.unreadCount] re-emits
+     *  when a notification is recorded, read or cleared. */
+    private fun showNotificationCount(count: Int) {
+        val badge = _binding?.tvNotificationsBadge ?: return
+        if (count <= 0) {
+            badge.visibility = View.GONE
+        } else {
+            badge.visibility = View.VISIBLE
+            badge.text = if (count > 99) "99+" else count.toString()
         }
     }
 

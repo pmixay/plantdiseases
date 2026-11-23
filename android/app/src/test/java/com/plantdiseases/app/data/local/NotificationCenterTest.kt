@@ -6,7 +6,11 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.repository.NotificationRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -40,6 +44,22 @@ class NotificationCenterTest {
     @After
     fun teardown() {
         db.close()
+    }
+
+    @Test
+    fun unreadCountFlow_reEmitsAsRowsArriveAndAreRead() = runBlocking {
+        val seen = Channel<Int>(Channel.UNLIMITED)
+        val collector = launch(Dispatchers.Default) { repo.unreadCount.collect { seen.send(it) } }
+        suspend fun next() = withTimeout(FLOW_TIMEOUT_MS) { seen.receive() }
+
+        assertThat(next()).isEqualTo(0)
+        repo.record("community", "Reply", "Someone answered", "community:abc")
+        assertThat(next()).isEqualTo(1)
+        repo.record("reminder", "Water", "Time to water", "plant:7")
+        assertThat(next()).isEqualTo(2)
+        repo.markAllRead()
+        assertThat(next()).isEqualTo(0)
+        collector.cancel()
     }
 
     @Test
@@ -89,5 +109,9 @@ class NotificationCenterTest {
         )
         repo.deleteOlderThan(System.currentTimeMillis() - 30L * 24 * 3_600_000)
         assertThat(repo.getAll().map { it.title }).containsExactly("fresh")
+    }
+
+    private companion object {
+        const val FLOW_TIMEOUT_MS = 5_000L
     }
 }
