@@ -30,6 +30,7 @@ import json
 import logging
 import math
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -271,7 +272,7 @@ class DiseaseClassifier:
         exact_model_path: bool = False,
     ):
         self.backend = ""               # "onnx"
-        self._onnx_session = None
+        self._onnx_session: Any = None  # onnxruntime.InferenceSession (untyped package)
         self._onnx_input_name: str = ""
         # Set when the shipped graph exports the DINOv2 CLS embedding as a
         # second output (``output_names=['logits','embedding']``). Drives
@@ -465,7 +466,7 @@ class DiseaseClassifier:
         warm_n = 2
         warm = np.zeros((warm_n, 3, self.img_size, self.img_size), dtype=np.float32)
         warm_out = sess.run(None, {inp.name: warm})
-        expected_shapes = [(warm_n, self.NUM_CLASSES)]
+        expected_shapes: list[tuple[int, int | None]] = [(warm_n, self.NUM_CLASSES)]
         if self._has_embedding:
             expected_shapes.append((warm_n, self._embedding_dim))
         if [tuple(value.shape) for value in warm_out] != expected_shapes:
@@ -530,7 +531,7 @@ class DiseaseClassifier:
         scale = target_short / float(min(w, h))
         new_w = max(side, round(w * scale))
         new_h = max(side, round(h * scale))
-        resized = img.resize((new_w, new_h), Image.BILINEAR)
+        resized = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
         if new_w == side and new_h == side:
             return resized
         left = (new_w - side) // 2

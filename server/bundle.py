@@ -13,6 +13,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _KNOWN_ARTIFACT_ROLES = {
@@ -509,7 +510,7 @@ def verify_bundle(model_dir: Path) -> VerifiedBundle:
         raise BundleLoadError("data_manifest.dataset_sha256 must be a SHA-256")
     if isinstance(n_images, bool) or not isinstance(n_images, int) or n_images <= 0:
         raise BundleLoadError("data_manifest.n_images must be a positive integer")
-    data_payload = _strict_json(resolved["data_manifest"])
+    data_payload = _strict_json(cast(Path, resolved["data_manifest"]))
     if (
         data_payload.get("classification_sha256") != dataset_sha
         or data_payload.get("n_images") != n_images
@@ -521,7 +522,7 @@ def verify_bundle(model_dir: Path) -> VerifiedBundle:
     run_record = artifacts["run_manifest"]
     if not isinstance(run_record, dict) or run_record.get("path") != "run_manifest.json":
         raise BundleLoadError("run_manifest artifact must be named run_manifest.json")
-    run_payload = _strict_json(resolved["run_manifest"])
+    run_payload = _strict_json(cast(Path, resolved["run_manifest"]))
     for key, wanted in (
         ("run_id", run_id),
         ("model_version", version),

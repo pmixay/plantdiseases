@@ -22,10 +22,11 @@ import re
 import secrets
 import sqlite3
 import time
+from collections.abc import Callable
 
 try:
-    from . import community, community_forum  # type: ignore[import-not-found]
-    from .config import get_str  # type: ignore[import-not-found]
+    from . import community, community_forum
+    from .config import get_str
 except ImportError:
     import community
     import community_forum
@@ -116,7 +117,7 @@ _schema_ready_for: str | None = None
 
 # Who counts toward auto-hide. Defaults to every live account; the
 # achievements module narrows it to level 2 and above.
-reporter_counts = None  # Callable[[sqlite3.Connection, str], bool] | None
+reporter_counts: Callable[[sqlite3.Connection, str], bool] | None = None
 
 
 def init_db() -> None:

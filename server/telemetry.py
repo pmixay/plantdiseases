@@ -17,8 +17,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:
-    from . import sqlite_store  # type: ignore[import-not-found]
-    from .config import get_str  # type: ignore[import-not-found]
+    from . import sqlite_store
+    from .config import get_str
 except ImportError:
     import sqlite_store
     from config import get_str

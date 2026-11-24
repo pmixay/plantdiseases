@@ -372,6 +372,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check . ../account-server
 
+      # From the repo root, not server/: mypy checks the `server.*` package
+      # spelling (config and why: [tool.mypy] in server/pyproject.toml).
+      - name: Type check (mypy)
+        working-directory: .
+        run: mypy --config-file server/pyproject.toml
+
       # -n auto: one pytest-xdist worker per core. The suite has no slow test to
       # single out — its time is ~1,300 small tests — so fanning them out is
       # what shortens it.

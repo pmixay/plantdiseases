@@ -4,6 +4,8 @@ The short-lived cache itself, its stale-while-revalidate refresh and the boot-ti
 warm-up stay in ``main.py``, next to the executor they run on.
 """
 
+from typing import Any
+
 # Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
     from . import community
@@ -126,7 +128,7 @@ def build_popular_bundle(
     if snap is None:
         # Curated names are bundled, so the placeholder build does NO network:
         # the photo is resolved lazily + cached by the by-name proxy.
-        items = [
+        items: list[dict[str, Any]] = [
             {
                 "scientific": p.scientific,
                 "common_en": p.common_en,

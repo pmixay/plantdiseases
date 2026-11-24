@@ -31,6 +31,7 @@ import json
 import logging
 import math
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -238,7 +239,7 @@ def letterbox(img: Image.Image, target_size: int = 640) -> tuple[np.ndarray, flo
     scale = target_size / max(w, h)
     new_w = int(round(w * scale))
     new_h = int(round(h * scale))
-    resized = img.resize((new_w, new_h), Image.BILINEAR)
+    resized = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
     # 114 is the standard YOLO grey padding
     new_img = Image.new("RGB", (target_size, target_size), (114, 114, 114))
@@ -256,7 +257,7 @@ class LeafDetector:
     """YOLOv8n-based single-class leaf detector running on raw ONNX Runtime."""
 
     def __init__(self, model_path: Path | None = None):
-        self.model = None
+        self.model: Any = None  # onnxruntime.InferenceSession (untyped package)
         self.input_name = ""
 
         meta = _load_detector_metadata(model_path.parent) if model_path else {}

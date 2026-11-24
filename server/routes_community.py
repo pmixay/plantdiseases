@@ -329,8 +329,9 @@ def register(router: APIRouter, m) -> None:
         # (pre-account) row is readable but never mutable, and the caller is told so rather than being handed a silent no-op. A
         # feed-scroll batch stays lenient and just skips any such id.
         if payload.scan_id and payload.scan_id.strip() and not payload.scan_ids:
+            single_scan_id = payload.scan_id.strip()
             sid = await loop.run_in_executor(
-                None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
+                None, lambda: m.community.resolve_scan_token(single_scan_id),
             )
             owner_actor = await loop.run_in_executor(
                 None, lambda: m.community.account_owner_of(sid)

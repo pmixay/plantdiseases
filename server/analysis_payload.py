@@ -1,5 +1,6 @@
 """The /api/analyze response shape: care cards, abstention presentation, payload builder."""
 
+from typing import Any
 
 # Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
@@ -99,7 +100,7 @@ def apply_abstention_presentation(payload: dict) -> dict:
     }
 
     if reason != pipeline_module.ABSTENTION_REASON_NAP:
-        neutral = diseases_data.DISEASES_DATABASE["unknown"]
+        neutral: dict[str, Any] = diseases_data.DISEASES_DATABASE["unknown"]
         payload["disease_name"] = neutral["name_en"]
         payload["disease_name_ru"] = neutral["name_ru"]
         payload["description"] = neutral["description_en"]

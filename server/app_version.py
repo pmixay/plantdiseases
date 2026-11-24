@@ -15,7 +15,7 @@ def resolve_app_version() -> str:
     string track the model.
     """
     try:
-        from . import __version__ as pkg_version  # type: ignore
+        from . import __version__ as pkg_version
 
         return str(pkg_version)
     except Exception:
