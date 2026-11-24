@@ -191,9 +191,6 @@ Each item is its own PR; don't fold one into another.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
       (the Android client mints these ids).
-- [ ] **Add `response_model` to routes.** `openapi.json` describes request bodies
-      only. `/api/analyze` is pinned by `tests/test_analyze_payload.py`; every other
-      response a frozen APK parses can change without failing CI.
 - [ ] **Break up `ai_services.py` (~3,630 lines)** — transport, five features, ~700
       lines of bilingual content for `diseases_data.py` — and turn `community.py`
       (~4,370 lines) into a package.
@@ -295,6 +292,12 @@ None blocks a release.
   store. No `PRAGMA user_version`: each store's idempotent checks run once per
   process and are cheap. Telemetry keeps day granularity (it stores only the
   error's day, by design), so it has no rolling-24 h counter to align.
+- **Responses are checked against the app, not described in OpenAPI**
+  (2026-11-24): `server/tests/app_contract.py` reads the Android DTOs and the
+  test client fails any 2xx JSON response from an app route that would not
+  decode in the app (39 routes, every one exercised). No `response_model`:
+  FastAPI would validate and filter live responses, so a wrong model becomes a
+  production 500 or a silently dropped field.
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified

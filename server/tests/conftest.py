@@ -109,7 +109,26 @@ class _AccountAwareTestClientMixin:
             )
             nickname = data.get("nickname") or body.get("nickname") or "Test Fern"
             headers["Authorization"] = f"Bearer {_test_access_token(str(identity), str(nickname))}"
-        return super().request(method, url, headers=headers, **kwargs)
+        response = super().request(method, url, headers=headers, **kwargs)
+        _assert_app_can_decode(method, request_path, response)
+        return response
+
+
+def _assert_app_can_decode(method: str, path: str, response) -> None:
+    """Fail the test when a 2xx JSON response from a route the Android app
+    calls would not decode into the app's model (``tests/app_contract.py``):
+    a server change that breaks installed apps fails CI here."""
+    from tests import app_contract
+
+    if not 200 <= response.status_code < 300:
+        return
+    if "application/json" not in response.headers.get("content-type", ""):
+        return
+    class_name = app_contract.class_for(method, path)
+    if class_name is None:
+        return
+    problems = app_contract.violations(response.json(), class_name)
+    assert not problems, f"{method} {path} would not decode in the app ({class_name}): {problems}"
 
 
 @pytest.fixture(autouse=True)

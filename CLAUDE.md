@@ -71,6 +71,10 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   takes `community_store` / `community_http_store` — never `importlib.reload(community)`,
   which re-creates classes `main` already holds. New pipeline behaviour means keeping
   `FakePipeline`'s response shape in sync, or patching `main.pipeline`.
+- Both test clients check every 2xx JSON response from a route the app calls
+  against the app's Kotlin DTOs (`tests/app_contract.py`, `ROUTES`): a dropped
+  required field or a changed type fails the test that produced it. A new app
+  endpoint gets a `ROUTES` entry; the DTOs are read from `android/` at test time.
 - Run as a flat package from `server/` (`uvicorn main:app`); `main.py` resolves imports
   both flat and as `server.*` via try/except.
 

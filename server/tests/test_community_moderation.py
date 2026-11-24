@@ -486,3 +486,23 @@ def test_http_moderator_sees_photos_of_removed_posts(client, staff):
     assert client.get(path, headers=_auth("globalmod")).status_code == 200
     review = client.get(f"/api/community/admin/posts/{created['id']}", headers=_auth("expert"))
     assert review.status_code == 200 and review.json()["state"] == "removed"
+
+
+def test_http_post_edit_and_answer_moderation_answer_in_the_apps_shape(client, staff):
+    # Both responses go through the app response contract in the test client.
+    post = _http_post(client)
+    edited = client.patch(
+        f"/api/community/posts/{post['id']}", json={"title": "Brown spots, now spreading"}, headers=_auth("author")
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["title"] == "Brown spots, now spreading"
+    answer = client.post(
+        f"/api/community/posts/{post['id']}/answers", json={"body": "Check the roots."}, headers=_auth("helper")
+    )
+    assert answer.status_code in (200, 201), answer.text
+    removed = client.post(
+        f"/api/community/admin/answers/{answer.json()['id']}/action",
+        json={"action": "remove", "reason_code": "spam"},
+        headers=_auth("globalmod"),
+    )
+    assert removed.status_code == 200, removed.text
