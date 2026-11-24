@@ -16,6 +16,7 @@ import pytest
 
 import community_deletion
 import community_feeds
+import community_views
 from server.tests.conftest import _test_access_token
 
 
@@ -1563,9 +1564,8 @@ def test_batch_impression_views_counted_once(client, isolated_community):
         },
     )
     assert second.json()["counted_n"] == 0
-    import community as comm
 
-    assert comm.view_counts(["viewbatch0001"]) == {"viewbatch0001": 1}
+    assert community_views.view_counts(["viewbatch0001"]) == {"viewbatch0001": 1}
 
 
 def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(community_store, tmp_path):
@@ -1728,4 +1728,4 @@ def test_feed_token_round_trip_for_views(client, isolated_community):
         json={"scan_id": token, "user_pseudo_id": "pseudo-viewer-1"},
     )
     assert r.json()["counted"] is True
-    assert comm.view_counts(["realscanid01"]) == {"realscanid01": 1}
+    assert community_views.view_counts(["realscanid01"]) == {"realscanid01": 1}

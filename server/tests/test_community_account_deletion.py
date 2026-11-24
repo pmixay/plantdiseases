@@ -13,6 +13,7 @@ from PIL import Image
 
 import community_deletion
 import community_feeds
+import community_views
 
 
 def _thumbnail_bytes() -> bytes:
@@ -64,9 +65,9 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         region="London",
         disease="healthy",
     )
-    community.record_view("keep-legacy-scan", account_actor_id=owner)
-    assert community.view_count_for("keep-legacy-scan") == 1
-    community.record_view(
+    community_views.record_view("keep-legacy-scan", account_actor_id=owner)
+    assert community_views.view_count_for("keep-legacy-scan") == 1
+    community_views.record_view(
         "delete-account-scan", account_actor_id=responder
     )
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
@@ -80,7 +81,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     visible = community_feeds.nearby_scans(country="GB", scope="country")
     assert [row["scan_id"] for row in visible] == ["keep-legacy-scan"]
     assert not community.thumbnail_is_visible(thumbnail)
-    assert community.view_count_for("keep-legacy-scan") == 0
+    assert community_views.view_count_for("keep-legacy-scan") == 0
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         # Logical hiding precedes the asynchronous physical pass.
         assert connection.execute(

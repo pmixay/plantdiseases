@@ -339,7 +339,7 @@ def register(router: APIRouter, m) -> None:
                 raise HTTPException(status_code=409, detail="legacy_scan_read_only")
         counted = await loop.run_in_executor(
             None,
-            lambda: m.community.record_views(ids, account_actor_id=principal.actor_id),
+            lambda: m.community_views.record_views(ids, account_actor_id=principal.actor_id),
         )
         return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
 
@@ -480,7 +480,7 @@ def register(router: APIRouter, m) -> None:
         views: dict = {}
         if ranking_norm == "recent":
             views = await loop.run_in_executor(
-                None, lambda: m.community.view_counts(scan_ids),
+                None, lambda: m.community_views.view_counts(scan_ids),
             )
         for r in rows:
             sid = str(r.get("scan_id"))
