@@ -16,12 +16,12 @@ import json
 from pathlib import Path
 
 try:
-    from .. import community
+    from .. import community_safety
 except ImportError:  # pragma: no cover - direct script execution
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    import community
+    import community_safety
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -58,20 +58,20 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "list":
-        reports = community.pending_content_reports(limit=args.limit)
+        reports = community_safety.pending_content_reports(limit=args.limit)
         print(json.dumps({"reports": reports}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "remove-scan":
         if not args.confirm_remove:
             raise SystemExit("--confirm-remove is required to remove community content")
-        removed = community.remove_scan(args.public_id)
+        removed = community_safety.remove_scan(args.public_id)
         print(json.dumps({"removed": removed, "public_id": args.public_id}))
         return 0 if removed else 2
 
     if args.action == "remove_content" and not args.confirm_remove:
         raise SystemExit("--confirm-remove is required to remove community content")
-    resolved = community.moderate_content_report(args.report_id, args.action)
+    resolved = community_safety.moderate_content_report(args.report_id, args.action)
     print(json.dumps({"resolved": resolved, "report_id": args.report_id}))
     return 0 if resolved else 2
 

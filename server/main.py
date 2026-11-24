@@ -74,6 +74,7 @@ try:
         community_feeds,  # noqa: F401  (routes reach it as m.community_feeds)
         community_forum,
         community_labels,
+        community_safety,  # noqa: F401  (routes reach it as m.{module})
         config,
         deps,
         feedback_labels,
@@ -109,6 +110,7 @@ except ImportError:
     import community_feeds  # noqa: F401
     import community_forum
     import community_labels
+    import community_safety  # noqa: F401
     import config
     import deps
     import feedback_labels

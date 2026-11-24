@@ -16,6 +16,7 @@ import uuid
 import pytest
 from PIL import Image
 
+import community_safety
 from tests.conftest import _test_access_token
 
 
@@ -233,7 +234,7 @@ def test_search_with_scan_filters_by_condition_and_species(forum):
 
 def test_blocked_authors_disappear_for_the_blocker(forum, community_store):
     post = _question(forum, author="spammer")
-    community_store.block_content_author(
+    community_safety.block_content_author(
         blocker_actor_id=_actor("reader"), target_type="post", target_id=post["id"]
     )
     assert forum.feed(viewer_actor_id=_actor("reader"))["items"] == []

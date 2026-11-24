@@ -282,7 +282,7 @@ def register(router: APIRouter, m) -> None:
     async def community_list_blocks(principal=Depends(account)):
         """List only the caller's blocks using unlinkable opaque block ids."""
         items = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.actor_blocks(principal.actor_id)
+            None, lambda: m.community_safety.actor_blocks(principal.actor_id)
         )
         return JSONResponse(
             content={"items": items}, headers={"Cache-Control": "no-store"}
@@ -298,7 +298,7 @@ def register(router: APIRouter, m) -> None:
         if len(block_id) != 32 or not block_id.startswith("cb"):
             raise HTTPException(status_code=422, detail="invalid_block_id")
         removed = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.unblock_actor(principal.actor_id, block_id)
+            None, lambda: m.community_safety.unblock_actor(principal.actor_id, block_id)
         )
         if not removed:
             raise HTTPException(status_code=404, detail="block_not_found")

@@ -13,6 +13,7 @@ from contextlib import closing
 import pytest
 
 import community_feeds
+import community_safety
 from server.tests.conftest import _test_access_token
 
 
@@ -80,12 +81,12 @@ def test_a_scan_is_not_a_block_target(safety_store):
     community = safety_store
     token = _scan(community, "unblockable-scan", _actor("scan-owner"))
     with pytest.raises(ValueError, match="target_not_found"):
-        community.block_content_author(
+        community_safety.block_content_author(
             blocker_actor_id=_actor("scan-reader"),
             target_type="scan",
             target_id=token,
         )
-    assert community.actor_blocks(_actor("scan-reader")) == []
+    assert community_safety.actor_blocks(_actor("scan-reader")) == []
 
 
 def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
@@ -100,7 +101,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     _scan(community, "other-scan", other, "Other Fern")
     blocked_post = _forum_post(blocked, "Blocked Fern")
 
-    result = community.block_content_author(
+    result = community_safety.block_content_author(
         blocker_actor_id=blocker,
         target_type="post",
         target_id=blocked_post,
@@ -108,7 +109,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     )
     assert result["created"] is True
     assert result["block_id"].startswith("cb")
-    assert community.block_content_author(
+    assert community_safety.block_content_author(
         blocker_actor_id=blocker,
         target_type="post",
         target_id=blocked_post,
@@ -145,7 +146,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
         "RU", viewer_account_actor_id=blocker
     )["total"] == 2
 
-    blocks = community.actor_blocks(blocker)
+    blocks = community_safety.actor_blocks(blocker)
     assert blocks == [
         {
             "block_id": result["block_id"],
@@ -153,8 +154,8 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
             "created_at": 2_000_000,
         }
     ]
-    assert community.unblock_actor(blocked, result["block_id"]) is False
-    assert community.unblock_actor(blocker, result["block_id"]) is True
+    assert community_safety.unblock_actor(blocked, result["block_id"]) is False
+    assert community_safety.unblock_actor(blocker, result["block_id"]) is True
     assert "blocked-scan" in {
         row["scan_id"]
         for row in community_feeds.nearby_scans(
@@ -171,21 +172,21 @@ def test_operator_removes_a_scan_and_drains_the_legacy_report_queue(safety_store
     # A scan flagged to the moderation contact is removed by its public id.
     flagged = _scan(community, "flagged-scan", owner)
     flagged_report = _queue_legacy_report(community, reporter, owner, "flagged-scan")
-    assert community.remove_scan("flagged-scan") is False  # never the internal id
-    assert community.remove_scan(flagged) is True
+    assert community_safety.remove_scan("flagged-scan") is False  # never the internal id
+    assert community_safety.remove_scan(flagged) is True
     assert community.scan_exists("flagged-scan") is False
-    assert community.remove_scan(flagged) is False
+    assert community_safety.remove_scan(flagged) is False
     assert flagged_report not in {
-        report["report_id"] for report in community.pending_content_reports()
+        report["report_id"] for report in community_safety.pending_content_reports()
     }
 
     # Reports filed by older app versions can still be resolved.
     _scan(community, "moderated-scan", owner)
     report_id = _queue_legacy_report(community, reporter, owner, "moderated-scan")
-    assert [r["report_id"] for r in community.pending_content_reports()] == [report_id]
-    assert community.moderate_content_report(report_id, "remove_content") is True
+    assert [r["report_id"] for r in community_safety.pending_content_reports()] == [report_id]
+    assert community_safety.moderate_content_report(report_id, "remove_content") is True
     assert community.scan_exists("moderated-scan") is False
-    assert community.pending_content_reports() == []
+    assert community_safety.pending_content_reports() == []
 
 
 def test_account_cleanup_erases_safety_data(safety_store):
@@ -194,7 +195,7 @@ def test_account_cleanup_erases_safety_data(safety_store):
     reporter = _actor("cleanup-reporter")
     _scan(community, "cleanup-scan", owner)
     _queue_legacy_report(community, reporter, owner, "cleanup-scan")
-    community.block_content_author(
+    community_safety.block_content_author(
         blocker_actor_id=reporter,
         target_type="post",
         target_id=_forum_post(owner, "Owner Fern"),
