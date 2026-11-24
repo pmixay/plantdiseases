@@ -116,12 +116,13 @@ below is a summary of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Scorch is the model's weak spot: it is the class most often read as `healthy`. Closing
 that gap is a data problem first, so that is what the roadmap's critical path targets.
 
-| | Work left |
+| | Work left, by priority |
 |---|---|
-| 🔴 **Critical path** | Collect **v9 data** — 400 early-stage scorch families with boxes · carve the locked test set **T_v1** from 80 export rows · build **OOD benchmark v3** |
-| 🟠 **Model checks** | 2.7.5 is **not** significantly better than 2.7.2 on the shared holdout (paired bootstrap, 2026-10-27) · ablate the augmentation profile |
-| 🟡 **Hardening** | Likes and views still accept a key-less pseudo-id · Aqua has no classifier-side OOD signal |
-| 🔵 **Refactors** | Split `ai_services.py` and `community.py` further · type-check the server |
+| ⚪ **Ship** | Release app 1.10 and deploy the server (it drops routes 1.9 still calls) · create the first forum admin |
+| 🔴 **Critical path** | Carve the locked test set **T_v1** from 80 export rows · collect **v9 data**: 400 early-stage scorch families with boxes · build **OOD benchmark v3** · ablate the augmentation profile · ship Aqua's OOD floor with the next run |
+| 🟠 **Unblockers** | Close the OOD benchmark v3 tool gaps · make `paired_eval`'s bundle check match boot |
+| 🟡 **Model checks** | 2.7.5 is **not** significantly better than 2.7.2 on the shared holdout (paired bootstrap, 2026-10-27) · crop-vs-whole gap · capacity and register runs |
+| 🔵 **Refactors** | Split `ai_services.py` and `community.py` further · type-check the server · replace code-built Android views |
 
 Full list, rationale and the "settled — do not retry" table: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
