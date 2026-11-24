@@ -41,16 +41,16 @@ import sqlite3
 import threading
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 try:
+    from . import sqlite_store  # type: ignore[import-not-found]
     from .config import get_str  # type: ignore[import-not-found]
     from .countries import to_iso_alpha2
 except ImportError:
+    import sqlite_store
     from config import get_str
     from countries import to_iso_alpha2
 
@@ -677,39 +677,15 @@ def _actor_is_deleted(conn: sqlite3.Connection, actor_id: str | None) -> bool:
     ).fetchone() is not None
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(
-        str(COMMUNITY_DB_PATH),
-        check_same_thread=False,
-        isolation_level=None,
-    )
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+def _register_functions(conn: sqlite3.Connection) -> None:
     conn.create_function("community_distance_km", 4, _haversine_km, deterministic=True)
-    try:
-        yield conn
-        conn.commit()
-    except BaseException:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
-def _add_column_if_missing(
-    conn: sqlite3.Connection,
-    table: str,
-    column: str,
-    decl: str,
-) -> None:
-    """Idempotent ALTER TABLE ADD COLUMN helper."""
-    cols = {
-        row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-    if column in cols:
-        return
-    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+def _connect() -> contextlib.AbstractContextManager[sqlite3.Connection]:
+    return sqlite_store.connect(COMMUNITY_DB_PATH, setup=_register_functions)
+
+
+_add_column_if_missing = sqlite_store.add_column_if_missing
 
 
 _IDENTITY_TABLE_DEFINITIONS = {

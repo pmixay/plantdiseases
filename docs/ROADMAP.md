@@ -197,11 +197,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Break up `ai_services.py` (~3,630 lines)** — transport, five features, ~700
       lines of bilingual content for `diseases_data.py` — and turn `community.py`
       (~4,370 lines) into a package.
-- [ ] **Consolidate the four SQLite stores** (`community`, `training_store`,
-      `push`, `telemetry`): shared WAL `_connect`/`init_db`, one
-      `_add_column_if_missing` / `prune_older_than`, and `PRAGMA user_version` so a
-      boot stops replaying every migration. `telemetry.daily_writes` still counts
-      from UTC midnight where the others use a rolling 24 h.
 - [ ] **Type-check the annotations** — no mypy/pyright config, not in CI.
 
 **Android**
@@ -295,6 +290,11 @@ None blocks a release.
   saved with each scan in EN and RU from plain-JVM code. `BilingualTablesTest`
   guards them; on-screen text goes to string resources (`StringParityTest`).
   The remaining `isRussian(` calls pick server or stored EN/RU fields.
+- **SQLite stores share `server/sqlite_store.py`** (2026-11-24): connection
+  setup and `add_column_if_missing`; schema, migrations and pruning stay per
+  store. No `PRAGMA user_version`: each store's idempotent checks run once per
+  process and are cheap. Telemetry keeps day granularity (it stores only the
+  error's day, by design), so it has no rolling-24 h counter to align.
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
