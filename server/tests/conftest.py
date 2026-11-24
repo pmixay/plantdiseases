@@ -142,6 +142,9 @@ def _reset_abuse_counters():
     import plant_photos
 
     # Background photo warming would make real Wikimedia requests from tests.
+    # The real function stays reachable for the tests of warming itself.
+    if not hasattr(plant_photos, "_real_warm"):
+        plant_photos._real_warm = plant_photos.warm
     plant_photos.warm = lambda urls: None
     # The anonymous popularity tally is written by every accepted analysis;
     # start each test from an empty one so popular-feed tests stay isolated.
@@ -283,7 +286,7 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
 
     # Same story for the proxied-photo cache: a route that fetches one would
     # otherwise create ``server/plant_photo_cache/`` in the working tree. The
-    # env var matters because a per-test ``importlib.reload`` re-reads it.
+    # env var covers anything that reads the setting afresh.
     import plant_photos
     plant_photos.PHOTO_CACHE_DIR = state_dir / "plant-photos"
     os.environ["PLANT_PHOTO_CACHE_DIR"] = str(plant_photos.PHOTO_CACHE_DIR)

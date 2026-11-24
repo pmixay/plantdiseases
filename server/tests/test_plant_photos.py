@@ -6,8 +6,8 @@ cached), the non-raster rejection, and the /api/plant-photo endpoint.
 """
 from __future__ import annotations
 
-import importlib
 import io
+import queue
 
 import pytest
 
@@ -17,9 +17,20 @@ _PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 @pytest.fixture
 def photos(tmp_path, monkeypatch):
-    monkeypatch.setenv("PLANT_PHOTO_CACHE_DIR", str(tmp_path / "photos"))
+    """plant_photos with a private cache dir and fresh back-off / warm-up state.
+    Patched in place, not reloaded: a reload re-creates objects other modules
+    already hold."""
     import plant_photos as pp
-    importlib.reload(pp)
+
+    monkeypatch.setattr(pp, "PHOTO_CACHE_DIR", tmp_path / "photos")
+    monkeypatch.setattr(pp, "_backoff_until", 0.0)
+    monkeypatch.setattr(pp, "_warm_pending", set())
+    # A fresh queue and worker: an earlier test's worker may still be asleep in
+    # a back-off it read before this test reset it.
+    monkeypatch.setattr(pp, "_warm_queue", queue.Queue(maxsize=pp._WARM_QUEUE_MAX))
+    monkeypatch.setattr(pp, "_warm_thread", None)
+    # conftest stubs warm() for every other test; these tests exercise it.
+    monkeypatch.setattr(pp, "warm", pp._real_warm)
     return pp
 
 

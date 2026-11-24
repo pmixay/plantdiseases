@@ -1016,3 +1016,64 @@ def test_pipeline_init_adopts_served_thresholds_when_contract_matches():
     assert served_emb == 0.68 and served_ml == 1.4
     # Single-image resolver still reads the provenance value untouched.
     assert pipeline_module._resolve_max_logit_floor(meta) == 2.01
+
+
+def test_is_diseased_needs_the_disease_confidence_floor():
+    """The confidence arm: a disease argmax below DISEASE_MIN_CONFIDENCE is not
+    a disease verdict; at the floor it is."""
+    import pipeline as pipeline_module
+
+    real = pipeline_module._RealPipelineForTests
+    floor = pipeline_module.DISEASE_MIN_CONFIDENCE
+    assert real._is_diseased({"class_name": "leaf_spot", "confidence": floor}) is True
+    assert real._is_diseased({"class_name": "leaf_spot", "confidence": floor - 1e-6}) is False
+    assert real._is_diseased({"class_name": "healthy", "confidence": 0.99}) is False
+
+
+def _served_gate_meta(pipeline_module, *, with_served_gate: bool) -> dict:
+    ood = {"max_logit_floor": 2.01, "max_logit_scope": "plant_only", "nap_head_mass_floor": 0.05}
+    if with_served_gate:
+        ood["served_gate"] = {
+            "schema_version": 1,
+            "calibration_mode": "full_served_pipeline",
+            "embedding_aggregation": "min_member_distance",
+            "max_logit_aggregation": "max_member_logit",
+            "detector_confidence_floor": pipeline_module.NAP_DETECTOR_CONF_FLOOR,
+            "fold_whole_frame_vote": pipeline_module.FOLD_WHOLE_FRAME_VOTE,
+            "embedding_threshold": 0.68,
+            "max_logit_floor": 1.4,
+        }
+    return {"ood": ood}
+
+
+@pytest.mark.parametrize("with_served_gate", [True, False])
+def test_pipeline_init_serves_only_the_served_gate_thresholds(monkeypatch, tmp_path, with_served_gate):
+    """Runs the real ``__init__`` over stub models: with a matching served-gate
+    contract the overlay uses the served thresholds; without one the served
+    embedding threshold stays unset and the overlay is off."""
+    import pipeline as pipeline_module
+
+    meta = _served_gate_meta(pipeline_module, with_served_gate=with_served_gate)
+
+    class StubClassifier:
+        tta = None
+        backend = "stub"
+
+        def __init__(self, path, exact_model_path=False):
+            self.meta = meta
+
+    monkeypatch.setattr(pipeline_module, "LeafDetector", lambda path: object())
+    monkeypatch.setattr(pipeline_module, "DiseaseClassifier", StubClassifier)
+    monkeypatch.setattr(pipeline_module, "_load_temperature", lambda *args, **kwargs: 1.0)
+    monkeypatch.setattr(pipeline_module, "load_conformal_config", lambda directory: None)
+    monkeypatch.setattr(pipeline_module, "load_embedding_ood", lambda directory, meta: None)
+
+    pipe = pipeline_module._RealPipelineForTests(tmp_path / "detector.onnx", tmp_path / "classifier.onnx")
+
+    assert pipe._secondary_ood_gate_enabled is with_served_gate
+    if with_served_gate:
+        assert pipe._served_embedding_threshold == 0.68
+        assert pipe.nap_max_logit_floor == 1.4
+    else:
+        assert pipe._served_embedding_threshold is None
+        assert pipe.nap_max_logit_floor == 2.01  # provenance, but the overlay is off

@@ -219,18 +219,9 @@ Each item is its own PR; don't fold one into another.
 
 ## Tests and CI
 
-The 2026-11 rework removed tests that guarded nothing, merged same-state tests,
-made the server suite parallel and passed CI. What it left open:
-
-- [ ] **Last two module reloads in tests**: `test_plant_photos.py` and
-      `test_push.py` still `importlib.reload` their own module to redirect a path.
-      Harmless today (nothing holds their classes), but the same
-      `monkeypatch.setattr` redirection the community and `ai_services` tests now
-      use would retire `importlib.reload` from the suite.
-- [ ] **Untested pipeline branches**: the confidence-threshold arm of
-      `_is_diseased` (`test_is_diseased_uses_disease_min_confidence` only checks the
-      constants), and the served-threshold adoption in
-      `PlantDiseasePipeline.__init__` (its resolvers are tested, the adoption is not).
+Nothing open. The 2026-11 rework is done: no test reloads a module, the
+pipeline's confidence floor and served-gate adoption are tested, and every app
+response is checked against the app's own models (`tests/app_contract.py`).
 
 ---
 
@@ -242,8 +233,6 @@ None blocks a release.
       map) → `docs/assets/screenshots/` + a row in "What it does". Needs a device.
 - [ ] **`docs/assets/per-class.svg`** holds hand-copied numbers; regenerate with
       `generate_assets.py` when a model ships.
-- [ ] **Notebook cell 0** is titled "PlantVision 2.6" and says "v2.5 continues
-      maximising gamma".
 
 ---
 
