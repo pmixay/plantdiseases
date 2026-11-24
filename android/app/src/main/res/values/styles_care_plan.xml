@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text of CarePlanCardView. Every line is full ink; small text is bold. -->
+<resources>
+    <style name="TextAppearance.App.CarePlan.Title" parent="">
+        <item name="android:textSize">@dimen/care_plan_text_title</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.App.CarePlan.Body" parent="">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.App.CarePlan.BodySm" parent="">
+        <item name="android:textSize">@dimen/text_body_sm</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.App.CarePlan.Item" parent="">
+        <item name="android:textSize">@dimen/care_plan_text_item</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.App.CarePlan.ItemMedium" parent="TextAppearance.App.CarePlan.Item">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.App.CarePlan.PillValue" parent="">
+        <item name="android:textSize">@dimen/care_plan_text_pill_value</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <!-- A sentence-case caption (not the all-caps label of App.Caption). -->
+    <style name="TextAppearance.App.CarePlan.Note" parent="">
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>
