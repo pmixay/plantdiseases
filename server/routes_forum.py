@@ -470,7 +470,7 @@ def register(router: APIRouter, m) -> None:
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community.block_content_author(
+                lambda: m.community_safety.block_content_author(
                     blocker_actor_id=principal.actor_id,
                     target_type=payload.target_type,
                     target_id=payload.target_id.strip(),

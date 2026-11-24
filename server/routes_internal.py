@@ -52,11 +52,11 @@ def register(router: APIRouter, m) -> None:
         except ValueError:
             raise HTTPException(status_code=422, detail="invalid_request") from None
         accepted = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.request_actor_deletion(actor_id)
+            None, lambda: m.community_deletion.request_actor_deletion(actor_id)
         )
         if not accepted:
             raise HTTPException(status_code=422, detail="invalid_request")
-        background_tasks.add_task(m.community.process_cleanup_jobs)
+        background_tasks.add_task(m.community_deletion.process_cleanup_jobs)
         return JSONResponse(status_code=202, content={"status": "accepted"})
 
 
@@ -80,7 +80,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=422, detail="invalid_request") from None
         updated = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community.update_actor_nickname(actor_id, payload.nickname),
+            lambda: m.community_deletion.update_actor_nickname(actor_id, payload.nickname),
         )
         return JSONResponse(
             status_code=202,

@@ -190,7 +190,7 @@ def register(router: APIRouter, m) -> None:
         # us ingesting its payload.
         issued = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community.is_analysis_token_issued(payload.scan_id),
+            lambda: m.community_scans.is_analysis_token_issued(payload.scan_id),
         )
         if not issued:
             m.logger.warning("Community publication capability rejected")
@@ -234,7 +234,7 @@ def register(router: APIRouter, m) -> None:
         try:
             row_id = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community.record_analysis_scan(
+                lambda: m.community_scans.record_analysis_scan(
                     scan_id=payload.scan_id,
                     account_actor_id=principal.actor_id,
                     country=geo["country"] or "",
@@ -251,17 +251,17 @@ def register(router: APIRouter, m) -> None:
                     locale=payload.locale,
                 ),
             )
-        except m.community.AnalysisTokenUnknownError as exc:
+        except m.community_scans.AnalysisTokenUnknownError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Unknown scan_id - re-scan before sharing to the community.",
             ) from exc
-        except m.community.AnalysisImageMismatchError as exc:
+        except m.community_scans.AnalysisImageMismatchError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Community image does not match the analyzed image.",
             ) from exc
-        except m.community.AnalysisTokenConflictError as exc:
+        except m.community_scans.AnalysisTokenConflictError as exc:
             raise HTTPException(
                 status_code=409,
                 detail="This scan_id has already been published.",
@@ -282,7 +282,7 @@ def register(router: APIRouter, m) -> None:
     async def community_list_blocks(principal=Depends(account)):
         """List only the caller's blocks using unlinkable opaque block ids."""
         items = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.actor_blocks(principal.actor_id)
+            None, lambda: m.community_safety.actor_blocks(principal.actor_id)
         )
         return JSONResponse(
             content={"items": items}, headers={"Cache-Control": "no-store"}
@@ -298,7 +298,7 @@ def register(router: APIRouter, m) -> None:
         if len(block_id) != 32 or not block_id.startswith("cb"):
             raise HTTPException(status_code=422, detail="invalid_block_id")
         removed = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.unblock_actor(principal.actor_id, block_id)
+            None, lambda: m.community_safety.unblock_actor(principal.actor_id, block_id)
         )
         if not removed:
             raise HTTPException(status_code=404, detail="block_not_found")
@@ -334,13 +334,13 @@ def register(router: APIRouter, m) -> None:
                 None, lambda: m.community.resolve_scan_token(single_scan_id),
             )
             owner_actor = await loop.run_in_executor(
-                None, lambda: m.community.account_owner_of(sid)
+                None, lambda: m.community_scans.account_owner_of(sid)
             )
             if owner_actor is None:
                 raise HTTPException(status_code=409, detail="legacy_scan_read_only")
         counted = await loop.run_in_executor(
             None,
-            lambda: m.community.record_views(ids, account_actor_id=principal.actor_id),
+            lambda: m.community_views.record_views(ids, account_actor_id=principal.actor_id),
         )
         return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
 
@@ -392,7 +392,7 @@ def register(router: APIRouter, m) -> None:
             )
         principal = await m._optional_account(request)
         try:
-            recommendation_cursor = m.community.decode_recommendation_cursor(cursor)
+            recommendation_cursor = m.community_feeds.decode_recommendation_cursor(cursor)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
         if ranking_norm == "recent" and recommendation_cursor is not None \
@@ -423,7 +423,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recommended":
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community.recommended_scans(
+                lambda: m.community_feeds.recommended_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -437,7 +437,7 @@ def register(router: APIRouter, m) -> None:
         else:
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community.nearby_scans(
+                lambda: m.community_feeds.nearby_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -457,7 +457,7 @@ def register(router: APIRouter, m) -> None:
         next_cursor = None
         if rows and len(rows) >= effective_limit:
             last = rows[-1]
-            next_cursor = m.community.encode_recommendation_cursor(
+            next_cursor = m.community_feeds.encode_recommendation_cursor(
                 int(last.get("_cursor_score", 0)),
                 int(last["created_at"]),
                 int(last["_cursor_row_id"]),
@@ -468,7 +468,7 @@ def register(router: APIRouter, m) -> None:
         # surface the scan they just uploaded.
         summary = await loop.run_in_executor(
             None,
-            lambda: m.community.region_summary(
+            lambda: m.community_feeds.region_summary(
                 country_norm or "",
                 None,
                 exclude_account_actor_id=principal.actor_id if principal else None,
@@ -481,7 +481,7 @@ def register(router: APIRouter, m) -> None:
         views: dict = {}
         if ranking_norm == "recent":
             views = await loop.run_in_executor(
-                None, lambda: m.community.view_counts(scan_ids),
+                None, lambda: m.community_views.view_counts(scan_ids),
             )
         for r in rows:
             sid = str(r.get("scan_id"))
@@ -542,7 +542,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None,
-            lambda: m.community.map_scans(
+            lambda: m.community_feeds.map_scans(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -576,7 +576,7 @@ def register(router: APIRouter, m) -> None:
         lo_lat, lo_lon, hi_lat, hi_lon = box
         data = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community.density_grid(
+            lambda: m.community_feeds.density_grid(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -608,7 +608,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
-            lambda: m.community.scans_by_species(
+            lambda: m.community_feeds.scans_by_species(
                 sci,
                 limit=max(1, min(int(limit), 50)),
                 exclude_account_actor_id=principal.actor_id if principal else None,
@@ -638,7 +638,7 @@ def register(router: APIRouter, m) -> None:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise HTTPException(status_code=400, detail="Invalid thumbnail name")
         visible = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.thumbnail_is_visible(filename)
+            None, lambda: m.community_scans.thumbnail_is_visible(filename)
         )
         if not visible:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
@@ -646,7 +646,7 @@ def register(router: APIRouter, m) -> None:
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Thumbnail not found")
         # Streams off the event loop; supports 304 revalidation. Thumbnails
-        # are always re-encoded to JPEG by community._save_thumbnail.
+        # are always re-encoded to JPEG by community_scans._save_thumbnail.
         return community_http.cached_image_response(
             request, path,
             media_type="image/jpeg",

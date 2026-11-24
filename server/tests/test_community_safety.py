@@ -12,6 +12,10 @@ from contextlib import closing
 
 import pytest
 
+import community_deletion
+import community_feeds
+import community_safety
+import community_scans
 from server.tests.conftest import _test_access_token
 
 
@@ -60,7 +64,7 @@ def _queue_legacy_report(community, reporter: str, owner: str, scan_id: str) -> 
 
 
 def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
-    community.record_scan(
+    community_scans.record_scan(
         scan_id=scan_id,
         account_actor_id=actor,
         country="RU",
@@ -79,12 +83,12 @@ def test_a_scan_is_not_a_block_target(safety_store):
     community = safety_store
     token = _scan(community, "unblockable-scan", _actor("scan-owner"))
     with pytest.raises(ValueError, match="target_not_found"):
-        community.block_content_author(
+        community_safety.block_content_author(
             blocker_actor_id=_actor("scan-reader"),
             target_type="scan",
             target_id=token,
         )
-    assert community.actor_blocks(_actor("scan-reader")) == []
+    assert community_safety.actor_blocks(_actor("scan-reader")) == []
 
 
 def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
@@ -99,7 +103,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     _scan(community, "other-scan", other, "Other Fern")
     blocked_post = _forum_post(blocked, "Blocked Fern")
 
-    result = community.block_content_author(
+    result = community_safety.block_content_author(
         blocker_actor_id=blocker,
         target_type="post",
         target_id=blocked_post,
@@ -107,16 +111,16 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     )
     assert result["created"] is True
     assert result["block_id"].startswith("cb")
-    assert community.block_content_author(
+    assert community_safety.block_content_author(
         blocker_actor_id=blocker,
         target_type="post",
         target_id=blocked_post,
     )["created"] is False
 
-    blocker_feed = community.nearby_scans(
+    blocker_feed = community_feeds.nearby_scans(
         country="RU", scope="country", viewer_account_actor_id=blocker
     )
-    blocked_feed = community.nearby_scans(
+    blocked_feed = community_feeds.nearby_scans(
         country="RU", scope="country", viewer_account_actor_id=blocked
     )
     assert "blocked-scan" not in {row["scan_id"] for row in blocker_feed}
@@ -125,13 +129,13 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
 
     assert "blocked-scan" not in {
         row["scan_id"]
-        for row in community.scans_by_species(
+        for row in community_feeds.scans_by_species(
             "Ficus elastica", viewer_account_actor_id=blocker
         )
     }
     map_ids = {
         row["scan_id"]
-        for row in community.map_scans(
+        for row in community_feeds.map_scans(
             55.0,
             56.0,
             37.0,
@@ -140,11 +144,11 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
         )["items"]
     }
     assert "blocked-scan" not in map_ids
-    assert community.region_summary(
+    assert community_feeds.region_summary(
         "RU", viewer_account_actor_id=blocker
     )["total"] == 2
 
-    blocks = community.actor_blocks(blocker)
+    blocks = community_safety.actor_blocks(blocker)
     assert blocks == [
         {
             "block_id": result["block_id"],
@@ -152,11 +156,11 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
             "created_at": 2_000_000,
         }
     ]
-    assert community.unblock_actor(blocked, result["block_id"]) is False
-    assert community.unblock_actor(blocker, result["block_id"]) is True
+    assert community_safety.unblock_actor(blocked, result["block_id"]) is False
+    assert community_safety.unblock_actor(blocker, result["block_id"]) is True
     assert "blocked-scan" in {
         row["scan_id"]
-        for row in community.nearby_scans(
+        for row in community_feeds.nearby_scans(
             country="RU", scope="country", viewer_account_actor_id=blocker
         )
     }
@@ -170,21 +174,21 @@ def test_operator_removes_a_scan_and_drains_the_legacy_report_queue(safety_store
     # A scan flagged to the moderation contact is removed by its public id.
     flagged = _scan(community, "flagged-scan", owner)
     flagged_report = _queue_legacy_report(community, reporter, owner, "flagged-scan")
-    assert community.remove_scan("flagged-scan") is False  # never the internal id
-    assert community.remove_scan(flagged) is True
-    assert community.scan_exists("flagged-scan") is False
-    assert community.remove_scan(flagged) is False
+    assert community_safety.remove_scan("flagged-scan") is False  # never the internal id
+    assert community_safety.remove_scan(flagged) is True
+    assert community_scans.scan_exists("flagged-scan") is False
+    assert community_safety.remove_scan(flagged) is False
     assert flagged_report not in {
-        report["report_id"] for report in community.pending_content_reports()
+        report["report_id"] for report in community_safety.pending_content_reports()
     }
 
     # Reports filed by older app versions can still be resolved.
     _scan(community, "moderated-scan", owner)
     report_id = _queue_legacy_report(community, reporter, owner, "moderated-scan")
-    assert [r["report_id"] for r in community.pending_content_reports()] == [report_id]
-    assert community.moderate_content_report(report_id, "remove_content") is True
-    assert community.scan_exists("moderated-scan") is False
-    assert community.pending_content_reports() == []
+    assert [r["report_id"] for r in community_safety.pending_content_reports()] == [report_id]
+    assert community_safety.moderate_content_report(report_id, "remove_content") is True
+    assert community_scans.scan_exists("moderated-scan") is False
+    assert community_safety.pending_content_reports() == []
 
 
 def test_account_cleanup_erases_safety_data(safety_store):
@@ -193,13 +197,13 @@ def test_account_cleanup_erases_safety_data(safety_store):
     reporter = _actor("cleanup-reporter")
     _scan(community, "cleanup-scan", owner)
     _queue_legacy_report(community, reporter, owner, "cleanup-scan")
-    community.block_content_author(
+    community_safety.block_content_author(
         blocker_actor_id=reporter,
         target_type="post",
         target_id=_forum_post(owner, "Owner Fern"),
     )
-    assert community.request_actor_deletion(reporter, now=3_000_000) is True
-    assert community.process_cleanup_jobs(now=3_000_000) == {
+    assert community_deletion.request_actor_deletion(reporter, now=3_000_000) is True
+    assert community_deletion.process_cleanup_jobs(now=3_000_000) == {
         "completed": 1,
         "retried": 0,
     }
@@ -223,9 +227,9 @@ def test_moderation_tool_requires_confirmation_to_remove_a_scan(safety_store, ca
     token = _scan(community, "tool-scan", _actor("tool-owner"))
     with pytest.raises(SystemExit):
         community_moderation.main(["remove-scan", token])
-    assert community.scan_exists("tool-scan") is True
+    assert community_scans.scan_exists("tool-scan") is True
     assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 0
-    assert community.scan_exists("tool-scan") is False
+    assert community_scans.scan_exists("tool-scan") is False
     assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 2
     capsys.readouterr()
 
@@ -351,14 +355,13 @@ def test_scan_items_carry_no_author_or_like_fields(safety_store, client):
 
 
 def test_species_scans_come_nearest_first_with_distance(safety_store):
-    community = safety_store
     places = {
         "far-scan": ("DE", "Berlin", 52.52, 13.40),
         "country-scan": ("RU", "Kazan", 55.79, 49.12),
         "near-scan": ("RU", "Moscow", 55.76, 37.63),
     }
     for scan_id, (country, city, lat, lon) in places.items():
-        community.record_scan(
+        community_scans.record_scan(
             scan_id=scan_id,
             account_actor_id=_actor(scan_id),
             country=country,
@@ -371,11 +374,11 @@ def test_species_scans_come_nearest_first_with_distance(safety_store):
             nickname="Fern",
         )
 
-    anchored = community.scans_by_species("Ficus elastica", country="RU", lat=55.75, lon=37.62)
+    anchored = community_feeds.scans_by_species("Ficus elastica", country="RU", lat=55.75, lon=37.62)
     assert [row["scan_id"] for row in anchored] == ["near-scan", "country-scan", "far-scan"]
     assert anchored[0]["distance_km"] is not None and anchored[0]["distance_km"] < 5
     assert all("lat" not in row and "lon" not in row for row in anchored)
 
-    unanchored = community.scans_by_species("Ficus elastica")
+    unanchored = community_feeds.scans_by_species("Ficus elastica")
     assert {row["scan_id"] for row in unanchored} == set(places)
     assert all(row["distance_km"] is None for row in unanchored)

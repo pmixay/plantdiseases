@@ -7,6 +7,10 @@ import time
 import uuid
 from contextlib import closing
 
+import community_feeds
+import community_scans
+import community_views
+
 _OLD_OPINION_SCHEMA = """
 CREATE TABLE community_opinions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id TEXT NOT NULL,
@@ -50,11 +54,11 @@ def test_init_db_drops_the_old_opinion_system_and_keeps_everything_else(communit
     forum.init_db()
     owner = str(uuid.uuid4())
     viewer = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="keeper-scan", account_actor_id=owner, nickname="Fern",
         country="GB", region="London", disease="healthy",
     )
-    community.record_views(["keeper-scan"], account_actor_id=viewer)
+    community_views.record_views(["keeper-scan"], account_actor_id=viewer)
     post = forum.create_post(
         actor_id=owner, nickname="Fern", kind="tip", title="Mist less", body="Ferns like humidity",
     )
@@ -112,8 +116,8 @@ def test_init_db_drops_the_old_opinion_system_and_keeps_everything_else(communit
             "SELECT legacy_scan_id FROM forum_posts"
         ).fetchone() == (None,)
 
-    assert community.scan_exists("keeper-scan")
-    assert community.view_counts(["keeper-scan"]) == {"keeper-scan": 1}
+    assert community_scans.scan_exists("keeper-scan")
+    assert community_views.view_counts(["keeper-scan"]) == {"keeper-scan": 1}
     assert forum.get_post(post["id"])["title"] == "Mist less"
 
 
@@ -139,11 +143,11 @@ def test_init_db_drops_the_old_scan_likes_and_keeps_the_scans(community_store):
     community.init_db()
     owner = str(uuid.uuid4())
     viewer = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="liked-scan", account_actor_id=owner, nickname="Fern",
         country="GB", region="London", disease="healthy",
     )
-    community.record_views(["liked-scan"], account_actor_id=viewer)
+    community_views.record_views(["liked-scan"], account_actor_id=viewer)
     now = int(time.time())
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as conn, conn:
         conn.executescript(_OLD_LIKE_SCHEMA)
@@ -164,9 +168,9 @@ def test_init_db_drops_the_old_scan_likes_and_keeps_the_scans(community_store):
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as conn, conn:
         assert not {n for n in _names(conn, "table") if "like" in n}
         assert not {n for n in _names(conn, "index") if "like" in n}
-    assert community.scan_exists("liked-scan")
-    assert community.view_counts(["liked-scan"]) == {"liked-scan": 1}
-    (item,) = community.nearby_scans(country="GB", scope="country")
+    assert community_scans.scan_exists("liked-scan")
+    assert community_views.view_counts(["liked-scan"]) == {"liked-scan": 1}
+    (item,) = community_feeds.nearby_scans(country="GB", scope="country")
     assert not {"nickname", "author_token", "like_count", "liked_by_me"} & item.keys()
 
 

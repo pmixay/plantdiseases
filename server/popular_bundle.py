@@ -8,9 +8,9 @@ from typing import Any
 
 # Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import community
+    from . import community_popular
 except ImportError:
-    import community
+    import community_popular
 try:
     from . import community_geo
 except ImportError:
@@ -70,10 +70,10 @@ def worldwide_snapshot() -> dict:
     """Worldwide popularity: the anonymous tally of every consented, accepted
     diagnosis (community members included, location or not); the community
     corpus only while the tally is still empty (e.g. right after deploy)."""
-    anonymous = community.anonymous_popular_snapshot(limit=POPULAR_MAX_CARDS)
+    anonymous = community_popular.anonymous_popular_snapshot(limit=POPULAR_MAX_CARDS)
     if anonymous.get("top_species") or anonymous.get("top_diseases"):
         return anonymous
-    return community.popular_snapshot(limit=POPULAR_MAX_CARDS)
+    return community_popular.popular_snapshot(limit=POPULAR_MAX_CARDS)
 
 
 def build_popular_bundle(
@@ -99,11 +99,11 @@ def build_popular_bundle(
     source = "worldwide"
     region_label: str | None = None
     if lat is not None and lon is not None:
-        s = community.popular_snapshot(lat=lat, lon=lon, limit=POPULAR_MAX_CARDS)
+        s = community_popular.popular_snapshot(lat=lat, lon=lon, limit=POPULAR_MAX_CARDS)
         if _has(s):
             snap, source, region_label = s, "nearby", city
     if snap is None and country:
-        s = community.popular_snapshot(country=country, limit=POPULAR_MAX_CARDS)
+        s = community_popular.popular_snapshot(country=country, limit=POPULAR_MAX_CARDS)
         if _has(s):
             snap, source = s, "country"
     if snap is None:

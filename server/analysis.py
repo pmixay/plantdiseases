@@ -27,9 +27,10 @@ try:
 except ImportError:
     import analysis_payload
 try:
-    from . import community
+    from . import community_popular, community_scans
 except ImportError:
-    import community
+    import community_popular
+    import community_scans
 try:
     from . import diseases_data
 except ImportError:
@@ -113,7 +114,7 @@ def persist_community_analysis_token(
 ) -> bool:
     """Persist a publication proof; report failure without leaking a phantom token."""
     try:
-        community.record_analysis_token(
+        community_scans.record_analysis_token(
             token,
             disease=disease,
             confidence=confidence,
@@ -201,10 +202,10 @@ def sha256_hex(data: bytes) -> str:
 
 def record_popular_contribution(species: str | None, disease: str) -> None:
     """Count one accepted diagnosis in the anonymous worldwide popularity
-    tally (species + class only; see community.record_anonymous_scan).
+    tally (species + class only; see community_popular.record_anonymous_scan).
     Fail-soft: never affects the response."""
     try:
-        community.record_anonymous_scan(species, disease)
+        community_popular.record_anonymous_scan(species, disease)
     except Exception:  # noqa: BLE001 - background bookkeeping only
         logger.warning("Popular tally update failed")
 

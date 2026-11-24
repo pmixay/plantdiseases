@@ -12,6 +12,7 @@ import uuid
 import pytest
 from PIL import Image
 
+import community_deletion
 from tests.conftest import _test_access_token
 
 
@@ -317,8 +318,8 @@ def test_account_deletion_forgets_sanctions_but_keeps_decisions(mod, forum, comm
         moderator_actor_id=_actor("globalmod"), actor_id=_actor("leaver"),
         kind="warn", reason_code="off_topic",
     )
-    community_store.request_actor_deletion(_actor("leaver"))
-    community_store.process_cleanup_jobs()
+    community_deletion.request_actor_deletion(_actor("leaver"))
+    community_deletion.process_cleanup_jobs()
     import community
 
     with community._connect() as conn:

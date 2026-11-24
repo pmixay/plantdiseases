@@ -11,6 +11,11 @@ from contextlib import closing
 import pytest
 from PIL import Image
 
+import community_deletion
+import community_feeds
+import community_scans
+import community_views
+
 
 def _thumbnail_bytes() -> bytes:
     encoded = io.BytesIO()
@@ -30,7 +35,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     responder = str(uuid.uuid4())
     legacy = "legacy-install"
     thumbnail_bytes = _thumbnail_bytes()
-    community.record_analysis_token(
+    community_scans.record_analysis_token(
         "delete-account-scan",
         disease="leaf_spot",
         confidence=0.91,
@@ -38,7 +43,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         species_score=0.88,
         image_sha256=hashlib.sha256(thumbnail_bytes).hexdigest(),
     )
-    community.record_analysis_token(
+    community_scans.record_analysis_token(
         "keep-unclaimed-token",
         disease="healthy",
         confidence=0.99,
@@ -46,7 +51,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         species_score=None,
         image_sha256=hashlib.sha256(b"unclaimed image").hexdigest(),
     )
-    community.record_analysis_scan(
+    community_scans.record_analysis_scan(
         scan_id="delete-account-scan",
         account_actor_id=owner,
         nickname="Private Fern",
@@ -54,30 +59,30 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         region="London",
         image_bytes=thumbnail_bytes,
     )
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="keep-legacy-scan",
         user_pseudo_id=legacy,
         country="GB",
         region="London",
         disease="healthy",
     )
-    community.record_view("keep-legacy-scan", account_actor_id=owner)
-    assert community.view_count_for("keep-legacy-scan") == 1
-    community.record_view(
+    community_views.record_view("keep-legacy-scan", account_actor_id=owner)
+    assert community_views.view_count_for("keep-legacy-scan") == 1
+    community_views.record_view(
         "delete-account-scan", account_actor_id=responder
     )
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         thumbnail = connection.execute(
             "SELECT thumb_path FROM community_scans WHERE scan_id = 'delete-account-scan'"
         ).fetchone()[0]
-    assert thumbnail and community.thumbnail_is_visible(thumbnail)
+    assert thumbnail and community_scans.thumbnail_is_visible(thumbnail)
 
-    assert community.request_actor_deletion(owner)
+    assert community_deletion.request_actor_deletion(owner)
 
-    visible = community.nearby_scans(country="GB", scope="country")
+    visible = community_feeds.nearby_scans(country="GB", scope="country")
     assert [row["scan_id"] for row in visible] == ["keep-legacy-scan"]
-    assert not community.thumbnail_is_visible(thumbnail)
-    assert community.view_count_for("keep-legacy-scan") == 0
+    assert not community_scans.thumbnail_is_visible(thumbnail)
+    assert community_views.view_count_for("keep-legacy-scan") == 0
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         # Logical hiding precedes the asynchronous physical pass.
         assert connection.execute(
@@ -92,7 +97,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
             "WHERE token = 'keep-unclaimed-token'"
         ).fetchone()[0] == 1
 
-    result = community.process_cleanup_jobs()
+    result = community_deletion.process_cleanup_jobs()
     assert result == {"completed": 1, "retried": 0}
     assert not (community.COMMUNITY_THUMB_DIR / thumbnail).exists()
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
@@ -107,7 +112,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         ).fetchone()[0] == 1
 
     with pytest.raises(ValueError, match="deleted account actor"):
-        community.record_scan(
+        community_scans.record_scan(
             scan_id="replayed-after-delete",
             account_actor_id=owner,
             nickname="Private Fern",
@@ -121,7 +126,7 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
     community, monkeypatch,
 ):
     owner = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="retry-delete-scan",
         account_actor_id=owner,
         nickname="Retry Fern",
@@ -130,15 +135,15 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
         disease="healthy",
         image_bytes=_thumbnail_bytes(),
     )
-    community.request_actor_deletion(owner, now=1_000)
+    community_deletion.request_actor_deletion(owner, now=1_000)
 
     def fail_unlink(*_args, **_kwargs):
         raise OSError("synthetic filesystem failure")
 
     monkeypatch.setattr(type(community.COMMUNITY_THUMB_DIR), "unlink", fail_unlink)
-    result = community.process_cleanup_jobs(now=1_000)
+    result = community_deletion.process_cleanup_jobs(now=1_000)
     assert result == {"completed": 0, "retried": 1}
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         state, attempts, next_attempt, code = connection.execute(
             "SELECT state, attempt_count, next_attempt_at, last_error_code "
@@ -202,7 +207,7 @@ def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
 
     module.init_db()
     actor = str(uuid.uuid4())
-    module.record_scan(
+    community_scans.record_scan(
         scan_id="new-account-row",
         account_actor_id=actor,
         nickname="Account Fern",
@@ -256,17 +261,17 @@ def test_deleted_actor_marker_expires_after_thirty_days_only_when_cleanup_finish
     now = 2_000_000_000
     day = 86_400
     expired, recent, pending = (str(uuid.uuid4()) for _ in range(3))
-    assert community.DELETED_ACTOR_MARKER_RETENTION_DAYS == 30  # disclosed in the policy
+    assert community_deletion.DELETED_ACTOR_MARKER_RETENTION_DAYS == 30  # disclosed in the policy
     for actor, age_days in ((expired, 31), (recent, 29), (pending, 40)):
-        community.request_actor_deletion(actor, now=now - age_days * day)
+        community_deletion.request_actor_deletion(actor, now=now - age_days * day)
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:  # hold one job back
         connection.execute(
             "UPDATE community_cleanup_jobs SET next_attempt_at = ? WHERE actor_id = ?",
             (now + 10 * day, pending),
         )
-    assert community.process_cleanup_jobs(now=now) == {"completed": 2, "retried": 0}
+    assert community_deletion.process_cleanup_jobs(now=now) == {"completed": 2, "retried": 0}
 
-    assert community.prune_expired_deleted_actor_markers(now=now) == 1
+    assert community_deletion.prune_expired_deleted_actor_markers(now=now) == 1
     # Too young stays; an unfinished cleanup keeps its marker even past 30 days.
     assert _marker_ids(community) == {recent, pending}
 
@@ -275,20 +280,20 @@ def test_deleted_actor_marker_expires_after_thirty_days_only_when_cleanup_finish
             "UPDATE community_cleanup_jobs SET next_attempt_at = ? WHERE actor_id = ?",
             (now, pending),
         )
-    assert community.process_cleanup_jobs(now=now) == {"completed": 1, "retried": 0}
-    assert community.prune_expired_deleted_actor_markers(now=now) == 1
+    assert community_deletion.process_cleanup_jobs(now=now) == {"completed": 1, "retried": 0}
+    assert community_deletion.prune_expired_deleted_actor_markers(now=now) == 1
     assert _marker_ids(community) == {recent}
-    assert community.prune_expired_deleted_actor_markers(now=now + 2 * day) == 1
+    assert community_deletion.prune_expired_deleted_actor_markers(now=now + 2 * day) == 1
     assert _marker_ids(community) == set()
 
 
 def test_daily_prune_also_expires_old_markers(community):
     actor = str(uuid.uuid4())
-    community.request_actor_deletion(actor, now=int(time.time()) - 31 * 86_400)
-    assert community.process_cleanup_jobs() == {"completed": 1, "retried": 0}
+    community_deletion.request_actor_deletion(actor, now=int(time.time()) - 31 * 86_400)
+    assert community_deletion.process_cleanup_jobs() == {"completed": 1, "retried": 0}
     assert _marker_ids(community) == {actor}
 
-    community.prune_older_than(365)
+    community_deletion.prune_older_than(365)
 
     assert _marker_ids(community) == set()
 
@@ -297,7 +302,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
     community, tmp_path,
 ):
     owner = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="restore-scan",
         account_actor_id=owner,
         nickname="Restore Fern",
@@ -314,9 +319,9 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
         source.backup(target)
 
     # The account is deleted after the backup was taken.
-    assert community.request_actor_deletion(owner)
-    assert community.process_cleanup_jobs()["completed"] == 1
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_deletion.request_actor_deletion(owner)
+    assert community_deletion.process_cleanup_jobs()["completed"] == 1
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
 
     # Disaster recovery restores the older community database.
     for suffix in ("-wal", "-shm"):
@@ -331,16 +336,16 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
     assert _marker_ids(community) == set()  # and nothing suppresses it
 
     # The account service re-delivers the tombstone.
-    assert community.request_actor_deletion(owner)
-    assert community.process_cleanup_jobs()["completed"] == 1
+    assert community_deletion.request_actor_deletion(owner)
+    assert community_deletion.process_cleanup_jobs()["completed"] == 1
 
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 0
     with pytest.raises(ValueError, match="deleted account actor"):
-        community.record_scan(
+        community_scans.record_scan(
             scan_id="after-replay",
             account_actor_id=owner,
             nickname="Restore Fern",
