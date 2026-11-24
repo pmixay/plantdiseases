@@ -24,6 +24,8 @@ opencv-python-headless>=5.0.0
 # Testing on the supported client also roughly halves the suite's wall time.
 httpx2>=2.16.0
 ruff>=0.17.4
+# Type checker, gated in CI (config: [tool.mypy] in pyproject.toml).
+mypy>=2.3.0
 bandit==1.9.4
 pip-audit==2.10.1
 # Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for

@@ -58,6 +58,7 @@ true across releases.
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
+mypy --config-file server/pyproject.toml   # type check; run from the REPO ROOT, not server/ (config in pyproject.toml)
 pytest tests -q -n auto                        # full suite in parallel (pytest-xdist); no model weights needed
 pytest tests/test_endpoints.py::test_name -q   # single test
 ./start.sh                                     # venv + uvicorn; refuses to start without a bundle
