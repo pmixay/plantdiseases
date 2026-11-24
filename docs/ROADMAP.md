@@ -167,6 +167,7 @@ Each item is its own PR; don't fold one into another.
       comment) under a threshold of 1200; LongMethod is 210 over
       `ResultActivity.displayResult`'s 197. Re-measure with detekt in CI before
       lowering either.
+
 ---
 
 ## P6 — Documentation
