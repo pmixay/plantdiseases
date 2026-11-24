@@ -154,7 +154,7 @@ def register(router: APIRouter, m) -> None:
         metered = purpose == "scan"
 
         def build(*, polish: bool, cached_polish_only: bool = False) -> dict:
-            return m.ai_services.generate_care_plan(
+            return m.care_plan.generate_care_plan(
                 disease=disease,
                 species=payload.species,
                 light=payload.light,

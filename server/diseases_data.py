@@ -619,7 +619,7 @@ def lookup_pet_toxicity(species: str | None) -> dict:
 # products" card) ─────────────────────────────────────────────────────
 #
 # Hand-maintained, bilingual, keyed by the SAME protocol key
-# ``ai_services.py::generate_care_plan`` resolves against
+# ``care_plan.py::generate_care_plan`` resolves against
 # ``_DISEASE_PROTOCOL`` — never generated, never LLM-sourced. A wrong
 # product recommendation has a physical consequence (someone sprays a
 # plant, or themselves), so a class with no entry here gets NO products

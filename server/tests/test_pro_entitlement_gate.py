@@ -538,8 +538,9 @@ def test_rules_based_care_plan_costs_no_allowance(client):
 
 def test_only_uncached_care_plan_polish_spends_allowance(client, monkeypatch):
     import ai_services
+    import care_plan
     fake = _PolishCache()
-    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(care_plan, "generate_care_plan", fake)
     monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
@@ -559,8 +560,9 @@ def test_only_uncached_care_plan_polish_spends_allowance(client, monkeypatch):
 
 def test_species_page_plan_is_never_metered(client, monkeypatch):
     import ai_services
+    import care_plan
     fake = _PolishCache()
-    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(care_plan, "generate_care_plan", fake)
     monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
@@ -581,8 +583,9 @@ def test_species_page_plan_is_never_metered(client, monkeypatch):
 
 def test_garden_checklist_plan_is_never_polished_or_metered(client, monkeypatch):
     import ai_services
+    import care_plan
     fake = _PolishCache()
-    monkeypatch.setattr(ai_services, "generate_care_plan", fake)
+    monkeypatch.setattr(care_plan, "generate_care_plan", fake)
     monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "care_plan", 1)
 
@@ -632,14 +635,15 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
     synchronous Starlette TestClient portal cannot enter app lifespan."""
 
     import ai_services
+    import care_plan
     original_pipeline = server_main.pipeline
     original_limit = server_main._GUEST_FEATURE_LIMITS["care_plan"]
-    original_plan = ai_services.generate_care_plan
+    original_plan = care_plan.generate_care_plan
     original_configured = ai_services.openrouter_configured
     server_main.pipeline = FakePipeline()
     server_main._GUEST_FEATURE_LIMITS["care_plan"] = 1
     # A paid (uncached) polish, so the care plan reaches the allowance.
-    ai_services.generate_care_plan = lambda **_: {"summary_md": "rules"}
+    care_plan.generate_care_plan = lambda **_: {"summary_md": "rules"}
     ai_services.openrouter_configured = lambda: True
     operation_id = str(uuid.uuid4())
     transport = httpx2.ASGITransport(app=server_main.app, client=("127.0.0.1", 43123))
@@ -665,7 +669,7 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
     finally:
         server_main.pipeline = original_pipeline
         server_main._GUEST_FEATURE_LIMITS["care_plan"] = original_limit
-        ai_services.generate_care_plan = original_plan
+        care_plan.generate_care_plan = original_plan
         ai_services.openrouter_configured = original_configured
 
     assert invalid.status_code == 400

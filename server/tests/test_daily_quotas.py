@@ -107,13 +107,14 @@ def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
 
 def test_care_plan_past_quota_drops_only_the_llm_polish(client, m, monkeypatch):
     import ai_services
+    import care_plan
     seen: list[tuple[bool, bool]] = []
 
     def fake_plan(**kwargs):
         seen.append((kwargs["polish"], kwargs.get("cached_polish_only", False)))
         return {"summary_md": "rules"}
 
-    monkeypatch.setattr(ai_services, "generate_care_plan", fake_plan)
+    monkeypatch.setattr(care_plan, "generate_care_plan", fake_plan)
     monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setattr(m._care_plan_quota, "limit", 1)
     for _ in range(2):

@@ -248,7 +248,8 @@ restart. Without it
 - *Answer caching.* AI answers are cached in `ai_cache_dir` (7 days; 30 for
   species profiles) and again on the device (7 days), so a prompt or model
   change can appear to do nothing until the TTL expires. Bump the cache
-  generation in `ai_services.py` to reach users sooner; orphaned generation
+  generation (the `_DiskCache(...)` name in `species_ai.py` or
+  `care_plan.py`) to reach users sooner; orphaned generation
   dirs under the cache dir are safe to `rm -rf`.
 
 ## 5. Running in production
@@ -617,7 +618,7 @@ where the app was installed *from* RuStore, not from a sideloaded build.
 | `/api/health` 503 `Pipeline not ready` | Models still loading, or the lifespan never completed | Wait out the cold load; if it persists, check the journal for the load error |
 | Every client shares one rate-limit bucket; mass 429/403 | `trusted_proxies` does not contain the actual peer address, or a CDN sits in front | §6.1 — verify with the `IP=` log walk, add `real_ip_header` for a CDN |
 | Species/care-plan screens are slow for everyone, every time | `AI_CACHE_DIR` unwritable under `ProtectSystem=strict` — writes are best-effort and swallowed | Point `AI_CACHE_DIR` into `StateDirectory`; the server logs a warning at startup when the probe write fails |
-| A prompt/model change has no visible effect | Server-side (7–30 d) and on-device (7 d) answer caches | Bump the cache generation in `ai_services.py`; `rm -rf` the stale dir under `ai_cache_dir` |
+| A prompt/model change has no visible effect | Server-side (7–30 d) and on-device (7 d) answer caches | Bump the cache generation (the `_DiskCache(...)` name in `species_ai.py` or `care_plan.py`); `rm -rf` the stale dir under `ai_cache_dir` |
 | `prompt_cache.hit_ratio` flat at 0.0 | Shared prefix changed or fell under `prompt_cache_min_prefix_tokens` | Check `shared_prefix_tokens_est`; build system prompts through `ai_services._system_prompt()` |
 | Release APK installs but Play/RuStore rejects it | Built without `RELEASE_STORE_FILE` → debug key fallback | Supply the four `RELEASE_*` props; CI fails this case when `RELEASE_KEYSTORE_BASE64` is set |
 | The on-device model never downloads and `aqua` scans fall back to the server, yet `/api/capabilities` reports `aqua: available:true` | `capabilities` describes the on-device tier, not provisioning | Check `/api/aqua/manifest` — `available:false` means `aqua_static_dir` is unprovisioned |

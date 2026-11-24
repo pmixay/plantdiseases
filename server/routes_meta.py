@@ -226,7 +226,7 @@ def register(router: APIRouter, m) -> None:
             # Across every OpenRouter caller, not just the doctor — the number that
             # answers "is prompt caching engaging at all" after a model switch.
             "prompt_cache": m.ai_services.prompt_cache_metrics_snapshot(),
-            "care_plan_polish": m.ai_services.care_plan_metrics_snapshot(),
+            "care_plan_polish": m.care_plan.care_plan_metrics_snapshot(),
             "plantnet": m.plantnet.plantnet_metrics_snapshot(),
             "training": training_snapshot,
             "community": community_snapshot,

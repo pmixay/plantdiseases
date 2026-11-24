@@ -69,6 +69,7 @@ try:
         ai_services,
         app_version,
         beta_runtime,
+        care_plan,
         community,
         community_achievements,
         community_forum,
@@ -106,6 +107,7 @@ except ImportError:
     import ai_services  # noqa: F401 - the routes reach it as m.ai_services
     import app_version
     import beta_runtime
+    import care_plan  # noqa: F401 - the routes reach it as m.care_plan
     import community
     import community_achievements
     import community_forum
