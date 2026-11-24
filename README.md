@@ -245,7 +245,11 @@ plantdiseases/
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
 │   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
-│   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
+│   ├── ai_services.py      OpenRouter transport, caches, shared prompt prefix
+│   ├── plantnet.py         PlantNet species identification
+│   ├── plant_doctor.py     AI Plant Doctor chat sessions
+│   ├── species_ai.py       Species common diseases + species profile (OpenRouter)
+│   ├── care_plan.py        Rules-based care plan + optional LLM polish
 │   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
 │   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes daily quotas
 │   ├── conformal.py        RAPS prediction sets

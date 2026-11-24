@@ -186,7 +186,7 @@ def register(router: APIRouter, m) -> None:
         without special-casing. At most ``PROGRESSION_MAX_HISTORY`` entries
         (422 past it), so the computation stays a few microseconds of event-loop
         time."""
-        return JSONResponse(content=m.ai_services.compare_progression_history(payload.history))
+        return JSONResponse(content=m.progression.compare_progression_history(payload.history))
 
 
     @router.post("/feedback")

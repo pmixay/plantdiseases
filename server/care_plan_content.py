@@ -1,8 +1,8 @@
-"""Bilingual care-plan rule tables for ``ai_services.generate_care_plan``.
+"""Bilingual care-plan rule tables for ``care_plan.generate_care_plan``.
 
 Pure data: light tiers, base care, per-disease protocols (EN and RU), the
 follow-up checkpoint text and the summary copy. The logic that reads them
-stays in ``ai_services``.
+stays in ``care_plan``.
 """
 
 from __future__ import annotations

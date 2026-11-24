@@ -14,19 +14,20 @@ import json
 import pytest
 
 import ai_services
+import species_ai
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache(tmp_path, monkeypatch):
-    ai_services._SPECIES_PROFILE_CACHE._d.clear()
+    species_ai._SPECIES_PROFILE_CACHE._d.clear()
     # Isolate the persistent disk layer per test (point it at a tmp dir) so a
     # real result from one test never satisfies another and the repo's
     # ``server/ai_cache/`` stays clean.
     monkeypatch.setattr(
-        ai_services._SPECIES_PROFILE_DISK, "dir", tmp_path / "species_profile",
+        species_ai._SPECIES_PROFILE_DISK, "dir", tmp_path / "species_profile",
     )
     yield
-    ai_services._SPECIES_PROFILE_CACHE._d.clear()
+    species_ai._SPECIES_PROFILE_CACHE._d.clear()
 
 
 def _valid_profile_json(**overrides) -> str:
@@ -117,35 +118,35 @@ def test_schema_and_parser_describe_the_same_profile():
     """A reply that satisfies the schema must parse into a complete profile —
     12-month calendar, native-range zones and bilingual text all intact."""
     reply = _valid_profile_v2_json()
-    _assert_conforms(json.loads(reply), ai_services._SPECIES_PROFILE_SCHEMA)
+    _assert_conforms(json.loads(reply), species_ai._SPECIES_PROFILE_SCHEMA)
 
-    parsed = ai_services._parse_species_profile_v2(reply)
+    parsed = species_ai._parse_species_profile_v2(reply)
     assert parsed is not None, "schema-conformant reply must survive the parser"
     assert len(parsed["flowering"]["monthly_intensity"]) == 12
     assert parsed["flowering"]["indoor_note"]["en"] and parsed["flowering"]["indoor_note"]["ru"]
     assert parsed["flowering_conditions"]["en"] and parsed["flowering_conditions"]["ru"]
     zones = parsed["native_range"]["zones"]
     assert [z["country_code"] for z in zones] == ["PER", "BOL"]  # duplicate dropped
-    assert {z["status"] for z in zones} <= ai_services._NATIVE_RANGE_STATUSES
+    assert {z["status"] for z in zones} <= species_ai._NATIVE_RANGE_STATUSES
     assert parsed["native_range"]["summary"]["en"] and parsed["native_range"]["summary"]["ru"]
 
 
 def test_schema_pins_the_calendar_and_zone_vocabulary():
     """The two fields with a closed vocabulary are the two the sanitiser drops
     the WHOLE profile over, so the schema has to constrain them at the source."""
-    schema = ai_services._SPECIES_PROFILE_SCHEMA["properties"]
+    schema = species_ai._SPECIES_PROFILE_SCHEMA["properties"]
     months = schema["flowering"]["properties"]["monthly_intensity"]
     assert months["items"]["enum"] == [0, 1, 2]
     assert "12" in months["description"]
     zone = schema["native_range"]["properties"]["zones"]["items"]["properties"]
-    assert set(zone["status"]["enum"]) == ai_services._NATIVE_RANGE_STATUSES
+    assert set(zone["status"]["enum"]) == species_ai._NATIVE_RANGE_STATUSES
     assert "alpha-3" in zone["country_code"]["description"]
 
 
 # ── parser ──────────────────────────────────────────────────────────
 
 def test_parser_plain_json():
-    result = ai_services._parse_species_profile(_valid_profile_json())
+    result = species_ai._parse_species_profile(_valid_profile_json())
     assert result == {
         "flowering": {
             "monthly_intensity": [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0],
@@ -163,7 +164,7 @@ def test_parser_plain_json():
 
 
 def test_v2_parser_deduplicates_country_codes_and_keeps_both_languages():
-    result = ai_services._parse_species_profile_v2(_valid_profile_v2_json())
+    result = species_ai._parse_species_profile_v2(_valid_profile_v2_json())
     assert result is not None
     assert [z["country_code"] for z in result["native_range"]["zones"]] == ["PER", "BOL"]
     assert result["flowering_conditions"] == {
@@ -174,7 +175,7 @@ def test_v2_parser_deduplicates_country_codes_and_keeps_both_languages():
 
 def test_parser_tolerates_code_fence_and_prose():
     text = "Sure! Here it is:\n```json\n" + _valid_profile_json() + "\n```"
-    result = ai_services._parse_species_profile(text)
+    result = species_ai._parse_species_profile(text)
     assert result is not None
     assert result["flowering"]["monthly_intensity"] == [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0]
 
@@ -188,14 +189,14 @@ def test_parser_tolerates_code_fence_and_prose():
 def test_parser_rejects_bad_monthly_intensity(bad_months):
     payload = json.loads(_valid_profile_json())
     payload["flowering"]["monthly_intensity"] = bad_months
-    assert ai_services._parse_species_profile(json.dumps(payload)) is None
+    assert species_ai._parse_species_profile(json.dumps(payload)) is None
 
 
 def test_parser_rejects_bool_in_monthly_intensity():
     # bool is a subclass of int in Python — must not sneak past the 0/1/2 check.
     payload = json.loads(_valid_profile_json())
     payload["flowering"]["monthly_intensity"] = [True] + [0] * 11
-    assert ai_services._parse_species_profile(json.dumps(payload)) is None
+    assert species_ai._parse_species_profile(json.dumps(payload)) is None
 
 
 def test_parser_drops_malformed_zones():
@@ -207,7 +208,7 @@ def test_parser_drops_malformed_zones():
         {"country": "L" * 200, "status": "grows_less"},    # dropped — too long (>80)
         {"country": "Mexico", "status": "grows_less"},
     ]
-    result = ai_services._parse_species_profile(json.dumps(payload))
+    result = species_ai._parse_species_profile(json.dumps(payload))
     assert result is not None
     assert result["native_range"]["zones"] == [
         {"country": "Brazil", "status": "grows_more"},
@@ -220,7 +221,7 @@ def test_parser_caps_zones_scanned_to_eight():
     payload["native_range"]["zones"] = [
         {"country": f"C{i}", "status": "grows_less"} for i in range(10)
     ]
-    result = ai_services._parse_species_profile(json.dumps(payload))
+    result = species_ai._parse_species_profile(json.dumps(payload))
     assert result is not None
     assert len(result["native_range"]["zones"]) == 8
 
@@ -228,24 +229,24 @@ def test_parser_caps_zones_scanned_to_eight():
 def test_parser_requires_at_least_one_zone():
     payload = json.loads(_valid_profile_json())
     payload["native_range"]["zones"] = []
-    assert ai_services._parse_species_profile(json.dumps(payload)) is None
+    assert species_ai._parse_species_profile(json.dumps(payload)) is None
 
 
 def test_parser_requires_summary_and_conditions():
     payload = json.loads(_valid_profile_json())
     payload["native_range"]["summary"] = ""
-    assert ai_services._parse_species_profile(json.dumps(payload)) is None
+    assert species_ai._parse_species_profile(json.dumps(payload)) is None
 
     payload = json.loads(_valid_profile_json())
     payload["flowering_conditions"] = "   "
-    assert ai_services._parse_species_profile(json.dumps(payload)) is None
+    assert species_ai._parse_species_profile(json.dumps(payload)) is None
 
 
 def test_parser_caps_long_notes():
     payload = json.loads(_valid_profile_json())
     payload["flowering"]["indoor_note"] = "z" * 500
     payload["native_range"]["summary"] = "z" * 500
-    result = ai_services._parse_species_profile(json.dumps(payload))
+    result = species_ai._parse_species_profile(json.dumps(payload))
     assert result is not None
     assert len(result["flowering"]["indoor_note"]) <= 240
     assert len(result["native_range"]["summary"]) <= 240
@@ -253,20 +254,20 @@ def test_parser_caps_long_notes():
 
 @pytest.mark.parametrize("text", ["", "not json at all", "{}", json.dumps({"flowering": "x"})])
 def test_parser_returns_none_on_junk(text):
-    assert ai_services._parse_species_profile(text) is None
+    assert species_ai._parse_species_profile(text) is None
 
 
 # ── helper: graceful + structured paths ─────────────────────────────
 
 def test_no_api_key_is_graceful(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "")
-    out = ai_services.species_profile("Ficus elastica", lang="en")
+    out = species_ai.species_profile("Ficus elastica", lang="en")
     assert out["available"] is False
     assert out["source"] == "no_api_key"
 
 
 def test_blank_name_is_graceful():
-    out = ai_services.species_profile("   ", lang="en")
+    out = species_ai.species_profile("   ", lang="en")
     assert out["available"] is False and out["source"] == "no_species"
 
 
@@ -288,14 +289,14 @@ def test_structured_success_and_cache(monkeypatch):
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
-    out = ai_services.species_profile("Ficus elastica", lang="en")
+    out = species_ai.species_profile("Ficus elastica", lang="en")
     assert out["available"] is True
     assert out["species"] == "Ficus elastica"
     assert out["flowering"]["monthly_intensity"] == [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0]
     assert out["native_range"]["zones"][0]["status"] == "grows_more"
 
     # Second call for the same (species, lang) is served from cache (no API hit).
-    cached = ai_services.species_profile("Ficus elastica", lang="en")
+    cached = species_ai.species_profile("Ficus elastica", lang="en")
     assert cached.get("cached") is True
     assert calls["n"] == 1
 
@@ -309,8 +310,8 @@ def test_v2_profile_is_shared_between_locales(monkeypatch):
         return (_valid_profile_v2_json(), 10, 20, {})
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
-    en = ai_services.species_profile("Potato", lang="en")
-    ru = ai_services.species_profile("Potato", lang="ru")
+    en = species_ai.species_profile("Potato", lang="en")
+    ru = species_ai.species_profile("Potato", lang="ru")
 
     assert calls["n"] == 1
     assert [z["country_code"] for z in en["native_range"]["zones"]] == ["PER", "BOL"]
@@ -333,12 +334,12 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
-    first = ai_services.species_profile("Calathea orbifolia", lang="en")
+    first = species_ai.species_profile("Calathea orbifolia", lang="en")
     assert first["available"] is True and calls["n"] == 1
 
     # Simulate a restart: drop the in-memory layer; the disk layer remains.
-    ai_services._SPECIES_PROFILE_CACHE._d.clear()
-    again = ai_services.species_profile("Calathea orbifolia", lang="en")
+    species_ai._SPECIES_PROFILE_CACHE._d.clear()
+    again = species_ai.species_profile("Calathea orbifolia", lang="en")
     assert again["available"] is True
     assert again.get("cached") is True
     assert calls["n"] == 1  # disk hit — the LLM was NOT called a second time
@@ -351,7 +352,7 @@ def test_api_error_is_graceful(monkeypatch):
         raise RuntimeError("upstream down")
 
     monkeypatch.setattr(ai_services, "_call_openrouter", boom)
-    out = ai_services.species_profile("Monstera deliciosa", lang="en")
+    out = species_ai.species_profile("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "api_error"
 
 
@@ -361,7 +362,7 @@ def test_malformed_reply_is_graceful(monkeypatch):
         ai_services, "_call_openrouter",
         lambda *a, **k: ("not valid json", 5, 5, {}),
     )
-    out = ai_services.species_profile("Monstera deliciosa", lang="en")
+    out = species_ai.species_profile("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "empty"
 
 
@@ -410,7 +411,7 @@ def test_v2_shape_with_bad_zone_codes_is_not_laundered_through_the_v1_parser(mon
         ai_services, "_call_openrouter", lambda *a, **k: (v2_with_alpha2, None, None, None),
     )
 
-    out = ai_services.species_profile("Ficus elastica", lang="en")
+    out = species_ai.species_profile("Ficus elastica", lang="en")
 
     assert out["available"] is False
     assert "{'en'" not in json.dumps(out, ensure_ascii=False)
@@ -436,10 +437,10 @@ def test_legacy_reply_is_not_served_to_the_other_locale(monkeypatch):
         ai_services, "_call_openrouter", lambda *a, **k: (ru_legacy, None, None, None),
     )
 
-    ru = ai_services.species_profile("Testus plantus", lang="ru")
+    ru = species_ai.species_profile("Testus plantus", lang="ru")
     assert ru["available"] is True
     assert ru["flowering_conditions"] == "Нужен прохладный период покоя."
 
     # The English client must not be handed the Russian copy from cache.
-    en = ai_services.species_profile("Testus plantus", lang="en")
+    en = species_ai.species_profile("Testus plantus", lang="en")
     assert en.get("cached") is not True

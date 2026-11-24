@@ -71,6 +71,7 @@ try:
         ai_services,
         app_version,
         beta_runtime,
+        care_plan,
         community,
         community_achievements,
         community_forum,
@@ -78,9 +79,12 @@ try:
         config,
         deps,
         feedback_labels,
+        plant_doctor,
         plant_photos,
+        plantnet,
         popular_bundle,
         popular_plants,
+        progression,
         routes_assistant,
         routes_community,
         routes_content,
@@ -90,6 +94,7 @@ try:
         routes_meta,
         routes_moderation,
         runtime_paths,
+        species_ai,
         species_info,
         synthetic_pipeline,
         telemetry,
@@ -102,9 +107,10 @@ except ImportError:
     import account_auth
     import account_entitlements
     import account_roles
-    import ai_services
+    import ai_services  # noqa: F401 - the routes reach it as m.ai_services
     import app_version
     import beta_runtime
+    import care_plan  # noqa: F401 - the routes reach it as m.care_plan
     import community
     import community_achievements
     import community_forum
@@ -113,9 +119,12 @@ except ImportError:
     import deps
     import feedback_labels
     import pipeline as pipeline_module
+    import plant_doctor  # noqa: F401 - the routes reach it as m.plant_doctor
     import plant_photos
+    import plantnet
     import popular_bundle
     import popular_plants
+    import progression  # noqa: F401 - the routes reach it as m.progression
     import routes_assistant
     import routes_community
     import routes_content
@@ -125,6 +134,7 @@ except ImportError:
     import routes_meta
     import routes_moderation
     import runtime_paths
+    import species_ai  # noqa: F401 - the routes reach it as m.species_ai
     import species_info
     import synthetic_pipeline
     import telemetry
@@ -976,7 +986,7 @@ async def _authorize_optional_species_lookup(request: Request) -> dict | None:
     instead of failing the already-authorized diagnosis.
     """
 
-    if not ai_services.plantnet_configured():
+    if not plantnet.plantnet_configured():
         return None
     try:
         await _authorize_metered_feature(request, feature="plant_identification")
@@ -1050,7 +1060,7 @@ IDENTIFY_DAILY_QUOTA = config.get_int("IDENTIFY_DAILY_QUOTA", 150)
 # PlantNet calls per IP, shared by the /api/analyze fan-out and /api/identify.
 # Past it a scan still gets its diagnosis, without the species block.
 PLANTNET_DAILY_QUOTA_PER_IP = config.get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
-# AI Plant Doctor turns per IP. The per-session caps in ai_services reset
+# AI Plant Doctor turns per IP. The per-session caps in plant_doctor reset
 # with every new client-chosen session_id; this one does not.
 CHAT_DAILY_QUOTA = config.get_int("CHAT_DAILY_QUOTA", 100)
 # LLM-polished care plans per IP. Past it the rules-based plan is served.

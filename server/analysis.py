@@ -23,10 +23,6 @@ from PIL import Image
 
 # Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
 try:
-    from . import ai_services
-except ImportError:
-    import ai_services
-try:
     from . import analysis_payload
 except ImportError:
     import analysis_payload
@@ -42,6 +38,10 @@ try:
     from . import pipeline as pipeline_module
 except ImportError:
     import pipeline as pipeline_module
+try:
+    from . import plantnet
+except ImportError:
+    import plantnet
 try:
     from . import synthetic_pipeline
 except ImportError:
@@ -321,7 +321,7 @@ async def species_identify_best_effort(
                     # keyword-only — run_in_executor only takes positional
                     # args, so we wrap in a lambda. Passing positionally
                     # raises TypeError at call time and surfaces as a 500.
-                    lambda: ai_services.identify_species(
+                    lambda: plantnet.identify_species(
                         image_bytes, organ="auto", lang=lang,
                     ),
                 ),
@@ -617,7 +617,7 @@ async def analyze_image_admitted(
     cached_species = await loop.run_in_executor(
         None,
         functools.partial(
-            ai_services.plantnet_cache_lookup,
+            plantnet.plantnet_cache_lookup,
             species_image_bytes,
             organ="auto",
             lang=plantnet_lang,
@@ -628,7 +628,7 @@ async def analyze_image_admitted(
         # its diagnosis, without the species block. A cache hit costs no
         # lookup and is never counted.
         species_payload = await plantnet_quota_exhausted()
-    elif cached_species is None and ai_services.plantnet_configured():
+    elif cached_species is None and plantnet.plantnet_configured():
         species_payload = await m._authorize_optional_species_lookup(request)
         species_authorized = species_payload is None
     if species_payload is None:
@@ -892,7 +892,7 @@ async def identify_admitted(
     cached_result = await loop.run_in_executor(
         None,
         functools.partial(
-            ai_services.plantnet_cache_lookup,
+            plantnet.plantnet_cache_lookup,
             external_image,
             organ=organ,
             lang=plantnet_lang,
@@ -909,7 +909,7 @@ async def identify_admitted(
                 "source": "quota",
                 "organ": organ,
             })
-        if ai_services.plantnet_configured():
+        if plantnet.plantnet_configured():
             await m._authorize_metered_feature(request, feature="plant_identification")
             identification_authorized = True
     try:
@@ -917,7 +917,7 @@ async def identify_admitted(
         if result is None:
             result = await loop.run_in_executor(
                 m._get_net_executor(),
-                lambda: ai_services.identify_species(
+                lambda: plantnet.identify_species(
                     external_image,
                     organ=organ,
                     lang=plantnet_lang,

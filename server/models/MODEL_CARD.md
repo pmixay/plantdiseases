@@ -360,7 +360,7 @@ extent; medium/high severity claims require a future severity-labelled target.
 - **No sub-class claims.** `leaf_spot` is an umbrella; no fungal-vs-bacterial
   accuracy is claimed, and no pathogen species is identified.
 - **Not a species identifier.** Species come from a separate, optional
-  PlantNet path (`server/ai_services.py`), not from this model.
+  PlantNet path (`server/plantnet.py`), not from this model.
 - **Not a plant-toxicity or edibility authority.**
 - **Not a nutrient assay.** `nutrient_deficiency` is a visual pattern, not an
   element-specific call.

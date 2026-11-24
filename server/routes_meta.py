@@ -222,12 +222,12 @@ def register(router: APIRouter, m) -> None:
         return {
             "uptime_seconds": round(uptime, 1),
             **snap,
-            "ai_doctor": m.ai_services.chat_metrics_snapshot(),
+            "ai_doctor": m.plant_doctor.chat_metrics_snapshot(),
             # Across every OpenRouter caller, not just the doctor — the number that
             # answers "is prompt caching engaging at all" after a model switch.
             "prompt_cache": m.ai_services.prompt_cache_metrics_snapshot(),
-            "care_plan_polish": m.ai_services.care_plan_metrics_snapshot(),
-            "plantnet": m.ai_services.plantnet_metrics_snapshot(),
+            "care_plan_polish": m.care_plan.care_plan_metrics_snapshot(),
+            "plantnet": m.plantnet.plantnet_metrics_snapshot(),
             "training": training_snapshot,
             "community": community_snapshot,
         }
@@ -237,7 +237,7 @@ def register(router: APIRouter, m) -> None:
     async def metrics_prometheus():
         """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
         snap = m._snapshot_metrics()
-        plantnet = m.ai_services.plantnet_metrics_snapshot()
+        plantnet = m.plantnet.plantnet_metrics_snapshot()
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
         version = _prom_label(m.app_version.APP_VERSION)
 
