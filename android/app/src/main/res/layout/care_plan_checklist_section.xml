@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A care-plan checklist section (treatment, sanitation): a header over bullet
+     rows from care_plan_checklist_item. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/care_plan_section_gap"
+    android:orientation="vertical">
+
+    <include
+        android:id="@+id/care_plan_checklist_header"
+        layout="@layout/care_plan_section_header" />
+
+    <LinearLayout
+        android:id="@+id/care_plan_checklist_items"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
+</LinearLayout>

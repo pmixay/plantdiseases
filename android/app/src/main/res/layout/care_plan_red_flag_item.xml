@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One bullet row of the red-flags card; the bullet is part of the text. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/care_plan_red_flags_item_gap"
+    android:lineSpacingExtra="@dimen/care_plan_line_extra_item"
+    android:textAppearance="@style/TextAppearance.App.CarePlan.Item"
+    android:textColor="@color/disease_red"
+    tools:text="•  Leaves turning black" />
