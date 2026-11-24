@@ -71,6 +71,7 @@ try:
         beta_runtime,
         community,
         community_achievements,
+        community_deletion,
         community_feeds,  # noqa: F401  (routes reach it as m.community_feeds)
         community_forum,
         community_labels,
@@ -107,6 +108,7 @@ except ImportError:
     import beta_runtime
     import community
     import community_achievements
+    import community_deletion
     import community_feeds  # noqa: F401
     import community_forum
     import community_labels
@@ -1975,10 +1977,10 @@ async def _prune_loop() -> None:
                 TRAINING_MAX_IMAGES,
             )
             removed_cm = await asyncio.get_running_loop().run_in_executor(
-                None, community.prune_older_than, COMMUNITY_RETENTION_DAYS,
+                None, community_deletion.prune_older_than, COMMUNITY_RETENTION_DAYS,
             )
             cleanup = await asyncio.get_running_loop().run_in_executor(
-                None, community.process_cleanup_jobs,
+                None, community_deletion.process_cleanup_jobs,
             )
             forum = await asyncio.get_running_loop().run_in_executor(
                 _get_net_executor(), _forum_maintenance,

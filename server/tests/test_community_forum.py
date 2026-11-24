@@ -16,6 +16,7 @@ import uuid
 import pytest
 from PIL import Image
 
+import community_deletion
 import community_safety
 from tests.conftest import _test_access_token
 
@@ -414,8 +415,8 @@ def test_account_deletion_purges_forum_content_and_counts(forum, community_store
     )
     media_path = forum.media_file(post["media"][0]["media_id"])
 
-    community_store.request_actor_deletion(_actor("leaver"))
-    assert community_store.process_cleanup_jobs() == {"completed": 1, "retried": 0}
+    community_deletion.request_actor_deletion(_actor("leaver"))
+    assert community_deletion.process_cleanup_jobs() == {"completed": 1, "retried": 0}
 
     assert not media_path.exists()
     with pytest.raises(forum.ForumError):
@@ -434,7 +435,7 @@ def test_account_deletion_purges_forum_content_and_counts(forum, community_store
 
 def test_nickname_change_updates_forum_rows(forum, community_store):
     post = _question(forum)
-    community_store.update_actor_nickname(_actor("asker"), "Renamed Fern")
+    community_deletion.update_actor_nickname(_actor("asker"), "Renamed Fern")
     assert forum.get_post(post["id"])["author"]["nickname"] == "Renamed Fern"
 
 

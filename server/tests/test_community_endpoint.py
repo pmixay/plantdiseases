@@ -14,6 +14,7 @@ from contextlib import closing
 
 import pytest
 
+import community_deletion
 import community_feeds
 from server.tests.conftest import _test_access_token
 
@@ -1214,7 +1215,7 @@ def test_prune_sweeps_orphaned_companion_rows(isolated_community):
     finally:
         conn.close()
 
-    assert comm.prune_older_than(90) == 1
+    assert community_deletion.prune_older_than(90) == 1
     conn = sqlite3.connect(db_path)
     try:
         assert conn.execute(
@@ -1248,7 +1249,7 @@ def test_prune_transaction_removes_fresh_companion_that_won_write_race(
             ("prune-raced", "viewer", fresh),
         )
 
-    assert comm.prune_older_than(90) == 1
+    assert community_deletion.prune_older_than(90) == 1
     with closing(sqlite3.connect(db_path)) as connection, connection:
         for table in (
             "community_scans",
@@ -1295,7 +1296,7 @@ def test_prune_retains_thumbnail_row_when_file_deletion_fails(
 
     monkeypatch.setattr(Path, "unlink", fail_target)
 
-    assert comm.prune_older_than(90) == 0
+    assert community_deletion.prune_older_than(90) == 0
     assert thumbnail.exists()
     conn = sqlite3.connect(db_path)
     try:
@@ -1306,7 +1307,7 @@ def test_prune_retains_thumbnail_row_when_file_deletion_fails(
         conn.close()
 
     monkeypatch.setattr(Path, "unlink", original_unlink)
-    assert comm.prune_older_than(90) == 1
+    assert community_deletion.prune_older_than(90) == 1
     conn = sqlite3.connect(db_path)
     try:
         assert conn.execute(

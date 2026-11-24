@@ -12,6 +12,7 @@ from contextlib import closing
 
 import pytest
 
+import community_deletion
 import community_feeds
 import community_safety
 from server.tests.conftest import _test_access_token
@@ -200,8 +201,8 @@ def test_account_cleanup_erases_safety_data(safety_store):
         target_type="post",
         target_id=_forum_post(owner, "Owner Fern"),
     )
-    assert community.request_actor_deletion(reporter, now=3_000_000) is True
-    assert community.process_cleanup_jobs(now=3_000_000) == {
+    assert community_deletion.request_actor_deletion(reporter, now=3_000_000) is True
+    assert community_deletion.process_cleanup_jobs(now=3_000_000) == {
         "completed": 1,
         "retried": 0,
     }
