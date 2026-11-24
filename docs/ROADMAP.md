@@ -191,9 +191,11 @@ Each item is its own PR; don't fold one into another.
       `scan_id` is `8..64` + charset in some models and `1..128` with no charset in
       others; `scan_ids` items are unbounded. Standardise on the looser bound
       (the Android client mints these ids).
-- [ ] **Break up `ai_services.py` (~3,630 lines)** — transport, five features, ~700
-      lines of bilingual content for `diseases_data.py` — and turn `community.py`
-      (~4,370 lines) into a package.
+- [ ] **Split `ai_services.py` further (~2,880 lines) and `community.py` (~3,000).**
+      The care-plan tables (`care_plan_content.py`) and progression
+      (`progression.py`) are out. What remains is transport plus four features
+      whose names ~100 test patches target on `ai_services`; moving a feature
+      means moving its patches to the new module in the same commit.
 - [ ] **Type-check the annotations** — no mypy/pyright config, not in CI.
 
 **Android**

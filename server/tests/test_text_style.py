@@ -38,3 +38,15 @@ def test_diagnosis_content_uses_plain_punctuation():
     text = json.dumps(DISEASES_DATABASE, ensure_ascii=False)
     for ch in LONG_PUNCTUATION:
         assert ch not in text, f"diseases_data contains {ch!r}; use '-' or ',' instead"
+
+
+def test_care_plan_content_uses_plain_punctuation():
+    try:
+        import care_plan_content as content
+    except ImportError:  # pragma: no cover - package layout
+        from server import care_plan_content as content
+    tables = {name: value for name, value in vars(content).items() if name.startswith("_") and name.isupper()}
+    assert tables, "care_plan_content defines no tables"
+    text = json.dumps(tables, ensure_ascii=False)
+    for ch in LONG_PUNCTUATION:
+        assert ch not in text, f"care_plan_content contains {ch!r}; use '-' or ',' instead"
