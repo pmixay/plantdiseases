@@ -10,7 +10,6 @@ they are tested directly rather than eyeballed.
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -21,9 +20,13 @@ _TOOLS = Path(__file__).resolve().parent.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
+from tests.bundle_fixtures import (  # noqa: E402
+    record,
+    write_bundle,
+    write_manifest,
+)
 from tools.paired_eval import (  # noqa: E402
     ABSTAIN_SENTINEL,
-    _canonical_json_sha256,
     _load_bundle_binding,
     _manifest_capture_families,
     _manifest_provenance,
@@ -37,65 +40,6 @@ from tools.paired_eval import (  # noqa: E402
 CLASSES = ["gray_mold_botrytis", "healthy", "leaf_scorch_underwatering",
            "leaf_spot", "not_a_plant", "nutrient_deficiency", "pests",
            "powdery_mildew", "viral_disease"]
-
-
-def _make_bound_bundle(root: Path, selected: str = "classifier_int8.onnx") -> dict:
-    root.mkdir(parents=True, exist_ok=True)
-    files = {
-        "classifier": selected,
-        "detector": "detector.onnx",
-        "classes": "classes.json",
-        "temperature": "temperature.json",
-        "conformal": "conformal.json",
-        "data_manifest": "data_manifest.json",
-        "run_manifest": "run_manifest.json",
-    }
-    payloads = {
-        selected: b"exact classifier graph",
-        "detector.onnx": b"detector",
-        "classes.json": json.dumps({"class_names": CLASSES}).encode(),
-        "temperature.json": b'{"temperature":1.0}',
-        "conformal.json": b'{"method":"raps"}',
-        "data_manifest.json": json.dumps({
-            "classification_sha256": "d" * 64, "n_images": 7,
-        }).encode(),
-        "run_manifest.json": b'{"run_id":"run-1"}',
-    }
-    artifacts = {}
-    for role, rel in files.items():
-        data = payloads[rel]
-        (root / rel).write_bytes(data)
-        artifacts[role] = {
-            "path": rel,
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "size_bytes": len(data),
-        }
-    manifest = {
-        "schema_version": 1,
-        "bundle_id_algorithm": "sha256_canonical_json_without_bundle_id",
-        "manifest_file": "bundle_manifest.json",
-        "run_id": "run-1",
-        "model_version": "2.7.3",
-        "train_mode": "gamma",
-        "model_family": "gamma",
-        "data_manifest": {
-            "path": "data_manifest.json",
-            "manifest_sha256": artifacts["data_manifest"]["sha256"],
-            "dataset_sha256": "d" * 64,
-            "n_images": 7,
-        },
-        "classifier_selection": {
-            "path": selected,
-            "fallback_allowed": False,
-            "calibration_source": "int8",
-        },
-        "artifacts": artifacts,
-        "serving_contract": {"schema_version": 1, "detector": {}, "crop": {},
-                             "classifier": {}, "blur": {}, "ood": {}},
-    }
-    manifest["bundle_id"] = _canonical_json_sha256(manifest)
-    (root / "bundle_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return manifest
 
 
 def _write_manifest(path: Path, rows: list[dict]) -> None:
@@ -282,27 +226,109 @@ def test_first_seen_version_excludes_rows_seen_by_either_model_era(tmp_path):
 
 
 def test_bundle_binding_selects_and_verifies_one_exact_graph(tmp_path):
-    manifest = _make_bound_bundle(tmp_path)
+    manifest = write_bundle(tmp_path)
     binding = _load_bundle_binding(tmp_path)
     assert binding["bound"] is True
-    assert binding["classifier_path"] == tmp_path / "classifier_int8.onnx"
+    assert binding["classifier_path"] == (tmp_path / "classifier_int8.onnx").resolve()
+    assert binding["selected_classifier"] == "classifier_int8.onnx"
     assert binding["bundle_id"] == manifest["bundle_id"]
+    assert binding["run_id"] == manifest["run_id"]
+    assert binding["model_version"] == manifest["model_version"]
     assert binding["dataset_sha256"] == "d" * 64
     assert len(binding["bundle_manifest_sha256"]) == 64
     assert len(binding["serving_contract_sha256"]) == 64
 
 
 def test_bundle_binding_rejects_tampered_artifact(tmp_path):
-    _make_bound_bundle(tmp_path)
+    write_bundle(tmp_path)
     (tmp_path / "temperature.json").write_bytes(b"tampered")
-    with pytest.raises(SystemExit, match="digest/size mismatch"):
+    with pytest.raises(SystemExit, match="size mismatch|SHA-256 mismatch"):
         _load_bundle_binding(tmp_path)
 
 
-def test_bundle_binding_rejects_sibling_classifier_fallback(tmp_path):
-    _make_bound_bundle(tmp_path)
+def test_bundle_binding_rejects_unbound_sibling_classifier(tmp_path):
+    write_bundle(tmp_path)
     (tmp_path / "classifier.onnx").write_bytes(b"stale sibling")
+    with pytest.raises(SystemExit, match="unbound"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_any_other_root_classifier_graph(tmp_path):
+    """Stricter than boot: boot only knows the two serving names, but an A/B
+    must not score a bundle whose root holds a second graph of any name."""
+    write_bundle(tmp_path)
+    (tmp_path / "classifier_old.onnx").write_bytes(b"leftover experiment")
     with pytest.raises(SystemExit, match="expected exactly"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_zero_byte_artifact(tmp_path):
+    """An empty file hashes to a valid SHA-256; boot refuses size 0, so must we."""
+    manifest = write_bundle(tmp_path)
+    (tmp_path / "conformal.json").write_bytes(b"")
+    manifest["artifacts"]["conformal"] = record(tmp_path / "conformal.json")
+    write_manifest(tmp_path, manifest)
+    with pytest.raises(SystemExit, match="invalid byte size"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_symlink_out_of_the_bundle(tmp_path):
+    """A bound path must resolve inside the bundle, not follow a link elsewhere."""
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    manifest = write_bundle(bundle_dir)
+    outside = tmp_path / "elsewhere.onnx"
+    outside.write_bytes((bundle_dir / "detector.onnx").read_bytes())
+    (bundle_dir / "detector.onnx").unlink()
+    (bundle_dir / "detector.onnx").symlink_to(outside)
+    write_manifest(bundle_dir, manifest)
+    with pytest.raises(SystemExit, match="escapes the bundle"):
+        _load_bundle_binding(bundle_dir)
+
+
+def test_bundle_binding_rejects_calibration_fit_for_another_graph(tmp_path):
+    manifest = write_bundle(tmp_path)
+    (tmp_path / "temperature.json").write_text(json.dumps({
+        "temperature": 1.2, "source": "fp32",
+    }))
+    manifest["artifacts"]["temperature"] = record(tmp_path / "temperature.json")
+    write_manifest(tmp_path, manifest)
+    with pytest.raises(SystemExit, match="not fit for the selected classifier"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_classes_contract_boot_would_refuse(tmp_path):
+    manifest = write_bundle(tmp_path)
+    classes_path = tmp_path / "classes.json"
+    classes = json.loads(classes_path.read_text())
+    classes["run_id"] = "another-run"
+    classes_path.write_text(json.dumps(classes))
+    manifest["artifacts"]["classes"] = record(classes_path)
+    write_manifest(tmp_path, manifest)
+    with pytest.raises(SystemExit, match="run_id does not match classes.json"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_stub_serving_contract(tmp_path):
+    manifest = write_bundle(tmp_path)
+    manifest["serving_contract"] = {
+        "schema_version": 1, "detector": {}, "crop": {}, "classifier": {},
+        "blur": {}, "ood": {},
+    }
+    write_manifest(tmp_path, manifest)
+    with pytest.raises(SystemExit, match="serving_contract.detector is missing"):
+        _load_bundle_binding(tmp_path)
+
+
+def test_bundle_binding_rejects_run_manifest_from_another_run(tmp_path):
+    manifest = write_bundle(tmp_path)
+    run_path = tmp_path / "run_manifest.json"
+    run = json.loads(run_path.read_text())
+    run["model_version"] = "8.9.9"
+    run_path.write_text(json.dumps(run))
+    manifest["artifacts"]["run_manifest"] = record(run_path)
+    write_manifest(tmp_path, manifest)
+    with pytest.raises(SystemExit, match="run_manifest.json -> model_version"):
         _load_bundle_binding(tmp_path)
 
 
@@ -343,3 +369,85 @@ def test_served_verdict_uses_pipeline_contract_and_counts_natural_nap():
     assert summary["natural_not_a_plant"] == 1
     assert summary["coverage"] == 0.5
     assert summary["by_reason"] == {"not_a_plant": 1, "ood": 1}
+
+
+def _rgb_images(root: Path, n: int) -> list[Path]:
+    from PIL import Image
+
+    paths = []
+    for i in range(n):
+        path = root / f"img_{i}.png"
+        Image.new("RGB", (8, 8), (i * 20, 100, 50)).save(path)
+        paths.append(path)
+    return paths
+
+
+def test_predict_scores_the_bound_graph_in_batches(tmp_path, monkeypatch):
+    """``predict`` loads the manifest-selected graph exactly and keeps row order
+    across batch boundaries."""
+    import classifier
+
+    write_bundle(tmp_path / "bundle")
+    paths = _rgb_images(tmp_path, 5)
+    seen: dict = {"batches": []}
+
+    class FakeClassifier:
+        CLASS_NAMES = ["healthy", "leaf_spot"]
+        img_size, eval_resize_ratio, tta, architecture = 224, 1.05, "none", "fake"
+
+        def __init__(self, model_path, *, exact_model_path):
+            seen["model_path"], seen["exact"] = Path(model_path), exact_model_path
+
+        def classify_batch(self, images):
+            seen["batches"].append(len(images))
+            return [
+                {"class_name": "leaf_spot" if im.getpixel((0, 0))[0] >= 40 else "healthy"}
+                for im in images
+            ]
+
+    monkeypatch.setattr(classifier, "DiseaseClassifier", FakeClassifier)
+    from tools.paired_eval import predict
+
+    preds = predict(tmp_path / "bundle", paths, batch=2, label="A")
+    assert preds == ["healthy", "healthy", "leaf_spot", "leaf_spot", "leaf_spot"]
+    assert seen["batches"] == [2, 2, 1]
+    assert seen["exact"] is True
+    assert seen["model_path"] == (tmp_path / "bundle" / "classifier_int8.onnx").resolve()
+
+
+def test_predict_served_runs_the_pipeline_and_reports_abstentions(tmp_path, monkeypatch):
+    """``predict_served`` scores what the API returns: gate rejections become the
+    abstention sentinel with their reason, a natural not_a_plant stays a
+    prediction, and the pipeline is told to require the bundle manifest."""
+    import pipeline
+
+    write_bundle(tmp_path / "bundle")
+    paths = _rgb_images(tmp_path, 3)
+    responses = iter([
+        {"class_name": "healthy"},
+        {"class_name": "leaf_spot", "abstained": True, "abstention_reason": "ood"},
+        {"class_name": "not_a_plant", "abstained": True,
+         "abstention_reason": "not_a_plant"},
+    ])
+    seen: dict = {}
+
+    class FakePipeline:
+        def __init__(self, detector_path, classifier_path, *, require_bundle_manifest):
+            seen["detector"] = Path(detector_path)
+            seen["classifier"] = Path(classifier_path)
+            seen["require_manifest"] = require_bundle_manifest
+
+        def analyze(self, image):
+            assert image.mode == "RGB"
+            return next(responses)
+
+    monkeypatch.setattr(pipeline, "PlantDiseasePipeline", FakePipeline)
+    from tools.paired_eval import predict_served
+
+    reasons: list = []
+    preds = predict_served(tmp_path / "bundle", paths, label="B", reasons=reasons)
+    assert preds == ["healthy", ABSTAIN_SENTINEL, "not_a_plant"]
+    assert reasons == [None, "ood", "not_a_plant"]
+    assert seen["require_manifest"] is True
+    assert seen["detector"] == tmp_path / "bundle" / "detector.onnx"
+    assert seen["classifier"].name == "classifier_int8.onnx"

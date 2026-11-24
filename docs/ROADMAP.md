@@ -17,8 +17,8 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 
 | track | now |
 |---|---|
-| **App** | 1.9 / versionCode 19 on RuStore since 2026-11-22. Built after it and not released: answer notifications, the Aqua OOD gate, shared scans opened as a plain photo (no likes, author, report or block), the second-opinion UI gone, a live garden tab, care day and bell over Room, Gson and the Navigation Component retired. PRO stays hidden (`ProUi.ENABLED = false`). |
-| **Server** | The branch's app API and account service have the second-opinion system retired, scan likes, author profiles and scan report/block removed (72 API operations), and `main.py` split into `routes_*.py`. These remove routes that 1.9 still calls (P0). |
+| **App** | 1.9 / versionCode 19 on RuStore since 2026-11-22, and it stays the current version for now (no release planned). Later app work waits on the branch for the next release. PRO stays hidden (`ProUi.ENABLED = false`). |
+| **Server** | The branch's app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed (72 API operations); 1.9 still calls those routes, so a deploy of this branch drops those features for 1.9 users. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
@@ -26,19 +26,9 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
 
-## P0 — Ship what is built
+## P0 — Production
 
-- [ ] ★ **Release 1.10 and deploy the server, in a chosen order.** The branch server
-      drops routes 1.9 calls (second opinions, scan likes, author profiles, scan
-      report and block) and there is no minimum-version gate, so 1.9 installs lose
-      those features as soon as it deploys: publish the app first, or accept the gap.
-      Steps: merge to `main` if releases are cut from it; bump `versionCode` /
-      `versionName` (still 19 / 1.9); review the `values-ru` diff; check on a phone
-      the answer notifications (half-hourly check, tap opens the answer) and the
-      full-screen scan photo; redeploy the app API and the account service with the
-      new compose files (dead push and notification settings removed); publish the
-      updated root `privacy.html`, which must match the app's bundled policy.
-- [ ] ★ **Create the first forum admin** on production after the deploy:
+- [ ] ★ **Create the first forum admin** on production:
       `python manage_roles.py grant --nickname … --role admin` in the account-api
       container (migration 0011 must run first).
 
@@ -72,7 +62,7 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 - [ ] ★ **Ship Aqua's OOD floor** from the next notebook run: §5 writes it into the
       Aqua sidecar (`ood`); copy that `classes.json` with the model into
       `server/static/aqua/`. Until then Aqua serves without the gate, and only apps
-      from 1.10 read it.
+      from the next release (after 1.9) read it.
 - [ ] **Watch feedback correcting "healthy" to scorch** (ongoing,
       `server/tools/analyse_training_data.py`). 15 of 2.7.5's 25 wrong "healthy" calls
       on the holdout are scorch; production feedback is the only real-distribution
@@ -82,17 +72,24 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 
 ## P2 — Code that unblocks the data loop (no data needed)
 
+- [ ] **One server CLI that exports all training material as one bundle.** This is
+      the only path from production data to training: the owner runs the export,
+      processes the bundle offline and adds the labelled photos to the dataset.
+      No notebook cell reads a server export directly. Today there are two
+      tools with two formats: `tools/export_training_data.py` (the training store's
+      consented scans and feedback, a privacy-checked tar) and
+      `tools/export_community_labels.py` (consented forum photos that already have a
+      consensus label, a folder, whose docstring still points at notebook §2). One
+      command, run in the API container against the read-only databases, should
+      write one archive with every consented photo from both stores, one manifest,
+      the labels that exist (model verdict, user feedback, community consensus) as
+      hints rather than ground truth, capture-family ids so related photos stay in
+      one split, and today's de-identification and metadata stripping.
 - [ ] **OOD benchmark v3 tool gaps** (blocks building v3). `build_ood_benchmark.py`
       has one hard-coded source and layout, a two-entry `CONDITION_MAP` (`healthy`,
       `scorch`) with no `not_a_plant`, and writes `manifest.csv` where §6 reads
-      `manifest_arms.csv`. Full list in `DATASET_LABELING_PLAN.md`.
-- [ ] **`paired_eval --argmax` binding check is weaker than boot.**
-      `_load_bundle_binding` accepts `size_bytes == 0` and follows symlinks, where
-      `bundle.verify_bundle` rejects both: reuse it. Also untested: `predict()`,
-      `predict_served()`, and `build_ood_benchmark.report()` beyond one synthetic test.
-- [ ] ★ **Notebook §2 cell for `tools/export_community_labels.py`**: load the export as
-      a `train_only` supplement grouped by `capture_family_id`; run
-      `tools/filter_supplement.py` against the OOD benchmark first.
+      `manifest_arms.csv`. Full list in `DATASET_LABELING_PLAN.md`. Also untested:
+      `build_ood_benchmark.report()` beyond one synthetic test.
 
 ---
 
@@ -117,9 +114,17 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 ## P4 — Product
 
-- [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.** The
-      tunables are reasoned, not measured. Compare with a few real plants before
-      trusting a red "Poor condition".
+- [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.**
+      `PlantHealth` turns a plant's scans into the one status the plant header, the
+      health card and the room list show. Each scan scores 0 to 100: a healthy
+      verdict 50 + 50 × confidence, a disease verdict 50 − 50 × confidence. The
+      tunables: only scans from the last 60 days count; no score before 2 of them;
+      HEALTHY needs the latest score ≥ 75 (healthy at ≥ 0.5 confidence) and no
+      decline; POOR needs the last 2 scores < 25 (disease at > 0.5 confidence each);
+      a change of 10 points or more against a scan at least 7 days older is a trend,
+      less is noise; under a treatment plan, RECOVERING needs ≥ 70 % of due work done
+      and a healthy reading or a rising trend. They were reasoned, not measured:
+      compare them with a few real plants before trusting a red "Poor condition".
 - [ ] **Following spaces** in the forum.
 - [ ] **Desktop web admin panel** for moderation.
 
@@ -242,6 +247,8 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **Knowledge cards are best-effort**, never blocking (LLM + cache, graceful `available:false`).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Target store: RuStore.** No Google Play.
+- **The app stays at 1.9 for now** (owner's decision, 2026-11-24). No release is
+  planned; later app work waits on the branch for the next one.
 - **No backups of production data** (owner's decision, 2026-11-14). A lost VDS
   loses the accounts and the community store; there is nothing to restore from.
 - **Cost cap is the OpenRouter key's own spend limit**; no in-server price
@@ -290,6 +297,8 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **Not planned:** a first-launch intro video; room-level care defaults
   (`RoomEntity.baselineLux` stays unused).
 - **The data loop is local.** Collect and judge offline → Kaggle supplement → notebook pulls it.
+  Production data enters it only through a server export bundle that the owner
+  processes and labels offline (2026-11-24); no notebook cell reads a server export.
 
 ---
 
