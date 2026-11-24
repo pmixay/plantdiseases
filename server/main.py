@@ -76,6 +76,7 @@ try:
         config,
         deps,
         feedback_labels,
+        plant_doctor,
         plant_photos,
         plantnet,
         popular_bundle,
@@ -112,6 +113,7 @@ except ImportError:
     import deps
     import feedback_labels
     import pipeline as pipeline_module
+    import plant_doctor  # noqa: F401 - the routes reach it as m.plant_doctor
     import plant_photos
     import plantnet
     import popular_bundle
@@ -1050,7 +1052,7 @@ IDENTIFY_DAILY_QUOTA = config.get_int("IDENTIFY_DAILY_QUOTA", 150)
 # PlantNet calls per IP, shared by the /api/analyze fan-out and /api/identify.
 # Past it a scan still gets its diagnosis, without the species block.
 PLANTNET_DAILY_QUOTA_PER_IP = config.get_int("PLANTNET_DAILY_QUOTA_PER_IP", 100)
-# AI Plant Doctor turns per IP. The per-session caps in ai_services reset
+# AI Plant Doctor turns per IP. The per-session caps in plant_doctor reset
 # with every new client-chosen session_id; this one does not.
 CHAT_DAILY_QUOTA = config.get_int("CHAT_DAILY_QUOTA", 100)
 # LLM-polished care plans per IP. Past it the rules-based plan is served.

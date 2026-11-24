@@ -608,10 +608,10 @@ def test_unknown_care_plan_purpose_is_rejected(client):
 
 def test_chat_refused_before_the_model_costs_no_allowance(client, monkeypatch):
     import ai_services
+    import plant_doctor
     monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setattr(
-        ai_services,
-        "chat_reply",
+        plant_doctor, "chat_reply",
         lambda **_: {"available": False, "reply": "", "reason": "session_turn_cap"},
     )
     monkeypatch.setitem(server_main._GUEST_FEATURE_LIMITS, "ai_doctor", 1)

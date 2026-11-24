@@ -94,7 +94,7 @@ def register(router: APIRouter, m) -> None:
             await m._authorize_metered_feature(request, feature="ai_doctor")
         result = await asyncio.get_running_loop().run_in_executor(
             m._get_net_executor(),
-            lambda: m.ai_services.chat_reply(
+            lambda: m.plant_doctor.chat_reply(
                 session_id=payload.session_id,
                 user_message=payload.message,
                 locale=payload.locale,
