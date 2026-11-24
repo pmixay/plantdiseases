@@ -13,14 +13,18 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.RoomEntity
+import com.plantdiseases.app.data.local.gardenChanges
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
 import com.plantdiseases.app.databinding.ActivityRoomDetailBinding
@@ -29,7 +33,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PlantHealth
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -46,13 +50,15 @@ class RoomDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivityRoomDetailBinding
     private var roomId: Long = UNASSIGNED_ID
     private var currentRoom: RoomEntity? = null
-    private var loadJob: Job? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
 
     @Inject
     lateinit var roomRepository: RoomRepository
+
+    @Inject
+    lateinit var database: AppDatabase
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -80,17 +86,21 @@ class RoomDetailActivity : AppCompatActivity() {
             Haptics.medium(this)
             openAddPlantDialog()
         }
+        followDatabase()
     }
 
-    /** Load here, not in onCreate — onResume is this screen's only initial-load
-     *  path, and it also picks up edits made in PlantDetailActivity. There is
-     *  deliberately no onRestart() override: onRestart is always followed by
-     *  onResume, so having both ran the whole load twice in two concurrent
-     *  coroutines on every return, re-inflating every row and restarting every
-     *  Glide request (visible thumbnail flicker). */
-    override fun onResume() {
-        super.onResume()
-        loadRoom()
+    /** The room follows the database, like the garden tab: any committed write
+     *  (a plant added, edited or deleted here, an edit or a task done in plant
+     *  detail, a reminder action) re-renders it, and coming back re-reads it.
+     *  Started once from onCreate, so the first load is the first emission and
+     *  there is no onResume load. collectLatest drops a read a newer change
+     *  has made stale. */
+    private fun followDatabase() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.gardenChanges().collectLatest { loadRoom() }
+            }
+        }
     }
 
     private fun onMenuItem(item: MenuItem): Boolean = when (item.itemId) {
@@ -99,7 +109,7 @@ class RoomDetailActivity : AppCompatActivity() {
             true
         }
         R.id.action_rename_room -> {
-            currentRoom?.let { showRoomNameDialog(roomRepository, it) { loadRoom() } }
+            currentRoom?.let { showRoomNameDialog(roomRepository, it) {} }
             true
         }
         R.id.action_delete_room -> {
@@ -122,26 +132,21 @@ class RoomDetailActivity : AppCompatActivity() {
                 rooms,
                 existing = null,
                 preselectedRoomId = if (roomId == UNASSIGNED_ID) null else roomId,
-            ) { loadRoom() }
+            ) {}
         }
     }
 
-    private fun loadRoom() {
-        // onResume plus add/edit callbacks may overlap; only the newest Room
-        // snapshot is allowed to render.
-        loadJob?.cancel()
-        loadJob = lifecycleScope.launch {
-            val isUnassigned = roomId == UNASSIGNED_ID
-            currentRoom = if (isUnassigned) null else roomRepository.getRoom(roomId)
-            if (!isUnassigned && currentRoom == null) {
-                // Deleted from elsewhere while this screen was backgrounded.
-                finish()
-                return@launch
-            }
-            val allPlants = plantRepository.getPlants()
-            val plants = allPlants.filter { it.plant.roomId == (if (isUnassigned) null else roomId) }
-            render(plants, isUnassigned)
+    private suspend fun loadRoom() {
+        val isUnassigned = roomId == UNASSIGNED_ID
+        currentRoom = if (isUnassigned) null else roomRepository.getRoom(roomId)
+        if (!isUnassigned && currentRoom == null) {
+            // Deleted (here or from elsewhere): nothing left to show.
+            finish()
+            return
         }
+        val allPlants = plantRepository.getPlants()
+        val plants = allPlants.filter { it.plant.roomId == (if (isUnassigned) null else roomId) }
+        render(plants, isUnassigned)
     }
 
     private fun render(plants: List<PlantRepository.PlantSummary>, isUnassigned: Boolean) {
@@ -234,12 +239,12 @@ class RoomDetailActivity : AppCompatActivity() {
                     1 -> {
                         lifecycleScope.launch {
                             val rooms = roomRepository.getRoomsForPicker()
-                            showAddEditPlantDialog(plantRepository, roomRepository, rooms, plant) { loadRoom() }
+                            showAddEditPlantDialog(plantRepository, roomRepository, rooms, plant) {}
                         }
                         true
                     }
                     2 -> {
-                        confirmDeletePlantDialog(plantRepository, plant) { loadRoom() }
+                        confirmDeletePlantDialog(plantRepository, plant) {}
                         true
                     }
                     else -> false
