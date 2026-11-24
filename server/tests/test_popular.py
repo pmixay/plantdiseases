@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import pytest
 
+import community_popular
+
 
 @pytest.fixture(autouse=True)
 def _no_wikipedia(monkeypatch):
     """Stub species image resolution so tests never hit the network, and clear
     the daily bundle cache between tests."""
-    import community
     import main as server_main
     import species_info
 
@@ -22,7 +23,7 @@ def _no_wikipedia(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        community,
+        community_popular,
         "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 0, "top_species": [], "top_diseases": [],
@@ -68,10 +69,9 @@ def test_popular_known_country_placeholder_is_curated(client):
 
 
 def test_popular_caps_at_ten_cards(client, monkeypatch):
-    import community
 
     monkeypatch.setattr(
-        community, "popular_snapshot",
+        community_popular, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 100,
             "top_species": [
@@ -90,10 +90,9 @@ def test_popular_caps_at_ten_cards(client, monkeypatch):
 
 
 def test_popular_uses_live_country_data(client, monkeypatch):
-    import community
 
     monkeypatch.setattr(
-        community,
+        community_popular,
         "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 5,
@@ -114,11 +113,10 @@ def test_popular_uses_live_country_data(client, monkeypatch):
 
 
 def test_popular_nearby_scope_when_coords(client, monkeypatch):
-    import community
 
     # Data only for the coords (nearby) scope; country/worldwide stay empty.
     monkeypatch.setattr(
-        community, "popular_snapshot",
+        community_popular, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: (
             {
                 "total": 4,
@@ -143,10 +141,9 @@ def test_popular_nearby_without_place_falls_back_to_worldwide(client, monkeypatc
     resolvable country and no city) must NOT be labeled "Worldwide" over a
     single local scan — it flips to the true worldwide aggregate so the label
     matches the data."""
-    import community
 
     monkeypatch.setattr(
-        community, "popular_snapshot",
+        community_popular, "popular_snapshot",
         # Same data whether called for the nearby (lat set) or worldwide
         # (lat None) scope, so the fallback recompute finds real rows.
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
@@ -168,11 +165,10 @@ def test_popular_images_are_english_and_titles_disambiguate(client, monkeypatch)
     """Lead images resolve through the EN proxy regardless of UI locale, and a
     localized title shared by two species falls back to the scientific name so
     the cards stay distinct (the RU 'two identical Spathiphyllum' bug)."""
-    import community
     import species_info
 
     monkeypatch.setattr(
-        community, "popular_snapshot",
+        community_popular, "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 2,
             "top_species": [
@@ -228,11 +224,10 @@ def test_popular_curated_countries_have_real_names(client):
 def test_thin_community_data_is_topped_up_with_curated_picks(client, monkeypatch):
     """One real scan worldwide must not leave a one-card carousel: real data
     first (with its percentage), then curated picks without counts."""
-    import community
     from popular_plants import GLOBAL_DEFAULT
 
     monkeypatch.setattr(
-        community,
+        community_popular,
         "popular_snapshot",
         lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
             "total": 1,
@@ -255,16 +250,16 @@ def test_thin_community_data_is_topped_up_with_curated_picks(client, monkeypatch
 def test_anonymous_tally_counts_species_and_diagnoses_without_identifiers():
     import community
 
-    community.record_anonymous_scan("Monstera deliciosa", "healthy", day=100)
-    community.record_anonymous_scan("monstera  deliciosa", "leaf_spot", day=100)
-    community.record_anonymous_scan(None, "leaf_spot", day=101)
-    community.record_anonymous_scan("Ficus lyrata", "not_a_plant", day=101)  # hidden class
-    snap = community.anonymous_popular_snapshot(limit=10, today=101)
+    community_popular.record_anonymous_scan("Monstera deliciosa", "healthy", day=100)
+    community_popular.record_anonymous_scan("monstera  deliciosa", "leaf_spot", day=100)
+    community_popular.record_anonymous_scan(None, "leaf_spot", day=101)
+    community_popular.record_anonymous_scan("Ficus lyrata", "not_a_plant", day=101)  # hidden class
+    snap = community_popular.anonymous_popular_snapshot(limit=10, today=101)
     assert snap["total"] == 3
     assert snap["top_species"] == [{"species": "Monstera deliciosa", "count": 2, "percent": 67}]
     assert snap["top_diseases"][0] == {"disease": "leaf_spot", "count": 2, "percent": 67}
     # Outside the window nothing counts.
-    assert community.anonymous_popular_snapshot(today=101 + community.ANON_POPULAR_WINDOW_DAYS + 1)["total"] == 0
+    assert community_popular.anonymous_popular_snapshot(today=101 + community_popular.ANON_POPULAR_WINDOW_DAYS + 1)["total"] == 0
     with community._connect() as conn:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(popular_scan_counts)")]
     assert cols == ["day", "species_lower", "species", "disease", "n"]
@@ -273,16 +268,15 @@ def test_anonymous_tally_counts_species_and_diagnoses_without_identifiers():
 def test_worldwide_popular_comes_from_the_anonymous_tally(client, monkeypatch):
     """Users without location (not in the community) still shape the worldwide
     list: it is built from the anonymous tally of every accepted diagnosis."""
-    import community
     import main as server_main
 
     def _no_community(country=None, *, lat=None, lon=None, radius_km=25.0, limit=10):
         return {"total": 0, "top_species": [], "top_diseases": []}
 
-    monkeypatch.setattr(community, "popular_snapshot", _no_community)
+    monkeypatch.setattr(community_popular, "popular_snapshot", _no_community)
     for _ in range(3):
-        community.record_anonymous_scan("Ficus elastica", "healthy")
-    community.record_anonymous_scan("Aloe vera", "leaf_spot")
+        community_popular.record_anonymous_scan("Ficus elastica", "healthy")
+    community_popular.record_anonymous_scan("Aloe vera", "leaf_spot")
     with server_main._popular_lock:
         server_main._popular_cache.clear()
     body = client.get("/api/popular?locale=en").json()

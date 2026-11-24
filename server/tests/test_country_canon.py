@@ -16,6 +16,7 @@ from contextlib import closing
 
 import pytest
 
+import community_popular
 from countries import to_iso_alpha2
 
 
@@ -60,15 +61,15 @@ def test_record_scan_canonicalizes_country(community_store):
         species="Monstera deliciosa",
     )
 
-    snap = comm.popular_snapshot(country="RU")
+    snap = community_popular.popular_snapshot(country="RU")
     assert snap["total"] == 2
     species = {row["species"] for row in snap["top_species"]}
     assert species == {"Spathiphyllum blandum", "Monstera deliciosa"}
 
     # The query side canonicalizes too, so a localized spelling finds the same
     # bucket and an unknown country finds nothing.
-    assert comm.popular_snapshot(country="Россия")["total"] == 2
-    assert comm.popular_snapshot(country="Narnia")["total"] == 0
+    assert community_popular.popular_snapshot(country="Россия")["total"] == 2
+    assert community_popular.popular_snapshot(country="Narnia")["total"] == 0
 
 
 def test_migration_canonicalizes_legacy_country_rows(community_store, tmp_path):

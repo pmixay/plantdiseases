@@ -30,9 +30,10 @@ try:
 except ImportError:
     import analysis_payload
 try:
-    from . import community
+    from . import community, community_popular
 except ImportError:
     import community
+    import community_popular
 try:
     from . import diseases_data
 except ImportError:
@@ -200,10 +201,10 @@ def sha256_hex(data: bytes) -> str:
 
 def record_popular_contribution(species: str | None, disease: str) -> None:
     """Count one accepted diagnosis in the anonymous worldwide popularity
-    tally (species + class only; see community.record_anonymous_scan).
+    tally (species + class only; see community_popular.record_anonymous_scan).
     Fail-soft: never affects the response."""
     try:
-        community.record_anonymous_scan(species, disease)
+        community_popular.record_anonymous_scan(species, disease)
     except Exception:  # noqa: BLE001 - background bookkeeping only
         logger.warning("Popular tally update failed")
 
