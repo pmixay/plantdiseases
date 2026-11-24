@@ -458,15 +458,77 @@ until every item holds:
 | scoring path | **served** — `tools/paired_eval.py` (served is its default; `--argmax` is the other instrument, reported separately) with `--manifest` for the family join, then `tools/eval_bootstrap.py` (resampling unit = capture family) and `build_ood_benchmark.py --report` per species — the AND-gate alone can move ornamental recall ~20 pp; the classifier-only number in §6 is a different instrument and is labelled so |
 | independence | families disjoint from every supplement family and every training source by *acquisition* (separate P5 batches, different collectors/plants), then confirmed by `filter_supplement.py --bench` against v9 and by pHash against the training corpora |
 | rights | per-row `license_id` / `source_url` / `creator` as P4, `release_eligible=true` only when a human has verified the rights; `rights_status` says what was verified |
-| privacy | **private** Kaggle dataset, never public, never trained, never in a supplement; the v3 slug and every dataset it was built from go into `KAGGLE_DENY_SLUGS` / `KAGGLE_DENY_FOLDERS` before the first row lands |
+| privacy | **private** Kaggle dataset, never public, never trained, never in a supplement; the v3 slug goes into `KAGGLE_BENCHMARK_SLUGS` and every dataset it was built from into `KAGGLE_DENY_SLUGS` / `KAGGLE_DENY_FOLDERS` before the first row lands (the build refuses otherwise) |
 | manifest | built with `build_ood_benchmark.py` so every row carries `capture_family_id`, `family_method`, `source_family_size`, `species`, `arm`, `source_relative_path` and the rights columns; §6 requires a unique `capture_family_id` per row or it refuses to gate |
 
-**Tool gaps to close before v3 can be built** (notebook/tools lane, not this
-document): the tool hard-codes one source (`SOURCE_DATASET_SLUG`, MIT,
-`release_eligible = "false"`), one folder layout (`<split>/<species>/<condition>`),
-a two-entry `CONDITION_MAP` (`healthy`, `scorch`) and no `not_a_plant` mapping;
-`MIN_CLUSTERS_PER_CLASS = 60` is the per-class floor it refuses under; and it
-writes `manifest.csv` while §6 looks for `manifest_arms.csv`.
+**Tool gaps: closed 2026-11-24, and what is left.** The list that stood here
+(one hard-coded source and layout, a two-entry `CONDITION_MAP` with no
+`not_a_plant`, `manifest.csv` vs `manifest_arms.csv`) is closed:
+`build_ood_benchmark.py --config sources.json` takes any number of declared
+sources, each with its own layout (`condition`, `species`, `session`, `split`
+levels), condition -> class map, arms and rights record; `--src` is still the
+v2 rebuild. The manifest name was already settled (§6 reads either). What the
+build does with a config:
+
+- **Classes** are checked against `classifier.DEFAULT_CLASS_NAMES` (or a
+  bundle's `classes.json` via `--classes-json`); every class the config maps is
+  required and must reach `--min-clusters-per-class` (default 60) or nothing is
+  written. A non-plant-only first revision is a config that maps only
+  non-plant folders.
+- **Arms.** `not_a_plant` rows are arm `non_plant`; healthy rows declared
+  `difficult_plant` are the difficult plant negatives; both carry
+  `negative_kind` (the folder: `empty_pot`, `variegated`, ...). Disease arms
+  stay declared per species (`species_arms`), `unassigned` when missing.
+- **Families.** A source may give a `family_manifest`: `sift_ransac_v1` (an
+  offline audit, as before) or `acquisition_record_v1` (the collector's P2
+  ids). Claimed ids join rows; pHash and SIFT+RANSAC still run over
+  everything. One `capture_family_id` per row, enforced.
+- **Deny-lists.** The build reads `KAGGLE_DENY_SLUGS` / `KAGGLE_DENY_FOLDERS`
+  from the notebook and refuses a Kaggle source that is in neither. The
+  benchmark's *own* slug goes in the new `KAGGLE_BENCHMARK_SLUGS` (§2), not in
+  `KAGGLE_DENY_SLUGS`: §6 downloads the benchmark through the same choke point
+  that enforces the deny-list, so a deny-listed benchmark could not be scored.
+  §6 refuses a benchmark slug that is not listed, and warns (raises once
+  `REQUIRE_OOD_BENCHMARK = True`) on a manifest `source_slug` that is not
+  denied or an image with no manifest row.
+- **Targets** (8-12 species, one species at most a quarter of an arm, three
+  sessions per species, ~100 families per scored arm) are printed and written
+  to `build_info.json`; they never refuse a build.
+- **Scoring.** `--report` prints, per arm and per kind, `ACCEPTED AS PLANT` for
+  non-plants and `FALSE-REJECT` / `FALSE-FIRE` for healthy rows, and exits on a
+  scored image the manifest does not list. §6 reports the same two arms from
+  the classifier head only, with no reference value.
+
+Decisions taken where this document and the notebook did not agree, all on the
+conservative side:
+
+1. *"The v3 slug goes into `KAGGLE_DENY_SLUGS`"* (privacy row above) cannot be
+   done literally, as explained under Deny-lists; `KAGGLE_BENCHMARK_SLUGS` is
+   where it goes.
+2. *A family may span classes* (P2) holds for the supplement only. In a
+   benchmark one row is one family, so one family id under two classes is an
+   integrity error and stops the build: a plant with a healthy leaf and a
+   scorched leaf contributes one of them.
+3. *A first-party batch* has no slug to deny. The build records its
+   `acquisition_batch_id` and says the supplement check
+   (`filter_supplement.py --bench`) is still owed; it does not call the batch
+   independent.
+4. *An abstention on a non-plant* counts as a rejection in `--report`, blur
+   gate included, because `preds.json` keeps no per-row abstention reason.
+
+Still open (none blocks building the non-plant arm):
+
+- `origin` is `kaggle` or `first_party` only. Internet rows with a licence,
+  URL and creator **per row** need a per-row rights file; today the rights
+  record is per source, so one source = one licence and one creator.
+- `tools/paired_eval.py` writes abstentions as `-1` without the reason, so the
+  report cannot separate the OOD gate from the blur gate on the non-plant arm.
+- `OOD_ARM_FLOORS` in §6 is still keyed by species (`hibiscus`) and reads only
+  the scorch class; v3 floors per arm are a notebook decision for when
+  `REQUIRE_OOD_BENCHMARK` returns, set from the incumbent's served score.
+- Nothing here checks morphology, sessions or independence beyond what the
+  config declares and the image measures can confirm; P6 adjudication and the
+  P5 batch record remain the evidence.
 
 **What a family-level recall floor means.** A floor *f* on arm *A* means: of
 the *n_A* independent families on that arm, at least *f·n_A* have served
